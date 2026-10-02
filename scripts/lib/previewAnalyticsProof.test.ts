@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import type { Route } from "@playwright/test";
+import { describe, expect, it, vi } from "vitest";
 import {
   assertPreviewPolicy,
   assertFreshPreviewCache,
@@ -6,6 +7,7 @@ import {
   assertSamePreviewPolicy,
   authorizedPreviewRequest,
   previewOrigin,
+  routePreviewRequest,
 } from "./previewAnalyticsProof";
 
 const origin = "https://clawhub-git-feat-native-ga4-openclaw-foundation.vercel.app";
@@ -83,6 +85,65 @@ describe("read-only hosted preview analytics proof", () => {
       /POLICY_SPOOF_CHANGED/,
     );
   });
+});
+
+it.each([
+  ["fetch", `${origin}/?secret=PRIVATE`, "home", null],
+  ["redirect", `${origin}/assets/app.js?secret=PRIVATE`, "asset", 307],
+  ["fulfill", `${origin}/api/private-value?secret=PRIVATE`, "api", 200],
+  ["continue", "https://external.invalid/private?secret=PRIVATE", "external", null],
+] as const)(
+  "retains only bounded %s diagnostics and confines authenticated redirects",
+  async (phase, url, pathClass, status) => {
+    const raw = new Error("PRIVATE header and redirect value");
+    const response = { status: () => status };
+    const route = {
+      request: () => ({ url: () => url, headers: () => ({}) }),
+      fetch: vi
+        .fn()
+        .mockImplementation(() =>
+          phase === "fetch" ? Promise.reject(raw) : Promise.resolve(response),
+        ),
+      fulfill: vi.fn().mockRejectedValue(raw),
+      continue: vi.fn().mockRejectedValue(raw),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+    const errors: string[] = [];
+    const failures: Parameters<typeof routePreviewRequest>[5] = [];
+    await routePreviewRequest(route as unknown as Route, origin, "PRIVATE", [], errors, failures);
+    expect(errors).toEqual(["BROWSER_ROUTE_FAILED"]);
+    expect(failures).toEqual([
+      { path_class: pathClass, phase, status, elapsed_ms: expect.any(Number) },
+    ]);
+    expect(failures[0].elapsed_ms).toBeGreaterThanOrEqual(0);
+    expect(failures[0].elapsed_ms).toBeLessThanOrEqual(60_000);
+    expect(JSON.stringify(failures)).not.toMatch(/PRIVATE|secret|https|header/);
+    if (phase === "continue") expect(route.fetch).not.toHaveBeenCalled();
+    else
+      expect(route.fetch).toHaveBeenCalledExactlyOnceWith({
+        headers: { "x-vercel-protection-bypass": "PRIVATE" },
+        maxRedirects: 0,
+        timeout: 20_000,
+      });
+    if (phase === "redirect") {
+      expect(route.fulfill).not.toHaveBeenCalled();
+      expect(route.continue).not.toHaveBeenCalled();
+    }
+  },
+);
+
+it("bounds retained route failures while every failure still fails the proof", async () => {
+  const errors: string[] = [];
+  const failures: Parameters<typeof routePreviewRequest>[5] = [];
+  const route = {
+    request: () => ({ url: () => origin, headers: () => ({}) }),
+    fetch: vi.fn().mockRejectedValue(new Error("not retained")),
+    abort: vi.fn().mockResolvedValue(undefined),
+  };
+  for (let index = 0; index < 33; index++)
+    await routePreviewRequest(route as unknown as Route, origin, "PRIVATE", [], errors, failures);
+  expect(errors).toHaveLength(33);
+  expect(failures).toHaveLength(32);
 });
 
 it("drains pending route work before context disposal and preserves failures", async () => {

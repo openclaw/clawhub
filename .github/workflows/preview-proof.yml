@@ -107,5 +107,5 @@ jobs:
             echo
             echo "- Git SHA: \`${actual_sha}\`"
             echo "- Preview URL: ${PREVIEW_URL}"
-            echo "- Verified: seeded skill detail and file, home, strict v2 region/cache/spoof policy, served SHA, and zero Google requests with a seeded grant and source OFF"
+            echo "- Verified: seeded skill detail and file, home, strict v2 region/cache/spoof policy, served SHA, reviewed source switch, and zero Google requests with a seeded grant on preview"
           } >> "$GITHUB_STEP_SUMMARY"

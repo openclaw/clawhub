@@ -2,6 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { GOOGLE_ANALYTICS_ENABLED } from "../src/lib/analyticsConsent";
 import {
   authorizedPreviewRequest,
   PreviewProofFailure,
@@ -29,6 +30,9 @@ export async function runPreviewProof({
   const expectedSha = env.EXPECTED_SHA?.trim();
   const actualSha = readHead();
   if (!expectedSha || expectedSha !== actualSha) throw new PreviewProofFailure("CHECKOUT_SHA");
+  // The reviewed exact checkout SHA binds the source switch; either source state
+  // must prove zero collection on preview without changing the main-only guard.
+  receipt.source_activation = GOOGLE_ANALYTICS_ENABLED;
   if (!env.CLAWHUB_E2E_SKILL_SLUG?.trim()) throw new PreviewProofFailure("FIXTURE_SELECTOR");
   receipt.preview_url = origin;
   receipt.git_sha = actualSha;

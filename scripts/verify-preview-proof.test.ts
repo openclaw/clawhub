@@ -41,6 +41,7 @@ describe("exact-head preview proof orchestration", () => {
     expect(receipt).toMatchObject({
       status: "passed",
       git_sha: sha,
+      source_activation: true,
       fixture: { slug: "02-team-operation", owner: "preview-seeded-owner" },
     });
     expect(JSON.stringify(receipt)).not.toContain("fixture-read-credential");
@@ -107,10 +108,15 @@ it.each(["timeout", "network", "browser-timeout", "browser-network", "non-error-
         .mockResolvedValueOnce(Response.json(detail))
         .mockResolvedValueOnce(new Response("# Skill"))
         .mockResolvedValueOnce(new Response("<title>ClawHub</title>"));
-      analyticsProof.mockImplementation(async () => {
+      analyticsProof.mockImplementation(async (_origin, _credential, _sha, evidence) => {
         const errors: string[] = [];
+        const failures: Parameters<typeof routePreviewRequest>[5] = [];
+        evidence.browser_route_failures = failures;
         const route = {
-          request: () => ({ url: () => `${origin}/api/v1/promotions`, headers: () => ({}) }),
+          request: () => ({
+            url: () => `${origin}/api/private-${canary}?secret=${canary}`,
+            headers: () => ({}),
+          }),
           fetch: vi.fn().mockRejectedValue(
             Object.assign(new Error(raw), {
               name: kind === "browser-timeout" ? "TimeoutError" : "Error",
@@ -118,8 +124,11 @@ it.each(["timeout", "network", "browser-timeout", "browser-network", "non-error-
           ),
           abort: vi.fn().mockResolvedValue(undefined),
         } as unknown as Route;
-        await routePreviewRequest(route, origin, canary, [], errors);
+        await routePreviewRequest(route, origin, canary, [], errors, failures);
         expect(errors).toEqual(["BROWSER_ROUTE_FAILED"]);
+        expect(failures).toEqual([
+          { path_class: "api", phase: "fetch", status: null, elapsed_ms: expect.any(Number) },
+        ]);
         if (errors.length) throw new PreviewProofFailure("BROWSER_ROUTE_FAILED");
       });
     } else fetchImpl.mockRejectedValue(kind === "non-error-rejection" ? raw : new Error(raw));

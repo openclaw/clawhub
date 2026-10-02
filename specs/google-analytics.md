@@ -158,12 +158,24 @@ These lower-bound observations must stay out of precise chronological funnels.
 
 ## Rollout and validation
 
-The source-owned `GOOGLE_ANALYTICS_ENABLED` switch remains false until root GO;
-`VITE_GA4_ENABLED=1` enables isolated local acceptance fixtures. The server uses the
+The source-owned `GOOGLE_ANALYTICS_ENABLED` switch is armed in the activation PR;
+merging that PR requires explicit root production GO for its exact head/base.
+Vercel Git can serve the new main commit before exact-main Deploy Test and manual
+frontend Deploy finish. The merge is therefore the activation operation; those
+later gates validate the release and must not be described as pre-emission gates.
+`VITE_GA4_ENABLED=1` remains available for isolated local acceptance fixtures, but
+no production provider override is required. The server uses the
 approved source policy and requires Vercel execution before trusting its country
 header; no new provider environment setting is required. Root production GO, actual
 hosting proof, repository checks and exact-SHA release gates remain mandatory. The
 existing Deploy Test includes the class-only/no-store/spoofed-header endpoint check.
+Protected Preview Proof accepts either source-switch state bound to the reviewed
+checkout SHA, and always requires zero Google SDK/requests/cookies on preview.
+A source-on preview may show consent controls and a granted preference; the
+independent exact canonical origin and production deployment checks still block
+collection. Route failure evidence contains only fixed path/phase categories,
+numeric status/timing, and at most 32 diagnostic entries; raw errors and credential
+values must never enter its stdout or receipt.
 `VITE_GA4_RELEASE` comes from the validated deployment Git SHA and does not change the
 existing application drift banner. User-provided-data activation
 must be off; an unrelated internal SDK capability flag is not proof of activation.

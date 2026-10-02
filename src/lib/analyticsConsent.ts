@@ -1,6 +1,6 @@
 export const ANALYTICS_POLICY_VERSION = "2026-10-02.v2";
 // Source-owned rollout switch. Change only with the coordinated release GO.
-export const GOOGLE_ANALYTICS_ENABLED = false;
+export const GOOGLE_ANALYTICS_ENABLED = true;
 export const ANALYTICS_CHOICE_KEY = "clawhub.analytics.choice";
 const CHOICE_LIFETIME_MS = 180 * 24 * 60 * 60 * 1000;
 export type AnalyticsRegionClass = "opt_in" | "notice_opt_out" | "unknown";
