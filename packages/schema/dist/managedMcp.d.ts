@@ -9,8 +9,10 @@ declare const definitionSchema: import("arktype/internal/variants/object.ts").Ob
     setup?: string | undefined;
     icon: {
         pngBase64: string;
-        license: "MIT";
+        license: string;
         attribution: string;
+        sourceUrl?: string | undefined;
+        licenseUrl?: string | undefined;
     };
     connection: {
         url: string;

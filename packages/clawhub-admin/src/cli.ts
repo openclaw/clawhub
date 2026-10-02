@@ -327,6 +327,7 @@ const managedMcp = program
 managedMcp
   .command("publish <file>")
   .description("Publish one definition or a JSON array through normal security gates")
+  .option("--icon <png>", "Use a local PNG for one definition; preserve its icon rights metadata")
   .option(
     "--dry-run",
     "Validate definition fields only; skip artifact, endpoint, and security checks",
