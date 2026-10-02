@@ -100,3 +100,33 @@ test("non-production contexts keep their own privacy behavior", async ({ browser
     await context.close();
   }
 });
+
+test("unexpected Google requests abort and fail the guard without reaching the network", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  let fallbackGoogleRequests = 0;
+  try {
+    // This lower-priority local fence prevents network even if the guard regresses.
+    await context.route("**/*", (route) => {
+      if (new URL(route.request().url()).hostname === "www.google-analytics.com") {
+        fallbackGoogleRequests++;
+        return route.fulfill({ status: 204, body: "" });
+      }
+      return route.fulfill({ contentType: "text/html", body: document });
+    });
+    const assertNoRequests = await protectProductionSmokeContext(context, origin);
+    const page = await context.newPage();
+    await page.goto(origin);
+    const outcome = await page.evaluate(() =>
+      fetch("https://www.google-analytics.com/g/collect?fixture=dummy", { mode: "no-cors" })
+        .then(() => "completed")
+        .catch(() => "aborted"),
+    );
+    expect(outcome).toBe("aborted");
+    expect(fallbackGoogleRequests).toBe(0);
+    expect(assertNoRequests).toThrow("Production smoke must not request Google analytics");
+  } finally {
+    await context.close();
+  }
+});
