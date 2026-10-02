@@ -3,7 +3,11 @@ import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { runEndorPluginScan, type EndorCommandDiagnostic } from "./run-endor-plugin-scan";
+import {
+  EndorContainerCleanupError,
+  runEndorPluginScan,
+  type EndorCommandDiagnostic,
+} from "./run-endor-plugin-scan";
 
 const containerId = "a".repeat(64);
 const tempDirs: string[] = [];
@@ -182,6 +186,16 @@ describe("runEndorPluginScan", () => {
       const createArgs = (await readFile(join(workspace, "docker-create-args"), "utf8"))
         .trim()
         .split("\n");
+      expect(createArgs).toContain("bridge");
+      expect(createArgs).toContain("NET_ADMIN");
+      expect(createArgs).toContain("ALL");
+      expect(createArgs).toContain("SETUID");
+      expect(createArgs).toContain("SETGID");
+      expect(createArgs).toContain("SETPCAP");
+      expect(createArgs).toContain("CHOWN");
+      expect(createArgs).toContain("no-new-privileges:true");
+      expect(createArgs).toContain("--read-only");
+      expect(createArgs).toContain("/usr/local/bin/clawhub-endor-entrypoint");
       expect(createArgs).toContain("clawhub-endor-scan");
       const runId = (await readFile(join(workspace, "docker-name"), "utf8")).replace(
         "clawhub-endor-",
@@ -331,10 +345,15 @@ describe("runEndorPluginScan", () => {
       await writeFile(join(workspace, "docker-start-stdout"), report());
       await writeFile(join(workspace, "docker-rm-exit"), "23");
       if (failScan) await writeFile(join(workspace, "docker-start-exit"), "17");
-      await expect(runScan(workspace)).rejects.toThrow(
-        failScan
-          ? "Endor scan failed: Endor Docker start exited 17;"
-          : "Endor Docker cleanup failed",
+      const error = await runScan(workspace).catch((reason: unknown) => reason);
+      expect(error).toBeInstanceOf(EndorContainerCleanupError);
+      expect(error).toHaveProperty(
+        "message",
+        expect.stringContaining(
+          failScan
+            ? "Endor scan failed: Endor Docker start exited 17;"
+            : "Endor Docker cleanup failed",
+        ),
       );
     }
   });

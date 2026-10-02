@@ -142,6 +142,43 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(claimJobs.mock.calls.map(([limit]) => limit)).toEqual([2, 1, 1]);
   });
 
+  it("stops claiming after a worker-fatal result and finishes already leased work", async () => {
+    let releaseActiveJob: (() => void) | undefined;
+    const activeJob = new Promise<void>((resolve) => {
+      releaseActiveJob = resolve;
+    });
+    const claimJobs = vi.fn(async () => ({
+      claimedCount: 2,
+      jobs: [{ id: "fatal" }, { id: "active" }],
+    }));
+    const processClaimedJob = vi.fn(async (job: { id: string }) => {
+      if (job.id === "active") await activeJob;
+      return {
+        completed: job.id === "active",
+        hardFailed: job.id === "fatal",
+        retryableFailed: false,
+        ...(job.id === "fatal" ? { workerMustStop: true } : {}),
+      };
+    });
+
+    const run = runContinuouslyRefilledWorkerPool({
+      concurrency: 2,
+      maxJobs: undefined,
+      canClaim: () => true,
+      claimJobs,
+      processClaimedJob,
+    });
+    await vi.waitFor(() => expect(processClaimedJob).toHaveBeenCalledTimes(2));
+    releaseActiveJob?.();
+
+    await expect(run).resolves.toMatchObject({
+      totalClaimed: 2,
+      totalCompleted: 1,
+      totalFailed: 1,
+    });
+    expect(claimJobs).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps refilling after a full lease batch has no hydratable jobs", async () => {
     const claimJobs = vi
       .fn()

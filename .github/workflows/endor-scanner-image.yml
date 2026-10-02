@@ -29,7 +29,28 @@ jobs:
             --build-arg "ENDORCTL_SHA256=$ENDORCTL_SHA256" \
             --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
             --tag "$IMAGE" scripts/security/endor
-          docker run --rm --network none "$IMAGE" test -x /usr/local/bin/clawhub-endor-scan
+          docker run --rm --network none "$IMAGE" sh -c '
+            test -x /usr/local/bin/clawhub-endor-scan
+            test -x /usr/local/bin/clawhub-endor-entrypoint
+            test -x /usr/local/bin/clawhub-endor-egress-guard
+          '
+          docker run --rm --network bridge \
+            --cap-drop ALL --cap-add NET_ADMIN \
+            --security-opt no-new-privileges:true \
+            "$IMAGE" sh -c '
+              /usr/local/bin/clawhub-endor-egress-guard
+              iptables -C OUTPUT -d 169.254.0.0/16 -j REJECT
+              iptables -C OUTPUT -d 172.16.0.0/12 -j REJECT
+              ip6tables -C OUTPUT -d fc00::/7 -j REJECT
+              ip6tables -C OUTPUT -d fe80::/10 -j REJECT
+            '
+          docker run --rm --network bridge --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev \
+            --cap-drop ALL --cap-add NET_ADMIN \
+            --cap-add SETUID --cap-add SETGID --cap-add SETPCAP --cap-add CHOWN \
+            --security-opt no-new-privileges:true \
+            --entrypoint /usr/local/bin/clawhub-endor-entrypoint \
+            "$IMAGE" sh -c 'test "$(id -u)" -eq 1000 && test -w /tmp && test ! -w /'
 
       - name: Publish image and report digest
         env:

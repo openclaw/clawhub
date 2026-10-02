@@ -36,6 +36,13 @@ const MAX_SUMMARY_FINDINGS = 50;
 const MAX_SUMMARY_TEXT_CHARS = 2_000;
 const REACHABLE_FUNCTION_TAG = "FINDING_TAGS_REACHABLE_FUNCTION";
 
+export class EndorContainerCleanupError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "EndorContainerCleanupError";
+  }
+}
+
 const unknownRecordSchema = z.record(z.string(), z.unknown());
 const endorFindingSchema = z
   .object({
@@ -330,6 +337,25 @@ export async function runEndorPluginScan(input: {
   const args = [
     "container",
     "create",
+    "--network",
+    "bridge",
+    "--cap-drop",
+    "ALL",
+    "--cap-add",
+    "NET_ADMIN",
+    "--cap-add",
+    "SETUID",
+    "--cap-add",
+    "SETGID",
+    "--cap-add",
+    "SETPCAP",
+    "--cap-add",
+    "CHOWN",
+    "--security-opt",
+    "no-new-privileges:true",
+    "--read-only",
+    "--entrypoint",
+    "/usr/local/bin/clawhub-endor-entrypoint",
     "--name",
     containerName,
     "--label",
@@ -404,18 +430,22 @@ export async function runEndorPluginScan(input: {
   } catch (error) {
     cleanupError = error;
   }
-  if (commandError !== undefined && cleanupError !== undefined) {
-    throw new AggregateError(
-      [commandError, cleanupError],
-      `Endor scan failed: ${errorMessage(commandError)}; Docker cleanup failed: ${errorMessage(cleanupError)}`,
+  if (cleanupError !== undefined) {
+    const cause =
+      commandError === undefined
+        ? cleanupError
+        : new AggregateError(
+            [commandError, cleanupError],
+            `Endor scan failed: ${errorMessage(commandError)}; Docker cleanup failed: ${errorMessage(cleanupError)}`,
+          );
+    throw new EndorContainerCleanupError(
+      commandError === undefined
+        ? `Endor Docker cleanup failed: ${errorMessage(cleanupError)}`
+        : `Endor scan failed: ${errorMessage(commandError)}; Docker cleanup failed: ${errorMessage(cleanupError)}`,
+      { cause },
     );
   }
   if (commandError !== undefined) throw commandError;
-  if (cleanupError !== undefined) {
-    throw new Error(`Endor Docker cleanup failed: ${errorMessage(cleanupError)}`, {
-      cause: cleanupError,
-    });
-  }
 
   if (!output) throw new Error("Endor scanner did not emit findings JSON");
   let parsedOutput: unknown;

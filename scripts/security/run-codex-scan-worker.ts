@@ -23,6 +23,7 @@ import {
 } from "../lib/workerRedaction";
 import { writeClawHubEndorProfile } from "./clawHubEndorProfile";
 import {
+  EndorContainerCleanupError,
   isEndorPluginScanEnabled,
   runEndorPluginScan,
   type EndorCommandDiagnostic,
@@ -190,6 +191,7 @@ type ProcessJobResult = {
   completed: boolean;
   hardFailed: boolean;
   retryableFailed: boolean;
+  workerMustStop?: boolean;
 };
 
 const DEFAULT_BATCH_LIMIT = 4;
@@ -2112,6 +2114,7 @@ export async function processJob(
   let aigAnalysis: AigAnalysis | undefined;
   let skillSpectorAnalysis: SkillSpectorAnalysis | undefined;
   let endorAnalysis: EndorAnalysis | undefined;
+  let preserveWorkspaceForEndorCleanup = false;
   let status: JobDiagnosticInput["status"] = "failed";
   try {
     await writeArtifactWorkspace(job, workspace);
@@ -2136,6 +2139,10 @@ export async function processJob(
       endor.error = sanitizeWorkerErrorMessage(
         reason instanceof Error ? reason.message : String(reason),
       );
+      if (reason instanceof EndorContainerCleanupError) {
+        preserveWorkspaceForEndorCleanup = true;
+        throw reason;
+      }
       endorAnalysis = {
         status: "failed",
         checkedAt: Date.now(),
@@ -2212,6 +2219,7 @@ export async function processJob(
     });
     return { completed: true, hardFailed: false, retryableFailed: false };
   } catch (error) {
+    const workerMustStop = error instanceof EndorContainerCleanupError;
     errorMessage = sanitizeWorkerErrorMessage(
       error instanceof Error ? error.message : String(error),
     );
@@ -2247,8 +2255,9 @@ export async function processJob(
     });
     return {
       completed: false,
-      hardFailed: !failResult?.retry,
-      retryableFailed: Boolean(failResult?.retry),
+      hardFailed: workerMustStop || !failResult?.retry,
+      retryableFailed: !workerMustStop && Boolean(failResult?.retry),
+      ...(workerMustStop ? { workerMustStop: true } : {}),
     };
   } finally {
     try {
@@ -2278,7 +2287,17 @@ export async function processJob(
         "security scan diagnostic write failed",
       );
     }
-    await rm(workspace, { recursive: true, force: true });
+    if (preserveWorkspaceForEndorCleanup) {
+      logger.error(
+        {
+          event: "security_scan_endor_workspace_preserved_after_cleanup_failure",
+          jobId: job.job._id,
+        },
+        "preserving Endor workspace because container removal was not confirmed",
+      );
+    } else {
+      await rm(workspace, { recursive: true, force: true });
+    }
   }
 }
 
@@ -2305,6 +2324,7 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
   const active = new Set<Promise<ProcessJobResult>>();
   const sleepImpl = options.sleep ?? sleep;
   let queueDrained = false;
+  let workerMustStop = false;
   let totalClaimed = 0;
   let totalCompleted = 0;
   let totalFailed = 0;
@@ -2313,7 +2333,12 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
   let consecutiveClaimFailures = 0;
 
   while (active.size > 0 || (!queueDrained && options.canClaim(totalClaimed))) {
-    while (active.size < options.concurrency && !queueDrained && options.canClaim(totalClaimed)) {
+    while (
+      active.size < options.concurrency &&
+      !queueDrained &&
+      !workerMustStop &&
+      options.canClaim(totalClaimed)
+    ) {
       const remainingJobs =
         options.maxJobs === undefined
           ? options.concurrency - active.size
@@ -2383,6 +2408,7 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
             completed: false,
             hardFailed: true,
             retryableFailed: false,
+            workerMustStop: true,
           };
         });
         active.add(task);
@@ -2398,6 +2424,10 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
       if (settled.result.completed) totalCompleted += 1;
       if (settled.result.hardFailed) totalFailed += 1;
       if (settled.result.retryableFailed) totalRetryableFailed += 1;
+      if (settled.result.workerMustStop) {
+        workerMustStop = true;
+        queueDrained = true;
+      }
       if (active.size > 0 || !queueDrained) continue;
     }
 

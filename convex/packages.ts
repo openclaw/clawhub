@@ -12998,13 +12998,20 @@ export const completeReleaseSecurityScanInternal = internalMutation({
 
     const releaseWithScannerResults: Doc<"packageReleases"> = {
       ...release,
-      skillSpectorAnalysis: args.skillSpectorAnalysis,
+      ...(args.skillSpectorAnalysis !== undefined
+        ? { skillSpectorAnalysis: args.skillSpectorAnalysis }
+        : {}),
       ...(endorAnalysis ? { endorAnalysis } : {}),
     };
-    await ctx.db.patch(args.releaseId, {
-      skillSpectorAnalysis: args.skillSpectorAnalysis,
+    const releasePatch: Partial<Doc<"packageReleases">> = {
+      ...(args.skillSpectorAnalysis !== undefined
+        ? { skillSpectorAnalysis: args.skillSpectorAnalysis }
+        : {}),
       ...(endorAnalysis ? { endorAnalysis } : {}),
-    });
+    };
+    if (Object.keys(releasePatch).length > 0) {
+      await ctx.db.patch(args.releaseId, releasePatch);
+    }
     await applyReleaseLlmAnalysis(ctx, releaseWithScannerResults, args.llmAnalysis);
 
     const now = Date.now();

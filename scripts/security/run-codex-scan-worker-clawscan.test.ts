@@ -3,7 +3,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
@@ -371,12 +371,25 @@ function pluginPackageJobWithBundledSkill(jobId: string): ClaimedJob {
 
 function fakeEndorDockerBody(input: {
   cleanupMarker: string;
+  cleanupFails?: boolean;
   exitCode: number;
   onStart?: string;
   startOutput: string;
 }) {
   return `case "$2" in
-  create) printf '%064d\\n' 0 ;;
+  create)
+    args=("$@")
+    for ((index = 0; index < \${#args[@]}; index++)); do
+      if [[ "\${args[$index]}" == "--mount" ]]; then
+        mount="\${args[$((index + 1))]}"
+        source="\${mount#type=bind,source=}"
+        source="\${source%%,target=*}"
+        printf '%s' "$source" > ${JSON.stringify(join(dirname(input.cleanupMarker), "endor-mounted-source"))}
+        break
+      fi
+    done
+    printf '%064d\\n' 0
+    ;;
   start)
     ${input.onStart ?? ""}
     cat <<'JSON'
@@ -388,7 +401,9 @@ JSON
     name="\${@: -1}"
     printf '%064d\\n/%s\\n%s\\n' 0 "$name" "\${name#clawhub-endor-}"
     ;;
-  rm) touch ${JSON.stringify(input.cleanupMarker)} ;;
+  rm)
+    ${input.cleanupFails ? 'echo "container removal failed" >&2; exit 23' : `touch ${JSON.stringify(input.cleanupMarker)}`}
+    ;;
   *) exit 99 ;;
 esac`;
 }
@@ -1346,6 +1361,47 @@ JSON`,
       llmAnalysis: { status: "malicious", verdict: "malicious" },
     });
     expect(await readFile(cleanupMarker, "utf8")).toBe("");
+  });
+
+  it("fails closed and stops the worker when Endor container cleanup fails", async () => {
+    const workspace = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const callLog = join(workspace, "clawscan-calls.log");
+    await writeFakeClawScanCommand(fakeClawScan, `touch ${JSON.stringify(callLog)}\nexit 0`);
+    await configureEndorFakeCommands({
+      clawScan: fakeClawScan,
+      dockerBody: fakeEndorDockerBody({
+        cleanupFails: true,
+        cleanupMarker: join(workspace, "endor-cleaned"),
+        exitCode: 0,
+        startOutput: endorArtifactJson(),
+      }),
+      workspace,
+    });
+
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry: true })) };
+    await expect(
+      processJob(
+        client,
+        "worker-auth",
+        pluginPackageJob("securityScanJobs:endor-cleanup-failure"),
+        undefined,
+      ),
+    ).resolves.toEqual({
+      completed: false,
+      hardFailed: true,
+      retryableFailed: false,
+      workerMustStop: true,
+    });
+    expect(client.action).toHaveBeenCalledTimes(1);
+    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+      error: expect.stringContaining("Docker cleanup failed"),
+    });
+    await expect(readFile(callLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    const mountedWorkspace = await readFile(join(workspace, "endor-mounted-source"), "utf8");
+    await expect(readFile(join(mountedWorkspace, "package.json"), "utf8")).resolves.toContain(
+      "name",
+    );
   });
 
   it("passes failed Endor analysis to the judge and completes the moderation result", async () => {

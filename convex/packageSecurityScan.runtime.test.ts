@@ -197,6 +197,30 @@ it("preserves a stored Endor summary when a worker omits it", async () => {
   });
 });
 
+it("preserves a stored SkillSpector result when a worker omits it", async () => {
+  const { t, releaseId, jobId } = await createPackageScanFixture();
+  const skillSpectorAnalysis = {
+    status: "clean",
+    issueCount: 0,
+    issues: [],
+    checkedAt: 8,
+  };
+  await t.run((ctx) => ctx.db.patch(releaseId, { skillSpectorAnalysis }));
+
+  await expect(
+    t.mutation(internal.packages.completeReleaseSecurityScanInternal, {
+      releaseId,
+      jobId,
+      leaseToken: "lease-one",
+      llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 10 },
+    }),
+  ).resolves.toEqual({ ok: true });
+
+  expect((await readReleaseAndJob(t, releaseId, jobId)).release).toMatchObject({
+    skillSpectorAnalysis,
+  });
+});
+
 it("rejects stale status, lease, and target completions without writing scan results", async () => {
   const { t, releaseId, jobId } = await createPackageScanFixture();
   const args = {

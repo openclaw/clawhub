@@ -34,12 +34,16 @@ supports paced batches and preserves active jobs.
 - Store a bounded summary on the exact package release. Keep the total count
   when the displayed list is capped. Package jobs do not upload or retain full
   scanner reports; worker diagnostics remain bounded and redacted.
-- An unsupported package is explicitly not analyzed. An Endor failure is saved
+- An unsupported package is explicitly not analyzed. A scanner-analysis failure is saved
   as a failed analysis with a safe reason, never a successful empty report.
   The failed or skipped status also reaches the judge; it cannot appear as a clean
   scan. The moderation result still completes and can quarantine the release.
-  An Endor failure does not retry the whole job; owners or admins can request a
-  rescan. Primary scanner failures retain the existing job failure/retry path.
+  Scanner-analysis failures do not retry the whole job; owners or admins can
+  request a rescan. Primary scanner failures retain the existing job
+  failure/retry path. Container ownership or cleanup failures are fatal to the
+  worker: do not run the judge, fail the job through the existing failure
+  handler, stop claiming work, and preserve the mounted workspace rather than
+  delete files while the container may still be using it.
 - Preserve the last stored result while replacement work is queued or running.
   Its check time identifies the analysis being displayed.
 - Prepare Endor and bundled SkillSpector concurrently after materializing the
@@ -84,7 +88,13 @@ scripts and target-selected Yarn executables, rejects `.npmrc`, and scans a fres
 Git snapshot. It preserves findings JSON, converts successful empty output to an
 empty report, accepts Endor's policy exit 128, and rejects analysis errors even
 when Endor exits zero. The image retains the reviewed npm version that prevents
-Git dependency prepare scripts from bypassing script suppression.
+Git dependency prepare scripts from bypassing script suppression. The dedicated
+container uses destination firewall rules to block private, link-local, and
+special-use IPv4 and IPv6 destinations during dependency resolution, then drops
+all capabilities and runs the scanner as the image's unprivileged `node` user.
+The worker grants network-admin capabilities only so the container can install
+those rules before scanning; image workflows verify the rules and privilege
+drop on a Linux Docker runner.
 
 Image publication, hosted configuration, and ClawHub deployment remain separate
 manual rollout actions.
