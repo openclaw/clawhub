@@ -72,7 +72,7 @@ function runLocalConvex(functionName: string, args: Record<string, unknown>) {
 }
 
 function packFixture(root: string, name: string, files: Record<string, string>): PackedFixture {
-  const sourceDir = path.join(root, name.replaceAll(/[\/@]/gu, "-"));
+  const sourceDir = path.join(root, name.replaceAll(/[/@]/gu, "-"));
   for (const [file, contents] of Object.entries(files)) {
     const filePath = path.join(sourceDir, file);
     mkdirSync(path.dirname(filePath), { recursive: true });
