@@ -1534,6 +1534,12 @@ function makeDigestCtx(options: {
       pagesByFamily.set(family, pagesByCursor);
     }
     familyPagesByTable.set("packageTopicSearchDigest", pagesByFamily);
+    rowsByTable.set("packageTopicSearchDigest", [
+      ...(rowsByTable.get("packageTopicSearchDigest") ?? []),
+      ...Object.values(options.topicPagesByFamily).flatMap((pages) =>
+        (pages ?? []).flatMap((page) => page.page),
+      ),
+    ]);
   }
   setPages("packagePluginCategorySearchDigest", options.categoryPages ?? []);
   if (options.categoryRows) {
@@ -6415,7 +6421,7 @@ describe("packages public queries", () => {
   });
 
   it("scans topic digest pages until a combined category search match is found", async () => {
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       topicPages: [
         {
           page: Array.from({ length: 50 }, (_, index) =>
@@ -6450,7 +6456,8 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["calendar-api"]);
-    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledWith(500);
+    expect(paginate).not.toHaveBeenCalled();
   });
 
   it("ranks bounded candidates from every stable family before applying the search limit", async () => {
@@ -6561,7 +6568,7 @@ describe("packages public queries", () => {
   it("scans each stable family past the first combined-filter window while Claws are disabled", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       topicPages: [
         {
           page: Array.from({ length: 50 }, (_, index) =>
@@ -6599,7 +6606,8 @@ describe("packages public queries", () => {
       });
 
       expect(result.map((entry) => entry.package.name)).toEqual(["calendar-skill-api"]);
-      expect(paginate).toHaveBeenCalled();
+      expect(take).toHaveBeenCalledWith(166);
+      expect(paginate).not.toHaveBeenCalled();
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
@@ -6628,10 +6636,9 @@ describe("packages public queries", () => {
     });
 
     expect(result).toEqual([]);
-    expect(paginate).toHaveBeenCalledTimes(6);
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(paginate).not.toHaveBeenCalled();
     expect(take).toHaveBeenCalledWith(20);
-    expect(take).toHaveBeenCalledWith(200);
+    expect(take).toHaveBeenCalledWith(500);
   });
 
   it("recalls exact author topics without an explicit topic filter", async () => {
@@ -21669,7 +21676,7 @@ describe("restorePackageInternal", () => {
       ownerHandle: "openclaw",
       ownerKind: "org",
     });
-    const { ctx } = makeDigestCtx({
+    const { ctx, paginate } = makeDigestCtx({
       pages: [
         { page: hidden, isDone: false, continueCursor: "after-legacy" },
         { page: [official], isDone: true, continueCursor: "" },
@@ -21677,12 +21684,21 @@ describe("restorePackageInternal", () => {
       publisherDocs: activeOpenClawPublisherDocs,
     });
 
-    const result = await listPublicPageHandler(ctx, {
+    const first = await listPublicPageHandler(ctx, {
       family: "claw",
       paginationOpts: { cursor: null, numItems: 10 },
     });
-    expect(result.page.map((entry) => entry.name)).toEqual(["@openclaw/assistant"]);
-    expect(result.isDone).toBe(true);
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(paginate).toHaveBeenCalledTimes(1);
+
+    const second = await listPublicPageHandler(ctx, {
+      family: "claw",
+      paginationOpts: { cursor: first.continueCursor, numItems: 10 },
+    });
+    expect(second.page.map((entry) => entry.name)).toEqual(["@openclaw/assistant"]);
+    expect(second.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
   });
 
   it("does not let hidden Claws starve an unfiltered catalog page", async () => {
@@ -21706,12 +21722,20 @@ describe("restorePackageInternal", () => {
       publisherDocs: activeOpenClawPublisherDocs,
     });
 
-    const result = await listPublicPageHandler(ctx, {
+    const first = await listPublicPageHandler(ctx, {
       paginationOpts: { cursor: null, numItems: 10 },
     });
-    expect(result.page.map((entry) => entry.name)).toEqual(["@openclaw/assistant"]);
-    expect(result.isDone).toBe(true);
-    expect(paginate).toHaveBeenNthCalledWith(2, { cursor: "after-legacy", numItems: 200 });
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(paginate).toHaveBeenCalledTimes(1);
+
+    const second = await listPublicPageHandler(ctx, {
+      paginationOpts: { cursor: first.continueCursor, numItems: 10 },
+    });
+    expect(second.page.map((entry) => entry.name)).toEqual(["@openclaw/assistant"]);
+    expect(second.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(paginate).toHaveBeenNthCalledWith(2, { cursor: "after-legacy", numItems: 10 });
   });
 
   it("searches past hidden legacy Claws to find an @openclaw Claw", async () => {
@@ -21769,7 +21793,7 @@ describe("restorePackageInternal", () => {
       ownerHandle: "openclaw",
       ownerKind: "org",
     });
-    const { ctx, indexNames } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       pages: [
         { page: hidden, isDone: false, continueCursor: "after-legacy" },
         { page: [official], isDone: true, continueCursor: "" },
@@ -21780,7 +21804,8 @@ describe("restorePackageInternal", () => {
 
     const result = await searchPublicHandler(ctx, { query: "assistant", limit: 10 });
     expect(result.map((entry) => entry.package.name)).toEqual(["@openclaw/qualified"]);
-    expect(indexNames).toContain("by_active_family_updated");
+    expect(take).toHaveBeenCalledWith(500);
+    expect(paginate).not.toHaveBeenCalled();
   });
 
   it("hides non-OpenClaw Claws from package-backed sorted lists", async () => {
@@ -21834,7 +21859,7 @@ describe("restorePackageInternal", () => {
       ownerPublisherId: "publishers:other",
     });
     const official = makeOpenClawClawPackageDoc({ _id: "packages:official" });
-    const { ctx } = makeDigestCtx({
+    const { ctx, paginate } = makeDigestCtx({
       packagePages: [
         { page: [hidden], isDone: false, continueCursor: "after-legacy" },
         { page: [official], isDone: true, continueCursor: "" },
@@ -21845,13 +21870,23 @@ describe("restorePackageInternal", () => {
       },
     });
 
-    const result = await listPublicPageHandler(ctx, {
+    const first = await listPublicPageHandler(ctx, {
       family: "claw",
       sort: "downloads",
       paginationOpts: { cursor: null, numItems: 10 },
     });
-    expect(result.page.map((entry) => entry.name)).toEqual(["@openclaw/demo-claw"]);
-    expect(result.isDone).toBe(true);
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(paginate).toHaveBeenCalledTimes(1);
+
+    const second = await listPublicPageHandler(ctx, {
+      family: "claw",
+      sort: "downloads",
+      paginationOpts: { cursor: first.continueCursor, numItems: 10 },
+    });
+    expect(second.page.map((entry) => entry.name)).toEqual(["@openclaw/demo-claw"]);
+    expect(second.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
   });
 
   it("does not let hidden Claws starve a sorted unfiltered catalog page", async () => {
@@ -21863,7 +21898,7 @@ describe("restorePackageInternal", () => {
       ownerPublisherId: "publishers:other",
     });
     const official = makeOpenClawClawPackageDoc({ _id: "packages:official" });
-    const { ctx } = makeDigestCtx({
+    const { ctx, paginate } = makeDigestCtx({
       packagePages: [
         { page: [hidden], isDone: false, continueCursor: "after-legacy" },
         { page: [official], isDone: true, continueCursor: "" },
@@ -21871,12 +21906,21 @@ describe("restorePackageInternal", () => {
       publisherDocs: { [openClawPublisher._id]: openClawPublisher },
     });
 
-    const result = await listPublicPageHandler(ctx, {
+    const first = await listPublicPageHandler(ctx, {
       sort: "downloads",
       paginationOpts: { cursor: null, numItems: 10 },
     });
-    expect(result.page.map((entry) => entry.name)).toEqual(["@openclaw/demo-claw"]);
-    expect(result.isDone).toBe(true);
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(paginate).toHaveBeenCalledTimes(1);
+
+    const second = await listPublicPageHandler(ctx, {
+      sort: "downloads",
+      paginationOpts: { cursor: first.continueCursor, numItems: 10 },
+    });
+    expect(second.page.map((entry) => entry.name)).toEqual(["@openclaw/demo-claw"]);
+    expect(second.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
   });
 
   it("does not export a non-OpenClaw Claw release by opaque package and release IDs", async () => {
@@ -22096,7 +22140,7 @@ describe("restorePackageInternal", () => {
         createdAt: 10,
       }),
     );
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       pages: [
         {
           page: olderMatches,
@@ -22125,6 +22169,7 @@ describe("restorePackageInternal", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["matching-new"]);
-    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledWith(500);
+    expect(paginate).not.toHaveBeenCalled();
   });
 });

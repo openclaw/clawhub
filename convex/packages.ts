@@ -5097,12 +5097,6 @@ async function listPackagePageImpl(
     let pageOffset = offset;
     let pageSize: number | null = decodedCursor.pageSize ?? null;
     let done = decodedCursor.done;
-    let scanPages = 0;
-    let skippedPolicyClaw = false;
-    let remainingScanBudget =
-      !family || family === "claw"
-        ? MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS
-        : MAX_PUBLIC_LIST_PAGE_SIZE;
     const buildSortedQuery = () => {
       if (family) {
         if (sortedPackageIndex === "family-official-downloads" && typeof isOfficial === "boolean") {
@@ -5134,21 +5128,15 @@ async function listPackagePageImpl(
       return ctx.db.query("packages").withIndex(indexName, (q) => q.eq("softDeletedAt", undefined));
     };
 
-    while (
-      (pageOffset > 0 || !done) &&
-      scanPages <
-        (family === "claw" || skippedPolicyClaw ? MAX_PUBLIC_LIST_FILTER_SCAN_PAGES : 1) &&
-      remainingScanBudget > 0
-    ) {
-      scanPages += 1;
+    // Convex permits only one native pagination call per query. The caller follows
+    // this public cursor when hidden rows leave the filtered page short.
+    if (pageOffset > 0 || !done) {
       const scanPageSize = Math.min(
-        remainingScanBudget,
         MAX_PUBLIC_LIST_PAGE_SIZE,
         pageOffset > 0 && pageSize
           ? Math.max(pageSize, pageOffset + targetCount)
           : Math.max(targetCount * 5, targetCount, 50),
       );
-      remainingScanBudget -= scanPageSize;
       const currentCursor = cursor;
       const page = await buildSortedQuery()
         .order("desc")
@@ -5158,10 +5146,7 @@ async function listPackagePageImpl(
         const pkg = page.page[index];
         if (!(await canViewerReadPackage(ctx, pkg, viewerUserId, membershipCache))) continue;
         if (!packageMatchesListFilters(pkg, { ...args, category, topic })) continue;
-        if (!(await isPackageAllowedInPublicClawCatalog(ctx, pkg))) {
-          if (pkg.family === "claw") skippedPolicyClaw = true;
-          continue;
-        }
+        if (!(await isPackageAllowedInPublicClawCatalog(ctx, pkg))) continue;
         collected.push(await toPublicPackageListItemFromPackage(ctx, pkg));
         if (collected.length >= targetCount) {
           const nextOffset = index + 1;
@@ -5237,37 +5222,18 @@ async function listPackagePageImpl(
   let pageOffset = offset;
   let pageSize: number | null = decodedCursor.pageSize ?? null;
   let done = decodedCursor.done;
-  let skippedPolicyClaw = false;
-  const requiresDigestPostFilterScan =
-    family === "claw" ||
-    (!family && experimentalClawsEnabled()) ||
-    hasCatalogMetadataFilter ||
-    Boolean(args.excludedScanStatuses?.length);
-  let digestScanPages = 0;
-  let remainingDigestScanBudget = requiresDigestPostFilterScan
-    ? MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS
-    : MAX_PUBLIC_LIST_PAGE_SIZE;
 
-  // Ordinary list filters keep their one-page query budget; Claw catalog reads backfill.
-  while (
-    (pageOffset > 0 || !done) &&
-    collected.length < targetCount &&
-    digestScanPages <
-      (family === "claw" || skippedPolicyClaw ? MAX_PUBLIC_LIST_FILTER_SCAN_PAGES : 1) &&
-    remainingDigestScanBudget > 0
-  ) {
+  // A short filtered page carries its raw continuation for another query call.
+  if ((pageOffset > 0 || !done) && collected.length < targetCount) {
     const scanPageSize = Math.min(
-      remainingDigestScanBudget,
       MAX_PUBLIC_LIST_PAGE_SIZE,
       pageOffset > 0 && pageSize
         ? Math.max(pageSize, pageOffset + targetCount)
-        : family === "claw" || skippedPolicyClaw
+        : family === "claw"
           ? MAX_PUBLIC_LIST_PAGE_SIZE
           : Math.max(effectivePageSize, targetCount),
     );
     if (scanPageSize > 0) {
-      digestScanPages += 1;
-      remainingDigestScanBudget -= scanPageSize;
       const currentCursor = cursor;
       const page: {
         page: PackageDigestLike[];
@@ -5285,10 +5251,7 @@ async function listPackagePageImpl(
         if (typeof isOfficial === "boolean" && digest.isOfficial !== isOfficial) {
           continue;
         }
-        if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) {
-          skippedPolicyClaw = true;
-          continue;
-        }
+        if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) continue;
         if (!digestMatchesFilters(digest, { ...args, category, topic })) continue;
         collected.push(await toPublicPackageListItem(ctx, digest));
         if (collected.length >= targetCount) {
@@ -5734,10 +5697,13 @@ async function searchPackagesImpl(
       .length;
 
   if (authoritativeMatchCount() < targetCount) {
-    const scanLimit =
-      args.family === "claw"
-        ? MAX_SEARCH_PAGE_SIZE
-        : Math.min(MAX_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
+    const requiresWideScan =
+      args.family === "claw" ||
+      (topic !== undefined && category !== undefined) ||
+      args.createdAfter !== undefined;
+    const scanLimit = requiresWideScan
+      ? Math.floor(MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS / searchFamilies.length)
+      : Math.min(MAX_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
     const collectDigestMatches = async (digests: PackageDigestLike[]) => {
       for (const digest of digests) {
         if (!(await canViewPackage(digest))) continue;
@@ -5756,89 +5722,31 @@ async function searchPackagesImpl(
       }
     };
 
-    if ((topic && category) || args.createdAfter !== undefined || args.family === "claw") {
-      const scanStates = searchFamilies.map((family) => ({
-        family,
-        cursor: null as string | null,
-        isDone: false,
-        pagesScanned: 0,
-      }));
-      let remainingScanBudget = MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS;
-      while (
-        authoritativeMatchCount() < targetCount &&
-        scanStates.some(
-          (state) => !state.isDone && state.pagesScanned < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES,
-        ) &&
-        remainingScanBudget > 0
-      ) {
-        // Finish each round before checking the match quota so the fixed family
-        // order cannot decide global relevance or consume another family's cap.
-        for (const state of scanStates) {
-          if (
-            state.isDone ||
-            state.pagesScanned >= MAX_PUBLIC_LIST_FILTER_SCAN_PAGES ||
-            remainingScanBudget <= 0
-          ) {
-            continue;
-          }
-          const pageSize = Math.min(scanLimit, remainingScanBudget);
-          const page: {
-            page: PackageDigestLike[];
-            isDone: boolean;
-            continueCursor: string;
-          } = await buildSearchDigestQuery(state.family)
-            .order("desc")
-            .paginate({ cursor: state.cursor, numItems: pageSize });
-          state.pagesScanned += 1;
-          remainingScanBudget -= pageSize;
-          await collectDigestMatches(page.page);
-          state.cursor = page.continueCursor;
-          state.isDone = page.isDone;
-        }
-      }
-    } else {
-      const fallback =
-        batchReads?.fallback ??
-        Promise.all(
-          searchFamilies.map(
-            async (family) =>
-              (await buildSearchDigestQuery(family)
-                .order("desc")
-                .take(scanLimit)) as PackageDigestLike[],
-          ),
-        ).then((groups) => groups.flat());
-      if (batchReads) batchReads.fallback = fallback;
-      const fallbackDigests = await fallback;
-      await collectDigestMatches(fallbackDigests);
-      if (
-        !args.family &&
-        experimentalClawsEnabled() &&
-        (fallbackDigests.some(isClawOutsideOpenClawPublisher) || skippedPolicyClaw) &&
-        authoritativeMatchCount() < targetCount
-      ) {
-        let cursor: string | null = null;
-        let remainingScanBudget = MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS;
-        for (
-          let pageNumber = 0;
-          pageNumber < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES &&
-          remainingScanBudget > 0 &&
-          authoritativeMatchCount() < targetCount;
-          pageNumber += 1
-        ) {
-          const pageSize = Math.min(MAX_SEARCH_PAGE_SIZE, remainingScanBudget);
-          const page: {
-            page: PackageDigestLike[];
-            isDone: boolean;
-            continueCursor: string;
-          } = await buildSearchDigestQuery("claw")
-            .order("desc")
-            .paginate({ cursor, numItems: pageSize });
-          remainingScanBudget -= pageSize;
-          await collectDigestMatches(page.page);
-          if (page.isDone) break;
-          cursor = page.continueCursor;
-        }
-      }
+    // Search is a ranked, non-paginated result. A bounded take keeps the full
+    // candidate window in one Convex query, including hidden legacy Claws.
+    const fallback =
+      batchReads?.fallback ??
+      Promise.all(
+        searchFamilies.map(
+          async (family) =>
+            (await buildSearchDigestQuery(family)
+              .order("desc")
+              .take(scanLimit)) as PackageDigestLike[],
+        ),
+      ).then((groups) => groups.flat());
+    if (batchReads) batchReads.fallback = fallback;
+    const fallbackDigests = await fallback;
+    await collectDigestMatches(fallbackDigests);
+    if (
+      !args.family &&
+      experimentalClawsEnabled() &&
+      (fallbackDigests.some(isClawOutsideOpenClawPublisher) || skippedPolicyClaw) &&
+      authoritativeMatchCount() < targetCount
+    ) {
+      const clawDigests = (await buildSearchDigestQuery("claw")
+        .order("desc")
+        .take(MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS)) as PackageDigestLike[];
+      await collectDigestMatches(clawDigests);
     }
   }
 
