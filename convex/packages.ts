@@ -12999,11 +12999,11 @@ export const completeReleaseSecurityScanInternal = internalMutation({
     const releaseWithScannerResults: Doc<"packageReleases"> = {
       ...release,
       skillSpectorAnalysis: args.skillSpectorAnalysis,
-      endorAnalysis,
+      ...(endorAnalysis ? { endorAnalysis } : {}),
     };
     await ctx.db.patch(args.releaseId, {
       skillSpectorAnalysis: args.skillSpectorAnalysis,
-      endorAnalysis,
+      ...(endorAnalysis ? { endorAnalysis } : {}),
     });
     await applyReleaseLlmAnalysis(ctx, releaseWithScannerResults, args.llmAnalysis);
 

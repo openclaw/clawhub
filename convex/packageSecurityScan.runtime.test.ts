@@ -173,6 +173,30 @@ it("claims an assigned plugin, stores its Endor summary, and serves the exact re
   expect(securityBody.release.endorAnalysis).toEqual(endorAnalysis);
 });
 
+it("preserves a stored Endor summary when a worker omits it", async () => {
+  const { t, releaseId, jobId } = await createPackageScanFixture();
+  const endorAnalysis = {
+    status: "completed" as const,
+    checkedAt: 9,
+    reachableFunctionCount: 0,
+    findings: [],
+  };
+  await t.run((ctx) => ctx.db.patch(releaseId, { endorAnalysis }));
+
+  await expect(
+    t.mutation(internal.packages.completeReleaseSecurityScanInternal, {
+      releaseId,
+      jobId,
+      leaseToken: "lease-one",
+      llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 10 },
+    }),
+  ).resolves.toEqual({ ok: true });
+
+  expect((await readReleaseAndJob(t, releaseId, jobId)).release).toMatchObject({
+    endorAnalysis,
+  });
+});
+
 it("rejects stale status, lease, and target completions without writing scan results", async () => {
   const { t, releaseId, jobId } = await createPackageScanFixture();
   const args = {

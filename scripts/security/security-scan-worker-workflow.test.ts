@@ -42,6 +42,7 @@ describe("security-scan-codex workflow", () => {
       jobs: {
         "codex-security-scan": {
           environment?: string;
+          if?: string;
           concurrency?: {
             "cancel-in-progress"?: boolean;
             group?: string;
@@ -100,6 +101,16 @@ describe("security-scan-codex workflow", () => {
     expect(workflow.concurrency).toBeUndefined();
     expect(workflow.jobs["codex-security-scan"].environment).toBe(
       "${{ inputs.environment || 'Production' }}",
+    );
+    expect(workflow.jobs["codex-security-scan"].if).toContain(
+      "github.event.client_payload.environment == 'Production'",
+    );
+    expect(workflow.jobs["codex-security-scan"].if).toContain("inputs.environment == 'Test'");
+    expect(workflow.jobs["codex-security-scan"].if).toContain(
+      "inputs.environment == 'Production' && github.ref == 'refs/heads/main'",
+    );
+    expect(workflow.jobs["codex-security-scan"].if).toContain(
+      "github.ref == 'refs/heads/codex/endor-plugin-scan-main-20261001' && github.actor == 'Patrick-Erichsen'",
     );
     expect(workflow.jobs["codex-security-scan"].concurrency).toEqual({
       group:
@@ -229,8 +240,8 @@ describe("security-scan-codex workflow", () => {
     );
     expect(guard?.if).toBe("inputs.environment == 'Test'");
     const target = {
-      SELECTED_REF: "refs/heads/jesse/endor-plugin-scan-pipeline",
-      SELECTED_ACTOR: "jesse-merhi",
+      SELECTED_REF: "refs/heads/codex/endor-plugin-scan-main-20261001",
+      SELECTED_ACTOR: "Patrick-Erichsen",
       EXPECTED_SHA: "a".repeat(40),
       SELECTED_SHA: "a".repeat(40),
       CONVEX_URL: "https://academic-chihuahua-392.convex.cloud",

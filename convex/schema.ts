@@ -7,6 +7,7 @@ import {
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
+import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
 import {
   pluginCategoryClassificationValidator,
@@ -20,7 +21,6 @@ import {
   searchScope,
 } from "./lib/searchInsights";
 import { reportRequest } from "./lib/searchReportContract";
-import { endorAnalysisValidator } from "./lib/endorAnalysis";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 

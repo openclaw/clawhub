@@ -57,8 +57,8 @@ jobs:
       github.actor == 'Patrick-Erichsen' &&
       github.event.pull_request.head.sha != '') ||
       (github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/jesse/endor-plugin-scan-pipeline' &&
-      github.actor == 'jesse-merhi' &&
+      github.ref == 'refs/heads/codex/endor-plugin-scan-main-20261001' &&
+      github.actor == 'Patrick-Erichsen' &&
       inputs.branch_test_confirm == 'deploy-endor-to-permanent-test' &&
       inputs.expected_sha == github.sha) ||
       (github.event.workflow_run.conclusion == 'success' &&
@@ -97,8 +97,8 @@ jobs:
           if [[ "$deploy_sha" != "$main_sha" ]]; then
             branch_test_allowed=false
             if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
-              [[ "$GITHUB_REF" == refs/heads/jesse/endor-plugin-scan-pipeline ]] &&
-              [[ "$GITHUB_ACTOR" == jesse-merhi ]] &&
+              [[ "$GITHUB_REF" == refs/heads/codex/endor-plugin-scan-main-20261001 ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
               [[ "$ENDOR_TEST_CONFIRM" == deploy-endor-to-permanent-test ]] &&
               [[ "$ENDOR_TEST_SHA" == "$deploy_sha" ]]
             then

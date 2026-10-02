@@ -45,6 +45,16 @@ permissions:
 
 jobs:
   codex-security-scan:
+    if: >-
+      github.repository == 'openclaw/clawhub' &&
+      ((github.event_name == 'repository_dispatch' &&
+        github.ref == 'refs/heads/main' &&
+        (!github.event.client_payload.environment || github.event.client_payload.environment == 'Production')) ||
+       (github.event_name == 'workflow_dispatch' &&
+        ((inputs.environment == 'Test' &&
+          (github.ref == 'refs/heads/main' ||
+           (github.ref == 'refs/heads/codex/endor-plugin-scan-main-20261001' && github.actor == 'Patrick-Erichsen'))) ||
+         (inputs.environment == 'Production' && github.ref == 'refs/heads/main')))
     name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
     runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 60
@@ -94,7 +104,8 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
           set -euo pipefail
-          [[ "$SELECTED_REF" == refs/heads/main || ( "$SELECTED_REF" == refs/heads/jesse/endor-plugin-scan-pipeline && "$SELECTED_ACTOR" == jesse-merhi ) ]] || exit 1
+          shopt -s nocasematch
+          [[ "$SELECTED_REF" == refs/heads/main || ( "$SELECTED_REF" == refs/heads/codex/endor-plugin-scan-main-20261001 && "$SELECTED_ACTOR" == Patrick-Erichsen ) ]] || exit 1
           [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ && "$EXPECTED_SHA" == "$SELECTED_SHA" ]] || exit 1
           [[ "$CONVEX_URL" == https://academic-chihuahua-392.convex.cloud ]] || exit 1
           [[ "$CONVEX_DEPLOY_KEY" == prod:academic-chihuahua-392\|* ]] || exit 1
