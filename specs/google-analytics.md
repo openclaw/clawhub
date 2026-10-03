@@ -4,7 +4,9 @@ The integration uses the native Google tag `G-3SK7X2YLSJ` in shared property
 `557069374`, stream `15954198155`. It covers traffic, useful native Enhanced
 Measurement, and observable site actions. It excludes heatmaps, replay, raw pointer
 or keystroke recording, advertising, User-ID, BigQuery, and other tracking vendors.
-Vercel Analytics, Speed Insights, CLI telemetry, and basic server counts are preserved.
+Vercel Web Analytics and Speed Insights client emitters and SDK dependencies are
+removed. Vercel hosting, OIDC, deployment configuration, CLI telemetry, and provider
+server-side records are outside that client-tracking removal.
 
 ## Eligibility and ownership
 
@@ -76,11 +78,12 @@ or contact a geolocation vendor. Vercel execution plus approved server policy is
 required to trust `x-vercel-ip-country`; missing/reserved/malformed values are unknown.
 Actual header availability and spoof resistance remain deployment acceptance gates.
 
-No analytics UI is rendered and no replacement popup or privacy destination is
-introduced. The task-added website analytics section in docs/telemetry.md is removed;
-that file is restored to its pre-rollout CLI telemetry content. Existing footer links
-and Vercel/basic counts are preserved. GPC/DNT
-cannot be silently overridden, and storage failures keep collection off.
+No analytics consent controls or prompts are rendered. The footer links to the
+shared Privacy policy at `https://openclaw.ai/privacy`; no local policy page or
+replacement popup is introduced. The task-added website analytics section in
+docs/telemetry.md is removed, preserving its pre-rollout CLI telemetry content.
+Other footer links remain. GPC/DNT cannot be silently overridden, and storage
+failures keep collection off.
 
 Basic Consent Mode holds the SDK and all measurement until allowed. Queue denied
 analytics/advertising defaults before config/events; grant only analytics. Keep Google

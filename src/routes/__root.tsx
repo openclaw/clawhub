@@ -6,8 +6,6 @@ import {
   useLocation,
   useRouter,
 } from "@tanstack/react-router";
-import { Analytics } from "@vercel/analytics/react";
-import { SpeedInsights } from "@vercel/speed-insights/react";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { AppProviders } from "../components/AppProviders";
@@ -176,10 +174,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     document.documentElement.dataset.clawhubHydrated = "true";
   }, []);
 
-  const showAnalytics =
-    typeof window !== "undefined" &&
-    !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-
   return (
     <html
       className={initialThemeMode === "dark" ? "dark" : undefined}
@@ -223,12 +217,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           />
           <ClientOnly>
             <GoogleAnalytics />
-            {showAnalytics ? (
-              <>
-                <Analytics />
-                <SpeedInsights />
-              </>
-            ) : null}
           </ClientOnly>
         </AppProviders>
         <Scripts />
