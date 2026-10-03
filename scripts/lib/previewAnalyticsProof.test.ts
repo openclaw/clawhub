@@ -2,6 +2,7 @@ import type { Route } from "@playwright/test";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertPreviewPolicy,
+  assertPreviewDeployment,
   assertFreshPreviewCache,
   drainPreviewRoutes,
   assertSamePreviewPolicy,
@@ -24,6 +25,42 @@ const cache = () =>
   });
 
 describe("read-only hosted preview analytics proof", () => {
+  it("binds expected commit to the exact runtime path and bytes, not an unrelated commit label", () => {
+    const asset = { path: "/assets/runtimeEnv-12345678.js", sha256: "b".repeat(64) };
+    const metadata = { schema_version: 1, git_commit_sha: "a".repeat(40), runtime_asset: asset };
+    expect(assertPreviewDeployment(metadata, cache(), "a".repeat(40), asset)).toEqual(metadata);
+    expect(() => assertPreviewDeployment(metadata, cache(), "c".repeat(40), asset)).toThrow(
+      "DEPLOYMENT_METADATA_SHA",
+    );
+    for (const changed of [
+      { ...asset, path: "/assets/runtimeEnv-87654321.js" },
+      { ...asset, sha256: "c".repeat(64) },
+    ])
+      expect(() => assertPreviewDeployment(metadata, cache(), "a".repeat(40), changed)).toThrow(
+        "DEPLOYMENT_METADATA_ASSET",
+      );
+    expect(() =>
+      assertPreviewDeployment({ ...metadata, runtime_asset: null }, cache(), "a".repeat(40), asset),
+    ).toThrow("DEPLOYMENT_METADATA_SCHEMA");
+  });
+  it("rejects cached deployment metadata even when the commit and asset match", () => {
+    const asset = { path: "/assets/runtimeEnv-12345678.js", sha256: "b".repeat(64) };
+    const metadata = { schema_version: 1, git_commit_sha: "a".repeat(40), runtime_asset: asset };
+    for (const change of [
+      { "cache-control": "max-age=0, must-revalidate" },
+      { "cdn-cache-control": "max-age=60" },
+      { "vercel-cdn-cache-control": "max-age=60" },
+      { age: "1" },
+      { "x-vercel-cache": "HIT" },
+      { "x-vercel-cache": "STALE" },
+    ]) {
+      const headers = cache();
+      for (const [key, value] of Object.entries(change)) headers.set(key, value);
+      expect(() => assertPreviewDeployment(metadata, headers, "a".repeat(40), asset)).toThrow(
+        "DEPLOYMENT_METADATA_CACHE",
+      );
+    }
+  });
   it("scopes the existing job credential to a ClawHub preview and GET only", () => {
     expect(previewOrigin(`${origin}/`)).toBe(origin);
     for (const target of [

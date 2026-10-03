@@ -7,6 +7,7 @@ import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { defineConfig, type Plugin } from "vite";
 import { copyOgAssets } from "./scripts/copy-og-assets";
+import { analyticsReleaseDefine } from "./scripts/lib/frontendBuildMetadata";
 
 const require = createRequire(import.meta.url);
 
@@ -179,6 +180,7 @@ function copyOgAssetsPlugin(): Plugin {
 }
 
 const config = defineConfig({
+  define: analyticsReleaseDefine,
   resolve: {
     dedupe: ["convex", "@convex-dev/auth", "react", "react-dom"],
     alias: {

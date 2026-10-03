@@ -187,8 +187,24 @@ before application scripts, preserving all supplied auth cookies and storage. It
 also aborts and fails on any Google request, including in explicitly created auth
 contexts. This applies only to automated smoke at the exact production origin;
 the separately authorized GA acceptance harness and real visitor policy are unchanged.
-`VITE_GA4_RELEASE` comes from the validated deployment Git SHA and does not change the
-existing application drift banner. User-provided-data activation
+The analytics `release` field is the bounded filename of the executing content-hashed
+client module (`import.meta.url`), or `unknown` outside a built browser module. It
+does not include the host, query or fragment. Deployment-only metadata must not change
+client asset hashes: the retired `VITE_GA4_RELEASE` is removed from the build process
+environment and defined as `undefined` for direct and dynamic Vite env reads, including
+values from dotenv files. The staging `VITE_APP_BUILD_SHA` and existing application
+drift banner remain unchanged.
+
+The completed frontend build writes an unreferenced `/.well-known/clawhub-deployment.json`
+with exactly `schema_version`, `git_commit_sha` and `runtime_asset` (path and SHA256).
+It hashes the actual built runtime asset, rejecting missing, ambiguous or disagreeing
+outputs. The Git SHA is null when not supplied as a valid full commit. Vercel serves
+this file with browser/CDN no-store. Preview proof requires the expected Git SHA,
+the runtime asset path referenced by the served page, and its actual byte hash to
+match this metadata; reading an unrelated commit label alone is insufficient. This
+JSON is not imported by the app and carries no timestamp or environment dump.
+
+User-provided-data activation
 must be off; an unrelated internal SDK capability flag is not proof of activation.
 
 Use the real local application, isolated headless browsers, and intercepted Google

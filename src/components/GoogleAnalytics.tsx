@@ -16,9 +16,12 @@ import {
   type AnalyticsEvent,
   type AnalyticsOperation,
 } from "../lib/analyticsEvents";
+import { analyticsReleaseFromModuleUrl } from "../lib/analyticsRelease";
 import { createGoogleAnalytics, getGoogleAnalyticsPage } from "../lib/googleAnalytics";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { useAuthStatus } from "../lib/useAuthStatus";
+
+const analyticsRelease = analyticsReleaseFromModuleUrl(import.meta.url);
 
 export function GoogleAnalytics() {
   const router = useRouter();
@@ -147,7 +150,6 @@ export function GoogleAnalytics() {
           vitals.eligible = false;
         } else {
           vitals.started = true;
-          const release = getRuntimeEnv("VITE_GA4_RELEASE") ?? getRuntimeEnv("VITE_APP_BUILD_SHA");
           vitals.stop = observeAnalyticsPerformance(
             (event) =>
               tracker.trackDocumentVital(
@@ -156,7 +158,7 @@ export function GoogleAnalytics() {
                   ? (vitals.restoredPage ?? page)
                   : page,
               ),
-            release && /^[a-f0-9]{7,40}$/.test(release) ? release : "unknown",
+            analyticsRelease,
             {
               eligibleSince: vitals.initialGrant ? 0 : performance.now(),
               isEligible: () =>
@@ -298,15 +300,9 @@ export function GoogleAnalytics() {
   }, [router, isAuthenticated, isLoading]);
 
   useEffect(() => {
-    const configuredRelease =
-      getRuntimeEnv("VITE_GA4_RELEASE") ?? getRuntimeEnv("VITE_APP_BUILD_SHA");
-    const release =
-      configuredRelease && /^[a-f0-9]{7,40}$/.test(configuredRelease)
-        ? configuredRelease
-        : "unknown";
     return observeAnalyticsErrors((event) => {
       if (analyticsPreferenceAllowsCollection()) analytics.current?.track(event);
-    }, release);
+    }, analyticsRelease);
   }, []);
 
   useEffect(

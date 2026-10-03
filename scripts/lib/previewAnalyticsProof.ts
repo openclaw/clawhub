@@ -5,6 +5,7 @@ import {
   ANALYTICS_POLICY_VERSION,
   GOOGLE_ANALYTICS_ENABLED,
 } from "../../src/lib/analyticsConsent";
+import { DEPLOYMENT_METADATA_PATH, parseDeploymentMetadata } from "./frontendBuildMetadata";
 
 const FAILURE_CODES = [
   "PREVIEW_ORIGIN",
@@ -36,7 +37,11 @@ const FAILURE_CODES = [
   "UI_OVERRIDE",
   "ASSET_MISSING",
   "ASSET_HTTP_STATUS",
-  "ASSET_SHA",
+  "DEPLOYMENT_METADATA_HTTP",
+  "DEPLOYMENT_METADATA_SCHEMA",
+  "DEPLOYMENT_METADATA_CACHE",
+  "DEPLOYMENT_METADATA_SHA",
+  "DEPLOYMENT_METADATA_ASSET",
   "BROWSER_ROUTE_FAILED",
   "BROWSER_RUNTIME_FAILED",
   "BROWSER_PROBE_FAILED",
@@ -136,6 +141,40 @@ export function assertPreviewPolicy(body: unknown, headers: Headers) {
 export function assertSamePreviewPolicy(baseline: unknown, actual: unknown) {
   if (JSON.stringify(baseline) !== JSON.stringify(actual))
     throw new PreviewProofFailure("POLICY_SPOOF_CHANGED");
+}
+
+export function assertPreviewDeployment(
+  value: unknown,
+  headers: Headers,
+  expectedSha: string,
+  servedAsset: { path: string; sha256: string },
+) {
+  const metadata = parseDeploymentMetadata(value);
+  if (!metadata) throw new PreviewProofFailure("DEPLOYMENT_METADATA_SCHEMA");
+  if (metadata.git_commit_sha !== expectedSha)
+    throw new PreviewProofFailure("DEPLOYMENT_METADATA_SHA");
+  if (
+    metadata.runtime_asset.path !== servedAsset.path ||
+    metadata.runtime_asset.sha256 !== servedAsset.sha256
+  )
+    throw new PreviewProofFailure("DEPLOYMENT_METADATA_ASSET");
+  const noStore = (name: string) =>
+    (headers.get(name) ?? "")
+      .toLowerCase()
+      .split(",")
+      .some((token) => token.trim() === "no-store");
+  if (
+    !noStore("cache-control") ||
+    !noStore("cdn-cache-control") ||
+    (headers.has("vercel-cdn-cache-control") && !noStore("vercel-cdn-cache-control"))
+  )
+    throw new PreviewProofFailure("DEPLOYMENT_METADATA_CACHE");
+  try {
+    assertFreshPreviewCache(headers);
+  } catch {
+    throw new PreviewProofFailure("DEPLOYMENT_METADATA_CACHE");
+  }
+  return metadata;
 }
 
 export async function provePreviewAnalytics(
@@ -252,12 +291,23 @@ export async function provePreviewAnalytics(
       signal: AbortSignal.timeout(20_000),
     });
     if (!assetResponse.ok) throw new PreviewProofFailure("ASSET_HTTP_STATUS");
-    const text = await assetResponse.text();
-    if (!text.includes(expectedSha)) throw new PreviewProofFailure("ASSET_SHA");
+    const bytes = Buffer.from(await assetResponse.arrayBuffer());
     servedAsset = {
       path: new URL(asset).pathname,
-      sha256: createHash("sha256").update(text).digest("hex"),
+      sha256: createHash("sha256").update(bytes).digest("hex"),
     };
+    const metadataRequest = authorizedPreviewRequest(origin, credential, DEPLOYMENT_METADATA_PATH);
+    const metadataResponse = await fetch(metadataRequest.url, {
+      ...metadataRequest.init,
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!metadataResponse.ok) throw new PreviewProofFailure("DEPLOYMENT_METADATA_HTTP");
+    evidence.deployment_metadata = assertPreviewDeployment(
+      await metadataResponse.json(),
+      metadataResponse.headers,
+      expectedSha,
+      servedAsset,
+    );
     await drainPreviewRoutes(pendingRoutes);
     await page.goto("about:blank");
     await drainPreviewRoutes(pendingRoutes);
@@ -286,6 +336,7 @@ export async function provePreviewAnalytics(
     observation_ms: 2000,
     policy_cases: cases,
     served_asset: servedAsset,
+    deployment_metadata: evidence.deployment_metadata,
     browser_preference: evidence.browser_preference,
     browser_route_failures: routeFailures,
   };
