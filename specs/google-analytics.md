@@ -25,7 +25,7 @@ departure resets it. An abandoned pending navigation does not create a return vi
 Trusted BFCache restores use this same owner. A restored counted public document
 gets one new view; an unmeasured document first granted while cached gets one view
 total. Actual `pagehide` defers first activation until restore, without disabling
-ordinary background tabs. Refresh persisted consent before native restore callbacks;
+ordinary background tabs. Refresh browser privacy signals before native restore callbacks;
 ordinary `pageshow` must not force another view.
 
 Successful route matches and resolved authentication are required. Signed-in visitors
@@ -57,54 +57,48 @@ until navigation without changing its destination; ordinary public outbound rema
 native. Sanitized config and application fields are necessary but do not prove that
 native or previously queued requests are safe. Browser tests inspect delayed flushes.
 
-## Saved Google Analytics consent
+## Automatic public Google Analytics
 
-Approved shared policy version: `2026-10-02.v2`.
+The approved 2026-10-03 collection rule starts analytics automatically when the
+existing production, canonical-origin and authoritative public-route checks pass.
+The nonvisual browser gate uses only the source rollout switch and browser GPC/DNT
+signals. No saved analytics-choice record is read, written, renewed, migrated or
+removed. Missing, old grant/denial, malformed, expired and inaccessible storage all
+have the same public eligibility. No regional response is requested during startup
+or needed to enable collection.
 
-The notice, dialog and footer control have been removed at the user's request.
-Only a still-valid previously saved explicit grant permits collection. No regional
-classification can create a new grant without a notice. This reduces measured
-traffic to existing explicit opt-ins; new visitors and prior notice-only visitors
-remain off. The nonvisible storage, expiry, privacy-signal and navigation gates stay
-in place. Existing v2 records and their original 180-day lifetime are unchanged.
+GPC and DNT `1` block collection. Refresh browser signals on focus, visibility,
+resume and capture-phase pageshow before restored SDK callbacks; the existing
+periodic signal check also remains. Each transition back to allowed uses a new
+in-memory operation epoch, so asynchronous work captured before a blocked interval
+cannot replay afterward. The pageview and safe workflow owners remain separate
+from this browser gate and keep their existing public/private rules.
 
-- GPC, DNT `1`, explicit deny, and storage failure override all grants.
-- Old-version, malformed, expired or missing choices remain off without renewal prompts.
-- The retained regional endpoint is metadata only for this stricter collection gate.
+The retained `GET /api/analytics-consent` endpoint exposes historical regional
+metadata with version `2026-10-02.v2`; it is not the current collection rule and is
+not consumed by analytics startup. Its class-only/no-store/trusted-header contract
+remains covered independently. Do not infer visitor eligibility from that response.
 
-The uncached same-origin `GET /api/analytics-consent` returns schema/policy versions
-and a region class only. It does not return or log IP/country, create tracking cookies,
-or contact a geolocation vendor. Vercel execution plus approved server policy is
-required to trust `x-vercel-ip-country`; missing/reserved/malformed values are unknown.
-Actual header availability and spoof resistance remain deployment acceptance gates.
+No analytics controls, prompts or replacement popup are rendered. The approved
+minimal Privacy policy link at `https://openclaw.ai/privacy`, other footer links,
+and pre-rollout CLI telemetry documentation remain unchanged.
 
-No analytics consent controls or prompts are rendered. The footer links to the
-shared Privacy policy at `https://openclaw.ai/privacy`; no local policy page or
-replacement popup is introduced. The task-added website analytics section in
-docs/telemetry.md is removed, preserving its pre-rollout CLI telemetry content.
-Other footer links remain. GPC/DNT cannot be silently overridden, and storage
-failures keep collection off.
+The SDK is held until both browser and public-context gates allow it. Queue denied
+analytics/advertising defaults before config/events; grant only analytics. Google
+signals and advertising personalization remain disabled. A browser privacy signal
+revokes application emission and sets the disable flag; deferred events and only
+the known installation cookies `_ga` and `_ga_3SK7X2YLSJ` are cleared, preserving
+unrelated cookies and unsaved work. Already-allowed queued public events may finish
+delivery; no new blocked events may be captured or replayed later.
 
-Basic Consent Mode holds the SDK and all measurement until allowed. Queue denied
-analytics/advertising defaults before config/events; grant only analytics. Keep Google
-signals and advertising personalization disabled. Revoke application emission and set
-the disable flag immediately; clear deferred events and only the known installation
-cookies `_ga` and `_ga_3SK7X2YLSJ`, preserving unrelated cookies.
-
-Actual SDK chronology distinguishes events captured with valid consent before decline
-from new denied-state events. A pre-decline public batch can finish delivery later;
-this is not new private collection. Do not automatically reload or discard drafts.
-Tests must prove no fresh denied app/native capture, cookies, or later replay after
-regrant. Persisted denial propagates to same-origin tabs. If storage fails, keep this tab denied; the controller must not invent a saved choice.
-
-Web Vitals observers register only after an eligible gate. A valid explicit grant
-whose saved timestamp is no later than this document’s `performance.timeOrigin`
-permits buffered initial entries (`eligibleSince=0`);
-a later grant uses registration time. Reject any metric with earlier entries.
-Revocation or a private/unknown route permanently invalidates this document's metric
-sink; regrant cannot make an aggregate spanning denied activity reportable. A fresh
-document establishes eligibility anew. Public SPA metrics retain their original
-document context, rather than being relabelled as the later route.
+Web Vitals observers register only after an eligible gate. Automatic eligibility
+with no browser privacy signal at the initial document observation permits buffered
+initial entries (`eligibleSince=0`); an initially blocked document that later becomes
+eligible uses registration time. Reject metrics with earlier entries. A browser
+privacy signal or private/unknown route after registration permanently invalidates
+that document's metric sink, so a later allow cannot report an aggregate spanning
+blocked activity. A fresh document establishes its own eligibility. No observer or
+network monkeypatch, synthetic metric, or automatic reload is used.
 
 ## Shared events and semantics
 
@@ -138,7 +132,7 @@ Asynchronous producers capture a consent generation, policy epoch, and safe cont
 before work starts. Public copies/search/report/star completions require the same
 public context generation, so even A-to-B-to-A cannot misattribute a stale outcome.
 Denied starts and any intervening denial invalidate completion, including when the
-same regional policy string is reused. Publishing outcomes retain only their fixed
+same route becomes eligible again. Publishing outcomes retain only their fixed
 workflow context across navigation. Login captures the authoritative ACK, then uses
 the same generation guard while awaiting resolved authentication. These measurement
 guards never change clipboard/mutation/auth UI success or failure.
@@ -161,22 +155,22 @@ These lower-bound observations must stay out of precise chronological funnels.
 
 ## Rollout and validation
 
-The source-owned `GOOGLE_ANALYTICS_ENABLED` switch is armed in the activation PR;
-merging that PR requires explicit root production GO for its exact head/base.
+The source-owned `GOOGLE_ANALYTICS_ENABLED` switch is armed. The automatic-public
+correction is authorized by the 2026-10-03 rollout brief and receives independent
+review of its exact head before the normal production merge.
 Vercel Git can serve the new main commit before exact-main Deploy Test and manual
 frontend Deploy finish. The merge is therefore the activation operation; those
 later gates validate the release and must not be described as pre-emission gates.
 `VITE_GA4_ENABLED=1` remains available for isolated local acceptance fixtures, but
-no production provider override is required. The server uses the
-approved source policy and requires Vercel execution before trusting its country
-header; no new provider environment setting is required. Root production GO, actual
-hosting proof, repository checks and exact-SHA release gates remain mandatory. The
+no production provider override is required. The retained regional metadata handler
+requires Vercel execution before trusting its country header; that endpoint is not
+a collection gate. Actual hosting proof, repository checks and exact-SHA release
+gates remain mandatory. The
 existing Deploy Test includes the class-only/no-store/spoofed-header endpoint check.
 Protected Preview Proof accepts either source-switch state bound to the reviewed
 checkout SHA, and always requires zero Google SDK/requests/cookies on preview.
-A source-on preview may show consent controls and a granted preference; the
-independent exact canonical origin and production deployment checks still block
-collection. Route failure evidence contains only fixed path/phase categories,
+A source-on preview may have an allowed browser gate; the independent exact
+canonical origin and production deployment checks still block collection. Route failure evidence contains only fixed path/phase categories,
 numeric status/timing, and at most 32 diagnostic entries; raw errors and credential
 values must never enter its stdout or receipt.
 The browser proof proxy uses the same native fetch transport as the protected
@@ -215,8 +209,8 @@ User-provided-data activation
 must be off; an unrelated internal SDK capability flag is not proof of activation.
 
 Use the real local application, isolated headless browsers, and intercepted Google
-collection/control requests. Cover policy classes, choice/expiry, GPC/DNT, storage
-failures, late responses, revocation, public/private overlays and transitions, delayed
+collection/control requests. Cover ignored legacy records and unavailable storage,
+no regional dependency, GPC/DNT transitions, public/private overlays and transitions, delayed
 flushes, native events, one pageview, attribution, and linker continuity. Inspect all
 URL/body fields. Mock conversion responses locally, never create production QA actions.
 Browser transport is not provider ingestion; control pings are reported separately.

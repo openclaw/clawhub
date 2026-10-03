@@ -1,11 +1,10 @@
 import { createHash } from "node:crypto";
 import { chromium, type Route } from "@playwright/test";
-import {
-  ANALYTICS_CHOICE_KEY,
-  ANALYTICS_POLICY_VERSION,
-  GOOGLE_ANALYTICS_ENABLED,
-} from "../../src/lib/analyticsConsent";
+import { ANALYTICS_POLICY_VERSION, GOOGLE_ANALYTICS_ENABLED } from "../../src/lib/analyticsConsent";
 import { DEPLOYMENT_METADATA_PATH, parseDeploymentMetadata } from "./frontendBuildMetadata";
+
+// A legacy record is seeded only by this proof; the application must ignore it.
+const ANALYTICS_CHOICE_KEY = "clawhub.analytics.choice";
 
 const FAILURE_CODES = [
   "PREVIEW_ORIGIN",

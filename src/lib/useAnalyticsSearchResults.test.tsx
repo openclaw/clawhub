@@ -10,7 +10,7 @@ const page = {
   page_title: "Search - ClawHub",
   page_referrer: "",
 };
-const epoch = "regional:2026-10-02.v2:notice_opt_out";
+const epoch = "automatic-public:1";
 let tracker: ReturnType<typeof createGoogleAnalytics>;
 let unregister: () => void;
 const observations = () =>

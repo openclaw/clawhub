@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  ANALYTICS_CHOICE_KEY,
-  analyticsChoiceEpoch,
-  makeAnalyticsChoice,
-} from "./analyticsConsent";
-import {
   analyticsEventParameters,
   analyticsSearchFilter,
   emitPublicSearchSubmission,
@@ -60,8 +55,7 @@ describe("analytics privacy boundaries", () => {
   });
   it("fails closed until the regional/explicit-choice owner grants collection", () => {
     expect(analyticsPreferenceAllowsCollection()).toBe(false);
-    document.documentElement.dataset.analyticsConsentEpoch =
-      "regional:2026-10-02.v2:notice_opt_out";
+    document.documentElement.dataset.analyticsConsentEpoch = "automatic-public:1";
     document.documentElement.dataset.analyticsAllowed = "true";
     expect(analyticsPreferenceAllowsCollection()).toBe(true);
     Object.defineProperty(navigator, "doNotTrack", { configurable: true, value: "1" });
@@ -131,8 +125,7 @@ describe("analytics privacy boundaries", () => {
     Object.defineProperty(navigator, "doNotTrack", { configurable: true, value: null });
     Object.defineProperty(navigator, "globalPrivacyControl", { configurable: true, value: false });
     localStorage.clear();
-    document.documentElement.dataset.analyticsConsentEpoch =
-      "regional:2026-10-02.v2:notice_opt_out";
+    document.documentElement.dataset.analyticsConsentEpoch = "automatic-public:1";
     const listener = vi.fn();
     window.addEventListener("clawhub:analytics", listener);
     emitPublicSearchSubmission("calendar", "skills", "header");
@@ -178,35 +171,32 @@ it("projects only permitted bounded event fields and rejects unexpected values",
   ).toEqual({ result_count: 0 });
 });
 
-it("fails closed on storage changes and privacy signals instead of trusting a stale DOM grant", () => {
+it("requires an initialized automatic gate and blocks browser signals without consulting storage", () => {
   Object.defineProperty(navigator, "doNotTrack", { configurable: true, value: null });
   Object.defineProperty(navigator, "globalPrivacyControl", { configurable: true, value: false });
   document.documentElement.dataset.analyticsAllowed = "true";
-  const choice = makeAnalyticsChoice("granted");
-  localStorage.setItem(ANALYTICS_CHOICE_KEY, choice);
-  document.documentElement.dataset.analyticsConsentEpoch = analyticsChoiceEpoch(choice);
+  document.documentElement.dataset.analyticsConsentEpoch = "automatic-public:1";
+  const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    throw new Error("no storage");
+  });
   expect(analyticsPreferenceAllowsCollection()).toBe(true);
-  document.documentElement.dataset.analyticsConsentEpoch = "mismatched";
+  document.documentElement.dataset.analyticsConsentEpoch = "";
   expect(analyticsPreferenceAllowsCollection()).toBe(false);
-  localStorage.setItem(ANALYTICS_CHOICE_KEY, makeAnalyticsChoice("denied"));
-  expect(analyticsPreferenceAllowsCollection()).toBe(false);
-  localStorage.setItem(ANALYTICS_CHOICE_KEY, "malformed");
-  expect(analyticsPreferenceAllowsCollection()).toBe(false);
-  localStorage.clear();
-  document.documentElement.dataset.analyticsConsentEpoch = "regional:2026-10-02.v2:notice_opt_out";
+  document.documentElement.dataset.analyticsConsentEpoch = "automatic-public:1";
   Object.defineProperty(navigator, "globalPrivacyControl", { configurable: true, value: true });
   expect(analyticsPreferenceAllowsCollection()).toBe(false);
   Object.defineProperty(navigator, "globalPrivacyControl", { configurable: true, value: false });
-  vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-    throw new Error("no storage");
-  });
+  Object.defineProperty(navigator, "doNotTrack", { configurable: true, value: "1" });
   expect(analyticsPreferenceAllowsCollection()).toBe(false);
+  Object.defineProperty(navigator, "doNotTrack", { configurable: true, value: null });
+  expect(analyticsPreferenceAllowsCollection()).toBe(true);
+  expect(read).not.toHaveBeenCalled();
 });
 
 it("uses capture-time permission and contains failed measurement without changing the product result", () => {
   Object.defineProperty(navigator, "doNotTrack", { configurable: true, value: null });
   document.documentElement.dataset.analyticsAllowed = "true";
-  document.documentElement.dataset.analyticsConsentEpoch = "regional:2026-10-02.v2:notice_opt_out";
+  document.documentElement.dataset.analyticsConsentEpoch = "automatic-public:1";
   localStorage.clear();
   expect(captureAnalyticsOperation()).toBeNull();
   const removeFirst = registerAnalyticsOperations(() => null);

@@ -54,7 +54,7 @@ beforeEach(() => {
   delete browser.gtag;
   delete browser.dataLayer;
   localStorage.clear();
-  document.documentElement.dataset.analyticsConsentEpoch = "regional:2026-10-02.v2:notice_opt_out";
+  document.documentElement.dataset.analyticsConsentEpoch = "automatic-public:1";
   document.documentElement.dataset.analyticsAllowed = "false";
 });
 afterEach(() => {

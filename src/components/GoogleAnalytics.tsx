@@ -1,6 +1,6 @@
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import { hasInitialAnalyticsGrant } from "../lib/analyticsConsent";
+import { hasAnalyticsPrivacySignal } from "../lib/analyticsConsent";
 import {
   observeAnalyticsEngagement,
   observeAnalyticsErrors,
@@ -36,7 +36,7 @@ export function GoogleAnalytics() {
   const resourceVisibility = useRef<{ id: string; public: boolean } | null>(null);
   const performanceState = useRef<{
     initialPath: string;
-    initialGrant: boolean;
+    initiallyAllowed: boolean;
     eligible: boolean;
     started: boolean;
     stop?: () => void;
@@ -44,7 +44,7 @@ export function GoogleAnalytics() {
   } | null>(null);
   performanceState.current ??= {
     initialPath: window.location.pathname,
-    initialGrant: hasInitialAnalyticsGrant(),
+    initiallyAllowed: !hasAnalyticsPrivacySignal(),
     eligible: true,
     started: false,
   };
@@ -160,7 +160,7 @@ export function GoogleAnalytics() {
               ),
             analyticsRelease,
             {
-              eligibleSince: vitals.initialGrant ? 0 : performance.now(),
+              eligibleSince: vitals.initiallyAllowed ? 0 : performance.now(),
               isEligible: () =>
                 vitals.eligible && analyticsPreferenceAllowsCollection() && tracker.isActive(),
             },
@@ -252,7 +252,6 @@ export function GoogleAnalytics() {
       update();
     };
     window.addEventListener("clawhub:login-acknowledged", loginAcknowledged);
-    window.addEventListener("storage", update);
     window.addEventListener("clawhub:analytics-preference", update);
 
     // Pause before a new route loads, including transitions whose visibility is still unknown.
@@ -292,7 +291,6 @@ export function GoogleAnalytics() {
       window.removeEventListener("clawhub:analytics-resource-visibility", visibilityChanged);
       document.removeEventListener("click", onClick, true);
       window.removeEventListener("clawhub:login-acknowledged", loginAcknowledged);
-      window.removeEventListener("storage", update);
       window.removeEventListener("clawhub:analytics-preference", update);
       window.removeEventListener("pageshow", restored, true);
       window.removeEventListener("pagehide", cached, true);

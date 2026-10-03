@@ -12,7 +12,7 @@ const pageA = {
 };
 let tracker: ReturnType<typeof createGoogleAnalytics>;
 let unregister: () => void;
-const epoch = "regional:2026-10-02.v2:notice_opt_out";
+const epoch = "automatic-public:1";
 function gate(allowed: boolean) {
   document.documentElement.dataset.analyticsAllowed = String(allowed);
   document.documentElement.dataset.analyticsConsentEpoch = allowed ? epoch : "";

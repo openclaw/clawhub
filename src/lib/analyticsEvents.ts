@@ -268,20 +268,13 @@ export function emitAnalytics<Name extends keyof AnalyticsEvents>(
 }
 
 export function analyticsPreferenceAllowsCollection(browser: Window = window) {
-  const nav = browser.navigator as Navigator & { globalPrivacyControl?: boolean };
-  if (nav.globalPrivacyControl || nav.doNotTrack === "1") return false;
-  try {
-    if (browser.document.documentElement.dataset.analyticsAllowed !== "true") return false;
-    const epoch = browser.document.documentElement.dataset.analyticsConsentEpoch ?? "";
-    const raw = browser.localStorage.getItem(ANALYTICS_CHOICE_KEY);
-    const choice = readAnalyticsChoice(raw);
-    if (choice === "denied" || (raw !== null && choice === null)) return false;
-    return (
-      epoch.startsWith("regional:") || (choice === "granted" && analyticsChoiceEpoch(raw) === epoch)
-    );
-  } catch {
-    return false;
-  }
+  return (
+    !hasAnalyticsPrivacySignal(browser) &&
+    browser.document.documentElement.dataset.analyticsAllowed === "true" &&
+    /^automatic-public:\d+$/.test(
+      browser.document.documentElement.dataset.analyticsConsentEpoch ?? "",
+    )
+  );
 }
 
 export function safePublicSearchTerm(value: string | null | undefined) {
@@ -348,8 +341,4 @@ export function publicAnalyticsContentId(
 ) {
   return `${kind}:${identity}`.slice(0, 100);
 }
-import {
-  ANALYTICS_CHOICE_KEY,
-  analyticsChoiceEpoch,
-  readAnalyticsChoice,
-} from "./analyticsConsent";
+import { hasAnalyticsPrivacySignal } from "./analyticsConsent";
