@@ -43,15 +43,38 @@ describe("read-only hosted preview analytics proof", () => {
       assertPreviewDeployment({ ...metadata, runtime_asset: null }, cache(), "a".repeat(40), asset),
     ).toThrow("DEPLOYMENT_METADATA_SCHEMA");
   });
-  it("rejects cached deployment metadata even when the commit and asset match", () => {
+  it("accepts deployment-scoped static HIT while keeping regional responses uncached", () => {
+    const asset = { path: "/assets/runtimeEnv-12345678.js", sha256: "b".repeat(64) };
+    const metadata = { schema_version: 1, git_commit_sha: "a".repeat(40), runtime_asset: asset };
+    const headers = cache();
+    headers.set("age", "13");
+    headers.set("x-vercel-cache", "HIT");
+    expect(assertPreviewDeployment(metadata, headers, "a".repeat(40), asset)).toEqual(metadata);
+    expect(() => assertPreviewDeployment(metadata, headers, "c".repeat(40), asset)).toThrow(
+      "DEPLOYMENT_METADATA_SHA",
+    );
+    expect(() =>
+      assertPreviewDeployment(metadata, headers, "a".repeat(40), {
+        ...asset,
+        sha256: "c".repeat(64),
+      }),
+    ).toThrow("DEPLOYMENT_METADATA_ASSET");
+    expect(() => assertPreviewPolicy(policy, headers)).toThrow("POLICY_CACHED");
+    headers.set("x-vercel-cache", "MISS");
+    expect(() => assertPreviewPolicy(policy, headers)).toThrow("POLICY_CACHED");
+    headers.set("age", "0");
+    expect(assertPreviewPolicy(policy, headers)).toEqual(policy);
+  });
+  it("rejects stale, malformed or cacheable-client metadata even when commit and asset match", () => {
     const asset = { path: "/assets/runtimeEnv-12345678.js", sha256: "b".repeat(64) };
     const metadata = { schema_version: 1, git_commit_sha: "a".repeat(40), runtime_asset: asset };
     for (const change of [
       { "cache-control": "max-age=0, must-revalidate" },
       { "cdn-cache-control": "max-age=60" },
       { "vercel-cdn-cache-control": "max-age=60" },
-      { age: "1" },
-      { "x-vercel-cache": "HIT" },
+      { age: "-1" },
+      { age: "invalid" },
+      { "x-vercel-cache": "UNKNOWN" },
       { "x-vercel-cache": "STALE" },
     ]) {
       const headers = cache();

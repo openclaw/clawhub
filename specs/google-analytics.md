@@ -203,6 +203,13 @@ this file with browser/CDN no-store. Preview proof requires the expected Git SHA
 the runtime asset path referenced by the served page, and its actual byte hash to
 match this metadata; reading an unrelated commit label alone is insufficient. This
 JSON is not imported by the app and carries no timestamp or environment dump.
+Vercel [caches static files for the deployment lifetime](https://vercel.com/docs/caching/cdn-cache#static-files-caching),
+so repeated metadata reads can report `HIT` and a positive `Age` despite the
+browser/CDN no-store headers. Proof records those fields and binds the expected
+commit to the actual served runtime path and bytes; it does not infer deployment
+freshness from a cache miss. `STALE`, malformed cache evidence, mismatched commits
+and mismatched assets still fail. The per-request regional endpoint separately
+requires fresh, uncached responses; its stricter checks are unchanged.
 
 User-provided-data activation
 must be off; an unrelated internal SDK capability flag is not proof of activation.

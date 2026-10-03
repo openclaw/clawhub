@@ -170,7 +170,12 @@ export function assertPreviewDeployment(
   )
     throw new PreviewProofFailure("DEPLOYMENT_METADATA_CACHE");
   try {
-    assertFreshPreviewCache(headers);
+    // Vercel stores static files for the deployment lifetime, even when browser
+    // caching is disabled. Exact commit and byte binding above prove provenance;
+    // unlike the per-request region endpoint, a static HIT is not stale metadata.
+    const cache = previewCacheEvidence(headers);
+    if (cache.x_vercel_cache === "STALE")
+      throw new PreviewProofFailure("DEPLOYMENT_METADATA_CACHE");
   } catch {
     throw new PreviewProofFailure("DEPLOYMENT_METADATA_CACHE");
   }
@@ -308,6 +313,7 @@ export async function provePreviewAnalytics(
       expectedSha,
       servedAsset,
     );
+    evidence.deployment_cache = previewCacheEvidence(metadataResponse.headers);
     await drainPreviewRoutes(pendingRoutes);
     await page.goto("about:blank");
     await drainPreviewRoutes(pendingRoutes);
@@ -337,6 +343,7 @@ export async function provePreviewAnalytics(
     policy_cases: cases,
     served_asset: servedAsset,
     deployment_metadata: evidence.deployment_metadata,
+    deployment_cache: evidence.deployment_cache,
     browser_preference: evidence.browser_preference,
     browser_route_failures: routeFailures,
   };
