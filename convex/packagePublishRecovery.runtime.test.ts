@@ -38,6 +38,12 @@ async function fixture() {
       createdAt: now,
       updatedAt: now,
     });
+    await ctx.db.insert("officialPublishers", {
+      publisherId: publisher,
+      reason: "local recovery fixture",
+      createdAt: now,
+      updatedAt: now,
+    });
     const membership = await ctx.db.insert("publisherMembers", {
       publisherId: publisher,
       userId: actor,

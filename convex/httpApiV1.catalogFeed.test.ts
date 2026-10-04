@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
+import { getLatestPublication } from "./catalogFeed";
 import { catalogClawsFeedV1Handler, catalogFeedV1Handler } from "./httpApiV1/catalogFeedV1";
 
 type QueryCtx = {
@@ -15,6 +16,42 @@ const publication = {
   payloadSha256: "abc123",
   publishedAt: Date.parse("2026-06-23T00:00:00.000Z"),
 };
+
+const getLatestPublicationHandler = (
+  getLatestPublication as unknown as {
+    _handler: (ctx: unknown, args: { feedId: string }) => Promise<unknown>;
+  }
+)._handler;
+
+function makeStoredClawFeedCtx(
+  storedPublication: Record<string, unknown>,
+  publisher: Record<string, unknown> | null = {
+    _id: "publishers:openclaw",
+    kind: "org",
+    handle: "openclaw",
+  },
+) {
+  const db = {
+    get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
+    query: vi.fn((table: string) => ({
+      withIndex: vi.fn(() => ({
+        unique: vi.fn(async () =>
+          table === "catalogFeedPublications"
+            ? storedPublication
+            : table === "officialPublishers" && publisher
+              ? { publisherId: "publishers:openclaw" }
+              : null,
+        ),
+      })),
+    })),
+  };
+  return {
+    runQuery: vi.fn(
+      async (_ref: unknown, args: { feedId: string }) =>
+        await getLatestPublicationHandler({ db }, args),
+    ),
+  };
+}
 
 describe("catalogFeedV1Handler", () => {
   let ctx: QueryCtx;
@@ -123,5 +160,55 @@ describe("catalogFeedV1Handler", () => {
     expect(ctx.runQuery).toHaveBeenCalledWith(internal.catalogFeed.getLatestPublication, {
       feedId: "clawhub-official-claws",
     });
+  });
+
+  it("rejects a pre-policy stored Claw feed even with a matching cache validator", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    const storedCtx = makeStoredClawFeedCtx({
+      ...publication,
+      feedId: "clawhub-official-claws",
+      payload: '{"entries":[{"id":"@other/legacy"}]}',
+    });
+
+    const response = await catalogClawsFeedV1Handler(
+      storedCtx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/claws", {
+        headers: { "If-None-Match": '"sha256:abc123"' },
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.text()).not.toContain("@other/legacy");
+  });
+
+  it("serves only a policy-stamped Claw feed from a currently active publisher", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    const stored = {
+      ...publication,
+      feedId: "clawhub-official-claws",
+      clawPolicyVersion: 1,
+      clawEntryCount: 1,
+      clawPublisherId: "publishers:openclaw",
+    };
+    const active = makeStoredClawFeedCtx(stored);
+    const activeResponse = await catalogClawsFeedV1Handler(
+      active as never,
+      new Request("https://clawhub.ai/api/v1/feeds/claws"),
+    );
+    expect(activeResponse.status).toBe(200);
+
+    const revoked = makeStoredClawFeedCtx(stored, {
+      _id: "publishers:openclaw",
+      kind: "org",
+      handle: "openclaw",
+      deactivatedAt: 123,
+    });
+    const revokedResponse = await catalogClawsFeedV1Handler(
+      revoked as never,
+      new Request("https://clawhub.ai/api/v1/feeds/claws"),
+    );
+    expect(revokedResponse.status).toBe(503);
+    expect(revokedResponse.headers.get("cache-control")).toBe("no-store");
   });
 });

@@ -1641,7 +1641,6 @@ async function parseMultipartPackagePublish(
   if (metadata.family === "claw" && !experimentalClawsEnabled()) {
     throw new Error("Experimental Claw publication is disabled");
   }
-
   const tarballPart = getTarballPart(form);
   const fileParts = getFileParts(
     form,
