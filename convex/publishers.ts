@@ -8,6 +8,7 @@ import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/acc
 import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
+import { hasNoPublishedPackageVersions } from "./lib/packageReleaseVisibility";
 import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
@@ -354,7 +355,10 @@ async function getPublisherPublishedRows(
       )
       .collect(),
   ]);
-  return { skills: skills.filter(isPublicPublishedSkill), packages };
+  return {
+    skills: skills.filter(isPublicPublishedSkill),
+    packages: packages.filter((pkg) => !hasNoPublishedPackageVersions(pkg)),
+  };
 }
 
 async function getPublisherPublishedPreviewRows(
@@ -377,7 +381,10 @@ async function getPublisherPublishedPreviewRows(
       .order("desc")
       .take(PUBLISHER_LIST_PREVIEW_LIMIT),
   ]);
-  return { skills: skills.filter(isPublicPublishedSkill), packages };
+  return {
+    skills: skills.filter(isPublicPublishedSkill),
+    packages: packages.filter((pkg) => !hasNoPublishedPackageVersions(pkg)),
+  };
 }
 
 function getIndexedPublisherStatsFromRows(rows: PublisherPublishedRows): PublisherListStats {
@@ -2721,12 +2728,14 @@ export const listPublishedPage = query({
 
     const cursorState = parsePublisherPageCursor(paginationOpts.cursor);
     if (cursorState.mode === "legacy" || cursorState.mode === "preindex") {
-      const packages = await ctx.db
-        .query("packages")
-        .withIndex("by_owner_publisher_active_updated", (q) =>
-          q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
-        )
-        .collect();
+      const packages = (
+        await ctx.db
+          .query("packages")
+          .withIndex("by_owner_publisher_active_updated", (q) =>
+            q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
+          )
+          .collect()
+      ).filter((pkg) => !hasNoPublishedPackageVersions(pkg));
       const items =
         cursorState.mode === "preindex"
           ? packages
@@ -2755,7 +2764,9 @@ export const listPublishedPage = query({
     return {
       ...result,
       continueCursor: encodePublisherPageCursor("indexed", result.continueCursor, result.isDone),
-      page: result.page.map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial)),
+      page: result.page
+        .filter((pkg) => !hasNoPublishedPackageVersions(pkg))
+        .map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial)),
     };
   },
 });

@@ -3501,7 +3501,8 @@ describe("publishers membership controls", () => {
       _id: "packages:demo",
       ownerPublisherId: "publishers:openclaw",
       softDeletedAt: undefined,
-      stats: { downloads: 8, installs: 5, stars: 1 },
+      latestReleaseId: "packageReleases:demo",
+      stats: { downloads: 8, installs: 5, stars: 1, versions: 1 },
     };
     const ctx = {
       db: {
@@ -3965,6 +3966,20 @@ describe("publishers membership controls", () => {
                   stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
                   updatedAt: 2,
                 },
+                {
+                  _id: "packages:pending-plugin",
+                  ownerPublisherId: "publishers:openclaw",
+                  softDeletedAt: undefined,
+                  family: "code-plugin",
+                  name: "@openclaw/pending-plugin",
+                  displayName: "Pending Plugin",
+                  summary: "Still scanning",
+                  channel: "community",
+                  scanStatus: "pending",
+                  icon: "https://pending.example/icon.png",
+                  stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+                  updatedAt: 1,
+                },
               ]);
             }
             if (table === "officialPublishers" && indexName === "by_publisher") {
@@ -4011,6 +4026,8 @@ describe("publishers membership controls", () => {
     expect(byName["Blocked Plugin"]).toMatchObject({ kind: "plugin", icon: null });
     // Private plugin icon URLs must not leak through public publisher profiles.
     expect(byName["Private Plugin"]).toMatchObject({ kind: "plugin", icon: null });
+    // A staged first publish has no public release, so the profile must not list it.
+    expect(byName["Pending Plugin"]).toBeUndefined();
   });
 
   it("returns GitHub-backed display manifest groups for publisher catalogs", async () => {
