@@ -1,16 +1,16 @@
 # ClawHub design audit
 
 - Carapace: `v0.6.1`
-- ClawHub commit: `85865573e9e6e26bc0dc59fdeab20587024d3015`
-- Comparison base: `4117154ecac49bd054026f1cf6ae4278b6eff72a`
-- Generated: 2026-08-25T19:25:20.268Z
+- ClawHub commit: `b0e34a98cd56581f770989ef3713455a0e00fd87`
+- Comparison base: `ff6c118c132ae89b5351739cc45fe9227ff1574e`
+- Generated: 2026-09-28T15:44:06.480Z
 - Validation: passed
 
 ## Summary
 
 - Errors: 0
-- Warnings: 22
-- Informational: 1
+- Warnings: 14
+- Informational: 0
 - Safe source fixes: 1
 
 ## Validation
@@ -31,23 +31,7 @@
 
 ### WARNING: `token/legacy-alias`
 
-- Evidence: [src/styles.css](../../src/styles.css#L11000)
-- Kind: mechanical
-- Finding: New code depends on migration-only alias --ink.
-- Remediation: Use the equivalent canonical --oc-* semantic token.
-- Contract: `openclaw-design-system/references/consumer-adapters.md`
-
-### WARNING: `token/legacy-alias`
-
-- Evidence: [src/styles.css](../../src/styles.css#L11000)
-- Kind: mechanical
-- Finding: Confirmed pre-fix: new code used migration-only alias --ink for skill evaluation heading text. Fixed to var(--oc-text-primary).
-- Remediation: Use canonical semantic text tokens for new code.
-- Contract: `openclaw-design-system/references/tokens.md`
-
-### WARNING: `token/legacy-alias`
-
-- Evidence: [src/styles.css](../../src/styles.css#L11007)
+- Evidence: [src/styles.css](../../src/styles.css#L2287)
 - Kind: mechanical
 - Finding: New code depends on migration-only alias --ink-soft.
 - Remediation: Use the equivalent canonical --oc-* semantic token.
@@ -55,18 +39,34 @@
 
 ### WARNING: `token/legacy-alias`
 
-- Evidence: [src/styles.css](../../src/styles.css#L11007)
+- Evidence: [src/styles.css](../../src/styles.css#L2287)
 - Kind: mechanical
-- Finding: Confirmed pre-fix: new code used migration-only alias --ink-soft for skill evaluation body text. Fixed to var(--oc-text-secondary).
-- Remediation: Use canonical semantic text tokens for new code.
-- Contract: `openclaw-design-system/references/tokens.md`
+- Finding: Confirmed fixed: `.skill-spector-evidence-meta` no longer depends on migration-only alias `--ink-soft`.
+- Remediation: Replaced with canonical `var(--oc-text-secondary)`.
+- Contract: `openclaw-design-system/references/tokens.md; openclaw-design-system/references/consumer-adapters.md`
 
 ### WARNING: `token/legacy-alias`
 
-- Evidence: [src/styles.css](../../src/styles.css#L11022)
+- Evidence: [src/styles.css](../../src/styles.css#L2306)
+- Kind: mechanical
+- Finding: New code depends on migration-only alias --ink-soft.
+- Remediation: Use the equivalent canonical --oc-* semantic token.
+- Contract: `openclaw-design-system/references/consumer-adapters.md`
+
+### WARNING: `token/legacy-alias`
+
+- Evidence: [src/styles.css](../../src/styles.css#L2306)
+- Kind: mechanical
+- Finding: Confirmed fixed: `.aig-finding-location` no longer depends on migration-only alias `--ink-soft`.
+- Remediation: Replaced with canonical `var(--oc-text-secondary)`.
+- Contract: `openclaw-design-system/references/tokens.md; openclaw-design-system/references/consumer-adapters.md`
+
+### WARNING: `token/legacy-alias`
+
+- Evidence: [src/styles.css](../../src/styles.css#L2317)
 - Kind: mechanical
 - Finding: New code depends on migration-only alias --ink.
 - Remediation: Use the equivalent canonical --oc-* semantic token.
 - Contract: `openclaw-design-system/references/consumer-adapters.md`
 
-18 additional non-error findings are retained in JSON.
+9 additional non-error findings are retained in JSON.

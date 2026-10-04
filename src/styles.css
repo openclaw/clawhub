@@ -2284,7 +2284,7 @@ code {
 
 .skill-spector-evidence-meta {
   margin: 0;
-  color: var(--ink-soft);
+  color: var(--oc-text-secondary);
   font-size: 0.75rem;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -2303,7 +2303,7 @@ code {
 }
 
 .aig-finding-location {
-  color: var(--ink-soft);
+  color: var(--oc-text-secondary);
   font-size: 0.75rem;
   overflow-wrap: anywhere;
 }
@@ -2314,7 +2314,7 @@ code {
 
 .security-report-disclosure summary {
   cursor: pointer;
-  color: var(--ink);
+  color: var(--oc-text-primary);
   font-weight: 600;
 }
 
@@ -3392,7 +3392,7 @@ code {
 
 .skill-summary-line a,
 .plugin-summary a {
-  color: var(--accent);
+  color: var(--oc-accent-primary);
   text-decoration: underline;
   text-underline-offset: 0.15em;
 }
@@ -13761,7 +13761,7 @@ a.skills-sh-security-audit-row:focus-visible {
   min-width: 0;
   font-size: 0.875rem;
   line-height: 1.6;
-  color: var(--ink-soft);
+  color: var(--oc-text-secondary);
   overflow-wrap: anywhere;
 }
 
@@ -13773,7 +13773,7 @@ a.skills-sh-security-audit-row:focus-visible {
   font-size: 1em;
   font-weight: 650;
   line-height: 1.45;
-  color: var(--ink);
+  color: var(--oc-text-primary);
 }
 
 .markdown.markdown-report :is(p, ul, ol, blockquote, table, .markdown-code-block) {
@@ -13793,7 +13793,7 @@ a.skills-sh-security-audit-row:focus-visible {
 }
 
 .markdown.markdown-report strong {
-  color: var(--ink);
+  color: var(--oc-text-primary);
 }
 
 .markdown.markdown-report pre {

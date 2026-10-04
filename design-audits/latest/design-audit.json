@@ -2,13 +2,13 @@
   "schemaVersion": 2,
   "carapaceVersion": "v0.6.1",
   "designSystemVersion": "v0.6.1",
-  "consumerSha": "85865573e9e6e26bc0dc59fdeab20587024d3015",
-  "auditBaseSha": "4117154ecac49bd054026f1cf6ae4278b6eff72a",
-  "generatedAt": "2026-08-25T19:25:20.268Z",
+  "consumerSha": "b0e34a98cd56581f770989ef3713455a0e00fd87",
+  "auditBaseSha": "ff6c118c132ae89b5351739cc45fe9227ff1574e",
+  "generatedAt": "2026-09-28T15:44:06.480Z",
   "summary": {
     "errors": 0,
-    "warnings": 22,
-    "info": 1
+    "warnings": 14,
+    "info": 0
   },
   "findings": [
     {
@@ -16,27 +16,7 @@
       "severity": "warning",
       "kind": "mechanical",
       "file": "src/styles.css",
-      "line": 11000,
-      "message": "New code depends on migration-only alias --ink.",
-      "remediation": "Use the equivalent canonical --oc-* semantic token.",
-      "reference": "openclaw-design-system/references/consumer-adapters.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11000,
-      "message": "Confirmed pre-fix: new code used migration-only alias --ink for skill evaluation heading text. Fixed to var(--oc-text-primary).",
-      "remediation": "Use canonical semantic text tokens for new code.",
-      "reference": "openclaw-design-system/references/tokens.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11007,
+      "line": 2287,
       "message": "New code depends on migration-only alias --ink-soft.",
       "remediation": "Use the equivalent canonical --oc-* semantic token.",
       "reference": "openclaw-design-system/references/consumer-adapters.md"
@@ -46,57 +26,17 @@
       "severity": "warning",
       "kind": "mechanical",
       "file": "src/styles.css",
-      "line": 11007,
-      "message": "Confirmed pre-fix: new code used migration-only alias --ink-soft for skill evaluation body text. Fixed to var(--oc-text-secondary).",
-      "remediation": "Use canonical semantic text tokens for new code.",
-      "reference": "openclaw-design-system/references/tokens.md"
+      "line": 2287,
+      "message": "Confirmed fixed: `.skill-spector-evidence-meta` no longer depends on migration-only alias `--ink-soft`.",
+      "remediation": "Replaced with canonical `var(--oc-text-secondary)`.",
+      "reference": "openclaw-design-system/references/tokens.md; openclaw-design-system/references/consumer-adapters.md"
     },
     {
       "id": "token/legacy-alias",
       "severity": "warning",
       "kind": "mechanical",
       "file": "src/styles.css",
-      "line": 11022,
-      "message": "New code depends on migration-only alias --ink.",
-      "remediation": "Use the equivalent canonical --oc-* semantic token.",
-      "reference": "openclaw-design-system/references/consumer-adapters.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11022,
-      "message": "Confirmed pre-fix: new code used migration-only alias --ink for skill evaluation section headings. Fixed to var(--oc-text-primary).",
-      "remediation": "Use canonical semantic text tokens for new code.",
-      "reference": "openclaw-design-system/references/tokens.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11031,
-      "message": "New code depends on migration-only alias --ink.",
-      "remediation": "Use the equivalent canonical --oc-* semantic token.",
-      "reference": "openclaw-design-system/references/consumer-adapters.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11031,
-      "message": "Confirmed pre-fix: new code used migration-only alias --ink for skill evaluation overview list text. Fixed to var(--oc-text-primary).",
-      "remediation": "Use canonical semantic text tokens for new code.",
-      "reference": "openclaw-design-system/references/tokens.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11044,
+      "line": 2306,
       "message": "New code depends on migration-only alias --ink-soft.",
       "remediation": "Use the equivalent canonical --oc-* semantic token.",
       "reference": "openclaw-design-system/references/consumer-adapters.md"
@@ -106,97 +46,17 @@
       "severity": "warning",
       "kind": "mechanical",
       "file": "src/styles.css",
-      "line": 11044,
-      "message": "Confirmed pre-fix: new code used migration-only alias --ink-soft for skill evaluation definition labels. Fixed to var(--oc-text-secondary).",
-      "remediation": "Use canonical semantic text tokens for new code.",
-      "reference": "openclaw-design-system/references/tokens.md"
+      "line": 2306,
+      "message": "Confirmed fixed: `.aig-finding-location` no longer depends on migration-only alias `--ink-soft`.",
+      "remediation": "Replaced with canonical `var(--oc-text-secondary)`.",
+      "reference": "openclaw-design-system/references/tokens.md; openclaw-design-system/references/consumer-adapters.md"
     },
     {
       "id": "token/legacy-alias",
       "severity": "warning",
       "kind": "mechanical",
       "file": "src/styles.css",
-      "line": 11100,
-      "message": "New code depends on migration-only alias --ink-soft.",
-      "remediation": "Use the equivalent canonical --oc-* semantic token.",
-      "reference": "openclaw-design-system/references/consumer-adapters.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11100,
-      "message": "Confirmed pre-fix: new code used migration-only alias --ink-soft for skill evaluation section copy. Fixed to var(--oc-text-secondary).",
-      "remediation": "Use canonical semantic text tokens for new code.",
-      "reference": "openclaw-design-system/references/tokens.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11107,
-      "message": "New code depends on migration-only alias --line.",
-      "remediation": "Use the equivalent canonical --oc-* semantic token.",
-      "reference": "openclaw-design-system/references/consumer-adapters.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11107,
-      "message": "Confirmed pre-fix: new code used migration-only alias --line for skill evaluation table border. Fixed to var(--oc-border-subtle).",
-      "remediation": "Use canonical semantic border tokens for new code.",
-      "reference": "openclaw-design-system/references/tokens.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11120,
-      "message": "New code depends on migration-only alias --line.",
-      "remediation": "Use the equivalent canonical --oc-* semantic token.",
-      "reference": "openclaw-design-system/references/consumer-adapters.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11120,
-      "message": "Confirmed pre-fix: new code used migration-only alias --line for skill evaluation table row borders. Fixed to var(--oc-border-subtle).",
-      "remediation": "Use canonical semantic border tokens for new code.",
-      "reference": "openclaw-design-system/references/tokens.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11130,
-      "message": "New code depends on migration-only alias --ink-soft.",
-      "remediation": "Use the equivalent canonical --oc-* semantic token.",
-      "reference": "openclaw-design-system/references/consumer-adapters.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11130,
-      "message": "Confirmed pre-fix: new code used migration-only alias --ink-soft for skill evaluation table header text. Fixed to var(--oc-text-secondary).",
-      "remediation": "Use canonical semantic text tokens for new code.",
-      "reference": "openclaw-design-system/references/tokens.md"
-    },
-    {
-      "id": "token/legacy-alias",
-      "severity": "warning",
-      "kind": "mechanical",
-      "file": "src/styles.css",
-      "line": 11136,
+      "line": 2317,
       "message": "New code depends on migration-only alias --ink.",
       "remediation": "Use the equivalent canonical --oc-* semantic token.",
       "reference": "openclaw-design-system/references/consumer-adapters.md"
@@ -206,17 +66,57 @@
       "severity": "warning",
       "kind": "mechanical",
       "file": "src/styles.css",
-      "line": 11136,
-      "message": "Confirmed pre-fix: new code used migration-only alias --ink for skill evaluation table row headers. Fixed to var(--oc-text-primary).",
-      "remediation": "Use canonical semantic text tokens for new code.",
-      "reference": "openclaw-design-system/references/tokens.md"
+      "line": 2317,
+      "message": "Confirmed fixed: `.security-report-disclosure summary` no longer depends on migration-only alias `--ink`.",
+      "remediation": "Replaced with canonical `var(--oc-text-primary)`.",
+      "reference": "openclaw-design-system/references/tokens.md; openclaw-design-system/references/consumer-adapters.md"
     },
     {
       "id": "token/legacy-alias",
       "severity": "warning",
       "kind": "mechanical",
       "file": "src/styles.css",
-      "line": 11141,
+      "line": 3395,
+      "message": "New code depends on migration-only alias --accent.",
+      "remediation": "Use the equivalent canonical --oc-* semantic token.",
+      "reference": "openclaw-design-system/references/consumer-adapters.md"
+    },
+    {
+      "id": "token/legacy-alias",
+      "severity": "warning",
+      "kind": "mechanical",
+      "file": "src/styles.css",
+      "line": 3395,
+      "message": "Confirmed fixed: `.skill-summary-line a, .plugin-summary a` no longer depends on migration-only alias `--accent`.",
+      "remediation": "Replaced with canonical `var(--oc-accent-primary)`.",
+      "reference": "openclaw-design-system/references/tokens.md; openclaw-design-system/references/consumer-adapters.md"
+    },
+    {
+      "id": "token/legacy-alias",
+      "severity": "warning",
+      "kind": "mechanical",
+      "file": "src/styles.css",
+      "line": 13764,
+      "message": "New code depends on migration-only alias --ink-soft.",
+      "remediation": "Use the equivalent canonical --oc-* semantic token.",
+      "reference": "openclaw-design-system/references/consumer-adapters.md"
+    },
+    {
+      "id": "token/legacy-alias",
+      "severity": "warning",
+      "kind": "mechanical",
+      "file": "src/styles.css",
+      "line": 13764,
+      "message": "Confirmed fixed: `.markdown.markdown-report` no longer depends on migration-only alias `--ink-soft`.",
+      "remediation": "Replaced with canonical `var(--oc-text-secondary)`.",
+      "reference": "openclaw-design-system/references/tokens.md; openclaw-design-system/references/consumer-adapters.md"
+    },
+    {
+      "id": "token/legacy-alias",
+      "severity": "warning",
+      "kind": "mechanical",
+      "file": "src/styles.css",
+      "line": 13776,
       "message": "New code depends on migration-only alias --ink.",
       "remediation": "Use the equivalent canonical --oc-* semantic token.",
       "reference": "openclaw-design-system/references/consumer-adapters.md"
@@ -226,20 +126,30 @@
       "severity": "warning",
       "kind": "mechanical",
       "file": "src/styles.css",
-      "line": 11141,
-      "message": "Confirmed pre-fix: new code used migration-only alias --ink for skill evaluation table cells. Fixed to var(--oc-text-primary).",
-      "remediation": "Use canonical semantic text tokens for new code.",
-      "reference": "openclaw-design-system/references/tokens.md"
+      "line": 13776,
+      "message": "Confirmed fixed: markdown report headings no longer depend on migration-only alias `--ink`.",
+      "remediation": "Replaced with canonical `var(--oc-text-primary)`.",
+      "reference": "openclaw-design-system/references/tokens.md; openclaw-design-system/references/consumer-adapters.md"
     },
     {
-      "id": "theme/parity",
-      "severity": "info",
-      "kind": "judgment",
+      "id": "token/legacy-alias",
+      "severity": "warning",
+      "kind": "mechanical",
       "file": "src/styles.css",
-      "line": 25229,
-      "message": "Home full-page proof shows the fixed fold fade over active catalog rows at the viewport bottom in both themes, reducing legibility in audit screenshots. Source confirms the fade is intentional and fixed-position, so this needs human visual review rather than an automatic fix.",
-      "remediation": "Review whether the home fold fade should avoid overlapping interactive listing content or be limited to a less opaque page-edge treatment.",
-      "reference": "openclaw-design-audit/references/rubric.md"
+      "line": 13796,
+      "message": "New code depends on migration-only alias --ink.",
+      "remediation": "Use the equivalent canonical --oc-* semantic token.",
+      "reference": "openclaw-design-system/references/consumer-adapters.md"
+    },
+    {
+      "id": "token/legacy-alias",
+      "severity": "warning",
+      "kind": "mechanical",
+      "file": "src/styles.css",
+      "line": 13796,
+      "message": "Confirmed fixed: `.markdown.markdown-report strong` no longer depends on migration-only alias `--ink`.",
+      "remediation": "Replaced with canonical `var(--oc-text-primary)`.",
+      "reference": "openclaw-design-system/references/tokens.md; openclaw-design-system/references/consumer-adapters.md"
     }
   ],
   "changedFiles": ["src/styles.css"],
