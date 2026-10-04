@@ -176,7 +176,7 @@
     "@vitejs/plugin-react": "6.1.1",
     "@vitest/coverage-v8": "4.1.11",
     "convex-test": "^0.0.58",
-    "jsdom": "29.1.1",
+    "jsdom": "30.1.1",
     "nitro": "3.0.260610-beta",
     "only-allow": "1.2.2",
     "oxfmt": "0.67.0",
