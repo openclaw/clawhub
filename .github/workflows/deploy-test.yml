@@ -56,6 +56,11 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor == 'Patrick-Erichsen' &&
       github.event.pull_request.head.sha != '') ||
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/codex/endor-plugin-scan-main-20261001' &&
+      github.actor == 'Patrick-Erichsen' &&
+      inputs.branch_test_confirm == 'deploy-endor-to-permanent-test' &&
+      inputs.expected_sha == github.sha) ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
@@ -80,6 +85,9 @@ jobs:
             }}
 
       - name: Resolve deployment revision
+        env:
+          ENDOR_TEST_CONFIRM: ${{ inputs.branch_test_confirm }}
+          ENDOR_TEST_SHA: ${{ inputs.expected_sha }}
         id: revision
         run: |
           set -euo pipefail
@@ -88,6 +96,14 @@ jobs:
           main_sha="$(git rev-parse origin/main)"
           if [[ "$deploy_sha" != "$main_sha" ]]; then
             branch_test_allowed=false
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/codex/endor-plugin-scan-main-20261001 ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "$ENDOR_TEST_CONFIRM" == deploy-endor-to-permanent-test ]] &&
+              [[ "$ENDOR_TEST_SHA" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
             if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
               [[ "$GITHUB_REF" == refs/heads/pe/claw-563-skills-sh-mirror-10k ]] &&
               [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
@@ -232,6 +248,11 @@ jobs:
           bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE test --prod
           bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE test --prod
 
+      - name: Deploy Convex Test
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bun run convex:deploy
+
       - name: Stamp Convex build SHA
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -241,11 +262,6 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bunx convex env set APP_DEPLOYED_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" --prod
-
-      - name: Deploy Convex Test
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bun run convex:deploy
 
       - name: Verify Convex contract
         env:

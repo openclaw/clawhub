@@ -175,6 +175,7 @@ export function PluginSecurityAuditPage({
       aigAnalysis={release.aigAnalysis ?? null}
       llmAnalysis={release.llmAnalysis ?? null}
       skillSpectorAnalysis={release.skillSpectorAnalysis ?? null}
+      endorAnalysis={release.endorAnalysis ?? null}
       skillSpectorApplicable={
         release.pluginManifestSummary
           ? release.pluginManifestSummary.bundledSkills.length > 0

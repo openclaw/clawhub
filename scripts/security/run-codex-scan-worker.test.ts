@@ -142,6 +142,43 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(claimJobs.mock.calls.map(([limit]) => limit)).toEqual([2, 1, 1]);
   });
 
+  it("stops claiming after a worker-fatal result and finishes already leased work", async () => {
+    let releaseActiveJob: (() => void) | undefined;
+    const activeJob = new Promise<void>((resolve) => {
+      releaseActiveJob = resolve;
+    });
+    const claimJobs = vi.fn(async () => ({
+      claimedCount: 2,
+      jobs: [{ id: "fatal" }, { id: "active" }],
+    }));
+    const processClaimedJob = vi.fn(async (job: { id: string }) => {
+      if (job.id === "active") await activeJob;
+      return {
+        completed: job.id === "active",
+        hardFailed: job.id === "fatal",
+        retryableFailed: false,
+        ...(job.id === "fatal" ? { workerMustStop: true } : {}),
+      };
+    });
+
+    const run = runContinuouslyRefilledWorkerPool({
+      concurrency: 2,
+      maxJobs: undefined,
+      canClaim: () => true,
+      claimJobs,
+      processClaimedJob,
+    });
+    await vi.waitFor(() => expect(processClaimedJob).toHaveBeenCalledTimes(2));
+    releaseActiveJob?.();
+
+    await expect(run).resolves.toMatchObject({
+      totalClaimed: 2,
+      totalCompleted: 1,
+      totalFailed: 1,
+    });
+    expect(claimJobs).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps refilling after a full lease batch has no hydratable jobs", async () => {
     const claimJobs = vi
       .fn()
@@ -1277,5 +1314,49 @@ describe("run-codex-scan-worker diagnostics", () => {
         status: "copied",
       },
     ]);
+  });
+
+  it("writes bounded Endor failure diagnostics with secrets redacted", async () => {
+    const diagnosticsRoot = await tempDir();
+    await writeJobDiagnostic({
+      completedAt: 2000,
+      diagnosticsRoot,
+      endor: {
+        args: ["docker", "container", "create", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
+        error: "Endor Docker start timed out; see redacted stdout/stderr diagnostics",
+        exitCode: null,
+        stderr: `ENDOR_TOKEN=fixture-token\ndependency resolution failed ${"x".repeat(21_000)}\n`,
+        stdout: "",
+        timedOut: true,
+      },
+      job: {
+        job: {
+          _id: "job-endor-failure-evidence",
+          hasMaliciousSignal: false,
+          leaseToken: "placeholder",
+          source: "publish",
+          targetKind: "packageRelease",
+          waitForVtUntil: 0,
+        },
+        target: {},
+      },
+      startedAt: 1000,
+      status: "completed",
+    });
+
+    const jobDir = join(diagnosticsRoot, "job-endor-failure-evidence");
+    const stderr = await readFile(join(jobDir, "endor.stderr.redacted.log"), "utf8");
+    const diagnostic = JSON.parse(await readFile(join(jobDir, "diagnostic.json"), "utf8"));
+    expect(stderr).toContain("ENDOR_TOKEN=[redacted-secret]");
+    expect(stderr).toContain("...[truncated ");
+    expect(stderr).not.toContain("fixture-token");
+    expect(diagnostic.endorResult).toEqual({
+      args: ["docker", "container", "create", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
+      error: "Endor Docker start timed out; see redacted stdout/stderr diagnostics",
+      exitCode: null,
+      stderrPath: "endor.stderr.redacted.log",
+      stdoutPath: "endor.stdout.redacted.log",
+      timedOut: true,
+    });
   });
 });
