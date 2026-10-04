@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { getFunctionName } from "convex/server";
+import { ConvexError } from "convex/values";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_PUBLISH_FILE_BYTES } from "./publishLimits";
 import {
   finalizeSkillPublishAttempt,
+  fetchText,
   publishVersionForUser,
   stageSkillPublishAttemptForUser,
   __test,
@@ -14,6 +16,22 @@ vi.mock("./embeddings", () => ({
 }));
 
 describe("skillPublish", () => {
+  it("reports invalid UTF-8 as a bounded client error", async () => {
+    const storage = {
+      get: vi.fn(async () => new Blob([Uint8Array.from([0xc3, 0x28])])),
+    };
+
+    await expect(fetchText({ storage } as never, "_storage:skill" as never)).rejects.toEqual(
+      expect.objectContaining({
+        name: "ConvexError",
+        message: "File is not valid UTF-8 text",
+      }),
+    );
+    await expect(fetchText({ storage } as never, "_storage:skill" as never)).rejects.toBeInstanceOf(
+      ConvexError,
+    );
+  });
+
   it.each([
     { staged: false, failure: "insert" },
     { staged: true, failure: "insert" },
