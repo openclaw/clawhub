@@ -16,6 +16,7 @@
 
 ### Fixes
 
+- CLI: list skill files in stable path order before publish so the uploaded file list and upload order no longer depend on the local filesystem's directory enumeration order.
 - Publishing: load only the text decoder, not the whole `clawhub-schema` barrel, in the static publish scan Node action, cutting ~140 MB from its peak so large bundled plugins such as WhatsApp no longer run it out of memory.
 - Publishing: settle retries of an exact staged package artifact before scans and Plugin Inspector run again, returning the pending or published result, and name a failed attempt with its recovery command instead of a bare "already exists".
 - CLI: read `Retry-After` and rate-limit headers from curl responses under Bun, so publishes back off for the time the server asks instead of retrying blind.
