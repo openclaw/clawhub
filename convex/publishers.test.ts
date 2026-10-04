@@ -2635,6 +2635,36 @@ describe("publishers membership controls", () => {
         stats: { downloads: 10, stars: 1, installs: 40, versions: 1 },
         updatedAt: 3,
       },
+      {
+        _id: "packages:secret-alpha",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        displayName: "Secret Alpha",
+        channel: "private",
+        stats: { downloads: 1000, stars: 1, installs: 9, versions: 1 },
+        updatedAt: 9,
+      },
+      {
+        _id: "packages:secret-beta",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        displayName: "Secret Beta",
+        channel: "private",
+        stats: { downloads: 900, stars: 1, installs: 8, versions: 1 },
+        updatedAt: 8,
+      },
+      {
+        _id: "packages:secret-gamma",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        displayName: "Secret Gamma",
+        channel: "private",
+        stats: { downloads: 800, stars: 1, installs: 7, versions: 1 },
+        updatedAt: 7,
+      },
     ];
     const rowsByDownloads = <
       T extends {
@@ -4009,8 +4039,126 @@ describe("publishers membership controls", () => {
     });
     // Blocked plugin icon URLs also stay out of public publisher profiles.
     expect(byName["Blocked Plugin"]).toMatchObject({ kind: "plugin", icon: null });
-    // Private plugin icon URLs must not leak through public publisher profiles.
-    expect(byName["Private Plugin"]).toMatchObject({ kind: "plugin", icon: null });
+    // A private package must not appear on the public profile at all.
+    // Nulling its icon still left the name, summary, topics, and href.
+    expect(byName["Private Plugin"]).toBeUndefined();
+    expect(pluginResult.page.map((item) => item.displayName)).toEqual([
+      "Example Plugin",
+      "Blocked Plugin",
+    ]);
+    expect(pluginResult.page.map((item) => item.href)).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("private-plugin")]),
+    );
+  });
+
+  it("omits private packages from every public publisher catalog page", async () => {
+    const publisher = {
+      _id: "publishers:openclaw",
+      _creationTime: 1,
+      kind: "org",
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const packages = [
+      {
+        _id: "packages:secret",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        name: "@openclaw/secret-package",
+        displayName: "Secret Package",
+        summary: "internal codename",
+        topics: ["unreleased"],
+        channel: "private",
+        scanStatus: "clean",
+        stats: { downloads: 9, installs: 4, stars: 1, versions: 1 },
+        updatedAt: 9,
+      },
+      {
+        _id: "packages:public",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        name: "@openclaw/public-plugin",
+        displayName: "Public Plugin",
+        summary: "A public plugin",
+        channel: "community",
+        scanStatus: "clean",
+        stats: { downloads: 5, installs: 2, stars: 0, versions: 1 },
+        updatedAt: 4,
+      },
+      {
+        _id: "packages:blocked",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        family: "code-plugin",
+        name: "@openclaw/blocked-plugin",
+        displayName: "Blocked Plugin",
+        summary: "A blocked plugin",
+        channel: "community",
+        scanStatus: "malicious",
+        icon: "https://malicious.example/icon.png",
+        stats: { downloads: 3, installs: 1, stars: 0, versions: 1 },
+        updatedAt: 3,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
+              };
+            }
+            if (table === "skills") return indexedRows([]);
+            if (table === "packages") return indexedRows(packages);
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const combined = await listPublishedPageHandler(ctx as never, {
+      handle: "openclaw",
+      paginationOpts: { cursor: null, numItems: 24 },
+    });
+    const legacy = await listPublishedPageHandler(ctx as never, {
+      handle: "openclaw",
+      kind: "plugin",
+      paginationOpts: { cursor: "preindex:0", numItems: 24 },
+    });
+    const indexed = await listPublishedPageHandler(ctx as never, {
+      handle: "openclaw",
+      kind: "plugin",
+      paginationOpts: { cursor: null, numItems: 24 },
+    });
+
+    for (const page of [combined.page, legacy.page, indexed.page]) {
+      const rendered = JSON.stringify(page);
+      expect(rendered).not.toContain("Secret Package");
+      expect(rendered).not.toContain("internal codename");
+      expect(rendered).not.toContain("secret-package");
+      expect(rendered).not.toContain("unreleased");
+      expect(page.map((item) => item.displayName)).toEqual(["Public Plugin", "Blocked Plugin"]);
+    }
+    expect(legacy.page.find((item) => item.displayName === "Blocked Plugin")).toMatchObject({
+      icon: null,
+    });
   });
 
   it("returns GitHub-backed display manifest groups for publisher catalogs", async () => {

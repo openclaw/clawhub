@@ -52,6 +52,9 @@ const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
 const LEGACY_PUBLISHER_DOWNLOAD_FALLBACK_LIMIT = MAX_PUBLIC_PUBLISHER_LIST_LIMIT;
 const MAX_PUBLISHER_HANDLE_PREFIX_CANDIDATES = 100;
 const PUBLISHER_LIST_PREVIEW_LIMIT = 3;
+// Directory cards show a few public packages. Read past private rows so a
+// high-download private package cannot take those slots.
+const PUBLISHER_LIST_PREVIEW_SCAN_LIMIT = 50;
 const GITHUB_AUTH_ACCOUNT_RECOVERY_MATCH_LIMIT = 10;
 const PERSONAL_PUBLISHER_RECOVERY_OWNER_MIGRATION_LIMIT = 100;
 const PUBLISHER_IMAGE_UPLOAD_TTL_MS = 15 * 60_000;
@@ -144,6 +147,17 @@ type PublisherListSummary = {
 
 function isPublicPublishedSkill(skill: Doc<"skills">) {
   return isPublicSkillDoc(skill);
+}
+
+function isPublicPublisherCatalogPackage(pkg: Pick<Doc<"packages">, "channel">) {
+  return pkg.channel !== "private";
+}
+
+function withoutPrivatePackages(rows: PublisherPublishedRows): PublisherPublishedRows {
+  return {
+    skills: rows.skills,
+    packages: rows.packages.filter(isPublicPublisherCatalogPackage),
+  };
 }
 
 type PublicPublisherKindFilter = "user" | "org";
@@ -375,9 +389,14 @@ async function getPublisherPublishedPreviewRows(
         q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
       )
       .order("desc")
-      .take(PUBLISHER_LIST_PREVIEW_LIMIT),
+      .take(PUBLISHER_LIST_PREVIEW_SCAN_LIMIT),
   ]);
-  return { skills: skills.filter(isPublicPublishedSkill), packages };
+  return {
+    skills: skills.filter(isPublicPublishedSkill),
+    packages: packages
+      .filter(isPublicPublisherCatalogPackage)
+      .slice(0, PUBLISHER_LIST_PREVIEW_LIMIT),
+  };
 }
 
 function getIndexedPublisherStatsFromRows(rows: PublisherPublishedRows): PublisherListStats {
@@ -2523,7 +2542,7 @@ export const getOgMetaByHandle = query({
     const stats = hasPublisherStats(visibility.publisher)
       ? getPublisherDenormalizedStats(visibility.publisher)
       : getIndexedPublisherStatsFromRows(
-          await getPublisherPublishedRows(ctx, visibility.publisher._id),
+          withoutPrivatePackages(await getPublisherPublishedRows(ctx, visibility.publisher._id)),
         );
     return {
       ...publicPublisher,
@@ -2634,7 +2653,7 @@ export const listPublishedPage = query({
       const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
       const items = getPublisherCatalogItems(
         visiblePublisher,
-        await getPublisherPublishedRows(ctx, visiblePublisher._id),
+        withoutPrivatePackages(await getPublisherPublishedRows(ctx, visiblePublisher._id)),
         publisherOfficial,
         sort,
       );
@@ -2721,12 +2740,14 @@ export const listPublishedPage = query({
 
     const cursorState = parsePublisherPageCursor(paginationOpts.cursor);
     if (cursorState.mode === "legacy" || cursorState.mode === "preindex") {
-      const packages = await ctx.db
-        .query("packages")
-        .withIndex("by_owner_publisher_active_updated", (q) =>
-          q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
-        )
-        .collect();
+      const packages = (
+        await ctx.db
+          .query("packages")
+          .withIndex("by_owner_publisher_active_updated", (q) =>
+            q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
+          )
+          .collect()
+      ).filter(isPublicPublisherCatalogPackage);
       const items =
         cursorState.mode === "preindex"
           ? packages
@@ -2755,7 +2776,9 @@ export const listPublishedPage = query({
     return {
       ...result,
       continueCursor: encodePublisherPageCursor("indexed", result.continueCursor, result.isDone),
-      page: result.page.map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial)),
+      page: result.page
+        .filter(isPublicPublisherCatalogPackage)
+        .map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial)),
     };
   },
 });
@@ -2780,7 +2803,7 @@ export const getPublishedDisplayManifest = query({
       .collect();
     if (sources.length === 0) return null;
 
-    const rows = await getPublisherPublishedRows(ctx, visiblePublisher._id);
+    const rows = withoutPrivatePackages(await getPublisherPublishedRows(ctx, visiblePublisher._id));
     if (!args.kind && rows.packages.length > 0) return null;
 
     const sourceById = new Map(sources.map((source) => [String(source._id), source]));
