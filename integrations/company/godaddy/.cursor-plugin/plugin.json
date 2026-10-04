@@ -1,0 +1,12 @@
+{
+  "name": "godaddy-mcp",
+  "displayName": "GoDaddy Domains",
+  "version": "1.0.0",
+  "description": "Find domain suggestions and check public domain availability through GoDaddy\u2019s official MCP service.",
+  "author": {
+    "name": "OpenClaw",
+    "url": "https://github.com/openclaw/clawhub"
+  },
+  "license": "MIT",
+  "mcpServers": "./.mcp.json"
+}
