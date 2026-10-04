@@ -11,7 +11,7 @@ import { extractResponseText } from "./openaiResponse";
 import { derivePluginManifestSummary, toConvexSafeJsonValue } from "./packageRegistry";
 import type { PluginCategoryClassification } from "./pluginCategoryClassificationContract";
 
-export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v7";
+export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v8";
 const DOCUMENTATION_CHARACTER_LIMIT = 16_000;
 export type PluginCategoryEvidence = {
   name: string;
@@ -38,6 +38,7 @@ function staticMetadata(value: unknown) {
       "skills",
       "bundledSkills",
       "mcpServers",
+      "lobsterPacks",
     ]
       .filter((key) => Object.hasOwn(record, key))
       .map((key) => [key, record[key]]),

@@ -683,8 +683,9 @@ Query params:
   retaining an existing selection preserves its position.
 - `category` (optional): plugin category filter. The active browse values are
   returned by `GET /api/v1/plugins/categories`, including their descriptions and
-  icons. The 23 categories cover core configuration surfaces and product uses,
-  including Computer use after Web for interactive desktop/browser control.
+  icons. The 24 categories cover core configuration surfaces and product uses,
+  including Computer use after Web for interactive desktop/browser control and
+  `lobster-packs` after Media for collectible LobsterDex characters.
   Retired values `tools`, `runtime`, and `gateway` remain readable for existing
   metadata and links, but do not appear in the active browse list.
 - `curated` (optional): `true` requires `category` and `sort=downloads`, and cannot
