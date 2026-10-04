@@ -26,6 +26,10 @@ const ABSOLUTE_HTTP = /^https?:\/\//i;
 const EXPLICIT_SCHEME = /^[a-z][a-z0-9+\-.]*:/i;
 const PROTOCOL_RELATIVE = /^\/\//;
 const IMAGE_PROXY_WIDTH = 1024;
+// Base used only to ask the URL parser what a browser would request.
+// Its host is not a real image host.
+const PARSER_BASE = "https://clawhub.invalid/readme";
+const PARSER_BASE_HOST = "clawhub.invalid";
 
 type SrcsetCandidate = {
   url: string;
@@ -46,11 +50,45 @@ function getRawGitHubCommitRoot(assetBaseUrl: string): URL | null {
   }
 }
 
+function isC0OrSpace(char: string): boolean {
+  return char.charCodeAt(0) <= 0x1f || char === " ";
+}
+
+function preprocessUrlInput(src: string): string {
+  // The URL parser drops tab and newline anywhere, then trims C0 controls
+  // and spaces, before it treats `\` as `/`.
+  let stripped = "";
+  for (const char of src) {
+    if (char === "\t" || char === "\n" || char === "\r") continue;
+    stripped += char;
+  }
+  let start = 0;
+  let end = stripped.length;
+  while (start < end && isC0OrSpace(stripped[start] ?? "")) start += 1;
+  while (end > start && isC0OrSpace(stripped[end - 1] ?? "")) end -= 1;
+  return stripped.slice(start, end);
+}
+
+function isSchemeRelative(src: string): boolean {
+  return src.length >= 2 && "/\\".includes(src[0]) && "/\\".includes(src[1]);
+}
+
+function parsedExternalHttp(src: string): string | null {
+  try {
+    const url = new URL(src, PARSER_BASE);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (url.hostname.length === 0 || url.hostname === PARSER_BASE_HOST) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
 function resolveRelativeSrc(src: string, assetBaseUrl: string | undefined): string | null {
   if (!assetBaseUrl) return null;
   if (!src) return null;
   if (ABSOLUTE_HTTP.test(src)) return null;
-  if (PROTOCOL_RELATIVE.test(src)) return null;
+  if (PROTOCOL_RELATIVE.test(src) || isSchemeRelative(src)) return null;
   if (DATA_OR_FRAGMENT.test(src)) return null;
   if (EXPLICIT_SCHEME.test(src)) return null;
   // Absolute site paths (e.g. "/foo.png") are NOT package-relative — leaving
@@ -73,16 +111,22 @@ function proxyImageSrc(src: string): string {
   return `/_vercel/image?url=${encodeURIComponent(src)}&w=${IMAGE_PROXY_WIDTH}&q=75`;
 }
 
+function isUnusableProtocolRelative(src: string): boolean {
+  const normalizedSrc = preprocessUrlInput(src);
+  return isSchemeRelative(normalizedSrc) && parsedExternalHttp(normalizedSrc) === null;
+}
+
 function rewriteImageSrc(src: string, assetBaseUrl: string | undefined): string | null {
-  const normalizedSrc = src.trim();
-  let absoluteSrc: string | null = null;
-  if (ABSOLUTE_HTTP.test(normalizedSrc)) {
-    absoluteSrc = normalizedSrc;
-  } else {
-    absoluteSrc = resolveRelativeSrc(normalizedSrc, assetBaseUrl);
-  }
-  if (!absoluteSrc) return null;
-  return proxyImageSrc(absoluteSrc);
+  const normalizedSrc = preprocessUrlInput(src);
+  if (ABSOLUTE_HTTP.test(normalizedSrc)) return proxyImageSrc(normalizedSrc);
+  // `/\host` and `http:/\host` have no `//` after a trim, but the browser
+  // still requests that host. `url.href` is that request.
+  const externalHref = parsedExternalHttp(normalizedSrc);
+  if (externalHref) return proxyImageSrc(externalHref);
+  if (isSchemeRelative(normalizedSrc)) return null;
+  const relativeSrc = resolveRelativeSrc(normalizedSrc, assetBaseUrl);
+  if (!relativeSrc) return null;
+  return proxyImageSrc(relativeSrc);
 }
 
 function isAsciiWhitespace(char: string): boolean {
@@ -137,28 +181,46 @@ function parseSrcset(srcset: string): SrcsetCandidate[] {
   return candidates;
 }
 
+function formatSrcsetCandidate(url: string, descriptors: string): string {
+  return descriptors ? `${url} ${descriptors}` : url;
+}
+
 function rewriteSrcset(srcset: string, assetBaseUrl: string | undefined): string | null {
   const candidates = parseSrcset(srcset);
   if (candidates.length === 0) return null;
 
-  let didRewrite = false;
-  const rewritten = candidates.map((candidate) => {
+  let didChange = false;
+  const rewritten: string[] = [];
+  for (const candidate of candidates) {
     const rewrittenUrl = rewriteImageSrc(candidate.url, assetBaseUrl);
-    if (!rewrittenUrl) {
-      return candidate.descriptors ? `${candidate.url} ${candidate.descriptors}` : candidate.url;
+    if (rewrittenUrl) {
+      didChange = true;
+      rewritten.push(formatSrcsetCandidate(rewrittenUrl, candidate.descriptors));
+      continue;
     }
-    didRewrite = true;
-    return candidate.descriptors ? `${rewrittenUrl} ${candidate.descriptors}` : rewrittenUrl;
-  });
+    // An unparseable `//` candidate is not a same-document path. Drop it
+    // instead of leaving a URL the browser will request directly.
+    if (isUnusableProtocolRelative(candidate.url)) {
+      didChange = true;
+      continue;
+    }
+    rewritten.push(formatSrcsetCandidate(candidate.url, candidate.descriptors));
+  }
 
-  return didRewrite ? rewritten.join(", ") : null;
+  return didChange ? rewritten.join(", ") : null;
 }
 
 /**
  * Routes external http(s) image sources through Vercel's image optimizer at
  * /_vercel/image, which enforces the allow-list, SVG rejection, and caching
  * declared in vercel.json. Local paths, relative paths, and data: URIs pass
- * through unchanged — only external schemes are treated as untrusted.
+ * through unchanged.
+ *
+ * Protocol-relative sources are parsed as https and sent through that
+ * same proxy. A leading backslash counts as a slash, and tab, newline,
+ * and leading C0 controls are removed first, because that is how the
+ * browser parses the URL. A protocol-relative value that does not parse
+ * is removed, so the original value cannot stay in the document.
  *
  * If `assetBaseUrl` is provided, relative sources are first resolved against
  * that base (typically a `raw.githubusercontent.com/<repo>/<commit>/<dir>/`
@@ -178,13 +240,17 @@ export function rehypeProxyImages(options: RehypeProxyImagesOptions = {}) {
       const element = node as HastElementLike;
       if (element.tagName === "img") {
         const src = element.properties?.src;
-        if (typeof src === "string") {
+        if (typeof src === "string" && element.properties) {
           const rewrittenSrc = rewriteImageSrc(src, assetBaseUrl);
           if (rewrittenSrc) {
             element.properties = {
               ...element.properties,
               src: rewrittenSrc,
             };
+          } else if (isUnusableProtocolRelative(src)) {
+            const properties = { ...element.properties };
+            delete properties.src;
+            element.properties = properties;
           }
         }
       }
@@ -192,13 +258,17 @@ export function rehypeProxyImages(options: RehypeProxyImagesOptions = {}) {
       if (element.tagName === "source") {
         const srcsetKey = typeof element.properties?.srcSet === "string" ? "srcSet" : "srcset";
         const srcset = element.properties?.[srcsetKey];
-        if (typeof srcset === "string") {
+        if (typeof srcset === "string" && element.properties) {
           const rewrittenSrcset = rewriteSrcset(srcset, assetBaseUrl);
           if (rewrittenSrcset) {
             element.properties = {
               ...element.properties,
               [srcsetKey]: rewrittenSrcset,
             };
+          } else if (rewrittenSrcset === "") {
+            const properties = { ...element.properties };
+            delete properties[srcsetKey];
+            element.properties = properties;
           }
         }
       }
