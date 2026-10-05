@@ -5,16 +5,9 @@ import { signInAsLocalPersona } from "./helpers";
 
 const exec = promisify(execFile);
 test.skip(process.env.VITE_ENABLE_DEV_AUTH !== "1", "Requires the disposable local-auth runner");
-test("staff reviews the complete Featured selection, membership changes and empty catalog without publishing", async ({
+test("staff reviews Featured slots, pending reservations and the empty catalog without publishing", async ({
   page,
 }, testInfo) => {
-  const seed = JSON.parse(
-    (
-      await exec("bunx", ["convex", "run", "searchInsightsFixtures:seedFeaturedLineup", "{}"], {
-        env: process.env,
-      })
-    ).stdout,
-  ) as { actorUserId: string };
   const current = async () =>
     JSON.parse(
       (
@@ -24,24 +17,55 @@ test("staff reviews the complete Featured selection, membership changes and empt
             "convex",
             "run",
             "featuredArtifacts:readCurrentFeaturedInternal",
-            JSON.stringify({ artifactKind: "plugin" }),
+            '{"artifactKind":"plugin"}',
           ],
           { env: process.env },
         )
       ).stdout,
     ) as Array<{ id: string; featuredAt: number }>;
-  const before = await current();
+
   await page.goto("/");
   await signInAsLocalPersona(page, "admin");
   await page.goto("/management?view=search-insights");
   await page.getByRole("combobox", { name: "View" }).selectOption("featured");
-  await expect(page.getByText(/Complete proposed Featured set: 8 of 8 plugins/)).toBeVisible();
-  await expect(page.locator(".featured-recommendation-card")).toHaveCount(8);
-  await expect(page.getByText(/1 retained · 7 additions · 2 removals proposed/)).toBeVisible();
-  await expect(page.getByText(/Retain · Emerging · Adoption/)).toBeVisible();
-  await expect(page.getByRole("region", { name: "Proposed removals" })).toContainText(
-    "Local discovery tool 9",
-  );
+  await page.getByRole("combobox", { name: "Catalog" }).selectOption("skill");
+  // The monthly fixture populates both catalogs, so prove the empty state first.
+  await expect(
+    page.getByText("0 ready of 16 skills · 0 pending reservations · 16 open telemetry places."),
+  ).toBeVisible();
+  await expect(page.locator(".featured-recommendation-card")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("featured-lineup-empty.png"), fullPage: true });
+
+  const seed = JSON.parse(
+    (
+      await exec("bunx", ["convex", "run", "searchInsightsFixtures:seedFeaturedLineup", "{}"], {
+        env: process.env,
+      })
+    ).stdout,
+  ) as { actorUserId: string; pluginIds: string[]; skillIds: string[] };
+  expect(seed.pluginIds).toHaveLength(20);
+  expect(seed.skillIds).toHaveLength(20);
+  const before = await current();
+  expect(before.map(({ id }) => id).sort()).toEqual([seed.pluginIds[0], seed.pluginIds[16]].sort());
+  await page.getByRole("combobox", { name: "Catalog" }).selectOption("plugin");
+  await expect(
+    page.getByText("13 ready of 16 plugins · 3 pending reservations · 0 open telemetry places."),
+  ).toBeVisible();
+  await expect(page.locator(".featured-recommendation-card")).toHaveCount(16);
+  await expect(page.locator(".featured-recommendation-card.is-pending")).toHaveCount(3);
+  await expect(page.locator(".featured-recommendation-card.is-pending a")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Editorial slots · 8 reserved" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Install-ranked selection · 8 of 8" }),
+  ).toBeVisible();
+  await expect(page.getByText("1 retained · 12 additions · 1 removals proposed.")).toBeVisible();
+  const selected = page.locator(".featured-recommendation-card:not(.is-pending) h3 a");
+  await expect(selected).toHaveCount(13);
+  expect(
+    await selected.evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+  ).toEqual(seed.pluginIds.slice(0, 13).map((id) => `/plugins/${id.slice("plugin:".length)}`));
+  await page.getByText("Proposed removals (1)", { exact: true }).click();
+  await expect(page.getByText("Local monthly tool 17", { exact: true })).toBeVisible();
   for (const [label, width, height] of [
     ["mobile", 390, 844],
     ["tablet", 768, 1024],
@@ -49,7 +73,7 @@ test("staff reviews the complete Featured selection, membership changes and empt
     ["desktop", 1440, 900],
   ] as const) {
     await page.setViewportSize({ width, height });
-    await expect(page.locator(".featured-recommendation-card")).toHaveCount(8);
+    await expect(page.locator(".featured-recommendation-card")).toHaveCount(16);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
@@ -59,34 +83,50 @@ test("staff reviews the complete Featured selection, membership changes and empt
     });
   }
   await page.getByRole("combobox", { name: "Catalog" }).selectOption("skill");
-  await expect(page.getByText(/8 open Featured places/)).toBeVisible();
-  await expect(page.locator(".featured-recommendation-card")).toHaveCount(0);
+  // Refresh the completed empty snapshot after seeding install evidence.
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(
+    page.getByText("16 ready of 16 skills · 0 pending reservations · 0 open telemetry places."),
+  ).toBeVisible();
+  await expect(page.locator(".featured-recommendation-card")).toHaveCount(16);
   expect(await current()).toEqual(before);
-  // Exercise the real moderator mutation and Convex index transaction after
-  // proving that report viewing made no publication changes.
-  const feature = (name: string) =>
+
+  // Exercise the existing sixteen-member cap and idempotent keep semantics.
+  const feature = (id: string) =>
     exec(
       "bunx",
       [
         "convex",
         "run",
         "packages:setPackageFeaturedForUserInternal",
-        JSON.stringify({ actorUserId: seed.actorUserId, name, featured: true }),
+        JSON.stringify({
+          actorUserId: seed.actorUserId,
+          name: id.slice("plugin:".length),
+          featured: true,
+        }),
       ],
       { env: process.env },
     );
-  for (let index = 1; index <= 5; index++) await feature(`lineup-tool-${index}`);
-  expect(await current()).toHaveLength(8);
-  await expect(feature("lineup-tool-6")).rejects.toThrow(/Featured is limited/);
-  await feature("lineup-tool-0");
+  for (const id of seed.pluginIds.slice(1, 15)) await feature(id);
+  const full = await current();
+  expect(full).toHaveLength(16);
+  await expect(feature(seed.pluginIds[15]!)).rejects.toThrow(/Featured is limited to 16 plugins/);
+  expect(await current()).toEqual(full);
+  await feature(seed.pluginIds[0]!);
   const after = await current();
-  expect(after).toHaveLength(8);
-  expect(after.find((entry) => entry.id === "plugin:lineup-tool-0")?.featuredAt).toBe(
-    before.find((entry) => entry.id === "plugin:lineup-tool-0")?.featuredAt,
+  expect(after).toEqual(full);
+  expect(after.find((entry) => entry.id === seed.pluginIds[0])?.featuredAt).toBe(
+    before.find((entry) => entry.id === seed.pluginIds[0])?.featuredAt,
   );
   await testInfo.attach("local-convex-publication-receipt", {
     body: JSON.stringify(
-      { fixture: "local-only", before, after, rejectedNinth: true, reportReadDidNotPublish: true },
+      {
+        fixture: "local-only",
+        before,
+        after,
+        rejectedSeventeenth: true,
+        reportReadDidNotPublish: true,
+      },
       null,
       2,
     ),
