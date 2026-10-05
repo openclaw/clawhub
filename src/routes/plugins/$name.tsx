@@ -389,6 +389,7 @@ function PluginDetailTabs({
         className={`skill-readme-preview${
           isReadmeLong && !isReadmeExpanded ? " is-collapsed" : ""
         }`}
+        data-analytics-public-detail=""
       >
         <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
       </div>
@@ -1476,7 +1477,13 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           .replace(/^https?:\/\//, "")
           .replace(/\/$/, "");
         return (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="plugin-external-link">
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="plugin-external-link"
+            data-analytics-public-detail=""
+          >
             <GitHubIcon />
             {display}
           </a>
@@ -1716,6 +1723,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   className={`section-subtitle skill-summary-line${
                     hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
                   }`}
+                  data-analytics-public-detail=""
                 >
                   <InlineMarkdownSummary>{headerSummary}</InlineMarkdownSummary>
                 </p>
@@ -1731,7 +1739,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 ) : null}
               </div>
               {pluginHeroCreator ? (
-                <div className="skill-hero-creator">{pluginHeroCreator}</div>
+                <div className="skill-hero-creator" data-analytics-public-detail="">
+                  {pluginHeroCreator}
+                </div>
               ) : null}
 
               {rateLimited?.scope === "metadata" ? (
