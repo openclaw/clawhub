@@ -381,6 +381,25 @@ describe("OpenClaw package publish authorization", () => {
   });
 
   it.each([
+    ["submission", "in_progress", null],
+    ["terminal", "completed", "failure"],
+  ] as const)(
+    "authorizes a sealed release milestone in %s mode after parent %s/%s",
+    async (requiredParentState, parentStatus, parentConclusion) => {
+      await expect(
+        verify(
+          githubFetch({
+            parentStatus,
+            parentConclusion,
+            parentReceipt: parentReceipt({ authorizationRoute: "automated-sealed" }),
+          }),
+          requiredParentState,
+        ),
+      ).resolves.toMatchObject({ authorizationRoute: "automated-sealed" });
+    },
+  );
+
+  it.each([
     { login: "github-actions[bot]", type: "Bot" },
     { login: "release-service", type: "App" },
     { login: "release-app[bot]", type: "User" },

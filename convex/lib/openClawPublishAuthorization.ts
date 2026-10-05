@@ -17,7 +17,7 @@ const PARENT_RECEIPT_KIND = "openclaw-clawhub-parent-authorization";
 const RECOVERY_RECEIPT_KIND = "openclaw-clawhub-recovery-approval";
 const RECOVERY_ENVIRONMENT = "clawhub-plugin-release";
 const RECOVERY_APPROVAL_JOB = "approve_plugins_clawhub_release";
-const AUTOMATED_ROUTES = new Set(["automated-awaited", "automated-detached"]);
+const AUTOMATED_ROUTES = new Set(["automated-awaited", "automated-detached", "automated-sealed"]);
 
 const IDENTITY_KEYS = [
   "candidateRepository",
@@ -549,6 +549,9 @@ function validateParentState(
   const active = status === "in_progress" && !conclusion;
   const successful = status === "completed" && conclusion === "success";
   const failed = status === "completed" && conclusion === "failure";
+  // The sealed receipt is uploaded only after OpenClaw's immutable release
+  // milestone. Later parent failure must not revoke those exact transactions.
+  if (route === "automated-sealed" && (active || successful || failed)) return;
   if (requiredParentState === "terminal") {
     if (status !== "completed") {
       fail("OpenClaw release parent is not terminal; public publication remains pending");
