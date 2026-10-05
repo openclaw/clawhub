@@ -27,9 +27,9 @@ on:
         default: ""
         type: string
 
-# Coalesce recurring syncs before they enter the shared production queue.
+# Coalesce recurring syncs; the one controlled deploy must survive new schedules.
 concurrency:
-  group: skills-sh-sync-${{ github.ref }}
+  group: ${{ inputs.deploy_experiment_sha != '' && format('skills-sh-deploy-experiment-{0}', github.ref) || format('skills-sh-sync-{0}', github.ref) }}
   queue: single
   cancel-in-progress: false
 

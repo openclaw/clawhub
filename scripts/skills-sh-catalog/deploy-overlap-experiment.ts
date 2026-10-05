@@ -99,8 +99,29 @@ export function firstExperimentRun(runs: Array<{ id: number; display_title: stri
   return ids.length ? Math.min(...ids) : undefined;
 }
 
+export function isUnstartedCancellation(
+  run: { status?: string; conclusion?: string | null; run_attempt?: number },
+  jobs: { total_count?: number; jobs?: unknown[] },
+) {
+  return (
+    run.status === "completed" &&
+    run.conclusion === "cancelled" &&
+    run.run_attempt === 1 &&
+    jobs.total_count === 0 &&
+    Array.isArray(jobs.jobs) &&
+    jobs.jobs.length === 0
+  );
+}
+
 async function requireSingleDispatch() {
-  const runs: Array<{ id: number; display_title: string; created_at: string }> = [];
+  const runs: Array<{
+    id: number;
+    display_title: string;
+    created_at: string;
+    status: string;
+    conclusion: string | null;
+    run_attempt: number;
+  }> = [];
   for (let page = 1; page <= 20; page += 1) {
     const result = await github(
       `actions/workflows/skills-sh-sync.yml/runs?event=workflow_dispatch&per_page=100&page=${page}`,
@@ -108,7 +129,23 @@ async function requireSingleDispatch() {
     const batch = result.workflow_runs as typeof runs;
     runs.push(...batch);
     if (batch.length < 100 || batch.at(-1)!.created_at < "2026-10-05T00:00:00Z") {
-      const first = firstExperimentRun(runs);
+      const eligible = [];
+      const unstarted = [];
+      for (const run of runs) {
+        if (run.display_title !== EXPERIMENT_NAME) continue;
+        if (run.status === "completed" && run.conclusion === "cancelled" && run.run_attempt === 1) {
+          const jobs = await github(`actions/runs/${run.id}/jobs?per_page=1`);
+          // A replaced pending workflow with zero jobs never reached any production command.
+          // Any started job, failed attempt, rerun or unverifiable history consumes the attempt.
+          if (isUnstartedCancellation(run, jobs)) {
+            unstarted.push({ id: run.id, runAttempt: run.run_attempt, jobs: 0 });
+            continue;
+          }
+        }
+        eligible.push(run);
+      }
+      receipt.unstartedCancellations = unstarted;
+      const first = firstExperimentRun(eligible);
       if (first !== Number(process.env.GITHUB_RUN_ID)) {
         throw new Error(
           "This single-use experiment was already requested by another immutable run",

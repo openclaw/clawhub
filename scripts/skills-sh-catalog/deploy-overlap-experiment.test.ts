@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   firstExperimentRun,
+  isUnstartedCancellation,
   syncEnvironment,
   syncOwnsActiveControl,
   validateExperimentRequest,
@@ -23,6 +24,18 @@ const request = {
 };
 
 describe("temporary controlled deployment authority", () => {
+  it("excludes only an exact first-attempt cancellation with no jobs", () => {
+    const run = { status: "completed", conclusion: "cancelled", run_attempt: 1 };
+    const jobs = { total_count: 0, jobs: [] };
+    expect(isUnstartedCancellation(run, jobs)).toBe(true);
+    expect(isUnstartedCancellation(run, { total_count: 1, jobs: [{}] })).toBe(false);
+    expect(isUnstartedCancellation(run, { total_count: 0, jobs: [{}] })).toBe(false);
+    expect(isUnstartedCancellation(run, {})).toBe(false);
+    expect(isUnstartedCancellation({ ...run, run_attempt: 2 }, jobs)).toBe(false);
+    expect(isUnstartedCancellation({ ...run, status: "in_progress" }, jobs)).toBe(false);
+    expect(isUnstartedCancellation({ ...run, conclusion: "failure" }, jobs)).toBe(false);
+    expect(isUnstartedCancellation({ ...run, conclusion: "success" }, jobs)).toBe(false);
+  });
   it("binds new or resumed durable work to this live sync worker, not its original start time", () => {
     const control = { enabled: true, paused: false, updatedBy: "github-actions:100:1" };
     expect(syncOwnsActiveControl(control, request)).toBe(true);

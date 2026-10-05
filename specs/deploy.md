@@ -79,7 +79,12 @@ Production deploy notes:
   Dispatch `skills-sh-sync.yml` from reviewed `main` with `deploy_experiment_sha`, exact successful
   `deploy_experiment_ci_run` and `deploy_experiment_test_run`, and
   `deploy_experiment_confirm=deploy-once-with-enabled-skills-sh`. Only Patrick's first attempt of the
-  earliest immutable experiment run is eligible. All other release gates remain: the existing
+  earliest immutable experiment run, excluding only proven first-attempt cancellations with zero jobs,
+  is eligible. A prior first-attempt cancellation
+  is excluded only after a live GitHub jobs read proves it had zero jobs. A started job or rerun still
+  consumes the single attempt. The experiment uses a separate outer queue so recurring schedules
+  cannot replace it, but retains the shared `deploy-production` job mutex. Ordinary sync queueing is
+  unchanged. All other release gates remain: the existing
   Production environment, production mutex through both processes and cleanup, unchanged rollout
   boundaries, typechecks, promotions/contract verification, and production HTTP smoke. The sync child
   uses its existing OIDC identity without the deploy credential. Record prior backend SHA and rollout,
