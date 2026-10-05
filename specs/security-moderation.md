@@ -68,6 +68,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
 - admin: all moderator actions + hard delete skills, change owners, change roles.
 
+## Manual package scan backfill
+
+- The public `packages.backfillPackageReleaseScans` action requires an active
+  authenticated admin before traversing releases or enqueueing any scan work.
+  Anonymous, ordinary-user, moderator, deleted, and deactivated callers must
+  leave scan queues and scheduled backfill work unchanged.
+- Manual clients must send an admin session through Convex Auth. The public
+  wrapper must not accept a caller-supplied user id or rely on queue deduplication
+  as authorization.
+- The internal backfill and its scheduled continuations retain service access
+  without a user session. Cron calls that internal entry point directly; placing
+  the public admin guard inside it would break scheduled maintenance.
+
 ## Ban + unban batches
 
 - Ban/unban skill batches are paginated and may continue after the mutation that
