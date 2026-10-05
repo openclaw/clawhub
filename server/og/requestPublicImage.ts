@@ -47,7 +47,7 @@ const lookupPublicAddress: LookupFunction = (hostname, options, callback) => {
   dns.lookup(hostname, { all: true, verbatim: true }, (error, addresses) => {
     if (error) return callback(error, "");
     if (!addresses.length || addresses.some(({ address }) => !isPublicAddress(address))) {
-      return callback(new Error("Image destination is not public"), "");
+      return callback(new Error("Destination is not public"), "");
     }
     // Return the checked addresses directly to the socket. A separate validation
     // lookup followed by ordinary fetch would allow DNS rebinding between them.
@@ -57,6 +57,25 @@ const lookupPublicAddress: LookupFunction = (hostname, options, callback) => {
 };
 
 export function requestPublicImage(url: URL, signal: AbortSignal): Promise<Response> {
+  return requestPublicResource(url, signal, {
+    headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/*" },
+  });
+}
+
+/** Public HTTPS only, pinned DNS and no automatic redirects. Callers bound response bytes/time. */
+export function requestPublicResource(
+  url: URL,
+  signal: AbortSignal,
+  options: { headers: Record<string, string>; body?: string },
+): Promise<Response> {
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    (isIP(hostname) && !isPublicAddress(hostname))
+  )
+    return Promise.reject(new Error("Destination is not public HTTPS"));
   return new Promise((resolve, reject) => {
     const req = request(
       url,
@@ -64,7 +83,8 @@ export function requestPublicImage(url: URL, signal: AbortSignal): Promise<Respo
         agent: false,
         lookup: lookupPublicAddress,
         signal,
-        headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/*" },
+        method: options.body === undefined ? "GET" : "POST",
+        headers: options.headers,
       },
       (response) => {
         try {
@@ -89,6 +109,6 @@ export function requestPublicImage(url: URL, signal: AbortSignal): Promise<Respo
       },
     );
     req.on("error", reject);
-    req.end();
+    req.end(options.body);
   });
 }

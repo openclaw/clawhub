@@ -1,6 +1,7 @@
 import {
   CliPublishRequestSchema,
   decodeUtf8Text,
+  getClawHubRuntimeEnvironment,
   normalizeContentType,
   parseArk,
 } from "clawhub-schema";
@@ -185,7 +186,10 @@ function firstForwardedValue(value: string | null) {
 
 function isProductionDeployment() {
   const deployment = process.env.CONVEX_DEPLOYMENT?.trim() ?? "";
-  return deployment.startsWith("prod:") || deployment.includes("production");
+  return (
+    (deployment.startsWith("prod:") || deployment.includes("production")) &&
+    getClawHubRuntimeEnvironment(process.env) === "production"
+  );
 }
 
 function isTrustedForwardedHost(value: string) {

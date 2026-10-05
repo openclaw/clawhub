@@ -831,3 +831,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   skills.
 - Word counting is language-aware (`Intl.Segmenter` with fallback), reducing
   false positives for non-space-separated languages.
+
+## Managed company MCP wrappers
+
+Admin-managed MCP packages use ordinary package releases as their authority. Both management UI and admin CLI require an active administrator and normal OpenClaw organization publishing access, including definition reads and unpublication. They cannot replace unrelated package identities. Each edit creates a new immutable version; unpublication uses the existing package policy and checks current administrator, publisher, and membership authority in the same transaction as soft deletion. Finalizing a queued managed release rechecks the submitting administrator, the active OpenClaw publisher, and current publishing membership in the same transaction that makes the release public. Revocation while scans run must leave the release unavailable.
+
+Generated wrappers accept only remote public HTTPS HTTP/SSE connections, current categories, credential placeholders, and PNG icons with attribution and explicit rights metadata. Wrapper code remains MIT-licensed; company artwork can have separate terms and must not inherit that license. Non-MIT icons require public HTTPS source and terms URLs, and the publishing operator must verify permission to redistribute the asset. Recording those URLs does not itself grant permission. They contain no arbitrary local commands or fetched provider code. OpenClaw wrapper authorship is distinct from remote-service ownership.
+
+Managed publication always enters the ordinary staged security pipeline. Neither admin authorship nor the `@openclaw` namespace grants trusted-package scan exemption; subsequent ordinary submissions retaining the managed definition marker also remain subject to checks. A successful package scan says nothing about the remote service's current or future tools.
+
+Public MCP inspection resolves a server from an accessible immutable release, never a caller-supplied URL. It pins public DNS destinations, rejects private addresses and credential-bearing URLs, never follows redirects, limits bytes and time, and uses an endpoint rate limit. It does not authenticate, register OAuth clients, follow legacy SSE session endpoints, or execute tools. OAuth authoring checks inspect public discovery metadata; they do not imply completed account testing.

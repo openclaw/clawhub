@@ -41,7 +41,7 @@ import {
 } from "../../components/DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "../../components/DownloadsMetricCard";
 import { EmptyState } from "../../components/EmptyState";
-import { InlineCodeSummary } from "../../components/InlineCodeSummary";
+import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
@@ -1717,7 +1717,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
                   }`}
                 >
-                  <InlineCodeSummary>{headerSummary}</InlineCodeSummary>
+                  <InlineMarkdownSummary>{headerSummary}</InlineMarkdownSummary>
                 </p>
                 {hasSummaryToggle ? (
                   <button

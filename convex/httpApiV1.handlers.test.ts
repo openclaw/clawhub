@@ -730,6 +730,45 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).not.toHaveBeenCalled();
   });
 
+  it("requires the branch secret before issuing Staging export manifests", async () => {
+    const secret = "s".repeat(48);
+    vi.stubEnv("CLAWHUB_ENV", "staging");
+    vi.stubEnv("CLAWHUB_STAGING_EDGE_SECRET", secret);
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    const verifyArchiveRequester = vi.fn(async () => undefined);
+    const runQuery = vi.fn();
+    const ctx = makeCtx({ runQuery });
+    const request = (edgeSecret?: string) =>
+      new Request("https://cheery-civet-733.convex.site/api/v1/skills/export", {
+        headers: {
+          authorization: "Bearer user-token",
+          "x-clawhub-archive-manifest": "v1",
+          "x-clawhub-vercel-oidc-token": "vercel-preview-oidc",
+          ...(edgeSecret ? { "x-clawhub-staging-edge-secret": edgeSecret } : {}),
+        },
+      });
+    const dependencies = {
+      verifyArchiveRequester,
+      signArchiveManifest: vi.fn(async () => "unused"),
+    };
+
+    expect((await __handlers.exportSkillsV1Handler(ctx, request(), dependencies)).status).toBe(401);
+    expect(verifyArchiveRequester).not.toHaveBeenCalled();
+    expect(runQuery).not.toHaveBeenCalled();
+
+    expect(
+      (await __handlers.exportSkillsV1Handler(ctx, request(secret), dependencies)).status,
+    ).toBe(400);
+    expect(verifyArchiveRequester).toHaveBeenCalledWith("vercel-preview-oidc", "preview");
+  });
+
   it("skills export preserves pagination headers for empty filtered pages", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",

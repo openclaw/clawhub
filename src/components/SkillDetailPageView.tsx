@@ -25,7 +25,7 @@ import { ActivityMetricLabel } from "./ActivityMetricLabel";
 import { DetailHero, DetailPageShell, DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
-import { InlineCodeSummary } from "./InlineCodeSummary";
+import { InlineMarkdownSummary } from "./InlineMarkdownSummary";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
@@ -542,7 +542,7 @@ export function SkillDetailPageView({
                       hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
                     }`}
                   >
-                    <InlineCodeSummary>{headerDescription}</InlineCodeSummary>
+                    <InlineMarkdownSummary>{headerDescription}</InlineMarkdownSummary>
                   </p>
                   {hasSummaryToggle ? (
                     <button

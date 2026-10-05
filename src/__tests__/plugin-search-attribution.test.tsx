@@ -306,9 +306,9 @@ describe("manual plugin search attribution", () => {
     await waitFor(() =>
       expect(requests.filter((url) => url.searchParams.has("searchSource"))).toHaveLength(1),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear plugin search" }));
     await waitFor(() => expect((input as HTMLInputElement).value).toBe(""));
-    fireEvent.click(screen.getByRole("button", { name: "Search plugins" }));
+    expect(screen.getByRole("searchbox", { name: "plugin search" }).closest("[hidden]")).toBeNull();
     fireEvent.change(screen.getByPlaceholderText("Search plugins..."), {
       target: { value: "notion" },
     });

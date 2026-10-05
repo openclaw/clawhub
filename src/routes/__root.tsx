@@ -6,8 +6,6 @@ import {
   useLocation,
   useRouter,
 } from "@tanstack/react-router";
-import { Analytics } from "@vercel/analytics/react";
-import { SpeedInsights } from "@vercel/speed-insights/react";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { AppProviders } from "../components/AppProviders";
@@ -16,6 +14,7 @@ import { DeploymentDriftBanner } from "../components/DeploymentDriftBanner";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Footer } from "../components/Footer";
 import { GenericNotFoundPage } from "../components/GenericNotFoundPage";
+import { GoogleAnalytics } from "../components/GoogleAnalytics";
 import Header from "../components/Header";
 import { PromotionsBar } from "../components/PromotionsBar";
 import {
@@ -175,10 +174,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     document.documentElement.dataset.clawhubHydrated = "true";
   }, []);
 
-  const showAnalytics =
-    typeof window !== "undefined" &&
-    !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-
   return (
     <html
       className={initialThemeMode === "dark" ? "dark" : undefined}
@@ -221,12 +216,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             }}
           />
           <ClientOnly>
-            {showAnalytics ? (
-              <>
-                <Analytics />
-                <SpeedInsights />
-              </>
-            ) : null}
+            <GoogleAnalytics />
           </ClientOnly>
         </AppProviders>
         <Scripts />

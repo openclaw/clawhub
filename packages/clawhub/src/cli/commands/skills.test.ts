@@ -2917,6 +2917,45 @@ describe("cmdInstall", () => {
     expect(downloadOrder).toBeLessThan(firstRenameOrder);
   });
 
+  it("keeps a finished --force swap when backup delete fails", async () => {
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+    mockApiRequest.mockResolvedValue({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      latestVersion: { version: "1.0.0" },
+      owner: null,
+      moderation: null,
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(rm).mockImplementation(async (path) => {
+      if (String(path).includes(".demo.backup-")) {
+        throw Object.assign(new Error("EBUSY: backup locked"), { code: "EBUSY" });
+      }
+    });
+
+    await expect(cmdInstall(makeOpts(), "demo", undefined, true)).resolves.toBeUndefined();
+
+    expect(rename).toHaveBeenNthCalledWith(
+      1,
+      "/work/skills/demo",
+      expect.stringMatching(/^\/work\/skills\/\.demo\.backup-/),
+    );
+    expect(rename).toHaveBeenNthCalledWith(2, "/work/skills/.demo.tmp-123", "/work/skills/demo");
+    expect(rename).toHaveBeenCalledTimes(2);
+    expect(writeLockfile).toHaveBeenCalled();
+  });
+
   it("writes identical installedAt to origin and lockfile on install", async () => {
     mockApiRequest.mockImplementation(async (_registry, args) => {
       if (args.path === LegacyApiRoutes.cliTelemetryInstall) return { ok: true };

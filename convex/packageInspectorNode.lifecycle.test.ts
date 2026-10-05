@@ -18,11 +18,12 @@ vi.mock("node:fs/promises", () => ({
   rm: mocks.rm,
 }));
 vi.mock("@openclaw/plugin-inspector", () => ({
-  openClawTargets: {
-    resolveVersion: vi.fn(async () => ({ version: "2026.8.1" })),
-    prepare: mocks.prepare,
-  },
+  openClawTargets: { eligibilityVersion: vi.fn() },
   pluginRoot: { runCheck: mocks.runCheck },
+  reports: { readOpenClawTargetSurface: vi.fn() },
+}));
+vi.mock("./lib/openClawInspectorTarget", () => ({
+  prepareOpenClawInspectorTarget: mocks.prepare,
 }));
 
 const inspect = () =>

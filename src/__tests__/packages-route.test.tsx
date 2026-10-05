@@ -120,126 +120,77 @@ describe("plugins route", () => {
     loaderDataMock = undefined;
   });
 
-  it.each([{ sort: "recommended" }, { q: "security" }])(
-    "does not label global plugin results Featured: %j",
+  it("renders category-only plugin browsing and ignores retired catalog filters", async () => {
+    const route = await loadRoute();
+    searchMock =
+      route.__config.validateSearch?.({
+        featured: true,
+        official: true,
+        new: true,
+        sort: "trending",
+        category: "computer-use",
+        cursor: "old-feed-cursor",
+      }) ?? {};
+    const Component = route.__config.component as ComponentType;
+    render(<Component />);
+    expect(screen.queryByRole("radiogroup", { name: "Sort order" })).toBeNull();
+    expect(screen.getByLabelText("Plugin categories")).toBeTruthy();
+    const deps = route.__config.loaderDeps?.({ search: searchMock }) ?? {};
+    const { loadPluginsPageData } = await import("../routes/plugins/index");
+    await loadPluginsPageData(deps);
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({ category: "computer-use", cursor: undefined }),
+    );
+    const request = fetchPluginCatalogMock.mock.calls.at(-1)?.[0];
+    expect(request?.featured).toBeUndefined();
+    expect(request?.isOfficial).toBeUndefined();
+    expect(queryNewPluginsMock).not.toHaveBeenCalled();
+  });
+
+  it.each([{}, { q: "security" }, { category: "computer-use" }])(
+    "does not render catalog tabs: %j",
     async (search) => {
       searchMock = search;
       const route = await loadRoute();
       const Component = route.__config.component as ComponentType;
       render(<Component />);
-      expect(screen.getByRole("radio", { name: "Featured" }).getAttribute("aria-checked")).toBe(
-        "false",
-      );
+      expect(screen.queryByRole("radiogroup", { name: "Sort order" })).toBeNull();
+      for (const name of ["Trending", "Featured", "Official", "New", "All"])
+        expect(screen.queryByRole("radio", { name })).toBeNull();
     },
   );
 
   it.each([
-    [
-      { new: true, official: true },
-      { new: undefined, official: true, featured: undefined },
-    ],
-    [
-      { new: true, featured: true },
-      { new: true, official: undefined, featured: undefined },
-    ],
-    [
-      { official: true, featured: true },
-      { new: undefined, official: true, featured: undefined },
-    ],
-  ])("normalizes conflicting catalog tabs: %j", async (search, expected) => {
+    {},
+    { featured: true },
+    { official: "true" },
+    { verified: "1" },
+    { new: true },
+    { tab: "trending" },
+    { sort: "trending" },
+    { highlighted: true },
+  ])("opens the full plugin catalog for retired feed URLs: %j", async (legacy) => {
     const route = await loadRoute();
-    expect(route.__config.validateSearch?.(search)).toMatchObject(expected);
-  });
-
-  it("defaults to Featured while retaining explicit legacy browse sorts", async () => {
-    const route = await loadRoute();
-    expect(route.__config.validateSearch?.({})).toMatchObject({ featured: true });
-    expect(route.__config.validateSearch?.({ sort: "recommended" }).featured).toBeUndefined();
-    expect(
-      route.__config.validateSearch?.({ new: "1", category: "tools", cursor: "new:next" }),
-    ).toMatchObject({ new: true, cursor: "new:next", featured: undefined });
-  });
-
-  it("loads New plugins by creation time with the shared recent window", async () => {
+    const search =
+      route.__config.validateSearch?.({
+        ...legacy,
+        category: "computer-use",
+        topic: "browser",
+        view: "grid",
+      }) ?? {};
+    expect(search).toMatchObject({ category: "computer-use", topic: "browser" });
+    expect(search).not.toHaveProperty("view");
     const { loadPluginsPageData } = await import("../routes/plugins/index");
-    const { DISCOVERY_RECENT_WINDOW_MS } = await import("../../convex/lib/discoveryWindows");
-    const now = Date.now();
-    vi.spyOn(Date, "now").mockReturnValue(now);
-    const plugins = Array.from({ length: 25 }, (_, index) => ({
-      name: `recent-${index}`,
-      family: "code-plugin",
-      createdAt: now,
-    }));
-    queryNewPluginsMock.mockResolvedValue({
-      page: plugins,
-      isDone: false,
-      continueCursor: "new:next",
+    await loadPluginsPageData(route.__config.loaderDeps?.({ search }) ?? {});
+    const request = fetchPluginCatalogMock.mock.calls.at(-1)?.[0];
+    expect(request).toMatchObject({
+      category: "computer-use",
+      topic: "browser",
+      sort: "downloads",
     });
-    try {
-      const result = await loadPluginsPageData({
-        new: true,
-        category: "tools",
-        cursor: "new:current",
-      });
-      expect(queryNewPluginsMock).toHaveBeenCalledWith("packages:listPublicNewPluginsPage", {
-        category: "tools",
-        createdAfter: now - DISCOVERY_RECENT_WINDOW_MS,
-        paginationOpts: { cursor: "new:current", numItems: 25 },
-      });
-      expect(result).toMatchObject({ items: plugins, nextCursor: "new:next" });
-      expect(fetchPluginCatalogMock).not.toHaveBeenCalled();
-    } finally {
-      vi.restoreAllMocks();
-    }
-  });
-
-  it("finds New topic matches beyond empty source pages", async () => {
-    const plugin = { name: "topic-match", family: "code-plugin", topics: ["browser"] };
-    queryNewPluginsMock
-      .mockResolvedValueOnce({
-        page: [{ ...plugin, topics: ["other"] }],
-        isDone: false,
-        continueCursor: "next",
-      })
-      .mockResolvedValueOnce({ page: [plugin], isDone: true, continueCursor: "" });
-    const { loadPluginsPageData } = await import("../routes/plugins/index");
-    const result = await loadPluginsPageData({ new: true, topic: "browser" });
-    expect(result).toMatchObject({ items: [plugin], nextCursor: null });
-    expect(queryNewPluginsMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("leaves New when searching globally and clears search when selecting New", async () => {
-    const route = await loadRoute();
-    expect(route.__config.validateSearch?.({ q: "security", new: true }).new).toBeUndefined();
-    searchMock = { q: "security" };
-    const Component = route.__config.component as ComponentType;
-    render(<Component />);
-    fireEvent.click(screen.getByRole("radio", { name: "New" }));
-    const change = navigateMock.mock.calls.at(-1)?.[0].search;
-    expect(change(searchMock)).toMatchObject({ q: undefined, new: true, featured: undefined });
-  });
-
-  it("bounds New plugin loading by the existing timeout", async () => {
-    vi.useFakeTimers();
-    queryNewPluginsMock.mockImplementation(() => new Promise(() => {}));
-    try {
-      const { loadPluginsPageData } = await import("../routes/plugins/index");
-      const result = loadPluginsPageData({ new: true });
-      await vi.advanceTimersByTimeAsync(5_000);
-      expect(await result).toMatchObject({ apiError: true, isLoading: false });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("cancels New plugin loading when navigation aborts", async () => {
-    queryNewPluginsMock.mockImplementation(() => new Promise(() => {}));
-    const { loadPluginsPageData } = await import("../routes/plugins/index");
-    const controller = new AbortController();
-    const result = loadPluginsPageData({ new: true, signal: controller.signal });
-    const rejection = expect(result).rejects.toMatchObject({ name: "AbortError" });
-    controller.abort();
-    await rejection;
+    expect(request?.featured).toBeUndefined();
+    expect(request?.isOfficial).toBeUndefined();
+    expect(queryNewPluginsMock).not.toHaveBeenCalled();
   });
 
   it("rejects skill family filter in search state", async () => {
@@ -269,23 +220,6 @@ describe("plugins route", () => {
       cursor: undefined,
       featured: undefined,
       official: undefined,
-      sort: undefined,
-      view: undefined,
-    });
-  });
-
-  it("keeps legacy verified search params as official browse", async () => {
-    const route = await loadRoute();
-    const validateSearch = route.__config.validateSearch as (
-      search: Record<string, unknown>,
-    ) => Record<string, unknown>;
-
-    expect(validateSearch({ verified: "1" })).toEqual({
-      q: undefined,
-      category: undefined,
-      cursor: undefined,
-      featured: undefined,
-      official: true,
       sort: undefined,
       view: undefined,
     });
@@ -472,68 +406,12 @@ describe("plugins route", () => {
     ).not.toThrow();
   });
 
-  it("redirects browse-only featured URLs when search is active", async () => {
-    const route = await loadRoute();
-    const beforeLoad = (
-      route.__config as never as {
-        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
-      }
-    ).beforeLoad;
-
-    expect(() =>
-      beforeLoad?.({
-        search: { q: "security", featured: true },
-      }),
-    ).toThrow();
-  });
-
-  it("preserves valid search sort when clearing stale featured URLs", async () => {
-    const route = await loadRoute();
-    const beforeLoad = (
-      route.__config as never as {
-        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
-      }
-    ).beforeLoad;
-
-    expect(() =>
-      beforeLoad?.({
-        search: { q: "security", sort: "updated", featured: true },
-      }),
-    ).toThrow();
-    expect(redirectMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        search: expect.objectContaining({
-          featured: undefined,
-          sort: "updated",
-        }),
-      }),
-    );
-  });
-
-  it("uses grid as the canonical browse view in search state", async () => {
+  it.each(["grid", "cards", "list"])("ignores the retired %s view selector", async (view) => {
     const route = await loadRoute();
     const validateSearch = route.__config.validateSearch as (
-      search: Record<string, unknown>,
+      s: Record<string, unknown>,
     ) => Record<string, unknown>;
-
-    expect(validateSearch({ view: "grid" })).toEqual(
-      expect.objectContaining({
-        view: "grid",
-      }),
-    );
-  });
-
-  it("keeps legacy cards URLs compatible with the grid view", async () => {
-    const route = await loadRoute();
-    const validateSearch = route.__config.validateSearch as (
-      search: Record<string, unknown>,
-    ) => Record<string, unknown>;
-
-    expect(validateSearch({ view: "cards" })).toEqual(
-      expect.objectContaining({
-        view: "grid",
-      }),
-    );
+    expect(validateSearch({ view })).not.toHaveProperty("view");
   });
 
   it("forwards opaque cursors through catalog loading", async () => {
@@ -586,7 +464,6 @@ describe("plugins route", () => {
         category: "tools",
         topic: "oauth",
         cursor: undefined,
-        isOfficial: true,
         signal: expect.any(AbortSignal),
         viewerMode: "anonymous",
       }),
@@ -1140,7 +1017,7 @@ describe("plugins route", () => {
   });
 
   it("hides the total plugin count when filters are active", async () => {
-    searchMock = { official: true };
+    searchMock = { category: "security" };
     loaderDataMock = {
       items: [],
       nextCursor: null,
@@ -1214,7 +1091,7 @@ describe("plugins route", () => {
     expect(lastCall.replace).toBe(true);
   });
 
-  it("renders a label-only title without positive count data and switches to grid view", async () => {
+  it("renders a label-only title and always-visible search without view controls", async () => {
     loaderDataMock = {
       items: [
         {
@@ -1238,20 +1115,10 @@ describe("plugins route", () => {
 
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.queryByText("1")).toBeNull();
-    expect(screen.getByRole("button", { name: "List" }).closest(".browse-controls")).not.toBeNull();
-    expect(document.querySelector(".browse-results-toolbar .browse-view-toggle")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
-
-    expect(navigateMock).toHaveBeenCalled();
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({})).toEqual({
-      view: "grid",
-    });
+    expect(screen.queryByRole("button", { name: "List" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+    expect(screen.getByRole("searchbox", { name: "plugin search" }).closest("[hidden]")).toBeNull();
+    expect(screen.getByText("Demo Plugin").closest(".plugin-summary-item")).not.toBeNull();
   });
 
   it("does not render the publish CTA on the plugins browse page", async () => {
@@ -1275,8 +1142,8 @@ describe("plugins route", () => {
     expect(screen.queryByText("Unable to load plugins")).toBeNull();
   });
 
-  it("switches legacy cards URLs back to list view", async () => {
-    searchMock = { view: "cards" };
+  it.each(["cards", "grid"])("renders legacy %s URLs as lists", async (view) => {
+    searchMock = { view };
     loaderDataMock = {
       items: [
         {
@@ -1298,17 +1165,10 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    const gridButton = screen.getByRole("button", { name: "Grid" });
-    expect(gridButton.className).toContain("is-active");
-
-    fireEvent.click(screen.getByRole("button", { name: "List" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ view: "cards" })).toEqual({ view: undefined });
+    expect(screen.getByText("Demo Plugin").closest(".plugin-summary-item")).not.toBeNull();
+    expect(document.querySelector(".browse-results-grid")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "List" })).toBeNull();
   });
 
   it("preserves catalog results during catalog loading", async () => {
@@ -1340,76 +1200,6 @@ describe("plugins route", () => {
     const result = await loadPluginsPageData({});
 
     expect(result.items).toHaveLength(2);
-  });
-
-  it("uses plugin-only catalog fetching for official browse", async () => {
-    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
-    const { loadPluginsPageData } = await import("../routes/plugins/index");
-
-    await loadPluginsPageData({
-      official: true,
-    });
-
-    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        isOfficial: true,
-        sort: "recommended",
-        limit: 25,
-      }),
-    );
-    expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("family");
-  });
-
-  it("preserves featured browse when selecting Featured from the plugin tab group", async () => {
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "Featured" }));
-
-    expect(navigateMock).toHaveBeenCalled();
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(
-      lastCall.search({
-        family: "code-plugin",
-        cursor: "cursor:current",
-        featured: true,
-        sort: "updated",
-      }),
-    ).toEqual({
-      family: undefined,
-      cursor: undefined,
-      featured: true,
-      sort: "recommended",
-    });
-  });
-
-  it("selects Featured within the current plugin category", async () => {
-    searchMock = { category: "security" };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "Featured" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ category: "security", cursor: "cursor:current" })).toEqual({
-      category: "security",
-      cursor: undefined,
-      family: undefined,
-      featured: true,
-      sort: "recommended",
-    });
   });
 
   it("returns a retryable empty state when the catalog is rate limited", async () => {
@@ -1673,7 +1463,7 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear plugin search" }));
 
     expect(navigateMock).toHaveBeenCalled();
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
@@ -1695,78 +1485,6 @@ describe("plugins route", () => {
     });
     expect(lastCall.replace).toBe(true);
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
-  });
-
-  it("keeps browse sort choices when only a category is active", async () => {
-    searchMock = { category: "security", featured: true };
-    loaderDataMock = {
-      items: [
-        {
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
-      nextCursor: null,
-      rateLimited: false,
-      retryAfterSeconds: null,
-    };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(screen.getByRole("radio", { name: "Featured" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
-    expect(screen.getByRole("radio", { name: "Official" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "New" })).toBeTruthy();
-    expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
-  });
-
-  it("keeps featured browse active when selecting Featured", async () => {
-    searchMock = { featured: true };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "Featured" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.search({ featured: true, cursor: "cursor:current" })).toEqual({
-      featured: true,
-      cursor: undefined,
-      family: undefined,
-      sort: "recommended",
-    });
-  });
-
-  it("selects Featured and leaves global search", async () => {
-    searchMock = { q: "security" };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "Featured" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.search({ q: "security", cursor: "cursor:current" })).toEqual({
-      q: undefined,
-      cursor: undefined,
-      family: undefined,
-      featured: true,
-      sort: "recommended",
-    });
   });
 
   it("sorts loaded search results by the selected search sort", async () => {
@@ -1845,50 +1563,5 @@ describe("plugins route", () => {
     const zulu = screen.getByText("Zulu Plugin");
     const alpha = screen.getByText("Alpha Plugin");
     expect(zulu.compareDocumentPosition(alpha) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it("keeps search sort visible even if a stale featured flag is present", async () => {
-    searchMock = { q: "security", featured: true };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(screen.getByRole("radio", { name: "Featured" }).getAttribute("aria-checked")).toBe(
-      "false",
-    );
-    expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
-  });
-
-  it("keeps plugin sort options stable while searching", async () => {
-    searchMock = { q: "security" };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    const sortOptions = Array.from(
-      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
-    ).map((option) => option.textContent);
-    expect(sortOptions).toEqual(["Featured", "Trending", "Official", "New"]);
-    expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();
-  });
-
-  it("puts the default plugin sort first", async () => {
-    searchMock = { featured: true };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    const sortOptions = Array.from(
-      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
-    ).map((option) => option.textContent);
-    expect(sortOptions[0]).toBe("Featured");
-    expect(screen.getByRole("radio", { name: "Featured" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
   });
 });

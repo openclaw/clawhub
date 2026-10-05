@@ -1,6 +1,7 @@
 import {
   ARCHIVE_REQUEST_IDENTITY_HEADER,
   expectedVercelEnvironmentForConvexSite,
+  hasValidStagingEdgeSecret,
   verifyClawHubVercelOidcToken,
 } from "./clawhubVercelOidc";
 
@@ -25,7 +26,7 @@ export async function getVerifiedClientIp(request: Request): Promise<string | nu
   const ip = request.headers.get(VERIFIED_CLIENT_IP_HEADER)?.trim();
   if (!token || token.length > 16384 || !ip || ip.length > 64 || ip.includes(",")) return null;
   const environment = expectedVercelEnvironmentForConvexSite(request.url);
-  if (!environment) return null;
+  if (!environment || !hasValidStagingEdgeSecret(request)) return null;
   try {
     await verifyClawHubVercelOidcToken(token, environment);
     if (ip.includes(":")) {

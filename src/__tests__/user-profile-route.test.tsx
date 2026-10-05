@@ -84,6 +84,7 @@ const publisher = {
 
 describe("user profile route", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", window.location.pathname);
     vi.resetModules();
     loaderDataMock.mockReset();
     loaderDataMock.mockReturnValue({ publisher });

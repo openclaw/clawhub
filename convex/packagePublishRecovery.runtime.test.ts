@@ -9,6 +9,10 @@ import { buildPackageInventoryDigest } from "./lib/skills";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
 
+vi.mock("./lib/verifiedClientIp", () => ({
+  getVerifiedClientIp: async () => "203.0.113.2",
+}));
+
 const modules = import.meta.glob("./**/*.ts");
 const bearer = "local-recovery-fixture";
 const reason = "Recover the exact staged artifact after failed release publication";
@@ -605,5 +609,304 @@ it.each(["none", "membership", "token", "archive-digest"] as const)(
       });
     }
     expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({ status: "failed" });
+  },
+);
+
+const publicationName = "@openclaw/recovery-fixture";
+const publicationVersion = "2026.9.2";
+const publicationIdentity = { name: publicationName, version: publicationVersion };
+const publicationPath = `/api/v1/packages/${encodeURIComponent(publicationName)}/versions/${publicationVersion}/publication`;
+
+async function publicationFixture() {
+  const fixtureResult = await fixture();
+  const { t, ids } = fixtureResult;
+  // A staged first release is not yet a visible package. Give this fixture a public baseline.
+  await t.run(async (ctx) => {
+    const latestReleaseId = await ctx.db.insert("packageReleases", {
+      packageId: ids.packageId,
+      version: "2026.9.1",
+      publicationStatus: "published",
+      changelog: "Published baseline",
+      integritySha256: "d".repeat(64),
+      files: [],
+      distTags: ["latest"],
+      createdAt: 1,
+      createdBy: ids.owner,
+    });
+    await ctx.db.patch(ids.packageId, {
+      latestReleaseId,
+      tags: { latest: latestReleaseId },
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+    });
+  });
+  const publication = async (expected: Record<string, unknown>, path = publicationPath) => {
+    const response = await t.fetch(path);
+    expect(response.status, await response.clone().text()).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({ ...publicationIdentity, ...expected });
+    expect(Object.keys(body).sort()).toEqual(
+      Object.keys({ ...publicationIdentity, ...expected }).sort(),
+    );
+    return response;
+  };
+  return { ...fixtureResult, publication };
+}
+
+it("reports unknown and hard-deleted releases as absent despite retained attempt audit rows", async () => {
+  const { t, ids, publication } = await publicationFixture();
+  const response = await publication(
+    { version: "unknown", state: "absent" },
+    publicationPath.replace(publicationVersion, "unknown"),
+  );
+  expect(response.headers.get("X-RateLimit-Limit")).toBe("3000");
+  await t.run((ctx) => ctx.db.delete(ids.releaseId));
+  await publication({ state: "absent" });
+  expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).not.toBeNull();
+});
+
+it.each([undefined, "published"] as const)(
+  "reports %s published releases",
+  async (publicationStatus) => {
+    const { t, ids, publication } = await publicationFixture();
+    await t.run((ctx) => ctx.db.patch(ids.releaseId, { publicationStatus }));
+    await publication({ state: "published" });
+    expect((await t.fetch(publicationPath.replace("/publication", ""))).status).toBe(200);
+  },
+);
+
+it.each(["unbound", "missing-row"] as const)(
+  "reports staging for an attempt that is %s",
+  async (binding) => {
+    const { t, ids, publication } = await publicationFixture();
+    await t.run((ctx) =>
+      binding === "unbound"
+        ? ctx.db.patch(ids.releaseId, { publishAttemptId: undefined })
+        : ctx.db.delete(ids.attemptId),
+    );
+    await publication({ state: "pending", stage: "staging" });
+  },
+);
+
+it.each([
+  ["pending_checks", "checks"],
+  ["ready_to_finalize", "finalization"],
+  ["finalizing", "finalization"],
+  ["finalized", "finalization"],
+] as const)("reports pending %s as %s without private attempt fields", async (status, stage) => {
+  const { t, ids, publication } = await publicationFixture();
+  await t.run((ctx) => ctx.db.patch(ids.attemptId, { status }));
+  await publication({ state: "pending", stage, attemptId: ids.attemptId });
+  await publication(
+    { state: "pending", stage, attemptId: ids.attemptId },
+    `/api/v1/packages/@openclaw/recovery-fixture/versions/${publicationVersion}/publication`,
+  );
+});
+
+it("reports recoverable publicly, proves recovery parity, and follows the successor binding", async () => {
+  const { ids, recover, publication } = await publicationFixture();
+  await publication({ state: "failed", attemptId: ids.attemptId, recoverable: true });
+  const recovery = await recover();
+  expect(recovery.status).toBe(202);
+  const { attemptId } = await recovery.json();
+  await publication({ state: "pending", stage: "checks", attemptId });
+});
+
+it("uses the same original-token policy for a failed manual successor", async () => {
+  const { t, ids, recover, publication } = await publicationFixture();
+  await recover();
+  const release = await t.run((ctx) => ctx.db.get(ids.releaseId));
+  const attemptId = release?.publishAttemptId;
+  if (!attemptId) throw new Error("Missing recovery successor");
+  await t.run((ctx) => ctx.db.patch(attemptId, { status: "failed" }));
+  await publication({ state: "failed", attemptId, recoverable: true });
+  await t.run((ctx) => ctx.db.patch(ids.releaseId, { pendingPublication: {} }));
+  await publication({ state: "failed", attemptId, recoverable: false });
+  await expect(
+    t.mutation(internal.packagePublishRecovery.commitInternal, {
+      attemptId,
+      actorUserId: ids.actor,
+      apiTokenId: ids.apiToken,
+      manualOverrideReason: reason,
+    }),
+  ).rejects.toThrow("Original manual recovery binding changed");
+});
+
+it("preserves storage-before-binding recovery rejection precedence", async () => {
+  const { t, ids } = await publicationFixture();
+  await t.run(async (ctx) => {
+    await ctx.storage.delete(ids.storageId);
+    await ctx.db.patch(ids.releaseId, { pendingPublication: {} });
+  });
+  await expect(
+    t.mutation(internal.packagePublishRecovery.commitInternal, {
+      attemptId: ids.attemptId,
+      actorUserId: ids.actor,
+      apiTokenId: ids.apiToken,
+      manualOverrideReason: reason,
+    }),
+  ).rejects.toThrow("Recovered package publication authorization artifact storage changed");
+});
+
+it.each(["blocked", "expired"] as const)(
+  "folds %s attempts into unrecoverable failures",
+  async (status) => {
+    const { t, ids, publication } = await publicationFixture();
+    await t.run((ctx) => ctx.db.patch(ids.attemptId, { status }));
+    await publication({ state: "failed", attemptId: ids.attemptId, recoverable: false });
+  },
+);
+
+it.each([true, false])("reports blocked releases, bound=%s", async (bound) => {
+  const { t, ids, publication } = await publicationFixture();
+  await t.run((ctx) =>
+    ctx.db.patch(ids.releaseId, {
+      publicationStatus: "blocked",
+      publishAttemptId: bound ? ids.attemptId : undefined,
+    }),
+  );
+  await publication({
+    state: "failed",
+    ...(bound ? { attemptId: ids.attemptId } : {}),
+    recoverable: false,
+  });
+});
+
+it.each([
+  "scan-block",
+  "non-openclaw",
+  "token-scope",
+  "token-missing",
+  "artifact",
+  "authorization-binding",
+  "release-binding",
+  "family",
+  "moderation",
+] as const)("shares static recovery rejection for %s", async (change) => {
+  const { t, ids, publication, recover } = await publicationFixture();
+  await t.run(async (ctx) => {
+    if (change === "scan-block")
+      await ctx.db.patch(ids.attemptId, {
+        checks: { trufflehog: { status: "blocked" }, clawscan: { status: "clean" } },
+      });
+    if (change === "non-openclaw")
+      await ctx.db.patch(ids.originalToken, { repository: "example/plugin" });
+    if (change === "token-scope") await ctx.db.patch(ids.originalToken, { scope: "upload" });
+    if (change === "token-missing") await ctx.db.delete(ids.originalToken);
+    if (change === "artifact") await ctx.db.patch(ids.releaseId, { integritySha256: "different" });
+    if (change === "authorization-binding")
+      await ctx.db.patch(ids.releaseId, { pendingPublication: {} });
+    if (change === "release-binding")
+      await ctx.db.patch(ids.attemptId, { packageReleaseId: undefined });
+    if (change === "family") await ctx.db.patch(ids.packageId, { family: "claw" });
+    if (change === "moderation")
+      await ctx.db.patch(ids.releaseId, {
+        manualModeration: {
+          state: "quarantined",
+          reason: "private reason",
+          reviewerUserId: ids.actor,
+          updatedAt: 1,
+        },
+      });
+  });
+  if (change === "family") vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+  await publication({ state: "failed", attemptId: ids.attemptId, recoverable: false });
+  expect([404, 409]).toContain((await recover()).status);
+});
+
+it.each(["membership", "storage", "active-claim"] as const)(
+  "keeps advisory eligibility independent of %s",
+  async (change) => {
+    const { t, ids, publication, recover } = await publicationFixture();
+    await t.run(async (ctx) => {
+      if (change === "membership") await ctx.db.delete(ids.membership);
+      if (change === "storage") await ctx.storage.delete(ids.storageId);
+      if (change === "active-claim")
+        await ctx.db.patch(ids.attemptId, { checkClaimExpiresAt: Date.now() + 60000 });
+    });
+    await publication({ state: "failed", attemptId: ids.attemptId, recoverable: true });
+    expect([404, 409]).toContain((await recover()).status);
+  },
+);
+
+it.each(["softDeletedAt", "ownerDeletedAt"] as const)(
+  "preserves hidden published version 404 for %s",
+  async (field) => {
+    const { t, ids } = await publicationFixture();
+    await t.run((ctx) =>
+      ctx.db.patch(ids.releaseId, { publicationStatus: "published", [field]: 0 }),
+    );
+    for (const path of [publicationPath, publicationPath.replace("/publication", "")]) {
+      const response = await t.fetch(path);
+      expect(response.status).toBe(404);
+      expect(await response.text()).toBe("Version not found");
+    }
+  },
+);
+
+it.each(["quarantined", "revoked"] as const)(
+  "preserves published metadata visibility for %s releases",
+  async (state) => {
+    const { t, ids, publication } = await publicationFixture();
+    await t.run((ctx) =>
+      ctx.db.patch(ids.releaseId, {
+        publicationStatus: "published",
+        manualModeration: {
+          state,
+          reason: "private reason",
+          reviewerUserId: ids.actor,
+          updatedAt: 1,
+        },
+      }),
+    );
+    expect((await t.fetch(publicationPath.replace("/publication", ""))).status).toBe(200);
+    await publication({ state: "published" });
+  },
+);
+
+it.each(["private", "deleted", "staged-first-release", "missing", "skill"] as const)(
+  "returns Package not found for %s packages",
+  async (visibility) => {
+    const { t, ids } = await publicationFixture();
+    await t.run(async (ctx) => {
+      if (visibility === "private") await ctx.db.patch(ids.packageId, { channel: "private" });
+      if (visibility === "deleted") await ctx.db.patch(ids.packageId, { softDeletedAt: 0 });
+      if (visibility === "staged-first-release")
+        await ctx.db.patch(ids.packageId, {
+          latestReleaseId: undefined,
+          stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+        });
+      if (visibility === "missing" || visibility === "skill") await ctx.db.delete(ids.packageId);
+      if (visibility === "skill")
+        await ctx.db.insert("skills", {
+          slug: "publication-skill",
+          displayName: "Publication skill",
+          ownerUserId: ids.owner,
+          tags: {},
+          stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+          createdAt: 1,
+          updatedAt: 1,
+        });
+    });
+    const path =
+      visibility === "skill"
+        ? "/api/v1/packages/publication-skill/versions/1.0.0/publication"
+        : publicationPath;
+    const response = await t.fetch(path);
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Package not found");
+    if (visibility === "private") {
+      const headers = { Authorization: `Bearer ${bearer}` };
+      const authenticated = await t.fetch(path, { headers });
+      expect(authenticated.status).toBe(200);
+      expect(await authenticated.json()).toEqual({
+        ...publicationIdentity,
+        state: "failed",
+        attemptId: ids.attemptId,
+        recoverable: true,
+      });
+      await t.run((ctx) => ctx.db.patch(ids.releaseId, { publicationStatus: "published" }));
+      for (const versionPath of [path, path.replace("/publication", "")])
+        expect((await t.fetch(versionPath, { headers })).status).toBe(200);
+    }
   },
 );

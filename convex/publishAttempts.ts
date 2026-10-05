@@ -408,6 +408,8 @@ export const findExistingPublishAttemptForArtifactInternal = internalQuery({
           releaseId: match.packageReleaseId,
           artifactFingerprint: match.artifactFingerprint,
           result: match.result,
+          error: match.status === "failed" ? publishAttemptStatusError(match) : undefined,
+          githubActionsRun: packageAttemptGitHubActionsRun(match),
         };
       }
     }
@@ -556,6 +558,20 @@ function compactPublishAttemptCheck(check: {
     status: check.status,
     ...(check.summary ? { summary: check.summary } : {}),
   };
+}
+
+function packageAttemptGitHubActionsRun(attempt: Doc<"publishAttempts">) {
+  const audit = (attempt.packageFollowup as { githubActionsAudit?: unknown } | undefined)
+    ?.githubActionsAudit as
+    | { repository?: unknown; runId?: unknown; runAttempt?: unknown }
+    | undefined;
+  return typeof audit?.runId === "string" && typeof audit.runAttempt === "string"
+    ? {
+        repository: typeof audit.repository === "string" ? audit.repository : undefined,
+        runId: audit.runId,
+        runAttempt: audit.runAttempt,
+      }
+    : undefined;
 }
 
 function publishAttemptStatusError(attempt: Doc<"publishAttempts">) {

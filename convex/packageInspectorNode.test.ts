@@ -1,12 +1,12 @@
 /* @vitest-environment node */
 
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   buildPublishInspectorRunCheckOptions,
   createPackageInspectorWorkspace,
   normalizeInspectorReportForPublish,
-  preparePublishInspectorOpenClawTarget,
+  resolveOpenClawTargetCacheRoot,
 } from "./packageInspectorNode";
 
 const originalPlatform = process.platform;
@@ -61,22 +61,25 @@ describe("package inspector publish normalization", () => {
     );
   });
 
-  it("prepares latest stable OpenClaw with a cache outside the inspected package", async () => {
-    const resolvedTarget = { version: "2026.7.0" };
-    const preparedTarget = { status: "ok", version: "2026.7.0" };
-    const resolveVersion = vi.fn(async () => resolvedTarget);
-    const prepare = vi.fn(async () => preparedTarget);
+  it("keeps the OpenClaw target cache outside per-inspection workspaces", async () => {
+    Object.defineProperty(process, "platform", { value: "linux" });
+    const madeDirs: string[] = [];
+    const makeDir = async (dir: string) => {
+      madeDirs.push(dir);
+      if (madeDirs.length === 1) {
+        throw Object.assign(new Error("configured temp directory is unavailable"), {
+          code: "EROFS",
+        });
+      }
+    };
 
-    await expect(
-      preparePublishInspectorOpenClawTarget("/tmp/plugin", { resolveVersion, prepare }),
-    ).resolves.toBe(preparedTarget);
-    expect(resolveVersion).toHaveBeenCalledWith("latest");
-    expect(prepare).toHaveBeenCalledWith(resolvedTarget, {
-      cacheDir: path.join("/tmp/plugin", ".plugin-inspector-cache"),
-    });
-    expect(path.join("/tmp/plugin", ".plugin-inspector-cache")).not.toContain(
-      path.join("/tmp/plugin", "package") + path.sep,
+    await expect(resolveOpenClawTargetCacheRoot("/home/sbx_user1051", makeDir)).resolves.toBe(
+      path.join("/tmp", "clawhub-plugin-inspector-openclaw"),
     );
+    expect(madeDirs).toEqual([
+      path.join("/home/sbx_user1051", "clawhub-plugin-inspector-openclaw"),
+      path.join("/tmp", "clawhub-plugin-inspector-openclaw"),
+    ]);
   });
 
   it("uses the prepared OpenClaw target for publish-time inspection", () => {

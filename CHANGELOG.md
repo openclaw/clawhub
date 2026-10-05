@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+## 0.24.0 - 2026-09-30
+
 ### Changes
 
+- CLI/API: publish experimental Claw packages from already-built npm tarballs, bind staged uploads to their SHA-256 digest, and preserve the exact artifact bytes through scanning and download.
+- API: expose public exact-version package publication state to distinguish staged, failed, absent, and published releases with advisory recovery eligibility.
+- CI: record dependency advisories from `bun audit` as warning annotations instead of failing `static` and blocking Deploy Test; known-malware findings still fail.
 - Workers: default Skill Cards to GPT-6 Sol with medium reasoning and fast service, and prepare semantic input reuse with stale-result fencing for separate activation after backend deployment.
 - Workers: preserve optional scanner model and reasoning settings in restricted subprocess environments without changing workflow defaults.
 - Web: organization publishers can upload durable PNG, JPEG, or WebP logos from settings instead of relying on hotlinked image URLs.
@@ -11,7 +16,14 @@
 
 ### Fixes
 
+- Publishing: load only the text decoder, not the whole `clawhub-schema` barrel, in the static publish scan Node action, cutting ~140 MB from its peak so large bundled plugins such as WhatsApp no longer run it out of memory.
+- Publishing: settle retries of an exact staged package artifact before scans and Plugin Inspector run again, returning the pending or published result, and name a failed attempt with its recovery command instead of a bare "already exists".
+- CLI: read `Retry-After` and rate-limit headers from curl responses under Bun, so publishes back off for the time the server asks instead of retrying blind.
+- CLI: keep completed skill installs and updates when deleting an old backup fails, without rolling back the new files (thanks @SebTardif).
+- Publishing: prepare the Plugin Inspector OpenClaw target by streaming and verifying only its public declaration surface, so plugin publishes no longer run the Node action out of memory or fill `/tmp` with the full OpenClaw package.
 - Deploy: coalesce pending skills.sh syncs per ref before they enter the production deployment queue, while preserving active sync cleanup and queued manual deploys.
+
+- Dependencies: align brace-expansion and fast-uri overrides with their patched lockfile versions so dependency resolution cannot restore the vulnerable pins.
 
 - Workers: reserve Skill Card capacity by lease slot to avoid global queue contention, continue after partial batches, and release undelivered leases when input hydration fails.
 

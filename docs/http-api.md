@@ -929,6 +929,47 @@ Notes:
   included when scan data exists.
 - Private packages return `404` unless the caller can read the owning publisher.
 
+### `GET /api/v1/packages/{name}/versions/{version}/publication`
+
+Returns publication state for an exact package version. This is a public read
+endpoint in the `read` rate-limit bucket. An optional bearer token affects
+package visibility exactly as on the version endpoint. Encode scoped names as
+`%40openclaw%2Fdiscord`; the `/@openclaw/discord/versions/...` path form also works.
+
+The response is a closed object with `name`, `version`, and one of these shapes:
+
+```json
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "published" }
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "absent" }
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "pending", "stage": "staging" }
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "pending", "stage": "checks", "attemptId": "..." }
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "pending", "stage": "finalization", "attemptId": "..." }
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "failed", "attemptId": "...", "recoverable": true }
+```
+
+An unknown version returns `200` with `absent`. Pending releases without a bound
+attempt return `staging`; checks and finalization include the bound attempt ID.
+Blocked or expired attempts, and blocked releases, return `failed` with
+`recoverable: false`. Failed responses omit `attemptId` only when no attempt row
+is bound. `recoverable` is advisory static recovery eligibility: it checks
+artifact/token bindings, package family, and moderation, but does not check the
+caller's publisher membership, active claims, or stored bytes. Recovery revalidates
+all of these and requires a current publisher's user API token.
+
+Invisible or soft-deleted packages and skill names return `404 Package not found`.
+Published releases follow the existing version endpoint's visibility: hidden
+published versions return `404 Version not found`, while moderated releases whose
+metadata remains readable return `published`. Publication state does not imply
+download permission. Error text, scanner results, identities, token IDs, GitHub
+run IDs, idempotency keys, artifact digests, and storage IDs are never returned.
+Attempt IDs grant no access to attempt details or recovery.
+
+Older servers may serve ordinary version JSON for this path. Clients should use
+a recognized, valid `state` response; on `404`, or `200` without `state`, fall back
+to `GET /api/v1/packages/{name}/versions/{version}` (`200` means published, `404`
+means not published). A `200` with an unknown state or malformed recognized shape
+must fail closed. Other non-2xx responses retain normal error handling and retries.
+
 ### `GET /api/v1/packages/{name}/versions/{version}/security`
 
 Returns the exact package release security and trust summary for install

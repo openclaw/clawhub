@@ -8,14 +8,6 @@ vi.mock("@tanstack/react-router", () => ({
   useLocation: () => ({ pathname: "/" }),
 }));
 
-vi.mock("@vercel/analytics/react", () => ({
-  Analytics: () => null,
-}));
-
-vi.mock("@vercel/speed-insights/react", () => ({
-  SpeedInsights: () => null,
-}));
-
 vi.mock("../components/AppProviders", () => ({
   AppProviders: ({ children }: { children: unknown }) => children,
 }));

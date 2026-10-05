@@ -2,10 +2,10 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /* @vitest-environment jsdom */
-import { TooltipProvider } from "../components/ui/tooltip";
 import {
   Route as SkillsRoute,
   SKILLS_INITIAL_PAGE_TIMEOUT_MS,
+  loadInitialSkillsData,
   SkillsIndex,
 } from "../routes/skills/index";
 import {
@@ -55,6 +55,7 @@ vi.mock("convex/react", () => ({
 
 vi.mock("../../src/convex/client", () => ({
   convexHttp: {
+    url: "https://example.convex.cloud",
     action: (...args: unknown[]) => convexHttpMock.action(...args),
     query: (...args: unknown[]) => convexHttpMock.query(...args),
   },
@@ -64,9 +65,7 @@ describe("SkillsIndex", () => {
   beforeEach(() => {
     resetConvexReactMocks();
     navigateMock.mockReset();
-    // Keep legacy browse/search regressions on the native New feed. Trending has
-    // its own canonical API seam and focused CLAW-591 coverage.
-    searchMock = { tab: "new" };
+    searchMock = {};
     loaderDataMock = null;
     setupDefaultConvexReactMocks();
     fetchCatalogDiscoveryCapabilitiesMock.mockReset();
@@ -91,6 +90,29 @@ describe("SkillsIndex", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("renders category-only skill browsing and ignores retired catalog filters", async () => {
+    const config = (
+      SkillsRoute as unknown as {
+        __config: { validateSearch: (search: Record<string, unknown>) => Record<string, unknown> };
+      }
+    ).__config;
+    searchMock = config.validateSearch({
+      tab: "new",
+      featured: true,
+      highlighted: true,
+      category: "development",
+    });
+    render(<SkillsIndex />);
+    await act(async () => {});
+    expect(screen.queryByRole("radiogroup", { name: "Skill view" })).toBeNull();
+    expect(screen.getByLabelText("Skill categories")).toBeTruthy();
+    const args = getLastListPageArgs();
+    expect(args.categorySlug).toBe("development");
+    expect(args.createdAfter).toBeUndefined();
+    expect(args.officialOnly).toBeUndefined();
+    expect(args.highlightedOnly).toBeUndefined();
   });
 
   it("maps topic search params", () => {
@@ -127,128 +149,165 @@ describe("SkillsIndex", () => {
     );
   });
 
-  it("loads the canonical first page on the server and excludes view-only state", async () => {
-    const routeConfig = (
+  it("loads the full first page on the server and excludes view and retired tab state", async () => {
+    const config = (
       SkillsRoute as unknown as {
         __config: {
-          loaderDeps: (args: { search: Record<string, unknown> }) => Record<string, unknown>;
-          loader: (args: {
+          validateSearch: (s: Record<string, unknown>) => Record<string, unknown>;
+          loaderDeps: (a: { search: Record<string, unknown> }) => Record<string, unknown>;
+          loader: (a: {
             deps: Record<string, unknown>;
             abortController: AbortController;
-          }) => unknown;
-          validateSearch: (search: Record<string, unknown>) => Record<string, unknown>;
+          }) => Promise<unknown>;
         };
       }
     ).__config;
-    const canonicalSearch = routeConfig.validateSearch({});
-    const controller = new AbortController();
-    const firstPage = {
-      kind: "skills",
-      snapshotId: "snapshot-1",
-      snapshotCursor: "snapshot-cursor",
-      generatedAt: "2026-08-04T00:00:00.000Z",
-      windowHours: 24,
-      rankingVersion: "skills-trending-v1",
-      totalItems: 1,
-      items: [makeTrendingResult("server-skill", "Server Skill")],
-      nextCursor: "cursor-2",
-    };
-    fetchCanonicalTrendingPageMock.mockResolvedValue(firstPage);
-
-    const canonicalDeps = routeConfig.loaderDeps({ search: canonicalSearch });
+    const entry = makeListResult("server-skill", "Server Skill");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "success",
+          value: { page: [entry], hasMore: true, nextCursor: "cursor-2" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const deps = config.loaderDeps({ search: config.validateSearch({}) });
     expect(
-      routeConfig.loaderDeps({ search: routeConfig.validateSearch({ view: "grid" }) }),
-    ).toEqual(canonicalDeps);
-    expect(
-      routeConfig.loaderDeps({ search: routeConfig.validateSearch({ tab: "new" }) }),
-    ).not.toEqual(canonicalDeps);
-
-    await expect(
-      routeConfig.loader({ deps: canonicalDeps, abortController: controller }),
-    ).resolves.toEqual({
-      kind: "canonical",
-      results: [{ trending: firstPage.items[0] }],
+      config.loaderDeps({
+        search: config.validateSearch({ view: "grid", tab: "new", featured: true }),
+      }),
+    ).toEqual(deps);
+    await expect(config.loader({ deps, abortController: new AbortController() })).resolves.toEqual({
+      kind: "browse",
+      key: '{"numItems":20,"dir":"desc"}',
+      results: [entry],
       nextCursor: "cursor-2",
-      trendingState: "available",
     });
-    expect(fetchCanonicalTrendingPageMock).toHaveBeenCalledTimes(1);
-    expect(fetchCanonicalTrendingPageMock).toHaveBeenCalledWith({
-      cursor: null,
-      limit: 20,
-      signal: expect.any(AbortSignal),
-    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const request = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(request.path).toBe("skills:listPublicPageV4");
+    expect(request.args[0]).toEqual({ numItems: 20, dir: "desc" });
+    expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
   });
 
-  it("releases the initial response when the canonical page exceeds its latency budget", async () => {
+  it("releases the initial response when full catalog loading exceeds its latency budget", async () => {
     vi.useFakeTimers();
-    const routeConfig = (
+    const config = (
+      SkillsRoute as unknown as {
+        __config: {
+          loader: (a: {
+            deps: Record<string, unknown>;
+            abortController: AbortController;
+          }) => Promise<unknown>;
+        };
+      }
+    ).__config;
+    let requestSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_input, init) =>
+          new Promise((_resolve, reject) => {
+            requestSignal = init.signal;
+            requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), {
+              once: true,
+            });
+          }),
+      ),
+    );
+    const result = config.loader({ deps: {}, abortController: new AbortController() });
+    await vi.advanceTimersByTimeAsync(SKILLS_INITIAL_PAGE_TIMEOUT_MS);
+    await expect(result).resolves.toBeNull();
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it("cancels the underlying browse request when navigation aborts", async () => {
+    const config = (
       SkillsRoute as unknown as {
         __config: {
           loader: (args: {
             deps: Record<string, unknown>;
             abortController: AbortController;
           }) => Promise<unknown>;
-          loaderDeps: (args: { search: Record<string, unknown> }) => Record<string, unknown>;
-          validateSearch: (search: Record<string, unknown>) => Record<string, unknown>;
         };
       }
     ).__config;
     let requestSignal: AbortSignal | undefined;
-    fetchCanonicalTrendingPageMock.mockImplementation(
-      ({ signal }: { signal: AbortSignal }) =>
-        new Promise((_, reject) => {
-          requestSignal = signal;
-          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-        }),
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_input, init) =>
+          new Promise((_resolve, reject) => {
+            requestSignal = init.signal;
+            requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), {
+              once: true,
+            });
+          }),
+      ),
     );
-    const deps = routeConfig.loaderDeps({ search: routeConfig.validateSearch({}) });
-    const result = routeConfig.loader({ deps, abortController: new AbortController() });
-
-    await vi.advanceTimersByTimeAsync(SKILLS_INITIAL_PAGE_TIMEOUT_MS);
-
-    await expect(result).resolves.toBeNull();
+    const controller = new AbortController();
+    const result = config.loader({ deps: {}, abortController: controller });
+    const rejection = expect(result).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await rejection;
     expect(requestSignal?.aborted).toBe(true);
-    expect(requestSignal?.reason).toEqual(expect.objectContaining({ name: "TimeoutError" }));
   });
 
-  it("renders canonical loader data without a duplicate first-page request", async () => {
+  it("renders full-catalog loader data without a duplicate first-page request", async () => {
     searchMock = {};
     loaderDataMock = {
-      kind: "canonical",
-      results: [{ trending: makeTrendingResult("server-skill", "Server Skill") }],
+      kind: "browse",
+      key: '{"numItems":20,"dir":"desc"}',
+      results: [makeListResult("server-skill", "Server Skill")],
       nextCursor: "cursor-2",
-      trendingState: "available",
     };
-
     render(<SkillsIndex />);
     await act(async () => {});
-
     expect(screen.getByText("Server Skill")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
-    expect(fetchCatalogDiscoveryCapabilitiesMock).not.toHaveBeenCalled();
-    expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
+    expect(convexHttpMock.query).not.toHaveBeenCalled();
   });
 
-  it("requests the first skills page", async () => {
+  it("continues scanning when the server returns an empty filtered transport page", async () => {
+    convexHttpMock.query.mockResolvedValueOnce({ page: [], hasMore: true, nextCursor: "scan-2" });
+    loaderDataMock = await loadInitialSkillsData({});
+    expect(loaderDataMock).toBeNull();
+    convexHttpMock.query
+      .mockResolvedValueOnce({ page: [], hasMore: true, nextCursor: "scan-2" })
+      .mockResolvedValueOnce({
+        page: [makeListResult("visible-skill", "Visible Skill")],
+        hasMore: false,
+        nextCursor: null,
+      });
     render(<SkillsIndex />);
     await act(async () => {});
+    expect(screen.getByText("Visible Skill")).toBeTruthy();
+    expect(getLastListPageArgs().cursor).toBe("scan-2");
+  });
 
-    const args = getLastListPageArgs();
-    expect(args).toEqual(
-      expect.objectContaining({
-        dir: "desc",
-        highlightedOnly: undefined,
-        cursor: undefined,
-        numItems: 20,
-        sort: "newest",
-      }),
-    );
-    expect(args).not.toHaveProperty("officialFirst");
-    expect(screen.getByRole("radio", { name: "New" }).getAttribute("aria-checked")).toBe("true");
-    const tabs = Array.from(
-      screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
-    ).map((option) => option.textContent);
-    expect(tabs).toEqual(["Featured", "Trending", "Official", "New"]);
+  it("does not reuse server results for a different category", async () => {
+    loaderDataMock = {
+      kind: "browse",
+      key: '{"numItems":20,"dir":"desc"}',
+      results: [makeListResult("stale-skill", "Stale Skill")],
+      nextCursor: null,
+    };
+    searchMock = { category: "development" };
+    render(<SkillsIndex />);
+    await act(async () => {});
+    expect(screen.queryByText("Stale Skill")).toBeNull();
+    expect(getLastListPageArgs().categorySlug).toBe("development");
+  });
+
+  it("requests the full first skills page without a date or publisher filter", async () => {
+    render(<SkillsIndex />);
+    await act(async () => {});
+    expect(getLastListPageArgs()).toMatchObject({ dir: "desc", numItems: 20, cursor: undefined });
+    expect(getLastListPageArgs().createdAfter).toBeUndefined();
+    expect(getLastListPageArgs().highlightedOnly).toBeUndefined();
+    expect(getLastListPageArgs().officialOnly).toBeUndefined();
+    expect(screen.queryByRole("radiogroup", { name: "Skill view" })).toBeNull();
   });
 
   it("renders desktop category navigation and keeps the responsive category dropdown", async () => {
@@ -320,7 +379,7 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear skill search" }));
 
     expect(navigateMock).toHaveBeenCalled();
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
@@ -342,7 +401,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
   });
 
-  it("keeps search collapsed until slash opens and focuses it", async () => {
+  it("keeps search visible and focuses it with slash", async () => {
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -352,12 +411,11 @@ describe("SkillsIndex", () => {
     await act(async () => {});
 
     const input = screen.getByPlaceholderText("Search skills...");
-    const panel = input.closest(".browse-search-panel");
-    expect(panel?.hasAttribute("hidden")).toBe(true);
+    expect(input.closest("[hidden]")).toBeNull();
 
     fireEvent.keyDown(window, { key: "/" });
 
-    expect(panel?.hasAttribute("hidden")).toBe(false);
+    expect(input.closest("[hidden]")).toBeNull();
     expect(document.activeElement).toBe(input);
   });
 
@@ -412,7 +470,7 @@ describe("SkillsIndex", () => {
   });
 
   it.each(["list", "grid"] as const)(
-    "shows an iconless %s loading state before fetch completes",
+    "shows iconless list loading for legacy %s view links",
     async (view) => {
       searchMock = { tab: "new", view: view === "grid" ? view : undefined };
       // Never resolve the query to keep the component in loading state
@@ -424,57 +482,49 @@ describe("SkillsIndex", () => {
       const loadingResults = screen.getByRole("status", { name: "Loading results" });
       expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
       expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
-      expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(
-        view === "grid" ? 6 : 0,
-      );
-      expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(
-        view === "list" ? 6 : 0,
-      );
+      expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(0);
+      expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(6);
       expect(screen.queryByText("No skills found")).toBeNull();
     },
   );
 
-  it("uses grid as the canonical browse view URL value", async () => {
-    render(<SkillsIndex />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({})).toEqual({ view: "grid" });
-  });
-
-  it("renders the view toggle above the skills search input", async () => {
+  it.each(["grid", "cards"])("renders legacy %s URLs as lists", async (view) => {
+    searchMock = { view };
+    convexHttpMock.query.mockResolvedValue({
+      page: [makeListResult("list-only", "List Only")],
+      hasMore: false,
+      nextCursor: null,
+    });
     render(<SkillsIndex />);
     await act(async () => {});
-
-    const listButton = screen.getByRole("button", { name: "List" });
-    const searchInput = screen.getByPlaceholderText("Search skills...");
-
-    expect(listButton.closest(".browse-controls")).not.toBeNull();
-    expect(
-      Boolean(listButton.compareDocumentPosition(searchInput) & Node.DOCUMENT_POSITION_FOLLOWING),
-    ).toBe(true);
+    expect(screen.getByText("List Only").closest(".results-list")).not.toBeNull();
+    expect(document.querySelector(".browse-results-grid")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "List" })).toBeNull();
   });
 
-  it("keeps legacy cards URLs compatible with the grid view", async () => {
-    searchMock = { view: "cards" };
+  it("renders search above category navigation and results", async () => {
     render(<SkillsIndex />);
+    await act(async () => {});
+    const searchInput = screen.getByRole("searchbox", { name: "skill search" });
+    const categories = screen.getByLabelText("Skill categories");
+    expect(searchInput.closest("[hidden]")).toBeNull();
+    expect(
+      Boolean(searchInput.compareDocumentPosition(categories) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Search skills" })).toBeNull();
+  });
 
-    const gridButton = screen.getByRole("button", { name: "Grid" });
-    expect(gridButton.className).toContain("is-active");
-
-    fireEvent.click(screen.getByRole("button", { name: "List" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ view: "cards" })).toEqual({ view: undefined });
+  it("clears with Escape while keeping the search field visible and focused", async () => {
+    searchMock = { q: "github" };
+    render(<SkillsIndex />);
+    await act(async () => {});
+    const input = screen.getByRole("searchbox", { name: "skill search" });
+    input.focus();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect((input as HTMLInputElement).value).toBe("");
+    expect(document.activeElement).toBe(input);
+    expect(input.closest("[hidden]")).toBeNull();
   });
 
   it("shows empty state immediately when search returns no results", async () => {
@@ -576,40 +626,20 @@ describe("SkillsIndex", () => {
     });
   });
 
-  it("keeps the accepted feed tabs visible while search uses relevance", async () => {
+  it("keeps search free of catalog tabs", async () => {
     searchMock = { q: "notion" };
-    const actionFn = vi.fn().mockResolvedValue([]);
-    convexReactMocks.useAction.mockReturnValue(actionFn);
-    vi.useFakeTimers();
-
     render(<SkillsIndex />);
-
-    expect(screen.getByRole("radio", { name: "Trending" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
-    expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
-    const tabs = Array.from(
-      screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
-    ).map((option) => option.textContent);
-    expect(tabs).toEqual(["Featured", "Trending", "Official", "New"]);
+    expect(screen.queryByRole("radiogroup", { name: "Skill view" })).toBeNull();
+    expect(screen.getByLabelText("Skill categories")).toBeTruthy();
   });
 
-  it("keeps the skills sort option list stable while typing a search", async () => {
+  it("does not reveal catalog tabs while typing a search", async () => {
     vi.useFakeTimers();
-
     render(<SkillsIndex />);
-
-    const beforeTyping = Array.from(
-      screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
-    ).map((option) => option.textContent);
-    const input = screen.getByPlaceholderText("Search skills...");
-    fireEvent.change(input, { target: { value: "agent" } });
-    const whileTyping = Array.from(
-      screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
-    ).map((option) => option.textContent);
-
-    expect(whileTyping).toEqual(beforeTyping);
-    expect(screen.getByRole("radio", { name: "Featured" })).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("Search skills..."), {
+      target: { value: "agent" },
+    });
+    expect(screen.queryByRole("radiogroup", { name: "Skill view" })).toBeNull();
   });
 
   it("does not treat category keywords typed in search as category filters", async () => {
@@ -817,7 +847,7 @@ describe("SkillsIndex", () => {
     expect(document.querySelector(".browse-list-head-icon-spacer")).toBeNull();
   });
 
-  it("keeps native and external grid results free of skill icons", async () => {
+  it("keeps native and external results in a list for old grid links", async () => {
     searchMock = { q: "find skills", view: "grid" };
     convexReactMocks.useAction.mockReturnValue(
       vi
@@ -982,7 +1012,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
   });
 
-  it("preserves backend ordering on New category pages without client reranking", async () => {
+  it("preserves backend ordering on category pages without client reranking", async () => {
     searchMock = { category: "development" };
     convexHttpMock.query.mockResolvedValue({
       page: [
@@ -1005,7 +1035,7 @@ describe("SkillsIndex", () => {
       (node) => node.textContent,
     );
     expect(titles).toEqual(["Official Dev", "Community Dev"]);
-    expect(getLastListPageArgs()).not.toHaveProperty("officialFirst");
+    expect(getLastListPageArgs()).toHaveProperty("officialFirst", true);
   });
 
   it("does not render the warning filter", async () => {
@@ -1019,38 +1049,6 @@ describe("SkillsIndex", () => {
     await act(async () => {});
 
     expect(screen.queryByLabelText("Hide warnings")).toBeNull();
-  });
-
-  it("uses the mixed Featured list when its filter is active", async () => {
-    searchMock = { highlighted: true };
-    render(<SkillsIndex />);
-    await act(async () => {});
-    expect(convexHttpMock.query.mock.calls.at(-1)?.[1]).toEqual({
-      categorySlug: undefined,
-      topic: undefined,
-    });
-  });
-
-  it("renders Featured native and external skills as compact download rows", async () => {
-    searchMock = { tab: "featured" };
-    const external = makeExternalSearchResult("humanlayer/skills/show-me", "show-me", 1);
-    const native = makeListResult("native", "Native Skill");
-    convexHttpMock.query.mockResolvedValue({ page: [{ external }, native] });
-    render(
-      <TooltipProvider>
-        <SkillsIndex />
-      </TooltipProvider>,
-    );
-    const name = await screen.findByText("show-me");
-    const row = name.closest("a");
-    expect(row?.textContent).toBe("show-me@humanlayerskills.sh42");
-    expect(await screen.findByText("Native Skill")).toBeTruthy();
-    expect(screen.getByLabelText("skills.sh lifetime installs").textContent).toBe("42");
-    expect(screen.queryByText("show-me summary")).toBeNull();
-    expect(screen.queryByText("Source")).toBeNull();
-    expect(screen.queryByText(/Observed|Updated/)).toBeNull();
-    expect(document.querySelector(".browse-list-head-category")).toBeNull();
-    expect(document.querySelector(".skill-stat-bookmarks")).toBeNull();
   });
 
   it("shows load-more button when more results are available", async () => {
@@ -1172,23 +1170,6 @@ describe("SkillsIndex", () => {
     }
   });
 
-  it("leaves canonical Trending on its own unavailable path", async () => {
-    searchMock = { tab: "trending" };
-    vi.stubGlobal("IntersectionObserver", undefined);
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      fetchCanonicalTrendingPageMock.mockRejectedValue(new Error("temporary failure"));
-
-      render(<SkillsIndex />);
-      await act(async () => {});
-
-      expect(screen.queryByText("Skills couldn't be loaded")).toBeNull();
-      expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
-    } finally {
-      consoleErrorSpy.mockRestore();
-    }
-  });
-
   it("keeps loading across empty filtered pages without flashing terminal states", async () => {
     class IntersectionObserverMock {
       observe = vi.fn();
@@ -1281,7 +1262,7 @@ describe("SkillsIndex", () => {
   });
 
   it.each(["list", "grid"] as const)(
-    "shows iconless %s skeletons during load-more",
+    "shows iconless list load-more skeletons for legacy %s view links",
     async (view) => {
       vi.stubGlobal("IntersectionObserver", undefined);
       searchMock = { tab: "new", view: view === "grid" ? view : undefined };
@@ -1305,12 +1286,8 @@ describe("SkillsIndex", () => {
       const loadingResults = screen.getByRole("status", { name: "Loading results" });
       expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
       expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
-      expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(
-        view === "grid" ? 2 : 0,
-      );
-      expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(
-        view === "list" ? 2 : 0,
-      );
+      expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(0);
+      expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(2);
       expect(screen.queryByText(/Loading/)).toBeNull();
     },
   );
@@ -1499,32 +1476,4 @@ function makeSearchEntry(params: {
   const entry = makeSearchResult(params.slug, params.displayName, 0.9, params.updatedAt);
   if (entry.native) entry.native.skill.stats.stars = params.stars;
   return entry;
-}
-
-function makeTrendingResult(slug: string, displayName: string) {
-  return {
-    id: `clawhub:${slug}`,
-    source: "clawhub" as const,
-    slug,
-    displayName,
-    summary: `${displayName} summary`,
-    canonicalUrl: `/owner/${slug}`,
-    publisher: {
-      kind: "user" as const,
-      handle: "owner",
-      displayName: "Owner",
-      image: null,
-      official: false,
-    },
-    official: false,
-    featured: false,
-    metrics: {
-      trending24hDownloads: null,
-      trending24hInstalls: 1,
-      trending24hBookmarks: null,
-      lifetimeInstalls: 100,
-      lifetimeInstallsPeriod: "lifetime" as const,
-      updatedAt: 1,
-    },
-  };
 }

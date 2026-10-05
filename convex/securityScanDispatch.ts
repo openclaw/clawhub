@@ -54,6 +54,7 @@ export async function dispatchSecurityScanWorkflow(
     {
       eventType: "clawhub-security-scan",
       clientPayload: {
+        ...(process.env.CLAWHUB_ENV === "staging" ? { environment: "staging" } : {}),
         batch_limit: "4",
         max_runtime_minutes: "12",
       },

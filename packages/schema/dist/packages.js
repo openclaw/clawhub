@@ -57,6 +57,12 @@ export const PluginManifestSummarySchema = type({
     }).array(),
     mcpServers: type({
         name: "string",
+        url: "string?",
+        "transport?": '"streamable-http"|"sse"|"stdio"',
+        "auth?": '"oauth"|"api-key"|"none"',
+        scope: "string?",
+        setup: "string?",
+        endpointRedacted: "boolean?",
     }).array(),
     bundledSkills: type({
         name: "string",
@@ -490,6 +496,27 @@ export const ApiV1PackageVersionResponseSchema = type({
         staticScan: PackageStaticScanSchema.or("null").optional(),
     }).or("null"),
 });
+export const ApiV1PackageVersionPublicationResponseSchema = type({
+    name: "string",
+    version: "string",
+    state: '"published"|"absent"',
+})
+    .or({ name: "string", version: "string", state: '"pending"', stage: '"staging"' })
+    .or({
+    name: "string",
+    version: "string",
+    state: '"pending"',
+    stage: '"checks"|"finalization"',
+    attemptId: "string",
+})
+    .or({
+    name: "string",
+    version: "string",
+    state: '"failed"',
+    "attemptId?": "string",
+    recoverable: "boolean",
+})
+    .onUndeclaredKey("reject");
 export const ApiV1PackageArtifactResponseSchema = type({
     package: type({
         name: "string",

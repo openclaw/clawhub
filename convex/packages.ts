@@ -1,5 +1,6 @@
 import {
   ServerPackagePublishRequestSchema,
+  MANAGED_MCP_DEFINITION_PATH,
   PACKAGE_CATEGORY_BATCH_LIMIT,
   validateClawPackageContents,
   getCatalogTopicSlugs,
@@ -15,6 +16,7 @@ import {
   resolveStoredPluginCategories,
   validateOpenClawExternalCodePluginPackageContents,
   type PackageArtifactSummary,
+  type ApiV1PackageVersionPublicationResponse,
   type PackageChannel,
   type PackageFamily,
   type PluginCategorySlug,
@@ -81,6 +83,7 @@ import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { resolvePackageIcon } from "./lib/packageIcons";
 import {
   assertManualRecoveryFinalization,
+  assertPackageRecoveryEligibility,
   manualPackageRecovery,
 } from "./lib/packagePublishRecovery";
 import {
@@ -701,6 +704,7 @@ type PackagePublishAuthContext =
 type PackageTrustedPublisherDoc = Doc<"packageTrustedPublishers">;
 type PackagePublishOptions = {
   stagePrePublicationChecks?: boolean;
+  requireSecurityChecks?: boolean;
   onFilesAdopted?: () => void;
 };
 type PackageDoc = Doc<"packages">;
@@ -3651,6 +3655,60 @@ export const getVersionByNameForViewerInternal = internalQuery({
     viewerUserId: v.optional(v.id("users")),
   },
   handler: readPackageVersionForViewer,
+});
+
+export const getVersionPublicationStateInternal = internalQuery({
+  args: {
+    name: v.string(),
+    version: v.string(),
+    viewerUserId: v.optional(v.id("users")),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    ApiV1PackageVersionPublicationResponse | { error: "Package not found" | "Version not found" }
+  > => {
+    const snapshot = await readPackageSnapshotForViewer(ctx, args);
+    if (!snapshot || snapshot.pkg.family === "skill") return { error: "Package not found" };
+    const { pkg } = snapshot;
+    const identity = { name: pkg.name, version: args.version };
+    const release = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_version", (q) =>
+        q.eq("packageId", pkg._id).eq("version", args.version),
+      )
+      .unique();
+    if (!release) return { ...identity, state: "absent" };
+    if (release.publicationStatus === undefined || release.publicationStatus === "published") {
+      return isPublishedPackageRelease(release, pkg._id)
+        ? { ...identity, state: "published" }
+        : { error: "Version not found" };
+    }
+    const attempt = release.publishAttemptId ? await ctx.db.get(release.publishAttemptId) : null;
+    const binding = attempt ? { attemptId: attempt._id } : {};
+    if (release.publicationStatus === "blocked")
+      return { ...identity, ...binding, state: "failed", recoverable: false };
+    if (!attempt) return { ...identity, state: "pending", stage: "staging" };
+    if (attempt.status === "failed") {
+      let recoverable = false;
+      try {
+        await assertPackageRecoveryEligibility(ctx, pkg, release, attempt);
+        recoverable = true;
+      } catch (error) {
+        if (!(error instanceof ConvexError)) throw error;
+      }
+      return { ...identity, attemptId: attempt._id, state: "failed", recoverable };
+    }
+    if (attempt.status === "blocked" || attempt.status === "expired")
+      return { ...identity, attemptId: attempt._id, state: "failed", recoverable: false };
+    return {
+      ...identity,
+      attemptId: attempt._id,
+      state: "pending",
+      stage: attempt.status === "pending_checks" ? "checks" : "finalization",
+    };
+  },
 });
 
 async function readPackageReleaseSnapshotForViewer(
@@ -9210,6 +9268,27 @@ async function publishPackageImpl(
   if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
     throw new ConvexError(getPublishTotalSizeError("package"));
   }
+  const integritySha256 = await hashSkillFiles(
+    files.map((file) => ({ path: file.path, sha256: file.sha256 })),
+  );
+  const publishedArtifactSha256 = family === "claw" ? payload.artifact?.sha256 : undefined;
+  const attemptArtifactFingerprint = publishedArtifactSha256 ?? integritySha256;
+  if (options.stagePrePublicationChecks) {
+    // Settle retries before the scans, Plugin Inspector, and classification run again.
+    const settled = await settleExistingStagedPackagePublication(ctx, {
+      auth,
+      existingPackage,
+      family,
+      name,
+      version,
+      actorUserId,
+      ownerUserId,
+      ownerPublisherId,
+      artifactFingerprint: attemptArtifactFingerprint,
+      publishedArtifactSha256,
+    });
+    if (settled) return settled;
+  }
   const legacyZipBytes = buildDeterministicPackageZip(legacyZipEntries);
   const legacyZipSha256 = await sha256Hex(legacyZipBytes);
 
@@ -9459,11 +9538,14 @@ async function publishPackageImpl(
         publisherId: ownerPublisherId,
       })
     : null;
-  const trustedOpenClawPlugin = isTrustedOpenClawPluginPackage({
-    family,
-    normalizedName: name,
-    ownerPublisher,
-  });
+  const trustedOpenClawPlugin =
+    !options.requireSecurityChecks &&
+    !files.some((file) => file.path === "clawhub-mcp.json") &&
+    isTrustedOpenClawPluginPackage({
+      family,
+      normalizedName: name,
+      ownerPublisher,
+    });
   const verificationSource = codeArtifacts?.verification ?? bundleArtifacts?.verification;
   const initialScanStatus = trustedOpenClawPlugin ? "clean" : "pending";
   const verification = verificationSource
@@ -9480,9 +9562,6 @@ async function publishPackageImpl(
           files,
           ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
         });
-  const integritySha256 = await hashSkillFiles(
-    files.map((file) => ({ path: file.path, sha256: file.sha256 })),
-  );
   const pluginManifestSummary =
     family === "claw"
       ? undefined
@@ -9588,8 +9667,6 @@ async function publishPackageImpl(
       throw error;
     }
   };
-  const publishedArtifactSha256 = family === "claw" ? packageInsertArgs.clawpackSha256 : undefined;
-  const attemptArtifactFingerprint = publishedArtifactSha256 ?? integritySha256;
 
   const inspectorFindings =
     inspectorResult?.warnings.map((finding) =>
@@ -9597,130 +9674,6 @@ async function publishPackageImpl(
     ) ?? [];
 
   if (options.stagePrePublicationChecks) {
-    let existingRelease: Doc<"packageReleases"> | null = null;
-    if (existingPackage) {
-      existingRelease = await runQueryRef<Doc<"packageReleases"> | null>(
-        ctx,
-        internalRefs.packages.getReleaseByPackageAndVersionInternal,
-        { packageId: existingPackage._id, version },
-      );
-    }
-    const existingAttempt = await runQueryRef<null | {
-      attemptId: Id<"publishAttempts">;
-      status: string;
-      reusable: boolean;
-      packageId?: Id<"packages">;
-      releaseId?: Id<"packageReleases">;
-      result?: {
-        ok: true;
-        packageId: Id<"packages">;
-        releaseId: Id<"packageReleases">;
-      };
-    }>(ctx, internalRefs.publishAttempts.findExistingPublishAttemptForArtifactInternal, {
-      kind: "package",
-      slug: name,
-      version,
-      ...(family === "claw"
-        ? {
-            userId: actorUserId,
-            ownerUserId,
-            ownerPublisherId,
-            artifactFingerprint: attemptArtifactFingerprint,
-          }
-        : {}),
-    });
-    if (existingAttempt) {
-      const reusableClawAttempt =
-        family === "claw" &&
-        existingAttempt.reusable &&
-        existingPackage !== null &&
-        !existingPackage.softDeletedAt &&
-        existingAttempt.packageId !== undefined &&
-        existingAttempt.packageId === existingPackage._id &&
-        existingAttempt.releaseId !== undefined &&
-        existingRelease !== null &&
-        existingAttempt.releaseId === existingRelease._id &&
-        !existingRelease.softDeletedAt &&
-        existingRelease.ownerDeletedAt === undefined &&
-        existingRelease.manualModeration?.state !== "quarantined" &&
-        existingRelease.manualModeration?.state !== "revoked" &&
-        resolvePackageReleaseScanStatus(existingRelease) !== "malicious" &&
-        (existingAttempt.status === "finalized"
-          ? isPublishedPackageRelease(existingRelease)
-          : existingRelease.publicationStatus === "pending");
-      if (reusableClawAttempt) {
-        if (existingAttempt.status === "finalized") {
-          if (!existingAttempt.result) {
-            throw new ConvexError("Finalized publish attempt is missing its package result.");
-          }
-          if (auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2) {
-            await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
-              tokenId: auth.publishToken._id,
-            });
-          }
-          const finalizedResult = {
-            ...existingAttempt.result,
-            publicationStatus: "published" as const,
-            artifactSha256: publishedArtifactSha256,
-          };
-          return inspectorFindings.length > 0
-            ? { ...finalizedResult, inspectorFindings }
-            : finalizedResult;
-        }
-        if (auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2) {
-          await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
-            tokenId: auth.publishToken._id,
-          });
-        }
-        return {
-          ok: true as const,
-          status: "pending" as const,
-          packageId: existingAttempt.packageId,
-          releaseId: existingAttempt.releaseId,
-          artifactSha256: publishedArtifactSha256,
-          publicationStatus: "pending" as const,
-          attemptId: existingAttempt.attemptId,
-          packageName: name,
-          version,
-          ...(inspectorFindings.length > 0 ? { inspectorFindings } : {}),
-        };
-      }
-      throw new ConvexError(
-        `Version ${version} already exists. Increment the version number and try again.`,
-      );
-    }
-    if (family === "claw") {
-      const conflictingAttempt = await runQueryRef<null | { attemptId: Id<"publishAttempts"> }>(
-        ctx,
-        internalRefs.publishAttempts.findExistingPublishAttemptForArtifactInternal,
-        {
-          kind: "package",
-          slug: name,
-          version,
-        },
-      );
-      if (conflictingAttempt) {
-        throw new ConvexError(
-          `Version ${version} already exists. Increment the version number and try again.`,
-        );
-      }
-    }
-    if (existingPackage && existingRelease) {
-      if (!existingRelease.softDeletedAt && existingRelease.publicationStatus === "pending") {
-        await runMutationRef(ctx, internalRefs.packages.discardPendingPackagePublicationInternal, {
-          packageId: existingPackage._id,
-          releaseId: existingRelease._id,
-          createdNewParent: hasNoPublishedPackageVersions(existingPackage),
-        });
-        throw new ConvexError(
-          `Previous pending publish for ${version} did not finish creating security checks. It was cleaned up; retry the publish.`,
-        );
-      }
-      throw new ConvexError(
-        `Version ${version} already exists. Increment the version number and try again.`,
-      );
-    }
-
     await reverifyOpenClawAuthorizationBeforePublish(auth, {
       name,
       version,
@@ -9945,6 +9898,159 @@ async function publishPackageImpl(
   return inspectorFindings.length > 0 ? { ...publishedResult, inspectorFindings } : publishedResult;
 }
 
+type ExistingPackagePublishAttempt = {
+  attemptId: Id<"publishAttempts">;
+  status: string;
+  reusable: boolean;
+  packageId?: Id<"packages">;
+  releaseId?: Id<"packageReleases">;
+  result?: { ok: true; packageId: Id<"packages">; releaseId: Id<"packageReleases"> };
+  error?: string;
+  githubActionsRun?: { repository?: string; runId: string; runAttempt: string };
+};
+
+// A retry of the exact artifact settles here, before storage scans and the Node
+// inspector run again: finalized returns published, a live attempt from the same
+// actor (and workflow run) returns pending, and a terminal one says how to recover.
+async function settleExistingStagedPackagePublication(
+  ctx: Pick<ActionCtx, "runQuery" | "runMutation">,
+  args: {
+    auth: PackagePublishAuthContext;
+    existingPackage: Doc<"packages"> | null;
+    family: string;
+    name: string;
+    version: string;
+    actorUserId: Id<"users">;
+    ownerUserId: Id<"users">;
+    ownerPublisherId?: Id<"publishers">;
+    artifactFingerprint: string;
+    publishedArtifactSha256?: string;
+  },
+) {
+  const { auth, existingPackage, name, version } = args;
+  const versionExists = () =>
+    new ConvexError(
+      `Version ${version} already exists. Increment the version number and try again.`,
+    );
+  const existingRelease = existingPackage
+    ? await runQueryRef<Doc<"packageReleases"> | null>(
+        ctx,
+        internalRefs.packages.getReleaseByPackageAndVersionInternal,
+        { packageId: existingPackage._id, version },
+      )
+    : null;
+  const existingAttempt = await runQueryRef<ExistingPackagePublishAttempt | null>(
+    ctx,
+    internalRefs.publishAttempts.findExistingPublishAttemptForArtifactInternal,
+    {
+      kind: "package",
+      slug: name,
+      version,
+      userId: args.actorUserId,
+      ownerUserId: args.ownerUserId,
+      ownerPublisherId: args.ownerPublisherId,
+      artifactFingerprint: args.artifactFingerprint,
+    },
+  );
+  if (existingAttempt) {
+    const sameRelease =
+      existingPackage !== null &&
+      !existingPackage.softDeletedAt &&
+      existingAttempt.packageId === existingPackage._id &&
+      existingRelease !== null &&
+      existingAttempt.releaseId === existingRelease._id &&
+      !existingRelease.softDeletedAt &&
+      existingRelease.ownerDeletedAt === undefined &&
+      existingRelease.manualModeration?.state !== "quarantined" &&
+      existingRelease.manualModeration?.state !== "revoked" &&
+      resolvePackageReleaseScanStatus(existingRelease) !== "malicious";
+    const revokeLegacyTrustedToken = async () => {
+      if (auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2) {
+        await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
+          tokenId: auth.publishToken._id,
+        });
+      }
+    };
+    if (
+      sameRelease &&
+      existingAttempt.status === "finalized" &&
+      isPublishedPackageRelease(existingRelease)
+    ) {
+      if (!existingAttempt.result) {
+        throw new ConvexError("Finalized publish attempt is missing its package result.");
+      }
+      await revokeLegacyTrustedToken();
+      return {
+        ...existingAttempt.result,
+        publicationStatus: "published" as const,
+        ...(args.publishedArtifactSha256 ? { artifactSha256: args.publishedArtifactSha256 } : {}),
+      };
+    }
+    if (
+      sameRelease &&
+      existingAttempt.reusable &&
+      existingAttempt.status !== "finalized" &&
+      existingRelease.publicationStatus === "pending"
+    ) {
+      // Finalization is authorized by the attempt's own workflow run, so another run
+      // must not report this pending release as its own publication.
+      if (
+        auth.kind === "github-actions" &&
+        (existingAttempt.githubActionsRun?.runId !== auth.publishToken.runId ||
+          existingAttempt.githubActionsRun?.runAttempt !== auth.publishToken.runAttempt)
+      ) {
+        throw new ConvexError(
+          `Version ${version} is already staged by publish attempt ${existingAttempt.attemptId} from another workflow run; that run decides its publication.`,
+        );
+      }
+      await revokeLegacyTrustedToken();
+      return {
+        ok: true as const,
+        status: "pending" as const,
+        packageId: existingAttempt.packageId as Id<"packages">,
+        releaseId: existingAttempt.releaseId as Id<"packageReleases">,
+        ...(args.publishedArtifactSha256 ? { artifactSha256: args.publishedArtifactSha256 } : {}),
+        publicationStatus: "pending" as const,
+        attemptId: existingAttempt.attemptId,
+        packageName: name,
+        version,
+      };
+    }
+    if (sameRelease && existingAttempt.status === "failed") {
+      const reason = existingAttempt.error ? ` (${existingAttempt.error})` : "";
+      // Only failed OpenClaw release attempts qualify for publisher recovery.
+      const recovery =
+        existingAttempt.githubActionsRun?.repository === "openclaw/openclaw"
+          ? ` Recover it with: clawhub package recover ${existingAttempt.attemptId} --manual-override-reason "<reason>"`
+          : "";
+      throw new ConvexError(
+        `Version ${version} is staged by failed publish attempt ${existingAttempt.attemptId}${reason}.${recovery}`,
+      );
+    }
+    throw versionExists();
+  }
+  const conflictingAttempt = await runQueryRef<{ attemptId: Id<"publishAttempts"> } | null>(
+    ctx,
+    internalRefs.publishAttempts.findExistingPublishAttemptForArtifactInternal,
+    { kind: "package", slug: name, version },
+  );
+  if (conflictingAttempt) throw versionExists();
+  if (existingPackage && existingRelease) {
+    if (!existingRelease.softDeletedAt && existingRelease.publicationStatus === "pending") {
+      await runMutationRef(ctx, internalRefs.packages.discardPendingPackagePublicationInternal, {
+        packageId: existingPackage._id,
+        releaseId: existingRelease._id,
+        createdNewParent: hasNoPublishedPackageVersions(existingPackage),
+      });
+      throw new ConvexError(
+        `Previous pending publish for ${version} did not finish creating security checks. It was cleaned up; retry the publish.`,
+      );
+    }
+    throw versionExists();
+  }
+  return null;
+}
+
 function toPackageInspectorPublishResponseFinding(
   finding: PackageInspectorFinding,
   metadata: PackageInspectorPublishResult["metadata"],
@@ -9990,11 +10096,14 @@ export const publishPackageForUserInternal = internalAction({
     actorUserId: v.id("users"),
     payload: v.any(),
     requestStorageIds: v.optional(v.array(v.id("_storage"))),
+    requireSecurityChecks: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     return await withRequestPackageStorage(ctx, args.requestStorageIds, (onFilesAdopted) =>
       publishPackageImpl(ctx, { kind: "user", actorUserId: args.actorUserId }, args.payload, {
-        stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
+        stagePrePublicationChecks:
+          args.requireSecurityChecks || stagedPrePublicationPublishesEnabled(),
+        requireSecurityChecks: args.requireSecurityChecks,
         onFilesAdopted,
       }),
     );
@@ -11940,6 +12049,30 @@ export const publishPendingReleaseInternal = internalMutation({
             args.manualRecoveryClaimId,
           )
         : undefined;
+    // Queueing does not preserve managed-publisher authority: membership, admin
+    // status, and publisher availability can change while security checks run.
+    if (release.files.some((file) => file.path === MANAGED_MCP_DEFINITION_PATH)) {
+      const actorUserId =
+        release.publishActor?.kind === "user" ? release.publishActor.userId : release.createdBy;
+      const actor = await ctx.db.get(actorUserId);
+      if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+      assertAdmin(actor);
+      const publisher = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
+      if (
+        !publisher ||
+        publisher.kind !== "org" ||
+        publisher.handle !== "openclaw" ||
+        publisher.deletedAt ||
+        publisher.deactivatedAt ||
+        pkg.family !== "bundle-plugin"
+      ) {
+        throw new ConvexError("Managed MCP publisher is unavailable");
+      }
+      const membership = await getPublisherMembership(ctx, publisher._id, actorUserId);
+      if (!membership || !isPublisherRoleAllowed(membership.role, ["publisher"])) {
+        throw new ConvexError("Managed MCP publishing access has been revoked");
+      }
+    }
     // The pending row and finalizer must present the same v2 binding. Recheck
     // mutable revocation and publisher state in the transaction that goes public.
     if (

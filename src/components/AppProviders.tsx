@@ -77,6 +77,7 @@ export function AuthCodeHandler() {
       .then((result) => {
         if (result.signingIn !== false) {
           window.history.replaceState(null, "", pending.relativeUrl);
+          window.dispatchEvent(new Event("clawhub:login-acknowledged"));
           return;
         }
 

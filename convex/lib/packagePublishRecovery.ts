@@ -103,7 +103,7 @@ export async function assertManualPackagePublisher(
   return actor;
 }
 
-export async function assertRecoveryArtifact(
+async function assertRecoveryArtifactEligibility(
   ctx: DbCtx,
   pkg: Doc<"packages">,
   release: Doc<"packageReleases">,
@@ -150,6 +150,10 @@ export async function assertRecoveryArtifact(
   ) {
     throw new ConvexError("Recovered package publication authorization is blocked by moderation");
   }
+  return token;
+}
+
+async function assertRecoveryStorage(ctx: DbCtx, release: Doc<"packageReleases">) {
   // Storage IDs bind immutable bytes; the original IDs and digests matched above.
   for (const file of release.files) {
     const stored = await ctx.db.system.get(file.storageId);
@@ -166,7 +170,103 @@ export async function assertRecoveryArtifact(
     )
       throw new ConvexError("Recovered package publication authorization archive storage changed");
   }
+}
+
+async function assertRecoveryArtifact(
+  ctx: DbCtx,
+  pkg: Doc<"packages">,
+  release: Doc<"packageReleases">,
+  attempt: Doc<"publishAttempts">,
+  originalTokenId: Id<"packagePublishTokens">,
+) {
+  const token = await assertRecoveryArtifactEligibility(
+    ctx,
+    pkg,
+    release,
+    attempt,
+    originalTokenId,
+  );
+  await assertRecoveryStorage(ctx, release);
   return token;
+}
+
+// Public state uses only static eligibility. Recovery also checks claims and storage
+// at their original positions so rejection precedence and messages stay unchanged.
+export async function assertPackageRecoveryEligibility(
+  ctx: DbCtx,
+  pkg: Doc<"packages">,
+  release: Doc<"packageReleases">,
+  attempt: Doc<"publishAttempts">,
+  runtime?: { now: number },
+) {
+  if (attempt.kind !== "package") throw new ConvexError("Publish attempt not found");
+  if (
+    attempt.status !== "failed" ||
+    release.publicationStatus !== "pending" ||
+    (release.publishAttemptId !== undefined && release.publishAttemptId !== attempt._id)
+  )
+    throw new ConvexError("Only the current failed staged publish attempt can be recovered");
+  if (release.publishAttemptId === undefined) {
+    // Older staged attempts acquired the backlink only after successful scans.
+    // Validate that no live or finalized sibling owns this exact release first.
+    for (const status of [
+      "pending_checks",
+      "ready_to_finalize",
+      "finalizing",
+      "finalized",
+    ] as const) {
+      const other = await ctx.db
+        .query("publishAttempts")
+        .withIndex("by_kind_status_slug_version_created", (q) =>
+          q
+            .eq("kind", "package")
+            .eq("status", status)
+            .eq("slug", pkg.name)
+            .eq("version", release.version),
+        )
+        .filter((q) => q.eq(q.field("packageReleaseId"), release._id))
+        .first();
+      if (other) throw new ConvexError("Another publish attempt owns this staged release");
+    }
+  }
+  if (
+    runtime &&
+    ((attempt.checkClaimExpiresAt ?? 0) > runtime.now ||
+      (attempt.finalizationClaimExpiresAt ?? 0) > runtime.now)
+  )
+    throw new ConvexError("Publish attempt still has an active claim");
+  const followup = attempt.packageFollowup as Record<string, unknown> | undefined;
+  const pending = release.pendingPublication as Record<string, unknown> | undefined;
+  const priorRecovery = manualPackageRecovery(followup);
+  if (
+    priorRecovery &&
+    JSON.stringify(manualPackageRecovery(pending)) !== JSON.stringify(priorRecovery)
+  )
+    throw new ConvexError("Original manual recovery binding changed");
+  const originalTokenId = priorRecovery?.originalTokenId ?? followup?.trustedPublishTokenId;
+  if (typeof originalTokenId !== "string")
+    throw new ConvexError("Original OpenClaw authorization is missing");
+  const tokenId = ctx.db.normalizeId("packagePublishTokens", originalTokenId);
+  if (!tokenId || !followup || !pending)
+    throw new ConvexError("Original OpenClaw authorization is missing");
+  const originalToken = await assertRecoveryArtifactEligibility(
+    ctx,
+    pkg,
+    release,
+    attempt,
+    tokenId,
+  );
+  if (runtime) await assertRecoveryStorage(ctx, release);
+  if (
+    !priorRecovery &&
+    (followup.trustedPublishAuthorizationVersion !== 2 ||
+      pending.trustedPublishTokenId !== tokenId ||
+      pending.trustedPublishAuthorizationVersion !== 2 ||
+      followup.trustedPublishInventoryDigest !== originalToken.inventoryDigest ||
+      pending.trustedPublishInventoryDigest !== originalToken.inventoryDigest)
+  )
+    throw new ConvexError("Original OpenClaw authorization binding changed");
+  return { followup, pending, tokenId, originalToken };
 }
 
 export async function assertManualRecoveryFinalization(
