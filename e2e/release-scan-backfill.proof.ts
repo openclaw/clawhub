@@ -55,11 +55,18 @@ test("release scan backfill authorizes real sessions before queue or scheduler w
     userId: admin.userId,
     phase: "public",
   })) as Id<"packageReleases">[];
+  // Pre-existing active job must retain its identity rather than be duplicated.
+  await operator.mutation(
+    makeFunctionReference<"mutation">("securityScan:enqueuePackageReleaseScanInternal"),
+    { releaseId: releaseIds[0], source: "backfill" },
+  );
   const state = () => operator.query(stateRef, { releaseIds }) as Promise<State>;
   const receipts: unknown[] = [{ url, mode: process.env.RELEASE_SCAN_PROOF_EXPECT ?? "guarded" }];
   try {
     const before = await state();
-    expect(before.queues.every(({ jobs }) => jobs.length === 0)).toBe(true);
+    expect(before.queues.filter(({ jobs }) => jobs.length === 0)).toHaveLength(9);
+    expect(before.queues[0].jobs).toHaveLength(1);
+    const preexistingJobId = before.queues[0].jobs[0]._id;
     // Run the same real-backend fixture against main as an explicit negative control.
     if (process.env.RELEASE_SCAN_PROOF_EXPECT === "unguarded") {
       const result = await anonymous.action(publicBackfill, { batchSize: 100 });
@@ -68,7 +75,7 @@ test("release scan backfill authorizes real sessions before queue or scheduler w
           const current = await state();
           return (
             current.queues.every(({ jobs }) => jobs.length === 1) &&
-            current.scheduled.length > 0 &&
+            current.scheduled.length >= 2 &&
             current.scheduled.every((job) => job.state.kind === "success")
           );
         })
@@ -114,16 +121,18 @@ test("release scan backfill authorizes real sessions before queue or scheduler w
         const current = await state();
         return (
           current.queues.every(({ jobs }) => jobs.length === 1 && jobs[0].status === "queued") &&
-          current.scheduled.length > 0 &&
+          current.scheduled.length >= 2 &&
           current.scheduled.every((job) => job.state.kind === "success")
         );
       })
       .toBe(true);
     receipts.push({
-      label: "active admin plus real scheduled continuation",
+      label: "active admin plus multiple real scheduled pages",
+      preexistingJobId,
       result,
       after: await state(),
     });
+    expect((await state()).queues[0].jobs[0]._id).toBe(preexistingJobId);
     const oldIds = new Set((await state()).scheduled.map((job) => job._id));
     releaseIds.push(
       ...((await operator.mutation(seed, {
@@ -139,7 +148,7 @@ test("release scan backfill authorizes real sessions before queue or scheduler w
         const continuation = current.scheduled.filter((job) => !oldIds.has(job._id));
         return (
           current.queues.every(({ jobs }) => jobs.length === 1 && jobs[0].status === "queued") &&
-          continuation.length > 0 &&
+          continuation.length >= 2 &&
           continuation.every((job) => job.state.kind === "success")
         );
       })

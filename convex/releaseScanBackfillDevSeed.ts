@@ -67,12 +67,12 @@ export const seed = internalMutation({
       tags: {},
       compatibility: {},
       verification: { tier: "structural", scope: "artifact-only", scanStatus: "pending" },
-      stats: { downloads: 0, installs: 0, stars: 0, versions: 2 },
+      stats: { downloads: 0, installs: 0, stars: 0, versions: phase === "public" ? 10 : 2 },
       createdAt: now,
       updatedAt: now,
     });
     const releaseIds = [];
-    for (let index = 0; index < 2; index += 1) {
+    for (let index = 0; index < (phase === "public" ? 10 : 2); index += 1) {
       releaseIds.push(
         await ctx.db.insert("packageReleases", {
           packageId,
@@ -108,7 +108,7 @@ export const state = internalQuery({
   args: { releaseIds: v.array(v.id("packageReleases")) },
   handler: async (ctx, { releaseIds }) => {
     assertIsolatedProof();
-    if (releaseIds.length > 4) throw new Error("Fixture limited to four releases");
+    if (releaseIds.length > 12) throw new Error("Fixture limited to twelve releases");
     const scheduled = await ctx.db.system.query("_scheduled_functions").order("desc").take(256);
     if (scheduled.length === 256) throw new Error("Proof scheduler snapshot exceeded its bound");
     const queues = await Promise.all(
@@ -123,6 +123,8 @@ export const state = internalQuery({
     if (queues.some(({ jobs }) => jobs.length === 8))
       throw new Error("Proof queue exceeded its bound");
     return {
+      releases: await Promise.all(releaseIds.map((id) => ctx.db.get(id))),
+      packages: await ctx.db.query("packages").take(3),
       queues,
       scheduled: scheduled.filter((job) =>
         /backfillPackageReleaseScansInternal|scanPackageReleaseStaticallyInternal|scanPackageReleaseWithVirusTotal/.test(
