@@ -19,7 +19,7 @@ export type SkillsShFixtureEnvironmentPolicy =
     }
   | {
       allowed: false;
-      environment: "preview" | "test" | "production" | "unknown";
+      environment: "preview" | "test" | "staging" | "production" | "unknown";
       reason: string;
     };
 

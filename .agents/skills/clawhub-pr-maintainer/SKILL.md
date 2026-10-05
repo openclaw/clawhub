@@ -154,32 +154,30 @@ inspect the running local instances and captured evidence.
 
 ## Final Review Comment With Proof
 
-If this review generated `proof:ui` artifacts, publish them before the final PR
-review comment. Do not leave only local `.artifacts/...` paths in a PR comment;
-they are useful to the maintainer locally but invisible to GitHub readers.
+Use [proof-video](../proof-video/SKILL.md) for capture, editing, inspection and
+publication. Capture from the real running ClawHub instance and inspect every
+final image/video before uploading it. Lead with the successful candidate;
+label any failed baseline separately and state companion fixes and simulations.
 
-Use:
+Attach inspected media directly to the PR with native GitHub attachments:
 
 ```sh
-bun run proof:publish -- --proof-dir .artifacts/clawhub-ui-proof/<timestamp> --target-pr <number>
+gh pr comment <number> --repo openclaw/clawhub \
+  --body-file .artifacts/proof/comment.md \
+  --attach .artifacts/proof/after.mp4 \
+  --attach '.artifacts/proof/before.png#Before' \
+  --attach '.artifacts/proof/after.png#After'
 ```
 
-`proof:publish` copies the selected files to the `qa-artifacts` branch and
-upserts a marker-backed PR comment with a **ClawHub UI Proof** section.
+Videos use bare uploaded URLs so GitHub renders players; do not add video alt
+text. Include exact refs, the tested flow, validation and limitations in the
+comment itself. Verify the final comment and return its direct link.
 
-That comment includes:
-
-- the proof mode (`before-after` or `feature`)
-- the `report.md` result summary
-- the most relevant per-step screenshots
-- inline video previews when GIF previews are present
-- links to full-run MP4s
-- links to raw proof files on the artifact branch
-
-Use `--dry-run` before publishing if you need to inspect the generated comment.
-If publishing fails because credentials are missing, report the local proof
-directory and the failed command instead of posting a comment that claims
-evidence is attached.
+Never push proof assets or generated reports to any product repository branch,
+including `qa-artifacts`. The old `proof:publish` helper is retired. Do not leave
+only local paths or links to a source-tree directory as published evidence.
+If attachment upload fails, retain the local files and report the precise
+blocker instead of claiming they are attached.
 
 ## ClawSweeper
 
@@ -198,8 +196,7 @@ before acting.
   auto-link them.
 - Keep maintainer comments short: finding, evidence, requested action, and
   verification path.
-- When no proof artifacts were generated, `gh pr comment --body-file` is fine.
-  When proof artifacts were generated, use `proof:publish` so screenshots/videos
-  are published before posting.
+- Use `gh pr comment --body-file`; add `--attach` for inspected media. Follow
+  the proof-video skill for safe updates to an existing proof comment.
 - Do not close more than five issues/PRs in one action without explicit
   confirmation and the exact target list.

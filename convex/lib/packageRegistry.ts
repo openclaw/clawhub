@@ -1,4 +1,5 @@
 import {
+  assertManagedMcpUrl,
   listMissingOpenClawExternalCodePluginFieldPaths,
   normalizeOpenClawExternalPluginCompatibility,
 } from "clawhub-schema";
@@ -280,6 +281,57 @@ function extractMcpServerNames(manifest: JsonRecord) {
   return [];
 }
 
+function extractMcpServerSummaries(manifest: JsonRecord) {
+  const raw = manifest.mcpServers ?? manifest.mcp;
+  return extractMcpServerNames(manifest).map((name) => {
+    const config = isRecord(raw) && isRecord(raw[name]) ? raw[name] : undefined;
+    if (!config || (typeof config.url !== "string" && typeof config.command !== "string"))
+      return { name };
+    const transport =
+      typeof config.command === "string"
+        ? ("stdio" as const)
+        : config.transport === "sse" || config.type === "sse"
+          ? ("sse" as const)
+          : config.transport === "streamable-http" ||
+              config.type === "http" ||
+              config.type === "streamable-http"
+            ? ("streamable-http" as const)
+            : undefined;
+    let url: string | undefined;
+    let endpointRedacted: boolean | undefined;
+    if (typeof config.url === "string") {
+      try {
+        assertManagedMcpUrl(config.url);
+        url = config.url;
+      } catch {
+        endpointRedacted = true;
+      }
+    }
+    const auth =
+      config.auth === "oauth" || isRecord(config.oauth)
+        ? ("oauth" as const)
+        : isRecord(config.headers) && Object.keys(config.headers).length
+          ? ("api-key" as const)
+          : ("none" as const);
+    const rawScope = isRecord(config.oauth)
+      ? (config.oauth.scope ?? config.oauth.scopes)
+      : undefined;
+    const scope =
+      auth === "oauth" && typeof rawScope === "string" ? rawScope.slice(0, 1000) : undefined;
+    return {
+      name,
+      ...(url ? { url } : {}),
+      ...(transport ? { transport } : {}),
+      auth,
+      ...(scope ? { scope } : {}),
+      ...(endpointRedacted ? { endpointRedacted } : {}),
+      ...(typeof config.description === "string"
+        ? { setup: config.description.slice(0, 2000) }
+        : {}),
+    };
+  });
+}
+
 function parseSkillMarkdownMetadata(text: string | undefined) {
   if (!text) return {};
   const frontmatter = parseFrontmatter(text);
@@ -352,7 +404,7 @@ export function derivePluginManifestSummary(params: {
     ...(providers.length ? { providers } : {}),
     ...(channels.length ? { channels } : {}),
     configFields: extractConfigFields(params.pluginManifest),
-    mcpServers: extractMcpServerNames(params.pluginManifest).map((name) => ({ name })),
+    mcpServers: extractMcpServerSummaries(params.pluginManifest),
     bundledSkills,
   };
 }

@@ -4,6 +4,7 @@ import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
+import { emitAnalytics } from "../lib/analyticsEvents";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { fetchPackageVersions } from "../lib/packageApi";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
@@ -316,6 +317,18 @@ export function PluginVersionsPanel({
                         {!isWithdrawn ? (
                           <a
                             href={buildPluginDownloadHref(packageName, release.version)}
+                            onClick={() =>
+                              emitAnalytics("select_content", {
+                                content_type: "install",
+                                ui_location: "detail",
+                                method: "download",
+                                artifact_version: /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(
+                                  release.version,
+                                )
+                                  ? release.version
+                                  : undefined,
+                              })
+                            }
                             className="skill-version-release-download"
                             aria-label={`Download .zip for v${release.version}`}
                           >

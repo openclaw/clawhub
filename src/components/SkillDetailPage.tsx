@@ -7,11 +7,16 @@ import {
 } from "clawhub-schema";
 import { useAction, useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import { ArrowLeft, TriangleAlert, Upload } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getActivityTrendEndDay } from "../lib/activityTrend";
+import {
+  captureAnalyticsOperation,
+  emitAnalytics,
+  publicAnalyticsContentId,
+} from "../lib/analyticsEvents";
 import {
   getUserFacingAuthError,
   isBannedAccountAuthError,
@@ -19,6 +24,7 @@ import {
 } from "../lib/authErrorMessage";
 import { getSkillCategoriesForSkill, getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
+import { isPublicAnalyticsSkill } from "../lib/googleAnalytics";
 import { buildSkillSecurityAuditHref } from "../lib/ownerRoute";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { skillCardLoadKey } from "../lib/skillCards";
@@ -222,6 +228,19 @@ export function SkillDetailPage({
     | undefined;
   const liveResult = isStaff ? staffResult : publicResult;
   const result = liveResult === undefined ? initialResult : liveResult;
+  const analyticsResourceId = result?.skill?._id ?? initialResult?.skill?._id;
+  const analyticsResourcePublic = isPublicAnalyticsSkill(result);
+  useLayoutEffect(() => {
+    if (!analyticsResourceId) return;
+    window.dispatchEvent(
+      new CustomEvent("clawhub:analytics-resource-visibility", {
+        detail: {
+          id: publicAnalyticsContentId("skill", String(analyticsResourceId)),
+          public: analyticsResourcePublic,
+        },
+      }),
+    );
+  }, [analyticsResourceId, analyticsResourcePublic]);
 
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
@@ -734,9 +753,16 @@ export function SkillDetailPage({
 
   const submitReport = async () => {
     if (!skill) return;
+    emitAnalytics("form_attempt", { form_id: "skill_report", ui_location: "detail" });
 
+    const operation = captureAnalyticsOperation();
     const trimmedReason = reportReason.trim();
     if (!trimmedReason) {
+      emitAnalytics("form_validation_error", {
+        form_id: "skill_report",
+        field_name: "form",
+        error_code: "required",
+      });
       setReportError("Report reason required.");
       return;
     }
@@ -747,6 +773,12 @@ export function SkillDetailPage({
       const submission = await reportSkill({ skillId: skill._id, reason: trimmedReason });
       closeReportDialog();
       if (submission.reported) {
+        operation?.emit("resource_action", {
+          action: "report",
+          content_type: "skill",
+          action_result: "success",
+          ui_location: "detail",
+        });
         window.alert("Thanks — your report has been submitted.");
       } else {
         window.alert("You have already reported this skill.");
@@ -760,6 +792,7 @@ export function SkillDetailPage({
 
   const handleToggleStar = async () => {
     if (!skill) return;
+    const operation = captureAnalyticsOperation();
     const activeStar = activeOptimisticStar;
     const baselineStarred = activeStar?.baselineStarred ?? Boolean(effectiveIsStarred);
     const previousIsStarred = Boolean(effectiveIsStarred);
@@ -767,6 +800,13 @@ export function SkillDetailPage({
 
     try {
       const starResult = (await toggleStar({ skillId: skill._id })) as { starred: boolean };
+      operation?.emit("resource_action", {
+        action: starResult.starred ? "star" : "unstar",
+        content_type: "skill",
+        content_id: publicAnalyticsContentId("skill", String(skill._id)),
+        action_result: "success",
+        ui_location: "detail",
+      });
       setOptimisticStar({
         skillId: skill._id,
         starred: starResult.starred,
@@ -783,6 +823,12 @@ export function SkillDetailPage({
       });
       void router.invalidate();
     } catch (error) {
+      operation?.emit("resource_action", {
+        action: "star",
+        content_type: "skill",
+        action_result: "error",
+        ui_location: "detail",
+      });
       console.error("Failed to toggle bookmark", error);
       toast.error(getUserFacingConvexError(error, "Unable to update bookmark. Please try again."));
     }
