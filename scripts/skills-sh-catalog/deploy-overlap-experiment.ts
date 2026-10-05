@@ -84,6 +84,14 @@ export function syncEnvironment(env: NodeJS.ProcessEnv) {
   return result;
 }
 
+export function syncOwnsActiveControl(control: Record<string, unknown>, env: NodeJS.ProcessEnv) {
+  return (
+    control.enabled === true &&
+    control.paused === false &&
+    control.updatedBy === `github-actions:${env.GITHUB_RUN_ID}:${env.GITHUB_RUN_ATTEMPT}`
+  );
+}
+
 export function firstExperimentRun(runs: Array<{ id: number; display_title: string }>) {
   const ids = runs.filter((run) => run.display_title === EXPERIMENT_NAME).map((run) => run.id);
   if (ids.some((id) => !Number.isSafeInteger(id)))
@@ -139,8 +147,13 @@ async function catalogRead(label: string) {
   }
 }
 
-async function observe(label: string, runId?: string) {
+async function observe(
+  label: string,
+  runId?: string,
+): Promise<(Record<string, unknown> & { experimentOwnsControl: boolean }) | undefined> {
   const status = await query("skillsShMirror:getStatusInternal");
+  const control = status.control as Record<string, unknown>;
+  const owned = syncOwnsActiveControl(control, process.env);
   const runs = status.runs as Array<Record<string, unknown>>;
   const run = runId ? runs.find((value) => value.runId === runId) : runs[0];
   // Snapshot IDs encode the captured corpus; retain only the operational fields.
@@ -162,9 +175,14 @@ async function observe(label: string, runId?: string) {
         ].map((key) => [key, run[key]]),
       )
     : null;
-  observations.push({ at: new Date().toISOString(), label, run: record });
+  observations.push({
+    at: new Date().toISOString(),
+    label,
+    control: { enabled: control.enabled, paused: control.paused, updatedBy: control.updatedBy },
+    run: record,
+  });
   await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
-  return run;
+  return run ? { ...run, experimentOwnsControl: owned } : undefined;
 }
 
 async function main() {
@@ -254,7 +272,7 @@ async function main() {
       if (
         run?.sourceView === "leaderboard" &&
         run.status === "running" &&
-        Number(run.startedAt) >= syncStartedAt - 30_000 &&
+        run.experimentOwnsControl === true &&
         run.runId === previousRunId &&
         observed > previousObserved &&
         previousObserved > 0 &&
@@ -276,15 +294,21 @@ async function main() {
     await command(["x", "tsc", "-p", "packages/clawhub/tsconfig.json", "--noEmit"]);
     await command(["x", "tsc", "-p", "convex/tsconfig.json", "--noEmit"]);
     await requireMain(sha);
+    const afterTypechecks = await observe("after-typechecks", runId);
     if (
-      (await observe("after-typechecks", runId))?.status !== "running" ||
+      afterTypechecks?.status !== "running" ||
+      !afterTypechecks.experimentOwnsControl ||
       syncExit !== undefined
     ) {
       throw new Error("Sync stopped during typechecks; no deployment");
     }
     await command(["x", "convex", "env", "set", "CLAWHUB_ENV", "production", "--prod"]);
     const beforeDeploy = await observe("immediately-before-deploy", runId);
-    if (beforeDeploy?.status !== "running" || syncExit !== undefined) {
+    if (
+      beforeDeploy?.status !== "running" ||
+      !beforeDeploy.experimentOwnsControl ||
+      syncExit !== undefined
+    ) {
       throw new Error("Sync stopped before deployment; no deployment");
     }
     receipt.deployStartedAt = new Date().toISOString();
@@ -323,6 +347,7 @@ async function main() {
     const afterDeploy = await observe("immediately-after-deploy", runId);
     receipt.overlapVerified =
       afterDeploy?.status === "running" &&
+      afterDeploy.experimentOwnsControl === true &&
       Number((afterDeploy.counts as { observed: number }).observed) >
         Number((beforeDeploy.counts as { observed: number }).observed);
     await command(["x", "convex", "run", "promotionsFeed:publishInternal", "--prod"]);

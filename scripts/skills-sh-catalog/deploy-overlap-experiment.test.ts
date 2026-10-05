@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   firstExperimentRun,
   syncEnvironment,
+  syncOwnsActiveControl,
   validateExperimentRequest,
 } from "./deploy-overlap-experiment";
 
@@ -22,6 +23,15 @@ const request = {
 };
 
 describe("temporary controlled deployment authority", () => {
+  it("binds new or resumed durable work to this live sync worker, not its original start time", () => {
+    const control = { enabled: true, paused: false, updatedBy: "github-actions:100:1" };
+    expect(syncOwnsActiveControl(control, request)).toBe(true);
+    expect(syncOwnsActiveControl({ ...control, enabled: false }, request)).toBe(false);
+    expect(syncOwnsActiveControl({ ...control, paused: true }, request)).toBe(false);
+    expect(syncOwnsActiveControl({ ...control, updatedBy: "github-actions:99:1" }, request)).toBe(
+      false,
+    );
+  });
   it("uses durable run identity across fresh dispatches, independent of completion or queue state", () => {
     const title = "2026-10-05 single skills.sh deployment overlap experiment";
     expect(
