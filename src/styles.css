@@ -3392,7 +3392,7 @@ code {
 
 .skill-summary-line a,
 .plugin-summary a {
-  color: var(--accent);
+  color: var(--oc-accent-primary);
   text-decoration: underline;
   text-underline-offset: 0.15em;
 }
