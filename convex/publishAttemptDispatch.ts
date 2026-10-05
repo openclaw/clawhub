@@ -18,8 +18,12 @@ const internalRefs = internal as unknown as {
 };
 
 export function isPublishAttemptEventDispatchEnabled(env: NodeJS.ProcessEnv = process.env) {
+  const dispatchEnabled =
+    env.CLAWHUB_ENV === "test"
+      ? env.PREPUBLICATION_PUBLISH_EVENT_DISPATCH_ENABLED === "1"
+      : env.SECURITY_SCAN_EVENT_DISPATCH_ENABLED === "1";
   return (
-    env.SECURITY_SCAN_EVENT_DISPATCH_ENABLED === "1" &&
+    dispatchEnabled &&
     env.CLAWHUB_PREVIEW !== "1" &&
     Boolean(
       env.GITHUB_APP_ID?.trim() &&
@@ -63,6 +67,9 @@ export async function dispatchPublishAttemptWorkflow(
     {
       eventType: "clawhub-prepublication-publish",
       clientPayload: {
+        ...(process.env.CLAWHUB_ENV === "staging" || process.env.CLAWHUB_ENV === "test"
+          ? { environment: process.env.CLAWHUB_ENV }
+          : {}),
         attempt_id: target.attemptId,
         kind: target.kind,
         slug: target.slug,

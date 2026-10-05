@@ -1,0 +1,164 @@
+name: Test Claw Canary Prepublication Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      attempt_id:
+        description: Exact Test publish attempt ID for @openclaw/hosted-e2e-canary
+        required: true
+        type: string
+
+concurrency:
+  group: test-claw-canary-prepublication-${{ inputs.attempt_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-request:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ATTEMPT_ID: ${{ inputs.attempt_id }}
+    steps:
+      - name: Require main and an exact attempt ID
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Test canary checks must run from main"
+            exit 1
+          fi
+          if ! [[ "$ATTEMPT_ID" =~ ^[a-z0-9]{32}$ ]]; then
+            echo "::error::attempt_id must be one exact Convex document ID"
+            exit 1
+          fi
+
+  check-test-attempt:
+    needs: validate-request
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 25
+    environment:
+      name: Test
+    env:
+      CONVEX_URL: https://academic-chihuahua-392.convex.cloud
+      PREPUBLICATION_CLAWSCAN_TIMEOUT_MS: "900000"
+      PREPUBLICATION_CLAWSCAN_SANDBOX: "off"
+      PREPUBLICATION_TRUFFLEHOG_IMAGE: ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056
+      PREPUBLICATION_WORKER_ID: github-actions:test-canary:${{ github.run_id }}:${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Verify permanent Test backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          TEST_CONVEX_DEPLOYMENT: ${{ vars.CONVEX_DEPLOYMENT }}
+          TEST_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+        run: |
+          set -euo pipefail
+          if [[ "$TEST_CONVEX_DEPLOYMENT" != "prod:academic-chihuahua-392" ||
+                "$TEST_CONVEX_URL" != "$CONVEX_URL" ||
+                "$CONVEX_DEPLOY_KEY" != prod:academic-chihuahua-392\|* ]]; then
+            echo "::error::Test deployment configuration does not target academic-chihuahua-392"
+            exit 1
+          fi
+          test_env="$(bunx convex env get CLAWHUB_ENV --prod)"
+          if [[ "$test_env" != "test" ]]; then
+            echo "::error::Target Convex deployment is not marked Test"
+            exit 1
+          fi
+          deployment_json="$(bunx convex run --no-push appMeta:getDeploymentInfo --prod)"
+          build_sha="$(jq -r '.appBuildSha // empty' <<< "$deployment_json")"
+          if [[ "$build_sha" != "$GITHUB_SHA" ]]; then
+            echo "::error::Test backend build SHA does not match this main commit"
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Codex CLI
+        run: |
+          set -euo pipefail
+          npm install -g @openai/codex@0.142.3
+          codex --version
+
+      - name: Install ClawScan CLI
+        run: |
+          set -euo pipefail
+          npm install -g @openclaw/clawscan@0.1.8
+          clawscan --version
+
+      - name: Install SkillSpector
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/skillspector-venv"
+          source "$RUNNER_TEMP/skillspector-venv/bin/activate"
+          python -m pip install --upgrade pip
+          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc'
+          echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
+          skillspector --help >/dev/null
+
+      - name: Install A.I.G scanner
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt
+          python -c 'from importlib.metadata import version; assert version("aig-skill-scan") == "0.2.2"'
+          python -c 'import inspect; from skill_scan.utils.llm import LLM; assert "temperature=" not in inspect.getsource(LLM.chat_stream)'
+          aig-skill-scan --help >/dev/null
+
+      - name: Run exact Test Claw publish checks
+        env:
+          ATTEMPT_ID: ${{ inputs.attempt_id }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEFAULT_BASE_URL: https://api.openai.com/v1
+          DEFAULT_MODEL: gpt-5.6
+          LLM_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$OPENAI_API_KEY" ]]; then
+            echo "::error::Repository OPENAI_API_KEY is required for ClawScan"
+            exit 1
+          fi
+          attempt_json="$(bunx convex run --no-push publishAttempts:getPackagePublishAttemptStatusInternal "{\"attemptId\":\"$ATTEMPT_ID\"}" --prod)"
+          if ! jq -e --arg attempt "$ATTEMPT_ID" '
+            .attemptId == $attempt and
+            .name == "@openclaw/hosted-e2e-canary" and
+            (.status == "pending_checks" or .status == "ready_to_finalize")
+          ' <<< "$attempt_json" >/dev/null; then
+            echo "::error::Attempt is not a pending Test @openclaw Claw canary publish"
+            exit 1
+          fi
+
+          worker_token="$(bunx convex env get SECURITY_SCAN_WORKER_TOKEN --prod)"
+          if [[ -z "$worker_token" ]]; then
+            echo "::error::Test SECURITY_SCAN_WORKER_TOKEN is missing"
+            exit 1
+          fi
+          printf '::add-mask::%s\n' "$worker_token"
+          SECURITY_SCAN_WORKER_TOKEN="$worker_token" \
+            bun run publish:prepublication-worker \
+              --attempt-id "$ATTEMPT_ID" \
+              --kind package \
+              --batch-limit 1 \
+              --max-jobs 1 \
+              --max-runtime-minutes 20
+          unset worker_token
+
+          attempt_json="$(bunx convex run --no-push publishAttempts:getPackagePublishAttemptStatusInternal "{\"attemptId\":\"$ATTEMPT_ID\"}" --prod)"
+          if ! jq -e --arg attempt "$ATTEMPT_ID" '
+            .attemptId == $attempt and
+            .status == "finalized" and
+            .checks.trufflehog.status == "clean" and
+            .checks.clawscan.status == "clean"
+          ' <<< "$attempt_json" >/dev/null; then
+            echo "::error::Test canary did not finalize with clean prepublication checks"
+            jq '{attemptId, status, checks, error}' <<< "$attempt_json"
+            exit 1
+          fi
+          jq '{attemptId, status, checks: {trufflehog: .checks.trufflehog.status, clawscan: .checks.clawscan.status}}' <<< "$attempt_json"

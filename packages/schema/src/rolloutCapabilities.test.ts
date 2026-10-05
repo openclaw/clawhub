@@ -12,7 +12,7 @@ describe("rollout capabilities", () => {
     expect(parseRolloutMode("enabled")).toBe("off");
   });
 
-  it("detects explicit Test and production runtimes", () => {
+  it("detects explicit Test, staging, and production runtimes", () => {
     expect(
       getClawHubRuntimeEnvironment({
         CLAWHUB_ENV: "test",
@@ -21,7 +21,37 @@ describe("rollout capabilities", () => {
     ).toBe("test");
     expect(
       getClawHubRuntimeEnvironment({
+        CLAWHUB_ENV: "staging",
+        CONVEX_DEPLOYMENT: "prod:cheery-civet-733",
+      }),
+    ).toBe("staging");
+    expect(
+      getClawHubRuntimeEnvironment({
         CONVEX_DEPLOYMENT: "prod:wry-manatee-359",
+      }),
+    ).toBe("production");
+  });
+
+  it("never classifies the dedicated staging deployment as production", () => {
+    for (const marker of [undefined, "staging", "production", "test"]) {
+      expect(
+        getClawHubRuntimeEnvironment({
+          CLAWHUB_ENV: marker,
+          CONVEX_DEPLOYMENT: "prod:cheery-civet-733",
+        }),
+      ).toBe("staging");
+    }
+    expect(
+      getClawHubRuntimeEnvironment({
+        CLAWHUB_ENV: "staging",
+        CLAWHUB_DEPLOYMENT_NAME: "cheery-civet-733",
+      }),
+    ).toBe("staging");
+    expect(
+      getClawHubRuntimeEnvironment({
+        CLAWHUB_ENV: "staging",
+        CONVEX_DEPLOYMENT: "prod:wry-manatee-359",
+        VERCEL_TARGET_ENV: "staging",
       }),
     ).toBe("production");
   });
@@ -102,6 +132,41 @@ describe("rollout capabilities", () => {
       environment: "test",
       skillsSh: { mode: "test", runtimeEnabled: true },
     });
+  });
+
+  it.each(["preview", "staging"])(
+    "recognizes permanent Staging with Vercel target %s",
+    (targetEnvironment) => {
+      expect(
+        getClawHubRolloutCapabilities({
+          CLAWHUB_ENV: "staging",
+          VERCEL_ENV: "preview",
+          VERCEL_TARGET_ENV: targetEnvironment,
+          VITE_CLAWHUB_DEPLOY_ENV: "staging",
+          VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
+          CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "production",
+          CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE: "test",
+        }),
+      ).toMatchObject({
+        environment: "staging",
+        skillsSh: {
+          mode: "production",
+          runtimeEnabled: false,
+          reason: "environment-mismatch",
+        },
+        githubSkillSync: { mode: "test", runtimeEnabled: false, reason: "environment-mismatch" },
+      });
+    },
+  );
+
+  it("treats an ordinary preview with a stale Staging marker as preview", () => {
+    expect(
+      getClawHubRuntimeEnvironment({
+        CLAWHUB_ENV: "staging",
+        CLAWHUB_PREVIEW: "1",
+        VERCEL_ENV: "preview",
+      }),
+    ).toBe("preview");
   });
 
   it("lets a production deployment override a conflicting Test marker", () => {

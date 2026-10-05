@@ -55,6 +55,12 @@ export declare const PluginManifestSummarySchema: import("arktype/internal/varia
     }[];
     mcpServers: {
         name: string;
+        url?: string | undefined;
+        transport?: "sse" | "stdio" | "streamable-http" | undefined;
+        auth?: "api-key" | "none" | "oauth" | undefined;
+        scope?: string | undefined;
+        setup?: string | undefined;
+        endpointRedacted?: boolean | undefined;
     }[];
     bundledSkills: {
         name: string;
@@ -724,6 +730,12 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             }[];
             mcpServers: {
                 name: string;
+                url?: string | undefined;
+                transport?: "sse" | "stdio" | "streamable-http" | undefined;
+                auth?: "api-key" | "none" | "oauth" | undefined;
+                scope?: string | undefined;
+                setup?: string | undefined;
+                endpointRedacted?: boolean | undefined;
             }[];
             bundledSkills: {
                 name: string;
@@ -836,6 +848,12 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             }[];
             mcpServers: {
                 name: string;
+                url?: string | undefined;
+                transport?: "sse" | "stdio" | "streamable-http" | undefined;
+                auth?: "api-key" | "none" | "oauth" | undefined;
+                scope?: string | undefined;
+                setup?: string | undefined;
+                endpointRedacted?: boolean | undefined;
             }[];
             bundledSkills: {
                 name: string;
@@ -1095,6 +1113,12 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
             }[];
             mcpServers: {
                 name: string;
+                url?: string | undefined;
+                transport?: "sse" | "stdio" | "streamable-http" | undefined;
+                auth?: "api-key" | "none" | "oauth" | undefined;
+                scope?: string | undefined;
+                setup?: string | undefined;
+                endpointRedacted?: boolean | undefined;
             }[];
             bundledSkills: {
                 name: string;
@@ -1198,6 +1222,12 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
             }[];
             mcpServers: {
                 name: string;
+                url?: string | undefined;
+                transport?: "sse" | "stdio" | "streamable-http" | undefined;
+                auth?: "api-key" | "none" | "oauth" | undefined;
+                scope?: string | undefined;
+                setup?: string | undefined;
+                endpointRedacted?: boolean | undefined;
             }[];
             bundledSkills: {
                 name: string;

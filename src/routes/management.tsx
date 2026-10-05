@@ -911,6 +911,7 @@ export function Management() {
 
         {activeView === "plugins" ? (
           <PluginsPage
+            isAdmin={admin}
             pluginSearch={pluginSearch}
             selectedPlugin={selectedPlugin}
             selectedPluginName={selectedPluginName}

@@ -34,27 +34,52 @@ permissions:
   contents: read
 
 jobs:
+  dispatch-staging:
+    if: >-
+      github.repository == 'openclaw/clawhub' &&
+      github.event_name == 'repository_dispatch' &&
+      github.event.client_payload.environment == 'staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch staging worker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BATCH_LIMIT: ${{ github.event.client_payload.batch_limit || '2' }}
+          MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || '12' }}
+        run: |
+          set -euo pipefail
+          gh workflow run security-scan-codex.yml --repo openclaw/clawhub --ref staging \
+            -f batch-limit="$BATCH_LIMIT" \
+            -f max-runtime-minutes="$MAX_RUNTIME_MINUTES"
+
   codex-security-scan:
+    if: >-
+      github.repository == 'openclaw/clawhub' &&
+      ((github.ref == 'refs/heads/main' && github.event.client_payload.environment != 'staging') ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging'))
     name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
     runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 40
-    environment: Production
+    environment: ${{ github.ref == 'refs/heads/staging' && 'Staging' || 'Production' }}
     concurrency:
       # Bulk assignments must not wait behind ordinary queue workers on the same shard.
       # Priority remains one reserved lane shared by every dispatch mode.
-      group: clawhub-security-scan-${{ matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '' }}${{ matrix.shard }}
+      group: ${{ github.ref == 'refs/heads/staging' && 'staging-' || '' }}clawhub-security-scan-${{ matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '' }}${{ matrix.shard }}
       cancel-in-progress: false
     strategy:
       fail-fast: false
       max-parallel: 19
       matrix:
         lane: [shared]
-        shard: ${{ fromJSON(inputs['assigned-jobs'] && inputs['shared-workers'] == '18' && '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8","shared-9","shared-10","shared-11","shared-12","shared-13","shared-14","shared-15","shared-16","shared-17"]' || '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8"]') }}
+        shard: ${{ fromJSON(github.ref == 'refs/heads/staging' && '["shared-0"]' || inputs['assigned-jobs'] && inputs['shared-workers'] == '18' && '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8","shared-9","shared-10","shared-11","shared-12","shared-13","shared-14","shared-15","shared-16","shared-17"]' || '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8"]') }}
         include:
           - lane: priority
             shard: priority-0
     env:
-      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      CONVEX_URL: ${{ github.ref == 'refs/heads/staging' && 'https://cheery-civet-733.convex.cloud' || vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       CODEX_SECURITY_SCAN_LIMIT: ${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}
       CODEX_SECURITY_SCAN_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
       CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}
@@ -73,6 +98,10 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
+
+      - name: Verify staging worker target
+        if: github.ref == 'refs/heads/staging'
+        run: bun scripts/security/check-staging-worker-target.ts
 
       - uses: actions/setup-python@v7
         with:

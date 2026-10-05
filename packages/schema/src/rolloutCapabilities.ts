@@ -2,7 +2,13 @@ export const CLAWHUB_SKILLS_SH_ROLLOUT_MODE = "CLAWHUB_SKILLS_SH_ROLLOUT_MODE";
 export const CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE = "CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE";
 
 export type ClawHubRolloutMode = "off" | "test" | "production";
-export type ClawHubRuntimeEnvironment = "local" | "test" | "preview" | "production" | "unknown";
+export type ClawHubRuntimeEnvironment =
+  | "local"
+  | "test"
+  | "staging"
+  | "preview"
+  | "production"
+  | "unknown";
 
 export type ClawHubRolloutEnvironment = {
   CLAWHUB_DEPLOYMENT_NAME?: string;
@@ -27,6 +33,7 @@ export type ClawHubRolloutCapability = {
 };
 
 const TEST_DEPLOYMENT = "academic-chihuahua-392";
+const STAGING_DEPLOYMENT = "cheery-civet-733";
 
 function normalized(value: string | undefined) {
   return value?.trim().toLowerCase() ?? "";
@@ -72,20 +79,33 @@ export function getClawHubRuntimeEnvironment(
   const name = deploymentName(env);
   const vercelEnvironment = normalized(env.VERCEL_ENV);
   const vercelTargetEnvironment = normalized(env.VERCEL_TARGET_ENV);
+  const backendEnvironment = normalized(env.CLAWHUB_ENV);
+  const frontendEnvironment = normalized(env.VITE_CLAWHUB_DEPLOY_ENV);
+  const stagingBackend =
+    name === STAGING_DEPLOYMENT ||
+    [env.CONVEX_CLOUD_URL, env.CONVEX_SITE_URL, env.VITE_CONVEX_URL].some((value) =>
+      normalized(value).includes(STAGING_DEPLOYMENT),
+    );
   const permanentTestTarget =
     vercelTargetEnvironment === "test" &&
-    (name === TEST_DEPLOYMENT ||
-      normalized(env.CLAWHUB_ENV) === "test" ||
-      normalized(env.VITE_CLAWHUB_DEPLOY_ENV) === "test");
+    (name === TEST_DEPLOYMENT || backendEnvironment === "test" || frontendEnvironment === "test");
+  const permanentStagingTarget =
+    stagingBackend &&
+    (vercelTargetEnvironment === "staging" ||
+      backendEnvironment === "staging" ||
+      frontendEnvironment === "staging");
+  // Convex labels permanent deployments as prod, including ClawHub Staging.
+  if (deployment === `prod:${STAGING_DEPLOYMENT}`) return "staging";
   if (deployment.startsWith("prod:")) return "production";
   if (
     env.CLAWHUB_PREVIEW === "1" ||
-    vercelTargetEnvironment === "preview" ||
-    (vercelEnvironment === "preview" && !permanentTestTarget)
+    (vercelTargetEnvironment === "preview" && !permanentStagingTarget) ||
+    (vercelEnvironment === "preview" && !permanentTestTarget && !permanentStagingTarget)
   ) {
     return "preview";
   }
   if (name === TEST_DEPLOYMENT) return "test";
+  if (name === STAGING_DEPLOYMENT) return "staging";
   if (normalized(env.CLAWHUB_DEPLOYMENT_NAME)) {
     return "production";
   }
@@ -95,6 +115,7 @@ export function getClawHubRuntimeEnvironment(
 
   const marker = runtimeMarker(env);
   if (marker === "test") return "test";
+  if (marker === "staging") return "staging";
   if (marker === "production") return "production";
   if (marker === "preview") return "preview";
   if (marker === "local" || marker === "development") return "local";
@@ -105,6 +126,7 @@ export function getClawHubRuntimeEnvironment(
     (value): value is string => Boolean(value?.trim()),
   );
   if (urls.some((value) => value.includes(TEST_DEPLOYMENT))) return "test";
+  if (urls.some((value) => value.includes(STAGING_DEPLOYMENT))) return "staging";
   if (urls.length > 0 && urls.every(isLocalUrl)) return "local";
   return "unknown";
 }

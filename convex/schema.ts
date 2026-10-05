@@ -752,6 +752,14 @@ export const pluginManifestSummaryValidator = v.object({
   mcpServers: v.array(
     v.object({
       name: v.string(),
+      url: v.optional(v.string()),
+      transport: v.optional(
+        v.union(v.literal("streamable-http"), v.literal("sse"), v.literal("stdio")),
+      ),
+      auth: v.optional(v.union(v.literal("oauth"), v.literal("api-key"), v.literal("none"))),
+      scope: v.optional(v.string()),
+      setup: v.optional(v.string()),
+      endpointRedacted: v.optional(v.boolean()),
     }),
   ),
   bundledSkills: v.array(

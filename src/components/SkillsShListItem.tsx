@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Download } from "lucide-react";
+import { emitAnalytics, publicAnalyticsContentId } from "../lib/analyticsEvents";
 import { formatCompactStat } from "../lib/numberFormat";
 import {
   SKILLS_SH_TRUST_LABEL,
@@ -13,7 +14,17 @@ import { Badge } from "./ui/badge";
 
 export function SkillsShListItem({ result }: { result: SkillsShSearchResult }) {
   return (
-    <Link to={result.route} className="skill-list-item skill-list-item-skill">
+    <Link
+      to={result.route}
+      onClick={() =>
+        emitAnalytics("select_content", {
+          content_type: "catalog_skill",
+          content_id: publicAnalyticsContentId("catalog_skill", result.externalId),
+          ui_location: "catalog",
+        })
+      }
+      className="skill-list-item skill-list-item-skill"
+    >
       <MarketplaceIcon kind="skill" label={result.displayName} />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">

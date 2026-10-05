@@ -1,0 +1,514 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact current staging branch SHA to deploy
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  deploy-staging:
+    if: >-
+      github.ref == 'refs/heads/staging' &&
+      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.expected_sha != ''))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 135
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+      statuses: read
+    environment:
+      name: Staging
+      url: ${{ vars.SITE_URL || 'https://clawhub-git-staging-openclaw-foundation.vercel.app' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Resolve staging revision
+        id: revision
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/heads/staging ||
+                ( "$GITHUB_EVENT_NAME" != push && "$GITHUB_EVENT_NAME" != workflow_dispatch ) ]]; then
+            echo "::error::Staging deploys must run from a staging push or staging dispatch"
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::expected_sha must be a full lowercase commit SHA"
+            exit 1
+          fi
+          deploy_sha="$(git rev-parse HEAD)"
+          git fetch --no-tags origin \
+            +refs/heads/staging:refs/remotes/origin/staging
+          current_sha="$(git rev-parse origin/staging)"
+          if [[ "$EXPECTED_SHA" != "$deploy_sha" || "$deploy_sha" != "$current_sha" ]]; then
+            echo "::error::Requested SHA must equal both the checked-out commit and current staging head"
+            exit 1
+          fi
+          # This main commit contains the environment-aware proxy/build path.
+          # A fixed baseline permits staging-only commits after main advances.
+          safe_baseline=72a32c2626700c4b05954289b8bf7ed4ccf00115
+          if ! git merge-base --is-ancestor "$safe_baseline" HEAD; then
+            echo "::error::Staging is older than the safe deployment baseline"
+            exit 1
+          fi
+          if [[ ! -f .github/workflows/deploy-staging.yml ]]; then
+            echo "::error::Checked-out staging commit lacks its deployment workflow"
+            exit 1
+          fi
+          if ! jq -e '
+            .buildCommand == "bun run build:vercel" and
+            .git.deploymentEnabled.staging == false and
+            ((.rewrites // []) | length == 0)
+          ' vercel.json > /dev/null; then
+            echo "::error::Staging requires the current Vercel build and hook-only branch configuration"
+            exit 1
+          fi
+          echo "deploy_sha=$deploy_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for successful staging CI
+        env:
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in {1..300}; do
+            if ! runs_json="$(gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f branch=staging -f event=push -f head_sha="$DEPLOY_SHA" \
+              -f per_page=100 2>/dev/null)"; then
+              echo "CI run lookup failed on attempt $attempt; retrying..."
+              sleep 10
+              continue
+            fi
+            ci_run="$(jq -c --arg sha "$DEPLOY_SHA" '
+              [.workflow_runs[] | select(
+                .event == "push" and
+                .head_branch == "staging" and
+                .head_sha == $sha
+              )] | sort_by(.run_number) | last // {}
+            ' <<< "$runs_json")"
+            ci_status="$(jq -r '.status // empty' <<< "$ci_run")"
+            ci_conclusion="$(jq -r '.conclusion // empty' <<< "$ci_run")"
+            ci_url="$(jq -r '.html_url // empty' <<< "$ci_run")"
+            if [[ "$ci_status" == completed ]]; then
+              if [[ "$ci_conclusion" == success ]]; then
+                echo "Exact-SHA staging CI passed: $ci_url"
+                exit 0
+              fi
+              echo "::error::Exact-SHA staging CI ended with ${ci_conclusion:-unknown}: $ci_url"
+              exit 1
+            fi
+            echo "Waiting for staging CI at $DEPLOY_SHA on attempt $attempt..."
+            sleep 10
+          done
+          echo "::error::Timed out waiting for exact-SHA staging CI"
+          exit 1
+
+      - name: Recheck staging head after CI
+        env:
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            +refs/heads/staging:refs/remotes/origin/staging
+          if [[ "$(git rev-parse origin/staging)" != "$DEPLOY_SHA" ]]; then
+            echo "::error::Staging advanced while CI ran"
+            exit 1
+          fi
+
+      - name: Reject previously deployed staging SHA
+        if: fromJSON(github.run_attempt) > 1 || github.event_name == 'workflow_dispatch'
+        env:
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! deployments_json="$(gh api --method GET --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/deployments" \
+            -f sha="$DEPLOY_SHA" -f per_page=100)"; then
+            echo "::error::Could not check prior Vercel deployments for $DEPLOY_SHA"
+            exit 1
+          fi
+          deployment_id="$(jq -r --arg sha "$DEPLOY_SHA" '
+            [.[][] | select(
+              .sha == $sha and
+              .creator.login == "vercel[bot]" and
+              .environment == "Preview – clawhub"
+            )] | first | .id // empty
+          ' <<< "$deployments_json")"
+          if [[ -n "$deployment_id" ]]; then
+            echo "::error::Staging SHA $DEPLOY_SHA already has Vercel Preview deployment $deployment_id. Push a new commit for environment-only changes, then deploy the new SHA."
+            exit 1
+          fi
+
+      - name: Check Staging configuration
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          STAGING_SITE_URL: ${{ vars.SITE_URL || 'https://clawhub-git-staging-openclaw-foundation.vercel.app' }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE }}
+          VITE_CONVEX_SITE_URL: ${{ vars.VITE_CONVEX_SITE_URL }}
+          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in \
+            CONVEX_DEPLOY_KEY \
+            STAGING_SITE_URL \
+            VERCEL_AUTOMATION_BYPASS_SECRET \
+            VERCEL_DEPLOY_HOOK_URL \
+            VERCEL_PROJECT_ID \
+            VERCEL_SCOPE \
+            VITE_CONVEX_SITE_URL \
+            VITE_CONVEX_URL
+          do
+            if [[ -z "${!name}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing Staging environment configuration: ${missing[*]}"
+            exit 1
+          fi
+          if [[ "$CONVEX_DEPLOY_KEY" != prod:cheery-civet-733\|* ]]; then
+            echo "::error::CONVEX_DEPLOY_KEY must target cheery-civet-733"
+            exit 1
+          fi
+          if [[ "$VERCEL_SCOPE" != openclaw-foundation ||
+                "$VERCEL_PROJECT_ID" != prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc ||
+                "$VERCEL_DEPLOY_HOOK_URL" != "https://api.vercel.com/v1/integrations/deploy/$VERCEL_PROJECT_ID/"?* ]]; then
+            echo "::error::Staging Deploy Hook must target openclaw-foundation/clawhub"
+            exit 1
+          fi
+          if [[ "$VITE_CONVEX_URL" != https://cheery-civet-733.convex.cloud ||
+                "$VITE_CONVEX_SITE_URL" != https://cheery-civet-733.convex.site ]]; then
+            echo "::error::Staging frontend must use the paired cheery-civet-733 Convex URLs"
+            exit 1
+          fi
+          if [[ "$STAGING_SITE_URL" != https://stg.clawhub.ai &&
+                "$STAGING_SITE_URL" != https://stg.clawhub.openclaw.org &&
+                "$STAGING_SITE_URL" != https://clawhub-git-staging-openclaw-foundation.vercel.app ]]; then
+            echo "::error::SITE_URL must be an approved staging domain or branch URL"
+            exit 1
+          fi
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Verify staging frontend build plan
+        env:
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+          STAGING_SITE_URL: ${{ vars.SITE_URL || 'https://clawhub-git-staging-openclaw-foundation.vercel.app' }}
+        run: |
+          set -euo pipefail
+          plan="$(bun -e '
+            import { resolveVercelBuildPlan } from "./scripts/vercel-build.ts";
+            import { resolveFrontendBuildEnv } from "./scripts/vercel-build-frontend.ts";
+            const env = {
+              CLAWHUB_ENV: "staging",
+              CLAWHUB_STAGING_EDGE_SECRET: "build-plan-fixture".padEnd(32, "x"),
+              VERCEL_ENV: "preview",
+              VERCEL_TARGET_ENV: "preview",
+              VERCEL_GIT_COMMIT_REF: "staging",
+              VERCEL_GIT_COMMIT_SHA: process.env.DEPLOY_SHA,
+              SITE_URL: process.env.STAGING_SITE_URL,
+              VITE_SITE_URL: process.env.STAGING_SITE_URL,
+              VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
+              VITE_CONVEX_SITE_URL: "https://cheery-civet-733.convex.site",
+            };
+            process.stdout.write(JSON.stringify({
+              plan: resolveVercelBuildPlan(env),
+              frontend: resolveFrontendBuildEnv(env),
+            }));
+          ')"
+          if ! jq -e --arg site "$STAGING_SITE_URL" '
+            .plan == [{"command":"bun","args":["scripts/vercel-build-frontend.ts"]}] and
+            .frontend.VITE_CLAWHUB_DEPLOY_ENV == "staging" and
+            .frontend.SITE_URL == $site and
+            .frontend.VITE_SITE_URL == $site and
+            .frontend.VITE_CONVEX_SITE_URL == "https://cheery-civet-733.convex.site"
+          ' <<< "$plan" > /dev/null; then
+            echo "::error::Staging build must not create or seed a Convex Preview deployment"
+            exit 1
+          fi
+
+      - name: Check Staging backend auth configuration
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          names="$(bunx convex env list --names-only --prod)"
+          missing=()
+          for name in AUTH_GITHUB_ID AUTH_GITHUB_SECRET JWT_PRIVATE_KEY JWKS CLAWHUB_STAGING_EDGE_SECRET SECURITY_SCAN_WORKER_TOKEN; do
+            if ! grep -Fxq "$name" <<< "$names"; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing Staging Convex auth variables: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Configure Staging backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          STAGING_SITE_URL: ${{ vars.SITE_URL || 'https://clawhub-git-staging-openclaw-foundation.vercel.app' }}
+        run: |
+          set -euo pipefail
+          bunx convex env set CLAWHUB_ENV staging --prod
+          bunx convex env set CLAWHUB_DISABLE_CRONS 1 --prod
+          bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE off --prod
+          bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE off --prod
+          bunx convex env set SITE_URL "$STAGING_SITE_URL" --prod
+
+      - name: Deploy Convex Staging
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bun run convex:deploy
+
+      - name: Verify Convex contract
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bun run verify:convex-contract -- --prod
+
+      - name: Stamp verified Staging SHA
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          bunx convex env set APP_BUILD_SHA "$DEPLOY_SHA" --prod
+          bunx convex env set APP_DEPLOYED_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" --prod
+
+      - name: Verify Staging backend identity
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+          STAGING_SITE_URL: ${{ vars.SITE_URL || 'https://clawhub-git-staging-openclaw-foundation.vercel.app' }}
+        run: |
+          set -euo pipefail
+          info="$(bunx convex run appMeta:getDeploymentInfo --prod)"
+          jq -e --arg sha "$DEPLOY_SHA" '
+            .appBuildSha == $sha and (.deployedAt | type == "string")
+          ' <<< "$info" > /dev/null
+          capabilities="$(bunx convex run rolloutCapabilities:getPublicCapabilities --prod)"
+          jq -e '
+            .environment == "staging" and
+            .skillsSh.mode == "off" and
+            .skillsSh.runtimeEnabled == false and
+            .githubSkillSync.mode == "off" and
+            .githubSkillSync.selfServiceEnabled == false
+          ' <<< "$capabilities" > /dev/null
+          if [[ "$(bunx convex env get SITE_URL --prod)" != "$STAGING_SITE_URL" ||
+                "$(bunx convex env get CLAWHUB_DISABLE_CRONS --prod)" != 1 ]]; then
+            echo "::error::Staging backend origin or cron guard did not persist"
+            exit 1
+          fi
+
+      - name: Recheck staging head before Deploy Hook
+        env:
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            +refs/heads/staging:refs/remotes/origin/staging
+          if [[ "$(git rev-parse origin/staging)" != "$DEPLOY_SHA" ]]; then
+            echo "::error::Staging advanced during backend deploy; leave the frontend unchanged"
+            exit 1
+          fi
+
+      - name: Trigger staging Vercel Deploy Hook
+        id: hook
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          set -euo pipefail
+          bun - <<'JS'
+          import { appendFileSync } from 'node:fs';
+
+          const hook = process.env.VERCEL_DEPLOY_HOOK_URL;
+          const startedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+          let response;
+          try {
+            response = await fetch(hook, { method: 'POST' });
+          } catch {
+            throw new Error('Staging Deploy Hook request failed');
+          }
+          if (!response.ok) {
+            throw new Error(`Staging Deploy Hook returned HTTP ${response.status}`);
+          }
+          const result = await response.json();
+          const jobId = result?.job?.id;
+          if (typeof jobId !== 'string' || !/^[A-Za-z0-9]+$/.test(jobId)) {
+            throw new Error('Staging Deploy Hook did not return a job ID');
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `started_at=${startedAt}\njob_id=${jobId}\n`);
+          JS
+
+      - name: Wait for exact-SHA Vercel Preview
+        id: vercel
+        env:
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+          GH_TOKEN: ${{ github.token }}
+          HOOK_STARTED_AT: ${{ steps.hook.outputs.started_at }}
+          VERCEL_STATUS_CONTEXT: Vercel – clawhub
+        run: |
+          set -euo pipefail
+          for attempt in {1..300}; do
+            if ! commit_json="$(gh api "repos/$GITHUB_REPOSITORY/commits/$DEPLOY_SHA/status" 2>/dev/null)"; then
+              echo "GitHub status lookup failed on attempt $attempt; retrying..."
+              sleep 10
+              continue
+            fi
+            status_json="$(jq -c \
+              --arg context "$VERCEL_STATUS_CONTEXT" \
+              --arg started "$HOOK_STARTED_AT" \
+              '[.statuses[] | select(.context == $context and .created_at >= $started)][0] // {}' \
+              <<< "$commit_json")"
+            state="$(jq -r '.state // empty' <<< "$status_json")"
+            target_url="$(jq -r '.target_url // empty' <<< "$status_json")"
+            case "$state" in
+              failure|error)
+                echo "::error::Vercel Preview failed for $DEPLOY_SHA"
+                exit 1
+                ;;
+              success)
+                if [[ "$target_url" != https://vercel.com/openclaw-foundation/clawhub/* ]]; then
+                  echo "::error::Vercel status points outside openclaw-foundation/clawhub"
+                  exit 1
+                fi
+                if ! deployments_json="$(gh api \
+                  "repos/$GITHUB_REPOSITORY/deployments?sha=$DEPLOY_SHA&per_page=100" 2>/dev/null)"; then
+                  echo "GitHub deployment lookup failed on attempt $attempt; retrying..."
+                  sleep 10
+                  continue
+                fi
+                deployment_id="$(jq -r \
+                  --arg sha "$DEPLOY_SHA" \
+                  --arg started "$HOOK_STARTED_AT" \
+                  '[.[] | select(
+                    .sha == $sha and
+                    .creator.login == "vercel[bot]" and
+                    .environment == "Preview – clawhub" and
+                    .created_at >= $started
+                  )] | sort_by(.created_at) | last | .id // empty' \
+                  <<< "$deployments_json")"
+                if [[ -z "$deployment_id" ]]; then
+                  echo "Waiting for exact-SHA Vercel Preview deployment on attempt $attempt..."
+                  sleep 10
+                  continue
+                fi
+                if ! deployment_statuses="$(gh api \
+                  "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses" 2>/dev/null)"; then
+                  echo "GitHub deployment status lookup failed on attempt $attempt; retrying..."
+                  sleep 10
+                  continue
+                fi
+                deployment_state="$(jq -r '.[0].state // empty' <<< "$deployment_statuses")"
+                deployment_url="$(jq -r '.[0].environment_url // empty' <<< "$deployment_statuses")"
+                if [[ "$deployment_state" == success ]]; then
+                  if [[ ! "$deployment_url" =~ ^https://clawhub-[a-z0-9-]+-openclaw-foundation[.]vercel[.]app/?$ ||
+                        "$deployment_url" == https://clawhub-git-staging-openclaw-foundation.vercel.app ]]; then
+                    echo "::error::Vercel Preview did not expose the expected project URL"
+                    exit 1
+                  fi
+                  echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
+                  echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                if [[ "$deployment_state" == failure || "$deployment_state" == error ]]; then
+                  echo "::error::Exact-SHA Vercel Preview deployment failed"
+                  exit 1
+                fi
+                ;;
+            esac
+            echo "Waiting for Vercel Preview of $DEPLOY_SHA on attempt $attempt..."
+            sleep 10
+          done
+          echo "::error::Timed out waiting for exact-SHA Vercel Preview"
+          exit 1
+
+      - name: Smoke Staging candidate API
+        env:
+          CLAWHUB_E2E_EXPECT_STAGING_BACKEND: cheery-civet-733
+          CLAWHUB_E2E_EXPECT_STAGING_SHA: ${{ steps.revision.outputs.deploy_sha }}
+          CLAWHUB_E2E_SITE: ${{ steps.vercel.outputs.deployment_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: bunx vitest run -c vitest.e2e.config.ts e2e/staging-api.e2e.test.ts
+
+      - name: Install Playwright browser
+        run: bunx playwright install --with-deps chromium
+
+      - name: Smoke Staging candidate UI
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ steps.vercel.outputs.deployment_url }}
+          PLAYWRIGHT_WORKERS: "1"
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: bunx playwright test --project=chromium e2e/ci-smoke.pw.test.ts
+
+      - name: Recheck staging head before stable URL proof
+        env:
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            +refs/heads/staging:refs/remotes/origin/staging
+          if [[ "$(git rev-parse origin/staging)" != "$DEPLOY_SHA" ]]; then
+            echo "::error::Staging advanced during candidate checks"
+            exit 1
+          fi
+
+      - name: Verify stable Staging URL
+        env:
+          CLAWHUB_E2E_EXPECT_STAGING_BACKEND: cheery-civet-733
+          CLAWHUB_E2E_EXPECT_STAGING_SHA: ${{ steps.revision.outputs.deploy_sha }}
+          CLAWHUB_E2E_SITE: ${{ vars.SITE_URL || 'https://clawhub-git-staging-openclaw-foundation.vercel.app' }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          for attempt in {1..30}; do
+            if bunx vitest run -c vitest.e2e.config.ts e2e/staging-api.e2e.test.ts; then
+              exit 0
+            fi
+            echo "Waiting for the stable Staging URL to serve this SHA on attempt $attempt..."
+            sleep 10
+          done
+          echo "::error::Stable Staging URL did not serve the verified SHA"
+          exit 1
+
+      - name: Write deployment summary
+        if: always()
+        env:
+          CANDIDATE_URL: ${{ steps.vercel.outputs.deployment_url }}
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+          HOOK_JOB_ID: ${{ steps.hook.outputs.job_id }}
+          STABLE_URL: ${{ vars.SITE_URL || 'https://clawhub-git-staging-openclaw-foundation.vercel.app' }}
+        run: |
+          {
+            echo "## ClawHub Staging deployment"
+            echo
+            echo "- Git SHA: \`${DEPLOY_SHA:-unresolved}\`"
+            echo "- Convex deployment: \`cheery-civet-733\` (amantus/clawhub-staging)"
+            echo "- Vercel Deploy Hook job: \`${HOOK_JOB_ID:-not started}\`"
+            echo "- Vercel candidate: ${CANDIDATE_URL:-not created}"
+            echo "- Stable Staging URL: ${STABLE_URL}"
+            echo "- Result: \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

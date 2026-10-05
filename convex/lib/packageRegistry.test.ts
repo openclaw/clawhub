@@ -213,7 +213,7 @@ describe("packageRegistry", () => {
           sensitive: false,
         },
       ],
-      mcpServers: [{ name: "exampleMcp" }],
+      mcpServers: [{ name: "exampleMcp", transport: "stdio", auth: "none" }],
       bundledSkills: [
         {
           name: "research",
@@ -233,7 +233,6 @@ describe("packageRegistry", () => {
       ],
     });
     expect(JSON.stringify(summary)).not.toContain("command");
-    expect(JSON.stringify(summary)).not.toContain("transport");
     expect(JSON.stringify(summary)).not.toContain("shared_deps");
     expect(JSON.stringify(summary)).not.toContain("contracts");
   });
@@ -501,9 +500,66 @@ describe("packageRegistry", () => {
       },
     ]);
     expect(summary.configFields).toHaveLength(1);
-    expect(summary.mcpServers).toEqual([{ name: "exampleMcp" }]);
+    expect(summary.mcpServers).toEqual([{ name: "exampleMcp", transport: "stdio", auth: "none" }]);
     expect(JSON.stringify(summary)).not.toContain("command");
     expect(JSON.stringify(summary)).not.toContain("customMetadata");
+  });
+
+  it("exposes safe remote connection details without header credentials or private URLs", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        mcpServers: {
+          public: {
+            type: "http",
+            url: "https://mcp.example.com/mcp?codemode=false",
+            auth: "oauth",
+            oauth: { scope: "read" },
+            description: "Connect in OpenClaw.",
+          },
+          standardOauth: {
+            type: "http",
+            url: "https://mcp.example.com/standard",
+            oauth: { scopes: "read write" },
+          },
+          keyed: {
+            type: "sse",
+            url: "https://mcp.example.com/sse",
+            headers: { Authorization: "Bearer private-key" },
+          },
+          secret: { type: "http", url: "https://mcp.example.com/?token=private-token" },
+          local: { type: "http", url: "https://127.0.0.1/private" },
+        },
+      },
+      files: [],
+      categories: ["integrations"],
+    });
+    expect(summary.mcpServers).toContainEqual({
+      name: "public",
+      url: "https://mcp.example.com/mcp?codemode=false",
+      transport: "streamable-http",
+      auth: "oauth",
+      scope: "read",
+      setup: "Connect in OpenClaw.",
+    });
+    expect(summary.mcpServers).toContainEqual({
+      name: "standardOauth",
+      url: "https://mcp.example.com/standard",
+      transport: "streamable-http",
+      auth: "oauth",
+      scope: "read write",
+    });
+    expect(summary.mcpServers).toContainEqual({
+      name: "keyed",
+      url: "https://mcp.example.com/sse",
+      transport: "sse",
+      auth: "api-key",
+    });
+    expect(
+      summary.mcpServers.filter(
+        (server) => "endpointRedacted" in server && server.endpointRedacted,
+      ),
+    ).toHaveLength(2);
+    expect(JSON.stringify(summary)).not.toMatch(/private-key|private-token|127\.0\.0\.1/);
   });
 
   it("allows missing host and environment metadata for code plugins", () => {

@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Bookmark, Download } from "lucide-react";
+import { emitAnalytics, publicAnalyticsContentId } from "../lib/analyticsEvents";
 import { getSkillBadges } from "../lib/badges";
 import { getSkillCategoriesForSkill } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
@@ -45,6 +46,13 @@ export function SkillListItem({
   return (
     <Link
       to={href}
+      onClick={() =>
+        emitAnalytics("select_content", {
+          content_type: "skill",
+          content_id: publicAnalyticsContentId("skill", String(skill._id)),
+          ui_location: "catalog",
+        })
+      }
       className={`skill-list-item skill-list-item-skill skill-list-item-with-taxonomy${
         showIcon ? "" : " skill-list-item-no-icon"
       }`}

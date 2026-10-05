@@ -1362,6 +1362,7 @@ function makeReleaseDoc(overrides: Partial<Record<string, unknown>> = {}) {
     _id: "packageReleases:demo-1",
     packageId: "packages:demo",
     version: "1.0.0",
+    files: [],
     createdAt: 1,
     softDeletedAt: undefined,
     createdBy: "users:owner",

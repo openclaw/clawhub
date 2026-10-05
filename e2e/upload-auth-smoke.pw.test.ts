@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/productionSmoke";
 import { expectHealthyPage, trackRuntimeErrors } from "./helpers/runtimeErrors";
 
 async function hasAuthStorageState() {
@@ -13,12 +13,17 @@ async function hasAuthStorageState() {
   }
 }
 
-test("authenticated upload preflight stays healthy", async ({ browser, baseURL }) => {
+test("authenticated upload preflight stays healthy", async ({
+  browser,
+  baseURL,
+  prepareSmokeContext,
+}) => {
   const storageState = await hasAuthStorageState();
   test.skip(!storageState, "Set PLAYWRIGHT_AUTH_STORAGE_STATE to run authenticated smoke.");
   if (!storageState) return;
 
   const context = await browser.newContext({ baseURL, storageState });
+  await prepareSmokeContext(context);
   const page = await context.newPage();
   const errors = trackRuntimeErrors(page);
 
@@ -30,12 +35,17 @@ test("authenticated upload preflight stays healthy", async ({ browser, baseURL }
   await context.close();
 });
 
-test("authenticated import preflight stays healthy", async ({ browser, baseURL }) => {
+test("authenticated import preflight stays healthy", async ({
+  browser,
+  baseURL,
+  prepareSmokeContext,
+}) => {
   const storageState = await hasAuthStorageState();
   test.skip(!storageState, "Set PLAYWRIGHT_AUTH_STORAGE_STATE to run authenticated smoke.");
   if (!storageState) return;
 
   const context = await browser.newContext({ baseURL, storageState });
+  await prepareSmokeContext(context);
   const page = await context.newPage();
   const errors = trackRuntimeErrors(page);
 
