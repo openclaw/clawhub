@@ -35,6 +35,7 @@ import { recordCatalogSearchObservation } from "../lib/catalogSearchObservations
 import {
   ARCHIVE_REQUEST_IDENTITY_HEADER,
   expectedVercelEnvironmentForConvexSite,
+  hasValidStagingEdgeSecret,
   type ClawHubVercelEnvironment,
   verifyClawHubVercelOidcToken,
 } from "../lib/clawhubVercelOidc";
@@ -3777,7 +3778,9 @@ export async function exportSkillsV1Handler(
   if (manifestRequested) {
     const token = request.headers.get(ARCHIVE_REQUEST_IDENTITY_HEADER)?.trim();
     const expectedEnvironment = expectedVercelEnvironmentForConvexSite(request.url);
-    if (!token || !expectedEnvironment) return unauthorizedSkillsExportManifestResponse();
+    if (!token || !expectedEnvironment || !hasValidStagingEdgeSecret(request)) {
+      return unauthorizedSkillsExportManifestResponse();
+    }
     try {
       await dependencies.verifyArchiveRequester(token, expectedEnvironment);
     } catch {

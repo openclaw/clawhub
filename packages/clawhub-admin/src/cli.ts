@@ -30,6 +30,11 @@ import { cmdSendStaffEmail } from "./commands/email.js";
 import { cmdSetPackageFeatured, cmdSetSkillFeatured } from "./commands/featured.js";
 import { cmdFeaturedSelection } from "./commands/featuredSelections.js";
 import {
+  cmdGetManagedMcp,
+  cmdPublishManagedMcp,
+  cmdUnpublishManagedMcp,
+} from "./commands/managedMcp.js";
+import {
   cmdBanUser,
   cmdLiftModerationHold,
   cmdRecoverPersonalPublisher,
@@ -315,6 +320,27 @@ users
     const opts = await resolveGlobalOpts();
     await cmdRecoverPersonalPublisher(opts, handle, options, isInputAllowed());
   });
+
+const managedMcp = program
+  .command("managed-mcp")
+  .description("Author and publish OpenClaw-managed remote MCP plugins");
+managedMcp
+  .command("publish <file>")
+  .description("Publish one definition or a JSON array through normal security gates")
+  .option("--icon <png>", "Use a local PNG for one definition; preserve its icon rights metadata")
+  .option(
+    "--dry-run",
+    "Validate definition fields only; skip artifact, endpoint, and security checks",
+  )
+  .action(async (file, options) => cmdPublishManagedMcp(await resolveGlobalOpts(), file, options));
+managedMcp
+  .command("get <id>")
+  .description("Read the most recent submitted definition for editing")
+  .action(async (id) => cmdGetManagedMcp(await resolveGlobalOpts(), id));
+managedMcp
+  .command("unpublish <id>")
+  .description("Stop new availability; preserve installed copies")
+  .action(async (id) => cmdUnpublishManagedMcp(await resolveGlobalOpts(), id));
 
 const plugins = program
   .command("plugins")

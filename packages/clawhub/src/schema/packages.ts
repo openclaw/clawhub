@@ -42,6 +42,12 @@ export const PluginManifestSummarySchema = type({
   }).array(),
   mcpServers: type({
     name: "string",
+    url: "string?",
+    "transport?": '"streamable-http"|"sse"|"stdio"',
+    "auth?": '"oauth"|"api-key"|"none"',
+    scope: "string?",
+    setup: "string?",
+    endpointRedacted: "boolean?",
   }).array(),
   bundledSkills: type({
     name: "string",

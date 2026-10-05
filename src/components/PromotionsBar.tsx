@@ -1,6 +1,7 @@
 import { ApiRoutes } from "clawhub-schema/routes";
 import { ArrowUpRight, Gift, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { emitAnalytics } from "../lib/analyticsEvents";
 import { publicApiUrl } from "../lib/publicApiUrl";
 
 type PublicPromotion = {
@@ -51,6 +52,12 @@ function PromotionBarItem({
   onDismiss: (promotion: PublicPromotion) => void;
 }) {
   const ctaUrl = promotionCtaUrl(promotion);
+  const shown = useRef(false);
+  useEffect(() => {
+    if (!shown.current)
+      emitAnalytics("popup_view", { popup_id: "promotion", ui_location: "promotion" });
+    shown.current = true;
+  }, []);
 
   return (
     <article className="promotion-bar-item">
@@ -64,7 +71,19 @@ function PromotionBarItem({
           <span className="promotion-bar-meta">{promotion.blurb}</span>
         </div>
         {ctaUrl ? (
-          <a className="promotion-bar-link" href={ctaUrl} target="_blank" rel="noopener noreferrer">
+          <a
+            className="promotion-bar-link"
+            onClick={() =>
+              emitAnalytics("select_content", {
+                content_type: "navigation",
+                content_id: `promotion:${promotion.slug}`,
+                ui_location: "promotion",
+              })
+            }
+            href={ctaUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             Try it free <ArrowUpRight size={15} aria-hidden="true" />
           </a>
         ) : null}
@@ -74,7 +93,14 @@ function PromotionBarItem({
         className="promotion-bar-dismiss"
         aria-label={`Dismiss ${promotion.title} promotion`}
         title="Dismiss promotion"
-        onClick={() => onDismiss(promotion)}
+        onClick={() => {
+          emitAnalytics("popup_dismiss", {
+            popup_id: "promotion",
+            ui_location: "promotion",
+            dismiss_method: "button",
+          });
+          onDismiss(promotion);
+        }}
       >
         <X size={14} aria-hidden="true" />
       </button>

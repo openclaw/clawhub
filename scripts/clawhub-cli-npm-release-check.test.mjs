@@ -1,10 +1,14 @@
 /* @vitest-environment node */
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("clawhub CLI npm release metadata check", () => {
-  const releaseTag = "v0.23.3";
+  const packageJson = JSON.parse(
+    readFileSync(new URL("../packages/clawhub/package.json", import.meta.url), "utf8"),
+  );
+  const releaseTag = `v${packageJson.version}`;
 
   function runCheck(args) {
     const env = { ...process.env };

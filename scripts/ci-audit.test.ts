@@ -71,6 +71,52 @@ describe("ci-audit", () => {
     );
   });
 
+  it("parses Bun 1.3.10 audit JSON without its stderr banner", () => {
+    const log = vi.fn();
+    const jsonOutput = JSON.stringify({
+      dompurify: [
+        {
+          title: "DOMPurify event handler advisory",
+          url: "https://github.com/advisories/GHSA-p98j-92pf-mc4p",
+          severity: "low",
+          cwe: ["CWE-79"],
+        },
+      ],
+    });
+    const stderr = "\u001b[1mbun audit \u001b[2mv1.3.10 (30e609e0)\u001b[0m\n";
+    const output = `${jsonOutput}\n${stderr}`;
+
+    expect(auditExitCode({ exitCode: 1, output, jsonOutput, stderr }, log)).toBe(0);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::warning .*dompurify/));
+  });
+
+  it("fails closed when Bun times out after writing advisory JSON", () => {
+    const log = vi.fn();
+    const jsonOutput = JSON.stringify({ dompurify: [{ title: "DOMPurify advisory" }] });
+    const output = `${jsonOutput}\n[ci-audit] ETIMEDOUT: bun audit exceeded 60s\n`;
+
+    expect(auditExitCode({ exitCode: 1, output, jsonOutput, toolFailure: true }, log)).toBe(1);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on unexpected stderr even with advisory JSON", () => {
+    const log = vi.fn();
+    const jsonOutput = JSON.stringify({ dompurify: [{ title: "DOMPurify advisory" }] });
+
+    expect(
+      auditExitCode(
+        {
+          exitCode: 1,
+          output: `${jsonOutput}\nerror: audit request failed\n`,
+          jsonOutput,
+          stderr: "error: audit request failed\n",
+        },
+        log,
+      ),
+    ).toBe(1);
+    expect(log).not.toHaveBeenCalled();
+  });
+
   it("still fails on known malware", () => {
     const log = vi.fn();
     const output = JSON.stringify({

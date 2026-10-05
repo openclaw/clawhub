@@ -1,5 +1,6 @@
 import {
   ServerPackagePublishRequestSchema,
+  MANAGED_MCP_DEFINITION_PATH,
   PACKAGE_CATEGORY_BATCH_LIMIT,
   validateClawPackageContents,
   getCatalogTopicSlugs,
@@ -703,6 +704,7 @@ type PackagePublishAuthContext =
 type PackageTrustedPublisherDoc = Doc<"packageTrustedPublishers">;
 type PackagePublishOptions = {
   stagePrePublicationChecks?: boolean;
+  requireSecurityChecks?: boolean;
   onFilesAdopted?: () => void;
 };
 type PackageDoc = Doc<"packages">;
@@ -9536,11 +9538,14 @@ async function publishPackageImpl(
         publisherId: ownerPublisherId,
       })
     : null;
-  const trustedOpenClawPlugin = isTrustedOpenClawPluginPackage({
-    family,
-    normalizedName: name,
-    ownerPublisher,
-  });
+  const trustedOpenClawPlugin =
+    !options.requireSecurityChecks &&
+    !files.some((file) => file.path === "clawhub-mcp.json") &&
+    isTrustedOpenClawPluginPackage({
+      family,
+      normalizedName: name,
+      ownerPublisher,
+    });
   const verificationSource = codeArtifacts?.verification ?? bundleArtifacts?.verification;
   const initialScanStatus = trustedOpenClawPlugin ? "clean" : "pending";
   const verification = verificationSource
@@ -10091,11 +10096,14 @@ export const publishPackageForUserInternal = internalAction({
     actorUserId: v.id("users"),
     payload: v.any(),
     requestStorageIds: v.optional(v.array(v.id("_storage"))),
+    requireSecurityChecks: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     return await withRequestPackageStorage(ctx, args.requestStorageIds, (onFilesAdopted) =>
       publishPackageImpl(ctx, { kind: "user", actorUserId: args.actorUserId }, args.payload, {
-        stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
+        stagePrePublicationChecks:
+          args.requireSecurityChecks || stagedPrePublicationPublishesEnabled(),
+        requireSecurityChecks: args.requireSecurityChecks,
         onFilesAdopted,
       }),
     );
@@ -12041,6 +12049,30 @@ export const publishPendingReleaseInternal = internalMutation({
             args.manualRecoveryClaimId,
           )
         : undefined;
+    // Queueing does not preserve managed-publisher authority: membership, admin
+    // status, and publisher availability can change while security checks run.
+    if (release.files.some((file) => file.path === MANAGED_MCP_DEFINITION_PATH)) {
+      const actorUserId =
+        release.publishActor?.kind === "user" ? release.publishActor.userId : release.createdBy;
+      const actor = await ctx.db.get(actorUserId);
+      if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+      assertAdmin(actor);
+      const publisher = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
+      if (
+        !publisher ||
+        publisher.kind !== "org" ||
+        publisher.handle !== "openclaw" ||
+        publisher.deletedAt ||
+        publisher.deactivatedAt ||
+        pkg.family !== "bundle-plugin"
+      ) {
+        throw new ConvexError("Managed MCP publisher is unavailable");
+      }
+      const membership = await getPublisherMembership(ctx, publisher._id, actorUserId);
+      if (!membership || !isPublisherRoleAllowed(membership.role, ["publisher"])) {
+        throw new ConvexError("Managed MCP publishing access has been revoked");
+      }
+    }
     // The pending row and finalizer must present the same v2 binding. Recheck
     // mutable revocation and publisher state in the transaction that goes public.
     if (

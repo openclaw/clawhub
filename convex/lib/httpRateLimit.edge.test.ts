@@ -73,6 +73,38 @@ it.each(["", "forged"])(
   },
 );
 
+it("rejects another Preview's asserted IP at the Staging site without the branch secret", async () => {
+  const secret = "s".repeat(48);
+  vi.stubEnv("CLAWHUB_ENV", "staging");
+  vi.stubEnv("CLAWHUB_STAGING_EDGE_SECRET", secret);
+  vi.stubEnv("SITE_URL", "https://stg.clawhub.ai");
+  const runMutation = vi.fn(async (_fn: unknown, args: { config?: unknown }) =>
+    args.config ? { ok: true } : { action: "retained" },
+  );
+  const ctx = { runMutation } as unknown as Parameters<typeof applyRateLimit>[0];
+  const stagingRequest = (edgeSecret?: string) =>
+    new Request("https://cheery-civet-733.convex.site/api/v1/search", {
+      headers: {
+        "x-clawhub-client-ip": "203.0.113.7",
+        "x-clawhub-vercel-oidc-token": "local-verified-edge-fixture",
+        ...(edgeSecret ? { "x-clawhub-staging-edge-secret": edgeSecret } : {}),
+      },
+    });
+
+  const missingSecret = await applyRateLimit(ctx, stagingRequest(), "read");
+  expect(missingSecret.ok).toBe(false);
+  if (!missingSecret.ok) expect(missingSecret.response.status).toBe(401);
+  expect(verifyClawHubVercelOidcToken).not.toHaveBeenCalled();
+  expect(runMutation).not.toHaveBeenCalled();
+
+  expect((await applyRateLimit(ctx, stagingRequest(secret), "read")).ok).toBe(true);
+  expect(verifyClawHubVercelOidcToken).toHaveBeenCalledWith(
+    "local-verified-edge-fixture",
+    "preview",
+  );
+  expect(runMutation).toHaveBeenCalled();
+});
+
 it.each(["203.0.113.1, 203.0.113.2", "not-an-ip", "256.1.1.1", "001.2.3.4"])(
   "rejects malformed edge addresses: %s",
   async (ip) => {

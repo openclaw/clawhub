@@ -42,6 +42,14 @@ on:
         options:
           - "blacksmith-8vcpu-ubuntu-2404"
           - "ubuntu-latest"
+      target-environment:
+        description: "Convex deployment to process for manual recovery"
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - test
   schedule:
     - cron: "*/5 * * * *"
 
@@ -49,22 +57,110 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ (github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && format('clawhub-prepublication-{0}', github.event.client_payload.attempt_id || inputs['attempt-id']) || 'clawhub-prepublication-publish-checks' }}
+  group: ${{ (github.ref == 'refs/heads/staging' || github.event.client_payload.environment == 'staging') && format('staging-{0}-', github.ref_name) || ((github.event.client_payload.environment == 'test' || inputs['target-environment'] == 'test') && 'test-' || '') }}${{ (github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && format('clawhub-prepublication-{0}', github.event.client_payload.attempt_id || inputs['attempt-id']) || 'clawhub-prepublication-publish-checks' }}
   cancel-in-progress: false
 
 jobs:
+  dispatch-staging:
+    if: >-
+      github.repository == 'openclaw/clawhub' &&
+      github.event_name == 'repository_dispatch' &&
+      github.event.client_payload.environment == 'staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch staging worker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTEMPT_ID: ${{ github.event.client_payload.attempt_id || '' }}
+          KIND: ${{ github.event.client_payload.kind || '' }}
+          SLUG: ${{ github.event.client_payload.slug || '' }}
+          VERSION: ${{ github.event.client_payload.version || '' }}
+          BATCH_LIMIT: ${{ github.event.client_payload.batch_limit || '1' }}
+          MAX_JOBS: ${{ github.event.client_payload.max_jobs || '1' }}
+          MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || '20' }}
+        run: |
+          set -euo pipefail
+          gh workflow run prepublication-publish-checks.yml --repo openclaw/clawhub --ref staging \
+            -f attempt-id="$ATTEMPT_ID" \
+            -f kind="$KIND" \
+            -f slug="$SLUG" \
+            -f version="$VERSION" \
+            -f batch-limit="$BATCH_LIMIT" \
+            -f max-jobs="$MAX_JOBS" \
+            -f max-runtime-minutes="$MAX_RUNTIME_MINUTES"
+
+  dispatch-test:
+    if: >-
+      github.repository == 'openclaw/clawhub' &&
+      github.event_name == 'repository_dispatch' &&
+      github.event.client_payload.environment == 'test'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch Test worker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTEMPT_ID: ${{ github.event.client_payload.attempt_id || '' }}
+          KIND: ${{ github.event.client_payload.kind || '' }}
+          SLUG: ${{ github.event.client_payload.slug || '' }}
+          VERSION: ${{ github.event.client_payload.version || '' }}
+          BATCH_LIMIT: ${{ github.event.client_payload.batch_limit || '1' }}
+          MAX_JOBS: ${{ github.event.client_payload.max_jobs || '1' }}
+          MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || '20' }}
+        run: |
+          set -euo pipefail
+          gh workflow run prepublication-publish-checks.yml --repo openclaw/clawhub --ref main \
+            -f target-environment=test \
+            -f attempt-id="$ATTEMPT_ID" \
+            -f kind="$KIND" \
+            -f slug="$SLUG" \
+            -f version="$VERSION" \
+            -f batch-limit="$BATCH_LIMIT" \
+            -f max-jobs="$MAX_JOBS" \
+            -f max-runtime-minutes="$MAX_RUNTIME_MINUTES"
+
+  reject-test-target-on-staging-ref:
+    if: >-
+      github.repository == 'openclaw/clawhub' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/staging' &&
+      inputs['target-environment'] == 'test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject mismatched branch and target
+        run: |
+          echo "::error::Test recovery must run from main so the worker code matches the Test deployment"
+          exit 1
+
   prepublication-publish-checks:
+    if: >-
+      github.repository == 'openclaw/clawhub' &&
+      ((github.ref == 'refs/heads/main' &&
+        (github.event_name != 'repository_dispatch' ||
+         (github.event.client_payload.environment != 'staging' &&
+          github.event.client_payload.environment != 'test')) &&
+        (github.event_name != 'workflow_dispatch' || inputs['target-environment'] != 'test')) ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' &&
+        inputs['target-environment'] != 'test') ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
+        inputs['target-environment'] == 'test'))
     name: Pre-publication publish checks shard ${{ matrix.shard }}
     runs-on: ${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 25
-    environment: Production
+    environment: ${{ github.ref == 'refs/heads/staging' && 'Staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'Test' || 'Production') }}
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
         shard: ${{ fromJSON((github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && '[0]' || '[0,1]') }}
     env:
-      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      CONVEX_URL: ${{ github.ref == 'refs/heads/staging' && 'https://cheery-civet-733.convex.cloud' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'https://academic-chihuahua-392.convex.cloud' || vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud') }}
+      PREPUBLICATION_WORKER_ENVIRONMENT: ${{ github.ref == 'refs/heads/staging' && 'staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'test' || 'production') }}
       PREPUBLICATION_CHECK_LIMIT: ${{ github.event.client_payload.batch_limit || inputs['batch-limit'] || '2' }}
       PREPUBLICATION_CHECK_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
       PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '15' }}
@@ -81,6 +177,28 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
+
+      - name: Verify staging worker target
+        if: github.ref == 'refs/heads/staging'
+        run: bun scripts/security/check-staging-worker-target.ts
+
+      - name: Verify permanent Test worker target
+        if: github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ "$CONVEX_URL" != "https://academic-chihuahua-392.convex.cloud" ||
+                "$GITHUB_REF" != "refs/heads/main" ||
+                "$CONVEX_DEPLOY_KEY" != prod:academic-chihuahua-392\|* ]]; then
+            echo "::error::Test prepublication workers must use academic-chihuahua-392 from main"
+            exit 1
+          fi
+          test_environment="$(bunx convex env get CLAWHUB_ENV --prod)"
+          if [[ "$test_environment" != "test" ]]; then
+            echo "::error::Target Convex deployment is not marked Test"
+            exit 1
+          fi
 
       - uses: actions/setup-python@v7
         with:
@@ -116,7 +234,29 @@ jobs:
           python -c 'import inspect; from skill_scan.utils.llm import LLM; assert "temperature=" not in inspect.getsource(LLM.chat_stream)'
           aig-skill-scan --help >/dev/null
 
+      - name: Run Test pre-publication publish worker
+        if: github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test'
+        env:
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEFAULT_BASE_URL: https://api.openai.com/v1
+          DEFAULT_MODEL: gpt-5.6
+          LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          worker_token="$(bunx convex env get SECURITY_SCAN_WORKER_TOKEN --prod)"
+          if [[ -z "$worker_token" ]]; then
+            echo "::error::Test SECURITY_SCAN_WORKER_TOKEN is missing"
+            exit 1
+          fi
+          printf '::add-mask::%s\n' "$worker_token"
+          unset CONVEX_DEPLOY_KEY
+          SECURITY_SCAN_WORKER_TOKEN="$worker_token" bun run publish:prepublication-worker
+          unset worker_token
+
       - name: Run pre-publication publish worker
+        if: github.ref != 'refs/heads/main' || inputs['target-environment'] != 'test'
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           DEFAULT_BASE_URL: https://api.openai.com/v1
@@ -124,5 +264,4 @@ jobs:
           LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
-        run: |
-          bun run publish:prepublication-worker
+        run: bun run publish:prepublication-worker

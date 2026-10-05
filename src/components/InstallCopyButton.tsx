@@ -1,5 +1,6 @@
 import { Check, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { captureAnalyticsOperation } from "../lib/analyticsEvents";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -43,6 +44,7 @@ export function InstallCopyButton({
   showLabel = true,
   variant = "outline",
   size = "sm",
+  analyticsMethod,
 }: {
   text: string;
   label?: string;
@@ -53,6 +55,7 @@ export function InstallCopyButton({
   showLabel?: boolean;
   variant?: "default" | "primary" | "secondary" | "destructive" | "ghost" | "outline" | "link";
   size?: "default" | "xs" | "sm" | "lg" | "icon" | "icon-xs" | "icon-sm" | "icon-lg";
+  analyticsMethod?: "cli" | "skills" | "prompt" | "link";
 }) {
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const resetTimeoutRef = useRef<number | null>(null);
@@ -90,12 +93,25 @@ export function InstallCopyButton({
       title={tooltip ? undefined : title}
       data-copy-state={copyState}
       onClick={() => {
+        const operation = captureAnalyticsOperation();
         void copyText(text)
           .then((didCopy) => {
+            operation?.emit("copy_action", {
+              content_type: "install",
+              action_result: didCopy ? "success" : "error",
+              ui_location: "install",
+              method: analyticsMethod,
+            });
             setCopyState(didCopy ? "copied" : "failed");
             scheduleReset();
           })
           .catch(() => {
+            operation?.emit("copy_action", {
+              content_type: "install",
+              action_result: "error",
+              ui_location: "install",
+              method: analyticsMethod,
+            });
             setCopyState("failed");
             scheduleReset();
           });

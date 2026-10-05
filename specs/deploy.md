@@ -79,6 +79,128 @@ Production deploy notes:
 - Required `Production` environment secret: `CONVEX_DEPLOY_KEY`.
 - Optional `Production` environment secret: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON` for authenticated smoke coverage.
 
+### Staging branch deploys
+
+Pushing `staging` starts the same CI as `main` and a separate staging deploy
+workflow at that exact SHA. The deploy waits for that staging push CI run to
+complete successfully before touching the backend. GitHub can run a `push`
+workflow that exists only on `staging`, so this path can be proven before merging
+the workflow into `main`. The GitHub `Staging` environment permits only the
+`staging` branch.
+
+After the workflow is merged into `main`, a manual dispatch can use the current
+full staging SHA:
+
+```bash
+staging_sha="$(git ls-remote origin refs/heads/staging | awk '{print $1}')"
+gh workflow run deploy-staging.yml --repo openclaw/clawhub --ref staging \
+  -f expected_sha="$staging_sha"
+```
+
+GitHub requires `workflow_dispatch` workflows to exist on the default branch.
+Before that merge, rerun the staging push workflow from its Actions run page
+only if its SHA has not already created a Vercel Preview deployment. Reruns
+and manual dispatches reject an already deployed SHA before changing Convex.
+The first attempt of a staging push skips that guard because the same commit
+may already have a PR Preview deployment. For environment-only changes, push a
+new staging commit and let its exact-SHA CI pass before deploying it.
+
+The deployment checks that the selected, checked-out, and current remote SHAs
+match. Before first use, fast-forward the formerly stale `staging` branch to a
+current `main` descendant. Its previous code contained a Vercel rewrite to the
+production API; the workflow also requires the safe baseline commit, the
+environment-aware `build:vercel` entrypoint, and no static rewrites. It does
+not require staging to contain every future `main` commit.
+
+One-time target configuration:
+
+- Convex project `amantus/clawhub-staging`, deployment `cheery-civet-733`.
+  Its `prod:cheery-civet-733|...` deploy key is scoped to the staging Convex
+  project, not ClawHub production or permanent Test.
+- Vercel project `openclaw-foundation/clawhub`: attach its Preview environment
+  variables to the `staging` branch. Set `CLAWHUB_ENV=staging`, the paired
+  `VITE_CONVEX_URL=https://cheery-civet-733.convex.cloud` and
+  `VITE_CONVEX_SITE_URL=https://cheery-civet-733.convex.site`, and the same
+  `SITE_URL`/`VITE_SITE_URL` as the GitHub `Staging` environment. Set a random,
+  at least 32-character `CLAWHUB_STAGING_EDGE_SECRET` only on the `staging`
+  branch and set the same value on `cheery-civet-733`. The server sends it only
+  to that Convex site, and Convex requires it alongside Vercel OIDC before
+  trusting visitor IPs or issuing archive manifests. Other Preview branches
+  share Vercel's project/environment OIDC identity and must not receive this
+  secret; keep Vercel's Git fork protection enabled. Do not give this frontend
+  a Convex deploy key. The build verifies the branch, both site URL variables,
+  backend URLs, edge secret, and matching deployed SHA before it runs; it never
+  creates or seeds a Convex Preview deployment. `CLAWHUB_ENV=staging` remains
+  the branch marker when Vercel reports its system `VERCEL_TARGET_ENV` as
+  `preview`.
+- The Vercel Deploy Hook named `clawhub-staging-github-actions` is bound to the
+  `staging` branch. `vercel.json` disables automatic Git builds only for this
+  branch; CI invokes the hook after the backend is ready. Do not set the
+  deprecated `github.enabled=false`, which disables hooks too.
+- GitHub `Staging` environment: permit the `staging` branch only. Set variables
+  `VERCEL_PROJECT_ID=prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc`,
+  `VERCEL_SCOPE=openclaw-foundation`, `VITE_CONVEX_URL`,
+  and `VITE_CONVEX_SITE_URL`. Set `SITE_URL` for a custom staging domain;
+  otherwise the workflow uses the stable Git branch URL
+  `https://clawhub-git-staging-openclaw-foundation.vercel.app`. Allowed custom
+  domains are `https://stg.clawhub.openclaw.org` (temporary public hostname)
+  and `https://stg.clawhub.ai` (pending DNS verification). Set secrets
+  `CONVEX_DEPLOY_KEY`, `VERCEL_DEPLOY_HOOK_URL`, and
+  `VERCEL_AUTOMATION_BYPASS_SECRET`. The bypass secret lets the API and UI smoke
+  tests reach SSO-protected Preview URLs.
+- [Vercel automation bypass secrets](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)
+  work across every deployment in the project, even when a copy is stored in
+  the branch-restricted GitHub `Staging` environment. Keep a separately labeled
+  staging CI secret and a distinct labeled secret selected as Vercel's default
+  `VERCEL_AUTOMATION_BYPASS_SECRET` system environment variable. To rotate them,
+  create replacements, update the affected GitHub environment secrets and
+  Vercel default, then push a fresh staging SHA. Verify its exact-SHA workflow
+  and candidate/stable URLs with the replacements before revoking old secrets.
+  Redeploy other consumers of the Vercel system default before revocation:
+  Vercel snapshots that value when each deployment is built.
+- On the staging Convex deployment, configure `AUTH_GITHUB_ID`,
+  `AUTH_GITHUB_SECRET`, `JWT_PRIVATE_KEY`, `JWKS`, and
+  `CLAWHUB_STAGING_EDGE_SECRET` for staging identity. The workflow checks the
+  names without printing their values. It stamps
+  `CLAWHUB_ENV=staging`, `CLAWHUB_DISABLE_CRONS=1`, both external-skill rollout
+  modes to `off`, and `SITE_URL` before deploying.
+
+The deploy order is: Convex deploy and contract check, stamp and read back
+`APP_BUILD_SHA`, trigger the branch Deploy Hook, then wait for Vercel's commit
+status and Preview deployment for that exact SHA after the hook request. The
+workflow obtains the immutable Preview URL from the GitHub deployment, smokes
+its API and UI, and then checks the stable branch/custom URL. The API smoke
+requires staging backend and frontend SHA headers, and works with an empty
+staging database. No Test backend or fixture seed is involved.
+
+### Staging scan and publish workers
+
+`SECURITY_SCAN_WORKER_TOKEN` must match between `cheery-civet-733` and the
+GitHub `Staging` environment. Generate a separate random value for staging;
+never reuse the production worker token. Workers use the repository's existing
+OpenAI credential, supplied only to the scanner steps.
+
+Both `prepublication-publish-checks.yml` and `security-scan-codex.yml` support
+manual runs with `--ref staging`. They select the `Staging` environment, pin
+`CONVEX_URL` to `cheery-civet-733`, and check that the deployed backend SHA
+matches the workflow SHA before claiming work. Staging concurrency groups are
+separate from production; staging security scans use one shared and one priority
+worker instead of the production pool.
+
+For automatic dispatch, configure the existing GitHub App integration on staging
+(`GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY`), then set
+`SECURITY_SCAN_EVENT_DISPATCH_ENABLED=1` and
+`CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES=1`. Keep `CLAWHUB_DISABLE_CRONS=1`; upload
+and queue events start workers through Convex's existing scheduled actions.
+Staging dispatch payloads carry `environment: staging`. The workflows on `main`
+relay these events to the same workflow on `staging`, using only a job-scoped
+Actions token. They skip their production worker jobs for these events. The
+GitHub App continues to require only its existing Contents write permission.
+
+**Land the relay workflows on `main` before enabling staging event dispatch.**
+GitHub receives repository dispatch events on the default branch. Before the
+relay is available, verify workers with manual staging workflow runs.
+
 ### Skill Card lease capacity
 
 Skill Card jobs own one of 64 capacity slots while running. Discovery runs in a
@@ -274,8 +396,27 @@ One-time setup:
 The shared seed command fails closed unless its target is local or an explicit
 preview name selected with a Convex Preview deploy key. It installs
 the committed public corpus plus the same synthetic clean, suspicious, and
-malicious presentation states used locally. Staging remains snapshot-backed and
-production is never seeded.
+malicious presentation states used locally. Permanent Test remains
+snapshot-backed. The separate Staging deployment and production are never
+seeded by Preview builds.
+
+### Permanent Test plugin pre-publication scans
+
+Test plugin uploads can run the same pre-publication scanners as production
+without enabling Test's general Convex crons. Configure
+`PREPUBLICATION_PUBLISH_EVENT_DISPATCH_ENABLED=1` and the GitHub App dispatch
+credentials on `academic-chihuahua-392`. The `Test` GitHub Actions environment's
+Convex deploy key is used to load that deployment's `SECURITY_SCAN_WORKER_TOKEN`
+inside the pre-publication worker process; do not copy the Test worker token to
+Production or the repository-wide GitHub secret.
+
+The Convex upload dispatch marks its event with `environment=test`. A secretless
+repository-dispatch relay then starts the pre-publication worker from `main`
+with the GitHub `Test` environment and a target guard pinned to
+`academic-chihuahua-392`. The worker checks the exact pending upload attempt.
+Test crons remain disabled, so this does not scan the catalog on a nightly or
+periodic schedule. The five-minute scheduled pre-publication worker remains a
+Production-only recovery path.
 
 Preview browser traffic is public and read-only. Nitro rejects non-GET/HEAD
 requests before proxying and adds `X-ClawHub-Preview-Backend` to proxied preview
