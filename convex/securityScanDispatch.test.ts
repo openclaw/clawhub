@@ -42,6 +42,19 @@ describe("securityScanDispatch", () => {
     vi.unstubAllEnvs();
   });
 
+  it("marks staging scan events for the branch relay", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "staging");
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+    await dispatchSecurityScanWorkflow(
+      { token: "installation-token", permissions: { contents: "write" } },
+      fetchImpl,
+    );
+    expect(JSON.parse(fetchImpl.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      event_type: "clawhub-security-scan",
+      client_payload: { environment: "staging" },
+    });
+  });
+
   it("schedules an immediate worker dispatch for claimable queue work", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
@@ -455,7 +468,7 @@ describe("securityScanDispatch", () => {
   });
 
   it("dispatches the production workflow through a narrowly typed repository event", async () => {
-    const fetchImpl = vi.fn(async () => new Response(null, { status: 204 }));
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
 
     await expect(
       dispatchSecurityScanWorkflow(

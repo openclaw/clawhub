@@ -95,7 +95,10 @@ ever regresses.
 
 The production script CSP is emitted per request by the TanStack Start server
 entry so framework/runtime inline scripts can be nonce-tagged without reopening
-global inline execution. Do not reintroduce a static global Vercel CSP with
+global inline execution. Generate the nonce in the request context before router
+creation, then use it for both the router's SSR options and the response header:
+Start captures the nonce for hydration before the render callback runs.
+Do not reintroduce a static global Vercel CSP with
 script `'unsafe-inline'`. First-paint theme state is represented with a
 server-readable preference cookie plus CSS media queries, not a pre-hydration
 theme bootstrap script.

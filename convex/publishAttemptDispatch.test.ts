@@ -8,6 +8,7 @@ const { createGitHubAppInstallationToken } = await import("./lib/githubAuth");
 const {
   dispatchPublishAttemptInternal,
   dispatchPublishAttemptWorkflow,
+  isPublishAttemptEventDispatchEnabled,
   requestPublishAttemptDispatch,
 } = await import("./publishAttemptDispatch");
 const { getPendingPublishAttemptDispatchTargetInternal } = await import("./publishAttempts");
@@ -58,6 +59,18 @@ describe("publishAttemptDispatch", () => {
     });
   });
 
+  it("requires the Test-only publish dispatch flag in Test", () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "1");
+    vi.stubEnv("GITHUB_APP_ID", "configured");
+    vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "configured");
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "configured");
+    expect(isPublishAttemptEventDispatchEnabled()).toBe(false);
+
+    vi.stubEnv("PREPUBLICATION_PUBLISH_EVENT_DISPATCH_ENABLED", "1");
+    expect(isPublishAttemptEventDispatchEnabled()).toBe(true);
+  });
+
   it("rechecks that the exact attempt is still pending", async () => {
     const get = vi
       .fn()
@@ -91,7 +104,7 @@ describe("publishAttemptDispatch", () => {
   });
 
   it("dispatches the exact prepublication worker payload", async () => {
-    const fetchImpl = vi.fn(async () => new Response(null, { status: 204 }));
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
 
     await expect(
       dispatchPublishAttemptWorkflow(
@@ -168,6 +181,44 @@ describe("publishAttemptDispatch", () => {
       retryCount: 3,
     });
     expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("marks staging publish events for the branch relay", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "staging");
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+    await dispatchPublishAttemptWorkflow(
+      { token: "installation-token", permissions: { contents: "write" } },
+      {
+        attemptId: "publishAttempts:staging" as never,
+        kind: "skill",
+        slug: "staging-proof",
+        version: "1.0.0",
+      },
+      fetchImpl,
+    );
+    expect(JSON.parse(fetchImpl.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      event_type: "clawhub-prepublication-publish",
+      client_payload: { environment: "staging", attempt_id: "publishAttempts:staging" },
+    });
+  });
+
+  it("marks Test publish events for the Test worker relay", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+    await dispatchPublishAttemptWorkflow(
+      { token: "installation-token", permissions: { contents: "write" } },
+      {
+        attemptId: "publishAttempts:test" as never,
+        kind: "package",
+        slug: "@openclaw/test-proof",
+        version: "1.0.0",
+      },
+      fetchImpl,
+    );
+    expect(JSON.parse(fetchImpl.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      event_type: "clawhub-prepublication-publish",
+      client_payload: { environment: "test", attempt_id: "publishAttempts:test" },
+    });
   });
 
   it("does not dispatch after the attempt leaves pending checks", async () => {

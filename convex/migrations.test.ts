@@ -1162,7 +1162,7 @@ describe("plugin manifest summary backfill migration", () => {
             sensitive: true,
           },
         ],
-        mcpServers: [{ name: "exampleMcp" }],
+        mcpServers: [{ name: "exampleMcp", transport: "stdio", auth: "none" }],
       }),
     });
     expect(JSON.stringify(runMutation.mock.calls[0]?.[1]?.pluginManifestSummary)).not.toContain(
