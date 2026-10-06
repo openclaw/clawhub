@@ -8,9 +8,13 @@ import {
   Package,
   Wrench,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { MouseEventHandler, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { captureAnalyticsOperation, emitAnalytics } from "../lib/analyticsEvents";
+import {
+  analyticsExternalLinkParameters,
+  captureAnalyticsOperation,
+  emitAnalytics,
+} from "../lib/analyticsEvents";
 import { getPublicClawHubSiteUrl } from "../lib/site";
 import { cn } from "../lib/utils";
 import { copyText } from "./InstallCopyButton";
@@ -286,11 +290,12 @@ export function SkillPublishSuccessDialog({
                 mobileTitle="Share with the OpenClaw community"
                 channelName="#skills"
                 serverName="Friends of the Crustacean 🦞🤝"
-                onClick={() => {
+                onClick={(event) => {
                   emitAnalytics("select_content", {
                     content_type: "navigation",
                     content_id: "share:discord",
                     ui_location: "publish",
+                    ...analyticsExternalLinkParameters(event.currentTarget, window.location.origin),
                   });
                   const operation = captureAnalyticsOperation();
                   void copyText(discordShareText)
@@ -316,11 +321,12 @@ export function SkillPublishSuccessDialog({
               <ShareDivider orientation="horizontal" />
               <ShareListAction
                 href={xShareUrl}
-                onClick={() =>
+                onClick={(event) =>
                   emitAnalytics("select_content", {
                     content_type: "navigation",
                     content_id: "share:x",
                     ui_location: "publish",
+                    ...analyticsExternalLinkParameters(event.currentTarget, window.location.origin),
                   })
                 }
                 title="Share on Twitter"
@@ -411,7 +417,7 @@ function ShareListAction({
   inlineDetail?: string;
   channelName?: string;
   serverName?: string;
-  onClick?: () => void;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
   icon: ReactNode;
 }) {
   return (

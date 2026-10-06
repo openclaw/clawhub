@@ -1593,7 +1593,9 @@ token. Pending is not published; fresh security checks and current authorization
 must pass before the retained release becomes public.
 
 Invalid bodies return `400`, invalid credentials `401`, undisclosed or missing
-attempts `404`, and conflicting or ineligible recovery state `409`.
+attempts `404`, and conflicting or ineligible recovery state `409`. A `409` with
+`Retry-After` means the sealed attempt is still active and may be retried after
+the indicated delay; other `409` responses are terminal for that request.
 
 ### `DELETE /api/v1/skills/{slug}` / `POST /api/v1/skills/{slug}/undelete`
 

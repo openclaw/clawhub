@@ -231,7 +231,7 @@ export function createGoogleAnalytics(
     browser.gtag?.("event", event.name, {
       ...pageContext,
       ...(deferred ? { event_deferred: 1 } : { content_id, content_type }),
-      ...analyticsEventParameters(event),
+      ...analyticsEventParameters(event, PUBLIC_ORIGIN),
       ...(deferred ? { ui_location: context.ui_location } : {}),
       send_to: GOOGLE_ANALYTICS_ID,
     });

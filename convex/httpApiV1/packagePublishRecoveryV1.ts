@@ -1,8 +1,10 @@
 import { makeFunctionReference } from "convex/server";
+import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { recoveryReason } from "../lib/packagePublishRecovery";
+import { PACKAGE_RECOVERY_PENDING, recoveryReason } from "../lib/packagePublishRecovery";
 import type { RecoveryResult } from "../packagePublishRecovery";
 import {
   getPathSegments,
@@ -55,6 +57,13 @@ export async function recoverPackagePublishAttemptV1Handler(ctx: ActionCtx, requ
     });
     return json(result, result.reused ? 200 : 202, rate.headers);
   } catch (error) {
+    if (error instanceof ConvexError && error.data === PACKAGE_RECOVERY_PENDING) {
+      return text(
+        "Publish attempt is still pending",
+        409,
+        mergeHeaders(rate.headers, { "Retry-After": "10" }),
+      );
+    }
     const message = formatUserFacingErrorMessage(error, "Recovery request failed");
     return text(message, message.includes("Publish attempt not found") ? 404 : 409, rate.headers);
   }
