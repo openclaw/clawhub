@@ -815,8 +815,14 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_ACTOR: ${{ github.actor }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          set +e
           "$RUNNER_TEMP/clawhub-package-publish-command.sh" | tee "$RUNNER_TEMP/package-publish.json"
+          publish_status="${PIPESTATUS[0]}"
+          if [[ ! -s "$RUNNER_TEMP/package-publish.json" ]]; then
+            rm -f "$RUNNER_TEMP/package-publish.json"
+          fi
+          exit "$publish_status"
 
       - name: Capture workflow outputs
         id: capture
@@ -860,8 +866,9 @@ jobs:
           PY
 
       - name: Upload publish JSON artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.publish_json_artifact_name }}
           path: ${{ runner.temp }}/package-publish.json
-          if-no-files-found: error
+          if-no-files-found: ignore

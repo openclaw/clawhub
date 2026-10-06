@@ -165,6 +165,10 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("package_artifact_path:");
     expect(workflow).toContain("publish_json_artifact_name:");
     expect(workflow).toContain("name: ${{ inputs.publish_json_artifact_name }}");
+    expect(workflow).toContain("set +e");
+    expect(workflow).toContain('publish_status="${PIPESTATUS[0]}"');
+    expect(workflow).toContain('if [[ ! -s "$RUNNER_TEMP/package-publish.json" ]]');
+    expect(workflow).toContain("if-no-files-found: ignore");
     expect(workflow).toContain("actions: read");
     expect(workflow).toContain("Download prebuilt package artifact");
     expect(workflow).toContain("actions/download-artifact");
