@@ -107,21 +107,22 @@ visibility are separate boundaries:
 - submission:
   - `automated-awaited`: parent must be active
   - `automated-detached`: parent may be active or completed successfully
-  - `automated-sealed`: the exact immutable release milestone is sufficient;
-    later parent state does not revoke its package transactions
+  - `automated-sealed`: parent must be active and the exact immutable release
+    milestone must cover the package transaction
   - `explicit-recovery`: parent may be active, successful, or failed
 - public finalization:
   - `automated-awaited` and `automated-detached` require the exact parent
     attempt to be completed successfully
-  - `automated-sealed` requires the exact immutable release milestone receipt;
-    later parent state does not revoke its package transactions
+  - `automated-sealed` requires the exact immutable release milestone receipt
+    and permits the exact parent attempt to finish successfully or fail
   - explicit recovery requires the exact parent attempt to be completed
     successfully or failed with the protected recovery evidence
 
 Cancelled parents are never authorized by the awaited, detached, or recovery
 routes. Unknown routes, states, conclusions, fields, and versions fail closed.
-An active parent can authorize only a non-public staged release unless its exact
-transaction is covered by the sealed milestone.
+An active parent can authorize only a non-public staged release. The sealed
+milestone preserves exact transactions through terminal parent failure without
+making cancellation or an active parent sufficient for public promotion.
 
 ## Server Authorization
 

@@ -549,9 +549,15 @@ function validateParentState(
   const active = status === "in_progress" && !conclusion;
   const successful = status === "completed" && conclusion === "success";
   const failed = status === "completed" && conclusion === "failure";
-  // The sealed receipt is uploaded only after OpenClaw's immutable release
-  // milestone. Later parent failure must not revoke those exact transactions.
-  if (route === "automated-sealed" && (active || successful || failed)) return;
+  // Sealing preserves exact transactions through parent failure, but public
+  // promotion still waits for terminal state so cancellation cannot race it.
+  if (
+    route === "automated-sealed" &&
+    ((requiredParentState === "submission" && active) ||
+      (requiredParentState === "terminal" && (successful || failed)))
+  ) {
+    return;
+  }
   if (requiredParentState === "terminal") {
     if (status !== "completed") {
       fail("OpenClaw release parent is not terminal; public publication remains pending");

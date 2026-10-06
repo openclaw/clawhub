@@ -399,6 +399,19 @@ describe("OpenClaw package publish authorization", () => {
     },
   );
 
+  it("withholds sealed public finalization while the parent is active", async () => {
+    await expect(
+      verify(
+        githubFetch({
+          parentStatus: "in_progress",
+          parentConclusion: null,
+          parentReceipt: parentReceipt({ authorizationRoute: "automated-sealed" }),
+        }),
+        "terminal",
+      ),
+    ).rejects.toThrow("public publication remains pending");
+  });
+
   it.each([
     { login: "github-actions[bot]", type: "Bot" },
     { login: "release-service", type: "App" },
