@@ -3381,3 +3381,339 @@ describe("skills.sh Vercel source boundary", () => {
     ).rejects.toThrow("dark Convex staging control");
   });
 });
+
+describe("malformed skills.sh list rows", () => {
+  it("coerces non-string identity fields instead of crashing observation", () => {
+    const malformedRow = {
+      id: 12345,
+      installUrl: null,
+      installs: 1,
+      name: "demo",
+      slug: "demo",
+      source: "example.com",
+      sourceType: "Well-Known",
+      url: "https://www.skills.sh/site/example.com/demo",
+    };
+    // Pre-fix this threw `TypeError: row.id.trim is not a function` before the
+    // identity check could run; now the numeric id is coerced and the row fails
+    // into the normal identity error carrying the coerced value.
+    expect(() => buildSkillsShMirrorObservation(malformedRow as never)).toThrow(
+      "Unsupported skills.sh mirror identity: 12345",
+    );
+  });
+
+  it("keeps measuring the page when one row has a numeric id", async () => {
+    const rows = [
+      {
+        id: "owner/repo/skill-a",
+        installUrl: "https://github.com/owner/repo",
+        installs: 3,
+        name: "skill-a",
+        slug: "skill-a",
+        source: "owner/repo",
+        sourceType: "github",
+        url: "https://www.skills.sh/owner/repo/skill-a",
+      },
+      {
+        id: 42,
+        installUrl: "https://github.com/owner/repo",
+        installs: 2,
+        name: "skill-b",
+        slug: "skill-b",
+        source: "owner/repo",
+        sourceType: "github",
+        url: "https://www.skills.sh/owner/repo/skill-b",
+      },
+    ];
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
+      const page = Number(url.searchParams.get("page"));
+      const data = page === 0 ? rows : [];
+      return new Response(
+        JSON.stringify({
+          data,
+          pagination: { page, perPage: 500, total: 2, hasMore: false },
+        }),
+      );
+    });
+
+    const measured = await measureSkillsShTrendingSource({
+      fetchImpl: fetchImpl as typeof fetch,
+      oidcToken: "oidc-token",
+      minimumApiRequestIntervalMs: 0,
+      observedAt: "2026-07-24T19:44:11.437Z",
+    });
+
+    expect(measured.snapshotHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(measured.evidence.uniqueIds).toBe(2);
+    const capturedRows = measured.sourcePages[0].rows;
+    expect(capturedRows).toHaveLength(2);
+    for (const row of capturedRows) {
+      expect(typeof row.id).toBe("string");
+      expect(typeof row.slug).toBe("string");
+      expect(typeof row.source).toBe("string");
+      expect(typeof row.name).toBe("string");
+      expect(typeof row.url).toBe("string");
+    }
+    expect(capturedRows[1].id).toBe("42");
+  });
+
+  it("quarantines a malformed batch row and keeps the rest of the page in order", async () => {
+    const sourcePage = {
+      pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
+      data: [
+        {
+          id: "owner/repo/skill",
+          installUrl: "https://github.com/owner/repo",
+          installs: 1,
+          name: "skill",
+          slug: "skill",
+          source: "owner/repo",
+          sourceType: "github",
+          url: "https://www.skills.sh/owner/repo/skill",
+        },
+        {
+          id: 12345,
+          installUrl: null,
+          installs: 1,
+          name: "demo",
+          slug: "demo",
+          source: "owner/repo",
+          sourceType: "github",
+          url: "https://www.skills.sh/owner/repo/demo",
+        },
+      ],
+    };
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
+      if (url.href.endsWith("/api/v1/skills/owner/repo/skill")) {
+        return new Response(
+          JSON.stringify({
+            files: [{ contents: "# Skill", path: "SKILL.md" }],
+            hash: "a".repeat(64),
+            id: "owner/repo/skill",
+            installs: 1,
+            slug: "skill",
+            source: "owner/repo",
+          }),
+        );
+      }
+      return new Response(JSON.stringify({ error: "not found" }), { status: 404 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 50, maxDetailBytes: 8192 },
+      {
+        fetchImpl: fetchImpl as typeof fetch,
+        oidcToken: "oidc-token",
+        minimumApiRequestIntervalMs: 0,
+        githubLocatorResolver: null,
+        sourcePage,
+      },
+    );
+
+    expect(batch.sourcePageIdentityHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(batch.rows).toHaveLength(2);
+    expect(batch.rows[0]).toMatchObject({
+      externalId: "owner/repo/skill",
+      sourceType: "github",
+    });
+    expect(batch.rows[1]).toMatchObject({
+      quarantined: true,
+      externalId: "12345",
+      reason: "unsupported-identity",
+    });
+  });
+});
+
+describe("malformed-first proof source pages", () => {
+  it("skips an invalid metadata candidate and samples the next valid row", async () => {
+    const validRow = {
+      id: "owner/repo/skill",
+      installUrl: null,
+      installs: 1,
+      name: "skill",
+      slug: "skill",
+      source: "owner/repo",
+      sourceType: "github",
+      url: "https://www.skills.sh/owner/repo/skill",
+    };
+    const malformedRow = {
+      id: 987,
+      installUrl: null,
+      installs: 1,
+      name: "bad",
+      slug: "bad",
+      source: "owner/repo",
+      sourceType: "github",
+      url: "https://www.skills.sh/owner/repo/bad",
+    };
+    const pages = [
+      {
+        data: [malformedRow, validRow],
+        pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
+      },
+      {
+        data: [],
+        pagination: { page: 1, perPage: 500, total: 2, hasMore: false },
+      },
+    ];
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/v1/skills?page=")) {
+        return new Response(JSON.stringify(pages.shift()));
+      }
+      if (url.includes("/api/v1/skills/search?")) {
+        return new Response(
+          JSON.stringify({
+            count: 1,
+            data: [validRow],
+            durationMs: 3,
+            query: "skill",
+            searchType: "full-text",
+          }),
+        );
+      }
+      if (url.endsWith("/api/v1/skills/owner/repo/skill")) {
+        return new Response(
+          JSON.stringify({
+            files: [{ contents: "# Skill", path: "SKILL.md" }],
+            hash: "a".repeat(64),
+            id: "owner/repo/skill",
+            installs: 1,
+            slug: "skill",
+            source: "owner/repo",
+          }),
+        );
+      }
+      if (url.includes("_rsc=")) {
+        return new Response(
+          '0:["$","div",null,{"children":"skill","className":"skill"}]\n1:{"prompt":"use skill"}\n',
+          { headers: { "Content-Type": "text/x-component" } },
+        );
+      }
+      if (url === validRow.url) {
+        return new Response(
+          '<!doctype html><script type="application/ld+json">' +
+            '{"@context":"https://schema.org","@type":"SoftwareApplication",' +
+            '"applicationCategory":"DeveloperApplication","name":"skill"}' +
+            "</script>",
+          { headers: { "Content-Type": "text/html; charset=utf-8" } },
+        );
+      }
+      return new Response(JSON.stringify({ error: "unexpected url" }), { status: 404 });
+    });
+
+    const measured = await measureSkillsShMirrorProofSource({
+      oidcToken: "oidc-token",
+      fetchImpl: fetchImpl as typeof fetch,
+      minimumApiRequestIntervalMs: 0,
+    });
+
+    expect(measured.catalogTotal).toBe(2);
+    expect(measured.evidence.pagination.uniqueIds).toBe(2);
+    expect(measured.evidence.fields.sampledExternalId).toBe("owner/repo/skill");
+    const capturedRows = measured.sourcePages[0].rows;
+    expect(capturedRows).toHaveLength(2);
+    for (const row of capturedRows) {
+      expect(typeof row.id).toBe("string");
+      expect(typeof row.slug).toBe("string");
+      expect(typeof row.source).toBe("string");
+      expect(typeof row.name).toBe("string");
+      expect(typeof row.url).toBe("string");
+    }
+    expect(capturedRows[0].id).toBe("987");
+  });
+
+  it("skips a two-segment id candidate with plausible metadata", async () => {
+    const validRow = {
+      id: "owner/repo/skill",
+      installUrl: null,
+      installs: 1,
+      name: "skill",
+      slug: "skill",
+      source: "owner/repo",
+      sourceType: "github",
+      url: "https://www.skills.sh/owner/repo/skill",
+    };
+    const twoSegmentRow = {
+      id: "bad/skill",
+      installUrl: null,
+      installs: 1,
+      name: "skill",
+      slug: "skill",
+      source: "owner/repo",
+      sourceType: "github",
+      url: "https://www.skills.sh/owner/repo/skill",
+    };
+    const pages = [
+      {
+        data: [twoSegmentRow, validRow],
+        pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
+      },
+      {
+        data: [],
+        pagination: { page: 1, perPage: 500, total: 2, hasMore: false },
+      },
+    ];
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/v1/skills?page=")) {
+        return new Response(JSON.stringify(pages.shift()));
+      }
+      if (url.includes("/api/v1/skills/search?")) {
+        return new Response(
+          JSON.stringify({
+            count: 1,
+            data: [validRow],
+            durationMs: 3,
+            query: "skill",
+            searchType: "full-text",
+          }),
+        );
+      }
+      if (url.endsWith("/api/v1/skills/owner/repo/skill")) {
+        return new Response(
+          JSON.stringify({
+            files: [{ contents: "# Skill", path: "SKILL.md" }],
+            hash: "a".repeat(64),
+            id: "owner/repo/skill",
+            installs: 1,
+            slug: "skill",
+            source: "owner/repo",
+          }),
+        );
+      }
+      if (url.includes("_rsc=")) {
+        return new Response(
+          '0:["$","div",null,{"children":"skill"}]' + "\n" + '1:{"prompt":"use skill"}\n',
+          { headers: { "Content-Type": "text/x-component" } },
+        );
+      }
+      if (url === validRow.url) {
+        return new Response(
+          '<!doctype html><script type="application/ld+json">' +
+            '{"@context":"https://schema.org","@type":"SoftwareApplication",' +
+            '"applicationCategory":"DeveloperApplication","name":"skill"}' +
+            "</script>",
+          { headers: { "Content-Type": "text/html; charset=utf-8" } },
+        );
+      }
+      return new Response(JSON.stringify({ error: "unexpected url" }), { status: 404 });
+    });
+
+    const measured = await measureSkillsShMirrorProofSource({
+      oidcToken: "oidc-token",
+      fetchImpl: fetchImpl as typeof fetch,
+      minimumApiRequestIntervalMs: 0,
+    });
+
+    expect(measured.catalogTotal).toBe(2);
+    expect(measured.evidence.fields.sampledExternalId).toBe("owner/repo/skill");
+    expect(measured.sourcePages[0].rows).toHaveLength(2);
+  });
+});

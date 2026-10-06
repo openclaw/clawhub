@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- Mirror: coerce non-string skills.sh list-row text fields (id, slug, source, name, url, installUrl) so one malformed upstream row degrades into the existing quarantine path instead of crashing identity handling, page hashing, and batch ingestion.
+
 ## 0.24.0 - 2026-09-30
 
 ### Changes
