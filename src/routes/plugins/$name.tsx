@@ -191,11 +191,18 @@ export async function loadPluginDetail(requestedName: string): Promise<PluginDet
   }
 
   try {
+    let releaseVersion = detail.package.latestVersion;
+    let cursor: string | undefined;
+    // Beta-only packages have published releases but no stable/latest pointer.
+    while (!releaseVersion) {
+      const releases = await fetchPackageVersions(resolvedName, { limit: 1, cursor });
+      releaseVersion = releases.items[0]?.version;
+      if (releaseVersion || !releases.nextCursor) break;
+      cursor = releases.nextCursor;
+    }
     const [version, readme] = await Promise.all([
-      detail.package.latestVersion
-        ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
-        : Promise.resolve(null),
-      fetchPackageReadme(resolvedName),
+      releaseVersion ? fetchPackageVersion(resolvedName, releaseVersion) : Promise.resolve(null),
+      releaseVersion ? fetchPackageReadme(resolvedName, releaseVersion) : Promise.resolve(null),
     ]);
 
     return { detail, version, versions: undefined, readme, rateLimited: null };
