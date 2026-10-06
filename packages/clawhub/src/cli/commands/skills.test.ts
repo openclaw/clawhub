@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import * as fsPromises from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
@@ -102,8 +103,17 @@ const { rename, rm, stat } = fsPromises;
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
+const WORKDIR = resolve("/work");
+const workPath = (...segments: string[]) => join(WORKDIR, ...segments);
+const backupDirMatcher = (baseName: string) =>
+  expect.stringMatching(
+    new RegExp(
+      `^${workPath("skills").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\\\/]${baseName.replace(/\./g, "\\.")}`,
+    ),
+  );
+
 function makeOpts() {
-  return makeGlobalOpts();
+  return makeGlobalOpts(WORKDIR);
 }
 
 function githubArtifactIdentity(repo: string, path: string, commit: string, contentHash: string) {
@@ -628,7 +638,7 @@ describe("cmdUpdate", () => {
     expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
       url: `https://codeload.github.com/patrick-erichsen/skills/zip/${nextCommit}`,
     });
-    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/html", {
+    expect(writeSkillOrigin).toHaveBeenCalledWith(workPath("skills", "html"), {
       version: 1,
       registry: "https://clawhub.ai",
       slug: "html",
@@ -649,7 +659,7 @@ describe("cmdUpdate", () => {
       installedAt: 123,
       fingerprint: "hash",
     });
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         [sourceRef]: {
@@ -762,7 +772,7 @@ describe("cmdUpdate", () => {
     expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
       url: `https://codeload.github.com/patrick-erichsen/skills/zip/${nextCommit}`,
     });
-    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/html", {
+    expect(writeSkillOrigin).toHaveBeenCalledWith(workPath("skills", "html"), {
       version: 1,
       registry: "https://clawhub.ai",
       slug: "html",
@@ -784,7 +794,7 @@ describe("cmdUpdate", () => {
       installedAt: 123,
       fingerprint: "hash",
     });
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         [sourceRef]: {
@@ -903,11 +913,11 @@ describe("cmdUpdate", () => {
     });
     expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
       new Uint8Array([1, 2, 3]),
-      expect.stringContaining("/.html.tmp-"),
+      expect.stringMatching(/[\\/]\.html\.tmp-/),
       "skills/html",
     );
     expect(writeSkillOrigin).toHaveBeenCalledWith(
-      "/work/skills/html",
+      workPath("skills", "html"),
       expect.objectContaining({
         sourceRepository: "openclaw/skills",
         canonicalRef: "@openclaw/html",
@@ -960,7 +970,7 @@ describe("cmdUpdate", () => {
     expect(mockApiRequest).toHaveBeenCalledTimes(1);
     const [, args] = mockApiRequest.mock.calls[0] ?? [];
     expect(args?.path).toBe(`${ApiRoutes.skills}/${encodeURIComponent("other")}`);
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         demo: { version: "0.1.0", installedAt: 123, pinned: true, pinReason: "hold" },
@@ -1009,7 +1019,7 @@ describe("cmdUpdate", () => {
       "https://clawhub.ai",
       expect.objectContaining({ slug: "demo", version: "2.0.0" }),
     );
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         "stale-github": { version: "a".repeat(40), installedAt: 123 },
@@ -1131,10 +1141,10 @@ describe("cmdUpdate", () => {
       expect.objectContaining({ slug: "demo", version: "2.0.0", ownerHandle: "openclaw" }),
     );
     expect(writeSkillOrigin).toHaveBeenCalledWith(
-      "/work/skills/demo",
+      workPath("skills", "demo"),
       expect.objectContaining({ slug: "demo", ownerHandle: "openclaw" }),
     );
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         demo: { version: "2.0.0", installedAt: expect.any(Number), ownerHandle: "openclaw" },
@@ -1180,10 +1190,10 @@ describe("cmdUpdate", () => {
       expect.objectContaining({ slug: "demo", ownerHandle: "alice", version: "2.0.0" }),
     );
     expect(writeSkillOrigin).toHaveBeenCalledWith(
-      "/work/skills/@alice/demo",
+      workPath("skills", "@alice", "demo"),
       expect.objectContaining({ slug: "demo", ownerHandle: "alice" }),
     );
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         "@alice/demo": {
@@ -1270,10 +1280,10 @@ describe("cmdUpdate", () => {
       );
     }
     expect(writeSkillOrigin).toHaveBeenLastCalledWith(
-      "/work/skills/demo",
+      workPath("skills", "demo"),
       expect.objectContaining({ ownerHandle: "openclaw" }),
     );
-    expect(writeLockfile).toHaveBeenLastCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenLastCalledWith(WORKDIR, {
       version: 1,
       skills: {
         demo: {
@@ -1369,7 +1379,7 @@ describe("cmdUpdate", () => {
     });
     expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
       new Uint8Array([1, 2, 3]),
-      "/work/skills/aiq-deploy",
+      workPath("skills", "aiq-deploy"),
       "skills/aiq-deploy",
     );
     expect(mockSpinner.succeed).toHaveBeenCalledWith(
@@ -1429,26 +1439,23 @@ describe("cmdUpdate", () => {
     });
     expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
       new Uint8Array([1, 2, 3]),
-      "/work/skills/.aiq-deploy.tmp-123",
+      workPath("skills", ".aiq-deploy.tmp-123"),
       "skills/aiq-deploy",
     );
     expect(rename).toHaveBeenNthCalledWith(
       1,
-      "/work/skills/aiq-deploy",
-      expect.stringMatching(/^\/work\/skills\/\.aiq-deploy\.backup-/),
+      workPath("skills", "aiq-deploy"),
+      backupDirMatcher(".aiq-deploy.backup-"),
     );
     expect(rename).toHaveBeenNthCalledWith(
       2,
-      "/work/skills/.aiq-deploy.tmp-123",
-      "/work/skills/aiq-deploy",
+      workPath("skills", ".aiq-deploy.tmp-123"),
+      workPath("skills", "aiq-deploy"),
     );
-    expect(rm).toHaveBeenCalledWith(
-      expect.stringMatching(/^\/work\/skills\/\.aiq-deploy\.backup-/),
-      {
-        recursive: true,
-        force: true,
-      },
-    );
+    expect(rm).toHaveBeenCalledWith(backupDirMatcher(".aiq-deploy.backup-"), {
+      recursive: true,
+      force: true,
+    });
     expect(mockSpinner.succeed).toHaveBeenCalledWith(
       `aiq-deploy: updated -> ${commit.slice(0, 12)}`,
     );
@@ -1496,7 +1503,7 @@ describe("cmdUpdate", () => {
       "https://clawhub.ai",
       expect.objectContaining({ slug: "demo", version: "2.0.0" }),
     );
-    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/demo", {
+    expect(writeSkillOrigin).toHaveBeenCalledWith(workPath("skills", "demo"), {
       version: 1,
       registry: "https://clawhub.ai",
       slug: "demo",
@@ -1574,7 +1581,7 @@ describe("cmdUpdate", () => {
     const [, resolveArgs] = mockApiRequest.mock.calls[1] ?? [];
     expect(new URL(String(resolveArgs?.url)).searchParams.get("ownerHandle")).toBe("openclaw");
     expect(mockDownloadZip).not.toHaveBeenCalled();
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         demo: { version: "1.0.0", installedAt: 123, ownerHandle: "openclaw" },
@@ -1648,11 +1655,11 @@ describe("cmdUpdate", () => {
     await expect(cmdUpdate(makeOpts(), "demo", {}, false)).rejects.toThrow("network down");
 
     expect(rename).not.toHaveBeenCalled();
-    expect(rm).toHaveBeenCalledWith("/work/skills/.demo.tmp-123", {
+    expect(rm).toHaveBeenCalledWith(workPath("skills", ".demo.tmp-123"), {
       recursive: true,
       force: true,
     });
-    expect(rm).not.toHaveBeenCalledWith("/work/skills/demo", {
+    expect(rm).not.toHaveBeenCalledWith(workPath("skills", "demo"), {
       recursive: true,
       force: true,
     });
@@ -1681,7 +1688,7 @@ describe("cmdUpdate", () => {
       "registry down",
     );
 
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         first: { version: "2.0.0", installedAt: expect.any(Number) },
@@ -1704,7 +1711,7 @@ describe("pin commands", () => {
 
     await cmdPin(makeOpts(), "demo", { reason: "scanner hold" });
 
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         demo: {
@@ -1749,7 +1756,7 @@ describe("pin commands", () => {
 
     await cmdUnpin(makeOpts(), "demo");
 
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         demo: {
@@ -1785,7 +1792,7 @@ describe("pin commands", () => {
 
     await cmdUnpin(makeOpts(), sourceRef);
 
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         [sourceRef]: {
@@ -1822,7 +1829,7 @@ describe("cmdList", () => {
     });
     await cmdList(makeOpts());
 
-    expect(skillStore.listManualSkills).toHaveBeenCalledWith("/work/skills", new Set(["html"]));
+    expect(skillStore.listManualSkills).toHaveBeenCalledWith(workPath("skills"), new Set(["html"]));
     expect(mockLog).toHaveBeenCalledWith(`${sourceRef}  ${"a".repeat(40)}  Not scanned by ClawHub`);
   });
 
@@ -1896,10 +1903,10 @@ describe("cmdInstall", () => {
     });
     expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
       new Uint8Array([1, 2, 3]),
-      "/work/skills/html",
+      workPath("skills", "html"),
       "skills/html",
     );
-    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/html", {
+    expect(writeSkillOrigin).toHaveBeenCalledWith(workPath("skills", "html"), {
       version: 1,
       registry: "https://clawhub.ai",
       slug: "html",
@@ -1920,7 +1927,7 @@ describe("cmdInstall", () => {
       installedAt: expect.any(Number),
       fingerprint: "hash",
     });
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         [sourceRef]: {
@@ -1997,7 +2004,7 @@ describe("cmdInstall", () => {
       version: "2.0.0",
       token: "tkn",
     });
-    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/html", {
+    expect(writeSkillOrigin).toHaveBeenCalledWith(workPath("skills", "html"), {
       version: 1,
       registry: "https://clawhub.ai",
       slug: "html",
@@ -2014,7 +2021,7 @@ describe("cmdInstall", () => {
       installedAt: expect.any(Number),
       fingerprint: undefined,
     });
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         [sourceRef]: {
@@ -2099,7 +2106,7 @@ describe("cmdInstall", () => {
     expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
       url: `https://codeload.github.com/patrick-erichsen/skills/zip/${commit}`,
     });
-    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/html", {
+    expect(writeSkillOrigin).toHaveBeenCalledWith(workPath("skills", "html"), {
       version: 1,
       registry: "https://clawhub.ai",
       slug: "html",
@@ -2121,7 +2128,7 @@ describe("cmdInstall", () => {
       installedAt: expect.any(Number),
       fingerprint: "hash",
     });
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         [sourceRef]: {
@@ -2201,7 +2208,7 @@ describe("cmdInstall", () => {
     });
 
     await expect(cmdInstall(makeOpts(), sourceRef, undefined, true)).rejects.toThrow(
-      `Install target collision: /work/skills/html is owned by skills-sh:other/repo/html`,
+      `Install target collision: ${workPath("skills", "html")} is owned by skills-sh:other/repo/html`,
     );
     expect(mockApiRequest).not.toHaveBeenCalled();
   });
@@ -2425,10 +2432,10 @@ describe("cmdInstall", () => {
     });
     expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
       new Uint8Array([1, 2, 3]),
-      "/work/skills/aiq-deploy",
+      workPath("skills", "aiq-deploy"),
       "skills/aiq-deploy",
     );
-    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/aiq-deploy", {
+    expect(writeSkillOrigin).toHaveBeenCalledWith(workPath("skills", "aiq-deploy"), {
       version: 1,
       registry: "https://clawhub.ai",
       slug: "aiq-deploy",
@@ -2436,7 +2443,7 @@ describe("cmdInstall", () => {
       installedAt: expect.any(Number),
       fingerprint: "hash",
     });
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         "aiq-deploy": { version: commit, installedAt: expect.any(Number) },
@@ -2529,14 +2536,14 @@ describe("cmdInstall", () => {
       }),
     );
     expect(writeSkillOrigin).toHaveBeenCalledWith(
-      "/work/skills/@openclaw/demo",
+      workPath("skills", "@openclaw", "demo"),
       expect.objectContaining({
         slug: "demo",
         ownerHandle: "openclaw",
         installedVersion: "1.0.0",
       }),
     );
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {
         "@openclaw/demo": {
@@ -2597,12 +2604,12 @@ describe("cmdInstall", () => {
 
     expect(writeSkillOrigin).toHaveBeenNthCalledWith(
       1,
-      "/work/skills/@alice/demo",
+      workPath("skills", "@alice", "demo"),
       expect.objectContaining({ ownerHandle: "alice", slug: "demo" }),
     );
     expect(writeSkillOrigin).toHaveBeenNthCalledWith(
       2,
-      "/work/skills/@bob/demo",
+      workPath("skills", "@bob", "demo"),
       expect.objectContaining({ ownerHandle: "bob", slug: "demo" }),
     );
     expect(lock.skills).toEqual({
@@ -2645,7 +2652,7 @@ describe("cmdInstall", () => {
       }),
     );
     expect(writeSkillOrigin).toHaveBeenCalledWith(
-      "/work/skills/@source/old-demo",
+      workPath("skills", "@source", "old-demo"),
       expect.objectContaining({ slug: "old-demo", ownerHandle: "source" }),
     );
     expect(mockApiRequest).toHaveBeenCalledWith(
@@ -2699,7 +2706,7 @@ describe("cmdInstall", () => {
       }),
     );
     expect(writeSkillOrigin).toHaveBeenCalledWith(
-      "/work/skills/old-demo",
+      workPath("skills", "old-demo"),
       expect.objectContaining({ slug: "demo", ownerHandle: "target" }),
     );
   });
@@ -2775,11 +2782,11 @@ describe("cmdInstall", () => {
     await expect(cmdInstall(makeOpts(), "demo", undefined, true)).rejects.toThrow("network down");
 
     expect(rename).not.toHaveBeenCalled();
-    expect(rm).toHaveBeenCalledWith("/work/skills/.demo.tmp-123", {
+    expect(rm).toHaveBeenCalledWith(workPath("skills", ".demo.tmp-123"), {
       recursive: true,
       force: true,
     });
-    expect(rm).not.toHaveBeenCalledWith("/work/skills/demo", {
+    expect(rm).not.toHaveBeenCalledWith(workPath("skills", "demo"), {
       recursive: true,
       force: true,
     });
@@ -2863,7 +2870,7 @@ describe("cmdInstall", () => {
     );
     expect(extractZipToDir).toHaveBeenCalledWith(
       new Uint8Array([1, 2, 3]),
-      "/work/skills/.demo.tmp-123",
+      workPath("skills", ".demo.tmp-123"),
     );
     const versionLookupOrder = mockApiRequest.mock.invocationCallOrder[1];
     const downloadOrder = mockDownloadZip.mock.invocationCallOrder[0];
@@ -2900,15 +2907,19 @@ describe("cmdInstall", () => {
     expect(mockDownloadZip).toHaveBeenCalled();
     expect(extractZipToDir).toHaveBeenCalledWith(
       new Uint8Array([1, 2, 3]),
-      "/work/skills/.demo.tmp-123",
+      workPath("skills", ".demo.tmp-123"),
     );
     expect(rename).toHaveBeenNthCalledWith(
       1,
-      "/work/skills/demo",
-      expect.stringMatching(/^\/work\/skills\/\.demo\.backup-/),
+      workPath("skills", "demo"),
+      backupDirMatcher(".demo.backup-"),
     );
-    expect(rename).toHaveBeenNthCalledWith(2, "/work/skills/.demo.tmp-123", "/work/skills/demo");
-    expect(rm).toHaveBeenCalledWith(expect.stringMatching(/^\/work\/skills\/\.demo\.backup-/), {
+    expect(rename).toHaveBeenNthCalledWith(
+      2,
+      workPath("skills", ".demo.tmp-123"),
+      workPath("skills", "demo"),
+    );
+    expect(rm).toHaveBeenCalledWith(backupDirMatcher(".demo.backup-"), {
       recursive: true,
       force: true,
     });
@@ -2948,10 +2959,14 @@ describe("cmdInstall", () => {
 
     expect(rename).toHaveBeenNthCalledWith(
       1,
-      "/work/skills/demo",
-      expect.stringMatching(/^\/work\/skills\/\.demo\.backup-/),
+      workPath("skills", "demo"),
+      backupDirMatcher(".demo.backup-"),
     );
-    expect(rename).toHaveBeenNthCalledWith(2, "/work/skills/.demo.tmp-123", "/work/skills/demo");
+    expect(rename).toHaveBeenNthCalledWith(
+      2,
+      workPath("skills", ".demo.tmp-123"),
+      workPath("skills", "demo"),
+    );
     expect(rename).toHaveBeenCalledTimes(2);
     expect(writeLockfile).toHaveBeenCalled();
   });
@@ -3020,7 +3035,7 @@ describe("cmdUninstall", () => {
     await cmdUninstall(makeOpts(), "demo", {}, true);
 
     expect(mockPromptConfirm).toHaveBeenCalledWith("Uninstall demo?");
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
+    expect(rm).toHaveBeenCalledWith(workPath("skills", "demo"), { recursive: true, force: true });
     expect(writeLockfile).toHaveBeenCalled();
   });
 
@@ -3066,8 +3081,8 @@ describe("cmdUninstall", () => {
 
     await cmdUninstall(makeOpts(), "demo", { yes: true }, false);
 
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(rm).toHaveBeenCalledWith(workPath("skills", "demo"), { recursive: true, force: true });
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: {},
     });
@@ -3116,8 +3131,8 @@ describe("cmdUninstall", () => {
 
     await cmdUninstall(makeOpts(), "demo", { yes: true }, false);
 
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
-    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+    expect(rm).toHaveBeenCalledWith(workPath("skills", "demo"), { recursive: true, force: true });
+    expect(writeLockfile).toHaveBeenCalledWith(WORKDIR, {
       version: 1,
       skills: { other: { version: "2.0.0", installedAt: 456 } },
     });
@@ -3133,6 +3148,6 @@ describe("cmdUninstall", () => {
 
     await cmdUninstall(makeOpts(), "  demo  ", { yes: true }, false);
 
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
+    expect(rm).toHaveBeenCalledWith(workPath("skills", "demo"), { recursive: true, force: true });
   });
 });

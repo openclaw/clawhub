@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- Tests: derive the skills CLI test workdir from the platform's `resolve()` and compare skill directory, lockfile, and backup-path expectations with platform separators, so the skills install/update suite passes on Windows as well as Linux.
+
 ## 0.24.0 - 2026-09-30
 
 ### Changes
