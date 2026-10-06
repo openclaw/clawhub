@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- Web: show the existing skill detail skeleton while navigating to a skill whose route data is still loading.
+
 ## 0.24.0 - 2026-09-30
 
 ### Changes
