@@ -714,15 +714,23 @@ it("finalizes a second successor through the complete action and replays its res
   expect(await t.run((ctx) => ctx.db.get(firstId))).toMatchObject({ status: "failed" });
 });
 
-it.each(["ready_to_finalize", "pending_checks", "finalized", "blocked", "expired"] as const)(
-  "does not reset an attempt in %s",
-  async (status) => {
-    const { t, ids, recover } = await fixture();
-    await t.run((ctx) => ctx.db.patch(ids.attemptId, { status }));
-    expect((await recover()).status).toBe(409);
-    expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({ status });
-  },
-);
+it.each([
+  "ready_to_finalize",
+  "pending_checks",
+  "finalizing",
+  "finalized",
+  "blocked",
+  "expired",
+] as const)("does not reset an attempt in %s", async (status) => {
+  const { t, ids, recover } = await fixture();
+  await t.run((ctx) => ctx.db.patch(ids.attemptId, { status }));
+  const response = await recover();
+  expect(response.status).toBe(409);
+  expect(response.headers.get("Retry-After")).toBe(
+    ["pending_checks", "ready_to_finalize", "finalizing"].includes(status) ? "10" : null,
+  );
+  expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({ status });
+});
 
 it.each([
   { manualOverrideReason: " " },
