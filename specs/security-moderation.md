@@ -716,6 +716,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   caller identity; the backfill preserves the existing scan-status precedence rules.
 - Package/plugin scan backfills may recompute deterministic static scan results for older releases,
   but those results remain ClawScan context and are not public trust status.
+- `packages.backfillLatestPackageScanStatus` is an admin-only catalog maintenance entry point.
+  Anonymous callers and signed-in non-admins are rejected before any package, release, or
+  search-digest write. An admin call runs the internal paged mutation, which patches drifted
+  scan status and schedules the next batch until the catalog page is done.
 - ClawPack package releases materialize parsed npm-pack artifact entries into the release file
   surface. Static scan, LLM review, package inspect/file APIs, and Codex package ClawScan use those
   stored artifact entries instead of metadata-only `package.json` / `openclaw.plugin.json` rows.
