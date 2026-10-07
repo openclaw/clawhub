@@ -558,6 +558,7 @@ function indexedRows(rows: unknown[]) {
 function makePublicPublisherVisibilityCtx(options?: {
   linkedUser?: Record<string, unknown> | null;
   legacyPersonalPublisher?: boolean;
+  skillModerationStatus?: string;
 }) {
   const legacyPersonalPublisher = options?.legacyPersonalPublisher ?? false;
   const publisher = {
@@ -602,6 +603,7 @@ function makePublicPublisherVisibilityCtx(options?: {
     softDeletedAt: undefined,
     slug: "demo",
     displayName: "Demo Skill",
+    moderationStatus: options?.skillModerationStatus,
     summary: "Demo summary",
     icon: null,
     installKind: "github",
@@ -4331,6 +4333,17 @@ describe("publishers membership controls", () => {
     });
 
     expect(result.page.map((item) => item.displayName)).toEqual(["Demo Skill"]);
+  });
+
+  it("hides a starred skill that is no longer public", async () => {
+    const ctx = makePublicPublisherVisibilityCtx({ skillModerationStatus: "hidden" });
+
+    const result = await listStarredPageHandler(ctx as never, {
+      handle: "proof-banned-builder",
+      paginationOpts: { cursor: null, numItems: 12 },
+    });
+
+    expect(result.page).toEqual([]);
   });
 
   it("hides members for a user publisher whose linked user is deleted", async () => {
