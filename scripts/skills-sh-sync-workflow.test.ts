@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 describe("skills.sh production synchronization workflow", () => {
-  it("coalesces pending syncs before taking the production deployment lock", async () => {
+  it("coalesces recurring syncs separately from the single experiment and shares the production lock", async () => {
     const workflow = parseYaml(await readFile(".github/workflows/skills-sh-sync.yml", "utf8")) as {
       concurrency?: { group?: string; queue?: string; "cancel-in-progress"?: boolean };
       jobs: Record<
@@ -35,7 +35,8 @@ describe("skills.sh production synchronization workflow", () => {
       concurrency?: { group?: string; queue?: string; "cancel-in-progress"?: boolean };
     };
     expect(workflow.concurrency).toEqual({
-      group: "skills-sh-sync-${{ github.ref }}",
+      group:
+        "${{ inputs.deploy_experiment_sha != '' && format('skills-sh-deploy-experiment-{0}', github.ref) || format('skills-sh-sync-{0}', github.ref) }}",
       queue: "single",
       "cancel-in-progress": false,
     });

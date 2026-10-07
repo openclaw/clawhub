@@ -657,6 +657,37 @@ test("detached normal publication permits only active or successful parents", as
   }
 });
 
+test("sealed publication permits submission only while the parent is active", async () => {
+  const identity = protectedIdentity();
+  const receipt = parentReceipt(identity, { authorizationRoute: "automated-sealed" });
+  await assert.doesNotReject(
+    verifyTrustedToolingIdentity({
+      rawIdentity: JSON.stringify(identity),
+      rawParentReceipt: JSON.stringify(receipt),
+      env: callerEnv(identity),
+      getJson: apiFixture({ identity, receipt }),
+    }),
+  );
+  for (const conclusion of ["success", "failure", "cancelled"]) {
+    await assert.rejects(
+      verifyTrustedToolingIdentity({
+        rawIdentity: JSON.stringify(identity),
+        rawParentReceipt: JSON.stringify(receipt),
+        env: callerEnv(identity),
+        getJson: apiFixture({
+          identity,
+          receipt,
+          parentRun: parentRunFixture(identity, receipt, {
+            status: "completed",
+            conclusion,
+          }),
+        }),
+      }),
+      /not allowed by authorization route automated-sealed/,
+    );
+  }
+});
+
 test("human dispatch requires the recovery receipt path and names its artifact", async () => {
   const identity = protectedIdentity();
   const receipt = parentReceipt(identity);
