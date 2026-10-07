@@ -3366,7 +3366,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
   });
 
-  it("batches latest snapshots and tags across multiple skills", async () => {
+  it("reuses checked version selections across latest snapshots and tags", async () => {
     const selectedSkill0 = {
       _id: "skills:1",
       slug: "skill-a",
@@ -3457,16 +3457,18 @@ describe("httpApiV1 handlers", () => {
     );
     expect(response.status).toBe(200);
     const json = await response.json();
-    // Verify tags are correctly resolved for each skill
     expect(json.items[0].tags.latest).toBe("2.0.0");
     expect(json.items[0].tags.stable).toBe("1.0.0");
     expect(json.items[1].tags.latest).toBe("1.0.0");
-    // Latest snapshots and tag snapshots are batched across skills, not queried per item.
+    expect(
+      json.items.map((item: { latestVersion: { version: string } }) => item.latestVersion.version),
+    ).toEqual(["2.0.0", "1.0.0"]);
+    // Latest and tag selectors share the same bounded checked-query budget.
     const batchCalls = runQuery.mock.calls.filter(
       ([query]) => getFunctionName(query as never) === "skills:getPublicVersionSelectionsInternal",
     );
-    expect(batchCalls).toHaveLength(2);
-    expect(batchCalls.map(([, args]) => (args.selections as unknown[]).length)).toEqual([2, 3]);
+    expect(batchCalls).toHaveLength(1);
+    expect(batchCalls.map(([, args]) => (args.selections as unknown[]).length)).toEqual([3]);
   });
 
   it("lists skills supports sort aliases", async () => {

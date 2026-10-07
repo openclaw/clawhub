@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
+import { strToU8, zipSync } from "fflate";
 import { afterEach, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -17,7 +18,151 @@ const modules = import.meta.glob("./**/*.ts");
 const bearer = "local-recovery-fixture";
 const reason = "Recover the exact staged artifact after failed release publication";
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
+
+const sealedIdentity = {
+  version: 2,
+  repository: "openclaw/openclaw",
+  workflow: ".github/workflows/plugin-clawhub-release.yml",
+  runId: "100",
+  runAttempt: "1",
+  ref: "release/2026.9.2",
+  fullRef: "refs/heads/release/2026.9.2",
+  sha: "a".repeat(40),
+  candidateRepository: "openclaw/openclaw",
+  candidateSha: "a".repeat(40),
+  toolingRef: `release-publish/${"b".repeat(12)}-99`,
+  toolingFullRef: `refs/tags/release-publish/${"b".repeat(12)}-99`,
+  toolingSha: "b".repeat(40),
+  parentRepository: "openclaw/openclaw",
+  parentWorkflow: ".github/workflows/openclaw-release-publish.yml",
+  parentRunId: "99",
+  parentRunAttempt: "2",
+};
+
+function sealedParentReceipt(inventoryDigest: string) {
+  return {
+    version: 2,
+    kind: "openclaw-clawhub-parent-authorization",
+    repository: sealedIdentity.parentRepository,
+    workflow: sealedIdentity.parentWorkflow,
+    runId: sealedIdentity.parentRunId,
+    runAttempt: sealedIdentity.parentRunAttempt,
+    ref: sealedIdentity.toolingRef,
+    fullRef: sealedIdentity.toolingFullRef,
+    headSha: sealedIdentity.toolingSha,
+    childRepository: sealedIdentity.repository,
+    childWorkflow: sealedIdentity.workflow,
+    childRunId: sealedIdentity.runId,
+    childRunAttempt: sealedIdentity.runAttempt,
+    childRef: sealedIdentity.ref,
+    childFullRef: sealedIdentity.fullRef,
+    childHeadSha: sealedIdentity.sha,
+    candidateRepository: sealedIdentity.candidateRepository,
+    candidateSha: sealedIdentity.candidateSha,
+    toolingRef: sealedIdentity.toolingRef,
+    toolingFullRef: sealedIdentity.toolingFullRef,
+    toolingSha: sealedIdentity.toolingSha,
+    authorizationRoute: "automated-sealed",
+    packages: [{ name: publicationName, version: publicationVersion, inventoryDigest }],
+  };
+}
+
+async function sha256Hex(bytes: Uint8Array) {
+  const digest = await crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function requestUrl(input: string | URL | Request) {
+  return input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+}
+
+async function sealedGitHubFetch(options: {
+  inventoryDigest: string;
+  parentConclusion?: "failure" | "cancelled";
+  childActor?: { login: string; type: string };
+  receiptInventoryDigest?: string;
+}) {
+  const receipt = sealedParentReceipt(options.receiptInventoryDigest ?? options.inventoryDigest);
+  const archive = zipSync(
+    { "authorization.json": strToU8(JSON.stringify(receipt)) },
+    { mtime: new Date("2000-01-01T00:00:00.000Z") },
+  );
+  const artifactDigest = `sha256:${await sha256Hex(archive)}`;
+  const artifactName = [
+    "openclaw-clawhub-parent-authorization-v2",
+    sealedIdentity.parentRunId,
+    sealedIdentity.parentRunAttempt,
+    sealedIdentity.runId,
+    sealedIdentity.runAttempt,
+  ].join("-");
+  const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+    const url = requestUrl(input);
+    if (url.includes(`/actions/runs/${sealedIdentity.runId}/attempts/1`)) {
+      return Response.json({
+        id: Number(sealedIdentity.runId),
+        run_attempt: 1,
+        path: sealedIdentity.workflow,
+        head_branch: sealedIdentity.ref,
+        head_sha: sealedIdentity.sha,
+        event: "workflow_dispatch",
+        status: "completed",
+        conclusion: "failure",
+        actor: options.childActor ?? { login: "github-actions[bot]", type: "Bot" },
+        repository: { full_name: sealedIdentity.repository },
+      });
+    }
+    if (url.includes(`/actions/runs/${sealedIdentity.parentRunId}/attempts/2`)) {
+      return Response.json({
+        id: Number(sealedIdentity.parentRunId),
+        run_attempt: 2,
+        path: sealedIdentity.parentWorkflow,
+        head_branch: sealedIdentity.toolingRef,
+        head_sha: sealedIdentity.toolingSha,
+        event: "workflow_dispatch",
+        status: "completed",
+        conclusion: options.parentConclusion ?? "failure",
+        repository: { full_name: sealedIdentity.parentRepository },
+      });
+    }
+    if (url.includes(`/actions/runs/${sealedIdentity.parentRunId}/artifacts?`)) {
+      if (new URL(url).searchParams.get("name") !== artifactName) {
+        return Response.json({ total_count: 0, artifacts: [] });
+      }
+      return Response.json({
+        total_count: 1,
+        artifacts: [
+          {
+            id: 101,
+            name: artifactName,
+            expired: false,
+            digest: artifactDigest,
+            archive_download_url: "https://api.github.com/artifacts/101/zip",
+            workflow_run: {
+              id: Number(sealedIdentity.parentRunId),
+              head_sha: sealedIdentity.toolingSha,
+            },
+          },
+        ],
+      });
+    }
+    if (url.includes(`/actions/runs/${sealedIdentity.runId}/artifacts?`)) {
+      return Response.json({ total_count: 0, artifacts: [] });
+    }
+    if (url.endsWith("/artifacts/101/zip")) return new Response(archive);
+    if (url.includes("/git/ref/tags/")) {
+      return Response.json({
+        ref: sealedIdentity.toolingFullRef,
+        object: { type: "commit", sha: sealedIdentity.toolingSha },
+      });
+    }
+    throw new Error(`Unexpected GitHub request: ${url}`);
+  });
+  return { artifactDigest, fetchImpl };
+}
 
 async function fixture() {
   vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
@@ -207,6 +352,172 @@ async function fixture() {
     });
   return { t, ids, recover };
 }
+
+async function sealedPublicationFixture() {
+  const fixtureResult = await fixture();
+  const { t, ids } = fixtureResult;
+  const token = await t.run((ctx) => ctx.db.get(ids.originalToken));
+  if (!token?.inventoryDigest) throw new Error("Missing fixture inventory digest");
+  const { artifactDigest, fetchImpl } = await sealedGitHubFetch({
+    inventoryDigest: token.inventoryDigest,
+  });
+  const transactionKey = [
+    sealedIdentity.parentRepository,
+    sealedIdentity.parentRunId,
+    sealedIdentity.parentRunAttempt,
+    sealedIdentity.runId,
+    sealedIdentity.runAttempt,
+    sealedIdentity.candidateSha,
+    publicationName,
+    publicationVersion,
+    token.inventoryDigest,
+  ].join(":");
+  await t.run(async (ctx) => {
+    const attempt = await ctx.db.get(ids.attemptId);
+    if (!attempt) throw new Error("Missing fixture attempt");
+    const packageFollowup = attempt.packageFollowup as Record<string, unknown>;
+    await ctx.db.patch(ids.originalToken, {
+      authorizationRoute: "automated-sealed",
+      authorizationTransactionKey: transactionKey,
+      authorizationKey: `${transactionKey}:publish`,
+      authorizationArtifactId: "101",
+      authorizationArtifactDigest: artifactDigest,
+      trustedToolingIdentityJson: JSON.stringify(sealedIdentity),
+      candidateRepository: sealedIdentity.candidateRepository,
+      candidateSha: sealedIdentity.candidateSha,
+      parentRepository: sealedIdentity.parentRepository,
+      parentWorkflow: sealedIdentity.parentWorkflow,
+      parentRunId: sealedIdentity.parentRunId,
+      parentRunAttempt: sealedIdentity.parentRunAttempt,
+      sha: sealedIdentity.sha,
+      ref: sealedIdentity.fullRef,
+    });
+    await ctx.db.patch(ids.attemptId, {
+      status: "ready_to_finalize",
+      finalizationLastError: undefined,
+      failedAt: undefined,
+      checks: {
+        trufflehog: { status: "clean", checkedAt: Date.now() },
+        clawscan: { status: "clean", checkedAt: Date.now() },
+      },
+      packageFollowup: {
+        ...packageFollowup,
+        githubActionsAudit: {
+          actorUserId: ids.owner,
+          version: publicationVersion,
+          repository: sealedIdentity.repository,
+          workflowFilename: "plugin-clawhub-release.yml",
+          runId: sealedIdentity.runId,
+          runAttempt: sealedIdentity.runAttempt,
+          sha: sealedIdentity.sha,
+        },
+      },
+      updatedAt: Date.now(),
+    });
+  });
+  vi.stubEnv("GITHUB_TOKEN", "test-token");
+  vi.stubGlobal("fetch", fetchImpl);
+  return fixtureResult;
+}
+
+type SealedPublicationFixture = Awaited<ReturnType<typeof sealedPublicationFixture>>;
+
+async function sealedInventoryDigest({ t, ids }: SealedPublicationFixture) {
+  const token = await t.run((ctx) => ctx.db.get(ids.originalToken));
+  if (!token?.inventoryDigest) throw new Error("Missing fixture inventory digest");
+  return token.inventoryDigest;
+}
+
+it("publishes the exact sealed transaction after its parent fails", async () => {
+  const { t, ids } = await sealedPublicationFixture();
+  await expect(
+    t.action(internal.packages.finalizePackagePublishAttemptInternal, {
+      attemptId: ids.attemptId,
+    }),
+  ).resolves.toMatchObject({ ok: true, releaseId: ids.releaseId });
+  expect(await t.run((ctx) => ctx.db.get(ids.releaseId))).toMatchObject({
+    publicationStatus: "published",
+  });
+  expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({
+    status: "finalized",
+  });
+});
+
+it.each([
+  {
+    name: "cancelled parent",
+    expected: "is not authorized by automated-sealed",
+    prepare: async (fixtureResult: SealedPublicationFixture) => {
+      const replacement = await sealedGitHubFetch({
+        inventoryDigest: await sealedInventoryDigest(fixtureResult),
+        parentConclusion: "cancelled",
+      });
+      vi.stubGlobal("fetch", replacement.fetchImpl);
+    },
+  },
+  {
+    name: "substituted non-bot child authority",
+    expected: "recovery-approval-100-1 is missing or ambiguous",
+    prepare: async (fixtureResult: SealedPublicationFixture) => {
+      const replacement = await sealedGitHubFetch({
+        inventoryDigest: await sealedInventoryDigest(fixtureResult),
+        childActor: { login: "substituted-publisher", type: "User" },
+      });
+      vi.stubGlobal("fetch", replacement.fetchImpl);
+    },
+  },
+  {
+    name: "revoked consumed token",
+    expected: "Staged OpenClaw publish authorization no longer matches the release",
+    prepare: async ({ t, ids }: SealedPublicationFixture) => {
+      await t.run((ctx) => ctx.db.patch(ids.originalToken, { revokedAt: Date.now() }));
+    },
+  },
+  {
+    name: "reassigned trusted publisher",
+    expected: "Trusted publish authorization no longer matches the current trusted publisher",
+    prepare: async ({ t, ids }: SealedPublicationFixture) => {
+      await t.run(async (ctx) => {
+        const trusted = await ctx.db
+          .query("packageTrustedPublishers")
+          .withIndex("by_package", (q) => q.eq("packageId", ids.packageId))
+          .unique();
+        if (!trusted) throw new Error("Missing trusted publisher fixture");
+        await ctx.db.patch(trusted._id, { repository: "openclaw/reassigned" });
+      });
+    },
+  },
+  {
+    name: "mismatched sealed transaction",
+    expected: "does not contain one exact package transaction",
+    prepare: async (fixtureResult: SealedPublicationFixture) => {
+      const inventoryDigest = await sealedInventoryDigest(fixtureResult);
+      const replacement = await sealedGitHubFetch({
+        inventoryDigest,
+        receiptInventoryDigest: "f".repeat(64),
+      });
+      await fixtureResult.t.run((ctx) =>
+        ctx.db.patch(fixtureResult.ids.originalToken, {
+          authorizationArtifactDigest: replacement.artifactDigest,
+        }),
+      );
+      vi.stubGlobal("fetch", replacement.fetchImpl);
+    },
+  },
+])("keeps publication pending for $name", async ({ prepare, expected }) => {
+  const fixtureResult = await sealedPublicationFixture();
+  await prepare(fixtureResult);
+  await expect(
+    fixtureResult.t.action(internal.packages.finalizePackagePublishAttemptInternal, {
+      attemptId: fixtureResult.ids.attemptId,
+    }),
+  ).rejects.toThrow(expected);
+  expect(await fixtureResult.t.run((ctx) => ctx.db.get(fixtureResult.ids.releaseId))).toMatchObject(
+    {
+      publicationStatus: "pending",
+    },
+  );
+});
 
 it("recovers a failed staged plugin through fresh publisher authority without replacing its bytes or history", async () => {
   const { t, ids, recover } = await fixture();
@@ -403,15 +714,23 @@ it("finalizes a second successor through the complete action and replays its res
   expect(await t.run((ctx) => ctx.db.get(firstId))).toMatchObject({ status: "failed" });
 });
 
-it.each(["ready_to_finalize", "pending_checks", "finalized", "blocked", "expired"] as const)(
-  "does not reset an attempt in %s",
-  async (status) => {
-    const { t, ids, recover } = await fixture();
-    await t.run((ctx) => ctx.db.patch(ids.attemptId, { status }));
-    expect((await recover()).status).toBe(409);
-    expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({ status });
-  },
-);
+it.each([
+  "ready_to_finalize",
+  "pending_checks",
+  "finalizing",
+  "finalized",
+  "blocked",
+  "expired",
+] as const)("does not reset an attempt in %s", async (status) => {
+  const { t, ids, recover } = await fixture();
+  await t.run((ctx) => ctx.db.patch(ids.attemptId, { status }));
+  const response = await recover();
+  expect(response.status).toBe(409);
+  expect(response.headers.get("Retry-After")).toBe(
+    ["pending_checks", "ready_to_finalize", "finalizing"].includes(status) ? "10" : null,
+  );
+  expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({ status });
+});
 
 it.each([
   { manualOverrideReason: " " },

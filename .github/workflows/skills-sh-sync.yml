@@ -1,13 +1,35 @@
 name: skills.sh Production Sync
+run-name: ${{ inputs.deploy_experiment_sha != '' && '2026-10-05 single skills.sh deployment overlap experiment' || 'skills.sh Production Sync' }}
 
 on:
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
+    inputs:
+      deploy_experiment_sha:
+        description: "Temporary Patrick-authorized overlap experiment: exact reviewed main SHA"
+        required: false
+        default: ""
+        type: string
+      deploy_experiment_confirm:
+        description: "One attempt only: deploy-once-with-enabled-skills-sh"
+        required: false
+        default: ""
+        type: string
+      deploy_experiment_ci_run:
+        description: "Successful CI push run for that exact main SHA"
+        required: false
+        default: ""
+        type: string
+      deploy_experiment_test_run:
+        description: "Successful Deploy Test run for that exact main SHA"
+        required: false
+        default: ""
+        type: string
 
-# Coalesce recurring syncs before they enter the shared production queue.
+# Coalesce recurring syncs; the one controlled deploy must survive new schedules.
 concurrency:
-  group: skills-sh-sync-${{ github.ref }}
+  group: ${{ inputs.deploy_experiment_sha != '' && format('skills-sh-deploy-experiment-{0}', github.ref) || format('skills-sh-sync-{0}', github.ref) }}
   queue: single
   cancel-in-progress: false
 
@@ -42,9 +64,23 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
+      - name: Reject incomplete experiment requests
+        env:
+          EXPERIMENT_SHA: ${{ inputs.deploy_experiment_sha }}
+          EXPERIMENT_CONFIRM: ${{ inputs.deploy_experiment_confirm }}
+          EXPERIMENT_CI_RUN: ${{ inputs.deploy_experiment_ci_run }}
+          EXPERIMENT_TEST_RUN: ${{ inputs.deploy_experiment_test_run }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$EXPERIMENT_SHA" && -n "${EXPERIMENT_CONFIRM}${EXPERIMENT_CI_RUN}${EXPERIMENT_TEST_RUN}" ]]; then
+            echo "::error::Incomplete controlled deployment experiment request."
+            exit 1
+          fi
+
       - uses: ./.github/actions/setup-bun
 
       - name: Synchronize and automatically verify the production corpus
+        if: inputs.deploy_experiment_sha == ''
         env:
           CLAWHUB_SKILLS_SH_SYNC_OUTPUT: skills-sh-sync-proof.json
           CLAWHUB_SKILLS_SH_SYNC_REASON: skills.sh production sync ${{ github.run_id }} attempt ${{ github.run_attempt }}
@@ -52,6 +88,30 @@ jobs:
         run: |
           set -euo pipefail
           bun scripts/skills-sh-catalog/sync.ts
+
+      - name: Run the single authorized enabled-sync deployment experiment
+        if: inputs.deploy_experiment_sha != ''
+        env:
+          EXPERIMENT_SHA: ${{ inputs.deploy_experiment_sha }}
+          EXPERIMENT_CONFIRM: ${{ inputs.deploy_experiment_confirm }}
+          EXPERIMENT_CI_RUN: ${{ inputs.deploy_experiment_ci_run }}
+          EXPERIMENT_TEST_RUN: ${{ inputs.deploy_experiment_test_run }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          PLAYWRIGHT_BASE_URL: https://clawhub.ai
+          CLAWHUB_SKILLS_SH_SYNC_OUTPUT: skills-sh-sync-proof.json
+          CLAWHUB_SKILLS_SH_SYNC_REASON: skills.sh production sync ${{ github.run_id }} attempt ${{ github.run_attempt }} deployment overlap experiment
+          CLAWHUB_SKILLS_SH_SYNC_URL: https://clawhub.ai/ops/skills-sh/mirror
+        run: bun scripts/skills-sh-catalog/deploy-overlap-experiment.ts
+
+      - name: Upload controlled deployment overlap evidence
+        if: ${{ !cancelled() && inputs.deploy_experiment_sha != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: skills-sh-deploy-overlap-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: |
+            skills-sh-deploy-overlap-proof.json
+            skills-sh-deploy-overlap.log
 
       - name: Upload skills.sh synchronization proof
         if: ${{ !cancelled() }}

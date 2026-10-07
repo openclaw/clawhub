@@ -313,35 +313,45 @@ export async function readPublicSkillVersionSelections(
   return results;
 }
 
-/** Resolve every tag through current documents; cached summaries omit lifecycle state. */
-export async function resolveTagsBatch(
+/** Check latest and tag targets together; cached summaries omit lifecycle state. */
+export async function resolvePublicSkillVersions(
   ctx: ActionCtx,
-  tagsList: Array<Record<string, Id<"skillVersions">>>,
-  skillIds: Array<Id<"skills">>,
-): Promise<Array<Record<string, string>>> {
+  items: Array<{
+    skillId: Id<"skills">;
+    tags: Record<string, Id<"skillVersions">>;
+    latestVersionId?: Id<"skillVersions">;
+  }>,
+): Promise<Array<{ tags: Record<string, string>; latestVersion: Doc<"skillVersions"> | null }>> {
   const selections = new Map<string, { skillId: Id<"skills">; versionId: Id<"skillVersions"> }>();
   const selectionKey = (skillId: Id<"skills">, versionId: Id<"skillVersions">) =>
     `${skillId}/${versionId}`;
-  tagsList.forEach((tags, index) => {
-    const skillId = skillIds[index];
-    for (const versionId of Object.values(tags))
+  for (const { skillId, tags, latestVersionId } of items) {
+    const versionIds = Object.values(tags);
+    if (latestVersionId) versionIds.push(latestVersionId);
+    for (const versionId of versionIds)
       selections.set(selectionKey(skillId, versionId), { skillId, versionId });
-  });
+  }
   const keys = [...selections.keys()].sort();
   const selected = await readPublicSkillVersionSelections(
     ctx,
     keys.map((key) => selections.get(key)!),
   );
   const selectionMap = new Map(keys.map((key, index) => [key, selected[index]]));
-  return tagsList.map((tags, index) => {
+  return items.map(({ skillId, tags, latestVersionId }) => {
     const resolved: Record<string, string> = {};
     for (const [tag, versionId] of Object.entries(tags)) {
-      const selection = selectionMap.get(selectionKey(skillIds[index], versionId));
+      const selection = selectionMap.get(selectionKey(skillId, versionId));
       // A published target can outlive a removed or repointed tag in a cached snapshot.
       if (selection?.status === "available" && selection.skill.tags[tag] === versionId)
         resolved[tag] = selection.version.version;
     }
-    return resolved;
+    const latest = latestVersionId
+      ? selectionMap.get(selectionKey(skillId, latestVersionId))
+      : undefined;
+    return {
+      tags: resolved,
+      latestVersion: latest?.status === "available" ? latest.version : null,
+    };
   });
 }
 
