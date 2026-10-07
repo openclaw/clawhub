@@ -74,6 +74,26 @@ Production deploy notes:
   exact active modes, pauses them before deploying Convex, and restores and verifies them before
   production HTTP smoke. The restore steps run even when deployment or dark-state verification
   fails.
+- Temporary exception authorized by Patrick on 2026-10-05: [PR #3911](https://github.com/openclaw/clawhub/pull/3911)
+  permits one controlled backend deployment while skills.sh stays enabled and a real sync progresses.
+  Dispatch `skills-sh-sync.yml` from reviewed `main` with `deploy_experiment_sha`, exact successful
+  `deploy_experiment_ci_run` and `deploy_experiment_test_run`, and
+  `deploy_experiment_confirm=deploy-once-with-enabled-skills-sh`. Only Patrick's first attempt of the
+  earliest immutable experiment run, excluding only proven first-attempt cancellations with zero jobs,
+  is eligible. A prior first-attempt cancellation
+  is excluded only after a live GitHub jobs read proves it had zero jobs. A started job or rerun still
+  consumes the single attempt. The experiment uses a separate outer queue so recurring schedules
+  cannot replace it, but retains the shared `deploy-production` job mutex. Ordinary sync queueing is
+  unchanged. All other release gates remain: the existing
+  Production environment, production mutex through both processes and cleanup, unchanged rollout
+  boundaries, typechecks, promotions/contract verification, and production HTTP smoke. The sync child
+  uses its existing OIDC identity without the deploy credential. Record prior backend SHA and rollout,
+  active durable sync progress, actual deployment logs, catalog reads during/after deployment, and
+  complete sync accounting. Stamp revision metadata only after successful deployment; investigate
+  failures and reconcile the actual deployed code before using the existing rollback procedure.
+  Remove the temporary inputs and supervisor after that attempt and evidence reconciliation. The
+  ordinary pause/restore guard remains; a successful experiment does not establish every future
+  deployment is safe without a pause.
 - `frontend` does not call `vercel deploy` directly yet. It relies on the existing Vercel Git-based production deploy for that SHA.
 - The real deploy job uses the GitHub `Production` environment for deploy secrets, but it does not wait for a separate approval.
 - Required `Production` environment secret: `CONVEX_DEPLOY_KEY`.

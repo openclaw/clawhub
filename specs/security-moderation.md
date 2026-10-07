@@ -710,10 +710,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   replacement jobs. Conflicting reuse fails. Optional ordered version baselines
   reject page drift atomically. Legacy batches without receipt IDs require
   read-only, fully paginated exact-version job reconciliation before admission.
-- Starting `packages.backfillLatestPackageScanStatus` requires an authenticated, active admin.
-  Anonymous, inactive, and non-admin callers must be rejected before dispatch, catalog writes,
-  or scheduling. Authorized batches may continue through the internal mutation without a
-  caller identity; the backfill preserves the existing scan-status precedence rules.
 - Package/plugin scan backfills may recompute deterministic static scan results for older releases,
   but those results remain ClawScan context and are not public trust status.
 - `packages.backfillLatestPackageScanStatus` is an admin-only catalog maintenance entry point.

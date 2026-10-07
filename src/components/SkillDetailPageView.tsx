@@ -123,6 +123,7 @@ function getGitHubRepositoryLink(skill: SkillDetailViewSkill) {
   return (
     <a
       href={`https://github.com/${repo}`}
+      data-analytics-public-detail=""
       target="_blank"
       rel="noopener noreferrer"
       className="plugin-external-link"
@@ -541,6 +542,7 @@ export function SkillDetailPageView({
                     className={`section-subtitle skill-summary-line${
                       hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
                     }`}
+                    data-analytics-public-detail=""
                   >
                     <InlineMarkdownSummary>{headerDescription}</InlineMarkdownSummary>
                   </p>
@@ -556,7 +558,7 @@ export function SkillDetailPageView({
                   ) : null}
                 </div>
                 {creatorContent || owner || ownerHandle ? (
-                  <div className="skill-hero-creator">
+                  <div className="skill-hero-creator" data-analytics-public-detail="">
                     {creatorContent ?? (
                       <UserBadge
                         user={heroCreatorPublisher}

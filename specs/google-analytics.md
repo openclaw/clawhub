@@ -102,6 +102,43 @@ network monkeypatch, synthetic metric, or automatic reload is used.
 
 ## Shared events and semantics
 
+External selection placement is carried by `select_content`, separately from
+Google's native Enhanced Measurement `click`. Never join or sum the two families
+as a click total. Native click ownership, parameters and global gtag settings remain
+unchanged; in particular there is no global placement set/reset.
+
+Actual external-origin HTTP(S) anchors add paired `link_url` and `link_domain`
+parameters to their selection event. Query and fragment are removed only from
+telemetry; the DOM destination is unchanged. Credentialed, non-HTTP(S), and existing
+sensitive/private targets are rejected. A URL over 1,000 characters or hostname
+over 253 characters omits both fields, without truncation or changing an existing
+selection. Other string fields retain their 100-character bound. Same-origin and
+non-anchor selections, including copy actions, do not gain destination fields.
+
+Existing promotion selections keep `promotion:<slug>` / `ui_location=promotion`.
+Existing post-publish share anchors keep `share:discord` or `share:x` and
+`ui_location=publish`; this dialog can appear on an authoritative public detail
+route. The same callbacks remain unmeasured on private routes, with no new share
+deferral or navigation/success claim.
+
+The existing public-route owner adds exactly one generic selection for previously
+untracked footer and explicitly marked public README, summary, repository,
+contributor and security-reference anchors. They use `content_type=resource`,
+bounded IDs `footer_link` / `detail_link`, and fixed `footer` / `detail` placement.
+Markers are opt-in on known read-only resource containers, not on the generic
+Markdown renderer or arbitrary previews. They sit outside sanitized user Markdown; labels
+never come from text, visitor data or arbitrary classes. Explicitly owned gestures,
+modal/menu/listbox contexts, unmarked areas, unresolved models and private routes
+are excluded. Standalone security-audit and private Dashboard routes remain outside
+the existing analytics route allowlist. Header/internal selections and all other
+existing event identities retain their prior semantics.
+
+Placement coverage begins with the served producer version that adds these fields.
+Historical missing destination/placement stays missing; native link URLs or popup
+views/dismissals cannot reconstruct an unrecorded selection placement. Grouped
+event counts may be reconciled only against compatible same-event/filter/window
+totals; grouped users are not additive unique users.
+
 | Event                                                                                                 | Fields and invariant                                                                                                                                                     |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Native session/first visit/engagement, scroll, outbound click, video, download, search, form activity | Google owns supported behavior. A click/submission/download event does not prove downstream success.                                                                     |

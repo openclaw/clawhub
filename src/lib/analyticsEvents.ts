@@ -3,6 +3,7 @@ type AnalyticsContentType =
   | "plugin"
   | "catalog_skill"
   | "navigation"
+  | "resource"
   | "install"
   | "search"
   | "form";
@@ -24,6 +25,8 @@ type AnalyticsEvents = {
     ui_location: AnalyticsLocation;
     method?: string;
     artifact_version?: string;
+    link_url?: string;
+    link_domain?: string;
   };
   copy_action: {
     content_type: AnalyticsContentType;
@@ -219,7 +222,7 @@ const EVENT_FIELDS: Record<AnalyticsEvent["name"], readonly string[]> = {
   client_error: ["error_type", "error_code", "release"],
 };
 
-export function analyticsEventParameters(event: AnalyticsEvent) {
+export function analyticsEventParameters(event: AnalyticsEvent, origin?: string) {
   const fields = EVENT_FIELDS[event.name];
   if (!fields) return {};
   const params: Record<string, string | number | boolean> = {};
@@ -230,9 +233,48 @@ export function analyticsEventParameters(event: AnalyticsEvent) {
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) params[key] = value;
     if (typeof value === "boolean") params[key] = value;
   }
+  // Destination fields have their own URL bounds; never truncate a URL into a
+  // different identity or accept an independently supplied/mismatched domain.
+  if (event.name === "select_content" && origin && event.params.link_url) {
+    const destination = analyticsLinkDestination(event.params.link_url, origin);
+    if (destination && event.params.link_domain === destination.link_domain)
+      Object.assign(params, destination);
+  }
   // An accidental extra field can never turn an application event into identity,
   // page-location, user-provided-data, or raw error transport.
   return params;
+}
+
+function analyticsLinkDestination(href: string, origin: string) {
+  try {
+    const url = new URL(href, origin);
+    if (url.origin === new URL(origin).origin || isSensitiveAnalyticsDestination(href, origin))
+      return null;
+    url.search = "";
+    url.hash = "";
+    if (url.href.length > 1000 || url.hostname.length > 253) return null;
+    return { link_url: url.href, link_domain: url.hostname };
+  } catch {
+    return null;
+  }
+}
+
+export function analyticsExternalLinkParameters(target: EventTarget | null, origin: string) {
+  if (typeof HTMLAnchorElement === "undefined" || !(target instanceof HTMLAnchorElement)) return {};
+  return analyticsLinkDestination(target.href, origin) ?? {};
+}
+
+export function analyticsPublicResourcePlacement(anchor: HTMLAnchorElement) {
+  // Explicit handlers retain their existing semantic event and ID. Only trusted
+  // application content regions opt generic links in; labels never come from text.
+  if (anchor.closest("[data-analytics-selection-owner]")) return null;
+  if (
+    anchor.closest('dialog, [role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"]')
+  )
+    return null;
+  if (anchor.closest("[data-analytics-public-detail]")) return "detail";
+  if (anchor.closest("footer")) return "footer";
+  return null;
 }
 
 export function isSensitiveAnalyticsDestination(href: string, origin: string) {

@@ -35,7 +35,8 @@ exactly:
 - child repository, workflow, run, attempt, ref, full ref, and head SHA
 - candidate repository and SHA
 - tooling ref, full ref, and SHA
-- `authorizationRoute`: `automated-awaited` or `automated-detached`
+- `authorizationRoute`: `automated-awaited`, `automated-detached`, or
+  `automated-sealed`
 - non-empty `packages`: exact `{name, version, inventoryDigest}` transactions
 
 The parent receipt is bounded at 64 KiB of UTF-8 JSON, matching the backend,
@@ -106,16 +107,22 @@ visibility are separate boundaries:
 - submission:
   - `automated-awaited`: parent must be active
   - `automated-detached`: parent may be active or completed successfully
+  - `automated-sealed`: parent must be active and the exact immutable release
+    milestone must cover the package transaction
   - `explicit-recovery`: parent may be active, successful, or failed
 - public finalization:
-  - both automated routes require the exact parent attempt to be completed
-    successfully
+  - `automated-awaited` and `automated-detached` require the exact parent
+    attempt to be completed successfully
+  - `automated-sealed` requires the exact immutable release milestone receipt
+    and permits the exact parent attempt to finish successfully or fail
   - explicit recovery requires the exact parent attempt to be completed
     successfully or failed with the protected recovery evidence
 
-Cancelled parents are never authorized. Unknown routes, states, conclusions,
-fields, and versions fail closed. An active parent can authorize only a
-non-public staged release.
+Cancelled parents are never authorized by the awaited, detached, or recovery
+routes. Unknown routes, states, conclusions, fields, and versions fail closed.
+An active parent can authorize only a non-public staged release. The sealed
+milestone preserves exact transactions through terminal parent failure without
+making cancellation or an active parent sufficient for public promotion.
 
 ## Server Authorization
 
@@ -228,11 +235,14 @@ shapes fail closed.
 
 ## Terminal outcomes
 
-An automated-route attempt whose exact parent attempt completed without success
-is terminal: the attempt becomes `failed`, the release remains non-public, and
-finalization never retries it. In particular, a failed bot parent reports
+An awaited or detached automated-route attempt whose exact parent attempt
+completed without success is terminal: the attempt becomes `failed`, the
+release remains non-public, and finalization never retries it. In particular, a
+failed bot parent reports
 `OpenClaw release parent terminal state completed/failure is not authorized by automated-awaited`,
-not a missing recovery artifact. Cancellation is terminal on both routes.
+not a missing recovery artifact. The sealed route is bound to an earlier
+immutable milestone and remains authorized after later parent failure.
+Cancellation remains terminal on every route.
 
 ## Operator discard
 

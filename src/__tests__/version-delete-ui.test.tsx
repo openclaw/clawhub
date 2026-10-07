@@ -488,12 +488,12 @@ describe("version Delete UI", () => {
         name: "demo-plugin",
         version: "1.0.0",
       });
+      expect(getVersionRowButton("1.0.0")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Restore version 1.0.0" })).toBeTruthy();
+      expect(getVersionRowButton("2.0.0")).toBeTruthy();
+      expect(onVersionDeleted).toHaveBeenCalledTimes(1);
+      expect(toast.success).toHaveBeenCalledWith("Deleted version 1.0.0.");
     });
-    expect(getVersionRowButton("1.0.0")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Restore version 1.0.0" })).toBeTruthy();
-    expect(getVersionRowButton("2.0.0")).toBeTruthy();
-    expect(onVersionDeleted).toHaveBeenCalledTimes(1);
-    expect(toast.success).toHaveBeenCalledWith("Deleted version 1.0.0.");
 
     fireEvent.click(screen.getByRole("button", { name: "Restore version 1.0.0" }));
     expectRestoreConfirmation("1.0.0");
@@ -506,8 +506,8 @@ describe("version Delete UI", () => {
       });
       expect(screen.getByRole("button", { name: "Delete version 1.0.0" })).toBeTruthy();
       expect(toast.success).toHaveBeenCalledWith("Restored version 1.0.0.");
+      expect(onVersionDeleted).toHaveBeenCalledTimes(2);
     });
-    expect(onVersionDeleted).toHaveBeenCalledTimes(2);
   });
 
   it("ignores a plugin deletion response after navigating to another plugin", async () => {
