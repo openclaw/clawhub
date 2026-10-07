@@ -1,0 +1,38 @@
+{
+  "status": "passed",
+  "mode": "before-after",
+  "scenario": "Same public Bookmarks fixture and viewport; hidden-skill omission, public control retained",
+  "provider": "real disposable local Convex and ClawHub browser; manually captured worker proof packaged by parent",
+  "baseline": "a18bc7496a106d97077897fd39746832a1f02577 (three changed production files applied to identical disposable environment)",
+  "candidate": "b139052b72828bae8e1df5a2375ad0b6d6ad730f",
+  "url": "http://127.0.0.1:43814/proof-3814-bookmarker-1791368227867#stars",
+  "viewport": {
+    "width": 1280,
+    "height": 1000
+  },
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "slug": "bookmarks",
+          "name": "Before: hidden bookmark exposed",
+          "screenshot": "bookmarks.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "slug": "bookmarks",
+          "name": "After: hidden omitted; public control retained",
+          "screenshot": "bookmarks.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "inspection": "All four worker screenshots personally inspected before GitHub publication; two exact matched captures selected. No CSS change. Unchanged responsive/loading/empty behavior outside scope. Synthetic local moderation records; no production mutation."
+}
