@@ -135,7 +135,12 @@ function makeInstallCtx(params: {
     ),
   }));
 
-  return { ctx: { db: { insert, patch, query } }, insert, patch, query };
+  return {
+    ctx: { db: { insert, patch, query, get: async () => null } },
+    insert,
+    patch,
+    query,
+  };
 }
 
 describe("telemetry install events", () => {
@@ -177,6 +182,39 @@ describe("telemetry install events", () => {
     expect(insert).toHaveBeenCalledWith(
       "skillStatEvents",
       expect.objectContaining({ skillId: "skills:calendar", kind: "install_new" }),
+    );
+  });
+
+  it("records two users installing the same skill without writing the skill document", async () => {
+    const { ctx, insert, patch } = makeInstallCtx({
+      skills: [
+        { _id: "skills:demo", slug: "demo" },
+        { _id: "skills:demo", slug: "demo" },
+      ],
+      dedupes: [null, null],
+      installs: [null, null],
+    });
+
+    await reportCliInstallHandler(ctx, {
+      userId: "users:one",
+      slug: "demo",
+      version: "1.0.0",
+    });
+    await reportCliInstallHandler(ctx, {
+      userId: "users:two",
+      slug: "demo",
+      version: "1.2.0",
+    });
+
+    expect(patch).not.toHaveBeenCalled();
+    const dedupeInserts = insert.mock.calls.filter((call) => call[0] === "installTelemetryDedupes");
+    expect(dedupeInserts.map((call) => call[1])).toEqual([
+      expect.objectContaining({ userId: "users:one", skillId: "skills:demo" }),
+      expect.objectContaining({ userId: "users:two", skillId: "skills:demo" }),
+    ]);
+    expect(insert).toHaveBeenCalledWith(
+      "skillStatEvents",
+      expect.objectContaining({ skillId: "skills:demo", kind: "install_new" }),
     );
   });
 
@@ -501,6 +539,7 @@ describe("telemetry install events", () => {
         })),
         insert,
         patch: vi.fn(),
+        get: async () => null,
       },
     };
 
@@ -712,6 +751,7 @@ describe("telemetry install events", () => {
         })),
         insert,
         patch,
+        get: async () => null,
       },
     };
 
