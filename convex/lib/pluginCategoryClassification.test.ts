@@ -105,8 +105,40 @@ describe("single-purpose plugin classification", () => {
     expect(body.instructions).toContain("agent-runtimes: Agent execution engines");
     expect(result).toMatchObject({
       categories: ["agent-runtimes"],
-      classification: { source: "generated", classifierVersion: "plugin-single-category-v7" },
+      classification: { source: "generated", classifierVersion: "plugin-single-category-v8" },
     });
+  });
+
+  it("passes pack contributions and the creator/consumer boundary to classification", async () => {
+    modelResponse(["lobster-packs"]);
+    const lobsterPacks = [{ id: "reef", source: "lobsters/reef.json" }];
+    const result = await classifyPluginCategories({
+      name: "reef-lobsters",
+      pluginManifest: { lobsterPacks },
+    });
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+    expect(JSON.parse(JSON.parse(body.input).manifest).lobsterPacks).toEqual(lobsterPacks);
+    expect(body.text.format.schema.properties.categories.items.enum).toContain("lobster-packs");
+    expect(body.instructions).toContain(
+      "Plugins that only display existing characters do not belong here",
+    );
+    expect(result).toMatchObject({
+      categories: ["lobster-packs"],
+      classification: { source: "generated", classifierVersion: "plugin-single-category-v8" },
+    });
+  });
+
+  it("accepts an explicit Lobster Packs declaration without a model call", async () => {
+    const request = modelResponse(["other"]);
+    const result = await classifyPluginCategories({
+      name: "reef-lobsters",
+      pluginManifest: { categories: ["lobster-packs"] },
+    });
+    expect(result).toMatchObject({
+      categories: ["lobster-packs"],
+      classification: { source: "manifest" },
+    });
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("allows a dedicated classifier model override", async () => {

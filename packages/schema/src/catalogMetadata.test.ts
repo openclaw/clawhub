@@ -27,6 +27,7 @@ describe("catalog metadata", () => {
       "web",
       "computer-use",
       "media",
+      "lobster-packs",
       "security",
       "integrations",
       "developer-tools",

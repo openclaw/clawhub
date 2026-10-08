@@ -240,6 +240,19 @@ them, omit the input to preserve existing topics, or use `--topics ""` /
 `clear_topics: true` to clear them. See the [package CLI reference](./cli.md#package-publish-%3Csource%3E)
 and [topic rules](#skill-catalog-metadata).
 
+### Lobster Packs
+
+Use `"categories": ["lobster-packs"]` in `openclaw.plugin.json` when the primary
+purpose of your plugin is adding collectible Clawmoji characters to the LobsterDex.
+The category includes original SVG artwork and sprite animations. A plugin that
+only displays existing characters should use
+the category matching its own purpose.
+
+Lobster Packs use the normal plugin publishing and installation flow. Browse them
+at [/plugins?category=lobster-packs](/plugins?category=lobster-packs). The category
+is a discovery label, not a guarantee of pack compatibility or artwork validation;
+OpenClaw owns the pack format and rendering contract.
+
 ### Trusted Publishing for Packages
 
 Package trusted publishing is a two-step setup:
