@@ -122,4 +122,105 @@ describe("rehypeProxyImages", () => {
       "./dark.png 1x, ./dark@2x.png 2x",
     );
   });
+
+  it("proxies protocol-relative README images the same way as https", () => {
+    const proxied = (src: string) => `/_vercel/image?url=${encodeURIComponent(src)}&w=1024&q=75`;
+
+    expect(rewriteImgSrc("//img.shields.io/badge/x-y-blue.svg")).toBe(
+      proxied("https://img.shields.io/badge/x-y-blue.svg"),
+    );
+    expect(rewriteImgSrc(" //attacker.example/pixel.png ")).toBe(
+      proxied("https://attacker.example/pixel.png"),
+    );
+    expect(rewriteImgSrc("//Attacker.Example/pixel.png")).toBe(
+      proxied("https://attacker.example/pixel.png"),
+    );
+    expect(rewriteImgSrc("//attacker.example:8443/pixel.png")).toBe(
+      proxied("https://attacker.example:8443/pixel.png"),
+    );
+    expect(rewriteImgSrc("//reader@attacker.example/pixel.png")).toBe(
+      proxied("https://reader@attacker.example/pixel.png"),
+    );
+    expect(rewriteImgSrc("//attacker.example/pixel.png?x=1&y=2#h")).toBe(
+      proxied("https://attacker.example/pixel.png?x=1&y=2#h"),
+    );
+    expect(rewriteImgSrc("//[::1]/a.png")).toBe(proxied("https://[::1]/a.png"));
+    expect(rewriteImgSrc("///pixel.png")).toBe(proxied("https://pixel.png/"));
+    expect(rewriteImgSrc("//evil.com\\@allowed.com/a.png")).toBe(
+      proxied("https://evil.com/@allowed.com/a.png"),
+    );
+    expect(rewriteImgSrc("http://attacker.example/pixel.png")).toBe(
+      proxied("http://attacker.example/pixel.png"),
+    );
+    expect(
+      rewriteImgSrc(
+        "//attacker.example/pixel.png",
+        "https://raw.githubusercontent.com/owner/repo/abcdef/sub/",
+      ),
+    ).toBe(proxied("https://attacker.example/pixel.png"));
+    expect(rewriteImgSrc("/\\attacker.example/pixel.png")).toBe(
+      proxied("https://attacker.example/pixel.png"),
+    );
+    expect(rewriteImgSrc("\\\\attacker.example/pixel.png")).toBe(
+      proxied("https://attacker.example/pixel.png"),
+    );
+    expect(rewriteImgSrc("\\/attacker.example/pixel.png")).toBe(
+      proxied("https://attacker.example/pixel.png"),
+    );
+    expect(rewriteImgSrc("/\t/attacker.example/pixel.png")).toBe(
+      proxied("https://attacker.example/pixel.png"),
+    );
+    expect(rewriteImgSrc("\u0000//attacker.example/pixel.png")).toBe(
+      proxied("https://attacker.example/pixel.png"),
+    );
+    expect(rewriteImgSrc("http:/\\attacker.example/pixel.png")).toBe(
+      proxied("http://attacker.example/pixel.png"),
+    );
+    expect(rewriteImgSrc("/site.png")).toBe("/site.png");
+    expect(rewriteImgSrc("\\site.png")).toBe("\\site.png");
+    expect(rewriteSourceSrcset("/\\attacker.example/pixel.png 1x, /site.png 2x")).toBe(
+      `${proxied("https://attacker.example/pixel.png")} 1x, /site.png 2x`,
+    );
+  });
+
+  it("removes a protocol-relative img src that is not a URL", () => {
+    const tree: ImageTree = {
+      type: "root",
+      children: [
+        {
+          type: "element",
+          tagName: "img",
+          properties: { src: "//", alt: "pixel" },
+        },
+      ],
+    };
+    rehypeProxyImages()(tree);
+    expect(tree.children[0].properties).toEqual({ alt: "pixel" });
+    expect(rewriteImgSrc("//:")).toBeUndefined();
+    expect(rewriteImgSrc("// example.com/a.png")).toBeUndefined();
+    expect(rewriteImgSrc("/\t/")).toBeUndefined();
+  });
+
+  it("proxies protocol-relative source srcset candidates and drops unparseable ones", () => {
+    expect(
+      rewriteSourceSrcset(
+        "//img.shields.io/badge/x-y-blue.svg 1x, // 2x, data:image/svg+xml,%3Csvg%3E 3x, /site.png 4x",
+      ),
+    ).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fimg.shields.io%2Fbadge%2Fx-y-blue.svg&w=1024&q=75 1x, data:image/svg+xml,%3Csvg%3E 3x, /site.png 4x",
+    );
+
+    const tree: ImageTree = {
+      type: "root",
+      children: [
+        {
+          type: "element",
+          tagName: "source",
+          properties: { srcset: "//", type: "image/png" },
+        },
+      ],
+    };
+    rehypeProxyImages()(tree);
+    expect(tree.children[0].properties).toEqual({ type: "image/png" });
+  });
 });
