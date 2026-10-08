@@ -53,15 +53,40 @@ artifact digest.
 
 - Backend Claw publication and read surfaces require
   `CLAWHUB_EXPERIMENTAL_CLAWS=1`.
-- This hosting gate is independent from OpenClaw's
-  `OPENCLAW_EXPERIMENTAL_CLAWS=1` local consumer gate; neither enables the
-  other side of the boundary.
+- This hosting gate is independent from OpenClaw's local Labs visibility
+  control; neither enables the other side of the boundary.
 - The gate is not user consent and must not bypass validation, moderation,
   ownership, or scanner checks.
 - Disabled deployments must not accept Claw publication or expose Claws through
   Claw-specific discovery surfaces.
 - Public Claw schemas and APIs may change while the gate is required. Removing
   the gate requires a separate compatibility and migration decision.
+
+The initial public catalog (package lists, search, and the Official Claw feed)
+contains only canonical `@openclaw/*` Claws owned by the active OpenClaw
+publisher organization with a current Official designation. Recheck that
+owner's current authority for catalog reads; cached search digest owner fields
+are not sufficient after an organization is deactivated or deleted. This is a
+discovery policy, not a hosting policy. On deployments with the experimental
+gate enabled, other publishers may publish Claws under their own scope and
+their published Claws remain reachable by exact-name metadata and artifact
+downloads, subject to the existing ownership, scanner, moderation, and access
+rules. If a Claw has a publisher row, admission and finalization recheck that
+it is active and matches the package scope. Legacy user-owned Claws without a
+publisher row continue through the existing user-owner and scan path. Losing
+an Official designation does not by itself withdraw a published artifact or
+prevent further publication.
+This catalog restriction does not apply to skills or plugins.
+
+The Claw feed is a stored snapshot, so a pre-policy snapshot must fail closed
+instead of becoming public when the backend gate is enabled. A new snapshot
+records the restricted policy version, entry count, and current publisher
+identity. The HTTP feed returns no stored bytes until that snapshot is built;
+if its publisher later loses active authority, it fails closed again until an
+empty or newly authorized snapshot replaces it. Rollout must refresh the feed
+and verify catalog exclusion, direct package continuity, and revoked Official
+publisher effects before enabling the public Claw catalog. Disabling the
+backend gate is the rollback path; it must not re-expose the old feed payload.
 
 ## Staged implementation
 

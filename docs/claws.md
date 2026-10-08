@@ -14,10 +14,20 @@ OpenClaw owns local preview, consent, apply, update, and removal.
 
 Claw publication is experimental. The ClawHub deployment must set
 `CLAWHUB_EXPERIMENTAL_CLAWS=1`; otherwise the server rejects publication.
-This registry gate is independent from OpenClaw's
-`OPENCLAW_EXPERIMENTAL_CLAWS=1` consumer gate. Hosting does not enable local
-preview or installation, and enabling the OpenClaw CLI does not enable ClawHub
-publication or hosted discovery.
+This registry gate is independent from OpenClaw's local Claws controls. Hosting
+does not enable local preview or installation.
+
+For the initial public catalog, package lists, search, and the Official Claw
+feed include only `@openclaw/*` Claws owned by the active OpenClaw publisher
+organization with a current Official designation. This catalog filter does not
+change Claw publication or exact-name metadata and artifact downloads on a
+deployment with the experimental gate enabled. Other publishers remain subject
+to the normal ownership, scanning, moderation, and access rules; their Claws
+are not offered in the initial catalog. A stored Claw feed from before this
+restriction is unavailable until a new restricted snapshot is published.
+If `@openclaw` loses Official status, an existing nonempty Claw feed fails
+closed with `503` and `Cache-Control: no-store`. Publish a new feed snapshot
+after revocation to serve an empty eligible Claws list.
 
 ## Package shape
 
@@ -26,7 +36,7 @@ points to its manifest:
 
 ```json
 {
-  "name": "@acme/github-triage",
+  "name": "@openclaw/github-triage",
   "version": "1.0.0",
   "openclaw": {
     "claw": "CLAW.md"
@@ -182,7 +192,7 @@ Enabled deployments expose Claws through the existing package API:
 ```bash
 curl "https://clawhub.ai/api/v1/packages?family=claw"
 curl "https://clawhub.ai/api/v1/packages/search?q=triage&family=claw"
-curl "https://clawhub.ai/api/v1/packages/@acme%2Fgithub-triage"
+curl "https://clawhub.ai/api/v1/packages/@openclaw%2Fgithub-triage"
 ```
 
 List and search results use the normal package summary fields. Package and
@@ -198,7 +208,8 @@ projected through public release responses.
 
 ## Consume the experimental feed
 
-Enabled deployments publish eligible official Claws as a separate hosted feed:
+Enabled deployments publish eligible Official `@openclaw` Claws as a separate
+hosted feed:
 
 ```bash
 curl "https://clawhub.ai/v1/feeds/claws"

@@ -49,6 +49,7 @@ import {
   getVersionByName,
   getVersionByNameForViewerInternal,
   getVersionSecurityByNameForViewerInternal,
+  getPublicReleaseSelectionsInternal,
   insertReleaseInternal,
   cleanupReassignedPackageReleaseTagsInternal,
   publishPendingReleaseInternal,
@@ -154,6 +155,12 @@ const getVersionByNameForViewerInternalHandler = (
     { package: { name: string }; version: { version: string; clawpackStorageId?: string } } | null
   >
 )._handler;
+const getPublicReleaseSelectionsInternalHandler = (
+  getPublicReleaseSelectionsInternal as unknown as WrappedHandler<
+    { selections: Array<{ packageId: string; releaseId: string }> },
+    Array<Record<string, unknown> | null>
+  >
+)._handler;
 const getVersionSecurityByNameForViewerInternalHandler = (
   getVersionSecurityByNameForViewerInternal as unknown as WrappedHandler<
     { name: string; version: string; viewerUserId?: string },
@@ -163,7 +170,7 @@ const getVersionSecurityByNameForViewerInternalHandler = (
 const listPublicPageHandler = (
   listPublicPage as unknown as WrappedHandler<
     {
-      family?: "skill" | "code-plugin" | "bundle-plugin";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -200,7 +207,7 @@ const listPublicNewPluginsPageHandler = (
 const listPageForViewerInternalHandler = (
   listPageForViewerInternal as unknown as WrappedHandler<
     {
-      family?: "skill" | "code-plugin" | "bundle-plugin";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
       families?: Array<"skill" | "code-plugin" | "bundle-plugin">;
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
@@ -408,7 +415,7 @@ const reservePackageNameInternalHandler = (
       name: string;
       displayName?: string;
       summary?: string;
-      family?: "skill" | "code-plugin" | "bundle-plugin";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
       reason?: string;
     },
     { ok: true; action: string; packageId: string; name: string }
@@ -419,7 +426,7 @@ const searchPublicHandler = (
     {
       query: string;
       limit?: number;
-      family?: "skill" | "code-plugin" | "bundle-plugin";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -437,7 +444,7 @@ const searchForViewerInternalHandler = (
     {
       query: string;
       limit?: number;
-      family?: "skill" | "code-plugin" | "bundle-plugin";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -1238,6 +1245,23 @@ function makePackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+const openClawPublisher = {
+  _id: "publishers:openclaw",
+  kind: "org",
+  handle: "openclaw",
+};
+const activeOpenClawPublisherDocs = { [openClawPublisher._id]: openClawPublisher };
+
+function makeOpenClawClawPackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
+  return makePackageDoc({
+    name: "@openclaw/demo-claw",
+    normalizedName: "@openclaw/demo-claw",
+    family: "claw",
+    ownerPublisherId: openClawPublisher._id,
+    ...overrides,
+  });
+}
+
 function makeCanDeleteVersionsCtx(options: {
   viewerId: string;
   viewerRole?: "user" | "admin" | "moderator";
@@ -1411,6 +1435,7 @@ function makeDigestCtx(options: {
   exactPackages?: Array<Record<string, unknown>>;
   exactDigests?: Array<Record<string, unknown>>;
   officialDigests?: Array<Record<string, unknown>>;
+  officialPublisherIds?: string[];
   publisherDocs?: Record<string, Record<string, unknown>>;
   publisherMemberships?: Record<string, "owner" | "admin" | "publisher">;
   highlightedBadges?: Array<Record<string, unknown>>;
@@ -1509,6 +1534,12 @@ function makeDigestCtx(options: {
       pagesByFamily.set(family, pagesByCursor);
     }
     familyPagesByTable.set("packageTopicSearchDigest", pagesByFamily);
+    rowsByTable.set("packageTopicSearchDigest", [
+      ...(rowsByTable.get("packageTopicSearchDigest") ?? []),
+      ...Object.values(options.topicPagesByFamily).flatMap((pages) =>
+        (pages ?? []).flatMap((page) => page.page),
+      ),
+    ]);
   }
   setPages("packagePluginCategorySearchDigest", options.categoryPages ?? []);
   if (options.categoryRows) {
@@ -1913,7 +1944,27 @@ function makeDigestCtx(options: {
             };
           }
           if (table === "officialPublishers") {
-            return { withIndex: () => ({ unique: async () => null }) };
+            return {
+              withIndex: (
+                _indexName: string,
+                builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+              ) => {
+                let publisherId = "";
+                const queryBuilder = {
+                  eq: (_field: string, value: string) => {
+                    publisherId = value;
+                    return queryBuilder;
+                  },
+                };
+                builder?.(queryBuilder);
+                return {
+                  unique: async () =>
+                    (options.officialPublisherIds ?? [openClawPublisher._id]).includes(publisherId)
+                      ? { publisherId }
+                      : null,
+                };
+              },
+            };
           }
           if (
             table !== "packageCapabilitySearchDigest" &&
@@ -2311,6 +2362,7 @@ function makeInsertReleaseCtx(
   runtimePackages: Array<Record<string, unknown>> = [],
   finalPublisherMembershipRole?: "owner" | "admin" | "publisher" | null,
   packageReleaseReadLimitBytes?: number,
+  officialPublisherIds: readonly string[] = [openClawPublisher._id],
 ) {
   let insertedPackage: Record<string, unknown> | null = null;
   const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
@@ -2367,6 +2419,7 @@ function makeInsertReleaseCtx(
         if (id === "packages:new") return insertedPackage;
         if (existing?._id === id) return existing;
         if (id === "users:owner") return { _id: id, role: "user", trustedPublisher: false };
+        if (id === openClawPublisher._id) return openClawPublisher;
         const priorRelease = priorReleases.find((release) => release._id === id);
         if (priorRelease) return readPackageRelease(priorRelease);
         return null;
@@ -2509,12 +2562,14 @@ function makeInsertReleaseCtx(
                 buildQuery?.(query);
                 const rawPublisherId = filters.get("publisherId");
                 const publisherId = typeof rawPublisherId === "string" ? rawPublisherId : "";
-                const publisher = recordsById[publisherId];
+                const publisher =
+                  recordsById[publisherId] ??
+                  (publisherId === openClawPublisher._id ? openClawPublisher : null);
                 return {
                   unique: vi
                     .fn()
                     .mockResolvedValue(
-                      publisher?.handle === "openclaw"
+                      publisher?.handle === "openclaw" && officialPublisherIds.includes(publisherId)
                         ? { _id: "officialPublishers:openclaw", publisherId }
                         : null,
                     ),
@@ -2900,12 +2955,15 @@ function makePackageCtx(options: {
     continueCursor: string;
   };
   ownerPublisher?: Record<string, unknown> | null;
+  officialPublisher?: boolean;
   viewerMembershipRole?: "owner" | "admin" | "publisher" | null;
 }) {
   const pkg = options.pkg ?? makePackageDoc();
   const latestRelease = options.latestRelease ?? makeReleaseDoc();
   const versionRelease = options.versionRelease ?? latestRelease;
-  const ownerPublisher = options.ownerPublisher ?? null;
+  const ownerPublisher =
+    options.ownerPublisher ??
+    (pkg?.ownerPublisherId === openClawPublisher._id ? openClawPublisher : null);
   const versionsPage = options.versionsPage ?? {
     page: [latestRelease].filter(Boolean),
     isDone: true,
@@ -2986,6 +3044,19 @@ function makePackageCtx(options: {
                       }
                     : null,
                 ),
+              })),
+            };
+          }
+          if (table === "officialPublishers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi
+                  .fn()
+                  .mockResolvedValue(
+                    options.officialPublisher === false
+                      ? null
+                      : { publisherId: pkg?.ownerPublisherId },
+                  ),
               })),
             };
           }
@@ -6350,7 +6421,7 @@ describe("packages public queries", () => {
   });
 
   it("scans topic digest pages until a combined category search match is found", async () => {
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       topicPages: [
         {
           page: Array.from({ length: 50 }, (_, index) =>
@@ -6385,7 +6456,8 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["calendar-api"]);
-    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledWith(500);
+    expect(paginate).not.toHaveBeenCalled();
   });
 
   it("ranks bounded candidates from every stable family before applying the search limit", async () => {
@@ -6496,7 +6568,7 @@ describe("packages public queries", () => {
   it("scans each stable family past the first combined-filter window while Claws are disabled", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       topicPages: [
         {
           page: Array.from({ length: 50 }, (_, index) =>
@@ -6534,7 +6606,8 @@ describe("packages public queries", () => {
       });
 
       expect(result.map((entry) => entry.package.name)).toEqual(["calendar-skill-api"]);
-      expect(paginate).toHaveBeenCalled();
+      expect(take).toHaveBeenCalledWith(166);
+      expect(paginate).not.toHaveBeenCalled();
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
@@ -6563,10 +6636,9 @@ describe("packages public queries", () => {
     });
 
     expect(result).toEqual([]);
-    expect(paginate).toHaveBeenCalledTimes(6);
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(paginate).not.toHaveBeenCalled();
     expect(take).toHaveBeenCalledWith(20);
-    expect(take).toHaveBeenCalledWith(200);
+    expect(take).toHaveBeenCalledWith(500);
   });
 
   it("recalls exact author topics without an explicit topic filter", async () => {
@@ -7374,7 +7446,7 @@ describe("packages public queries", () => {
       clawpackSha256: "a".repeat(64),
     });
     const { ctx } = makePackageCtx({
-      pkg: makePackageDoc({ family: "claw" }),
+      pkg: makeOpenClawClawPackageDoc(),
       latestRelease: release,
       versionRelease: release,
       versionsPage: {
@@ -7392,11 +7464,11 @@ describe("packages public queries", () => {
     });
 
     const listed = await listVersionsForViewerInternalHandler(ctx, {
-      name: "demo-plugin",
+      name: "@openclaw/demo-claw",
       paginationOpts: { cursor: null, numItems: 10 },
     });
     const exact = await getVersionByNameForViewerInternalHandler(ctx, {
-      name: "demo-plugin",
+      name: "@openclaw/demo-claw",
       version: "1.0.0",
     });
 
@@ -9962,7 +10034,8 @@ describe("packages public queries", () => {
       await insertReleaseInternalHandler(ctx, {
         actorUserId: "users:owner",
         ownerUserId: "users:owner",
-        name: "demo-claw",
+        ownerPublisherId: openClawPublisher._id,
+        name: "@openclaw/demo-claw",
         displayName: "Demo Claw",
         family: "claw",
         version: "1.0.0",
@@ -9986,10 +10059,151 @@ describe("packages public queries", () => {
     );
   });
 
+  it("publishes a Claw in the community channel when its owner is not Official", async () => {
+    const ctx = makeInsertReleaseCtx(
+      null,
+      [],
+      { [openClawPublisher._id]: openClawPublisher },
+      [],
+      undefined,
+      undefined,
+      [],
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: openClawPublisher._id,
+        name: "@openclaw/demo-claw",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packages",
+      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
+    );
+  });
+
+  it("keeps plugin release admission available after its publisher loses Official status", async () => {
+    const ctx = makeInsertReleaseCtx(
+      null,
+      [],
+      { [openClawPublisher._id]: openClawPublisher },
+      [],
+      undefined,
+      undefined,
+      [],
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: openClawPublisher._id,
+        name: "@openclaw/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packages",
+      expect.objectContaining({ channel: "community", isOfficial: false }),
+    );
+  });
+
+  it("rejects a Claw release whose @openclaw name is owned by another publisher", async () => {
+    const ctx = makeInsertReleaseCtx(null, [], {
+      "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:other",
+        name: "@openclaw/demo-claw",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow('Package scope "@openclaw" must match selected owner "@other"');
+    expect(ctx.insert).not.toHaveBeenCalledWith("packages", expect.anything());
+  });
+
+  it("publishes a Claw under its matching third-party organization", async () => {
+    const ctx = makeInsertReleaseCtx(null, [], {
+      "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:other",
+        name: "@other/demo-claw",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packages",
+      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
+    );
+  });
+
+  it("keeps the existing user-owned Claw publication path without a publisher row", async () => {
+    const ctx = makeInsertReleaseCtx(null);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "legacy-claw",
+        displayName: "Legacy Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packages",
+      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
+    );
+  });
+
   it("pins a reserved package when its first published release is a Claw", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
-    const reservation = makePackageDoc({
+    const reservation = makeOpenClawClawPackageDoc({
       family: "code-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
@@ -10001,7 +10215,8 @@ describe("packages public queries", () => {
       await insertReleaseInternalHandler(ctx, {
         actorUserId: "users:owner",
         ownerUserId: "users:owner",
-        name: "demo-plugin",
+        ownerPublisherId: openClawPublisher._id,
+        name: "@openclaw/demo-claw",
         displayName: "Demo Claw",
         family: "claw",
         version: "1.0.0",
@@ -10026,7 +10241,7 @@ describe("packages public queries", () => {
   });
 
   it("pins a reserved package when its pending first Claw release is published", async () => {
-    const reservation = makePackageDoc({
+    const reservation = makeOpenClawClawPackageDoc({
       family: "code-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
@@ -10057,6 +10272,154 @@ describe("packages public queries", () => {
         family: "claw",
         clawProfilePolicyVersion: 1,
       }),
+    );
+  });
+
+  it("finalizes a pending user-owned Claw without a publisher row", async () => {
+    const reservation = makePackageDoc({
+      name: "legacy-claw",
+      normalizedName: "legacy-claw",
+      family: "code-plugin",
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+    });
+    const pendingRelease = makeReleaseDoc({
+      _id: "packageReleases:pending",
+      packageId: "packages:demo",
+      publicationStatus: "pending",
+      pendingPublication: {
+        family: "claw",
+        displayName: "Legacy Claw",
+        tags: ["latest"],
+      },
+    });
+    const ctx = makeInsertReleaseCtx(reservation, [pendingRelease], {
+      "packages:demo": reservation,
+      "packageReleases:pending": pendingRelease,
+    });
+
+    await expect(
+      publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:pending" }),
+    ).resolves.toMatchObject({ ok: true, releaseId: "packageReleases:pending" });
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packageReleases:pending",
+      expect.objectContaining({ publicationStatus: "published" }),
+    );
+  });
+
+  it("does not finalize a pending Claw after its reserved package has a different owner", async () => {
+    const reservation = makePackageDoc({
+      name: "@openclaw/demo-claw",
+      normalizedName: "@openclaw/demo-claw",
+      ownerPublisherId: "publishers:other",
+      family: "code-plugin",
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+    });
+    const pendingRelease = makeReleaseDoc({
+      _id: "packageReleases:pending",
+      packageId: "packages:demo",
+      publicationStatus: "pending",
+      pendingPublication: {
+        family: "claw",
+        displayName: "Demo Claw",
+        tags: ["latest"],
+      },
+    });
+    const ctx = makeInsertReleaseCtx(reservation, [pendingRelease], {
+      "packages:demo": reservation,
+      "packageReleases:pending": pendingRelease,
+      "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
+    });
+
+    await expect(
+      publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:pending" }),
+    ).rejects.toThrow('Package scope "@openclaw" must match selected owner "@other"');
+    expect(ctx.patch).not.toHaveBeenCalled();
+  });
+
+  it.each(["deletedAt", "deactivatedAt"] as const)(
+    "does not finalize a pending Claw when its publisher has %s",
+    async (inactiveField) => {
+      const reservation = makeOpenClawClawPackageDoc({
+        family: "code-plugin",
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      });
+      const pendingRelease = makeReleaseDoc({
+        _id: "packageReleases:pending",
+        publicationStatus: "pending",
+        pendingPublication: { family: "claw", displayName: "Demo Claw", tags: ["latest"] },
+      });
+      const ctx = makeInsertReleaseCtx(reservation, [pendingRelease], {
+        "packages:demo": reservation,
+        "packageReleases:pending": pendingRelease,
+        [openClawPublisher._id]: { ...openClawPublisher, [inactiveField]: 123 },
+      });
+
+      await expect(
+        publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:pending" }),
+      ).rejects.toThrow("Claw package owner publisher is unavailable");
+      expect(ctx.patch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("finalizes a staged Claw after @openclaw loses Official status", async () => {
+    const reservation = makeOpenClawClawPackageDoc({
+      family: "code-plugin",
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+    });
+    const officialPublisherIds = [openClawPublisher._id];
+    const recordsById = {
+      "packages:demo": reservation,
+      [openClawPublisher._id]: openClawPublisher,
+    } as Record<string, Record<string, unknown>>;
+    const ctx = makeInsertReleaseCtx(
+      reservation,
+      [],
+      recordsById,
+      [],
+      undefined,
+      undefined,
+      officialPublisherIds,
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: openClawPublisher._id,
+        name: "@openclaw/demo-claw",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+        publicationStatus: "pending",
+      }),
+    ).resolves.toMatchObject({ publicationStatus: "pending" });
+    const pendingInsert = ctx.insert.mock.calls.find(([table]) => table === "packageReleases");
+    if (!pendingInsert) throw new Error("Expected a staged Claw release");
+    recordsById["packageReleases:new"] = makeReleaseDoc({
+      ...pendingInsert[1],
+      _id: "packageReleases:new",
+    });
+    officialPublisherIds.length = 0;
+
+    await expect(
+      publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:new" }),
+    ).resolves.toMatchObject({ ok: true, releaseId: "packageReleases:new" });
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packageReleases:new",
+      expect.objectContaining({ publicationStatus: "published" }),
     );
   });
 
@@ -10823,7 +11186,7 @@ describe("packages public queries", () => {
   );
 
   it("rejects a Claw version retry when the exact artifact digest differs", async () => {
-    const ctx = makeInsertReleaseCtx(makePackageDoc({ family: "claw" }), [
+    const ctx = makeInsertReleaseCtx(makeOpenClawClawPackageDoc(), [
       makeReleaseDoc({
         _id: "packageReleases:existing",
         version: "1.0.0",
@@ -10836,7 +11199,8 @@ describe("packages public queries", () => {
       insertReleaseInternalHandler(ctx, {
         actorUserId: "users:owner",
         ownerUserId: "users:owner",
-        name: "demo-claw",
+        ownerPublisherId: openClawPublisher._id,
+        name: "@openclaw/demo-claw",
         displayName: "Demo Claw",
         family: "claw",
         version: "1.0.0",
@@ -10853,7 +11217,7 @@ describe("packages public queries", () => {
 
   it("treats an ordinary-user exact Claw artifact retry as idempotent", async () => {
     const artifactSha256 = "a".repeat(64);
-    const ctx = makeInsertReleaseCtx(makePackageDoc({ family: "claw" }), [
+    const ctx = makeInsertReleaseCtx(makeOpenClawClawPackageDoc(), [
       makeReleaseDoc({
         _id: "packageReleases:existing",
         version: "1.0.0",
@@ -10866,7 +11230,8 @@ describe("packages public queries", () => {
       insertReleaseInternalHandler(ctx, {
         actorUserId: "users:owner",
         ownerUserId: "users:owner",
-        name: "demo-claw",
+        ownerPublisherId: openClawPublisher._id,
+        name: "@openclaw/demo-claw",
         displayName: "Demo Claw",
         family: "claw",
         version: "1.0.0",
@@ -10888,7 +11253,7 @@ describe("packages public queries", () => {
     "does not report a %s exact Claw release as published",
     async (publicationStatus) => {
       const artifactSha256 = "a".repeat(64);
-      const ctx = makeInsertReleaseCtx(makePackageDoc({ family: "claw" }), [
+      const ctx = makeInsertReleaseCtx(makeOpenClawClawPackageDoc(), [
         makeReleaseDoc({
           _id: "packageReleases:pending",
           version: "1.0.0",
@@ -10902,7 +11267,8 @@ describe("packages public queries", () => {
         insertReleaseInternalHandler(ctx, {
           actorUserId: "users:owner",
           ownerUserId: "users:owner",
-          name: "demo-claw",
+          ownerPublisherId: openClawPublisher._id,
+          name: "@openclaw/demo-claw",
           displayName: "Demo Claw",
           family: "claw",
           version: "1.0.0",
@@ -11069,6 +11435,114 @@ describe("packages public queries", () => {
     }
   });
 
+  it("rejects a Claw publish when the resolved @openclaw owner is another publisher", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        _id: "users:owner",
+        role: "user",
+        githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+      })
+      .mockResolvedValueOnce({
+        _id: "users:owner",
+        role: "user",
+        githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+      })
+      .mockResolvedValueOnce({ _id: "publishers:other", kind: "org", handle: "other" });
+    const runMutation = vi.fn(async () => ({ publisherId: "publishers:other" }));
+    const storageGet = vi.fn();
+
+    await expect(
+      publishPackageForUserInternalHandler(
+        { runQuery, runMutation, storage: { get: storageGet } } as never,
+        {
+          actorUserId: "users:owner",
+          payload: {
+            name: "@openclaw/demo-claw",
+            family: "claw",
+            version: "1.0.0",
+            changelog: "init",
+            files: [],
+            expectedArtifactSha256: "a".repeat(64),
+            artifact: {
+              kind: "npm-pack",
+              storageId: "storage:archive",
+              sha256: "a".repeat(64),
+              size: 3,
+              format: "tgz",
+              npmIntegrity: "sha512-demo",
+              npmShasum: "b".repeat(40),
+              npmTarballName: "demo-claw-1.0.0.tgz",
+              npmUnpackedSize: 3,
+              npmFileCount: 3,
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow('Package scope "@openclaw" must match selected owner "@other"');
+    expect(storageGet).not.toHaveBeenCalled();
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("still requires a first manual publish for a third-party trusted Claw", async () => {
+    const token = {
+      _id: "packagePublishTokens:other",
+      packageId: "packages:other",
+      provider: "github-actions",
+      repository: "other/awesome-claws",
+      repositoryId: "1",
+      repositoryOwner: "other",
+      repositoryOwnerId: "2",
+      workflowFilename: "publish.yml",
+      environment: "clawhub-release",
+      version: "1.0.0",
+      sha: "abc123",
+      ref: "refs/heads/main",
+      runId: "100",
+      runAttempt: "1",
+      expiresAt: Date.now() + 60_000,
+    };
+    const runQuery = vi.fn().mockResolvedValueOnce(token).mockResolvedValueOnce({
+      packageId: token.packageId,
+      provider: token.provider,
+      repository: token.repository,
+      repositoryId: token.repositoryId,
+      repositoryOwner: token.repositoryOwner,
+      repositoryOwnerId: token.repositoryOwnerId,
+      workflowFilename: token.workflowFilename,
+      environment: token.environment,
+    });
+    const runMutation = vi.fn();
+
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler({ runQuery, runMutation } as never, {
+        publishTokenId: token._id,
+        payload: {
+          name: "@other/demo-claw",
+          family: "claw",
+          version: "1.0.0",
+          changelog: "init",
+          files: [],
+          expectedArtifactSha256: "a".repeat(64),
+          artifact: {
+            kind: "npm-pack",
+            storageId: "storage:archive",
+            sha256: "a".repeat(64),
+            size: 3,
+            format: "tgz",
+            npmIntegrity: "sha512-demo",
+            npmShasum: "b".repeat(40),
+            npmTarballName: "demo-claw-1.0.0.tgz",
+            npmUnpackedSize: 3,
+            npmFileCount: 3,
+          },
+        },
+      }),
+    ).rejects.toThrow("First publish must be manual by a logged-in package owner");
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
   it("rechecks the Claw gate at release insertion for staged publications", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
@@ -11100,160 +11574,163 @@ describe("packages public queries", () => {
     }
   });
 
-  it("publishes a profile-bearing Claw through the existing release pipeline when enabled", async () => {
-    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
-    const longClawDescription = "x".repeat(1_100);
-    const artifactSha256 = "a".repeat(64);
-    const storedFiles = new Map<string, string>([
-      [
-        "storage:package",
-        JSON.stringify({
-          name: "demo-claw",
-          version: "1.0.0",
-          openclaw: { claw: "manifests/CLAW.md" },
-        }),
-      ],
-      [
-        "storage:claw",
-        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\n---\nRun the demo workflow precisely.\n`,
-      ],
-      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
-      ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
-      ["storage:bootstrap", "Ask which repositories the user owns.\n"],
-    ]);
-    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if (args.minimumRole === "publisher") {
-        return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
-      }
-      if (args.family === "claw") {
-        return { ok: true, packageId: "packages:claw", releaseId: "releases:claw-1" };
-      }
-      return null;
-    });
-    const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "publishers:owner",
-          kind: "user",
-          handle: "owner",
-          linkedUserId: "users:owner",
-        }),
-      runMutation,
-      scheduler: { runAfter: vi.fn() },
-      storage: {
-        get: vi.fn(async (storageId: string) => {
-          const content = storedFiles.get(storageId);
-          return content === undefined ? null : new Blob([content]);
-        }),
-        store: vi.fn(async () => "storage:legacy-zip"),
-      },
-      runAction: makePublishRunActionMock(),
-    };
-
-    try {
-      await expect(
-        publishPackageForUserInternalHandler(ctx as never, {
-          actorUserId: "users:owner",
-          payload: {
-            name: "demo-claw",
-            displayName: "Demo Claw",
-            family: "claw",
+  it.each([
+    { scope: "official", handle: "openclaw", publisherId: openClawPublisher._id },
+    { scope: "third-party", handle: "other", publisherId: "publishers:other" },
+  ])(
+    "publishes a profile-bearing $scope Claw through the release pipeline",
+    async ({ handle, publisherId }) => {
+      const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+      const name = `@${handle}/demo-claw`;
+      const publisher = { _id: publisherId, kind: "org", handle };
+      const longClawDescription = "x".repeat(1_100);
+      const artifactSha256 = "a".repeat(64);
+      const storedFiles = new Map<string, string>([
+        [
+          "storage:package",
+          JSON.stringify({
+            name,
             version: "1.0.0",
-            changelog: "init",
-            expectedArtifactSha256: artifactSha256,
-            files: [
-              { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
-              {
-                path: "manifests/CLAW.md",
-                size: 1,
-                storageId: "storage:claw",
-                sha256: "claw",
-              },
-              {
-                path: "profiles/openclaw.yml",
-                size: 1,
-                storageId: "storage:profile",
-                sha256: "profile",
-              },
-              {
-                path: "profiles/codex.yml",
-                size: 1,
-                storageId: "storage:codex-profile",
-                sha256: "codex-profile",
-              },
-              {
-                path: "BOOTSTRAP.md",
-                size: 1,
-                storageId: "storage:bootstrap",
-                sha256: "bootstrap",
-              },
-            ],
-            artifact: {
-              kind: "npm-pack",
-              storageId: "storage:archive",
-              sha256: artifactSha256,
-              size: 3,
-              format: "tgz",
-              npmIntegrity: "sha512-demo",
-              npmShasum: "b".repeat(40),
-              npmTarballName: "demo-claw-1.0.0.tgz",
-              npmUnpackedSize: 3,
-              npmFileCount: 3,
-            },
-          },
-        }),
-      ).resolves.toEqual({
-        ok: true,
-        packageId: "packages:claw",
-        releaseId: "releases:claw-1",
-        publicationStatus: "published",
-        artifactSha256,
-      });
-
-      expect(runMutation).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          family: "claw",
-          summary: expect.any(String),
-          artifactKind: "npm-pack",
-          clawpackStorageId: "storage:archive",
-          clawpackSha256: artifactSha256,
-          clawpackSize: 3,
-          clawManifestSummary: expect.objectContaining({
-            agent: expect.objectContaining({
-              id: "demo-claw",
-              description: "x".repeat(1_024),
-            }),
-            workspace: expect.objectContaining({
-              bootstrapFiles: ["BOOTSTRAP.md", "SOUL.md"],
-            }),
+            openclaw: { claw: "manifests/CLAW.md" },
           }),
-          pluginManifestSummary: undefined,
-        }),
-      );
-      const publishMutationArgs = runMutation.mock.calls.find(
-        ([, args]) => args.family === "claw",
-      )?.[1];
-      expect(publishMutationArgs?.summary).toBe("x".repeat(1_024));
-      expect(publishMutationArgs).not.toHaveProperty("extractedClawManifest");
-    } finally {
-      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
-    }
-  });
+        ],
+        [
+          "storage:claw",
+          `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\n---\nRun the demo workflow precisely.\n`,
+        ],
+        ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
+        ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
+        ["storage:bootstrap", "Ask which repositories the user owns.\n"],
+      ]);
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if (args.minimumRole === "publisher") {
+          return { publisherId };
+        }
+        if (args.family === "claw") {
+          return { ok: true, packageId: "packages:claw", releaseId: "releases:claw-1" };
+        }
+        return null;
+      });
+      const ctx = {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            role: "user",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            role: "user",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce(publisher),
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            const content = storedFiles.get(storageId);
+            return content === undefined ? null : new Blob([content]);
+          }),
+          store: vi.fn(async () => "storage:legacy-zip"),
+        },
+        runAction: makePublishRunActionMock(),
+      };
+
+      try {
+        await expect(
+          publishPackageForUserInternalHandler(ctx as never, {
+            actorUserId: "users:owner",
+            payload: {
+              name,
+              displayName: "Demo Claw",
+              family: "claw",
+              version: "1.0.0",
+              changelog: "init",
+              expectedArtifactSha256: artifactSha256,
+              files: [
+                { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+                {
+                  path: "manifests/CLAW.md",
+                  size: 1,
+                  storageId: "storage:claw",
+                  sha256: "claw",
+                },
+                {
+                  path: "profiles/openclaw.yml",
+                  size: 1,
+                  storageId: "storage:profile",
+                  sha256: "profile",
+                },
+                {
+                  path: "profiles/codex.yml",
+                  size: 1,
+                  storageId: "storage:codex-profile",
+                  sha256: "codex-profile",
+                },
+                {
+                  path: "BOOTSTRAP.md",
+                  size: 1,
+                  storageId: "storage:bootstrap",
+                  sha256: "bootstrap",
+                },
+              ],
+              artifact: {
+                kind: "npm-pack",
+                storageId: "storage:archive",
+                sha256: artifactSha256,
+                size: 3,
+                format: "tgz",
+                npmIntegrity: "sha512-demo",
+                npmShasum: "b".repeat(40),
+                npmTarballName: "demo-claw-1.0.0.tgz",
+                npmUnpackedSize: 3,
+                npmFileCount: 3,
+              },
+            },
+          }),
+        ).resolves.toEqual({
+          ok: true,
+          packageId: "packages:claw",
+          releaseId: "releases:claw-1",
+          publicationStatus: "published",
+          artifactSha256,
+        });
+
+        expect(runMutation).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            family: "claw",
+            summary: expect.any(String),
+            artifactKind: "npm-pack",
+            clawpackStorageId: "storage:archive",
+            clawpackSha256: artifactSha256,
+            clawpackSize: 3,
+            clawManifestSummary: expect.objectContaining({
+              agent: expect.objectContaining({
+                id: "demo-claw",
+                description: "x".repeat(1_024),
+              }),
+              workspace: expect.objectContaining({
+                bootstrapFiles: ["BOOTSTRAP.md", "SOUL.md"],
+              }),
+            }),
+            pluginManifestSummary: undefined,
+          }),
+        );
+        const publishMutationArgs = runMutation.mock.calls.find(
+          ([, args]) => args.family === "claw",
+        )?.[1];
+        expect(publishMutationArgs?.summary).toBe("x".repeat(1_024));
+        expect(publishMutationArgs).not.toHaveProperty("extractedClawManifest");
+      } finally {
+        if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+        else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+      }
+    },
+  );
 
   it("reuses an in-flight staged Claw publish for the same user and artifact", async () => {
     const previousStage = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
@@ -11263,7 +11740,7 @@ describe("packages public queries", () => {
       [
         "storage:package",
         JSON.stringify({
-          name: "demo-claw",
+          name: "@openclaw/demo-claw",
           version: "1.0.0",
           openclaw: { claw: "manifests/CLAW.md" },
         }),
@@ -11274,10 +11751,8 @@ describe("packages public queries", () => {
       ],
       ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n"],
     ]);
-    const existingPackage = makePackageDoc({
-      family: "claw",
+    const existingPackage = makeOpenClawClawPackageDoc({
       ownerUserId: "users:owner",
-      ownerPublisherId: "publishers:owner",
     });
     const currentPolicyPackage = {
       ...existingPackage,
@@ -11291,7 +11766,7 @@ describe("packages public queries", () => {
     });
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
       if (args.minimumRole === "publisher") {
-        return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
+        return { publisherId: openClawPublisher._id };
       }
       throw new Error("retry should not create another release or publish attempt");
     });
@@ -11308,6 +11783,7 @@ describe("packages public queries", () => {
         role: "user",
         githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
       })
+      .mockResolvedValueOnce(openClawPublisher)
       .mockResolvedValueOnce(existingRelease)
       .mockResolvedValueOnce({
         attemptId: "publishAttempts:pending",
@@ -11336,12 +11812,12 @@ describe("packages public queries", () => {
         publishPackageForUserInternalHandler(ctx as never, {
           actorUserId: "users:owner",
           payload: {
-            name: "demo-claw",
+            name: "@openclaw/demo-claw",
             displayName: "Demo Claw",
             family: "claw",
             version: "1.0.0",
             changelog: "retry",
-            ownerHandle: "owner",
+            ownerHandle: "openclaw",
             expectedArtifactSha256: artifactSha256,
             files: [
               { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
@@ -11389,11 +11865,11 @@ describe("packages public queries", () => {
         expect.anything(),
         expect.objectContaining({
           kind: "package",
-          slug: "demo-claw",
+          slug: "@openclaw/demo-claw",
           version: "1.0.0",
           userId: "users:owner",
           ownerUserId: "users:owner",
-          ownerPublisherId: "publishers:owner",
+          ownerPublisherId: openClawPublisher._id,
           artifactFingerprint: artifactSha256,
         }),
       );
@@ -11410,6 +11886,7 @@ describe("packages public queries", () => {
           role: "user",
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         })
+        .mockResolvedValueOnce(openClawPublisher)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
@@ -11418,12 +11895,12 @@ describe("packages public queries", () => {
         publishPackageForUserInternalHandler(ctx as never, {
           actorUserId: "users:owner",
           payload: {
-            name: "demo-claw",
+            name: "@openclaw/demo-claw",
             displayName: "Demo Claw",
             family: "claw",
             version: "1.0.0",
             changelog: "retry",
-            ownerHandle: "owner",
+            ownerHandle: "openclaw",
             expectedArtifactSha256: artifactSha256,
             files: [
               { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
@@ -11472,6 +11949,7 @@ describe("packages public queries", () => {
           role: "user",
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         })
+        .mockResolvedValueOnce(openClawPublisher)
         .mockResolvedValueOnce(existingRelease)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
@@ -11482,12 +11960,12 @@ describe("packages public queries", () => {
         publishPackageForUserInternalHandler(ctx as never, {
           actorUserId: "users:owner",
           payload: {
-            name: "demo-claw",
+            name: "@openclaw/demo-claw",
             displayName: "Demo Claw",
             family: "claw",
             version: "1.0.0",
             changelog: "different artifact",
-            ownerHandle: "owner",
+            ownerHandle: "openclaw",
             expectedArtifactSha256: "c".repeat(64),
             files: [
               { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
@@ -11526,7 +12004,7 @@ describe("packages public queries", () => {
         expect.anything(),
         expect.objectContaining({
           kind: "package",
-          slug: "demo-claw",
+          slug: "@openclaw/demo-claw",
           version: "1.0.0",
         }),
       );
@@ -20885,6 +21363,30 @@ describe("restorePackageInternal", () => {
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
 
+  it("keeps a third-party Claw readable by exact name outside the official catalog", async () => {
+    const name = "@other/demo-claw";
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({
+        name,
+        normalizedName: name,
+        family: "claw",
+        ownerPublisherId: "publishers:other",
+      }),
+      latestRelease: makeReleaseDoc({ files: [], distTags: [] }),
+      ownerPublisher: { _id: "publishers:other", kind: "org", handle: "other" },
+    });
+
+    await expect(getByNameHandler(ctx, { name })).resolves.toMatchObject({
+      package: { name, family: "claw" },
+    });
+    await expect(getVersionByNameHandler(ctx, { name, version: "1.0.0" })).resolves.toMatchObject({
+      package: { name, family: "claw" },
+    });
+    await expect(
+      getVersionSecurityByNameForViewerInternalHandler(ctx, { name, version: "1.0.0" }),
+    ).resolves.not.toBeNull();
+  });
+
   it("gates Claw named reads and exposes only the safe manifest summary when enabled", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
@@ -20931,8 +21433,7 @@ describe("restorePackageInternal", () => {
       },
     });
     const { ctx } = makePackageCtx({
-      pkg: makePackageDoc({
-        family: "claw",
+      pkg: makeOpenClawClawPackageDoc({
         clawProfilePolicyVersion: 1,
         latestReleaseId: "packageReleases:demo-latest",
         latestVersionSummary: { version: "2.0.0" },
@@ -20968,13 +21469,13 @@ describe("restorePackageInternal", () => {
 
     try {
       delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-      await expect(getByNameHandler(ctx, { name: "demo-plugin" })).resolves.toBeNull();
+      await expect(getByNameHandler(ctx, { name: "@openclaw/demo-claw" })).resolves.toBeNull();
       await expect(
-        getVersionByNameHandler(ctx, { name: "demo-plugin", version: "1.0.0" }),
+        getVersionByNameHandler(ctx, { name: "@openclaw/demo-claw", version: "1.0.0" }),
       ).resolves.toBeNull();
 
       process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
-      const detail = await getByNameHandler(ctx, { name: "demo-plugin" });
+      const detail = await getByNameHandler(ctx, { name: "@openclaw/demo-claw" });
       expect(detail).toMatchObject({
         package: {
           family: "claw",
@@ -20987,7 +21488,7 @@ describe("restorePackageInternal", () => {
       expect(JSON.stringify(detail)).not.toContain("must-not-project");
 
       const version = await getVersionByNameHandler(ctx, {
-        name: "demo-plugin",
+        name: "@openclaw/demo-claw",
         version: "1.0.0",
       });
       expect(version).toMatchObject({
@@ -21024,10 +21525,10 @@ describe("restorePackageInternal", () => {
         extractedPackageJson: { privateWorkspace: "must-not-project" },
       });
       const { ctx: clawCtx } = makePackageCtx({
-        pkg: makePackageDoc({ family: "claw" }),
+        pkg: makeOpenClawClawPackageDoc(),
         latestRelease: clawRelease,
       });
-      const claw = await getByNameHandler(clawCtx, { name: "demo-plugin" });
+      const claw = await getByNameHandler(clawCtx, { name: "@openclaw/demo-claw" });
       expect(claw?.latestRelease).not.toHaveProperty("extractedPackageJson");
       expect(JSON.stringify(claw)).not.toContain("must-not-project");
 
@@ -21038,10 +21539,12 @@ describe("restorePackageInternal", () => {
         extractedPackageJson: { privateWorkspace: "must-not-project-owner-deleted" },
       });
       const { ctx: ownerDeletedCtx } = makePackageCtx({
-        pkg: makePackageDoc({ family: "claw" }),
+        pkg: makeOpenClawClawPackageDoc(),
         latestRelease: ownerDeletedRelease,
       });
-      const ownerDeleted = await getByNameHandler(ownerDeletedCtx, { name: "demo-plugin" });
+      const ownerDeleted = await getByNameHandler(ownerDeletedCtx, {
+        name: "@openclaw/demo-claw",
+      });
       expect(ownerDeleted).toMatchObject({ package: { latestVersion: null }, latestRelease: null });
       expect(JSON.stringify(ownerDeleted)).not.toContain("stale-non-claw-summary");
       expect(JSON.stringify(ownerDeleted)).not.toContain("must-not-project-owner-deleted");
@@ -21078,6 +21581,470 @@ describe("restorePackageInternal", () => {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
     }
+  });
+
+  it("discovers only @openclaw-owned Claws in package list and search", async () => {
+    const otherOfficial = makeDigest("@other/matching-claw", {
+      family: "claw",
+      channel: "official",
+      isOfficial: true,
+      ownerPublisherId: "publishers:other",
+      ownerHandle: "other",
+      ownerKind: "org",
+    });
+    const spoofedName = makeDigest("@openclaw/spoofed-claw", {
+      family: "claw",
+      ownerPublisherId: "publishers:other",
+      ownerHandle: "other",
+      ownerKind: "org",
+    });
+    const openclaw = makeDigest("@openclaw/matching-claw", {
+      family: "claw",
+      channel: "official",
+      isOfficial: true,
+      ownerPublisherId: "publishers:openclaw",
+      ownerHandle: "openclaw",
+      ownerKind: "org",
+    });
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [otherOfficial, spoofedName, openclaw],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      publisherDocs: activeOpenClawPublisherDocs,
+    });
+
+    const listed = await listPublicPageHandler(ctx, {
+      family: "claw",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(listed.page.map((entry) => entry.name)).toEqual(["@openclaw/matching-claw"]);
+
+    const searched = await searchPublicHandler(ctx, { query: "claw", family: "claw", limit: 10 });
+    expect(searched.map((entry) => entry.package.name)).toEqual(["@openclaw/matching-claw"]);
+  });
+
+  it.each(["deletedAt", "deactivatedAt"] as const)(
+    "hides an @openclaw Claw from the catalog when its publisher has %s",
+    async (inactiveField) => {
+      const inactivePublisher = { ...openClawPublisher, [inactiveField]: 123 };
+      const pkg = makeOpenClawClawPackageDoc();
+      const { ctx: namedCtx } = makePackageCtx({
+        pkg,
+        latestRelease: makeReleaseDoc({ files: [] }),
+        ownerPublisher: inactivePublisher,
+      });
+
+      await expect(
+        getByNameHandler(namedCtx, { name: pkg.name as string }),
+      ).resolves.not.toBeNull();
+      await expect(
+        getVersionByNameHandler(namedCtx, { name: pkg.name as string, version: "1.0.0" }),
+      ).resolves.not.toBeNull();
+
+      const digest = makeDigest(pkg.name as string, {
+        family: "claw",
+        ownerPublisherId: openClawPublisher._id,
+        ownerHandle: "openclaw",
+        ownerKind: "org",
+      });
+      const { ctx: discoveryCtx } = makeDigestCtx({
+        pages: [{ page: [digest], isDone: true, continueCursor: "" }],
+        publisherDocs: { [openClawPublisher._id]: inactivePublisher },
+      });
+      const listed = await listPublicPageHandler(discoveryCtx, {
+        family: "claw",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      expect(listed.page).toEqual([]);
+      const searched = await searchPublicHandler(discoveryCtx, {
+        query: "demo-claw",
+        family: "claw",
+        limit: 10,
+      });
+      expect(searched).toEqual([]);
+
+      const { ctx: sortedCtx } = makeDigestCtx({
+        packagePages: [{ page: [pkg], isDone: true, continueCursor: "" }],
+        publisherDocs: { [openClawPublisher._id]: inactivePublisher },
+      });
+      const sorted = await listPublicPageHandler(sortedCtx, {
+        family: "claw",
+        sort: "downloads",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      expect(sorted.page).toEqual([]);
+
+      const release = makeReleaseDoc({ files: [] });
+      const rows = new Map<string, Record<string, unknown>>([
+        [pkg._id as string, pkg],
+        [release._id as string, release],
+        [openClawPublisher._id, inactivePublisher],
+      ]);
+      const selected = await getPublicReleaseSelectionsInternalHandler(
+        { db: { get: vi.fn(async (id: string) => rows.get(id) ?? null) } },
+        { selections: [{ packageId: pkg._id as string, releaseId: release._id as string }] },
+      );
+      expect(selected).toEqual([release]);
+    },
+  );
+
+  it("hides a Claw from the catalog when @openclaw loses Official status", async () => {
+    const pkg = makeOpenClawClawPackageDoc();
+    const { ctx: namedCtx } = makePackageCtx({
+      pkg,
+      latestRelease: makeReleaseDoc({ files: [] }),
+      officialPublisher: false,
+    });
+    await expect(getByNameHandler(namedCtx, { name: pkg.name as string })).resolves.not.toBeNull();
+    await expect(
+      getVersionByNameHandler(namedCtx, { name: pkg.name as string, version: "1.0.0" }),
+    ).resolves.not.toBeNull();
+
+    const digest = makeDigest(pkg.name as string, {
+      family: "claw",
+      channel: "official",
+      isOfficial: true,
+      ownerPublisherId: openClawPublisher._id,
+      ownerHandle: "openclaw",
+      ownerKind: "org",
+    });
+    const { ctx: discoveryCtx } = makeDigestCtx({
+      pages: [{ page: [digest], isDone: true, continueCursor: "" }],
+      publisherDocs: activeOpenClawPublisherDocs,
+      officialPublisherIds: [],
+    });
+    const listed = await listPublicPageHandler(discoveryCtx, {
+      family: "claw",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(listed.page).toEqual([]);
+    const searched = await searchPublicHandler(discoveryCtx, {
+      query: "demo-claw",
+      family: "claw",
+      limit: 10,
+    });
+    expect(searched).toEqual([]);
+  });
+
+  it("lists an @openclaw Claw beyond a first page of hidden legacy Claws", async () => {
+    const hidden = Array.from({ length: 50 }, (_, index) =>
+      makeDigest(`@other/legacy-${index}`, {
+        family: "claw",
+        ownerPublisherId: "publishers:other",
+        ownerHandle: "other",
+        ownerKind: "org",
+      }),
+    );
+    const official = makeDigest("@openclaw/assistant", {
+      family: "claw",
+      ownerPublisherId: openClawPublisher._id,
+      ownerHandle: "openclaw",
+      ownerKind: "org",
+    });
+    const { ctx, paginate } = makeDigestCtx({
+      pages: [
+        { page: hidden, isDone: false, continueCursor: "after-legacy" },
+        { page: [official], isDone: true, continueCursor: "" },
+      ],
+      publisherDocs: activeOpenClawPublisherDocs,
+    });
+
+    const first = await listPublicPageHandler(ctx, {
+      family: "claw",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(paginate).toHaveBeenCalledTimes(1);
+
+    const second = await listPublicPageHandler(ctx, {
+      family: "claw",
+      paginationOpts: { cursor: first.continueCursor, numItems: 10 },
+    });
+    expect(second.page.map((entry) => entry.name)).toEqual(["@openclaw/assistant"]);
+    expect(second.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let hidden Claws starve an unfiltered catalog page", async () => {
+    const hidden = makeDigest("@other/legacy", {
+      family: "claw",
+      ownerPublisherId: "publishers:other",
+      ownerHandle: "other",
+      ownerKind: "org",
+    });
+    const official = makeDigest("@openclaw/assistant", {
+      family: "claw",
+      ownerPublisherId: openClawPublisher._id,
+      ownerHandle: "openclaw",
+      ownerKind: "org",
+    });
+    const { ctx, paginate } = makeDigestCtx({
+      pages: [
+        { page: [hidden], isDone: false, continueCursor: "after-legacy" },
+        { page: [official], isDone: true, continueCursor: "" },
+      ],
+      publisherDocs: activeOpenClawPublisherDocs,
+    });
+
+    const first = await listPublicPageHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(paginate).toHaveBeenCalledTimes(1);
+
+    const second = await listPublicPageHandler(ctx, {
+      paginationOpts: { cursor: first.continueCursor, numItems: 10 },
+    });
+    expect(second.page.map((entry) => entry.name)).toEqual(["@openclaw/assistant"]);
+    expect(second.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(paginate).toHaveBeenNthCalledWith(2, { cursor: "after-legacy", numItems: 10 });
+  });
+
+  it("searches past hidden legacy Claws to find an @openclaw Claw", async () => {
+    const hidden = Array.from({ length: 50 }, (_, index) =>
+      makeDigest(`@other/legacy-${index}`, {
+        family: "claw",
+        displayName: `Legacy ${index}`,
+        summary: "assistant",
+        ownerPublisherId: "publishers:other",
+        ownerHandle: "other",
+        ownerKind: "org",
+      }),
+    );
+    const official = makeDigest("@openclaw/qualified", {
+      family: "claw",
+      displayName: "Qualified",
+      summary: "assistant",
+      ownerPublisherId: openClawPublisher._id,
+      ownerHandle: "openclaw",
+      ownerKind: "org",
+    });
+    const { ctx } = makeDigestCtx({
+      pages: [
+        { page: hidden, isDone: false, continueCursor: "after-legacy" },
+        { page: [official], isDone: true, continueCursor: "" },
+      ],
+      officialDigests: [],
+      publisherDocs: activeOpenClawPublisherDocs,
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "assistant",
+      family: "claw",
+      limit: 10,
+    });
+    expect(result.map((entry) => entry.package.name)).toEqual(["@openclaw/qualified"]);
+  });
+
+  it("does not let hidden Claws starve unfiltered catalog search", async () => {
+    const hidden = Array.from({ length: 50 }, (_, index) =>
+      makeDigest(`@other/legacy-${index}`, {
+        family: "claw",
+        displayName: `Legacy ${index}`,
+        summary: "assistant",
+        ownerPublisherId: "publishers:other",
+        ownerHandle: "other",
+        ownerKind: "org",
+      }),
+    );
+    const official = makeDigest("@openclaw/qualified", {
+      family: "claw",
+      displayName: "Qualified",
+      summary: "assistant",
+      ownerPublisherId: openClawPublisher._id,
+      ownerHandle: "openclaw",
+      ownerKind: "org",
+    });
+    const { ctx, paginate, take } = makeDigestCtx({
+      pages: [
+        { page: hidden, isDone: false, continueCursor: "after-legacy" },
+        { page: [official], isDone: true, continueCursor: "" },
+      ],
+      officialDigests: [],
+      publisherDocs: activeOpenClawPublisherDocs,
+    });
+
+    const result = await searchPublicHandler(ctx, { query: "assistant", limit: 10 });
+    expect(result.map((entry) => entry.package.name)).toEqual(["@openclaw/qualified"]);
+    expect(take).toHaveBeenCalledWith(500);
+    expect(paginate).not.toHaveBeenCalled();
+  });
+
+  it("hides non-OpenClaw Claws from package-backed sorted lists", async () => {
+    const other = makePackageDoc({
+      _id: "packages:other",
+      name: "@other/other-claw",
+      normalizedName: "@other/other-claw",
+      family: "claw",
+      ownerPublisherId: "publishers:other",
+    });
+    const spoofed = makePackageDoc({
+      _id: "packages:spoofed",
+      name: "@openclaw/spoofed-claw",
+      normalizedName: "@openclaw/spoofed-claw",
+      family: "claw",
+      ownerPublisherId: "publishers:other",
+    });
+    const official = makePackageDoc({
+      _id: "packages:official",
+      name: "@openclaw/official-claw",
+      normalizedName: "@openclaw/official-claw",
+      family: "claw",
+      ownerPublisherId: "publishers:openclaw",
+    });
+    const { ctx } = makeDigestCtx({
+      packagePages: [{ page: [other, spoofed, official], isDone: true, continueCursor: "" }],
+      publisherDocs: {
+        "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
+        "publishers:openclaw": {
+          _id: "publishers:openclaw",
+          kind: "org",
+          handle: "openclaw",
+        },
+      },
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "claw",
+      sort: "downloads",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(result.page.map((entry) => entry.name)).toEqual(["@openclaw/official-claw"]);
+  });
+
+  it("scans sorted Claw pages past hidden legacy packages", async () => {
+    const hidden = makePackageDoc({
+      _id: "packages:legacy",
+      name: "@other/legacy",
+      normalizedName: "@other/legacy",
+      family: "claw",
+      ownerPublisherId: "publishers:other",
+    });
+    const official = makeOpenClawClawPackageDoc({ _id: "packages:official" });
+    const { ctx, paginate } = makeDigestCtx({
+      packagePages: [
+        { page: [hidden], isDone: false, continueCursor: "after-legacy" },
+        { page: [official], isDone: true, continueCursor: "" },
+      ],
+      publisherDocs: {
+        "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
+        [openClawPublisher._id]: openClawPublisher,
+      },
+    });
+
+    const first = await listPublicPageHandler(ctx, {
+      family: "claw",
+      sort: "downloads",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(paginate).toHaveBeenCalledTimes(1);
+
+    const second = await listPublicPageHandler(ctx, {
+      family: "claw",
+      sort: "downloads",
+      paginationOpts: { cursor: first.continueCursor, numItems: 10 },
+    });
+    expect(second.page.map((entry) => entry.name)).toEqual(["@openclaw/demo-claw"]);
+    expect(second.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let hidden Claws starve a sorted unfiltered catalog page", async () => {
+    const hidden = makePackageDoc({
+      _id: "packages:legacy",
+      name: "@other/legacy",
+      normalizedName: "@other/legacy",
+      family: "claw",
+      ownerPublisherId: "publishers:other",
+    });
+    const official = makeOpenClawClawPackageDoc({ _id: "packages:official" });
+    const { ctx, paginate } = makeDigestCtx({
+      packagePages: [
+        { page: [hidden], isDone: false, continueCursor: "after-legacy" },
+        { page: [official], isDone: true, continueCursor: "" },
+      ],
+      publisherDocs: { [openClawPublisher._id]: openClawPublisher },
+    });
+
+    const first = await listPublicPageHandler(ctx, {
+      sort: "downloads",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(paginate).toHaveBeenCalledTimes(1);
+
+    const second = await listPublicPageHandler(ctx, {
+      sort: "downloads",
+      paginationOpts: { cursor: first.continueCursor, numItems: 10 },
+    });
+    expect(second.page.map((entry) => entry.name)).toEqual(["@openclaw/demo-claw"]);
+    expect(second.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
+  });
+
+  it("exports a third-party Claw release by exact package and release IDs", async () => {
+    const other = makePackageDoc({
+      _id: "packages:other",
+      name: "@other/other-claw",
+      normalizedName: "@other/other-claw",
+      family: "claw",
+      ownerPublisherId: "publishers:other",
+    });
+    const official = makePackageDoc({
+      _id: "packages:official",
+      name: "@openclaw/official-claw",
+      normalizedName: "@openclaw/official-claw",
+      family: "claw",
+      ownerPublisherId: "publishers:openclaw",
+    });
+    const otherRelease = makeReleaseDoc({
+      _id: "packageReleases:other",
+      packageId: "packages:other",
+      files: [],
+    });
+    const officialRelease = makeReleaseDoc({
+      _id: "packageReleases:official",
+      packageId: "packages:official",
+      files: [],
+    });
+    const records = new Map<string, Record<string, unknown>>([
+      ["packages:other", other],
+      ["packages:official", official],
+      ["packageReleases:other", otherRelease],
+      ["packageReleases:official", officialRelease],
+      ["publishers:other", { _id: "publishers:other", kind: "org", handle: "other" }],
+      ["publishers:openclaw", { _id: "publishers:openclaw", kind: "org", handle: "openclaw" }],
+    ]);
+
+    const result = await getPublicReleaseSelectionsInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => records.get(id) ?? null),
+          query: vi.fn(() => ({
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue({ publisherId: "publishers:openclaw" }),
+            })),
+          })),
+        },
+      },
+      {
+        selections: [
+          { packageId: "packages:other", releaseId: "packageReleases:other" },
+          { packageId: "packages:official", releaseId: "packageReleases:official" },
+        ],
+      },
+    );
+    expect(result).toEqual([otherRelease, officialRelease]);
   });
 
   it("does not let disabled Claws starve unfiltered public list pages", async () => {
@@ -21242,7 +22209,7 @@ describe("restorePackageInternal", () => {
         createdAt: 10,
       }),
     );
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       pages: [
         {
           page: olderMatches,
@@ -21271,6 +22238,7 @@ describe("restorePackageInternal", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["matching-new"]);
-    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledWith(500);
+    expect(paginate).not.toHaveBeenCalled();
   });
 });

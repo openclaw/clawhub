@@ -24,6 +24,21 @@ describe("experimental Claw feed runtime", () => {
     vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const t = convexTest(schema, modules);
     registerRateLimiter(t);
+    const publisherId = await t.run(async (ctx) => {
+      const createdPublisherId = await ctx.db.insert("publishers", {
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("officialPublishers", {
+        publisherId: createdPublisherId,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return createdPublisherId;
+    });
     const stored = await t.mutation(internal.catalogFeed.storeClawPublication, {
       generatedAt: "2026-07-24T00:00:00.000Z",
       expiresAt: "2026-07-25T00:00:00.000Z",
@@ -73,10 +88,55 @@ describe("experimental Claw feed runtime", () => {
     expect(enabled.headers.get("surrogate-control")).toBeNull();
     expect(await enabled.text()).toBe(publication?.payload);
 
+    await t.run(async (ctx) => {
+      await ctx.db.patch(publisherId, { deactivatedAt: 123 });
+    });
+    expect(
+      await t.query(internal.catalogFeed.getLatestPublication, {
+        feedId: "clawhub-official-claws",
+      }),
+    ).toBeNull();
+    const revoked = await t.fetch("/api/v1/feeds/claws");
+    expect(revoked.status).toBe(503);
+    expect(revoked.headers.get("cache-control")).toBe("no-store");
+
     vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "0");
     const disabled = await t.fetch("/api/v1/feeds/claws");
     expect(disabled.status).toBe(404);
     expect(disabled.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("does not serve a pre-policy snapshot before publishing a restricted replacement", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    const t = convexTest(schema, modules);
+    registerRateLimiter(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("catalogFeedPublications", {
+        feedId: "clawhub-official-claws",
+        sequence: 1,
+        generatedAt: "2026-09-30T00:00:00.000Z",
+        expiresAt: "2026-10-01T00:00:00.000Z",
+        payload: '{"entries":[{"id":"@other/legacy"}]}',
+        payloadSha256: "a".repeat(64),
+        publishedAt: 1,
+      });
+    });
+
+    const stale = await t.fetch("/api/v1/feeds/claws", {
+      headers: { "If-None-Match": `"sha256:${"a".repeat(64)}"` },
+    });
+    expect(stale.status).toBe(503);
+    expect(await stale.text()).not.toContain("@other/legacy");
+
+    const replacement = await t.mutation(internal.catalogFeed.storeClawPublication, {
+      generatedAt: "2026-10-01T00:00:00.000Z",
+      expiresAt: "2026-10-02T00:00:00.000Z",
+      entries: [],
+    });
+    expect(replacement).toMatchObject({ sequence: 2, entryCount: 0 });
+    const current = await t.fetch("/api/v1/feeds/claws");
+    expect(current.status).toBe(200);
+    expect(await current.text()).not.toContain("@other/legacy");
   });
 });
 

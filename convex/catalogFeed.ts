@@ -22,7 +22,11 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import type { QueryCtx } from "./_generated/server";
 import { isSkillHighlighted } from "./lib/badges";
 import { sha256Hex } from "./lib/clawpack";
-import { experimentalClawsEnabled } from "./lib/experimentalClaws";
+import {
+  experimentalClawsEnabled,
+  isOpenClawClawName,
+  isOpenClawClawPublisher,
+} from "./lib/experimentalClaws";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
@@ -175,6 +179,12 @@ async function buildEntry(
     ownerUserId: pkg.ownerUserId,
   });
   if (!(await isOfficialPublisher(ctx, owner))) return null;
+  if (
+    pkg.family === "claw" &&
+    (!isOpenClawClawName(pkg.normalizedName) || !isOpenClawClawPublisher(owner))
+  ) {
+    return null;
+  }
   const publisherId = owner?.handle?.trim();
   if (!publisherId) return null;
 
@@ -552,6 +562,38 @@ export const storeClawPublication = internalMutation({
   },
   handler: async (ctx, args) => {
     if (!experimentalClawsEnabled()) throw new Error("Experimental Claw feeds are disabled");
+    if (
+      args.entries.some(
+        (entry) =>
+          !isOpenClawClawName(entry.id) ||
+          entry.publisher.id !== "openclaw" ||
+          entry.publisher.trust !== "official" ||
+          entry.install.candidates.length === 0 ||
+          entry.install.candidates.some(
+            (candidate) => candidate.package !== entry.id || candidate.version !== entry.version,
+          ),
+      )
+    ) {
+      throw new Error("Experimental Claw feed entries must be published by @openclaw");
+    }
+    const owner = args.entries.length
+      ? await ctx.db
+          .query("publishers")
+          .withIndex("by_active_kind_handle", (q) =>
+            q
+              .eq("deletedAt", undefined)
+              .eq("deactivatedAt", undefined)
+              .eq("kind", "org")
+              .eq("handle", "openclaw"),
+          )
+          .unique()
+      : null;
+    if (
+      args.entries.length &&
+      (!isOpenClawClawPublisher(owner) || !(await isOfficialPublisher(ctx, owner)))
+    ) {
+      throw new Error("Experimental Claw feed publisher is unavailable");
+    }
     const latest = await ctx.db
       .query("catalogFeedPublications")
       .withIndex("by_feed", (q) => q.eq("feedId", EXPERIMENTAL_CLAW_FEED_ID))
@@ -576,6 +618,9 @@ export const storeClawPublication = internalMutation({
       payload,
       payloadSha256,
       publishedAt,
+      clawPolicyVersion: 1 as const,
+      clawEntryCount: args.entries.length,
+      clawPublisherId: owner?._id,
     };
     const publicationId = latest
       ? (await ctx.db.patch(latest._id, publication), latest._id)
@@ -691,9 +736,24 @@ export const getLatestPublication = internalQuery({
       v.literal(PROMOTIONS_FEED_ID),
     ),
   },
-  handler: async (ctx, args) =>
-    await ctx.db
+  handler: async (ctx, args) => {
+    const publication = await ctx.db
       .query("catalogFeedPublications")
       .withIndex("by_feed", (q) => q.eq("feedId", args.feedId))
-      .unique(),
+      .unique();
+    if (args.feedId !== EXPERIMENTAL_CLAW_FEED_ID || !publication) return publication;
+    if (
+      publication.clawPolicyVersion !== 1 ||
+      publication.clawEntryCount === undefined ||
+      !Number.isSafeInteger(publication.clawEntryCount) ||
+      publication.clawEntryCount < 0
+    ) {
+      return null;
+    }
+    if (publication.clawEntryCount === 0) return publication;
+    if (!publication.clawPublisherId) return null;
+    const owner = await ctx.db.get(publication.clawPublisherId);
+    if (!isOpenClawClawPublisher(owner) || !(await isOfficialPublisher(ctx, owner))) return null;
+    return publication;
+  },
 });
