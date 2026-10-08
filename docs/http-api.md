@@ -1936,3 +1936,57 @@ clawhub-admin featured publish skill approved-skills.json --apply
 `publish` defaults to a dry run regardless of the file's `dryRun` value. Use
 `--apply` only after the exact selection has been approved. Counts describe recorded
 install events, not unique users or proven successful runtime installations.
+
+## Staff Content rights proxy
+
+`GET /api/v1/content-rights/{caseId}` and
+`POST /api/v1/content-rights/{caseId}/correspondence` forward to the Hermit
+content-rights origin (default `https://forms.openclaw.ai`, override with the
+`HERMIT_CONTENT_RIGHTS_BASE_URL` deployment env var; the shared service token
+comes from `CLAWHUB_BAN_APPEALS_TOKEN`). They require an admin API token and
+rate-limit as staff reads/writes. The correspondence POST forwards the staff
+form unchanged and adds an `actor` field carrying the acting user ID.
+
+### Timeout budget
+
+Both outbound Hermit requests are bounded by a ten-second abort deadline
+(`HERMIT_CONTENT_RIGHTS_FETCH_TIMEOUT_MS`). Rationale: ten seconds is generous
+for a responsive forms backend (representative correspondence uploads, including
+10 MB attachments, complete in well under a second) while staying far below the
+Convex platform action limit, so a stalled Hermit origin fails fast and free
+instead of pinning the action. The constant is exported so the budget can be
+calibrated in one place if production timing evidence ever requires a separate
+POST deadline.
+
+When the budget expires, the proxy returns its existing failure response:
+`502 Hermit content rights service unavailable`. The proxy performs **no
+automatic retries** — staff clients must not infer that a timed-out write was
+rolled back on Hermit's side.
+
+### Uncertain correspondence POST recovery
+
+The correspondence POST is the **archive** operation: it appends the exact
+correspondence and evidence to the Hermit case. It **never sends an email** —
+sending is the separate, sign-off-gated `clawhub-admin email send` step, and
+the archive step links the record to the sent message via
+`--provider-message-id`. A `502` on this POST therefore means the **archive**
+write may be incomplete; the email-send state is unaffected by this timeout.
+
+Recovery procedure:
+
+1. Inspect the case: `GET /api/v1/content-rights/{caseId}` and check the
+   case's recorded correspondence for the entry you just attempted.
+2. If the entry is present, the archive write landed — no archive repair is
+   needed.
+3. If the entry is absent (or the read is inconclusive), reconcile what should
+   be archived (exact correspondence text, direction, provider message id) and
+   re-run the archive POST to repair the archive. Re-running the archive can
+   create a duplicate archive entry, so reconcile before resubmitting — but it
+   cannot send an email again.
+4. Never re-run `email send` because the archive POST timed out. Whether the
+   email was sent is tracked at the send step (dry-run by default; the sent
+   provider message id is what the archive record references).
+
+There is no duplicate-free guarantee on the correspondence log after archive
+repair; send de-duplication is the staff responsibility at the `email send`
+step. Design record: `specs/content-rights-proxy.md`.

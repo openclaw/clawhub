@@ -4,6 +4,10 @@
 
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
+### Fixes
+
+- Content-rights: bound the Hermit proxy fetches (GET case and POST correspondence) with a 10 s abort timeout so a stalled Hermit origin fails as a 502 proxy response instead of holding the Convex action until the platform limit.
+
 ## 0.24.0 - 2026-09-30
 
 ### Changes

@@ -1,9 +1,35 @@
 /* @vitest-environment node */
 
-import { describe, expect, it, vi } from "vitest";
-import { proxyHermitContentRightsRequest } from "./contentRightsV1";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  HERMIT_CONTENT_RIGHTS_FETCH_TIMEOUT_MS,
+  proxyHermitContentRightsRequest,
+} from "./contentRightsV1";
+
+// Hermit stand-in that never responds until its signal aborts.
+function hangUntilAborted(_input: unknown, init?: RequestInit) {
+  return new Promise<Response>((_resolve, reject) => {
+    const signal = init?.signal;
+    if (!signal) return;
+    signal.addEventListener(
+      "abort",
+      () => {
+        reject(
+          signal.reason instanceof Error
+            ? signal.reason
+            : new DOMException("The operation was aborted.", "AbortError"),
+        );
+      },
+      { once: true },
+    );
+  });
+}
 
 describe("ClawHub content rights Hermit proxy", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
   it("reads a case using the existing shared ClawHub-Hermit token", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ case: { caseId: "CHR-000007" }, files: [], events: [] }), {
@@ -27,6 +53,7 @@ describe("ClawHub content rights Hermit proxy", () => {
       {
         method: "GET",
         headers: { Authorization: "Bearer shared-token" },
+        signal: expect.any(AbortSignal),
       },
     );
   });
@@ -63,6 +90,7 @@ describe("ClawHub content rights Hermit proxy", () => {
     expect(response.status).toBe(201);
     const forwarded = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(forwarded.method).toBe("POST");
+    expect(forwarded.signal).toBeInstanceOf(AbortSignal);
     expect(forwarded.body).toBeInstanceOf(FormData);
     const forwardedBody = forwarded.body as FormData;
     expect(forwardedBody.get("actor")).toBe("users:admin");
@@ -82,5 +110,66 @@ describe("ClawHub content rights Hermit proxy", () => {
     );
 
     expect(response.status).toBe(503);
+  });
+
+  it("fails the proxy with 502 when a hung Hermit GET exceeds the fetch timeout", async () => {
+    vi.useFakeTimers();
+    // Node's native AbortSignal.timeout ignores fake timers; drive the abort
+    // through the same timer so the test observes the configured budget.
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(
+        () => controller.abort(new Error(`Request timed out after ${Math.ceil(ms / 1000)}s`)),
+        ms,
+      );
+      return controller.signal;
+    });
+
+    const pending = proxyHermitContentRightsRequest(
+      new Request("https://clawhub.ai/api/v1/content-rights/CHR-000007"),
+      "users:admin",
+      {
+        baseUrl: "https://forms.openclaw.ai",
+        serviceToken: "shared-token",
+        fetch: hangUntilAborted as typeof fetch,
+      },
+    );
+    await vi.advanceTimersByTimeAsync(HERMIT_CONTENT_RIGHTS_FETCH_TIMEOUT_MS);
+    const response = await pending;
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe("Hermit content rights service unavailable");
+  });
+
+  it("fails the proxy with 502 when a hung Hermit correspondence POST exceeds the fetch timeout", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(
+        () => controller.abort(new Error(`Request timed out after ${Math.ceil(ms / 1000)}s`)),
+        ms,
+      );
+      return controller.signal;
+    });
+
+    const body = new FormData();
+    body.set("direction", "outbound");
+    body.set("text", "Exact email body");
+    const pending = proxyHermitContentRightsRequest(
+      new Request("https://clawhub.ai/api/v1/content-rights/CHR-000007/correspondence", {
+        method: "POST",
+        body,
+      }),
+      "users:admin",
+      {
+        baseUrl: "https://forms.openclaw.ai",
+        serviceToken: "shared-token",
+        fetch: hangUntilAborted as typeof fetch,
+      },
+    );
+    await vi.advanceTimersByTimeAsync(HERMIT_CONTENT_RIGHTS_FETCH_TIMEOUT_MS);
+    const response = await pending;
+
+    expect(response.status).toBe(502);
   });
 });
