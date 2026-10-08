@@ -67,6 +67,22 @@ clawhub search "my query"
 
 When no proxy variable is set, behavior is unchanged (direct connections).
 
+### Request timeouts
+
+Every registry request is bounded by a total-transfer deadline: if the request
+is not complete within the budget, it is aborted and the command fails with a
+`Request timed out after Ns` error (attempts that are retried are retried with
+backoff, restarting the transfer from the beginning).
+
+- regular requests (auth, search, publish metadata, downloads): 15 s
+- uploads and binary transfers: 120 s (or the caller's explicit override)
+
+The deadline covers the entire transfer — connection, response headers, and
+response body — not just time to first byte. A slow-but-progressing response
+that finishes inside the deadline is unaffected; a transfer still running at
+the deadline is aborted. On the bun runtime the same contract is enforced by
+`curl --max-time`.
+
 ## Config file
 
 Stores your API token + cached registry URL.

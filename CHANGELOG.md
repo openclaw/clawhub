@@ -4,6 +4,10 @@
 
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
+### Fixes
+
+- CLI: keep the Node HTTP request timeout alive until the response body is consumed, so an origin that sends headers and then stalls fails with the existing `Request timed out after 15s` error instead of hanging the command. The timeout now bounds the whole transfer: slow-but-progressing bodies that finish inside the budget still succeed, while transfers still running at the deadline abort and follow the normal retry path.
+
 ## 0.24.0 - 2026-09-30
 
 ### Changes

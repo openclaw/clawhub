@@ -213,20 +213,24 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         headers["Content-Type"] = "application/json";
         body = JSON.stringify(args.body ?? {});
       }
-      const response = await fetchWithTimeout(deps, url, {
+      const { response, release } = await fetchWithTimeout(deps, url, {
         method: args.method,
         headers,
         body,
       });
-      if (!response.ok && !isAcceptedStatus(response.status, args.acceptedStatuses)) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
+      try {
+        if (!response.ok && !isAcceptedStatus(response.status, args.acceptedStatuses)) {
+          throwHttpStatusError(
+            response.status,
+            await readResponseTextSafe(response),
+            response.headers,
+            deps.now,
+          );
+        }
+        return (await response.json()) as unknown;
+      } finally {
+        release();
       }
-      return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
     return json as T;
@@ -245,7 +249,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
 
       const headers: Record<string, string> = { Accept: "application/json" };
       if (args.token) headers.Authorization = `Bearer ${args.token}`;
-      const response = await fetchWithTimeout(
+      const { response, release } = await fetchWithTimeout(
         deps,
         url,
         {
@@ -255,15 +259,19 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         },
         args.timeoutMs ?? UPLOAD_TIMEOUT_MS,
       );
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
+      try {
+        if (!response.ok) {
+          throwHttpStatusError(
+            response.status,
+            await readResponseTextSafe(response),
+            response.headers,
+            deps.now,
+          );
+        }
+        return (await response.json()) as unknown;
+      } finally {
+        release();
       }
-      return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
     return json as T;
@@ -278,12 +286,16 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
 
       const headers: Record<string, string> = { Accept: "text/plain" };
       if (args.token) headers.Authorization = `Bearer ${args.token}`;
-      const response = await fetchWithTimeout(deps, url, { method: "GET", headers });
-      const text = await response.text();
-      if (!response.ok) {
-        throwHttpStatusError(response.status, text, response.headers, deps.now);
+      const { response, release } = await fetchWithTimeout(deps, url, { method: "GET", headers });
+      try {
+        const text = await response.text();
+        if (!response.ok) {
+          throwHttpStatusError(response.status, text, response.headers, deps.now);
+        }
+        return text;
+      } finally {
+        release();
       }
-      return text;
     });
   }
 
@@ -296,16 +308,20 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
 
       const headers: Record<string, string> = {};
       if (args.token) headers.Authorization = `Bearer ${args.token}`;
-      const response = await fetchWithTimeout(deps, url, { method: "GET", headers });
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
+      const { response, release } = await fetchWithTimeout(deps, url, { method: "GET", headers });
+      try {
+        if (!response.ok) {
+          throwHttpStatusError(
+            response.status,
+            await readResponseTextSafe(response),
+            response.headers,
+            deps.now,
+          );
+        }
+        return new Uint8Array(await response.arrayBuffer());
+      } finally {
+        release();
       }
-      return new Uint8Array(await response.arrayBuffer());
     });
   }
 
@@ -321,7 +337,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
       const headers: Record<string, string> = {};
       if (args.contentType) headers["Content-Type"] = args.contentType;
       if (args.token) headers.Authorization = `Bearer ${args.token}`;
-      const response = await fetchWithTimeout(
+      const { response, release } = await fetchWithTimeout(
         deps,
         args.url,
         {
@@ -331,15 +347,19 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         },
         UPLOAD_TIMEOUT_MS,
       );
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
+      try {
+        if (!response.ok) {
+          throwHttpStatusError(
+            response.status,
+            await readResponseTextSafe(response),
+            response.headers,
+            deps.now,
+          );
+        }
+        return (await response.json()) as unknown;
+      } finally {
+        release();
       }
-      return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
     return json as T;
@@ -357,16 +377,23 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
 
       const headers: Record<string, string> = {};
       if (args.token) headers.Authorization = `Bearer ${args.token}`;
-      const response = await fetchWithTimeout(deps, url.toString(), { method: "GET", headers });
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
+      const { response, release } = await fetchWithTimeout(deps, url.toString(), {
+        method: "GET",
+        headers,
+      });
+      try {
+        if (!response.ok) {
+          throwHttpStatusError(
+            response.status,
+            await readResponseTextSafe(response),
+            response.headers,
+            deps.now,
+          );
+        }
+        return new Uint8Array(await response.arrayBuffer());
+      } finally {
+        release();
       }
-      return new Uint8Array(await response.arrayBuffer());
     });
   }
 
@@ -485,25 +512,40 @@ async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   timeoutMs = REQUEST_TIMEOUT_MS,
-): Promise<Response> {
+): Promise<{ response: Response; release: () => void }> {
   const controller = new AbortController();
   const timeoutSeconds = Math.ceil(timeoutMs / 1000);
   const timeout = deps.setTimeoutImpl(
     () => controller.abort(new Error(`Request timed out after ${timeoutSeconds}s`)),
     timeoutMs,
   );
+  let response: Response;
   try {
-    return await deps.fetchImpl(url, { ...init, signal: controller.signal });
+    response = await deps.fetchImpl(url, { ...init, signal: controller.signal });
   } catch (error) {
+    deps.clearTimeoutImpl(timeout);
     if (error instanceof Error) throw error;
     const message =
       typeof error === "object" && error !== null && "message" in error
         ? String((error as { message: unknown }).message)
         : String(error);
     throw new Error(message, { cause: error });
-  } finally {
-    deps.clearTimeoutImpl(timeout);
   }
+  // Keep the abort alive through body reads: clearing it when headers arrive
+  // would leave json/text/arrayBuffer reads with no deadline, and a server
+  // that stalls after headers would hang the command. Callers invoke release()
+  // in a finally once the body is consumed (or the attempt errors); it is
+  // idempotent, so the success and error paths both cover it.
+  let released = false;
+  return {
+    response,
+    release: () => {
+      if (!released) {
+        released = true;
+        deps.clearTimeoutImpl(timeout);
+      }
+    },
+  };
 }
 
 async function readResponseTextSafe(response: Response): Promise<string> {

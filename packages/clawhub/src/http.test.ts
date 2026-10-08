@@ -37,6 +37,46 @@ function createImmediateTimeouts() {
   return { setTimeoutImpl, clearTimeoutImpl };
 }
 
+// Builds a 200 JSON response whose body only ends when the signal aborts:
+// simulates an origin that sends headers and then stalls (optionally after
+// one chunk, to model a progressing-but-too-slow transfer).
+function createStalledBodyFetch(stallAfterFirstChunk = false) {
+  return vi.fn(async (_url: string, init?: RequestInit) => {
+    const signal = init?.signal;
+    if (!(signal instanceof AbortSignal)) throw new Error("Missing abort signal");
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        if (stallAfterFirstChunk) controller.enqueue(encoder.encode('{"partial": true, "'));
+        signal.addEventListener(
+          "abort",
+          () => {
+            controller.error(
+              signal.reason instanceof Error
+                ? signal.reason
+                : new Error("The operation was aborted"),
+            );
+          },
+          { once: true },
+        );
+      },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+}
+
+// Real timers scaled down so tests finish in milliseconds; the code still
+// exercises the full abort path it installs for the production budget.
+function createBoundedTimers(maxMs: number) {
+  const setTimeoutImpl = vi.fn((callback: () => void, ms?: number) =>
+    setTimeout(callback, Math.min(ms ?? 0, maxMs)),
+  );
+  const clearTimeoutImpl = vi.fn((handle: unknown) =>
+    clearTimeout(handle as ReturnType<typeof setTimeout>),
+  );
+  return { setTimeoutImpl, clearTimeoutImpl };
+}
+
 function createAbortingFetchMock() {
   return vi.fn(async (_url: string, init?: RequestInit) => {
     const signal = init?.signal;
@@ -566,5 +606,61 @@ describe("node http client", () => {
       }),
     ).rejects.toThrow(/timed out after 300s/i);
     expect(longTimeouts.setTimeoutImpl.mock.calls[0]?.[1]).toBe(300_000);
+  });
+});
+
+describe("node fetch timeout across the response body", () => {
+  it("aborts a body that stalls after headers with the request timeout", async () => {
+    const { setTimeoutImpl, clearTimeoutImpl } = createBoundedTimers(50);
+    const fetchImpl = createStalledBodyFetch(false);
+    const client = createNodeClient({
+      fetchImpl,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
+    });
+
+    await expect(
+      client.apiRequest("https://example.com", { method: "GET", path: "/x", retryCount: 0 }),
+    ).rejects.toThrow(/timed out/i);
+    expect(clearTimeoutImpl).toHaveBeenCalled();
+  });
+
+  it("still succeeds when the body completes inside the budget and releases the timer", async () => {
+    const { setTimeoutImpl, clearTimeoutImpl } = createBoundedTimers(500);
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const client = createNodeClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
+    });
+
+    const result = await client.apiRequest<{ ok: boolean }>("https://example.com", {
+      method: "GET",
+      path: "/x",
+      retryCount: 0,
+    });
+    expect(result).toEqual({ ok: true });
+    expect(clearTimeoutImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts a progressing body that exceeds the total-transfer budget", async () => {
+    const { setTimeoutImpl, clearTimeoutImpl } = createBoundedTimers(30);
+    const fetchImpl = createStalledBodyFetch(true);
+    const client = createNodeClient({
+      fetchImpl,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
+    });
+
+    await expect(
+      client.fetchText("https://example.com", { path: "/x", retryCount: 0 }),
+    ).rejects.toThrow(/timed out/i);
+    expect(clearTimeoutImpl).toHaveBeenCalled();
   });
 });
