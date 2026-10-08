@@ -1,0 +1,12 @@
+{
+  "id": "excalidraw-mcp",
+  "name": "Excalidraw",
+  "description": "Create and inspect diagrams through Excalidraw\u2019s official hosted MCP service.",
+  "version": "1.0.0",
+  "categories": ["media"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
