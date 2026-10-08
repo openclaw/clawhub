@@ -110,6 +110,11 @@ export async function listSkillFiles(root: string, limits?: SkillFileLimits): Pr
     entries.push({ absPath, relPath, size: fileStat.size, contentType });
   });
 
+  // Directory entry order is filesystem-dependent (e.g. NTFS sorts
+  // case-insensitively, ext4 does not), so keep the returned list in
+  // stable code-unit path order.
+  sortSkillFilesByPath(entries);
+
   if (limits) {
     const oversized = entries.find((entry) => entry.size > limits.maxFileBytes);
     if (oversized) {
@@ -260,6 +265,13 @@ function normalizePath(path: string) {
     .split(sep)
     .join("/")
     .replace(/^\.\/+/, "");
+}
+
+export function sortSkillFilesByPath<T extends { relPath: string }>(files: T[]): T[] {
+  files.sort((left, right) =>
+    left.relPath < right.relPath ? -1 : left.relPath > right.relPath ? 1 : 0,
+  );
+  return files;
 }
 
 function hasDotPathSegment(path: string) {

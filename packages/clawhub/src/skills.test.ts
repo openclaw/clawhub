@@ -156,6 +156,28 @@ describe("skills", () => {
     );
   });
 
+  it("returns files in deterministic code-unit order regardless of creation order", async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-file-order-"));
+    // Created deliberately out of alphabetical order, including a nested
+    // directory, so filesystem readdir order cannot match the expectation
+    // by accident on every platform.
+    await writeFile(join(workdir, "zeta.txt"), "z", "utf8");
+    await writeFile(join(workdir, "SKILL.md"), "hi", "utf8");
+    await mkdir(join(workdir, "alpha"), { recursive: true });
+    await writeFile(join(workdir, "alpha", "zeta.txt"), "az", "utf8");
+    await writeFile(join(workdir, "alpha", "beta.txt"), "ab", "utf8");
+    await writeFile(join(workdir, "beta.txt"), "b", "utf8");
+
+    const files = await listSkillFiles(workdir);
+    expect(files.map((file) => file.relPath)).toEqual([
+      "SKILL.md",
+      "alpha/beta.txt",
+      "alpha/zeta.txt",
+      "beta.txt",
+      "zeta.txt",
+    ]);
+  });
+
   it("uses a generic MIME fallback for unknown extensions", async () => {
     const workdir = await mkdtemp(join(tmpdir(), "clawhub-env-"));
     await writeFile(join(workdir, "SKILL.md"), "hi", "utf8");
