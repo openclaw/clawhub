@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSkillsShMirrorProofSnapshotId,
   buildSkillsShMirrorObservation,
+  skillsShPageIdentityHash,
   buildSkillsShMirrorControlledObservation,
   buildSkillsShMirrorDetail,
   buildSkillsShMirrorUpstreamScanners,
@@ -1113,6 +1114,48 @@ describe("skills.sh Vercel source boundary", () => {
         if (row.installUrl) expect(message).not.toContain(row.installUrl);
       }
     }
+  });
+
+  it("quarantines a non-string skills.sh id instead of throwing", () => {
+    const liveRow = {
+      id: "larksuite/cli/lark-doc",
+      installUrl: "https://github.com/larksuite/cli",
+      installs: 383_123,
+      name: "lark-doc",
+      slug: "lark-doc",
+      source: "larksuite/cli",
+      sourceType: "repository",
+      url: "https://skills.sh/larksuite/cli/lark-doc",
+    };
+    const malformed = { ...liveRow, id: 12, source: { repo: "larksuite/cli" } };
+    expect(() => buildSkillsShMirrorObservation(malformed as never)).toThrow(
+      "Unsupported skills.sh mirror identity",
+    );
+    expect(() => skillsShPageIdentityHash([malformed as never])).not.toThrow();
+    expect(skillsShPageIdentityHash([malformed as never])).toBe(
+      skillsShPageIdentityHash([{ ...liveRow, id: "" }]),
+    );
+    expect(skillsShPageIdentityHash([malformed as never])).not.toBe(
+      skillsShPageIdentityHash([{ ...liveRow, id: "missing:0:0" }]),
+    );
+  });
+
+  it("keeps a legacy blank id hash distinct from the stored missing placeholder", () => {
+    const row = {
+      id: "owner/repo/skill",
+      installUrl: "https://github.com/owner/repo",
+      installs: 1,
+      name: "Skill",
+      slug: "skill",
+      source: "owner/repo",
+      sourceType: "github",
+      url: "https://skills.sh/owner/repo/skill",
+    };
+    const legacy = [{ ...row, id: "   " }, row];
+    const empty = [{ ...row, id: "" }, row];
+    const stored = [{ ...row, id: "missing:4:0" }, row];
+    expect(skillsShPageIdentityHash(legacy, 4)).toBe(skillsShPageIdentityHash(empty, 4));
+    expect(skillsShPageIdentityHash(legacy, 4)).not.toBe(skillsShPageIdentityHash(stored, 4));
   });
 
   it("requires the exact skills.sh site route for well-known identity", () => {
