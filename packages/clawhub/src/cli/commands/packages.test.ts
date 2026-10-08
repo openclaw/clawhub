@@ -41,6 +41,10 @@ vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
 vi.mock("@openclaw/plugin-inspector", () => inspectorMocks);
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+});
 
 const {
   cmdDeletePackage,
@@ -2564,6 +2568,46 @@ describe("package commands", () => {
       expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
         `Packed @scope/demo-plugin@1.0.0 -> ${packPath}`,
       );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("explains a missing npm instead of surfacing a raw ENOENT when packing a folder", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await mkdir(join(workdir, "packs"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      vi.mocked(spawnSync).mockImplementationOnce(() => ({
+        error: Object.assign(new Error("spawnSync npm ENOENT"), { code: "ENOENT" }),
+        status: null,
+        stdout: "",
+        stderr: "",
+        output: [],
+        pid: 0,
+        signal: null,
+      }));
+
+      await expect(
+        cmdPackPackage(makeOpts(workdir), "demo-plugin", { packDestination: "packs" }),
+      ).rejects.toThrow("npm was not found on PATH");
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

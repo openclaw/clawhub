@@ -899,6 +899,10 @@ function pluginInspectorFixtureId(rawName: string) {
   );
 }
 
+function isMissingExecutableError(error: unknown) {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
 async function createClawPackFromFolder(options: {
   sourcePath: string;
   packDestination: string;
@@ -919,7 +923,14 @@ async function createClawPackFromFolder(options: {
       encoding: "utf8",
     },
   );
-  if (result.error) throw result.error;
+  if (result.error) {
+    if (isMissingExecutableError(result.error)) {
+      fail(
+        "npm was not found on PATH. Folder publishing packs the package with `npm pack`; install Node.js (which includes npm) and try again, or publish a prebuilt .tgz instead.",
+      );
+    }
+    throw result.error;
+  }
   if (result.status !== 0) {
     fail((result.stderr || result.stdout || "npm pack failed").trim());
   }
