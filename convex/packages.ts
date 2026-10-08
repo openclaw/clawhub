@@ -101,7 +101,10 @@ import {
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
-import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
+import {
+  hasNoPublishedPackageVersions,
+  isPublishedPackageRelease,
+} from "./lib/packageReleaseVisibility";
 import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import {
@@ -1223,12 +1226,6 @@ function resolvePublicPackageScanStatus(
     return releaseScanStatus === "not-run" ? pkg.scanStatus : releaseScanStatus;
   }
   return pkg.scanStatus;
-}
-
-function hasNoPublishedPackageVersions(
-  pkg: Pick<Doc<"packages">, "latestReleaseId" | "latestVersionSummary" | "stats">,
-) {
-  return !pkg.latestReleaseId && !pkg.latestVersionSummary && (pkg.stats?.versions ?? 0) <= 0;
 }
 
 function normalizePublicPackageSourcePath(sourcePath: unknown) {
@@ -3978,6 +3975,7 @@ export const listAuditPage = query({
     const membershipCache = new Map<string, Promise<boolean>>();
     for (const pkg of result.page) {
       if (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") continue;
+      if (hasNoPublishedPackageVersions(pkg)) continue;
       if (!(await canViewerReadPackage(ctx, pkg, undefined, membershipCache))) continue;
 
       const owner = toPublicPublisher(
