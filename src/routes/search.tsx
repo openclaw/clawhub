@@ -270,18 +270,18 @@ function UnifiedSearchPage() {
           All
         </button>
         <button
-          className={`search-tab${activeType === "skills" ? " is-active" : ""}`}
-          type="button"
-          onClick={() => setType("skills")}
-        >
-          Skills
-        </button>
-        <button
           className={`search-tab${activeType === "plugins" ? " is-active" : ""}`}
           type="button"
           onClick={() => setType("plugins")}
         >
           Plugins
+        </button>
+        <button
+          className={`search-tab${activeType === "skills" ? " is-active" : ""}`}
+          type="button"
+          onClick={() => setType("skills")}
+        >
+          Skills
         </button>
         <button
           className={`search-tab${activeType === "creators" ? " is-active" : ""}`}
@@ -328,17 +328,17 @@ function UnifiedSearchPage() {
         <>
           {activeType === "all" ? (
             <div className="search-results-sections">
-              {skillResults.length > 0 ? (
-                <SearchResultSection title="Skills">
-                  {skillResults.map((item) => (
-                    <SkillResultRow key={skillResultKey(item)} result={item} />
-                  ))}
-                </SearchResultSection>
-              ) : null}
               {pluginResults.length > 0 ? (
                 <SearchResultSection title="Plugins">
                   {pluginResults.map((item) => (
                     <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
+                  ))}
+                </SearchResultSection>
+              ) : null}
+              {skillResults.length > 0 ? (
+                <SearchResultSection title="Skills">
+                  {skillResults.map((item) => (
+                    <SkillResultRow key={skillResultKey(item)} result={item} />
                   ))}
                 </SearchResultSection>
               ) : null}
