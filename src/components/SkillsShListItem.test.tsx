@@ -11,7 +11,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 describe("SkillsShListItem", () => {
-  it("renders the repository identity and explicit external trust boundary", () => {
+  it("renders the repository identity without a scan badge", () => {
     render(<SkillsShListItem result={makeResult()} />);
 
     expect(screen.getByRole("link").getAttribute("href")).toBe(
@@ -19,7 +19,7 @@ describe("SkillsShListItem", () => {
     );
     expect(screen.getByText("HTML Artifact Chooser")).toBeTruthy();
     expect(screen.getByText("patrick-erichsen/skills")).toBeTruthy();
-    expect(screen.getByText("Not scanned by ClawHub")).toBeTruthy();
+    expect(screen.queryByText("Not scanned by ClawHub")).toBeNull();
     expect(screen.queryByText("@patrick-erichsen")).toBeNull();
   });
 

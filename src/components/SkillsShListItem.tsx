@@ -2,15 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { Download } from "lucide-react";
 import { emitAnalytics, publicAnalyticsContentId } from "../lib/analyticsEvents";
 import { formatCompactStat } from "../lib/numberFormat";
-import {
-  SKILLS_SH_TRUST_LABEL,
-  skillsShRepositoryLabel,
-  type SkillsShSearchResult,
-} from "../lib/skillsShCatalog";
+import { skillsShRepositoryLabel, type SkillsShSearchResult } from "../lib/skillsShCatalog";
 import { timeAgo } from "../lib/timeAgo";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { MarketplaceIcon } from "./MarketplaceIcon";
-import { Badge } from "./ui/badge";
 
 export function SkillsShListItem({ result }: { result: SkillsShSearchResult }) {
   return (
@@ -34,9 +29,6 @@ export function SkillsShListItem({ result }: { result: SkillsShSearchResult }) {
             </span>
             <span className="skill-list-item-owner">{skillsShRepositoryLabel(result)}</span>
           </span>
-          <Badge variant="warning" size="sm">
-            {SKILLS_SH_TRUST_LABEL}
-          </Badge>
         </div>
         {result.summary ? (
           <p className="skill-list-item-summary">{truncateText(result.summary, 80)}</p>
