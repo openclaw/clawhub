@@ -39,7 +39,7 @@ The `{type, temporality, unit}` block from `metrics-info` drives the pipeline:
 
 | `type` | `temporality` | Pipeline |
 |---|---|---|
-| `Gauge` | `null` | Align directly with `avg`/`min`/`max`/`sum`. No rate. |
+| `Gauge` | `null` | Align directly; the function follows the panel's intent. No rate. |
 | `CounterMonotonic` | `Cumulative` | Convert to per-second rate (`align using prom::rate`), then aggregate. |
 | `CounterMonotonic` | `Delta` | Already per-interval. Sum/align directly. |
 | `CounterNonMonotonic` | either | Ambiguous (rate? delta? current value?). Ask the user. |
