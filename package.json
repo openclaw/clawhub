@@ -188,7 +188,7 @@
     "typescript": "6.0.3",
     "undici": "7.29.1",
     "vite": "8.3.3",
-    "vitest": "4.1.11"
+    "vitest": "5.0.3"
   },
   "overrides": {
     "ast-v8-to-istanbul": "1.0.4",
