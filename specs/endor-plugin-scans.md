@@ -103,6 +103,20 @@ drop on a Linux Docker runner.
 Image publication, hosted configuration, and ClawHub deployment remain separate
 manual rollout actions.
 
+The same `Endor Scanner Image` workflow has a manual report-only trial: select one
+frozen `trial-package` instead of `none`. It accepts Discord and Codex 2026.9.9
+from the verified OpenClaw publisher, or community Google OAuth 0.4.0, and checks
+the npm tarball identity and frozen SHA-256 before scanning. Only the official
+packages receive the explicit first-party trust assertion. The Linux job builds
+and checks its pinned Endor image, then runs the existing local plugin CLI with
+ClawScan 0.2.0, Codex 0.142.3 and the worker's pinned SkillSpector revision.
+It uses repository scanner credentials and the configured Endor namespace/API;
+it needs no Test login, admin key, deployment environment or backend job. Any
+valid judge verdict is acceptable, but Endor and the judge must both complete.
+Only bounded redacted reports and worker diagnostics pass the pinned secret
+guard into a seven-day artifact. The trial cannot publish an image or submit
+moderation changes. `none` preserves image publication from `main`.
+
 ### Deployment and rollback order
 
 1. Deploy the additive backend schema and result handlers first. Existing

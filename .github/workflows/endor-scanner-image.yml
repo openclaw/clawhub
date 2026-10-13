@@ -2,14 +2,26 @@ name: Endor Scanner Image
 
 on:
   workflow_dispatch:
+    inputs:
+      trial-package:
+        description: "Publish the image from main, or run one report-only plugin trial"
+        type: choice
+        default: none
+        options:
+          - none
+          - "@openclaw/discord@2026.9.9"
+          - "@openclaw/codex@2026.9.9"
+          - "@jason-vaughan/openclaw-google-oauth@0.4.0"
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (!inputs['trial-package'] || inputs['trial-package'] == 'none')
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -40,3 +52,158 @@ jobs:
           docker push "$IMAGE"
           digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")
           printf 'Set CODEX_SECURITY_SCAN_ENDOR_IMAGE to %s before enabling Endor.\n' "$digest" >> "$GITHUB_STEP_SUMMARY"
+
+  trial:
+    if: inputs['trial-package'] && inputs['trial-package'] != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TRIAL_PACKAGE: ${{ inputs['trial-package'] }}
+      TRIAL_DIR: .artifacts/endor-plugin-trial
+      REPORT_DIR: .artifacts/endor-plugin-report
+      CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: "900000"
+      CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX: "off"
+      SKILLSPECTOR_PROVIDER: openai
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Download and validate one frozen npm artifact
+        run: |
+          set -euo pipefail
+          case "$TRIAL_PACKAGE" in
+            @openclaw/discord@2026.9.9)
+              tarball='@openclaw/discord/-/discord-2026.9.9.tgz'
+              sha256=a81d70af3ab3cf081c74276366c5bc60d46d6e5cbf8452b3f559ee2f68db8e6e ;;
+            @openclaw/codex@2026.9.9)
+              tarball='@openclaw/codex/-/codex-2026.9.9.tgz'
+              sha256=ea5e2d200ab6014ae9f138b369db844d509ead33936cfbca5cc1153ff7755e60 ;;
+            @jason-vaughan/openclaw-google-oauth@0.4.0)
+              tarball='@jason-vaughan/openclaw-google-oauth/-/openclaw-google-oauth-0.4.0.tgz'
+              sha256=5572178dc9ef4ca2d86d39c2de16b55c46e9e947710cdd84af2dd8dea45b3078 ;;
+            *) echo 'Select one frozen trial package' >&2; exit 1 ;;
+          esac
+          mkdir -p "$TRIAL_DIR"
+          curl --fail --location --retry 3 --max-filesize 52428800 \
+            "https://registry.npmjs.org/$tarball" --output "$TRIAL_DIR/plugin.tgz"
+          printf '%s  %s\n' "$sha256" "$TRIAL_DIR/plugin.tgz" | sha256sum --check -
+          bun - <<'JS'
+          import { readFile } from "node:fs/promises";
+          import { parseClawPack } from "./packages/clawhub/src/clawpack.ts";
+          const packed = parseClawPack(await readFile(`${process.env.TRIAL_DIR}/plugin.tgz`));
+          if (`${packed.packageName}@${packed.packageVersion}` !== process.env.TRIAL_PACKAGE || !packed.pluginManifest) {
+            throw new Error("Frozen npm artifact identity or plugin manifest mismatch");
+          }
+          JS
+
+      - name: Build and check pinned Endor image
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://api.endorlabs.com/download/endorlabs/v1.7.1115/binaries/endorctl_v1.7.1115_linux_amd64 \
+            --output scripts/security/endor/endorctl
+          docker build --platform linux/amd64 \
+            --build-arg ENDORCTL_SHA256=4022e91a39d04f852f8a6195a5f98297af6cf2738f4012b1591bc87976136d4b \
+            --tag "clawhub-endor-trial:$GITHUB_SHA" scripts/security/endor
+          image=$(docker image inspect --format '{{.Id}}' "clawhub-endor-trial:$GITHUB_SHA")
+          [[ "$image" =~ ^sha256:[a-f0-9]{64}$ ]]
+          sh scripts/security/check-endor-image.sh "$image"
+          printf 'CODEX_SECURITY_SCAN_ENDOR_IMAGE=%s\n' "$image" >> "$GITHUB_ENV"
+
+      - name: Install pinned Codex, ClawScan and SkillSpector
+        run: |
+          set -euo pipefail
+          npm install --global @openai/codex@0.142.3 @openclaw/clawscan@0.2.0
+          codex --version
+          clawscan --version
+          python -m venv "$RUNNER_TEMP/skillspector-venv"
+          source "$RUNNER_TEMP/skillspector-venv/bin/activate"
+          python -m pip install --upgrade pip
+          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc'
+          echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
+          skillspector --help >/dev/null
+
+      - name: Authenticate Codex CLI
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
+
+      - name: Run the report-only ClawHub plugin profile
+        id: scan
+        env:
+          CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEFAULT_BASE_URL: https://api.openai.com/v1
+          DEFAULT_MODEL: gpt-5.6
+          ENDOR_NAMESPACE: ${{ vars.ENDOR_NAMESPACE }}
+          ENDOR_API: ${{ vars.ENDOR_API }}
+          ENDOR_API_CREDENTIALS_KEY: ${{ secrets.ENDOR_API_CREDENTIALS_KEY }}
+          ENDOR_API_CREDENTIALS_SECRET: ${{ secrets.ENDOR_API_CREDENTIALS_SECRET }}
+        run: |
+          set -euo pipefail
+          trust=()
+          case "$TRIAL_PACKAGE" in
+            @openclaw/discord@2026.9.9|@openclaw/codex@2026.9.9) trust=(--trusted-openclaw) ;;
+          esac
+          bun scripts/security/scan-local-plugins.ts "${trust[@]}" \
+            --out "$TRIAL_DIR/results" "$TRIAL_DIR/plugin.tgz"
+
+      - name: Prepare bounded redacted reports
+        id: report
+        if: ${{ !cancelled() && steps.scan.outcome != 'skipped' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPORT_DIR"
+          cp -R "$TRIAL_DIR/results/diagnostics" "$REPORT_DIR/diagnostics"
+          bun - <<'JS'
+          import { readFile, writeFile } from "node:fs/promises";
+          import { redactWorkerPublicText } from "./scripts/lib/workerRedaction.ts";
+          const reports = JSON.parse(await readFile(`${process.env.TRIAL_DIR}/results/report.json`, "utf8"));
+          // Workspaces contain scanner configuration and dependencies; upload only owned reports.
+          const report = reports.map(({ artifact, workspace, ...result }) => result);
+          await writeFile(`${process.env.REPORT_DIR}/report.json`, JSON.stringify(report, (_key, value) =>
+            typeof value === "string" ? redactWorkerPublicText(value) : value, 2) + "\n");
+          JS
+          [[ -z "$(find "$REPORT_DIR" -type f -size +10485760c -print -quit)" ]] || { echo 'Trial report exceeds 10 MiB' >&2; exit 1; }
+          bytes=$(du --bytes --summarize "$REPORT_DIR" | cut -f1)
+          (( bytes <= 20971520 )) || { echo 'Trial reports exceed 20 MiB' >&2; exit 1; }
+          echo 'artifact-ready=true' >> "$GITHUB_OUTPUT"
+
+      - name: Verify Endor and judge completion
+        if: ${{ !cancelled() && steps.report.outputs.artifact-ready == 'true' }}
+        run: |
+          bun - <<'JS'
+          import { readFile } from "node:fs/promises";
+          const reports = JSON.parse(await readFile(`${process.env.REPORT_DIR}/report.json`, "utf8"));
+          if (reports.length !== 1 || `${reports[0].name}@${reports[0].version}` !== process.env.TRIAL_PACKAGE ||
+              reports[0].status !== "completed" || reports[0].endorAnalysis?.status !== "completed" ||
+              !["benign", "suspicious", "malicious"].includes(reports[0].llmAnalysis?.verdict)) {
+            throw new Error("Trial requires completed Endor and judge results for the selected package; inspect diagnostics");
+          }
+          console.log(`${process.env.TRIAL_PACKAGE}: Endor completed, judge verdict=${reports[0].llmAnalysis.verdict}`);
+          JS
+
+      - name: Scan reports for verified secrets
+        id: report-secret-scan
+        if: ${{ !cancelled() && steps.report.outputs.artifact-ready == 'true' }}
+        run: |
+          docker run --rm -v "$PWD/$REPORT_DIR:/scan:ro" \
+            ghcr.io/trufflesecurity/trufflehog:3.95.5@sha256:56c25710275c4b8d74c4f1346a5e7c606fa7ff4afe996f680b288d0fae3fcd9c \
+            filesystem /scan --only-verified --fail --no-update --github-actions
+
+      - name: Upload redacted trial reports
+        if: ${{ !cancelled() && steps.report-secret-scan.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: endor-plugin-trial-${{ github.run_id }}
+          path: ${{ env.REPORT_DIR }}
+          retention-days: 7
+          if-no-files-found: error
