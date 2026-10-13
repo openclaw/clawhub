@@ -1,89 +1,78 @@
 import { createHash } from "node:crypto";
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
+import { generateEmbedding } from "./embeddings";
 import { MAX_PUBLISH_FILE_BYTES } from "./publishLimits";
-import {
-  finalizeSkillPublishAttempt,
-  publishVersionForUser,
-  stageSkillPublishAttemptForUser,
-  __test,
-} from "./skillPublish";
+import { finalizeSkillPublishAttempt, publishVersionForUser, __test } from "./skillPublish";
 
 vi.mock("./embeddings", () => ({
   generateEmbedding: vi.fn(async () => [0, 1, 2]),
 }));
 
 describe("skillPublish", () => {
-  it.each([
-    { staged: false, failure: "insert" },
-    { staged: true, failure: "insert" },
-    { staged: false, failure: "followup" },
-    { staged: true, failure: "attempt" },
-    { staged: true, failure: "none" },
-  ])("transfers file ownership at persistence ($staged, $failure)", async ({ staged, failure }) => {
-    const events: string[] = [];
-    const markdown = "---\ndescription: Verify durable upload ownership.\n---\n# Ownership proof\n";
-    const ctx = {
-      runQuery: vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) =>
-        getFunctionName(ref) === "users:getByIdInternal"
-          ? { _id: "users:1", handle: "demo", createdAt: 1 }
-          : null,
-      ),
-      runMutation: vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
-        const name = getFunctionName(ref);
-        if (name === "skills:insertVersion") {
-          events.push("insert");
-          if (failure === "insert") throw new Error("insert rejected");
-          return { skillId: "skills:demo", versionId: "skillVersions:demo" };
-        }
-        if (name === "publishAttempts:createSkillPublishAttemptInternal") {
-          events.push("attempt");
-          if (failure === "attempt") throw new Error("attempt failed");
-          return { attemptId: "publishAttempts:demo", status: "pending_checks" };
-        }
-        if (name === "skills:discardPendingPublicationInternal") events.push("discard");
-        return null;
-      }),
-      scheduler: {
-        runAfter: vi.fn(async () => {
-          throw new Error("followup failed");
+  it.each([{ failure: "insert" }, { failure: "attempt" }, { failure: "none" }])(
+    "transfers file ownership at persistence ($failure)",
+    async ({ failure }) => {
+      const events: string[] = [];
+      const markdown =
+        "---\ndescription: Verify durable upload ownership.\n---\n# Ownership proof\n";
+      const ctx = {
+        runQuery: vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) =>
+          getFunctionName(ref) === "users:getByIdInternal"
+            ? { _id: "users:1", handle: "demo", createdAt: 1 }
+            : null,
+        ),
+        runMutation: vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
+          const name = getFunctionName(ref);
+          if (name === "skills:insertVersion") {
+            events.push("insert");
+            if (failure === "insert") throw new Error("insert rejected");
+            return { skillId: "skills:demo", versionId: "skillVersions:demo" };
+          }
+          if (name === "publishAttempts:createSkillPublishAttemptInternal") {
+            events.push("attempt");
+            if (failure === "attempt") throw new Error("attempt failed");
+            return { attemptId: "publishAttempts:demo", status: "pending_checks" };
+          }
+          if (name === "skills:discardPendingPublicationInternal") events.push("discard");
+          return null;
         }),
-      },
-      storage: { get: vi.fn(async () => new Blob([markdown])) },
-    };
-    const result = publishVersionForUser(
-      ctx as never,
-      "users:1" as never,
-      {
-        slug: "ownership-proof",
-        displayName: "Ownership Proof",
-        version: "1.0.0",
-        changelog: "Initial release",
-        files: [file("_storage:skill", "SKILL.md", markdown.length, "text/markdown")],
-      },
-      {
-        bypassGitHubAccountAge: true,
-        bypassQualityGate: true,
-        skipWebhook: true,
-        stagePrePublicationChecks: staged,
-        onFilesPersisted: () => {
-          events.push("persisted");
+        scheduler: { runAfter: vi.fn() },
+        storage: { get: vi.fn(async () => new Blob([markdown])) },
+      };
+      const result = publishVersionForUser(
+        ctx as never,
+        "users:1" as never,
+        {
+          slug: "ownership-proof",
+          displayName: "Ownership Proof",
+          version: "1.0.0",
+          changelog: "Initial release",
+          files: [file("_storage:skill", "SKILL.md", markdown.length, "text/markdown")],
         },
-      },
-    );
-    if (failure === "none") await expect(result).resolves.toMatchObject({ status: "pending" });
-    else
-      await expect(result).rejects.toThrow(
-        failure === "insert" ? "insert rejected" : `${failure} failed`,
+        {
+          bypassGitHubAccountAge: true,
+          bypassQualityGate: true,
+          skipWebhook: true,
+          onFilesPersisted: () => {
+            events.push("persisted");
+          },
+        },
       );
-    expect(events).toEqual(
-      failure === "insert"
-        ? ["insert"]
-        : staged
-          ? ["insert", "persisted", "attempt", ...(failure === "attempt" ? ["discard"] : [])]
-          : ["insert", "persisted"],
-    );
-  });
+      if (failure === "none") await expect(result).resolves.toMatchObject({ status: "pending" });
+      else
+        await expect(result).rejects.toThrow(
+          failure === "insert" ? "insert rejected" : `${failure} failed`,
+        );
+      expect(events).toEqual(
+        failure === "insert"
+          ? ["insert"]
+          : ["insert", "persisted", "attempt", ...(failure === "attempt" ? ["discard"] : [])],
+      );
+      // Publication followups (scans, webhooks) belong to finalization, after the checks pass.
+      expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+    },
+  );
 
   it("normalizes agents/openai.yaml presentation metadata and hosts its icon", async () => {
     const skillMarkdown =
@@ -103,15 +92,14 @@ describe("skillPublish", () => {
       if ("version" in args && "embedding" in args) {
         return { skillId: "skills:demo", versionId: "skillVersions:demo" };
       }
+      if ("skillVersionId" in args) return PENDING_ATTEMPT;
       return null;
     });
     const ctx = {
       runAction: vi.fn(async () => true),
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 })
-        .mockResolvedValueOnce(null),
+      runQuery: routeQueries({
+        "users:getByIdInternal": { _id: "users:1", handle: "demo", createdAt: 1 },
+      }),
       runMutation,
       scheduler: { runAfter: vi.fn() },
       storage: {
@@ -176,23 +164,23 @@ describe("skillPublish", () => {
       ["_storage:skill", new Blob([skillMarkdown], { type: "text/markdown" })],
       ["_storage:openai", new Blob([openAiYaml], { type: "application/yaml" })],
     ]);
-    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
-      "version" in args && "embedding" in args
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("skillVersionId" in args) return PENDING_ATTEMPT;
+      return "version" in args && "embedding" in args
         ? { skillId: "skills:demo", versionId: "skillVersions:v2" }
-        : null,
-    );
+        : null;
+    });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce({
+      runQuery: routeQueries({
+        "skills:getSkillForPublishPreflightInternal": {
           _id: "skills:demo",
           slug: "demo-skill",
           displayName: "OpenAI Demo v1",
           summary: "OpenAI summary v1.",
           latestVersionId: "skillVersions:v1",
-        })
-        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 })
-        .mockResolvedValueOnce({
+        },
+        "users:getByIdInternal": { _id: "users:1", handle: "demo", createdAt: 1 },
+        "skills:getVersionByIdInternal": {
           _id: "skillVersions:v1",
           parsed: {
             frontmatter: {},
@@ -203,7 +191,8 @@ describe("skillPublish", () => {
               summarySource: "openai",
             },
           },
-        }),
+        },
+      }),
       runMutation,
       scheduler: { runAfter: vi.fn() },
       storage: {
@@ -487,13 +476,13 @@ describe("skillPublish", () => {
           embeddingId: "skillEmbeddings:long-name",
         };
       }
+      if ("skillVersionId" in args) return PENDING_ATTEMPT;
       return null;
     });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runQuery: routeQueries({
+        "users:getByIdInternal": { _id: "users:1", handle: "demo", createdAt: 1 },
+      }),
       runMutation,
       scheduler: { runAfter: vi.fn() },
       storage: {
@@ -558,13 +547,13 @@ description: Automation workflow for recurring reports.
           embeddingId: "skillEmbeddings:demo",
         };
       }
+      if ("skillVersionId" in args) return PENDING_ATTEMPT;
       return null;
     });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runQuery: routeQueries({
+        "users:getByIdInternal": { _id: "users:1", handle: "demo", createdAt: 1 },
+      }),
       runMutation,
       scheduler: { runAfter: vi.fn() },
       storage: {
@@ -610,40 +599,25 @@ description: Automation workflow for recurring reports.
     expect(result).toEqual({
       skillId: "skills:demo",
       versionId: "skillVersions:demo",
-      embeddingId: "skillEmbeddings:demo",
-      status: "published",
+      status: "pending",
       slug: "automation-helper",
       version: "1.0.0",
-      publicationStatus: "published",
+      publicationStatus: "pending",
+      attemptId: PENDING_ATTEMPT.attemptId,
     });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         categories: ["other"],
         topics: undefined,
+        publicationStatus: "pending",
       }),
     );
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
-      versionId: "skillVersions:demo",
-      source: "publish",
-    });
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(2_000, expect.anything(), {
-      versionId: "skillVersions:demo",
-      source: "publish",
-      preserveActiveJob: true,
-      preserveExistingJob: true,
-    });
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(15_000, expect.anything(), {
-      versionId: "skillVersions:demo",
-      source: "publish",
-      preserveActiveJob: true,
-      preserveExistingJob: true,
-    });
+    // Security scans and webhooks are scheduled only by finalization, after the checks pass.
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it("resolves the target publisher handle before scheduling publish webhooks", async () => {
-    const previousWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
-    process.env.DISCORD_WEBHOOK_URL = "https://example.invalid/webhook";
+  it("stores the target publisher handle for the finalization webhook", async () => {
     const storedFiles = new Map([
       [
         "_storage:skill",
@@ -662,24 +636,14 @@ description: Org helper.
           embeddingId: "skillEmbeddings:demo",
         };
       }
+      if ("skillVersionId" in args) return PENDING_ATTEMPT;
       return null;
     });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ _id: "users:1", handle: "actor", createdAt: 1 })
-        .mockResolvedValueOnce({ _id: "publishers:org", handle: "org-demo" })
-        .mockResolvedValueOnce({
-          skill: {
-            _id: "skills:demo",
-            slug: "org-helper",
-            displayName: "Org Helper",
-            summary: "Org helper",
-            tags: {},
-          },
-          owner: { handle: "org-demo" },
-        }),
+      runQuery: routeQueries({
+        "users:getByIdInternal": { _id: "users:1", handle: "actor", createdAt: 1 },
+        "publishers:getByIdInternal": { _id: "publishers:org", handle: "org-demo" },
+      }),
       runMutation,
       scheduler: { runAfter: vi.fn() },
       storage: {
@@ -690,46 +654,40 @@ description: Org helper.
       },
     };
 
-    try {
-      await publishVersionForUser(
-        ctx as never,
-        "users:1" as never,
-        {
-          slug: "org-helper",
-          displayName: "Org Helper",
-          version: "1.0.0",
-          changelog: "Initial release",
-          files: [
-            {
-              path: "SKILL.md",
-              size: 70,
-              storageId: "_storage:skill" as never,
-              sha256: "a".repeat(64),
-              contentType: "text/markdown",
-            },
-          ],
-        },
-        {
-          bypassGitHubAccountAge: true,
-          bypassQualityGate: true,
-          ownerPublisherId: "publishers:org" as never,
-        },
-      );
-
-      await new Promise((resolve) => {
-        setTimeout(resolve, 0);
-      });
-      expect(ctx.runQuery).toHaveBeenCalledWith(expect.anything(), {
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
         slug: "org-helper",
-        ownerHandle: "org-demo",
-      });
-    } finally {
-      if (previousWebhookUrl === undefined) {
-        delete process.env.DISCORD_WEBHOOK_URL;
-      } else {
-        process.env.DISCORD_WEBHOOK_URL = previousWebhookUrl;
-      }
-    }
+        displayName: "Org Helper",
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [
+          {
+            path: "SKILL.md",
+            size: 70,
+            storageId: "_storage:skill" as never,
+            sha256: "a".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        ownerPublisherId: "publishers:org" as never,
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        skillVersionId: "skillVersions:demo",
+        ownerPublisherId: "publishers:org",
+        followup: { skipWebhook: undefined, ownerHandle: "org-demo" },
+      }),
+    );
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("uses Other when an existing skill has a retired stored category", async () => {
@@ -751,12 +709,12 @@ description: Research helper for literature reviews.
           embeddingId: "skillEmbeddings:demo",
         };
       }
+      if ("skillVersionId" in args) return PENDING_ATTEMPT;
       return null;
     });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce({
+      runQuery: routeQueries({
+        "skills:getSkillForPublishPreflightInternal": {
           _id: "skills:demo",
           slug: "research-helper",
           displayName: "Research Helper",
@@ -764,8 +722,9 @@ description: Research helper for literature reviews.
           ownerUserId: "users:1",
           latestVersionSummary: { version: "0.9.0" },
           categories: ["retired-category"],
-        })
-        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+        },
+        "users:getByIdInternal": { _id: "users:1", handle: "demo", createdAt: 1 },
+      }),
       runMutation,
       scheduler: { runAfter: vi.fn() },
       storage: {
@@ -828,12 +787,12 @@ description: Research helper for literature reviews.
           embeddingId: "skillEmbeddings:demo",
         };
       }
+      if ("skillVersionId" in args) return PENDING_ATTEMPT;
       return null;
     });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce({
+      runQuery: routeQueries({
+        "skills:getSkillForPublishPreflightInternal": {
           _id: "skills:demo",
           slug: "research-helper",
           displayName: "Research Helper",
@@ -841,8 +800,9 @@ description: Research helper for literature reviews.
           ownerUserId: "users:1",
           latestVersionSummary: { version: "0.9.0" },
           categories: ["development"],
-        })
-        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+        },
+        "users:getByIdInternal": { _id: "users:1", handle: "demo", createdAt: 1 },
+      }),
       runMutation,
       scheduler: { runAfter: vi.fn() },
       storage: {
@@ -887,7 +847,8 @@ description: Research helper for literature reviews.
     );
   });
 
-  it("staged publishes create a real pending version and return legacy-compatible ids", async () => {
+  it("publishes create a real pending version and return legacy-compatible ids", async () => {
+    vi.mocked(generateEmbedding).mockClear();
     const storedFiles = new Map([
       [
         "_storage:skill",
@@ -931,7 +892,7 @@ description: Security scanner smoke fixture.
       },
     };
 
-    const result = await stageSkillPublishAttemptForUser(
+    const result = await publishVersionForUser(
       ctx as never,
       "users:1" as never,
       {
@@ -990,6 +951,8 @@ description: Security scanner smoke fixture.
       }),
     );
     expect(scheduler.runAfter).not.toHaveBeenCalled();
+    // AI enrichment of unscanned content is deferred to finalization.
+    expect(generateEmbedding).not.toHaveBeenCalled();
   });
 
   it("cleans up the pending version when staged publish attempt creation fails", async () => {
@@ -1037,7 +1000,7 @@ description: Security scanner smoke fixture.
     };
 
     await expect(
-      stageSkillPublishAttemptForUser(
+      publishVersionForUser(
         ctx as never,
         "users:1" as never,
         {
@@ -1098,7 +1061,7 @@ description: Security scanner smoke fixture.
     };
 
     await expect(
-      stageSkillPublishAttemptForUser(
+      publishVersionForUser(
         ctx as never,
         "users:1" as never,
         {
@@ -1145,7 +1108,7 @@ description: Security scanner smoke fixture.
     };
 
     await expect(
-      stageSkillPublishAttemptForUser(
+      publishVersionForUser(
         ctx as never,
         "users:1" as never,
         {
@@ -1766,6 +1729,14 @@ description: Expert guidance for sushi-rolls.
     expect(quality.decision).toBe("pass");
   });
 });
+
+const PENDING_ATTEMPT = { attemptId: "publishAttempts:demo", status: "pending_checks" };
+
+function routeQueries(routes: Record<string, unknown>) {
+  return vi.fn(
+    async (ref: Parameters<typeof getFunctionName>[0]) => routes[getFunctionName(ref)] ?? null,
+  );
+}
 
 function file(storageId: string, path: string, size: number, contentType: string) {
   return {

@@ -11,10 +11,12 @@ read_when:
 Publishing sends a skill folder or plugin package to ClawHub under the owner you
 choose. ClawHub checks that your token can publish for that owner, validates the
 metadata, name, version, files, and source information, then stores the release
-and starts automated security checks.
+as pending and runs automated security checks on that exact artifact.
 
-If validation fails, nothing is published. New releases may also stay out of
-normal install and download surfaces until review finishes.
+If validation fails, nothing is published. A pending release stays out of
+search, install, and download surfaces until the security checks pass. If the
+checks find malicious content, fail repeatedly, or time out, the release is not
+published.
 
 ## Skills
 

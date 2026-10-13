@@ -677,7 +677,6 @@ type PackagePublishAuthContext =
     };
 type PackageTrustedPublisherDoc = Doc<"packageTrustedPublishers">;
 type PackagePublishOptions = {
-  stagePrePublicationChecks?: boolean;
   requireSecurityChecks?: boolean;
   onFilesAdopted?: () => void;
 };
@@ -9249,22 +9248,20 @@ async function publishPackageImpl(
   );
   const publishedArtifactSha256 = family === "claw" ? payload.artifact?.sha256 : undefined;
   const attemptArtifactFingerprint = publishedArtifactSha256 ?? integritySha256;
-  if (options.stagePrePublicationChecks) {
-    // Settle retries before the scans, Plugin Inspector, and classification run again.
-    const settled = await settleExistingStagedPackagePublication(ctx, {
-      auth,
-      existingPackage,
-      family,
-      name,
-      version,
-      actorUserId,
-      ownerUserId,
-      ownerPublisherId,
-      artifactFingerprint: attemptArtifactFingerprint,
-      publishedArtifactSha256,
-    });
-    if (settled) return settled;
-  }
+  // Settle retries before the scans, Plugin Inspector, and classification run again.
+  const settled = await settleExistingStagedPackagePublication(ctx, {
+    auth,
+    existingPackage,
+    family,
+    name,
+    version,
+    actorUserId,
+    ownerUserId,
+    ownerPublisherId,
+    artifactFingerprint: attemptArtifactFingerprint,
+    publishedArtifactSha256,
+  });
+  if (settled) return settled;
   const legacyZipBytes = buildDeterministicPackageZip(legacyZipEntries);
   const legacyZipSha256 = await sha256Hex(legacyZipBytes);
 
@@ -9649,229 +9646,125 @@ async function publishPackageImpl(
       toPackageInspectorPublishResponseFinding(finding, inspectorResult.metadata),
     ) ?? [];
 
-  if (options.stagePrePublicationChecks) {
-    await reverifyOpenClawAuthorizationBeforePublish(auth, {
-      name,
-      version,
-      inventoryDigest,
-    });
-    const pendingResult = await insertReleaseOwningLegacyZip(() =>
-      runMutationRef<{
-        ok: true;
-        packageId: Id<"packages">;
-        releaseId: Id<"packageReleases">;
-        publicationStatus?: "pending" | "published";
-        createdNewParent?: boolean;
-      }>(ctx, internalRefs.packages.insertReleaseInternal, {
-        ...packageInsertArgs,
-        publicationStatus: "pending",
-      }),
-    );
-
-    const staged = await runMutationRef<{
-      attemptId: Id<"publishAttempts">;
-      status: string;
-      result?: { ok: true; packageId: Id<"packages">; releaseId: Id<"packageReleases"> };
-    }>(ctx, internalRefs.publishAttempts.createPackagePublishAttemptInternal, {
-      userId: actorUserId,
-      ownerUserId,
-      ownerPublisherId,
-      packageId: pendingResult.packageId,
-      packageReleaseId: pendingResult.releaseId,
-      createdNewParent: pendingResult.createdNewParent,
-      name,
-      displayName,
-      version,
-      idempotencyKey: buildPackagePublishAttemptIdempotencyKey({
-        actorUserId,
-        ownerPublisherId,
-        ownerUserId,
-        name,
-        version,
-        artifactFingerprint: attemptArtifactFingerprint,
-      }),
-      artifactFingerprint: attemptArtifactFingerprint,
-      files,
-      clawpackStorageId: packageInsertArgs.clawpackStorageId,
-      scanContext: buildPackagePublishAttemptScanContext(packageInsertArgs),
-      packageFollowup: stripUndefinedForStoredAttempt({
-        ownerUserId,
-        ownerPublisherId,
-        packageName: name,
-        version,
-        inspectorWarnings: inspectorResult?.warnings ?? [],
-        inspectorMetadata: inspectorResult?.metadata,
-        trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
-        trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
-        trustedPublishAuthorizationVersion:
-          auth.kind === "github-actions" ? auth.publishToken.authorizationVersion : undefined,
-        manualOverrideAudit:
-          auth.kind === "user" && existingTrustedPublisher && manualOverrideReason
-            ? {
-                actorUserId,
-                version,
-                reason: manualOverrideReason,
-                trustedPublisher: {
-                  provider: existingTrustedPublisher.provider,
-                  repository: existingTrustedPublisher.repository,
-                  workflowFilename: existingTrustedPublisher.workflowFilename,
-                  environment: existingTrustedPublisher.environment,
-                },
-              }
-            : undefined,
-        githubActionsAudit:
-          auth.kind === "github-actions"
-            ? {
-                actorUserId,
-                version,
-                repository: auth.publishToken.repository,
-                workflowFilename: auth.publishToken.workflowFilename,
-                environment: auth.publishToken.environment,
-                runId: auth.publishToken.runId,
-                runAttempt: auth.publishToken.runAttempt,
-                sha: auth.publishToken.sha,
-              }
-            : undefined,
-      }),
-    }).catch(async (error) => {
-      await runMutationRef(ctx, internalRefs.packages.discardPendingPackagePublicationInternal, {
-        packageId: pendingResult.packageId,
-        releaseId: pendingResult.releaseId,
-        createdNewParent: pendingResult.createdNewParent,
-      });
-      throw error;
-    });
-    if (auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2) {
-      await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
-        tokenId: auth.publishToken._id,
-      });
-    }
-    if (staged.status === "finalized" && staged.result) {
-      const finalizedResult = {
-        ...staged.result,
-        publicationStatus: "published" as const,
-        ...(publishedArtifactSha256 ? { artifactSha256: publishedArtifactSha256 } : {}),
-      };
-      return inspectorFindings.length > 0
-        ? { ...finalizedResult, inspectorFindings }
-        : finalizedResult;
-    }
-
-    return {
-      ok: true as const,
-      status: "pending" as const,
-      packageId: pendingResult.packageId,
-      releaseId: pendingResult.releaseId,
-      ...(publishedArtifactSha256 ? { artifactSha256: publishedArtifactSha256 } : {}),
-      publicationStatus: "pending" as const,
-      attemptId: staged.attemptId,
-      packageName: name,
-      version,
-      ...(inspectorFindings.length > 0 ? { inspectorFindings } : {}),
-    };
-  }
-
   await reverifyOpenClawAuthorizationBeforePublish(auth, {
     name,
     version,
     inventoryDigest,
   });
-  const publishResult = await insertReleaseOwningLegacyZip(() =>
+  const pendingResult = await insertReleaseOwningLegacyZip(() =>
     runMutationRef<{
       ok: true;
       packageId: Id<"packages">;
       releaseId: Id<"packageReleases">;
-    }>(ctx, internalRefs.packages.insertReleaseInternal, packageInsertArgs),
+      publicationStatus?: "pending" | "published";
+      createdNewParent?: boolean;
+    }>(ctx, internalRefs.packages.insertReleaseInternal, {
+      ...packageInsertArgs,
+      publicationStatus: "pending",
+    }),
   );
-  if (inspectorResult?.warnings.length) {
-    const insertFindingsResult = await runMutationRef<{
-      ok: true;
-      inserted: number;
-      shouldEmailOwner: boolean;
-    }>(ctx, internalRefs.packages.insertPackageInspectorWarningsInternal, {
-      packageId: publishResult.packageId,
-      releaseId: publishResult.releaseId,
+
+  const staged = await runMutationRef<{
+    attemptId: Id<"publishAttempts">;
+    status: string;
+    result?: { ok: true; packageId: Id<"packages">; releaseId: Id<"packageReleases"> };
+  }>(ctx, internalRefs.publishAttempts.createPackagePublishAttemptInternal, {
+    userId: actorUserId,
+    ownerUserId,
+    ownerPublisherId,
+    packageId: pendingResult.packageId,
+    packageReleaseId: pendingResult.releaseId,
+    createdNewParent: pendingResult.createdNewParent,
+    name,
+    displayName,
+    version,
+    idempotencyKey: buildPackagePublishAttemptIdempotencyKey({
+      actorUserId,
+      ownerPublisherId,
+      ownerUserId,
+      name,
+      version,
+      artifactFingerprint: attemptArtifactFingerprint,
+    }),
+    artifactFingerprint: attemptArtifactFingerprint,
+    files,
+    clawpackStorageId: packageInsertArgs.clawpackStorageId,
+    scanContext: buildPackagePublishAttemptScanContext(packageInsertArgs),
+    packageFollowup: stripUndefinedForStoredAttempt({
       ownerUserId,
       ownerPublisherId,
       packageName: name,
       version,
-      scanSource: "publish",
-      inspectorVersion: inspectorResult.metadata?.inspectorVersion,
-      targetOpenClawVersion: inspectorResult.metadata?.targetOpenClawVersion,
-      findings: inspectorResult.warnings,
+      inspectorWarnings: inspectorResult?.warnings ?? [],
+      inspectorMetadata: inspectorResult?.metadata,
+      trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
+      trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
+      trustedPublishAuthorizationVersion:
+        auth.kind === "github-actions" ? auth.publishToken.authorizationVersion : undefined,
+      manualOverrideAudit:
+        auth.kind === "user" && existingTrustedPublisher && manualOverrideReason
+          ? {
+              actorUserId,
+              version,
+              reason: manualOverrideReason,
+              trustedPublisher: {
+                provider: existingTrustedPublisher.provider,
+                repository: existingTrustedPublisher.repository,
+                workflowFilename: existingTrustedPublisher.workflowFilename,
+                environment: existingTrustedPublisher.environment,
+              },
+            }
+          : undefined,
+      githubActionsAudit:
+        auth.kind === "github-actions"
+          ? {
+              actorUserId,
+              version,
+              repository: auth.publishToken.repository,
+              workflowFilename: auth.publishToken.workflowFilename,
+              environment: auth.publishToken.environment,
+              runId: auth.publishToken.runId,
+              runAttempt: auth.publishToken.runAttempt,
+              sha: auth.publishToken.sha,
+            }
+          : undefined,
+    }),
+  }).catch(async (error) => {
+    await runMutationRef(ctx, internalRefs.packages.discardPendingPackagePublicationInternal, {
+      packageId: pendingResult.packageId,
+      releaseId: pendingResult.releaseId,
+      createdNewParent: pendingResult.createdNewParent,
     });
-    if (insertFindingsResult.shouldEmailOwner) {
-      try {
-        await runActionRef(ctx, internalRefs.packages.sendPackageInspectorFindingsEmailInternal, {
-          packageId: publishResult.packageId,
-          releaseId: publishResult.releaseId,
-        });
-      } catch (error) {
-        console.error("Package Inspector findings email failed", error);
-      }
-    }
-  }
-
+    throw error;
+  });
   if (auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2) {
     await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
       tokenId: auth.publishToken._id,
     });
   }
-  if (auth.kind === "user" && existingTrustedPublisher && manualOverrideReason) {
-    await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
-      actorUserId,
-      action: "package.publish.manual_override",
-      targetType: "package",
-      targetId: String(publishResult.packageId),
-      metadata: {
-        version,
-        reason: manualOverrideReason,
-        trustedPublisher: {
-          provider: existingTrustedPublisher.provider,
-          repository: existingTrustedPublisher.repository,
-          workflowFilename: existingTrustedPublisher.workflowFilename,
-          environment: existingTrustedPublisher.environment,
-        },
-      },
-    });
-  }
-  if (auth.kind === "github-actions") {
-    await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
-      actorUserId,
-      action: "package.publish.github_actions",
-      targetType: "package",
-      targetId: String(publishResult.packageId),
-      metadata: {
-        version,
-        repository: auth.publishToken.repository,
-        workflowFilename: auth.publishToken.workflowFilename,
-        environment: auth.publishToken.environment,
-        runId: auth.publishToken.runId,
-        runAttempt: auth.publishToken.runAttempt,
-        sha: auth.publishToken.sha,
-      },
-    });
+  if (staged.status === "finalized" && staged.result) {
+    const finalizedResult = {
+      ...staged.result,
+      publicationStatus: "published" as const,
+      ...(publishedArtifactSha256 ? { artifactSha256: publishedArtifactSha256 } : {}),
+    };
+    return inspectorFindings.length > 0
+      ? { ...finalizedResult, inspectorFindings }
+      : finalizedResult;
   }
 
-  await runAfterRef(
-    ctx,
-    INITIAL_PACKAGE_VT_SCAN_DELAY_MS,
-    internalRefs.vt.scanPackageReleaseWithVirusTotal,
-    {
-      releaseId: publishResult.releaseId,
-    },
-  );
-  await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
-    releaseId: publishResult.releaseId,
-    source: "publish",
-  });
-
-  const publishedResult = {
-    ...publishResult,
-    publicationStatus: "published" as const,
+  return {
+    ok: true as const,
+    status: "pending" as const,
+    packageId: pendingResult.packageId,
+    releaseId: pendingResult.releaseId,
     ...(publishedArtifactSha256 ? { artifactSha256: publishedArtifactSha256 } : {}),
+    publicationStatus: "pending" as const,
+    attemptId: staged.attemptId,
+    packageName: name,
+    version,
+    ...(inspectorFindings.length > 0 ? { inspectorFindings } : {}),
   };
-  return inspectorFindings.length > 0 ? { ...publishedResult, inspectorFindings } : publishedResult;
 }
 
 type ExistingPackagePublishAttempt = {
@@ -10077,8 +9970,6 @@ export const publishPackageForUserInternal = internalAction({
   handler: async (ctx, args) => {
     return await withRequestPackageStorage(ctx, args.requestStorageIds, (onFilesAdopted) =>
       publishPackageImpl(ctx, { kind: "user", actorUserId: args.actorUserId }, args.payload, {
-        stagePrePublicationChecks:
-          args.requireSecurityChecks || stagedPrePublicationPublishesEnabled(),
         requireSecurityChecks: args.requireSecurityChecks,
         onFilesAdopted,
       }),
@@ -10100,16 +9991,9 @@ export const publishRelease: ReturnType<typeof action> = action({
       throw new ConvexError("Claw packages must use the exact-artifact HTTP publish flow");
     }
     const { userId } = await requireUserFromAction(ctx);
-    const stagePrePublicationChecks = stagedPrePublicationPublishesEnabled();
-    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload, {
-      stagePrePublicationChecks,
-    });
+    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload);
   },
 });
-
-function stagedPrePublicationPublishesEnabled() {
-  return process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES === "1";
-}
 
 export const finalizePackagePublishAttemptInternal = internalAction({
   args: {
@@ -10286,8 +10170,6 @@ export const publishPackageForTrustedPublisherInternal = internalAction({
       }
       return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload, {
         onFilesAdopted,
-        stagePrePublicationChecks:
-          publishToken.authorizationVersion === 2 || stagedPrePublicationPublishesEnabled(),
       });
     });
   },

@@ -209,8 +209,7 @@ worker instead of the production pool.
 
 For automatic dispatch, configure the existing GitHub App integration on staging
 (`GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY`), then set
-`SECURITY_SCAN_EVENT_DISPATCH_ENABLED=1` and
-`CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES=1`. Keep `CLAWHUB_DISABLE_CRONS=1`; upload
+`SECURITY_SCAN_EVENT_DISPATCH_ENABLED=1`. Keep `CLAWHUB_DISABLE_CRONS=1`; upload
 and queue events start workers through Convex's existing scheduled actions.
 Staging dispatch payloads carry `environment: staging`. The workflows on `main`
 relay these events to the same workflow on `staging`, using only a job-scoped

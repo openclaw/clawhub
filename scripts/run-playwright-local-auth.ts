@@ -643,7 +643,6 @@ async function main() {
     { name: "CLAWHUB_EXPERIMENTAL_CLAWS", value: "1" },
     { name: "CLAWHUB_SKILLS_SH_ROLLOUT_MODE", value: "test" },
     { name: "CLAWHUB_EMAIL_CAPTURE_FILE", value: e2eEnv.CLAWHUB_EMAIL_CAPTURE_FILE ?? "" },
-    { name: "CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES", value: "1" },
     { name: "DEV_AUTH_CONVEX_DEPLOYMENT", value: localAuthDeployment },
     { name: "DEV_AUTH_ENABLED", value: "1" },
     { name: "JWKS", value: authKeys.JWKS },

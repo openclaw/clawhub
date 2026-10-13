@@ -153,49 +153,20 @@ export type PublishOptions = {
   // publishes (including older CLIs that never pass this flag) can never
   // accidentally transfer ownership.
   migrateOwner?: boolean;
-  stagePrePublicationChecks?: boolean;
   skillPublishUploadTickets?: Id<"skillPublishUploadTickets">[];
   // Called synchronously once a pending or published version owns the files.
   // Later failures belong to publication compensation, not request upload cleanup.
   onFilesPersisted?: () => void;
 };
 
-type InternalPublishOptions = PublishOptions;
-
+// Every skill publish stages a pending version and a publish attempt. The version becomes
+// public only after the pre-publication checks pass on this exact artifact; scanner failures
+// and timeouts leave it pending or failed, never published.
 export async function publishVersionForUser(
   ctx: ActionCtx,
   userId: Id<"users">,
   args: PublishVersionArgs,
   options: PublishOptions = {},
-): Promise<SkillPublishResult> {
-  return await publishVersionForUserInternal(ctx, userId, args, {
-    ...options,
-    stagePrePublicationChecks:
-      options.stagePrePublicationChecks ?? stagedPrePublicationPublishesEnabled(),
-  });
-}
-
-export async function stageSkillPublishAttemptForUser(
-  ctx: ActionCtx,
-  userId: Id<"users">,
-  args: PublishVersionArgs,
-  options: PublishOptions & { stagePrePublicationChecks?: boolean } = {},
-): Promise<SkillPublishResult> {
-  return await publishVersionForUserInternal(ctx, userId, args, {
-    ...options,
-    stagePrePublicationChecks: options.stagePrePublicationChecks ?? true,
-  });
-}
-
-function stagedPrePublicationPublishesEnabled() {
-  return process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES === "1";
-}
-
-async function publishVersionForUserInternal(
-  ctx: ActionCtx,
-  userId: Id<"users">,
-  args: PublishVersionArgs,
-  options: InternalPublishOptions,
 ): Promise<SkillPublishResult> {
   const version = args.version.trim();
   // Normalize first so we can look up the existing skill before deciding
@@ -222,7 +193,7 @@ async function publishVersionForUserInternal(
     sourceOwnerPublisherId: options.sourceOwnerPublisherId,
     migrateOwner: options.migrateOwner,
   })) as Doc<"skills"> | null;
-  if (options.stagePrePublicationChecks && existingSkill && !existingSkill.softDeletedAt) {
+  if (existingSkill && !existingSkill.softDeletedAt) {
     const existingVersion = (await ctx.runQuery(
       internal.skills.getVersionBySkillAndVersionInternal,
       {
@@ -236,22 +207,20 @@ async function publishVersionForUserInternal(
       );
     }
   }
-  if (options.stagePrePublicationChecks) {
-    const existingAttempt = (await ctx.runQuery(
-      internal.publishAttempts.findExistingPublishAttemptForArtifactInternal,
-      {
-        kind: "skill",
-        slug: normalizedSlug,
-        version,
-        userId,
-        ownerPublisherId: options.ownerPublisherId,
-      },
-    )) as { attemptId: Id<"publishAttempts"> } | null;
-    if (existingAttempt) {
-      throw new ConvexError(
-        `Version ${version} already exists. Increment the version number and try again.`,
-      );
-    }
+  const existingAttempt = (await ctx.runQuery(
+    internal.publishAttempts.findExistingPublishAttemptForArtifactInternal,
+    {
+      kind: "skill",
+      slug: normalizedSlug,
+      version,
+      userId,
+      ownerPublisherId: options.ownerPublisherId,
+    },
+  )) as { attemptId: Id<"publishAttempts"> } | null;
+  if (existingAttempt) {
+    throw new ConvexError(
+      `Version ${version} already exists. Increment the version number and try again.`,
+    );
   }
   const isNewSkill = !existingSkill;
 
@@ -364,17 +333,8 @@ async function publishVersionForUserInternal(
     slug,
   });
   displayName = presentation.displayName;
-  const shouldDeferAiEnrichment = options.stagePrePublicationChecks === true;
-  const summary =
-    publisherSummary ||
-    (shouldDeferAiEnrichment
-      ? (presentation.summary ?? existingSkill?.summary ?? "")
-      : await generateSkillSummary({
-          slug,
-          displayName,
-          readmeText,
-          currentSummary: presentation.summary ?? existingSkill?.summary ?? undefined,
-        }));
+  // AI summary, changelog, and embedding generation run at finalization, after the checks pass.
+  const summary = publisherSummary || (presentation.summary ?? existingSkill?.summary ?? "");
 
   let qualityAssessment: QualityAssessment | null = null;
   if (isNewSkill && !options.bypassQualityGate) {
@@ -426,19 +386,6 @@ async function publishVersionForUserInternal(
 
   const metadata = mergeSourceIntoMetadata(frontmatterMetadata, args.source, qualityAssessment);
 
-  const fileContents: Array<{ path: string; content: string }> = [
-    { path: readmeFile.path, content: readmeText },
-  ];
-  for (const file of publishFiles) {
-    if (!file.path || file.storageId === readmeFile.storageId) continue;
-    const content = await fetchPreviewText(ctx, file.storageId);
-    if (content === null) continue;
-    fileContents.push({ path: file.path, content });
-  }
-
-  const otherFiles = fileContents
-    .filter((file) => !file.path.toLowerCase().endsWith(".md"))
-    .slice(0, MAX_FILES_FOR_EMBEDDING);
   let categories: string[];
   let topics: string[];
   try {
@@ -459,36 +406,9 @@ async function publishVersionForUserInternal(
     files: publishFiles,
   });
 
-  const embeddingText = buildEmbeddingText({
-    frontmatter,
-    readme: readmeText,
-    otherFiles,
-  });
-  const fingerprintPromise = buildPublishSourceFingerprint(
+  const fingerprint = await buildPublishSourceFingerprint(
     publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
   );
-
-  const changelogPromise =
-    changelogSource === "user" || shouldDeferAiEnrichment
-      ? Promise.resolve(suppliedChangelog)
-      : generateChangelogForPublish(ctx, {
-          slug,
-          version,
-          readmeText,
-          files: publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
-        });
-
-  const embeddingPromise = shouldDeferAiEnrichment
-    ? Promise.resolve([] as number[])
-    : generateEmbedding(embeddingText);
-
-  const [fingerprint, changelogText, embedding] = await Promise.all([
-    fingerprintPromise,
-    changelogPromise,
-    embeddingPromise.catch((error) => {
-      throw new ConvexError(formatEmbeddingError(error));
-    }),
-  ]);
   const icon = await hostDirectSkillPresentationIcon(ctx, publishFiles, presentation.iconPaths);
 
   const skillInsertArgs = {
@@ -500,7 +420,7 @@ async function publishVersionForUserInternal(
     slug,
     displayName,
     version,
-    changelog: changelogText,
+    changelog: suppliedChangelog,
     changelogSource,
     sourceProvenance: options.sourceProvenance,
     tags: normalizeSkillTags(args.tags),
@@ -535,22 +455,20 @@ async function publishVersionForUserInternal(
     summary,
     icon,
     staticScan,
-    embedding,
-    deferredAiEnrichment: shouldDeferAiEnrichment
-      ? ({
-          summary:
-            publisherSummary || presentation.summary
-              ? { mode: "literal", literal: publisherSummary ?? presentation.summary }
-              : {
-                  mode: "generate",
-                  currentSummary: existingSkill?.summary ?? undefined,
-                },
-          changelog: {
-            source: changelogSource,
-            supplied: suppliedChangelog,
-          },
-        } satisfies DeferredAiEnrichment)
-      : undefined,
+    embedding: [] as number[],
+    deferredAiEnrichment: {
+      summary:
+        publisherSummary || presentation.summary
+          ? { mode: "literal", literal: publisherSummary ?? presentation.summary }
+          : {
+              mode: "generate",
+              currentSummary: existingSkill?.summary ?? undefined,
+            },
+      changelog: {
+        source: changelogSource,
+        supplied: suppliedChangelog,
+      },
+    } satisfies DeferredAiEnrichment,
     qualityAssessment: qualityAssessment
       ? {
           decision: qualityAssessment.decision,
@@ -571,30 +489,6 @@ async function publishVersionForUserInternal(
     ownerHandle = targetPublisher?.handle;
   }
   ownerHandle ??= owner?.handle ?? owner?.displayName ?? owner?.name;
-
-  const followup = {
-    skipWebhook: options.skipWebhook || undefined,
-    ownerHandle,
-    slug,
-    version,
-    displayName,
-  };
-
-  if (!options.stagePrePublicationChecks) {
-    const publishResult = (await ctx.runMutation(
-      internal.skills.insertVersion,
-      skillInsertArgs,
-    )) as PublishResult;
-    options.onFilesPersisted?.();
-    await scheduleSkillPublishFollowups(ctx, publishResult, followup);
-    return {
-      ...publishResult,
-      status: "published",
-      slug,
-      version,
-      publicationStatus: "published",
-    };
-  }
 
   const pendingInsertArgs = {
     ...skillInsertArgs,
@@ -631,7 +525,7 @@ async function publishVersionForUserInternal(
       })),
       scanContext: buildSkillPublishAttemptScanContext(skillInsertArgs),
       followup: {
-        skipWebhook: followup.skipWebhook,
+        skipWebhook: options.skipWebhook || undefined,
         ownerHandle,
       },
     })

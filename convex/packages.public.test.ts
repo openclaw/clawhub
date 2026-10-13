@@ -539,6 +539,12 @@ type StaticScanHandler = (ctx: unknown, args: unknown) => Promise<unknown>;
 // action handler against the calling ctx's storage (`ctx.runAction(...)` binds
 // `this`) so scan verdicts stay observable, and answer every other action (the
 // package inspector) with the supplied result.
+const STAGED_PACKAGE_ATTEMPT = { attemptId: "publishAttempts:package", status: "pending_checks" };
+
+function isPackagePublishAttemptArgs(args: unknown) {
+  return typeof args === "object" && args !== null && "packageReleaseId" in args;
+}
+
 function makePublishRunActionMock(
   inspectorResult: () => unknown = makeCleanPackageInspectorResult,
 ) {
@@ -11123,6 +11129,7 @@ describe("packages public queries", () => {
       ["storage:bootstrap", "Ask which repositories the user owns.\n"],
     ]);
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
       if (args.minimumRole === "publisher") {
         return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
       }
@@ -11145,6 +11152,9 @@ describe("packages public queries", () => {
           role: "user",
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         })
+        // Retry settlement: no existing attempt for this artifact or version.
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
           _id: "publishers:owner",
           kind: "user",
@@ -11217,9 +11227,13 @@ describe("packages public queries", () => {
         }),
       ).resolves.toEqual({
         ok: true,
+        status: "pending",
         packageId: "packages:claw",
         releaseId: "releases:claw-1",
-        publicationStatus: "published",
+        publicationStatus: "pending",
+        attemptId: STAGED_PACKAGE_ATTEMPT.attemptId,
+        packageName: "demo-claw",
+        version: "1.0.0",
         artifactSha256,
       });
 
@@ -11256,8 +11270,6 @@ describe("packages public queries", () => {
   });
 
   it("reuses an in-flight staged Claw publish for the same user and artifact", async () => {
-    const previousStage = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
     const artifactSha256 = "a".repeat(64);
     const storedFiles = new Map<string, string>([
       [
@@ -11331,222 +11343,212 @@ describe("packages public queries", () => {
       runAction: makePublishRunActionMock(),
     };
 
-    try {
-      await expect(
-        publishPackageForUserInternalHandler(ctx as never, {
-          actorUserId: "users:owner",
-          payload: {
-            name: "demo-claw",
-            displayName: "Demo Claw",
-            family: "claw",
-            version: "1.0.0",
-            changelog: "retry",
-            ownerHandle: "owner",
-            expectedArtifactSha256: artifactSha256,
-            files: [
-              { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
-              {
-                path: "manifests/CLAW.md",
-                size: 1,
-                storageId: "storage:claw",
-                sha256: "claw",
-              },
-              {
-                path: "profiles/openclaw.yml",
-                size: 1,
-                storageId: "storage:profile",
-                sha256: "profile",
-              },
-            ],
-            artifact: {
-              kind: "npm-pack",
-              storageId: "storage:archive",
-              sha256: artifactSha256,
-              size: 3,
-              format: "tgz",
-              npmIntegrity: "sha512-demo",
-              npmShasum: "b".repeat(40),
-              npmTarballName: "demo-claw-1.0.0.tgz",
-              npmUnpackedSize: 3,
-              npmFileCount: 3,
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-claw",
+          displayName: "Demo Claw",
+          family: "claw",
+          version: "1.0.0",
+          changelog: "retry",
+          ownerHandle: "owner",
+          expectedArtifactSha256: artifactSha256,
+          files: [
+            { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+            {
+              path: "manifests/CLAW.md",
+              size: 1,
+              storageId: "storage:claw",
+              sha256: "claw",
             },
+            {
+              path: "profiles/openclaw.yml",
+              size: 1,
+              storageId: "storage:profile",
+              sha256: "profile",
+            },
+          ],
+          artifact: {
+            kind: "npm-pack",
+            storageId: "storage:archive",
+            sha256: artifactSha256,
+            size: 3,
+            format: "tgz",
+            npmIntegrity: "sha512-demo",
+            npmShasum: "b".repeat(40),
+            npmTarballName: "demo-claw-1.0.0.tgz",
+            npmUnpackedSize: 3,
+            npmFileCount: 3,
           },
-        }),
-      ).resolves.toMatchObject({
-        ok: true,
-        status: "pending",
-        packageId: "packages:demo",
-        releaseId: "packageReleases:pending",
-        artifactSha256,
-        publicationStatus: "pending",
-        attemptId: "publishAttempts:pending",
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: "pending",
+      packageId: "packages:demo",
+      releaseId: "packageReleases:pending",
+      artifactSha256,
+      publicationStatus: "pending",
+      attemptId: "publishAttempts:pending",
+    });
+
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    // The retry settles before the Node static scan and inspector run again.
+    expect(ctx.runAction).not.toHaveBeenCalled();
+    expect(runQuery).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        kind: "package",
+        slug: "demo-claw",
+        version: "1.0.0",
+        userId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner",
+        artifactFingerprint: artifactSha256,
+      }),
+    );
+
+    runQuery
+      .mockResolvedValueOnce(currentPolicyPackage)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        _id: "users:owner",
+        githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+      })
+      .mockResolvedValueOnce({
+        _id: "users:owner",
+        role: "user",
+        githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+      })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-claw",
+          displayName: "Demo Claw",
+          family: "claw",
+          version: "1.0.0",
+          changelog: "retry",
+          ownerHandle: "owner",
+          expectedArtifactSha256: artifactSha256,
+          files: [
+            { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+            {
+              path: "manifests/CLAW.md",
+              size: 1,
+              storageId: "storage:claw",
+              sha256: "claw",
+            },
+            {
+              path: "profiles/openclaw.yml",
+              size: 1,
+              storageId: "storage:profile",
+              sha256: "profile",
+            },
+          ],
+          artifact: {
+            kind: "npm-pack",
+            storageId: "storage:archive",
+            sha256: artifactSha256,
+            size: 3,
+            format: "tgz",
+            npmIntegrity: "sha512-demo",
+            npmShasum: "b".repeat(40),
+            npmTarballName: "demo-claw-1.0.0.tgz",
+            npmUnpackedSize: 3,
+            npmFileCount: 3,
+          },
+        },
+      }),
+    ).rejects.toThrow(
+      "profiles/openclaw.yml.agent.tools.profile: Must name a registered OpenClaw built-in profile.",
+    );
+    expect(runMutation).toHaveBeenCalledTimes(2);
+
+    runQuery.mockReset();
+    runQuery
+      .mockResolvedValueOnce(existingPackage)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        _id: "users:owner",
+        githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+      })
+      .mockResolvedValueOnce({
+        _id: "users:owner",
+        role: "user",
+        githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+      })
+      .mockResolvedValueOnce(existingRelease)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        attemptId: "publishAttempts:different-artifact",
       });
 
-      expect(runMutation).toHaveBeenCalledTimes(1);
-      // The retry settles before the Node static scan and inspector run again.
-      expect(ctx.runAction).not.toHaveBeenCalled();
-      expect(runQuery).toHaveBeenLastCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          kind: "package",
-          slug: "demo-claw",
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-claw",
+          displayName: "Demo Claw",
+          family: "claw",
           version: "1.0.0",
-          userId: "users:owner",
-          ownerUserId: "users:owner",
-          ownerPublisherId: "publishers:owner",
-          artifactFingerprint: artifactSha256,
-        }),
-      );
-
-      runQuery
-        .mockResolvedValueOnce(currentPolicyPackage)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
-
-      await expect(
-        publishPackageForUserInternalHandler(ctx as never, {
-          actorUserId: "users:owner",
-          payload: {
-            name: "demo-claw",
-            displayName: "Demo Claw",
-            family: "claw",
-            version: "1.0.0",
-            changelog: "retry",
-            ownerHandle: "owner",
-            expectedArtifactSha256: artifactSha256,
-            files: [
-              { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
-              {
-                path: "manifests/CLAW.md",
-                size: 1,
-                storageId: "storage:claw",
-                sha256: "claw",
-              },
-              {
-                path: "profiles/openclaw.yml",
-                size: 1,
-                storageId: "storage:profile",
-                sha256: "profile",
-              },
-            ],
-            artifact: {
-              kind: "npm-pack",
-              storageId: "storage:archive",
-              sha256: artifactSha256,
-              size: 3,
-              format: "tgz",
-              npmIntegrity: "sha512-demo",
-              npmShasum: "b".repeat(40),
-              npmTarballName: "demo-claw-1.0.0.tgz",
-              npmUnpackedSize: 3,
-              npmFileCount: 3,
+          changelog: "different artifact",
+          ownerHandle: "owner",
+          expectedArtifactSha256: "c".repeat(64),
+          files: [
+            { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+            {
+              path: "manifests/CLAW.md",
+              size: 1,
+              storageId: "storage:claw",
+              sha256: "claw",
             },
-          },
-        }),
-      ).rejects.toThrow(
-        "profiles/openclaw.yml.agent.tools.profile: Must name a registered OpenClaw built-in profile.",
-      );
-      expect(runMutation).toHaveBeenCalledTimes(2);
-
-      runQuery.mockReset();
-      runQuery
-        .mockResolvedValueOnce(existingPackage)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce(existingRelease)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          attemptId: "publishAttempts:different-artifact",
-        });
-
-      await expect(
-        publishPackageForUserInternalHandler(ctx as never, {
-          actorUserId: "users:owner",
-          payload: {
-            name: "demo-claw",
-            displayName: "Demo Claw",
-            family: "claw",
-            version: "1.0.0",
-            changelog: "different artifact",
-            ownerHandle: "owner",
-            expectedArtifactSha256: "c".repeat(64),
-            files: [
-              { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
-              {
-                path: "manifests/CLAW.md",
-                size: 1,
-                storageId: "storage:claw",
-                sha256: "claw",
-              },
-              {
-                path: "profiles/openclaw.yml",
-                size: 1,
-                storageId: "storage:profile",
-                sha256: "profile",
-              },
-            ],
-            artifact: {
-              kind: "npm-pack",
-              storageId: "storage:archive",
-              sha256: "c".repeat(64),
-              size: 3,
-              format: "tgz",
-              npmIntegrity: "sha512-different",
-              npmShasum: "d".repeat(40),
-              npmTarballName: "demo-claw-1.0.0.tgz",
-              npmUnpackedSize: 3,
-              npmFileCount: 3,
+            {
+              path: "profiles/openclaw.yml",
+              size: 1,
+              storageId: "storage:profile",
+              sha256: "profile",
             },
+          ],
+          artifact: {
+            kind: "npm-pack",
+            storageId: "storage:archive",
+            sha256: "c".repeat(64),
+            size: 3,
+            format: "tgz",
+            npmIntegrity: "sha512-different",
+            npmShasum: "d".repeat(40),
+            npmTarballName: "demo-claw-1.0.0.tgz",
+            npmUnpackedSize: 3,
+            npmFileCount: 3,
           },
-        }),
-      ).rejects.toThrow(
-        "Version 1.0.0 already exists. Increment the version number and try again.",
-      );
+        },
+      }),
+    ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
 
-      expect(runQuery).toHaveBeenLastCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          kind: "package",
-          slug: "demo-claw",
-          version: "1.0.0",
-        }),
-      );
-      expect(runQuery.mock.calls.at(-1)?.[1]).not.toHaveProperty("artifactFingerprint");
-      expect(runMutation).toHaveBeenCalledTimes(3);
-      expect(runMutation).not.toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          packageId: existingPackage._id,
-          releaseId: existingRelease._id,
-          createdNewParent: expect.anything(),
-        }),
-      );
-    } finally {
-      if (previousStage === undefined) {
-        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-      } else {
-        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousStage;
-      }
-    }
+    expect(runQuery).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        kind: "package",
+        slug: "demo-claw",
+        version: "1.0.0",
+      }),
+    );
+    expect(runQuery.mock.calls.at(-1)?.[1]).not.toHaveProperty("artifactFingerprint");
+    expect(runMutation).toHaveBeenCalledTimes(3);
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        packageId: existingPackage._id,
+        releaseId: existingRelease._id,
+        createdNewParent: expect.anything(),
+      }),
+    );
   });
 
   it("keeps raw package publishes behind the per-file size limit", async () => {
@@ -11597,6 +11599,7 @@ describe("packages public queries", () => {
 
   it("allows large files inside ClawPack npm package artifacts", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
       if (args.name === "demo-plugin" && args.version === "1.0.0") {
         return { ok: true, packageId: "packages:demo", releaseId: "releases:demo-1" };
       }
@@ -11712,14 +11715,19 @@ describe("packages public queries", () => {
       }),
     ).resolves.toEqual({
       ok: true,
+      status: "pending",
       packageId: "packages:demo",
       releaseId: "releases:demo-1",
-      publicationStatus: "published",
+      publicationStatus: "pending",
+      attemptId: STAGED_PACKAGE_ATTEMPT.attemptId,
+      packageName: "demo-plugin",
+      version: "1.0.0",
     });
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
+        publicationStatus: "pending",
         artifactKind: "npm-pack",
         files: expect.arrayContaining([
           expect.objectContaining({
@@ -11816,8 +11824,6 @@ describe("packages public queries", () => {
 
   it("binds a split-ref trusted publish to the frozen candidate source", async () => {
     const candidateSha = "b".repeat(40);
-    const previousStage = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-    delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
     const manifestBytes = new TextEncoder().encode(JSON.stringify({ id: "demo.plugin" }));
     const inventoryDigest = await buildPackageInventoryDigest([
       {
@@ -11927,34 +11933,27 @@ describe("packages public queries", () => {
     };
 
     let result: unknown;
-    try {
-      result = await publishPackageForTrustedPublisherInternalHandler(ctx as never, {
-        publishTokenId: "packagePublishTokens:1",
-        payload: {
-          name: "demo-plugin",
-          family: "bundle-plugin",
-          version: "1.0.0",
-          changelog: "split ref",
-          bundle: { hostTargets: ["desktop"] },
-          source: {
-            kind: "github",
-            url: "https://github.com/openclaw/openclaw",
-            repo: "openclaw/openclaw",
-            ref: candidateSha,
-            commit: candidateSha,
-            path: "extensions/demo-plugin",
-            importedAt: 1,
-          },
-          files: [packageManifestFile],
+    result = await publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+      publishTokenId: "packagePublishTokens:1",
+      payload: {
+        name: "demo-plugin",
+        family: "bundle-plugin",
+        version: "1.0.0",
+        changelog: "split ref",
+        bundle: { hostTargets: ["desktop"] },
+        source: {
+          kind: "github",
+          url: "https://github.com/openclaw/openclaw",
+          repo: "openclaw/openclaw",
+          ref: candidateSha,
+          commit: candidateSha,
+          path: "extensions/demo-plugin",
+          importedAt: 1,
         },
-      });
-    } finally {
-      if (previousStage === undefined) {
-        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-      } else {
-        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousStage;
-      }
-    }
+        files: [packageManifestFile],
+      },
+    });
+
     expect(result).toMatchObject({
       ok: true,
       packageId: "packages:demo",
@@ -12198,8 +12197,6 @@ describe("packages public queries", () => {
   );
 
   it("revokes trusted publish tokens when a staged publish is accepted for checks", async () => {
-    const previousFlag = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
       if (
         typeof args === "object" &&
@@ -12271,36 +12268,28 @@ describe("packages public queries", () => {
       storage: makePackageManifestStorage(),
     };
 
-    try {
-      await expect(
-        publishPackageForTrustedPublisherInternalHandler(ctx as never, {
-          publishTokenId: "packagePublishTokens:1",
-          payload: {
-            name: "demo-plugin",
-            family: "bundle-plugin",
-            version: "1.0.0",
-            changelog: "init",
-            bundle: { hostTargets: ["desktop"] },
-            files: [packageManifestFile],
-          },
-        }),
-      ).resolves.toMatchObject({
-        ok: true,
-        status: "pending",
-        packageId: "packages:demo",
-        releaseId: "packageReleases:pending",
-        publicationStatus: "pending",
-        attemptId: "publishAttempts:demo",
-        packageName: "demo-plugin",
-        version: "1.0.0",
-      });
-    } finally {
-      if (previousFlag === undefined) {
-        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-      } else {
-        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousFlag;
-      }
-    }
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [packageManifestFile],
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: "pending",
+      packageId: "packages:demo",
+      releaseId: "packageReleases:pending",
+      publicationStatus: "pending",
+      attemptId: "publishAttempts:demo",
+      packageName: "demo-plugin",
+      version: "1.0.0",
+    });
 
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
       tokenId: "packagePublishTokens:1",
@@ -12316,8 +12305,6 @@ describe("packages public queries", () => {
   });
 
   it("cleans up orphan pending package releases instead of wedging future retries", async () => {
-    const previousFlag = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
       if (
         typeof args === "object" &&
@@ -12400,29 +12387,21 @@ describe("packages public queries", () => {
       storage: makePackageManifestStorage(),
     };
 
-    try {
-      await expect(
-        publishPackageForTrustedPublisherInternalHandler(ctx as never, {
-          publishTokenId: "packagePublishTokens:1",
-          payload: {
-            name: "demo-plugin",
-            family: "bundle-plugin",
-            version: "1.0.0",
-            changelog: "init",
-            bundle: { hostTargets: ["desktop"] },
-            files: [packageManifestFile],
-          },
-        }),
-      ).rejects.toThrow(
-        "Previous pending publish for 1.0.0 did not finish creating security checks. It was cleaned up; retry the publish.",
-      );
-    } finally {
-      if (previousFlag === undefined) {
-        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-      } else {
-        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousFlag;
-      }
-    }
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [packageManifestFile],
+        },
+      }),
+    ).rejects.toThrow(
+      "Previous pending publish for 1.0.0 did not finish creating security checks. It was cleaned up; retry the publish.",
+    );
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
@@ -12435,8 +12414,6 @@ describe("packages public queries", () => {
   });
 
   it("cleans up pending package releases when staged publish attempt creation fails", async () => {
-    const previousFlag = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
       if (
         typeof args === "object" &&
@@ -12509,28 +12486,20 @@ describe("packages public queries", () => {
       storage: { ...makePackageManifestStorage(), delete: vi.fn() },
     };
 
-    try {
-      await expect(
-        publishPackageForTrustedPublisherInternalHandler(ctx as never, {
-          publishTokenId: "packagePublishTokens:1",
-          requestStorageIds: [packageManifestFile.storageId],
-          payload: {
-            name: "demo-plugin",
-            family: "bundle-plugin",
-            version: "1.0.0",
-            changelog: "init",
-            bundle: { hostTargets: ["desktop"] },
-            files: [packageManifestFile],
-          },
-        }),
-      ).rejects.toThrow("attempt creation outage");
-    } finally {
-      if (previousFlag === undefined) {
-        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-      } else {
-        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousFlag;
-      }
-    }
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        requestStorageIds: [packageManifestFile.storageId],
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [packageManifestFile],
+        },
+      }),
+    ).rejects.toThrow("attempt creation outage");
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
@@ -12547,8 +12516,6 @@ describe("packages public queries", () => {
   });
 
   it("rejects duplicate staged package releases before creating a publish attempt", async () => {
-    const previousFlag = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
     const runMutation = vi.fn(async () => {
       throw new Error("duplicate publish should not create an attempt");
     });
@@ -12599,36 +12566,24 @@ describe("packages public queries", () => {
       storage: makePackageManifestStorage(),
     };
 
-    try {
-      await expect(
-        publishPackageForTrustedPublisherInternalHandler(ctx as never, {
-          publishTokenId: "packagePublishTokens:1",
-          payload: {
-            name: "demo-plugin",
-            family: "bundle-plugin",
-            version: "1.0.0",
-            changelog: "duplicate",
-            bundle: { hostTargets: ["desktop"] },
-            files: [packageManifestFile],
-          },
-        }),
-      ).rejects.toThrow(
-        "Version 1.0.0 already exists. Increment the version number and try again.",
-      );
-    } finally {
-      if (previousFlag === undefined) {
-        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-      } else {
-        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousFlag;
-      }
-    }
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "duplicate",
+          bundle: { hostTargets: ["desktop"] },
+          files: [packageManifestFile],
+        },
+      }),
+    ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
 
     expect(runMutation).not.toHaveBeenCalled();
   });
 
   it("rejects staged package releases reserved by a retained publish attempt", async () => {
-    const previousFlag = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
     const runMutation = vi.fn(async () => {
       throw new Error("duplicate publish should not create an attempt");
     });
@@ -12679,36 +12634,24 @@ describe("packages public queries", () => {
       storage: makePackageManifestStorage(),
     };
 
-    try {
-      await expect(
-        publishPackageForTrustedPublisherInternalHandler(ctx as never, {
-          publishTokenId: "packagePublishTokens:1",
-          payload: {
-            name: "demo-plugin",
-            family: "bundle-plugin",
-            version: "1.0.0",
-            changelog: "duplicate",
-            bundle: { hostTargets: ["desktop"] },
-            files: [packageManifestFile],
-          },
-        }),
-      ).rejects.toThrow(
-        "Version 1.0.0 already exists. Increment the version number and try again.",
-      );
-    } finally {
-      if (previousFlag === undefined) {
-        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-      } else {
-        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousFlag;
-      }
-    }
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "duplicate",
+          bundle: { hostTargets: ["desktop"] },
+          files: [packageManifestFile],
+        },
+      }),
+    ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
 
     expect(runMutation).not.toHaveBeenCalled();
   });
 
   it("does not leave a legacy zip blob when staged publish rejects a duplicate version", async () => {
-    const previousFlag = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
     const storedIds: string[] = [];
     const deletedIds: string[] = [];
     const runMutation = vi.fn(async () => {
@@ -12770,40 +12713,34 @@ describe("packages public queries", () => {
       },
     };
 
-    try {
-      await expect(
-        publishPackageForTrustedPublisherInternalHandler(ctx as never, {
-          publishTokenId: "packagePublishTokens:1",
-          payload: {
-            name: "demo-plugin",
-            family: "bundle-plugin",
-            version: "1.0.0",
-            changelog: "duplicate",
-            bundle: { hostTargets: ["desktop"] },
-            files: [packageManifestFile],
-          },
-        }),
-      ).rejects.toThrow(
-        "Version 1.0.0 already exists. Increment the version number and try again.",
-      );
-    } finally {
-      if (previousFlag === undefined) {
-        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-      } else {
-        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousFlag;
-      }
-    }
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "duplicate",
+          bundle: { hostTargets: ["desktop"] },
+          files: [packageManifestFile],
+        },
+      }),
+    ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
 
     expect(runMutation).not.toHaveBeenCalled();
     expect(storedIds.filter((storageId) => !deletedIds.includes(storageId))).toEqual([]);
   });
 
-  it.each(["rejected", "reused", "created", "followup-failure"] as const)(
+  it.each(["rejected", "reused", "created", "attempt-failure"] as const)(
     "keeps generated ZIP and request-file ownership after %s insertion",
     async (outcome) => {
       const storedIds: string[] = [];
       const deletedIds: string[] = [];
       const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+        if (isPackagePublishAttemptArgs(args)) {
+          if (outcome === "attempt-failure") throw new Error("publish attempt creation failed");
+          return STAGED_PACKAGE_ATTEMPT;
+        }
         if (
           typeof args === "object" &&
           args !== null &&
@@ -12819,14 +12756,6 @@ describe("packages public queries", () => {
             ...(outcome === "reused" ? { reusedExistingRelease: true } : {}),
           };
         }
-        if (
-          outcome === "followup-failure" &&
-          typeof args === "object" &&
-          args !== null &&
-          "source" in args &&
-          args.source === "publish"
-        )
-          throw new Error("post-insert followup failed");
         return null;
       });
       const trustedPublisher = {
@@ -12893,17 +12822,31 @@ describe("packages public queries", () => {
           files: [packageManifestFile],
         },
       });
-      if (outcome === "rejected" || outcome === "followup-failure") {
+      if (outcome === "rejected" || outcome === "attempt-failure") {
         await expect(publication).rejects.toThrow(
-          outcome === "rejected" ? "release insert rejected" : "post-insert followup failed",
+          outcome === "rejected" ? "release insert rejected" : "publish attempt creation failed",
         );
       } else {
         await expect(publication).resolves.toEqual({
           ok: true,
+          status: "pending",
           packageId: "packages:demo",
           releaseId: "packageReleases:result",
-          publicationStatus: "published",
+          publicationStatus: "pending",
+          attemptId: STAGED_PACKAGE_ATTEMPT.attemptId,
+          packageName: "demo-plugin",
+          version: "1.0.0",
         });
+      }
+      if (outcome === "attempt-failure") {
+        // The pending release adopted the files; discarding it owns their cleanup.
+        expect(runMutation).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            packageId: "packages:demo",
+            releaseId: "packageReleases:result",
+          }),
+        );
       }
 
       expect(storedIds).toEqual(["storage:legacy-zip"]);
@@ -12917,6 +12860,7 @@ describe("packages public queries", () => {
 
   it("accepts trusted publish tokens when no environment is pinned", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
       if (
         typeof args === "object" &&
         args !== null &&
@@ -13152,6 +13096,140 @@ describe("packages public queries", () => {
     ).rejects.toThrow("openclaw.plugin.json is required");
   });
 
+  it.each(["publishRelease", "publishPackageForUserInternal"] as const)(
+    "stages %s as a pending release before pre-publication checks",
+    async (entryPoint) => {
+      vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+      const storedFiles = new Map<string, string>([
+        [
+          "storage:package",
+          JSON.stringify({
+            name: "staged-plugin",
+            openclaw: {
+              extensions: ["./dist/index.js"],
+              compat: { pluginApi: "^1.0.0" },
+              build: { openclawVersion: "2026.3.14" },
+              configSchema: { type: "object" },
+            },
+          }),
+        ],
+        ["storage:manifest", JSON.stringify({ id: "staged.plugin" })],
+        ["storage:code", "export default {};"],
+      ]);
+      const owner = {
+        _id: "users:owner",
+        role: "user",
+        githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+      };
+      const runQuery = vi.fn(async (ref: FunctionReference<"query">) => {
+        const name = getFunctionName(ref);
+        if (name === "users:getByIdInternal") return owner;
+        if (name === "publishers:getByIdInternal") {
+          return {
+            _id: "publishers:owner",
+            kind: "user",
+            handle: "owner",
+            linkedUserId: owner._id,
+          };
+        }
+        return null;
+      });
+      const runMutation = vi.fn(
+        async (ref: FunctionReference<"mutation">, args: Record<string, unknown>) => {
+          const name = getFunctionName(ref);
+          if (name === "publishers:resolvePublishTargetForUserInternal") {
+            return { publisherId: "publishers:owner", linkedUserId: owner._id };
+          }
+          if (name === "packages:insertReleaseInternal") {
+            return {
+              ok: true,
+              packageId: "packages:staged",
+              releaseId: "packageReleases:staged",
+              publicationStatus: args.publicationStatus,
+              createdNewParent: true,
+            };
+          }
+          if (name === "publishAttempts:createPackagePublishAttemptInternal") {
+            return STAGED_PACKAGE_ATTEMPT;
+          }
+          return null;
+        },
+      );
+      const ctx = {
+        runQuery,
+        runMutation,
+        runAction: makePublishRunActionMock(),
+        scheduler: { runAfter: vi.fn() },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            const content = storedFiles.get(storageId);
+            return content ? new Blob([content]) : null;
+          }),
+          store: vi.fn(async () => "storage:legacy-zip"),
+        },
+      };
+      const payload = {
+        name: "staged-plugin",
+        displayName: "Staged Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        source: {
+          kind: "github",
+          url: "https://github.com/openclaw/staged-plugin",
+          repo: "openclaw/staged-plugin",
+          ref: "refs/tags/v1.0.0",
+          commit: "abc123",
+          path: ".",
+          importedAt: Date.now(),
+        },
+        files: [
+          { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+          {
+            path: "openclaw.plugin.json",
+            size: 1,
+            storageId: "storage:manifest",
+            sha256: "manifest",
+          },
+          { path: "dist/index.js", size: 1, storageId: "storage:code", sha256: "code" },
+        ],
+      };
+
+      const result =
+        entryPoint === "publishRelease"
+          ? await publishReleaseHandler(ctx as never, { payload })
+          : await publishPackageForUserInternalHandler(ctx as never, {
+              actorUserId: owner._id,
+              payload,
+            });
+
+      expect(result).toEqual({
+        ok: true,
+        status: "pending",
+        packageId: "packages:staged",
+        releaseId: "packageReleases:staged",
+        publicationStatus: "pending",
+        attemptId: STAGED_PACKAGE_ATTEMPT.attemptId,
+        packageName: "staged-plugin",
+        version: "1.0.0",
+      });
+      const mutationNames = runMutation.mock.calls.map(([ref]) => getFunctionName(ref));
+      expect(mutationNames).toEqual([
+        "publishers:resolvePublishTargetForUserInternal",
+        "packages:insertReleaseInternal",
+        "publishAttempts:createPackagePublishAttemptInternal",
+      ]);
+      expect(runMutation.mock.calls[1]?.[1]).toMatchObject({ publicationStatus: "pending" });
+      expect(runMutation.mock.calls[2]?.[1]).toMatchObject({
+        packageId: "packages:staged",
+        packageReleaseId: "packageReleases:staged",
+        artifactFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      });
+      // Nothing is published, scanned post-hoc, or announced before the checks finish.
+      expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+    },
+  );
+
   it("allows package names that match an unrelated skill slug", async () => {
     const storedFiles = new Map<string, string>([
       [
@@ -13172,6 +13250,7 @@ describe("packages public queries", () => {
       ["storage:code", "export default {};"],
     ]);
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
       if (args.minimumRole === "publisher") {
         return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
       }
@@ -13194,6 +13273,9 @@ describe("packages public queries", () => {
           role: "user",
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         })
+        // Retry settlement: no existing attempt for this artifact or version.
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
           _id: "publishers:owner",
           kind: "user",
@@ -13300,6 +13382,7 @@ describe("packages public queries", () => {
       documentation?: Array<{ path: string; text: string }>,
     ) {
       const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
         if ("sha256" in args && "contentType" in args) return args;
         if (args.minimumRole === "publisher") {
           return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
@@ -13359,6 +13442,9 @@ describe("packages public queries", () => {
             role: "user",
             githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
           })
+          // Retry settlement: no existing attempt for this artifact or version.
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(null)
           .mockResolvedValueOnce({
             _id: "publishers:owner",
             kind: "user",
@@ -13624,7 +13710,9 @@ describe("packages public queries", () => {
   });
 
   it("scans plugin publishes and forwards scan status to insertReleaseInternal", async () => {
-    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => args);
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) =>
+      isPackagePublishAttemptArgs(args) ? STAGED_PACKAGE_ATTEMPT : args,
+    );
     const storedFiles = new Map<string, string>([
       [
         "storage:package",
@@ -13704,7 +13792,7 @@ describe("packages public queries", () => {
       })),
     };
 
-    const result = (await publishPackageForUserInternalHandler(ctx as never, {
+    await publishPackageForUserInternalHandler(ctx as never, {
       actorUserId: "users:owner",
       payload: {
         name: "demo-plugin",
@@ -13745,7 +13833,14 @@ describe("packages public queries", () => {
           },
         ],
       },
-    })) as Record<string, unknown>;
+    });
+    // The pending release carries the same scan inputs that finalization publishes.
+    const result = runMutation.mock.calls
+      .map(([, args]) => args as Record<string, unknown>)
+      .find((args) => args.publicationStatus === "pending" && "files" in args) as Record<
+      string,
+      unknown
+    >;
     const expectedLegacyZipSha256 = await sha256Hex(
       buildDeterministicPackageZip([
         {
@@ -13777,16 +13872,17 @@ describe("packages public queries", () => {
         reasonCodes: expect.arrayContaining(["suspicious.dangerous_exec"]),
       }),
     );
-    expect(ctx.scheduler.runAfter).toHaveBeenNthCalledWith(
-      1,
-      30_000,
+    expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.any(Object),
+      expect.objectContaining({ name: "demo-plugin", artifactFingerprint: expect.any(String) }),
     );
+    // VirusTotal and post-publication scans are scheduled by finalization, not publish.
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("blocks plugin publishes when plugin inspector reports hard breakages", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
       if (typeof args === "object" && args !== null && "minimumRole" in args) return null;
       return args;
     });
@@ -13902,8 +13998,9 @@ describe("packages public queries", () => {
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it("stores plugin inspector warnings after successful warning-only publishes", async () => {
+  it("defers plugin inspector warning storage to finalization for warning-only publishes", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
       if ("minimumRole" in args) return null;
       if ("warnings" in args) return { ok: true, inserted: 1 };
       return { ok: true, packageId: "packages:demo", releaseId: "packageReleases:demo-1" };
@@ -14022,32 +14119,41 @@ describe("packages public queries", () => {
       },
     });
 
-    const inspectorWarningCall = runMutation.mock.calls.find(
-      ([, args]) =>
-        typeof args === "object" &&
-        args !== null &&
-        (args as { packageId?: string }).packageId === "packages:demo" &&
-        Array.isArray((args as { findings?: unknown[] }).findings),
+    // Warnings are stored for the release only after it passes the pre-publication checks.
+    expect(
+      runMutation.mock.calls.some(
+        ([, args]) =>
+          typeof args === "object" &&
+          args !== null &&
+          Array.isArray((args as { findings?: unknown[] }).findings),
+      ),
+    ).toBe(false);
+    const attemptCall = runMutation.mock.calls.find(([, args]) =>
+      isPackagePublishAttemptArgs(args),
     );
-    expect(inspectorWarningCall?.[1]).toMatchObject({
+    expect(attemptCall?.[1]).toMatchObject({
       packageId: "packages:demo",
-      releaseId: "packageReleases:demo-1",
-      packageName: "demo-plugin",
-      version: "1.0.0",
-      inspectorVersion: "0.3.19",
-      targetOpenClawVersion: "2026.7.1-2",
-      findings: [
-        expect.objectContaining({
-          code: "legacy-before-agent-start",
-          issueClass: "deprecation-warning",
-          message: "legacy before_agent_start hook is deprecated",
-          authorRemediation: {
-            summary: "Move prompt mutation work to before_prompt_build.",
-            docsUrl:
-              "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-          },
-        }),
-      ],
+      packageReleaseId: "packageReleases:demo-1",
+      packageFollowup: {
+        packageName: "demo-plugin",
+        version: "1.0.0",
+        inspectorMetadata: {
+          inspectorVersion: "0.3.19",
+          targetOpenClawVersion: "2026.7.1-2",
+        },
+        inspectorWarnings: [
+          expect.objectContaining({
+            code: "legacy-before-agent-start",
+            issueClass: "deprecation-warning",
+            message: "legacy before_agent_start hook is deprecated",
+            authorRemediation: {
+              summary: "Move prompt mutation work to before_prompt_build.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+            },
+          }),
+        ],
+      },
     });
   });
 

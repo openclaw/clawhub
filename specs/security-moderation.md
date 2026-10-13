@@ -479,6 +479,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   download must serve the exact stored tarball bytes whose SHA-256 matches that
   value. Trusted publish tokens accepted by an idempotent retry are revoked on
   the same success boundary as a newly created attempt.
+- Every skill and package publish entry point (web actions, CLI and HTTP
+  routes, GitHub import, trusted publishing, and managed MCP) stores a pending
+  version or release plus a publish attempt bound to the exact artifact
+  fingerprint. No deployment toggle or fallback publishes first and scans
+  later. Only a passing pre-publication verdict promotes the release. Repeated
+  scanner failures terminate the attempt as failed, and a worker whose check
+  lease expired cannot submit a verdict, so scanner failures and timeouts leave
+  the release unpublished. AI summary, changelog, and embedding generation run
+  during finalization, after the checks pass.
 - A staged publish attempt is not a successful release. ClawHub dispatches an
   exact pre-publication worker through the production GitHub App as soon as the
   attempt becomes pending; the scheduled worker remains recovery for missed

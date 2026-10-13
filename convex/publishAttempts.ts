@@ -712,43 +712,6 @@ async function deleteSecretBlockedPendingPackageArtifact(
   }
 }
 
-export const recordSkillPublishAttemptChecksPassedInternal = internalMutation({
-  args: {
-    attemptId: v.id("publishAttempts"),
-    trufflehogSummary: v.optional(v.string()),
-    clawscanSummary: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const attempt = await requireSkillPublishAttempt(ctx, args.attemptId);
-    if (attempt.status === "finalized") {
-      return { attemptId: attempt._id, status: attempt.status, result: attempt.result };
-    }
-    if (attempt.status !== "pending_checks" && attempt.status !== "ready_to_finalize") {
-      throw new ConvexError(`Publish attempt is ${attempt.status}, not pending checks.`);
-    }
-
-    const now = Date.now();
-    await ctx.db.patch(attempt._id, {
-      status: "ready_to_finalize",
-      checks: {
-        trufflehog: {
-          status: "clean",
-          checkedAt: now,
-          summary: args.trufflehogSummary,
-        },
-        clawscan: {
-          status: "clean",
-          checkedAt: now,
-          summary: args.clawscanSummary,
-        },
-      },
-      updatedAt: now,
-    });
-
-    return { attemptId: attempt._id, status: "ready_to_finalize" as const, result: undefined };
-  },
-});
-
 export const completePendingPublishAttemptChecksInternal = internalMutation({
   args: {
     attemptId: v.id("publishAttempts"),
