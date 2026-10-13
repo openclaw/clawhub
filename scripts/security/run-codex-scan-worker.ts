@@ -147,7 +147,7 @@ type BundledSkillSpectorScanInput = {
   scanPath: string;
 };
 
-type ClawScanCommandDiagnostic = {
+export type ClawScanCommandDiagnostic = {
   args?: string[];
   artifactPath?: string;
   exitCode?: number | null;
@@ -682,9 +682,12 @@ function sanitizedJobForArtifactContext(job: ClaimedJob["job"]) {
 }
 
 function sanitizedTargetForArtifactContext(target: ClaimedJob["target"]) {
-  const { clawpackUrl, files, job: _job, ...safeTarget } = target;
+  const { clawpackUrl, files, job: _job, release, ...safeTarget } = target;
+  // Use only this run's injected Endor result in the judge context.
+  const { endorAnalysis: _storedEndorAnalysis, ...currentRelease } = release ?? {};
   return {
     ...safeTarget,
+    ...(release ? { release: currentRelease } : {}),
     files: files?.map(({ url: _url, ...file }) => file),
     clawpackUrl: Boolean(clawpackUrl),
   };
@@ -702,16 +705,6 @@ function artifactMetadata(job: ClaimedJob) {
         "plugins under @openclaw owned by the OpenClaw publisher are trusted unless artifact evidence proves malicious behavior",
     },
   };
-}
-
-// The judge prompt carries this run's Endor result. Drop the release's stored
-// summary so a stale earlier result cannot contradict a failed or skipped run.
-function judgeMetadata(job: ClaimedJob) {
-  const metadata = artifactMetadata(job);
-  const release = metadata.target.release;
-  if (!release) return metadata;
-  const { endorAnalysis: _storedEndorAnalysis, ...currentRelease } = release;
-  return { ...metadata, target: { ...metadata.target, release: currentRelease } };
 }
 
 async function writeDiagnosticText(
@@ -955,7 +948,7 @@ async function runCommand(
   return await runWorkerCommand(command, args, {
     cwd: options.cwd,
     env,
-    ...(options.input !== undefined ? { input: options.input } : {}),
+    input: options.input,
     timeoutMs: options.timeoutMs,
   });
 }
@@ -1965,7 +1958,7 @@ export async function runClawScan(
     const contextPath = join(workspace, "clawhub-endor-context.json");
     await writeFile(endorResultPath, `${JSON.stringify(endorAnalysis)}\n`, "utf8");
     // ClawScan writes only context.metadata into the judge's metadata.json.
-    await writeFile(contextPath, JSON.stringify({ metadata: judgeMetadata(job) }), "utf8");
+    await writeFile(contextPath, JSON.stringify({ metadata: artifactMetadata(job) }), "utf8");
     args.push(
       "--config",
       configPath,
@@ -2332,11 +2325,11 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
   let totalClaimFailures = 0;
   let consecutiveClaimFailures = 0;
 
-  while (active.size > 0 || (!queueDrained && options.canClaim(totalClaimed))) {
+  while (active.size > 0 || (!workerMustStop && !queueDrained && options.canClaim(totalClaimed))) {
     while (
       active.size < options.concurrency &&
-      !queueDrained &&
       !workerMustStop &&
+      !queueDrained &&
       options.canClaim(totalClaimed)
     ) {
       const remainingJobs =
@@ -2360,6 +2353,7 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
         totalFailed += 1;
         consecutiveClaimFailures += 1;
         const retry =
+          !workerMustStop &&
           isTransientClaimError(error) &&
           consecutiveClaimFailures <= 3 &&
           options.canClaim(totalClaimed);
@@ -2394,23 +2388,30 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
         queueDrained = true;
       }
       for (const job of jobs) {
-        const task = options.processClaimedJob(job).catch((error) => {
-          const message = error instanceof Error ? error.message : String(error);
-          logger.error(
-            {
-              event: "security_scan_unhandled_process_failure",
-              publicReason: sanitizeWorkerErrorMessage(message),
-              scannerPhase: "process",
-            },
-            "security scan job escaped worker error handling",
-          );
-          return {
-            completed: false,
-            hardFailed: true,
-            retryableFailed: false,
-            workerMustStop: true,
-          };
-        });
+        const task = options
+          .processClaimedJob(job)
+          .catch((error) => {
+            const message = error instanceof Error ? error.message : String(error);
+            logger.error(
+              {
+                event: "security_scan_unhandled_process_failure",
+                publicReason: sanitizeWorkerErrorMessage(message),
+                scannerPhase: "process",
+              },
+              "security scan job escaped worker error handling",
+            );
+            return {
+              completed: false,
+              hardFailed: true,
+              retryableFailed: false,
+              workerMustStop: true,
+            };
+          })
+          .then((result) => {
+            // Stop claims when any job settles fatally, before accounting picks a winner.
+            if (result.workerMustStop) workerMustStop = true;
+            return result;
+          });
         active.add(task);
       }
       if (jobs.length === 0 && queueDrained) break;
@@ -2424,13 +2425,10 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
       if (settled.result.completed) totalCompleted += 1;
       if (settled.result.hardFailed) totalFailed += 1;
       if (settled.result.retryableFailed) totalRetryableFailed += 1;
-      if (settled.result.workerMustStop) {
-        workerMustStop = true;
-        queueDrained = true;
-      }
       if (active.size > 0 || !queueDrained) continue;
     }
 
+    if (workerMustStop) break;
     const maxJobsReached = options.maxJobs !== undefined && totalClaimed >= options.maxJobs;
     if (queueDrained && !maxJobsReached && options.idlePollMs && options.canClaim(totalClaimed)) {
       await sleepImpl(options.idlePollMs);

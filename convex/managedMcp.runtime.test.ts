@@ -99,6 +99,68 @@ async function publicationFixture() {
 }
 
 describe("managed MCP authorization", () => {
+  it("requires a new version for icon edits and keeps the old release until publication", async () => {
+    const { t, ui, submission, definition } = await publicationFixture();
+    const original = await t.mutation(internal.packages.insertReleaseInternal, submission);
+    await t.mutation(internal.packages.publishPendingReleaseInternal, {
+      releaseId: original.releaseId,
+    });
+    const nextDefinition = {
+      ...definition,
+      version: "1.0.1",
+      icon: {
+        ...definition.icon,
+        pngBase64:
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+        license: "Provider brand terms",
+        attribution: "Example logo belongs to Example.",
+        sourceUrl: "https://example.com/brand/icon.png",
+        licenseUrl: "https://example.com/brand/terms",
+      },
+    };
+    const bytes = new TextEncoder().encode(JSON.stringify(nextDefinition));
+    const storageId = await t.run((ctx) => ctx.storage.store(new Blob([bytes])));
+    const edited = {
+      ...submission,
+      integritySha256: "d".repeat(64),
+      sha256hash: "e".repeat(64),
+      files: [
+        {
+          path: MANAGED_MCP_DEFINITION_PATH,
+          size: bytes.byteLength,
+          storageId,
+          sha256: await sha256Hex(bytes),
+        },
+      ],
+    };
+    await expect(t.mutation(internal.packages.insertReleaseInternal, edited)).rejects.toThrow(
+      "Version 1.0.0 already exists",
+    );
+    const next = await t.mutation(internal.packages.insertReleaseInternal, {
+      ...edited,
+      version: "1.0.1",
+    });
+    expect((await t.run((ctx) => ctx.db.get(original.packageId)))?.latestReleaseId).toBe(
+      original.releaseId,
+    );
+    expect((await t.run((ctx) => ctx.db.get(next.releaseId)))?.publicationStatus).toBe("pending");
+    expect(await ui.action(api.managedMcp.getDefinition, { id: definition.id })).toEqual(
+      nextDefinition,
+    );
+
+    // Model successful security finalization; this test does not run external scanners.
+    await t.mutation(internal.packages.publishPendingReleaseInternal, {
+      releaseId: next.releaseId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(original.packageId)))?.latestReleaseId).toBe(
+      next.releaseId,
+    );
+    const old = await t.run((ctx) => ctx.db.get(original.releaseId));
+    expect(old?.files).toEqual(submission.files);
+    expect(old?.integritySha256).toBe(submission.integritySha256);
+    expect(old?.publicationStatus).toBe("published");
+  });
+
   it("denies UI and CLI reads and unpublication to an administrator without publishing membership", async () => {
     const { t, ui, userId, membershipId, submission } = await publicationFixture();
     const staged = await t.mutation(internal.packages.insertReleaseInternal, submission);

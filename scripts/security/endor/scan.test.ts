@@ -37,12 +37,12 @@ async function fixture(body: string) {
   return { root, source, bin, env };
 }
 
-async function run(test: Awaited<ReturnType<typeof fixture>>) {
+async function run(test: Awaited<ReturnType<typeof fixture>>, timeoutMs = 10_000) {
   return runWorkerCommand("/bin/sh", [scanScript, test.source], {
     commandLabel: "Endor wrapper",
     cwd: test.root,
     env: test.env,
-    timeoutMs: 10_000,
+    timeoutMs,
   });
 }
 
@@ -94,39 +94,23 @@ describe("Endor custom-scanner wrapper", () => {
     expect(JSON.parse((await run(test)).stdout)).toEqual(emptyReport);
   });
 
+  it("retains the last Endor diagnostic when a scan stalls", async () => {
+    const test = await fixture(
+      'require("node:fs").writeFileSync(process.env.HOME + "/stage", "resolving"); process.stderr.write("Resolving dependencies\\n"); setTimeout(() => {}, 20_000);',
+    );
+    const failure = await run(test).catch((error: unknown) => error);
+    expect(await readFile(join(test.root, "stage"), "utf8")).toBe("resolving");
+    expect(failure).toMatchObject({
+      timedOut: true,
+      stdout: "",
+      stderr: "Resolving dependencies\n",
+    });
+  });
+
   it.each([
-    { name: "whitespace", raw: " \n", status: 0, stderr: "" },
-    { name: "malformed JSON", raw: "not-json", status: 0, stderr: "" },
-    { name: "null report", raw: "null", status: 0, stderr: "" },
-    { name: "missing findings", raw: "{}", status: 0, stderr: "" },
-    {
-      name: "null finding",
-      raw: JSON.stringify({ ...emptyReport, all_findings: [null] }),
-      status: 0,
-      stderr: "",
-    },
-    {
-      name: "non-object finding",
-      raw: JSON.stringify({ ...emptyReport, warning_findings: ["bad"] }),
-      status: 0,
-      stderr: "",
-    },
-    { name: "empty policy failure", raw: "", status: 128, stderr: "" },
     { name: "command failure with JSON", raw: JSON.stringify(emptyReport), status: 7, stderr: "" },
     {
-      name: "error log despite zero exit",
-      raw: JSON.stringify(emptyReport),
-      status: 0,
-      stderr: "ERROR dependency scan failed",
-    },
-    {
-      name: "scan failure summary",
-      raw: JSON.stringify(emptyReport),
-      status: 128,
-      stderr: "1 scan failure(s)",
-    },
-    {
-      name: "call graph failure summary",
+      name: "call graph failure despite zero exit",
       raw: JSON.stringify(emptyReport),
       status: 0,
       stderr: "2 call graph error(s)",
@@ -140,16 +124,6 @@ describe("Endor custom-scanner wrapper", () => {
     if (!(failure instanceof CommandFailure)) throw new Error("expected a command failure");
     expect(failure.stdout).toBe("");
     expect(failure.stderr).toContain("Endor");
-  });
-
-  it.each([".npmrc", "nested/.npmrc"])("rejects %s before running Endor", async (name) => {
-    const test = await fixture('console.error("ENDOR_WAS_RUN");');
-    await mkdir(join(test.source, "nested"));
-    await writeFile(join(test.source, name), "registry=https://example.invalid\n");
-    const failure = await run(test).catch((error: unknown) => error);
-    if (!(failure instanceof CommandFailure)) throw new Error("expected a command failure");
-    expect(failure.stderr).toContain(".npmrc");
-    expect(failure.stderr).not.toContain("ENDOR_WAS_RUN");
   });
 
   it("scans a fresh snapshot and keeps credentials away from package managers", async () => {

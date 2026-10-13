@@ -92,6 +92,10 @@ Git dependency prepare scripts from bypassing script suppression. The dedicated
 container uses destination firewall rules to block private, link-local, and
 special-use IPv4 and IPv6 destinations during dependency resolution, then drops
 all capabilities and runs the scanner as the image's unprivileged `node` user.
+Container-local loopback remains available, including Docker's local DNS resolver;
+it cannot reach the host's loopback services. The disposable `/tmp` mount allows
+execution of the owned npm/Yarn shims. The wrapper invokes each shim directly
+before scanning and stops if the mount prevents execution.
 The worker grants network-admin capabilities only so the container can install
 those rules before scanning; image workflows verify the rules and privilege
 drop on a Linux Docker runner.
@@ -120,3 +124,10 @@ handlers. Do not delete stored results just to make the old schema deployable.
 
 Endor runs with `--dry-run`; the plugin audit and its report download contain the
 saved summary. These scans do not create persistent projects in the Endor dashboard.
+
+Local plugin batches reuse the same Endor runner, bundled-skill selection, ClawHub
+profile, and judge-result validation. They consume release tarballs and save local
+reports without claiming jobs or submitting moderation changes. First-party trust
+is an explicit assertion by the caller, rather than inferred from a package name.
+Endor uses public DNS resolvers because the container guard blocks private host
+resolvers.

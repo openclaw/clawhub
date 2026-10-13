@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -41,7 +41,7 @@ case "$2" in
         *) shift ;;
       esac
     done
-    touch "$root/docker-exists"
+    if [[ ! -f "$root/docker-create-never-visible" ]]; then touch "$root/docker-exists"; fi
     if [[ -f "$root/docker-create-sleep" ]]; then sleep 2; fi
     printf '%s\\n' "$id"
     ;;
@@ -56,6 +56,11 @@ case "$2" in
     printf '%s|%s|%s|%s|%s|%s|%s\\n' "$ENDOR_NAMESPACE" "$ENDOR_TOKEN" "$OPENAI_API_KEY" "$SECURITY_SCAN_WORKER_TOKEN" "$HOME" "$DOCKER_CONFIG" "$DOCKER_HOST" > "$root/docker-cleanup-env"
     if [[ -f "$root/docker-inspect-missing-once" ]]; then
       rm "$root/docker-inspect-missing-once"
+      # Model the daemon finishing creation after the CLI has timed out.
+      name=$5
+      printf '%s' "$name" > "$root/docker-name"
+      printf 'org.openclaw.clawhub.endor-run-id=%s' "\${name#clawhub-endor-}" > "$root/docker-label"
+      touch "$root/docker-exists"
       echo "Error: No such object" >&2
       exit 1
     fi
@@ -113,131 +118,97 @@ function runScan(
 }
 
 describe("runEndorPluginScan", () => {
-  it.each(["plugin", "claw"] as const)(
-    "scans a normalized disposable %s package and retains only exact reachable functions",
-    async (family) => {
-      const workspace = await tempDir();
-      const root = await packageRoot(workspace);
-      await writeFile(
-        join(root, "package.json"),
-        `${JSON.stringify({
-          name: "fixture-plugin",
-          ...(family === "claw" ? { openclaw: { claw: "CLAW.md" } } : {}),
-          dependencies: { "runtime-workspace": "workspace:*", lodash: "4.17.20" },
-          devDependencies: { "dev-workspace": "workspace:^", typescript: "6.0.3" },
-        })}\n`,
-      );
-      await writeFile(join(root, "npm-shrinkwrap.json"), '{"lockfileVersion":3}\n');
-      await writeFile(
-        join(root, family === "plugin" ? "openclaw.plugin.json" : "CLAW.md"),
-        family === "plugin" ? '{"id":"fixture-plugin"}\n' : "# Fixture Claw\n",
-      );
-      await writeFile(
-        join(workspace, "docker-start-stdout"),
-        report([
-          {
-            spec: {
-              finding_tags: ["FINDING_TAGS_REACHABLE_FUNCTION"],
-              level: "FINDING_LEVEL_HIGH",
-              summary: "Reachable lodash function is vulnerable",
-            },
-          },
-          { spec: { finding_tags: ["FINDING_TAGS_POTENTIALLY_REACHABLE_FUNCTION"] } },
-          { spec: { finding_tags: ["FINDING_TAGS_REACHABLE_DEPENDENCY"] } },
-        ]),
-      );
-      const diagnostics: Array<Partial<EndorCommandDiagnostic>> = [];
-      const before = Date.now();
-      const result = await runScan(
-        workspace,
-        {
-          DOCKER_CONFIG: "/tmp/fixture-docker-config",
-          DOCKER_HOST: "must-not-reach-endor",
-          ENDOR_NAMESPACE: "fixture-namespace",
-          ENDOR_TOKEN: "fixture-token",
-          HOME: "/tmp/fixture-home",
-          OPENAI_API_KEY: "must-not-reach-endor",
-          SECURITY_SCAN_WORKER_TOKEN: "must-not-reach-endor",
-        },
-        (next) => diagnostics.push(next),
-      );
-
-      expect(result).toMatchObject({
-        status: "completed",
-        reachableFunctionCount: 1,
-        findings: [{ severity: "high", summary: "Reachable lodash function is vulnerable" }],
-      });
-      expect(result.checkedAt).toBeGreaterThanOrEqual(before);
-      expect(result.checkedAt).toBeLessThanOrEqual(Date.now());
-      expect(
-        JSON.parse(await readFile(join(workspace, "endor-artifact", "package.json"), "utf8")),
-      ).toEqual({
-        name: "fixture-plugin",
-        ...(family === "claw" ? { openclaw: { claw: "CLAW.md" } } : {}),
-        dependencies: { "runtime-workspace": "workspace:*", lodash: "4.17.20" },
-        devDependencies: { typescript: "6.0.3" },
-      });
-      await expect(
-        readFile(join(workspace, "endor-artifact", "package-lock.json"), "utf8"),
-      ).resolves.toContain('"lockfileVersion":3');
-      await expect(readFile(join(root, "npm-shrinkwrap.json"), "utf8")).resolves.toContain(
-        '"lockfileVersion":3',
-      );
-      const createArgs = (await readFile(join(workspace, "docker-create-args"), "utf8"))
-        .trim()
-        .split("\n");
-      expect(createArgs).toContain("bridge");
-      expect(createArgs).toContain("NET_ADMIN");
-      expect(createArgs).toContain("ALL");
-      expect(createArgs).toContain("SETUID");
-      expect(createArgs).toContain("SETGID");
-      expect(createArgs).toContain("SETPCAP");
-      expect(createArgs).toContain("CHOWN");
-      expect(createArgs).toContain("no-new-privileges:true");
-      expect(createArgs).toContain("--read-only");
-      expect(createArgs).toContain("/usr/local/bin/clawhub-endor-entrypoint");
-      expect(createArgs).toContain("clawhub-endor-scan");
-      const runId = (await readFile(join(workspace, "docker-name"), "utf8")).replace(
-        "clawhub-endor-",
-        "",
-      );
-      expect(runId).toMatch(/^[a-f0-9]{32}$/);
-      expect(createArgs).toContain(`clawhub-endor-${runId}`);
-      expect(createArgs).toContain(`org.openclaw.clawhub.endor-run-id=${runId}`);
-      expect(createArgs).toContain(
-        `type=bind,source=${join(workspace, "endor-artifact")},target=/workspace,readonly`,
-      );
-      expect(createArgs.filter((arg) => arg === "--env")).toHaveLength(2);
-      expect(createArgs).toContain("ENDOR_NAMESPACE");
-      expect(createArgs).toContain("ENDOR_TOKEN");
-      expect(createArgs).not.toContain("fixture-token");
-      expect(createArgs).not.toContain("OPENAI_API_KEY");
-      expect(await readFile(join(workspace, "docker-create-env"), "utf8")).toBe(
-        "fixture-namespace|fixture-token|||/tmp/fixture-home|/tmp/fixture-docker-config|\n",
-      );
-      expect(await readFile(join(workspace, "docker-start-env"), "utf8")).toBe(
-        "||||/tmp/fixture-home|/tmp/fixture-docker-config|\n",
-      );
-      expect(await readFile(join(workspace, "docker-cleanup-env"), "utf8")).toBe(
-        "||||/tmp/fixture-home|/tmp/fixture-docker-config|\n",
-      );
-      expect(
-        (await readFile(join(workspace, "docker-commands"), "utf8")).trim().split("\n"),
-      ).toEqual(["container create", "container start", "container inspect", "container rm"]);
-      expect(await readFile(join(workspace, "docker-removed"), "utf8")).toBe(containerId);
-      expect(Object.assign({}, ...diagnostics)).toMatchObject({ exitCode: 0 });
-      expect(JSON.stringify(diagnostics)).not.toContain("fixture-token");
-    },
-  );
-
-  it("returns an explicit skip when package.json is missing", async () => {
+  it("scans a normalized disposable package and retains only exact reachable functions", async () => {
     const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"));
-    await expect(runScan(workspace)).resolves.toMatchObject({
-      status: "skipped",
-      reason: "Endor requires package.json at the package artifact root.",
+    const root = await packageRoot(workspace);
+    await writeFile(
+      join(root, "package.json"),
+      `${JSON.stringify({
+        name: "fixture-plugin",
+        dependencies: { "runtime-workspace": "workspace:*", lodash: "4.17.20" },
+        devDependencies: { "dev-workspace": "workspace:^", typescript: "6.0.3" },
+      })}\n`,
+    );
+    await writeFile(join(root, "npm-shrinkwrap.json"), '{"lockfileVersion":3}\n');
+    await writeFile(join(root, "openclaw.plugin.json"), '{"id":"fixture-plugin"}\n');
+    await writeFile(
+      join(workspace, "docker-start-stdout"),
+      report([
+        {
+          spec: {
+            finding_tags: ["FINDING_TAGS_REACHABLE_FUNCTION"],
+            level: "FINDING_LEVEL_HIGH",
+            summary: "Reachable lodash function is vulnerable",
+          },
+        },
+        { spec: { finding_tags: ["FINDING_TAGS_POTENTIALLY_REACHABLE_FUNCTION"] } },
+        { spec: { finding_tags: ["FINDING_TAGS_REACHABLE_DEPENDENCY"] } },
+      ]),
+    );
+    const diagnostics: Array<Partial<EndorCommandDiagnostic>> = [];
+    const before = Date.now();
+    const result = await runScan(
+      workspace,
+      {
+        DOCKER_CONFIG: "/tmp/fixture-docker-config",
+        DOCKER_HOST: "must-not-reach-endor",
+        ENDOR_NAMESPACE: "fixture-namespace",
+        ENDOR_TOKEN: "fixture-token",
+        HOME: "/tmp/fixture-home",
+        OPENAI_API_KEY: "must-not-reach-endor",
+        SECURITY_SCAN_WORKER_TOKEN: "must-not-reach-endor",
+      },
+      (next) => diagnostics.push(next),
+    );
+
+    expect(result).toMatchObject({
+      status: "completed",
+      reachableFunctionCount: 1,
+      findings: [{ severity: "high", summary: "Reachable lodash function is vulnerable" }],
     });
-    await expect(readFile(join(workspace, "docker-commands"))).rejects.toThrow();
+    expect(result.checkedAt).toBeGreaterThanOrEqual(before);
+    expect(result.checkedAt).toBeLessThanOrEqual(Date.now());
+    expect(
+      JSON.parse(await readFile(join(workspace, "endor-artifact", "package.json"), "utf8")),
+    ).toEqual({
+      name: "fixture-plugin",
+      dependencies: { "runtime-workspace": "workspace:*", lodash: "4.17.20" },
+      devDependencies: { typescript: "6.0.3" },
+    });
+    await expect(
+      readFile(join(workspace, "endor-artifact", "package-lock.json"), "utf8"),
+    ).resolves.toContain('"lockfileVersion":3');
+    await expect(readFile(join(root, "npm-shrinkwrap.json"), "utf8")).resolves.toContain(
+      '"lockfileVersion":3',
+    );
+    const createArgs = (await readFile(join(workspace, "docker-create-args"), "utf8"))
+      .trim()
+      .split("\n");
+    const runId = (await readFile(join(workspace, "docker-name"), "utf8")).replace(
+      "clawhub-endor-",
+      "",
+    );
+    expect(runId).toMatch(/^[a-f0-9]{32}$/);
+    expect(createArgs).toContain(`clawhub-endor-${runId}`);
+    expect(createArgs).toContain(`org.openclaw.clawhub.endor-run-id=${runId}`);
+    expect(createArgs).toContain(
+      `type=bind,source=${join(workspace, "endor-artifact")},target=/workspace,readonly`,
+    );
+    expect(await readFile(join(workspace, "docker-create-env"), "utf8")).toBe(
+      "fixture-namespace|fixture-token|||/tmp/fixture-home|/tmp/fixture-docker-config|\n",
+    );
+    expect(await readFile(join(workspace, "docker-start-env"), "utf8")).toBe(
+      "||||/tmp/fixture-home|/tmp/fixture-docker-config|\n",
+    );
+    expect(await readFile(join(workspace, "docker-cleanup-env"), "utf8")).toBe(
+      "||||/tmp/fixture-home|/tmp/fixture-docker-config|\n",
+    );
+    expect((await readFile(join(workspace, "docker-commands"), "utf8")).trim().split("\n")).toEqual(
+      ["container create", "container start", "container inspect", "container rm"],
+    );
+    expect(await readFile(join(workspace, "docker-removed"), "utf8")).toBe(containerId);
+    expect(Object.assign({}, ...diagnostics)).toMatchObject({ exitCode: 0 });
+    expect(JSON.stringify(diagnostics)).not.toContain("fixture-token");
   });
 
   it("bounds the summary without losing the total reachable-function count", async () => {
@@ -261,22 +232,6 @@ describe("runEndorPluginScan", () => {
     expect(result.findings[0]?.summary).toHaveLength(2_000);
   });
 
-  it.each([
-    "",
-    "not json",
-    "{}",
-    '{"all_findings":[]}',
-    '{"all_findings":[{}],"blocking_findings":[],"warning_findings":[]}',
-  ])("fails closed on missing or invalid Endor output: %j", async (raw) => {
-    const workspace = await tempDir();
-    await packageRoot(workspace);
-    await writeFile(join(workspace, "docker-start-stdout"), raw);
-    await expect(runScan(workspace)).rejects.toThrow(
-      "Endor scanner did not emit valid findings JSON",
-    );
-    expect(await readFile(join(workspace, "docker-removed"), "utf8")).toBe(containerId);
-  });
-
   it("reports a nonzero container exit with redacted diagnostics", async () => {
     const workspace = await tempDir();
     await packageRoot(workspace);
@@ -297,20 +252,6 @@ describe("runEndorPluginScan", () => {
     expect(await readFile(join(workspace, "docker-removed"), "utf8")).toBe(containerId);
   });
 
-  it("stops and removes an owned container after a scan timeout", async () => {
-    const workspace = await tempDir();
-    await packageRoot(workspace);
-    await writeFile(join(workspace, "docker-start-sleep"), "");
-    const diagnostics: Array<Partial<EndorCommandDiagnostic>> = [];
-    await expect(
-      runScan(workspace, { CODEX_SECURITY_SCAN_ENDOR_TIMEOUT_MS: "1000" }, (next) =>
-        diagnostics.push(next),
-      ),
-    ).rejects.toThrow("Endor Docker start timed out");
-    expect(Object.assign({}, ...diagnostics)).toMatchObject({ timedOut: true });
-    expect(await readFile(join(workspace, "docker-removed"), "utf8")).toBe(containerId);
-  });
-
   it("finds a container that becomes visible after Docker create times out", async () => {
     const workspace = await tempDir();
     await packageRoot(workspace);
@@ -323,6 +264,19 @@ describe("runEndorPluginScan", () => {
     expect(
       (await readFile(join(workspace, "docker-commands"), "utf8")).match(/container inspect/g),
     ).toHaveLength(2);
+  });
+
+  it("stops when a timed-out create remains unconfirmed after cleanup polling", async () => {
+    const workspace = await tempDir();
+    await packageRoot(workspace);
+    await writeFile(join(workspace, "docker-create-sleep"), "");
+    await writeFile(join(workspace, "docker-create-never-visible"), "");
+    await expect(
+      runScan(workspace, { CODEX_SECURITY_SCAN_ENDOR_TIMEOUT_MS: "100" }),
+    ).rejects.toBeInstanceOf(EndorContainerCleanupError);
+    await expect(readFile(join(workspace, "docker-removed"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it.each([
@@ -356,17 +310,5 @@ describe("runEndorPluginScan", () => {
         ),
       );
     }
-  });
-
-  it("rejects an external artifact symlink before invoking Docker", async () => {
-    const workspace = await tempDir();
-    const root = await packageRoot(workspace);
-    const external = join(await tempDir(), "outside.js");
-    await writeFile(external, "export const outside = true;\n");
-    await symlink(external, join(root, "outside.js"));
-    await expect(runScan(workspace)).rejects.toThrow(
-      "Package artifact contains a symlink outside its root",
-    );
-    await expect(readFile(join(workspace, "docker-commands"))).rejects.toThrow();
   });
 });

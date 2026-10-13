@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { EndorAnalysis } from "./lib/endorAnalysis";
 import {
   appendGitHubSkillScanRequestFilesInternal,
   cancelQueuedVtUpdateJobsInternal,
@@ -318,14 +319,7 @@ const completeCodexScanJobHandler = (
         }>;
         checkedAt: number;
       };
-      endorAnalysis?:
-        | {
-            status: "completed";
-            checkedAt: number;
-            reachableFunctionCount: number;
-            findings: Array<{ severity: string; summary: string }>;
-          }
-        | { status: "skipped" | "failed"; checkedAt: number; reason: string };
+      endorAnalysis?: EndorAnalysis;
       scannerReportsStorageId?: string;
       runId?: string;
     },

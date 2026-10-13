@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { isPluginCategorySlug } from "clawhub-schema";
 import { Download } from "lucide-react";
+import { emitAnalytics, publicAnalyticsContentId } from "../lib/analyticsEvents";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { getPluginCategoryBySlug } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
@@ -51,12 +52,21 @@ export function PluginListItem({
   const primaryCategory = categories[0] ?? null;
   const pluginHref = href ?? buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
   const displayName = presentationTitle(item.displayName, item.name);
+  const recordSelection = () => {
+    if (item.channel === "official" || item.channel === "community")
+      emitAnalytics("select_content", {
+        content_type: "plugin",
+        content_id: publicAnalyticsContentId("plugin", item.name),
+        ui_location: "catalog",
+      });
+  };
 
   if (variant === "card") {
     return (
       <div className="card skill-card plugin-card plugin-summary-item">
         <Link
           to={pluginHref}
+          onClick={recordSelection}
           className="plugin-detail-link"
           aria-label={`Plugin: ${displayName}`}
         />
@@ -114,7 +124,12 @@ export function PluginListItem({
 
   return (
     <div className="skill-list-item plugin-summary-item">
-      <Link to={pluginHref} className="plugin-detail-link" aria-label={`Plugin: ${displayName}`} />
+      <Link
+        to={pluginHref}
+        onClick={recordSelection}
+        className="plugin-detail-link"
+        aria-label={`Plugin: ${displayName}`}
+      />
       <MarketplaceIcon
         kind="plugin"
         label={displayName}

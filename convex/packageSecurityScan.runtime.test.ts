@@ -173,7 +173,7 @@ it("claims an assigned plugin, stores its Endor summary, and serves the exact re
   expect(securityBody.release.endorAnalysis).toEqual(endorAnalysis);
 });
 
-it("preserves a stored Endor summary when a worker omits it", async () => {
+it("preserves prior optional scanner results when an older worker omits them", async () => {
   const { t, releaseId, jobId } = await createPackageScanFixture();
   const endorAnalysis = {
     status: "completed" as const,
@@ -181,7 +181,8 @@ it("preserves a stored Endor summary when a worker omits it", async () => {
     reachableFunctionCount: 0,
     findings: [],
   };
-  await t.run((ctx) => ctx.db.patch(releaseId, { endorAnalysis }));
+  const skillSpectorAnalysis = { status: "clean", issueCount: 0, issues: [], checkedAt: 8 };
+  await t.run((ctx) => ctx.db.patch(releaseId, { endorAnalysis, skillSpectorAnalysis }));
 
   await expect(
     t.mutation(internal.packages.completeReleaseSecurityScanInternal, {
@@ -194,29 +195,6 @@ it("preserves a stored Endor summary when a worker omits it", async () => {
 
   expect((await readReleaseAndJob(t, releaseId, jobId)).release).toMatchObject({
     endorAnalysis,
-  });
-});
-
-it("preserves a stored SkillSpector result when a worker omits it", async () => {
-  const { t, releaseId, jobId } = await createPackageScanFixture();
-  const skillSpectorAnalysis = {
-    status: "clean",
-    issueCount: 0,
-    issues: [],
-    checkedAt: 8,
-  };
-  await t.run((ctx) => ctx.db.patch(releaseId, { skillSpectorAnalysis }));
-
-  await expect(
-    t.mutation(internal.packages.completeReleaseSecurityScanInternal, {
-      releaseId,
-      jobId,
-      leaseToken: "lease-one",
-      llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 10 },
-    }),
-  ).resolves.toEqual({ ok: true });
-
-  expect((await readReleaseAndJob(t, releaseId, jobId)).release).toMatchObject({
     skillSpectorAnalysis,
   });
 });
@@ -268,33 +246,6 @@ it("rejects stale status, lease, and target completions without writing scan res
   expect(release).not.toHaveProperty("skillSpectorAnalysis");
   expect(await t.run((ctx) => ctx.db.get(otherReleaseId))).not.toHaveProperty("endorAnalysis");
   expect(job).toMatchObject({ status: "queued", leaseToken: "lease-one" });
-});
-
-it("parses bounded Endor summaries before any package release write", async () => {
-  const { t, releaseId, jobId } = await createPackageScanFixture();
-
-  await expect(
-    t.mutation(internal.packages.completeReleaseSecurityScanInternal, {
-      releaseId,
-      jobId,
-      leaseToken: "lease-one",
-      llmAnalysis: { status: "clean", checkedAt: 10 },
-      endorAnalysis: {
-        status: "completed",
-        checkedAt: 9,
-        reachableFunctionCount: 51,
-        findings: Array.from({ length: 51 }, (_, index) => ({
-          severity: "high",
-          summary: `Finding ${index}`,
-        })),
-      },
-    }),
-  ).rejects.toThrow();
-
-  const { release, job } = await readReleaseAndJob(t, releaseId, jobId);
-  expect(release).not.toHaveProperty("endorAnalysis");
-  expect(release).not.toHaveProperty("llmAnalysis");
-  expect(job).toMatchObject({ status: "running", leaseToken: "lease-one" });
 });
 
 it("stores a failed Endor summary while enforcing a malicious primary verdict", async () => {

@@ -16,7 +16,7 @@ const RECOVERY_ENVIRONMENT = "clawhub-plugin-release";
 const RECOVERY_APPROVAL_JOB = "approve_plugins_clawhub_release";
 const PARENT_RECEIPT_KIND = "openclaw-clawhub-parent-authorization";
 const RECOVERY_RECEIPT_KIND = "openclaw-clawhub-recovery-approval";
-const AUTOMATED_ROUTES = new Set(["automated-awaited", "automated-detached"]);
+const AUTOMATED_ROUTES = new Set(["automated-awaited", "automated-detached", "automated-sealed"]);
 const IDENTITY_KEYS = [
   "candidateRepository",
   "candidateSha",

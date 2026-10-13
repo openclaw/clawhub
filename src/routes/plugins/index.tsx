@@ -14,6 +14,8 @@ import {
 import { PluginListItem } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
+import { analyticsSearchFilter } from "../../lib/analyticsEvents";
+import { emitPublicSearchSubmission } from "../../lib/analyticsEvents";
 import { formatBrowseCount } from "../../lib/browseCount";
 import {
   parseBrowseTopicFromSearchInput,
@@ -25,6 +27,7 @@ import {
   isRateLimitedPackageApiError,
   type PackageListItem,
 } from "../../lib/packageApi";
+import { useAnalyticsSearchResults } from "../../lib/useAnalyticsSearchResults";
 import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
 
 type VisiblePluginSort = "recommended" | "updated" | "downloads" | "trending";
@@ -414,6 +417,15 @@ function PluginsIndex() {
       : search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
         ? "recommended"
         : (search.sort ?? "recommended");
+  useAnalyticsSearchResults({
+    filter: analyticsSearchFilter(search),
+    query: search.q,
+    count: items.length,
+    loading: isLoading,
+    failed: apiError || rateLimited,
+    context: "plugins",
+    complete: !nextCursor && items.length < PLUGINS_PAGE_SIZE,
+  });
   const visibleItems = useMemo(() => {
     return hasQuery ? sortPluginSearchItems(items, activeSort) : items;
   }, [activeSort, hasQuery, items]);
@@ -486,6 +498,7 @@ function PluginsIndex() {
   );
 
   const handleSearchSubmit = () => {
+    emitPublicSearchSubmission(query, "plugins", "catalog");
     window.clearTimeout(searchNavigateTimer.current);
     navigateToPluginSearch(query, false);
   };

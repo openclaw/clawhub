@@ -231,10 +231,10 @@ describe("useUnifiedSearch", () => {
       "two-creator",
     ]);
     expect(result.current.results.map((entry) => entry.type)).toEqual([
-      "skill",
-      "skill",
       "plugin",
       "plugin",
+      "skill",
+      "skill",
       "creator",
       "creator",
     ]);

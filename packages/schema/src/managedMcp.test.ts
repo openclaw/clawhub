@@ -17,6 +17,33 @@ const definition = {
 };
 
 describe("managed MCP definitions", () => {
+  it("preserves official icon provenance and its separate rights", () => {
+    const input = {
+      ...definition,
+      icon: {
+        ...definition.icon,
+        license: "Provider brand terms",
+        attribution: "Indeed logo belongs to Indeed.",
+        sourceUrl: "https://www.indeed.com/brand/icon.png",
+        licenseUrl: "https://www.indeed.com/legal/brand",
+      },
+    };
+    expect(parseManagedMcpDefinition(input)).toEqual(input);
+  });
+
+  it.each([
+    { license: "Provider brand terms" },
+    { license: "" },
+    { license: "x".repeat(121) },
+    { sourceUrl: "http://example.com/icon.png" },
+    { licenseUrl: "https://example.com/terms?token=secret" },
+    { sourceUrl: "https://127.0.0.1/icon.png" },
+  ])("rejects missing or unsafe icon rights metadata %j", (overrides) => {
+    expect(() =>
+      parseManagedMcpDefinition({ ...definition, icon: { ...definition.icon, ...overrides } }),
+    ).toThrow();
+  });
+
   it("preserves endpoint restrictions, transport and OAuth scopes", () => {
     const input = structuredClone(definition);
     input.connection.url += "?codemode=false&tools=search%2Cread";

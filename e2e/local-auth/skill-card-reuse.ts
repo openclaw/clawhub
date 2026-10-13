@@ -84,10 +84,13 @@ export async function proveSkillCardReuse(
     });
     // Convex can reject excess callers before executing a nested function.
     // This is not a retry: every delivered receipt and lease is checked below.
+    // Current backends renamed these admission errors; unknown failures still reject.
     for (const { admission } of rejections) {
       expect([
         "Too many concurrent requests in a short period of time. Spread out your requests out over time or throttle them to avoid errors.",
         "Couldn't acquire a permit on this funrun",
+        "Too many concurrent requests in a short period of time. Spread your requests out over time or throttle them to avoid errors.",
+        "Timed out waiting for capacity to run this function",
       ]).toContain(admission);
     }
     return receipts;

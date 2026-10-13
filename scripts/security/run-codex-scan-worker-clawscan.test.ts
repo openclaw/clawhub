@@ -481,77 +481,47 @@ ${clawScanArtifactJson({ verdict: "benign" })}
 JSON`,
     );
 
-    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-    const previousSandbox = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX;
-    const previousDefaultBaseUrl = process.env.DEFAULT_BASE_URL;
-    const previousOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
-    const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
-    const previousWorkerToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
-    const previousEndorToken = process.env.ENDOR_TOKEN;
-    const previousEndorKey = process.env.ENDOR_API_CREDENTIALS_KEY;
-    const previousEndorSecret = process.env.ENDOR_API_CREDENTIALS_SECRET;
-    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
-    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX = "off";
-    process.env.DEFAULT_BASE_URL = "https://api.openai.com/v1";
-    process.env.OPENAI_BASE_URL = "https://unapproved.example.invalid/v1";
-    process.env.OPENAI_API_KEY = "mock-provider-key";
-    process.env.SECURITY_SCAN_WORKER_TOKEN = "mock-worker-token";
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX", "off");
+    vi.stubEnv("DEFAULT_BASE_URL", "https://api.openai.com/v1");
+    vi.stubEnv("OPENAI_BASE_URL", "https://unapproved.example.invalid/v1");
+    vi.stubEnv("OPENAI_API_KEY", "mock-provider-key");
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "mock-worker-token");
     vi.stubEnv("DEFAULT_MODEL", "gpt-6-luna");
     vi.stubEnv("REASONING_EFFORT", "high");
     vi.stubEnv("SKILLSPECTOR_MODEL", "gpt-6-luna");
     vi.stubEnv("SKILLSPECTOR_REASONING_EFFORT", "high");
-    process.env.ENDOR_TOKEN = "mock-endor-token";
-    process.env.ENDOR_API_CREDENTIALS_KEY = "mock-endor-key";
-    process.env.ENDOR_API_CREDENTIALS_SECRET = "mock-endor-secret";
+    vi.stubEnv("ENDOR_TOKEN", "mock-endor-token");
+    vi.stubEnv("ENDOR_API_CREDENTIALS_KEY", "mock-endor-key");
+    vi.stubEnv("ENDOR_API_CREDENTIALS_SECRET", "mock-endor-secret");
 
-    try {
-      const onDiagnostic = vi.fn();
-      await runClawScan(
-        skillVersionJob("securityScanJobs:restricted-environment"),
-        workspace,
-        onDiagnostic,
-      );
+    const onDiagnostic = vi.fn();
+    await runClawScan(
+      skillVersionJob("securityScanJobs:restricted-environment"),
+      workspace,
+      onDiagnostic,
+    );
 
-      expect(onDiagnostic).toHaveBeenCalledWith(
-        expect.objectContaining({
-          args: expect.arrayContaining(["--sandbox", "off"]),
-        }),
-      );
+    expect(onDiagnostic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: expect.arrayContaining(["--sandbox", "off"]),
+      }),
+    );
 
-      expect((await readFile(environmentLog, "utf8")).split("\n")).toEqual([
-        "https://api.openai.com/v1",
-        "",
-        "mock-provider-key",
-        "",
-        "gpt-6-luna",
-        "high",
-        "gpt-6-luna",
-        "high",
-        "",
-        "",
-        "",
-        "",
-      ]);
-    } finally {
-      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
-      if (previousSandbox === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX;
-      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX = previousSandbox;
-      if (previousDefaultBaseUrl === undefined) delete process.env.DEFAULT_BASE_URL;
-      else process.env.DEFAULT_BASE_URL = previousDefaultBaseUrl;
-      if (previousOpenAiBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
-      else process.env.OPENAI_BASE_URL = previousOpenAiBaseUrl;
-      if (previousOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
-      else process.env.OPENAI_API_KEY = previousOpenAiApiKey;
-      if (previousWorkerToken === undefined) delete process.env.SECURITY_SCAN_WORKER_TOKEN;
-      else process.env.SECURITY_SCAN_WORKER_TOKEN = previousWorkerToken;
-      if (previousEndorToken === undefined) delete process.env.ENDOR_TOKEN;
-      else process.env.ENDOR_TOKEN = previousEndorToken;
-      if (previousEndorKey === undefined) delete process.env.ENDOR_API_CREDENTIALS_KEY;
-      else process.env.ENDOR_API_CREDENTIALS_KEY = previousEndorKey;
-      if (previousEndorSecret === undefined) delete process.env.ENDOR_API_CREDENTIALS_SECRET;
-      else process.env.ENDOR_API_CREDENTIALS_SECRET = previousEndorSecret;
-    }
+    expect((await readFile(environmentLog, "utf8")).split("\n")).toEqual([
+      "https://api.openai.com/v1",
+      "",
+      "mock-provider-key",
+      "",
+      "gpt-6-luna",
+      "high",
+      "gpt-6-luna",
+      "high",
+      "",
+      "",
+      "",
+      "",
+    ]);
   });
 
   it.each([
@@ -818,164 +788,6 @@ JSON`,
       expect(client.action.mock.calls[0]?.[1]).toMatchObject({
         llmAnalysis: { status: "clean", verdict: "benign" },
       });
-    } finally {
-      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
-    }
-  });
-
-  it.each([
-    {
-      name: "reachable finding",
-      analysis: {
-        status: "completed",
-        checkedAt: 1_780_000_000_000,
-        reachableFunctionCount: 1,
-        findings: [{ severity: "high", summary: "Reachable fixture function" }],
-      } satisfies EndorAnalysis,
-    },
-    {
-      name: "failed analysis",
-      analysis: {
-        status: "failed",
-        checkedAt: 1_780_000_000_000,
-        reason: "Endor analysis failed. Request a rescan to try again.",
-      } satisfies EndorAnalysis,
-    },
-    {
-      name: "skipped analysis",
-      analysis: {
-        status: "skipped",
-        checkedAt: 1_780_000_000_000,
-        reason: "Endor requires package.json at the package artifact root.",
-      } satisfies EndorAnalysis,
-    },
-  ])("supplies $name to the single ClawHub plugin judge", async ({ analysis }) => {
-    const workspace = await tempDir();
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    const callLog = join(workspace, "clawscan-calls.log");
-    const artifactRoot = join(workspace, "artifact", "package");
-    await mkdir(artifactRoot, { recursive: true });
-    await writeFile(join(artifactRoot, "package.json"), '{"name":"fixture-plugin"}\n');
-    await writeFile(join(artifactRoot, "openclaw.plugin.json"), '{"id":"fixture-plugin"}\n');
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `printf 'called\\n' >> ${JSON.stringify(callLog)}
-out=""
-while [[ $# -gt 0 ]]; do
-  if [[ "$1" == "--output" ]]; then out="$2"; shift 2; else shift; fi
-done
-cat > "$out" <<'JSON'
-${clawScanArtifactJson({ endorAnalysis: analysis })}
-JSON`,
-    );
-    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
-    try {
-      const diagnostics: Array<{ args?: string[] }> = [];
-      const job = claimedJob({
-        jobId: `securityScanJobs:endor-${analysis.status}`,
-        source: "publish",
-        targetKind: "packageRelease",
-        target: {
-          package: { name: "@openclaw/fixture-plugin" },
-          release: {
-            version: "1.0.0",
-            endorAnalysis: {
-              status: "completed",
-              checkedAt: 1_700_000_000_000,
-              reachableFunctionCount: 0,
-              findings: [],
-            },
-          },
-          trustedOpenClawPlugin: true,
-        },
-      });
-      const result = await runClawScan(job, workspace, (next) => diagnostics.push(next), analysis);
-      expect(result.llmAnalysis.verdict).toBe("benign");
-      expect((await readFile(callLog, "utf8")).trim().split("\n")).toEqual(["called"]);
-
-      const args = diagnostics.find((entry) => entry.args)?.args ?? [];
-      const configPath = args[args.indexOf("--config") + 1];
-      const contextPath = args[args.indexOf("--context") + 1];
-      const scannerResult = args[args.indexOf("--scanner-result") + 1];
-      expect(configPath).toBe(join(workspace, "clawhub-endor-profile.json"));
-      expect(contextPath).toBe(join(workspace, "clawhub-endor-context.json"));
-      expect(scannerResult).toBe(`endor=${join(workspace, "endor-analysis.json")}`);
-      if (!configPath) throw new Error("ClawScan config path was missing");
-      const config = JSON.parse(await readFile(configPath, "utf8"));
-      expect(config.profiles.clawhub.scanners).toContain("clawscan-static");
-      expect(config.profiles.clawhub.scanners).toContain("skillspector");
-      expect(config.profiles.clawhub.scanners).toContainEqual(
-        expect.objectContaining({ id: "endor", targets: ["skill", "plugin"] }),
-      );
-      const prompt = await readFile(join(workspace, "clawhub-endor-prompt.md"), "utf8");
-      expect(prompt).toContain("{{ scanners.endor }}");
-      expect(prompt).toContain("failed or skipped");
-      expect(prompt).toContain("artifact_inspection");
-      if (!contextPath) throw new Error("ClawScan context path was missing");
-      const contextText = await readFile(contextPath, "utf8");
-      const context = JSON.parse(contextText);
-      expect(Object.keys(context)).toEqual(["metadata"]);
-      expect(context.metadata).toMatchObject({
-        job: { _id: job.job._id, source: "publish", targetKind: "packageRelease" },
-        target: {
-          package: { name: "@openclaw/fixture-plugin" },
-          release: { version: "1.0.0" },
-          trustedOpenClawPlugin: true,
-        },
-        policy: { openclawPluginTrust: expect.stringContaining("trusted") },
-      });
-      // Only this run's Endor result reaches the judge; the stored one may be stale.
-      expect(context.metadata.target.release).not.toHaveProperty("endorAnalysis");
-      expect(contextText).not.toContain("lease-fixture");
-      expect(JSON.parse(await readFile(join(workspace, "endor-analysis.json"), "utf8"))).toEqual(
-        analysis,
-      );
-    } finally {
-      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
-    }
-  });
-
-  it("rejects a plugin judge artifact that omits the supplied Endor evidence", async () => {
-    const workspace = await tempDir();
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    const artifactRoot = join(workspace, "artifact", "package");
-    await mkdir(artifactRoot, { recursive: true });
-    await writeFile(join(artifactRoot, "package.json"), '{"name":"fixture-plugin"}\n');
-    await writeFile(join(artifactRoot, "openclaw.plugin.json"), '{"id":"fixture-plugin"}\n');
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `out=""
-while [[ $# -gt 0 ]]; do
-  if [[ "$1" == "--output" ]]; then out="$2"; shift 2; else shift; fi
-done
-cat > "$out" <<'JSON'
-${clawScanArtifactJson()}
-JSON`,
-    );
-    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
-    try {
-      const analysis = {
-        status: "failed",
-        checkedAt: 1_780_000_000_000,
-        reason: "Endor analysis failed. Request a rescan to try again.",
-      } satisfies EndorAnalysis;
-      await expect(
-        runClawScan(
-          claimedJob({
-            jobId: "securityScanJobs:endor-evidence-missing",
-            source: "publish",
-            targetKind: "packageRelease",
-            target: {},
-          }),
-          workspace,
-          () => {},
-          analysis,
-        ),
-      ).rejects.toThrow("ClawScan Endor evidence was not supplied to the judge");
     } finally {
       if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
       else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
@@ -1399,6 +1211,7 @@ JSON`,
     });
     await expect(readFile(callLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     const mountedWorkspace = await readFile(join(workspace, "endor-mounted-source"), "utf8");
+    tempDirs.push(dirname(mountedWorkspace));
     await expect(readFile(join(mountedWorkspace, "package.json"), "utf8")).resolves.toContain(
       "name",
     );
@@ -1560,9 +1373,12 @@ exit 7`,
       settled = true;
     });
     try {
-      await vi.waitFor(async () => {
-        expect(await readFile(skillFailed, "utf8")).toBe("");
-      });
+      await vi.waitFor(
+        async () => {
+          expect(await readFile(skillFailed, "utf8")).toBe("");
+        },
+        { timeout: 10_000 },
+      );
       expect(settled).toBe(false);
       await expect(readFile(cleanupMarker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     } finally {

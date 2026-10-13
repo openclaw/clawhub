@@ -475,7 +475,7 @@ describe("Header", () => {
     expect(scrollIntoViewMock).toHaveBeenLastCalledWith({ block: "nearest" });
   });
 
-  it("shows skills, plugins, and creators together in grouped typeahead sections", () => {
+  it("shows plugins before skills and creators in grouped typeahead sections", () => {
     navigateMock.mockReset();
 
     render(<Header />);
@@ -488,6 +488,11 @@ describe("Header", () => {
     const skillGroup = within(typeahead).getByRole("group", { name: "Skills" });
     const pluginGroup = within(typeahead).getByRole("group", { name: "Plugins" });
     const creatorGroup = within(typeahead).getByRole("group", { name: "Creators" });
+    expect(within(typeahead).getAllByRole("group")).toEqual([
+      pluginGroup,
+      skillGroup,
+      creatorGroup,
+    ]);
     expect(screen.getByText("Weather Skill")).toBeTruthy();
     expect(screen.getByText("Weather Plugin")).toBeTruthy();
     expect(screen.getByText("Local Creator")).toBeTruthy();
@@ -512,7 +517,9 @@ describe("Header", () => {
     expect(input.getAttribute("aria-expanded")).toBe("true");
     const activeDescendant = input.getAttribute("aria-activedescendant");
     expect(activeDescendant).toBeTruthy();
-    expect(document.getElementById(activeDescendant ?? "")).toBeTruthy();
+    expect(document.getElementById(activeDescendant ?? "")?.textContent).toContain(
+      "Weather Plugin",
+    );
     expect(within(typeahead).queryByText("Publishers")).toBeNull();
     expect(within(typeahead).queryByText('See user results for "weather"')).toBeNull();
     expect(within(typeahead).getByText('See creator results for "weather"')).toBeTruthy();
@@ -522,7 +529,7 @@ describe("Header", () => {
 
     expect(navigateMock).toHaveBeenCalledWith({
       to: "/search",
-      search: { q: "weather", type: "skills" },
+      search: { q: "weather", type: "plugins" },
     });
   });
 

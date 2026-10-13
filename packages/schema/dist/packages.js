@@ -185,24 +185,21 @@ export const PackageSkillSpectorAnalysisSchema = type({
     error: "string?",
     checkedAt: "number",
 });
-const PackageEndorFindingSeveritySchema = type("string").atMostLength(64);
-const PackageEndorFindingSummarySchema = type("string").atMostLength(2000);
-const PackageEndorFindingSchema = type({
-    severity: PackageEndorFindingSeveritySchema,
-    summary: PackageEndorFindingSummarySchema,
-});
-const PackageEndorCompletedAnalysisSchema = type({
+export const PackageEndorAnalysisSchema = type({
     status: '"completed"',
     checkedAt: "number",
     reachableFunctionCount: "number.integer >= 0",
-    findings: PackageEndorFindingSchema.array().atMostLength(50),
-});
-const PackageEndorIncompleteAnalysisSchema = type({
+    findings: type({
+        severity: type("string").atMostLength(64),
+        summary: type("string").atMostLength(2000),
+    })
+        .array()
+        .atMostLength(50),
+}).or({
     status: '"skipped"|"failed"',
     checkedAt: "number",
     reason: type("string").atMostLength(2000),
 });
-export const PackageEndorAnalysisSchema = PackageEndorCompletedAnalysisSchema.or(PackageEndorIncompleteAnalysisSchema);
 export const PackageAigFindingSchema = type({
     ruleId: "string",
     level: "string",

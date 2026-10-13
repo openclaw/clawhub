@@ -294,15 +294,14 @@ describe("restored UI design contract", () => {
     }
   });
 
-  it("keeps Vercel browser instrumentation mounted outside local dev", () => {
+  it("keeps Vercel browser tracking out of the app shell", () => {
     const rootSource = rootRoute();
 
-    expect(rootSource).toContain('import { Analytics } from "@vercel/analytics/react";');
-    expect(rootSource).toContain('import { SpeedInsights } from "@vercel/speed-insights/react";');
-    expect(rootSource).toContain('!["localhost", "127.0.0.1", "::1"].includes');
-    expect(rootSource).toContain("{showAnalytics ? (");
-    expect(rootSource).toContain("<Analytics />");
-    expect(rootSource).toContain("<SpeedInsights />");
+    expect(rootSource).not.toContain("@vercel/analytics");
+    expect(rootSource).not.toContain("@vercel/speed-insights");
+    expect(rootSource).not.toContain("<Analytics />");
+    expect(rootSource).not.toContain("<SpeedInsights />");
+    expect(rootSource).toContain("<GoogleAnalytics />");
   });
 
   it("requires the responsive header rail, search overlay, and theme controls", () => {

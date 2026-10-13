@@ -12952,16 +12952,16 @@ export const updateReleaseAigAnalysisInternal = internalMutation({
 
 type ReleaseLlmAnalysis = NonNullable<Doc<"packageReleases">["llmAnalysis"]>;
 
-async function applyReleaseLlmAnalysis(
+async function applyReleaseSecurityAnalysis(
   ctx: Pick<MutationCtx, "db"> & Partial<Pick<MutationCtx, "scheduler">>,
   release: Doc<"packageReleases">,
-  llmAnalysis: ReleaseLlmAnalysis,
+  results: Pick<Doc<"packageReleases">, "endorAnalysis" | "skillSpectorAnalysis"> & {
+    llmAnalysis: ReleaseLlmAnalysis;
+  },
 ) {
-  await ctx.db.patch(release._id, { llmAnalysis });
-  const updatedRelease: Doc<"packageReleases"> = {
-    ...release,
-    llmAnalysis,
-  };
+  await ctx.db.patch(release._id, results);
+  const updatedRelease = { ...release, ...results };
+  const { llmAnalysis } = results;
   const llmVerdict = (llmAnalysis.verdict ?? llmAnalysis.status).trim().toLowerCase();
   await syncLatestPackageVerification(ctx, updatedRelease, {
     quarantineMaliciousLatest: llmVerdict === "malicious",
@@ -12996,23 +12996,13 @@ export const completeReleaseSecurityScanInternal = internalMutation({
       ? endorAnalysisSchema.parse(args.endorAnalysis)
       : undefined;
 
-    const releaseWithScannerResults: Doc<"packageReleases"> = {
-      ...release,
+    await applyReleaseSecurityAnalysis(ctx, release, {
+      llmAnalysis: args.llmAnalysis,
       ...(args.skillSpectorAnalysis !== undefined
         ? { skillSpectorAnalysis: args.skillSpectorAnalysis }
         : {}),
       ...(endorAnalysis ? { endorAnalysis } : {}),
-    };
-    const releasePatch: Partial<Doc<"packageReleases">> = {
-      ...(args.skillSpectorAnalysis !== undefined
-        ? { skillSpectorAnalysis: args.skillSpectorAnalysis }
-        : {}),
-      ...(endorAnalysis ? { endorAnalysis } : {}),
-    };
-    if (Object.keys(releasePatch).length > 0) {
-      await ctx.db.patch(args.releaseId, releasePatch);
-    }
-    await applyReleaseLlmAnalysis(ctx, releaseWithScannerResults, args.llmAnalysis);
+    });
 
     const now = Date.now();
     await ctx.db.patch(args.jobId, {
@@ -13035,7 +13025,7 @@ export const updateReleaseLlmAnalysisInternal = internalMutation({
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
     if (!isReleaseActive(release)) return;
-    await applyReleaseLlmAnalysis(ctx, release, args.llmAnalysis);
+    await applyReleaseSecurityAnalysis(ctx, release, { llmAnalysis: args.llmAnalysis });
   },
 });
 
@@ -13122,6 +13112,8 @@ export const backfillLatestPackageScanStatus = action({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertAdmin(user);
     return await runMutationRef(
       ctx,
       internalRefs.packages.backfillLatestPackageScanStatusInternal,
@@ -13392,6 +13384,8 @@ export const backfillPackageReleaseScans = action({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertAdmin(user);
     return await runActionRef(ctx, internalRefs.packages.backfillPackageReleaseScansInternal, {
       batchSize: args.batchSize,
     });

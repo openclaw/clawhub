@@ -1,6 +1,7 @@
 import { AlertTriangle } from "lucide-react";
 import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
+import { emitAnalytics } from "../lib/analyticsEvents";
 import { Button } from "./ui/button";
 
 interface ErrorBoundaryProps {
@@ -38,6 +39,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    emitAnalytics("client_error", { error_type: "render", error_code: "render_failed" });
     console.error("ErrorBoundary caught:", error, errorInfo);
   }
 

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import type { Id } from "../../convex/_generated/dataModel";
+import { emitAnalytics } from "../lib/analyticsEvents";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -214,6 +215,18 @@ export function SkillVersionsPanel({
                       {!nixPlugin && isAvailable ? (
                         <a
                           href={buildVersionDownloadHref(skillSlug, ownerHandle, version.version)}
+                          onClick={() =>
+                            emitAnalytics("select_content", {
+                              content_type: "install",
+                              ui_location: "detail",
+                              method: "download",
+                              artifact_version: /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(
+                                version.version,
+                              )
+                                ? version.version
+                                : undefined,
+                            })
+                          }
                           download={`${skillSlug}-${version.version}.zip`}
                           className="skill-version-release-download skill-version-release-download-labeled"
                           aria-label={`Download version v${version.version}`}

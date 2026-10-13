@@ -7,7 +7,7 @@ import {
   formatUserFacingErrorMessage,
   parseMultipartPublish,
   parseMultipartSkillScan,
-  resolveTagsBatch,
+  resolvePublicSkillVersions,
   softDeleteErrorToResponse,
 } from "./httpApiV1/shared";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
@@ -84,7 +84,7 @@ describe("http API v1 shared helpers", () => {
     await expect(response.text()).resolves.toBe("Internal Server Error");
   });
 
-  it("checks latest tags against current version documents", async () => {
+  it("checks a selected latest version even when it has no tag", async () => {
     const ctx = makeCtx();
     const versionId = "skillVersions:latest" as Id<"skillVersions">;
     const skillId = "skills:demo" as Id<"skills">;
@@ -95,15 +95,15 @@ describe("http API v1 shared helpers", () => {
         version: { version: "2.0.0" },
       },
     ]);
-    expect(await resolveTagsBatch(ctx, [{ latest: versionId }], [skillId])).toEqual([
-      { latest: "2.0.0" },
-    ]);
+    expect(
+      await resolvePublicSkillVersions(ctx, [{ skillId, tags: {}, latestVersionId: versionId }]),
+    ).toEqual([{ tags: {}, latestVersion: { version: "2.0.0" } }]);
     expect(ctx.runQuery).toHaveBeenCalledWith(internal.skills.getPublicVersionSelectionsInternal, {
       selections: [{ skillId, versionId }],
     });
   });
 
-  it("deduplicates tag targets in the checked batch", async () => {
+  it("deduplicates latest and tag targets in the checked batch", async () => {
     const ctx = makeCtx();
     const versionId = "skillVersions:latest" as Id<"skillVersions">;
     const skillId = "skills:demo" as Id<"skills">;
@@ -115,8 +115,12 @@ describe("http API v1 shared helpers", () => {
       },
     ]);
     expect(
-      await resolveTagsBatch(ctx, [{ latest: versionId, stable: versionId }], [skillId]),
-    ).toEqual([{ latest: "2.0.0", stable: "2.0.0" }]);
+      await resolvePublicSkillVersions(ctx, [
+        { skillId, tags: { latest: versionId, stable: versionId }, latestVersionId: versionId },
+      ]),
+    ).toEqual([
+      { tags: { latest: "2.0.0", stable: "2.0.0" }, latestVersion: { version: "2.0.0" } },
+    ]);
     expect(ctx.runQuery).toHaveBeenCalledWith(internal.skills.getPublicVersionSelectionsInternal, {
       selections: [{ skillId, versionId }],
     });
@@ -144,8 +148,10 @@ describe("http API v1 shared helpers", () => {
       ]);
 
       expect(
-        await resolveTagsBatch(ctx, [{ latest: versionId, stable: versionId }], [skillId]),
-      ).toEqual([{ latest: "1.0.0" }]);
+        await resolvePublicSkillVersions(ctx, [
+          { skillId, tags: { latest: versionId, stable: versionId } },
+        ]),
+      ).toEqual([{ tags: { latest: "1.0.0" }, latestVersion: null }]);
       expect(ctx.runQuery).toHaveBeenCalledTimes(1);
       expect(ctx.runQuery).toHaveBeenCalledWith(
         internal.skills.getPublicVersionSelectionsInternal,
@@ -169,9 +175,11 @@ describe("http API v1 shared helpers", () => {
         version: { version: "1.5.0" },
       },
     ]);
-    expect(await resolveTagsBatch(ctx, [{ latest: otherId, stable: stableId }], [skillId])).toEqual(
-      [{ stable: "1.5.0" }],
-    );
+    expect(
+      await resolvePublicSkillVersions(ctx, [
+        { skillId, tags: { latest: otherId, stable: stableId } },
+      ]),
+    ).toEqual([{ tags: { stable: "1.5.0" }, latestVersion: null }]);
   });
 
   it("validates skill scan multipart payloads before storing uploaded files", async () => {

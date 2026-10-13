@@ -243,6 +243,7 @@ export function SkillDetailTabs({
                 className={`skill-readme-preview${
                   isReadmeLong && !isReadmeExpanded ? " is-collapsed" : ""
                 }`}
+                data-analytics-public-detail=""
               >
                 <MarkdownPreview
                   highlight={false}

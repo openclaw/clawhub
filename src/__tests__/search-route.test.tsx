@@ -346,7 +346,7 @@ describe("search route", () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
-    render(<Component />);
+    const rendered = render(<Component />);
 
     expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Plugins" })).toBeTruthy();
@@ -354,6 +354,18 @@ describe("search route", () => {
     expect(screen.getByText("weather")).toBeTruthy();
     expect(screen.queryByText("weather-plugin")).toBeNull();
     expect(screen.queryByText("Weather Creator @weather")).toBeNull();
+
+    searchMock = { q: "weather" };
+    rendered.rerender(<Component />);
+    expect(
+      screen.getAllByRole("region").map((section) => section.getAttribute("aria-label")),
+    ).toEqual(["Plugins", "Skills", "Creators"]);
+    expect(Array.from(document.querySelectorAll(".search-tab"), (tab) => tab.textContent)).toEqual([
+      "All",
+      "Plugins",
+      "Skills",
+      "Creators",
+    ]);
   });
 
   it("passes official owner metadata to skill search rows", async () => {

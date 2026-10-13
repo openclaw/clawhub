@@ -143,6 +143,7 @@ describe("run-codex-scan-worker diagnostics", () => {
   });
 
   it("stops claiming after a worker-fatal result and finishes already leased work", async () => {
+    const sleep = vi.fn(async () => {});
     let releaseActiveJob: (() => void) | undefined;
     const activeJob = new Promise<void>((resolve) => {
       releaseActiveJob = resolve;
@@ -167,9 +168,54 @@ describe("run-codex-scan-worker diagnostics", () => {
       canClaim: () => true,
       claimJobs,
       processClaimedJob,
+      idlePollMs: 1000,
+      sleep,
     });
     await vi.waitFor(() => expect(processClaimedJob).toHaveBeenCalledTimes(2));
     releaseActiveJob?.();
+
+    await expect(run).resolves.toMatchObject({
+      totalClaimed: 2,
+      totalCompleted: 1,
+      totalFailed: 1,
+    });
+    expect(claimJobs).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("does not refill when ordinary work settles immediately before a fatal result", async () => {
+    let finishNormal: (() => void) | undefined;
+    let finishFatal: (() => void) | undefined;
+    const normal = new Promise<void>((resolve) => {
+      finishNormal = resolve;
+    });
+    const fatal = new Promise<void>((resolve) => {
+      finishFatal = resolve;
+    });
+    const claimJobs = vi
+      .fn()
+      .mockResolvedValueOnce({ claimedCount: 2, jobs: ["normal", "fatal"] })
+      .mockResolvedValue({ claimedCount: 0, jobs: [] });
+    const processClaimedJob = vi.fn(async (job: string) => {
+      await (job === "normal" ? normal : fatal);
+      return {
+        completed: job === "normal",
+        hardFailed: job === "fatal",
+        retryableFailed: false,
+        ...(job === "fatal" ? { workerMustStop: true } : {}),
+      };
+    });
+
+    const run = runContinuouslyRefilledWorkerPool({
+      concurrency: 2,
+      maxJobs: undefined,
+      canClaim: () => true,
+      claimJobs,
+      processClaimedJob,
+    });
+    await vi.waitFor(() => expect(processClaimedJob).toHaveBeenCalledTimes(2));
+    finishNormal?.();
+    finishFatal?.();
 
     await expect(run).resolves.toMatchObject({
       totalClaimed: 2,

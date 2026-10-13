@@ -46,6 +46,7 @@ import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { UploadDropzoneDecor } from "../../components/UploadDropzoneDecor";
 import { VersionInput } from "../../components/VersionInput";
+import { captureAnalyticsOperation, emitAnalytics } from "../../lib/analyticsEvents";
 import { setPostPublishFlash } from "../../lib/postPublishFlash";
 import {
   extractSkillFrontmatterDescription,
@@ -121,6 +122,7 @@ export function Upload() {
     | undefined;
 
   const [hasAttempted, setHasAttempted] = useState(false);
+  const analyticsFormStarted = useRef(false);
   const [files, setFiles] = useState<File[]>([]);
   const [ignoredLocalMetadataPaths, setIgnoredLocalMetadataPaths] = useState<string[]>([]);
   const [pendingFileRemovalIndex, setPendingFileRemovalIndex] = useState<number | null>(null);
@@ -673,7 +675,14 @@ export function Upload() {
     event.preventDefault();
     setHasAttempted(true);
     if (hasPublished) return;
+    const operation = captureAnalyticsOperation("skill_publish");
+    emitAnalytics("form_attempt", { form_id: "skill_publish", ui_location: "publish" });
     if (!validation.ready) {
+      emitAnalytics("form_validation_error", {
+        form_id: "skill_publish",
+        field_name: "form",
+        error_code: "invalid",
+      });
       const message = validation.issues[0] ?? "Fix validation issues to continue.";
       setError(message);
       toast.error(message);
@@ -766,10 +775,22 @@ export function Upload() {
       setChangelogSource("user");
       if (result) {
         if (typeof result === "object" && "status" in result && result.status === "pending") {
+          operation?.emit("resource_action", {
+            action: "publish",
+            content_type: "skill",
+            action_result: "accepted",
+            ui_location: "publish",
+          });
           toast.success("Publish received. Security checks are running.");
           void navigate({ to: "/dashboard" });
           return;
         }
+        operation?.emit("resource_action", {
+          action: "publish",
+          content_type: "skill",
+          action_result: "success",
+          ui_location: "publish",
+        });
         const ownerParam = ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
         const didSetPostPublishFlash = setPostPublishFlash(ownerParam, trimmedSlug);
         if (!didSetPostPublishFlash) {
@@ -782,6 +803,12 @@ export function Upload() {
         });
       }
     } catch (publishError) {
+      operation?.emit("resource_action", {
+        action: "publish",
+        content_type: "skill",
+        action_result: "error",
+        ui_location: "publish",
+      });
       setStatus(null);
       const message = formatPublishError(publishError);
       setError(message);
@@ -838,6 +865,12 @@ export function Upload() {
 
         <form
           onSubmit={handleSubmit}
+          onFocusCapture={() => {
+            if (!analyticsFormStarted.current) {
+              analyticsFormStarted.current = true;
+              emitAnalytics("form_start", { form_id: "skill_publish", ui_location: "publish" });
+            }
+          }}
           className={
             isNewSkillPublishEmpty
               ? "publish-empty-skill-form flex flex-col gap-6"

@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { applyRateLimit } from "../lib/httpRateLimit";
@@ -34,7 +35,11 @@ export async function starsPostRouterV1Handler(ctx: ActionCtx, request: Request)
     });
     return json(result, 200, rate.headers);
   } catch (e) {
-    if (e instanceof Error && e.message === "Skill not found") {
+    // Convex preserves application error data across the mutation RPC boundary.
+    if (
+      (e instanceof ConvexError && e.data === "Skill not found") ||
+      (e instanceof Error && e.message === "Skill not found")
+    ) {
       return text("Skill not found", 404, rate.headers);
     }
     return text(errorMessage(e, "Unable to star skill."), 400, rate.headers);

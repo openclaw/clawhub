@@ -28,6 +28,8 @@ SOFTWARE.
 export function buildManagedMcpBundle(raw: unknown) {
   const definition = parseManagedMcpDefinition(raw);
   const { id, name, company, description, category, version, connection, icon } = definition;
+  const separateIconRights = icon.license !== "MIT";
+  const packageLicense = separateIconRights ? "SEE LICENSE IN LICENSE" : "MIT";
   const packageName = `@openclaw/${id}`;
   const auth = connection.auth;
   const server = {
@@ -46,7 +48,7 @@ export function buildManagedMcpBundle(raw: unknown) {
       name: packageName,
       version,
       description,
-      license: "MIT",
+      license: packageLicense,
       author: "OpenClaw",
     }),
     "openclaw.plugin.json": json({
@@ -63,7 +65,8 @@ export function buildManagedMcpBundle(raw: unknown) {
       version,
       description,
       author: { name: "OpenClaw" },
-      license: "MIT",
+      // This optional manifest field requires SPDX; mixed asset rights live in LICENSE/NOTICE.
+      ...(separateIconRights ? {} : { license: "MIT" }),
       mcpServers: "./.mcp.json",
     }),
     ".mcp.json": json({
@@ -71,8 +74,10 @@ export function buildManagedMcpBundle(raw: unknown) {
     }),
     [MANAGED_MCP_DEFINITION_PATH]: json(definition),
     "README.md": `${description}\n\nMCP service operated by ${company}. Wrapper published by OpenClaw.\n${definition.setup ? `\n${definition.setup}\n` : ""}`,
-    LICENSE: WRAPPER_LICENSE,
-    NOTICE: `The wrapper is MIT-licensed. The remote service is subject to its provider's terms.\nIcon: ${icon.attribution}; ${icon.license}.\nPackage scanning covers these files, not the remote service or its future tools.\n`,
+    LICENSE: separateIconRights
+      ? `The following MIT license covers the wrapper. It does not apply to assets/icon.png; see NOTICE for the icon's separate rights and terms.\n\n${WRAPPER_LICENSE}`
+      : WRAPPER_LICENSE,
+    NOTICE: `The wrapper is MIT-licensed. The remote service is subject to its provider's terms.\nIcon: ${icon.attribution}; ${icon.license}.\n${icon.sourceUrl ? `Source: ${icon.sourceUrl}\n` : ""}${icon.licenseUrl ? `Terms: ${icon.licenseUrl}\n` : ""}${separateIconRights ? "The icon is not relicensed under the wrapper's MIT license. Provider trademarks remain with their owners.\n" : ""}Package scanning covers these files, not the remote service or its future tools.\n`,
   };
   const iconBytes = Uint8Array.from(atob(icon.pngBase64), (character) => character.charCodeAt(0));
   validateSkillPresentationIcon({ path: "assets/icon.png", bytes: iconBytes });

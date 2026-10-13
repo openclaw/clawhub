@@ -52,13 +52,25 @@ test("agents/openai.yaml drives hosted skill presentation in UI and feed", async
   await waitForHydration(page);
   await expect(page.locator("h1.skill-page-title")).toHaveText("OpenAI Presentation Fixture");
   await expect(page.getByText("Feed-ready OpenAI summary.")).toBeVisible();
-  const icon = page.locator(".skill-hero-title-row img.marketplace-icon-image");
+  // Detail heroes are title-first; hosted presentation icons remain on catalog rows.
+  await expect(page.locator(".skill-hero-title-row .marketplace-icon")).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("presentation-detail-title-first.png"),
+    fullPage: true,
+  });
+  await page.goto(`/${ownerHandle}`);
+  await waitForHydration(page);
+  const icon = page.locator(`a.skill-list-item[href$="/${slug}"] img.marketplace-icon-image`);
   await expect(icon).toBeVisible();
   await expect
     .poll(() =>
       icon.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
     )
     .toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("presentation-profile-icon.png"),
+    fullPage: true,
+  });
   const iconUrl = await icon.getAttribute("src");
   expect(iconUrl).toMatch(/^\/api\/v1\/skill-icons\/[a-f\d]{64}$/);
 

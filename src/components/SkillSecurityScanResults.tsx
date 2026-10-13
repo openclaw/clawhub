@@ -417,7 +417,7 @@ function SkillSpectorContent({
     Boolean(scannerSnippet) && isMarkdownFile && /^\s{0,3}(?:`{3,}|~{3,})/m.test(snippet);
 
   return (
-    <div className="skill-spector-evidence">
+    <div className="skill-spector-evidence" data-analytics-public-detail="">
       <p className="skill-spector-evidence-meta">
         {label}
         {scannerSnippet ? <span>May include surrounding context.</span> : null}
@@ -461,7 +461,7 @@ function SkillSpectorFindingCard({
         </div>
         <div>
           <dt>Finding</dt>
-          <dd>
+          <dd data-analytics-public-detail="">
             <MarkdownPreview variant="report" highlight={false}>
               {issue.explanation?.trim() || issue.finding || ""}
             </MarkdownPreview>

@@ -117,8 +117,7 @@ export async function runWorkerCommand(
       if (timedOut || outputLimitExceeded) killProcessTree("SIGKILL");
       const label = options.commandLabel ?? command;
       if (outputLimitExceeded) {
-        const maxBytes =
-          outputLimitExceeded === "stdout" ? options.maxStdoutBytes : options.maxStderrBytes;
+        const maxBytes = outputLimitExceeded === "stdout" ? maxStdoutBytes : maxStderrBytes;
         reject(
           new CommandFailure(
             `${label} ${outputLimitExceeded} exceeded the ${maxBytes} byte output limit; see redacted stdout/stderr diagnostics`,

@@ -53,6 +53,9 @@ EOF
 }
 write_resolver_shim npm "$npm_executable"
 write_resolver_shim yarn "$yarn_executable"
+# Fail before scanning if the mount cannot execute our credential-isolating shims.
+"$resolver_bin/npm" --version >/dev/null
+"$resolver_bin/yarn" --version >/dev/null
 export PATH="$resolver_bin:$PATH"
 scan_root=$(mktemp -d)
 cp -R "$1"/. "$scan_root"/
@@ -72,15 +75,21 @@ git -C "$scan_root" remote add origin https://example.invalid/clawscan/scan-targ
 cd "$scan_root"
 report=$(mktemp)
 diagnostic=$(mktemp)
-status=0
-endorctl scan --dry-run --dependencies --languages=javascript,typescript --call-graph-languages=javascript,typescript --build=false --output-type=json --path "$scan_root" >"$report" 2>"$diagnostic" || status=$?
+status_file=$(mktemp)
+# Stream diagnostics so a timeout does not erase the last completed scan stage.
+# Keep the scanner's status separately: POSIX pipelines return tee's status.
+{
+  status=0
+  endorctl scan --dry-run --dependencies --languages=javascript,typescript --call-graph-languages=javascript,typescript --build=false --output-type=json --path "$scan_root" >"$report" || status=$?
+  printf '%s\n' "$status" >"$status_file"
+} 2>&1 | tee "$diagnostic" >&2
+status=$(cat "$status_file")
 # The worker requires JSON, including for a successful empty scan.
 # Endor's 128 means policy findings; analysis failures must still fail the scanner.
 node - "$status" "$report" "$diagnostic" <<'JS'
 const fs = require("node:fs");
 const [status, reportPath, diagnosticPath] = process.argv.slice(2);
 const diagnostic = fs.readFileSync(diagnosticPath, "utf8");
-process.stderr.write(diagnostic);
 function fail(message) {
   console.error(message);
   process.exit(1);

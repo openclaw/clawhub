@@ -61,6 +61,13 @@ Additional product decision:
 
 ## Constraints
 
+### Documentation for prerelease-only plugins
+
+Plugin detail pages prefer the latest release. Without one, load the newest
+published release from the public version history, following filtered pages.
+Fetch its README by exact version. This display fallback does not promote a
+prerelease or change install defaults, package tags, or publication visibility.
+
 ### Publication archive ownership
 
 Package publication allocates a generated legacy ZIP only when it reaches release

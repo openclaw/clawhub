@@ -24,6 +24,10 @@ const CHILD_RUNTIME_ENV_KEYS = [
   "WINDIR",
   "COMSPEC",
   "PATHEXT",
+  // The host Docker CLI needs its selected context. Container variables are
+  // explicitly selected in the create command.
+  "HOME",
+  "DOCKER_CONFIG",
 ] as const;
 const DEFAULT_ENDOR_TIMEOUT_MS = 20 * 60 * 1000;
 const DOCKER_CLEANUP_TIMEOUT_MS = 10_000;
@@ -44,34 +48,27 @@ export class EndorContainerCleanupError extends Error {
 }
 
 const unknownRecordSchema = z.record(z.string(), z.unknown());
-const endorFindingSchema = z
-  .object({
-    meta: z
-      .object({
-        description: z.string().optional(),
-        name: z.string().optional(),
-      })
-      .passthrough()
-      .optional(),
-    spec: z
-      .object({
-        extra_key: z.string().optional(),
-        finding_tags: z.array(z.string()).optional(),
-        level: z.string().optional(),
-        summary: z.string().optional(),
-        target_dependency_package_name: z.string().optional(),
-        target_dependency_version: z.string().optional(),
-      })
-      .passthrough(),
-  })
-  .passthrough();
-const endorRawReportSchema = z
-  .object({
-    all_findings: z.array(endorFindingSchema),
-    blocking_findings: z.array(z.record(z.string(), z.unknown())),
-    warning_findings: z.array(z.record(z.string(), z.unknown())),
-  })
-  .passthrough();
+const endorFindingSchema = z.object({
+  meta: z
+    .object({
+      description: z.string().optional(),
+      name: z.string().optional(),
+    })
+    .optional(),
+  spec: z.object({
+    extra_key: z.string().optional(),
+    finding_tags: z.array(z.string()).optional(),
+    level: z.string().optional(),
+    summary: z.string().optional(),
+    target_dependency_package_name: z.string().optional(),
+    target_dependency_version: z.string().optional(),
+  }),
+});
+const endorRawReportSchema = z.object({
+  all_findings: z.array(endorFindingSchema),
+  blocking_findings: z.array(unknownRecordSchema),
+  warning_findings: z.array(unknownRecordSchema),
+});
 
 export type EndorCommandDiagnostic = {
   args?: string[];
@@ -128,8 +125,7 @@ async function normalizePackageRoot(scanRoot: string, manifestDirectory: string)
     }
     const workspaceDependencyNames = Object.entries(devDependencies.data)
       .filter(([, version]) => typeof version === "string" && version.startsWith("workspace:"))
-      .map(([name]) => name)
-      .sort();
+      .map(([name]) => name);
     if (workspaceDependencyNames.length > 0) {
       for (const name of workspaceDependencyNames) delete devDependencies.data[name];
       manifest.devDependencies = devDependencies.data;
@@ -172,12 +168,6 @@ function endorRuntimeEnv(
     TMPDIR: workspace,
   };
   for (const key of [...CHILD_RUNTIME_ENV_KEYS, ...extraKeys]) {
-    const value = source[key];
-    if (value !== undefined) env[key] = value;
-  }
-  // The host Docker CLI needs its selected context. Container variables are
-  // explicitly selected in the create command.
-  for (const key of ["HOME", "DOCKER_CONFIG"] as const) {
     const value = source[key];
     if (value !== undefined) env[key] = value;
   }
@@ -254,6 +244,7 @@ async function cleanupEndorContainer(input: {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, DOCKER_LATE_CREATE_POLL_MS));
     if (await removeIfOwned()) return;
   }
+  throw new Error("Endor Docker create timed out and container removal could not be confirmed");
 }
 
 function redactEndorDiagnosticText(value: string, env: NodeJS.ProcessEnv) {
@@ -339,6 +330,11 @@ export async function runEndorPluginScan(input: {
     "create",
     "--network",
     "bridge",
+    // The egress guard blocks private host resolvers, including OrbStack's DNS.
+    "--dns",
+    "1.1.1.1",
+    "--dns",
+    "8.8.8.8",
     "--cap-drop",
     "ALL",
     "--cap-add",
@@ -361,7 +357,7 @@ export async function runEndorPluginScan(input: {
     "--label",
     `${ENDOR_RUN_ID_LABEL}=${sandboxRunId}`,
     "--tmpfs",
-    "/tmp:rw,nosuid,nodev",
+    "/tmp:rw,nosuid,nodev,exec",
     "--mount",
     `type=bind,source=${scanRoot},target=/workspace,readonly`,
     ...ENDOR_ENV_KEYS.filter((key) => env[key] !== undefined).flatMap((key) => ["--env", key]),
@@ -415,7 +411,6 @@ export async function runEndorPluginScan(input: {
     }
   }
 
-  let cleanupError: unknown;
   try {
     await cleanupEndorContainer({
       env,
@@ -427,22 +422,18 @@ export async function runEndorPluginScan(input: {
         commandError.timedOut,
       workspace: input.workspace,
     });
-  } catch (error) {
-    cleanupError = error;
-  }
-  if (cleanupError !== undefined) {
-    const cause =
-      commandError === undefined
-        ? cleanupError
-        : new AggregateError(
-            [commandError, cleanupError],
-            `Endor scan failed: ${errorMessage(commandError)}; Docker cleanup failed: ${errorMessage(cleanupError)}`,
-          );
+  } catch (cleanupError) {
+    const message = `Endor Docker cleanup failed: ${errorMessage(cleanupError)}`;
     throw new EndorContainerCleanupError(
       commandError === undefined
-        ? `Endor Docker cleanup failed: ${errorMessage(cleanupError)}`
-        : `Endor scan failed: ${errorMessage(commandError)}; Docker cleanup failed: ${errorMessage(cleanupError)}`,
-      { cause },
+        ? message
+        : `Endor scan failed: ${errorMessage(commandError)}; ${message}`,
+      {
+        cause:
+          commandError === undefined
+            ? cleanupError
+            : new AggregateError([commandError, cleanupError]),
+      },
     );
   }
   if (commandError !== undefined) throw commandError;

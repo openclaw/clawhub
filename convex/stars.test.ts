@@ -113,6 +113,17 @@ describe("stars mutations", () => {
     vi.mocked(ensureHourlyStatsState).mockClear();
   });
 
+  it("does not star a hidden skill", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:viewer" as never);
+    const { ctx, db } = makeCtx({
+      existingStar: null,
+      skill: makeSkill({ moderationStatus: "hidden" }),
+    });
+
+    await expect(toggleHandler(ctx, { skillId: "skills:1" })).rejects.toThrow("Skill not found");
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
   it("toggle inserts a star row and updates denormalized star counts synchronously", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:viewer" as never);
     const { ctx, db } = makeCtx({ existingStar: null });
