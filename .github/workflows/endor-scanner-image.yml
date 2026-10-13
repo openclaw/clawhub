@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       trial-package:
-        description: "Publish the image from main, or run one report-only plugin trial"
+        description: "Publish from main, run one trial, or scan the 93 remaining official plugins"
         type: choice
         default: none
         options:
           - none
+          - official-remaining
           - "@openclaw/discord@2026.9.9"
           - "@openclaw/codex@2026.9.9"
           - "@jason-vaughan/openclaw-google-oauth@0.4.0"
@@ -53,12 +54,59 @@ jobs:
           digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")
           printf 'Set CODEX_SECURITY_SCAN_ENDOR_IMAGE to %s before enabling Endor.\n' "$digest" >> "$GITHUB_STEP_SUMMARY"
 
-  trial:
+  select:
     if: inputs['trial-package'] && inputs['trial-package'] != 'none'
     runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.packages.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select frozen plugin releases
+        id: packages
+        env:
+          SELECTION: ${{ inputs['trial-package'] }}
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+
+          official = json.loads(Path("scripts/security/endor-official-plugins.json").read_text())
+          selection = os.environ["SELECTION"]
+          community = "@jason-vaughan/openclaw-google-oauth@0.4.0"
+          if selection == "official-remaining":
+              # Codex already completed the full hosted profile in run 38362196418.
+              packages = [package for package in official if package != "@openclaw/codex@2026.9.9"]
+          elif selection in ("@openclaw/discord@2026.9.9", "@openclaw/codex@2026.9.9", community):
+              packages = [selection]
+          else:
+              raise ValueError("Select a frozen trial or the remaining official plugins")
+          include = []
+          for package in packages:
+              trusted = package in official and package != community
+              sha256 = official[package] if package != community else "5572178dc9ef4ca2d86d39c2de16b55c46e9e947710cdd84af2dd8dea45b3078"
+              include.append({"package": package, "sha256": sha256, "trusted": trusted,
+                              "artifact": package.removeprefix("@").replace("/", "-").replace("@", "-")})
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("matrix=" + json.dumps({"include": include}, separators=(",", ":")) + "\n")
+          PYTHON
+
+  trial:
+    needs: select
+    name: Scan ${{ matrix.package }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
     env:
-      TRIAL_PACKAGE: ${{ inputs['trial-package'] }}
+      TRIAL_PACKAGE: ${{ matrix.package }}
+      TRIAL_SHA256: ${{ matrix.sha256 }}
+      TRUSTED_OPENCLAW: ${{ matrix.trusted }}
       TRIAL_DIR: .artifacts/endor-plugin-trial
       REPORT_DIR: .artifacts/endor-plugin-report
       CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: "900000"
@@ -78,22 +126,13 @@ jobs:
       - name: Download and validate one frozen npm artifact
         run: |
           set -euo pipefail
-          case "$TRIAL_PACKAGE" in
-            @openclaw/discord@2026.9.9)
-              tarball='@openclaw/discord/-/discord-2026.9.9.tgz'
-              sha256=a81d70af3ab3cf081c74276366c5bc60d46d6e5cbf8452b3f559ee2f68db8e6e ;;
-            @openclaw/codex@2026.9.9)
-              tarball='@openclaw/codex/-/codex-2026.9.9.tgz'
-              sha256=ea5e2d200ab6014ae9f138b369db844d509ead33936cfbca5cc1153ff7755e60 ;;
-            @jason-vaughan/openclaw-google-oauth@0.4.0)
-              tarball='@jason-vaughan/openclaw-google-oauth/-/openclaw-google-oauth-0.4.0.tgz'
-              sha256=5572178dc9ef4ca2d86d39c2de16b55c46e9e947710cdd84af2dd8dea45b3078 ;;
-            *) echo 'Select one frozen trial package' >&2; exit 1 ;;
-          esac
+          package_name="${TRIAL_PACKAGE%@*}"
+          version="${TRIAL_PACKAGE##*@}"
+          tarball="$package_name/-/${package_name##*/}-$version.tgz"
           mkdir -p "$TRIAL_DIR"
           curl --fail --location --retry 3 --max-filesize 52428800 \
             "https://registry.npmjs.org/$tarball" --output "$TRIAL_DIR/plugin.tgz"
-          printf '%s  %s\n' "$sha256" "$TRIAL_DIR/plugin.tgz" | sha256sum --check -
+          printf '%s  %s\n' "$TRIAL_SHA256" "$TRIAL_DIR/plugin.tgz" | sha256sum --check -
           bun - <<'JS'
           import { readFile } from "node:fs/promises";
           import { parseClawPack } from "./packages/clawhub/src/clawpack.ts";
@@ -162,9 +201,7 @@ jobs:
         run: |
           set -euo pipefail
           trust=()
-          case "$TRIAL_PACKAGE" in
-            @openclaw/discord@2026.9.9|@openclaw/codex@2026.9.9) trust=(--trusted-openclaw) ;;
-          esac
+          if [[ "$TRUSTED_OPENCLAW" == true ]]; then trust=(--trusted-openclaw); fi
           bun scripts/security/scan-local-plugins.ts "${trust[@]}" \
             --out "$TRIAL_DIR/results" "$TRIAL_DIR/plugin.tgz"
 
@@ -215,7 +252,7 @@ jobs:
         if: ${{ !cancelled() && steps.report-secret-scan.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
-          name: endor-plugin-trial-${{ github.run_id }}
+          name: endor-plugin-${{ matrix.artifact }}-${{ github.run_id }}
           path: ${{ env.REPORT_DIR }}
           retention-days: 7
           if-no-files-found: error

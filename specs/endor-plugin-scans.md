@@ -119,6 +119,24 @@ Only bounded redacted reports and worker diagnostics pass the pinned secret
 guard into a seven-day artifact. The trial cannot publish an image or submit
 moderation changes. `none` preserves image publication from `main`.
 
+Select `official-remaining` to scan the other 93 frozen official npm plugins with
+at most four concurrent jobs. The 94-entry
+`scripts/security/endor-official-plugins.json` records package versions and
+checksums from the verified OpenClaw publisher catalog and downloaded releases.
+It includes BlueBubbles 2026.5.7 and OCF Fleet Acceptance 0.1.1; the other 92
+releases are 2026.9.9. Manifest membership supplies the first-party trust
+assertion. Community Google OAuth remains untrusted. Codex 2026.9.9 is excluded
+from the batch because its full hosted scan already completed in
+[run 38362196418](https://github.com/openclaw/clawhub/actions/runs/38362196418).
+The three individual trials remain available.
+
+Each matrix job validates its own tarball and uses the same scanner profile,
+sandbox preflight, completion check, and bounded redacted artifact upload gate.
+Its artifact name identifies the package and version. Findings are valid
+completed outcomes; scanner or judge failures fail the job. A failed package
+does not cancel other jobs or remove their reports. The batch remains manually
+triggered and report-only, with no backend submission or deployment.
+
 ### Deployment and rollback order
 
 1. Deploy the additive backend schema and result handlers first. Existing
