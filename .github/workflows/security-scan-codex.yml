@@ -75,7 +75,7 @@ jobs:
         ((inputs.environment == 'Test' &&
           (github.ref == 'refs/heads/main' ||
            (github.ref == 'refs/heads/codex/endor-plugin-scan-main-20261001' && github.actor == 'Patrick-Erichsen'))) ||
-         (inputs.environment == 'Production' && github.ref == 'refs/heads/main')))
+         (inputs.environment == 'Production' && github.ref == 'refs/heads/main'))))
     name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
     runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 60

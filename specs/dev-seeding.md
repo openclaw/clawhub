@@ -42,7 +42,7 @@ Local fixture seeding is command-driven by default:
   correctly.
 - After creating a read-only production snapshot with `bunx convex export --prod`, run
   `bun run seed:test:ranking-export -- --snapshot <snapshot.zip> --dataset-version
-ranking-metrics-YYYY-MM-DD-vN --output <dataset.json>`. The sanitizer reads five fixed tables:
+  ranking-metrics-YYYY-MM-DD-vN --output <dataset.json>`. The sanitizer reads five fixed tables:
   public skills, public plugins, their daily aggregate rows, and active bookmarks used only to aggregate
   bookmark creation counts by skill/day. The emitted JSON contains no Convex ids or user, device,
   session, IP, auth, moderation, or private telemetry fields and is rejected unless it covers an
@@ -53,7 +53,7 @@ ranking-metrics-YYYY-MM-DD-vN --output <dataset.json>`. The sanitizer reads five
   are complete. The reservation is read-only and shares the `deploy-test` concurrency group, so a
   Test deploy cannot overlap the operation.
 - `bun run seed:test:ranking-import -- --dataset <dataset.json> --backup-dir <empty-dir>
---lane-run-id <run-id>` targets only `academic-chihuahua-392`. It verifies that the reservation,
+  --lane-run-id <run-id>` targets only `academic-chihuahua-392`. It verifies that the reservation,
   local checkout, and current `main` are the same revision, then atomically replaces the three
   ranking tables from one ZIP. Before the baseline export it sets an expiring Test-only write lock;
   skill/package daily-stat writes and the user, publisher, skill, and package identity writes used
