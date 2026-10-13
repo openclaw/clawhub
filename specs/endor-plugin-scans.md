@@ -113,6 +113,8 @@ ClawScan 0.2.0, Codex 0.142.3 and the worker's pinned SkillSpector revision.
 It uses repository scanner credentials and the configured Endor namespace/API;
 it needs no Test login, admin key, deployment environment or backend job. Any
 valid judge verdict is acceptable, but Endor and the judge must both complete.
+The Ubuntu trial loads the distribution's bubblewrap AppArmor profile, then
+checks that Codex can read files while writes remain denied before authenticating.
 Only bounded redacted reports and worker diagnostics pass the pinned secret
 guard into a seven-day artifact. The trial cannot publish an image or submit
 moderation changes. `none` preserves image publication from `main`.

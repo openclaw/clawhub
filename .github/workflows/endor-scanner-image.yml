@@ -55,7 +55,7 @@ jobs:
 
   trial:
     if: inputs['trial-package'] && inputs['trial-package'] != 'none'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       TRIAL_PACKAGE: ${{ inputs['trial-package'] }}
@@ -129,6 +129,18 @@ jobs:
           python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc'
           echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
           skillspector --help >/dev/null
+
+      - name: Prepare and verify Codex read-only sandbox
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y bubblewrap apparmor-profiles apparmor-utils
+          sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          codex sandbox linux -c 'sandbox_mode="read-only"' -- /bin/sh -c '
+            sha256sum scripts/security/codex-scan-output.schema.json >/dev/null &&
+            ! touch .artifacts/endor-sandbox-write-probe
+          '
 
       - name: Authenticate Codex CLI
         env:
