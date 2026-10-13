@@ -123,15 +123,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download and validate one frozen npm artifact
+      - name: Download and validate one frozen plugin artifact
         run: |
           set -euo pipefail
           package_name="${TRIAL_PACKAGE%@*}"
           version="${TRIAL_PACKAGE##*@}"
-          tarball="$package_name/-/${package_name##*/}-$version.tgz"
+          if [[ "$TRUSTED_OPENCLAW" == true ]]; then
+            url="https://clawhub.ai/api/v1/packages/$package_name/versions/$version/artifact/download"
+          else
+            url="https://registry.npmjs.org/$package_name/-/${package_name##*/}-$version.tgz"
+          fi
           mkdir -p "$TRIAL_DIR"
           curl --fail --location --retry 3 --max-filesize 52428800 \
-            "https://registry.npmjs.org/$tarball" --output "$TRIAL_DIR/plugin.tgz"
+            "$url" --output "$TRIAL_DIR/plugin.tgz"
           printf '%s  %s\n' "$TRIAL_SHA256" "$TRIAL_DIR/plugin.tgz" | sha256sum --check -
           bun - <<'JS'
           import { readFile } from "node:fs/promises";

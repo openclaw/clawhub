@@ -123,6 +123,10 @@ Select `official-remaining` to scan the other 93 frozen official npm plugins wit
 at most four concurrent jobs. The 94-entry
 `scripts/security/endor-official-plugins.json` records package versions and
 checksums from the verified OpenClaw publisher catalog and downloaded releases.
+Official tarballs come from ClawHub's versioned artifact download endpoint, matching the
+frozen published artifact bytes; npmjs.org releases may contain different bytes.
+The download route records ordinary download telemetry without counting a scan
+as a plugin install. The trial submits no scan jobs or moderation results.
 It includes BlueBubbles 2026.5.7 and OCF Fleet Acceptance 0.1.1; the other 92
 releases are 2026.9.9. Manifest membership supplies the first-party trust
 assertion. Community Google OAuth remains untrusted. Codex 2026.9.9 is excluded
