@@ -64,9 +64,10 @@ Wire Stripe to Convex using @convex-dev/stripe: a checkout action, an httpAction
      handler: async (ctx) => {
        const identity = await ctx.auth.getUserIdentity();
        if (!identity) return false;
-       const subscriptions = await ctx.runQuery(components.stripe.public.listSubscriptionsByUserId, {
-         userId: identity.subject,
-       });
+       const subscriptions = await ctx.runQuery(
+         components.stripe.public.listSubscriptionsByUserId,
+         { userId: identity.subject },
+       );
        return subscriptions.some((sub) => sub.status === "active" || sub.status === "trialing");
      },
    });
