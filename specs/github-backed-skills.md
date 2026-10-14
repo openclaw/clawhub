@@ -148,6 +148,16 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
 - Detail storage retains at most one preferred `SKILL.md` or `README.md`,
   capped at 64 KiB. The complete upstream file tree is never persisted for an
   unclaimed mirror row.
+- The mirror source is a bounded top window, not the whole upstream feed. Each
+  hourly sync captures at most the top 4,000 rows of the all-time view (ranked
+  by installs) and of `view=trending`. skills.sh serves up to a 100k-row
+  all-time window, and a mirrored leaderboard row costs about 0.4s of detail and
+  audit work, so mirroring the full feed would take about ten hours per run.
+  When the upstream total exceeds the window, measurement stops at the window,
+  records the upstream total, and treats the window as the complete source.
+  Rows below it are deliberately absent. Raise the window only with a matching
+  run-time budget. The 50,000-row source capacity remains a hard guard on
+  measurement, proof snapshots, and Convex run totals.
 - Snapshot ingestion uses bounded page/offset cursors. Pause is checked before
   another source batch is fetched; resume continues at the exact stored cursor.
   Reconciliation tombstones disappeared rows and reactivates later
@@ -160,7 +170,7 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
 - skills.sh does not expose an exact rolling-24-hour count in this response.
   `trending24hInstalls` therefore remains unavailable; lifetime totals,
   snapshot deltas, and weekly sparklines must not be relabeled as that metric.
-- Trending pages are exhausted and captured immutably before application.
+- Trending pages within the mirror window are captured immutably before application.
   Older observations cannot overwrite newer fields, identical replays are
   idempotent, and a same-timestamp payload drift is rejected. At most ten IDs
   missing because of pagination drift may hydrate through the existing mirror
