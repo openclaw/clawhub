@@ -15,7 +15,7 @@ concurrency:
 env:
   AUDIT_BRANCH: automation/design-system-audit
   ARTIFACT_DIRECTORY: artifacts/design-audit
-  BUN_VERSION: "1.3.11"
+  BUN_VERSION: "1.3.14"
   CODEX_VERSION: "0.142.3"
 
 jobs:

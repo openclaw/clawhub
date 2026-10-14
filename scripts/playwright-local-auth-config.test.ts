@@ -41,11 +41,10 @@ describe("playwright local-auth runner config", () => {
     },
   );
 
-  it("sets the backend transport timeout and bounded, cache-preferring npm fetches", () => {
+  it("sets backend timeouts without bypassing npm cache staleness checks", () => {
     expect(buildLocalAuthBackendEnv({})).toEqual({
       HTTP_SERVER_TIMEOUT_SECONDS: "900",
       FUNRUN_ISOLATE_ACTIVE_THREADS: "2",
-      npm_config_prefer_offline: "true",
       npm_config_fetch_timeout: "60000",
       npm_config_fetch_retries: "5",
     });
