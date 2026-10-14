@@ -162,7 +162,7 @@ jobs:
           from pathlib import Path
 
           package_name, version = os.environ["TRIAL_PACKAGE"].rsplit("@", 1)
-          origin = os.environ["TRIAL_ARTIFACT_URL"]
+          origin = os.environ["TRIAL_ARTIFACT_URL"].replace("@", "%40")
           tags = f"plugin:{package_name},version:{version},trial:{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
           path = Path("scripts/security/endor/scan.sh")
           script = path.read_text()
@@ -285,7 +285,7 @@ jobs:
             if (projects.length !== 1 || projects[0][2] !== process.env.ENDOR_NAMESPACE) {
               throw new Error("Saved Endor scan must identify one project in the configured namespace");
             }
-            const uuid = z.string().uuid().parse(projects[0][1]);
+            const uuid = projects[0][1];
             const endorKeys = ["ENDOR_API", "ENDOR_NAMESPACE", "ENDOR_API_CREDENTIALS_KEY", "ENDOR_API_CREDENTIALS_SECRET"];
             const readback = await runWorkerCommand("docker", [
               "run", "--rm", "--read-only", "--user", "1000:1000", "--cap-drop", "ALL",
@@ -305,15 +305,12 @@ jobs:
             // GetProject returns the Project itself, as documented by the native API.
             const project = z.object({
               uuid: z.string(), meta: z.object({ tags: z.array(z.string()) }),
-              spec: z.object({ git: z.object({ http_clone_url: z.string().optional() }).optional() }).optional(),
             }).parse(result.endorSavedProject);
             const expectedTags = [
               `plugin:${result.name}`, `version:${result.version}`,
               `trial:${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
             ];
-            const cloneUrl = project.spec?.git?.http_clone_url;
-            if (project.uuid !== uuid || !expectedTags.every((tag) => project.meta.tags.includes(tag)) ||
-                (cloneUrl !== undefined && cloneUrl !== result.endorSourceUrl.toLowerCase())) {
+            if (project.uuid !== uuid || !expectedTags.every((tag) => project.meta.tags.includes(tag))) {
               throw new Error("Saved Endor project identity does not match the selected artifact and trial");
             }
             result.endorSavedProject.identityVerified = true;

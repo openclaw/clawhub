@@ -150,18 +150,22 @@ Endor alone; findings, including policy exit 128, are informational, while scann
 errors fail the job. Failed scans still save bounded redacted Endor diagnostics
 and reports through the existing secret-scan and artifact-upload gates.
 After scanning, a source-free container using the same pinned CLI reads the
-reported Project UUID from the configured namespace. Completion also requires a
-persisted Project with that UUID and the selected plugin, version and trial tags;
-its Git HTTP clone URL must match the artifact source when returned. The redacted
-report retains the native Project response and an `identityVerified` flag.
+reported Project ID from the configured namespace. Completion also requires a
+persisted Project with that exact ID and the selected plugin, version and trial
+tags. Saved project IDs are opaque; dry-run preview IDs may use a different
+format. Endor can normalize the source URL, so its returned name and Git URL are
+provider metadata. The redacted report retains the selected input source, native
+Project response and an `identityVerified` flag.
 
 Only this mode alters the trial image's build-context `scan.sh`, asserting the
 known source strings before removing `--dry-run`. It uses the selected package's
 download URL as the Git origin: the canonical versioned ClawHub artifact URL for
-official plugins, or the npm tarball URL for the community trial. Distinct plugins
-and versions therefore do not share the placeholder project identity. Native project and scan
-tags identify the plugin, version and workflow trial. Repository dependency and
-call-graph analysis stay enabled; `--project-name` is reserved for Endor's
+official plugins, or the npm tarball URL for the community trial. The trial origin
+encodes the package scope's `@` as `%40` so Endor's Git parser does not treat it
+as user information. Native project and scan tags identify the plugin, version
+and workflow trial; verify distinct persisted project IDs across the selected
+cohort. Repository dependency and call-graph analysis stay enabled;
+`--project-name` is reserved for Endor's
 `--package` mode and is not used. Verify dashboard persistence with Codex 2026.9.9
 before starting the remaining 93 plugins. The production image source, worker
 flags, moderation, and deployment remain unchanged.
