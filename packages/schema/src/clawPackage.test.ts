@@ -99,6 +99,21 @@ describe("validateClawPackageContents", () => {
     });
   });
 
+  it("preserves declared categories from CLAW.md frontmatter", () => {
+    const categorized = { ...manifest, categories: ["engineering", "productivity"] };
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: files(`---\n${JSON.stringify(categorized)}\n---\n`),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { manifest: { categories: ["engineering", "productivity"] } },
+    });
+  });
+
   it("treats a non-empty CLAW.md body as the portable SOUL.md source", () => {
     const bodyManifest = {
       ...manifest,

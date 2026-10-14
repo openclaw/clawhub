@@ -76,6 +76,27 @@ describe("Claw manifest contract", () => {
     });
   });
 
+  it("accepts optional portable category slugs without embedding the catalog taxonomy", () => {
+    const result = validateClawManifest({ ...fixture, categories: ["travel", "custom-category"] });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.manifest.categories).toEqual(["travel", "custom-category"]);
+  });
+
+  it.each([
+    { categories: [] },
+    { categories: ["Travel"] },
+    { categories: ["travel", "travel"] },
+    { categories: ["a", "b", "c", "d"] },
+  ])("rejects invalid portable category declarations $categories", ({ categories }) => {
+    const result = validateClawManifest({ ...fixture, categories });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.issues.some((issue) => issue.code === CLAW_MANIFEST_VALIDATION_CODES.invalidCategory),
+    ).toBe(true);
+  });
+
   it("does not schedule timers while validating cron syntax", () => {
     vi.useFakeTimers();
     try {
