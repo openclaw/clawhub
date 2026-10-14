@@ -177,7 +177,7 @@
     "@vitejs/plugin-react": "6.1.2",
     "@vitest/coverage-v8": "5.0.3",
     "convex-test": "^0.0.61",
-    "jsdom": "29.1.1",
+    "jsdom": "30.1.2",
     "nitro": "3.0.260610-beta",
     "only-allow": "1.2.2",
     "oxfmt": "0.72.0",
@@ -204,7 +204,6 @@
     "sharp": "0.35.4",
     "shell-quote": "1.10.0",
     "socket.io-parser": "4.2.7",
-    "undici": "7.29.1",
     "ws": "8.21.0"
   },
   "patchedDependencies": {
