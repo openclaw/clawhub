@@ -183,6 +183,12 @@ async function fixture() {
       createdAt: now,
       updatedAt: now,
     });
+    await ctx.db.insert("officialPublishers", {
+      publisherId: publisher,
+      reason: "local recovery fixture",
+      createdAt: now,
+      updatedAt: now,
+    });
     const membership = await ctx.db.insert("publisherMembers", {
       publisherId: publisher,
       userId: actor,
@@ -1127,7 +1133,6 @@ it.each([
         },
       });
   });
-  if (change === "family") vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
   await publication({ state: "failed", attemptId: ids.attemptId, recoverable: false });
   expect([404, 409]).toContain((await recover()).status);
 });

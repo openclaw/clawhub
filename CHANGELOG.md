@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Tests: update Vitest and its V8 coverage provider together to 5.0.3; retain registered auth callbacks across per-test mock cleanup.
+
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
 ## 0.24.0 - 2026-09-30

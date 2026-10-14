@@ -49,19 +49,45 @@ Schemas, templates, examples, fixtures, and static assets require no special
 registry role: they remain ordinary declared `workspace.files` covered by the
 artifact digest.
 
-## Experimental contract
+## Launch contract
 
-- Backend Claw publication and read surfaces require
-  `CLAWHUB_EXPERIMENTAL_CLAWS=1`.
-- This hosting gate is independent from OpenClaw's
-  `OPENCLAW_EXPERIMENTAL_CLAWS=1` local consumer gate; neither enables the
-  other side of the boundary.
-- The gate is not user consent and must not bypass validation, moderation,
-  ownership, or scanner checks.
-- Disabled deployments must not accept Claw publication or expose Claws through
-  Claw-specific discovery surfaces.
-- Public Claw schemas and APIs may change while the gate is required. Removing
-  the gate requires a separate compatibility and migration decision.
+- Backend Claw publication and exact-name reads are available by default.
+- ClawHub remains headless for Claws. OpenClaw owns local Labs visibility,
+  preview, consent, and installation.
+- Claw publication still requires validation, moderation, ownership, and
+  scanner checks.
+
+The initial public catalog (package lists, search, and the Official Claw feed)
+contains only canonical `@openclaw/*` Claws owned by the active OpenClaw
+publisher organization with a current Official designation. Recheck that
+owner's current authority for catalog reads; cached search digest owner fields
+are not sufficient after an organization is deactivated or deleted. This is a
+discovery policy, not a hosting policy. Other publishers may publish Claws under their own scope and
+their published Claws remain reachable by exact-name metadata and artifact
+downloads, subject to the existing ownership, scanner, moderation, and access
+rules. If a Claw has a publisher row, admission and finalization recheck that
+it is active and matches the package scope. Legacy user-owned Claws without a
+publisher row continue through the existing user-owner and scan path. Losing
+an Official designation does not by itself withdraw a published artifact or
+prevent further publication.
+This catalog restriction does not apply to skills or plugins.
+
+The Claw feed is a stored snapshot, so a pre-policy snapshot must fail closed
+after deployment. A new snapshot records the restricted policy version, entry
+count, and current publisher identity. The HTTP feed returns no stored bytes
+until that snapshot is built; if its publisher later loses active authority, it
+fails closed again until an empty or newly authorized snapshot replaces it.
+Rollout must refresh the feed with the production catalog publication workflow
+and verify catalog exclusion, direct package continuity, and revoked Official
+publisher effects.
+
+There is no Claw feature flag to turn off for rollback. Revert or fix the
+backend on `main` and run the production deploy workflow, retaining the
+fail-closed Claw-feed read guard in the rollback build. A code deploy does not
+restore or clear the stored feed snapshot. Rebuild it under the current policy,
+or replace it with an empty policy-stamped snapshot and prevent the scheduled
+publisher from repopulating it until the incident is resolved. Verify that
+`/v1/feeds/claws` returns no old payload bytes before restoring catalog traffic.
 
 ## Staged implementation
 

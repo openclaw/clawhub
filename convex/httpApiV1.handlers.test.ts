@@ -13587,6 +13587,28 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("forwards Featured plugin searches with a spaced topic", async () => {
+    const runQuery = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/search?q=calendar&family=code-plugin&highlightedOnly=true&topic=team%20calendar",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        query: "calendar",
+        family: "code-plugin",
+        highlightedOnly: true,
+        topic: "team calendar",
+      }),
+    );
+  });
+
   it("packages search forwards topics to both unified catalog sources", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -13788,7 +13810,6 @@ describe("httpApiV1 handlers", () => {
       400,
     ],
   ])("does not record %s", async (_case, requestUrl, expectedStatus) => {
-    if (_case === "marked claw family") vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const observationWrites: Record<string, unknown>[] = [];
     const ctx = makeCtx({
       runQuery: vi.fn().mockResolvedValue([]),
@@ -17942,74 +17963,16 @@ describe("httpApiV1 handlers", () => {
     expect(runAction).not.toHaveBeenCalled();
   });
 
-  it.each(["loose", "direct-tgz", "staged-tgz"] as const)(
-    "disabled Claw publication rejects %s before multipart storage or ticket mutation",
-    async (mode) => {
-      vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "0");
-      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
-      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
-        kind: "user",
-        userId: "users:1",
-        user: { _id: "users:1", handle: "p" },
-      } as never);
-      const runMutation = vi.fn().mockResolvedValue(okRate());
-      const runAction = vi.fn();
-      const storageGet = vi.fn();
-      const storageStore = vi.fn();
-      const form = packagePublishForm(packagePublishMetadata({ family: "claw" }));
-      if (mode === "loose") {
-        form.append("files", new File(["manifest"], "CLAW.md", { type: "text/markdown" }));
-      } else if (mode === "direct-tgz") {
-        const pack = npmPackFixture({
-          "package/package.json": JSON.stringify({ name: "demo-claw", version: "1.0.0" }),
-          "package/CLAW.md": "manifest",
-        });
-        form.append(
-          "clawpack",
-          new File([bytesToArrayBuffer(pack)], "demo-claw-1.0.0.tgz", {
-            type: "application/octet-stream",
-          }),
-        );
-      } else {
-        form.set("clawpack", "storage:clawpack");
-        form.set("clawpackUploadTicket", "packagePublishUploadTickets:1");
-      }
-
-      const response = await __handlers.publishPackageV1Handler(
-        makeCtx({
-          runAction,
-          runMutation,
-          storage: { get: storageGet, store: storageStore },
-        }),
-        new Request("https://example.com/api/v1/packages", {
-          method: "POST",
-          headers: { Authorization: "Bearer clh_test" },
-          body: form,
-        }),
-      );
-
-      expect(response.status).toBe(400);
-      expect(await response.text()).toBe("Experimental Claw publication is disabled");
-      expect(storageGet).not.toHaveBeenCalled();
-      expect(storageStore).not.toHaveBeenCalled();
-      expect(runAction).not.toHaveBeenCalled();
-      expect(
-        runMutation.mock.calls.some(([, args]) =>
-          Boolean(args && typeof args === "object" && "uploadTicket" in args),
-        ),
-      ).toBe(false);
-    },
-  );
-
-  it("rejects loose Claw files before multipart storage when the experiment is enabled", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+  it("rejects loose Claw files before multipart storage", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requirePackagePublishAuth).mockResolvedValue({
       kind: "user",
       userId: "users:1",
       user: { _id: "users:1", handle: "p" },
     } as never);
-    const form = packagePublishForm(packagePublishMetadata({ family: "claw" }));
+    const form = packagePublishForm(
+      packagePublishMetadata({ family: "claw", name: "@openclaw/demo-claw" }),
+    );
     form.append("files", new File(["manifest"], "CLAW.md", { type: "text/markdown" }));
     const storageStore = vi.fn();
     const runAction = vi.fn();
@@ -18403,102 +18366,106 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("multipart Claw publish accepts an npm pack without a plugin manifest", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
-    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
-    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
-      kind: "user",
-      userId: "users:1",
-      user: { _id: "users:1", handle: "p" },
-    } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
-    const storageStore = vi.fn(async (_blob: Blob) => `storage:${storageStore.mock.calls.length}`);
-    const pack = npmPackFixture({
-      "package/package.json": JSON.stringify({
-        name: "demo-claw",
-        version: "1.0.0",
-        openclaw: { claw: "CLAW.md" },
-      }),
-      "package/CLAW.md":
-        "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\nYou are a focused demo agent.\n",
-    });
-    const artifactSha256 = await sha256Hex(pack);
-    const runAction = vi.fn().mockResolvedValue({
-      ok: true,
-      packageId: "pkg:claw",
-      releaseId: "rel:claw",
-      artifactSha256,
-    });
-    const form = new FormData();
-    form.set(
-      "payload",
-      JSON.stringify({
-        name: "demo-claw",
-        family: "claw",
-        version: "1.0.0",
-        changelog: "init",
-        expectedArtifactSha256: artifactSha256,
-      }),
-    );
-    form.append(
-      "clawpack",
-      new File([bytesToArrayBuffer(pack)], "demo-claw-1.0.0.tgz", {
-        type: "application/octet-stream",
-      }),
-    );
-
-    const response = await __handlers.publishPackageV1Handler(
-      makeCtx({ runAction, runMutation, storage: { store: storageStore } }),
-      new Request("https://example.com/api/v1/packages", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: form,
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ artifactSha256 });
-    expect(storageStore).toHaveBeenCalledTimes(3);
-    const storedArtifact = storageStore.mock.calls[0]?.[0];
-    expect(storedArtifact).toBeInstanceOf(Blob);
-    expect(new Uint8Array(await (storedArtifact as Blob).arrayBuffer())).toEqual(pack);
-    expect(runAction).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        payload: expect.objectContaining({
-          family: "claw",
-          expectedArtifactSha256: artifactSha256,
-          artifact: expect.objectContaining({ kind: "npm-pack", npmFileCount: 2 }),
-          files: [
-            expect.objectContaining({ path: "package.json" }),
-            expect.objectContaining({ path: "CLAW.md" }),
-          ],
+  it.each(["openclaw", "other"])(
+    "multipart Claw publish accepts a valid @%s npm pack without a plugin manifest",
+    async (handle) => {
+      const name = `@${handle}/demo-claw`;
+      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+        kind: "user",
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const storageStore = vi.fn(
+        async (_blob: Blob) => `storage:${storageStore.mock.calls.length}`,
+      );
+      const pack = npmPackFixture({
+        "package/package.json": JSON.stringify({
+          name,
+          version: "1.0.0",
+          openclaw: { claw: "CLAW.md" },
         }),
-      }),
-    );
-  });
+        "package/CLAW.md":
+          "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\nYou are a focused demo agent.\n",
+      });
+      const artifactSha256 = await sha256Hex(pack);
+      const runAction = vi.fn().mockResolvedValue({
+        ok: true,
+        packageId: "pkg:claw",
+        releaseId: "rel:claw",
+        artifactSha256,
+      });
+      const form = new FormData();
+      form.set(
+        "payload",
+        JSON.stringify({
+          name,
+          family: "claw",
+          version: "1.0.0",
+          changelog: "init",
+          expectedArtifactSha256: artifactSha256,
+        }),
+      );
+      form.append(
+        "clawpack",
+        new File([bytesToArrayBuffer(pack)], "demo-claw-1.0.0.tgz", {
+          type: "application/octet-stream",
+        }),
+      );
+
+      const response = await __handlers.publishPackageV1Handler(
+        makeCtx({ runAction, runMutation, storage: { store: storageStore } }),
+        new Request("https://example.com/api/v1/packages", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: form,
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({ artifactSha256 });
+      expect(storageStore).toHaveBeenCalledTimes(3);
+      const storedArtifact = storageStore.mock.calls[0]?.[0];
+      expect(storedArtifact).toBeInstanceOf(Blob);
+      expect(new Uint8Array(await (storedArtifact as Blob).arrayBuffer())).toEqual(pack);
+      expect(runAction).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            family: "claw",
+            expectedArtifactSha256: artifactSha256,
+            artifact: expect.objectContaining({ kind: "npm-pack", npmFileCount: 2 }),
+            files: [
+              expect.objectContaining({ path: "package.json" }),
+              expect.objectContaining({ path: "CLAW.md" }),
+            ],
+          }),
+        }),
+      );
+    },
+  );
 
   it.each([
     {
       label: "package name",
-      metadata: { name: "other-claw", version: "1.0.0" },
+      metadata: { name: "@openclaw/other-claw", version: "1.0.0" },
       digest: "actual",
       message: "Claw package name mismatch",
     },
     {
       label: "package version",
-      metadata: { name: "demo-claw", version: "2.0.0" },
+      metadata: { name: "@openclaw/demo-claw", version: "2.0.0" },
       digest: "actual",
       message: "Claw package version mismatch",
     },
     {
       label: "artifact digest",
-      metadata: { name: "demo-claw", version: "1.0.0" },
+      metadata: { name: "@openclaw/demo-claw", version: "1.0.0" },
       digest: "0".repeat(64),
       message: "Claw artifact SHA-256 mismatch",
     },
   ])("rejects a Claw tarball with mismatched $label before storing it", async (testCase) => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requirePackagePublishAuth).mockResolvedValue({
       kind: "user",
@@ -18507,7 +18474,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
     const pack = npmPackFixture({
       "package/package.json": JSON.stringify({
-        name: "demo-claw",
+        name: "@openclaw/demo-claw",
         version: "1.0.0",
         openclaw: { claw: "CLAW.md" },
       }),
@@ -20405,33 +20372,7 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toBe(moderationMessage);
   });
 
-  it("keeps Claw list and search filters unavailable while the gate is disabled", async () => {
-    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    try {
-      const ctx = makeCtx({});
-      const listResponse = await __handlers.listPackagesV1Handler(
-        ctx,
-        new Request("https://example.com/api/v1/packages?family=claw"),
-      );
-      const searchResponse = await __handlers.packagesGetRouterV1Handler(
-        ctx,
-        new Request("https://example.com/api/v1/packages/search?q=triage&family=claw"),
-      );
-
-      expect(listResponse.status).toBe(400);
-      await expect(listResponse.text()).resolves.toBe("Invalid family query parameter");
-      expect(searchResponse.status).toBe(400);
-      await expect(searchResponse.text()).resolves.toBe("Invalid family query parameter");
-    } finally {
-      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
-    }
-  });
-
-  it("lists and returns safe Claw details while the gate is enabled", async () => {
-    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+  it("lists and returns safe Claw details by default", async () => {
     const latestClawManifestSummary = {
       schemaVersion: 1,
       agent: { id: "triage-latest", name: "Triage Latest", description: "Latest release" },
@@ -20503,45 +20444,40 @@ describe("httpApiV1 handlers", () => {
       return null;
     });
 
-    try {
-      const ctx = makeCtx({ runQuery });
-      const listResponse = await __handlers.listPackagesV1Handler(
-        ctx,
-        new Request("https://example.com/api/v1/packages?family=claw"),
-      );
-      if (listResponse.status !== 200) throw new Error(await listResponse.text());
-      await expect(listResponse.json()).resolves.toMatchObject({
-        items: [{ name: "triage-claw", family: "claw" }],
-      });
+    const ctx = makeCtx({ runQuery });
+    const listResponse = await __handlers.listPackagesV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/packages?family=claw"),
+    );
+    if (listResponse.status !== 200) throw new Error(await listResponse.text());
+    await expect(listResponse.json()).resolves.toMatchObject({
+      items: [{ name: "triage-claw", family: "claw" }],
+    });
 
-      const detailResponse = await __handlers.packagesGetRouterV1Handler(
-        ctx,
-        new Request("https://example.com/api/v1/packages/triage-claw"),
-      );
-      if (detailResponse.status !== 200) throw new Error(await detailResponse.text());
-      await expect(detailResponse.json()).resolves.toMatchObject({
-        package: {
-          name: "triage-claw",
-          family: "claw",
-          clawManifestSummary: latestClawManifestSummary,
-        },
-      });
+    const detailResponse = await __handlers.packagesGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/packages/triage-claw"),
+    );
+    if (detailResponse.status !== 200) throw new Error(await detailResponse.text());
+    await expect(detailResponse.json()).resolves.toMatchObject({
+      package: {
+        name: "triage-claw",
+        family: "claw",
+        clawManifestSummary: latestClawManifestSummary,
+      },
+    });
 
-      const versionResponse = await __handlers.packagesGetRouterV1Handler(
-        ctx,
-        new Request("https://example.com/api/v1/packages/triage-claw/versions/1.0.0"),
-      );
-      if (versionResponse.status !== 200) throw new Error(await versionResponse.text());
-      const versionBody = await versionResponse.json();
-      expect(versionBody).toMatchObject({
-        package: { name: "triage-claw", family: "claw" },
-        version: { version: "1.0.0", clawManifestSummary: exactClawManifestSummary },
-      });
-      expect(JSON.stringify(versionBody)).not.toContain("must-not-project");
-    } finally {
-      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
-    }
+    const versionResponse = await __handlers.packagesGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/packages/triage-claw/versions/1.0.0"),
+    );
+    if (versionResponse.status !== 200) throw new Error(await versionResponse.text());
+    const versionBody = await versionResponse.json();
+    expect(versionBody).toMatchObject({
+      package: { name: "triage-claw", family: "claw" },
+      version: { version: "1.0.0", clawManifestSummary: exactClawManifestSummary },
+    });
+    expect(JSON.stringify(versionBody)).not.toContain("must-not-project");
   });
 
   it("filters Claw browse and search by the fixed Claw taxonomy", async () => {

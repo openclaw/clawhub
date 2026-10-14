@@ -3241,6 +3241,9 @@ const catalogFeedPublications = defineTable({
   payload: v.string(),
   payloadSha256: v.string(),
   publishedAt: v.number(),
+  clawPolicyVersion: v.optional(v.literal(1)),
+  clawEntryCount: v.optional(v.number()),
+  clawPublisherId: v.optional(v.id("publishers")),
 }).index("by_feed", ["feedId"]);
 
 const stars = defineTable({

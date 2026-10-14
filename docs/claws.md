@@ -12,12 +12,19 @@ A Claw is a versioned package that describes one complete OpenClaw agent and
 the reusable resources it needs. ClawHub stores and scans the package;
 OpenClaw owns local preview, consent, apply, update, and removal.
 
-Claw publication is experimental. The ClawHub deployment must set
-`CLAWHUB_EXPERIMENTAL_CLAWS=1`; otherwise the server rejects publication.
-This registry gate is independent from OpenClaw's
-`OPENCLAW_EXPERIMENTAL_CLAWS=1` consumer gate. Hosting does not enable local
-preview or installation, and enabling the OpenClaw CLI does not enable ClawHub
-publication or hosted discovery.
+Claw publication and exact-name reads are available by default. Hosting a Claw
+does not enable local preview or installation in OpenClaw.
+
+For the initial public catalog, package lists, search, and the Official Claw
+feed include only `@openclaw/*` Claws owned by the active OpenClaw publisher
+organization with a current Official designation. This catalog filter does not
+change Claw publication or exact-name metadata and artifact downloads. Other publishers remain subject
+to the normal ownership, scanning, moderation, and access rules; their Claws
+are not offered in the initial catalog. A stored Claw feed from before this
+restriction is unavailable until a new restricted snapshot is published.
+If `@openclaw` loses Official status, an existing nonempty Claw feed fails
+closed with `503` and `Cache-Control: no-store`. Publish a new feed snapshot
+after revocation to serve an empty eligible Claws list.
 
 ## Package shape
 
@@ -26,7 +33,7 @@ points to its manifest:
 
 ```json
 {
-  "name": "@acme/github-triage",
+  "name": "@openclaw/github-triage",
   "version": "1.0.0",
   "openclaw": {
     "claw": "CLAW.md"
@@ -187,14 +194,14 @@ not duplicate the full manifest into Convex storage.
 
 ## Discover published Claws
 
-Enabled deployments expose Claws through the existing package API:
+ClawHub exposes Claws through the existing package API:
 
 ```bash
 curl "https://clawhub.ai/api/v1/packages?family=claw"
 curl "https://clawhub.ai/api/v1/packages?family=claw&category=travel"
 curl "https://clawhub.ai/api/v1/packages/search?q=triage&family=claw"
 curl "https://clawhub.ai/api/v1/packages/search?q=trip&family=claw&category=travel"
-curl "https://clawhub.ai/api/v1/packages/@acme%2Fgithub-triage"
+curl "https://clawhub.ai/api/v1/packages/@openclaw%2Fgithub-triage"
 ```
 
 List and search results use the normal package summary fields. Package and
@@ -205,14 +212,12 @@ manifest or profile contents.
 Use `category=other` for Claws that could not be classified. Category filters
 require `family=claw`; unrecognized categories return a validation error.
 
-When `CLAWHUB_EXPERIMENTAL_CLAWS` is disabled, explicit `family=claw` filters
-are rejected, unscoped list and search results omit Claws, and named Claw reads
-return not found. Full manifests remain in exact artifacts and are never
-projected through public release responses.
+Full manifests remain in exact artifacts and are never projected through public
+release responses.
 
 ## Consume the experimental feed
 
-Enabled deployments publish eligible official Claws as a separate hosted feed:
+ClawHub publishes eligible Official `@openclaw` Claws as a separate hosted feed:
 
 ```bash
 curl "https://clawhub.ai/v1/feeds/claws"
@@ -227,9 +232,7 @@ unpack it as a normal Claw package directory, and pass the directory to
 OpenClaw for local inspection or `claws add --dry-run`. ClawHub does not bypass
 OpenClaw's preview or consent boundary.
 
-The route returns `404` while `CLAWHUB_EXPERIMENTAL_CLAWS` is disabled and is
-not advertised in the registry discovery document until the experimental gate
-is removed.
+The feed route returns `503` until a current Official Claw snapshot is published.
 
 Run the repeatable registry-to-OpenClaw proof against an OpenClaw Claws
 checkout with:
