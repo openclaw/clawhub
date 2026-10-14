@@ -135,6 +135,33 @@ it("excludes setup purposes from Trending and Featured while retaining All, sear
   ]);
 });
 
+it("continues a pre-Claw unfiltered catalog cursor instead of restarting the page", async () => {
+  const { t } = await fixture();
+  const first = await t.query(api.packages.listPublicNewPluginsPage, {
+    createdAfter: 0,
+    paginationOpts: { cursor: null, numItems: 1 },
+  });
+  const second = await t.query(api.packages.listPublicNewPluginsPage, {
+    createdAfter: 0,
+    paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+  });
+  expect(first.continueCursor).toMatch(/^pkgstable:/);
+  expect(second.page).toHaveLength(1);
+
+  // These fixture rows have identical createdAt and updatedAt values, so the
+  // source keys from the created feed also describe a legacy updated feed.
+  const cursor = JSON.parse(first.continueCursor.slice("pkgstable:".length));
+  cursor.sort = "updated";
+  cursor.sources.skill.done = false;
+  const resumed = await t.query(api.packages.listPublicPage, {
+    paginationOpts: { cursor: `pkgstable:${JSON.stringify(cursor)}`, numItems: 1 },
+  });
+
+  expect(resumed.page.map((row) => row.name)).toEqual(second.page.map((row) => row.name));
+  expect(resumed.page.map((row) => row.name)).not.toEqual(first.page.map((row) => row.name));
+  expect(resumed.continueCursor).toMatch(/^pkgstable:/);
+});
+
 it("selects adoption leaders after discovery eligibility, so higher setup adoption cannot consume the limit", async () => {
   const { t, ids, ownerUserId } = await fixture(205);
   await t.run(async (ctx) => {

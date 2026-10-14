@@ -4993,6 +4993,22 @@ async function listPackagePageImpl(
     return { page, isDone: true, continueCursor: "" };
   }
 
+  if (
+    !args.family &&
+    args.paginationOpts.cursor?.startsWith(STABLE_PACKAGE_DISCOVERY_CURSOR_PREFIX)
+  ) {
+    return await listStablePackageDiscoveryPage(ctx, {
+      channel: args.channel,
+      isOfficial: args.isOfficial,
+      category,
+      topic,
+      excludedScanStatuses: args.excludedScanStatuses,
+      sort: args.sort,
+      viewerUserId: args.viewerUserId,
+      paginationOpts: args.paginationOpts,
+    });
+  }
+
   const collected: PublicPackageListItem[] = [];
   const clawPublisherCache = new Map<string, Promise<boolean>>();
   const family = args.family;
@@ -5691,10 +5707,19 @@ async function searchPackagesImpl(
       (fallbackDigests.some(isClawOutsideOpenClawPublisher) || skippedPolicyClaw) &&
       authoritativeMatchCount() < targetCount
     ) {
-      const clawDigests = (await buildSearchDigestQuery("claw")
-        .order("desc")
-        .take(MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS)) as PackageDigestLike[];
-      await collectDigestMatches(clawDigests);
+      // Hidden Claws may exhaust the shared candidate window before any stable
+      // package appears. Give each family its own bounded recovery window.
+      const recoveryGroups = await Promise.all(
+        [...STABLE_PACKAGE_FAMILIES, "claw" as const].map(
+          async (family) =>
+            (await buildSearchDigestQuery(family)
+              .order("desc")
+              .take(
+                family === "claw" ? MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS : scanLimit,
+              )) as PackageDigestLike[],
+        ),
+      );
+      await collectDigestMatches(recoveryGroups.flat());
     }
   }
 

@@ -21901,6 +21901,35 @@ describe("restorePackageInternal", () => {
     expect(paginate).not.toHaveBeenCalled();
   });
 
+  it("recalls stable package families when hidden Claws exhaust the unfiltered search window", async () => {
+    const hidden = Array.from({ length: 50 }, (_, index) =>
+      makeDigest(`@other/legacy-${index}`, {
+        family: "claw",
+        displayName: `Legacy ${index}`,
+        summary: "assistant",
+        ownerPublisherId: "publishers:other",
+        ownerHandle: "other",
+        ownerKind: "org",
+      }),
+    );
+    const stable = ["skill", "code-plugin", "bundle-plugin"].map((family) =>
+      makeDigest(`${family}-assistant`, {
+        family,
+        displayName: `${family} package`,
+        summary: "assistant",
+      }),
+    );
+    const { ctx } = makeDigestCtx({
+      pages: [{ page: [...hidden, ...stable], isDone: true, continueCursor: "" }],
+      officialDigests: [],
+    });
+
+    const result = await searchPublicHandler(ctx, { query: "assistant", limit: 10 });
+    expect(result.map((entry) => entry.package.name).sort((a, b) => a.localeCompare(b))).toEqual(
+      stable.map((digest) => String(digest.name)).sort((a, b) => a.localeCompare(b)),
+    );
+  });
+
   it("hides non-OpenClaw Claws from package-backed sorted lists", async () => {
     const other = makePackageDoc({
       _id: "packages:other",
