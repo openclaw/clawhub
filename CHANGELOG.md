@@ -4,6 +4,9 @@
 
 - Tests: update Vitest and its V8 coverage provider together to 5.0.3; retain registered auth callbacks across per-test mock cleanup.
 - Tests: update jsdom to 30.1.2 and allow its required Undici 8 transport while keeping the CLI on Undici 7.
+- Runtime: use Bun 1.3.14 across CI and deployment tooling to preserve labelled conditional blocks when compiling React server rendering.
+
+- Dependencies: refresh production packages and synchronize the Sharp pin; let each package resolve its supported Undici transport and drop the workpool patch now included upstream.
 
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 

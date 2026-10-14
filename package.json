@@ -201,12 +201,9 @@
     "nanoid": "3.3.18",
     "next": "16.3.3",
     "postcss": "8.5.23",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "shell-quote": "1.10.0",
     "socket.io-parser": "4.2.7",
     "ws": "8.21.0"
-  },
-  "patchedDependencies": {
-    "@convex-dev/workpool@0.4.12": "patches/@convex-dev%2Fworkpool@0.4.12.patch"
   }
 }
