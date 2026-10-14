@@ -97,10 +97,12 @@ while the executor keeps building, and overlapping builds corrupt the shared
 `build_deps` directory. The isolated runner sets `HTTP_SERVER_TIMEOUT_SECONDS=900`,
 above the executor's unchanged 605-second dependency-build cap, so that cap fails
 the build before a transport retry can overlap it. Before starting the backend,
-it warms npm's cache with a bounded, best-effort install; warmup and backend both
-use `npm_config_prefer_offline=true`, `npm_config_fetch_timeout=60000`, and
-`npm_config_fetch_retries=5`. CI restores and saves `~/.npm` keyed by `bun.lock`
-and `convex.json`. Action execution limits are not raised.
+it warms npm's cache with a bounded, best-effort install. Warmup and backend
+retain cached package tarballs while using npm's normal metadata staleness
+checks, so npm can refresh stale version lists when dependencies change. Both use
+`npm_config_fetch_timeout=60000` and `npm_config_fetch_retries=5`. CI restores
+and saves `~/.npm` keyed by `bun.lock` and `convex.json`. Action execution limits
+are not raised.
 
 The full `bun run test:e2e` suite includes token-backed CLI flows. Keep that for
 local or secret-backed validation; PR CI should not require a developer auth
