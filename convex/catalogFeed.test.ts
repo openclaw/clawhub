@@ -305,7 +305,6 @@ describe("catalog feed projection", () => {
   });
 
   it("projects validated Claw releases with only their safe summary", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const clawManifestSummary = {
       schemaVersion: 1,
       agent: { id: "triage", name: "Triage" },
@@ -344,7 +343,6 @@ describe("catalog feed projection", () => {
   });
 
   it("omits Claws from another Official publisher while retaining @openclaw entries", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     vi.mocked(getOwnerPublisher).mockResolvedValueOnce({ kind: "org", handle: "other" } as never);
     const summary = {
       schemaVersion: 1,
@@ -393,7 +391,6 @@ describe("catalog feed projection", () => {
   });
 
   it("excludes Claw releases without a validated manifest summary", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const result = await listOfficialClawEntriesHandler(
       makeCtx([makePackage({ family: "claw" })], {
         "packageReleases:1": makeRelease(),
@@ -604,15 +601,26 @@ describe("catalog feed projection", () => {
   it("caps oversized skills feeds instead of blocking plugin publication", async () => {
     const skillEntries = Array.from({ length: 1001 }, (_, index) => makeFeedSkillEntry(index));
     const runMutation = vi.fn(
-      async (_ref: unknown, args: { feedId: string; entries: unknown[] }) => ({
-        feedId: args.feedId,
+      async (ref: unknown, args: { feedId?: string; entries: unknown[] }) => ({
+        feedId: getFunctionName(ref as Parameters<typeof getFunctionName>[0]).endsWith(
+          "storeClawPublication",
+        )
+          ? EXPERIMENTAL_CLAW_FEED_ID
+          : args.feedId,
         entryCount: args.entries.length,
       }),
     );
-    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+    const runQuery = vi.fn(async (ref: unknown, args: Record<string, unknown>) => {
       if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
       if ("publisherId" in args) {
         return { entries: skillEntries, isDone: true, continueCursor: "" };
+      }
+      if (
+        getFunctionName(ref as Parameters<typeof getFunctionName>[0]).endsWith(
+          "listOfficialClawEntries",
+        )
+      ) {
+        return { entries: [], isDone: true, continueCursor: "" };
       }
       return {
         publishers: [{ _id: "publishers:1" }],
@@ -626,7 +634,7 @@ describe("catalog feed projection", () => {
       { expiresAt: "2026-06-30T00:00:00.000Z" },
     );
 
-    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenCalledTimes(3);
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ feedId: CATALOG_FEED_ID, entries: [] }),
@@ -646,11 +654,11 @@ describe("catalog feed projection", () => {
     expect(result).toEqual([
       { feedId: CATALOG_FEED_ID, entryCount: 0 },
       { feedId: CATALOG_SKILLS_FEED_ID, entryCount: 1000 },
+      { feedId: EXPERIMENTAL_CLAW_FEED_ID, entryCount: 0 },
     ]);
   });
 
   it("publishes Claws through the separate experimental mutation", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const clawEntry = {
       type: "claw",
       id: "@openclaw/triage",
@@ -718,7 +726,6 @@ describe("catalog feed projection", () => {
   });
 
   it("stamps only a current @openclaw Claw publication with its publisher authority", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const entry = {
       type: "claw",
       id: "@openclaw/triage",

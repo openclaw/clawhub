@@ -15,8 +15,10 @@ const definitionSchema = type({
     icon: {
         "+": "reject",
         pngBase64: "string",
-        license: '"MIT"',
+        license: "string",
         attribution: "string",
+        sourceUrl: "string?",
+        licenseUrl: "string?",
     },
     connection: {
         "+": "reject",
@@ -41,6 +43,7 @@ export function parseManagedMcpDefinition(raw) {
         ["name", value.name, 120],
         ["company", value.company, 120],
         ["description", value.description, 300],
+        ["icon license", value.icon.license, 120],
         ["icon attribution", value.icon.attribution, 500],
         ["setup", value.setup ?? "", 2000],
     ]) {
@@ -48,6 +51,20 @@ export function parseManagedMcpDefinition(raw) {
             text.length > max ||
             Array.from(text).some((character) => character.charCodeAt(0) < 32 && !"\t\n\r".includes(character)))
             throw new Error(`Invalid ${field}`);
+    }
+    // Legacy original icons are MIT-licensed. Company artwork has separate rights;
+    // keep its provenance and permission terms with the immutable package bytes.
+    if (value.icon.license !== "MIT" && (!value.icon.sourceUrl || !value.icon.licenseUrl))
+        throw new Error("Non-MIT icons require a source URL and license URL");
+    for (const url of [value.icon.sourceUrl, value.icon.licenseUrl]) {
+        if (url === undefined)
+            continue;
+        try {
+            assertManagedMcpUrl(url);
+        }
+        catch {
+            throw new Error("Icon source and license URLs must use public HTTPS without credentials");
+        }
     }
     assertManagedMcpUrl(value.connection.url);
     const auth = value.connection.auth;

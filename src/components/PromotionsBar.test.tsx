@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ANALYTICS_EVENT, analyticsPublicResourcePlacement } from "../lib/analyticsEvents";
 import { PromotionsBar } from "./PromotionsBar";
 
 const { fetchMock, publicApiUrlMock } = vi.hoisted(() => ({
@@ -51,6 +52,46 @@ describe("PromotionsBar", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    delete document.documentElement.dataset.analyticsAllowed;
+    delete document.documentElement.dataset.analyticsConsentEpoch;
+  });
+
+  it("enriches the original promotion selection once without changing its identity or target", async () => {
+    const href = "https://example.test/promotion?utm_source=fixture#offer";
+    const activePromotion = { ...promotion, endsAt: 200_000, launchPageUrl: href };
+    fetchMock.mockResolvedValue(promotionsResponse([activePromotion]));
+    document.documentElement.dataset.analyticsAllowed = "true";
+    document.documentElement.dataset.analyticsConsentEpoch = "automatic-public:1";
+    const received: Array<{ name: string; params: unknown }> = [];
+    const listener = (event: Event) => received.push((event as CustomEvent).detail);
+    window.addEventListener(ANALYTICS_EVENT, listener);
+    try {
+      render(
+        <section data-analytics-public-detail="">
+          <PromotionsBar />
+        </section>,
+      );
+      await flushPromises();
+      const link = screen.getByRole("link", { name: /Try it free/ });
+      link.addEventListener("click", (event) => event.preventDefault());
+      fireEvent.click(link);
+      expect(received.filter((event) => event.name === "select_content")).toEqual([
+        expect.objectContaining({
+          name: "select_content",
+          params: {
+            content_type: "navigation",
+            content_id: `promotion:${activePromotion.slug}`,
+            ui_location: "promotion",
+            link_url: "https://example.test/promotion",
+            link_domain: "example.test",
+          },
+        }),
+      ]);
+      expect(link.getAttribute("href")).toBe(href);
+      expect(analyticsPublicResourcePlacement(link as HTMLAnchorElement)).toBeNull();
+    } finally {
+      window.removeEventListener(ANALYTICS_EVENT, listener);
+    }
   });
 
   it("polls for promotions that become active while the page is open", async () => {

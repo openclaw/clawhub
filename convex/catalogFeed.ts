@@ -22,11 +22,7 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import type { QueryCtx } from "./_generated/server";
 import { isSkillHighlighted } from "./lib/badges";
 import { sha256Hex } from "./lib/clawpack";
-import {
-  experimentalClawsEnabled,
-  isOpenClawClawName,
-  isOpenClawClawPublisher,
-} from "./lib/experimentalClaws";
+import { isOpenClawClawName, isOpenClawClawPublisher } from "./lib/experimentalClaws";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
@@ -455,9 +451,6 @@ export const listOfficialClawEntries = internalQuery({
     cursor: v.union(v.string(), v.null()),
   },
   handler: async (ctx, args) => {
-    if (!experimentalClawsEnabled()) {
-      return { entries: [] as ExperimentalClawFeedEntry[], isDone: true, continueCursor: "" };
-    }
     const page = await listFamilyEntryPage(ctx, CATALOG_CLAW_FAMILY, args.cursor);
     if (page.entries.some((entry) => entry.type !== "claw")) {
       throw new Error("Claw feed projection returned a mismatched entry type");
@@ -561,7 +554,6 @@ export const storeClawPublication = internalMutation({
     entries: v.array(clawFeedEntryValidator),
   },
   handler: async (ctx, args) => {
-    if (!experimentalClawsEnabled()) throw new Error("Experimental Claw feeds are disabled");
     if (
       args.entries.some(
         (entry) =>
@@ -708,9 +700,6 @@ export const publish = internalAction({
         entries: skillEntries.sort((left, right) => left.id.localeCompare(right.id)),
       },
     );
-    if (!experimentalClawsEnabled()) {
-      return [pluginResult, skillsResult];
-    }
     const clawEntries: ExperimentalClawFeedEntry[] =
       await collectFeedPages<ExperimentalClawFeedEntry>((cursor) =>
         ctx.runQuery(internal.catalogFeed.listOfficialClawEntries, { cursor }),

@@ -14,7 +14,7 @@ vi.mock("./lib/apiTokenAuth", () => ({
 }));
 vi.mock("./skills", () => ({ publishVersionForUser: vi.fn() }));
 
-const { resolveTagsBatch } = await import("./httpApiV1/shared");
+const { resolvePublicSkillVersions } = await import("./httpApiV1/shared");
 const { exportSkillsV1Handler, skillsGetRouterV1Handler, listSkillsV1Handler } =
   await import("./httpApiV1/skillsV1");
 
@@ -145,12 +145,17 @@ describe("skill HTTP publication boundaries", () => {
     async (status) => {
       const f = fixture(status);
       const hiddenId = ids[status] as Id<"skillVersions">;
-      const result = await resolveTagsBatch(
-        f.ctx,
-        [{ latest: hiddenId, candidate: hiddenId, stable: ids.legacy as Id<"skillVersions"> }],
-        [skillId],
-      );
-      expect(result).toEqual([{ stable: "1.0.1" }]);
+      const result = await resolvePublicSkillVersions(f.ctx, [
+        {
+          skillId,
+          tags: {
+            latest: hiddenId,
+            candidate: hiddenId,
+            stable: ids.legacy as Id<"skillVersions">,
+          },
+        },
+      ]);
+      expect(result).toEqual([{ tags: { stable: "1.0.1" }, latestVersion: null }]);
     },
   );
 
@@ -266,21 +271,32 @@ describe("skill HTTP publication boundaries", () => {
   it("bounds full-document tag batches and preserves parent association", async () => {
     const selections = Array.from({ length: 12 }, (_, index) => ({
       skillId: `skills:${index}` as Id<"skills">,
-      versionId: `skillVersions:${index}` as Id<"skillVersions">,
+      versionId: `skillVersions:${index === 1 ? 0 : index}` as Id<"skillVersions">,
     }));
     const runQuery = vi.fn(async (_ref: unknown, args: { selections: typeof selections }) =>
-      args.selections.map(({ skillId: parentId, versionId }) => ({
-        status: "available",
-        skill: { _id: parentId, tags: { latest: versionId } },
-        version: { _id: versionId, skillId: parentId, version: "1.0.0" },
+      args.selections.map(({ skillId: parentId, versionId }) =>
+        parentId === "skills:1"
+          ? { status: "not_found" }
+          : {
+              status: "available",
+              skill: { _id: parentId, tags: { latest: versionId } },
+              version: { _id: versionId, skillId: parentId, version: "1.0.0" },
+            },
+      ),
+    );
+    const result = await resolvePublicSkillVersions(
+      { runQuery } as unknown as ActionCtx,
+      selections.map(({ skillId: parentId, versionId }) => ({
+        skillId: parentId,
+        tags: { latest: versionId },
       })),
     );
-    const result = await resolveTagsBatch(
-      { runQuery } as unknown as ActionCtx,
-      selections.map(({ versionId }) => ({ latest: versionId })),
-      selections.map(({ skillId: parentId }) => parentId),
+    expect(result).toEqual(
+      selections.map((_, index) => ({
+        tags: index === 1 ? {} : { latest: "1.0.0" },
+        latestVersion: null,
+      })),
     );
-    expect(result).toEqual(selections.map(() => ({ latest: "1.0.0" })));
     expect(runQuery).toHaveBeenCalledTimes(3);
     expect(runQuery.mock.calls.map(([, args]) => args.selections.length)).toEqual([5, 5, 2]);
   });
@@ -288,8 +304,10 @@ describe("skill HTTP publication boundaries", () => {
   it("does not trust a cached latest tag projection without publication state", async () => {
     const f = fixture("pending");
     const pendingId = ids.pending as Id<"skillVersions">;
-    const tags = await resolveTagsBatch(f.ctx, [{ latest: pendingId }], [skillId]);
-    expect(tags).toEqual([{}]);
+    const tags = await resolvePublicSkillVersions(f.ctx, [
+      { skillId, tags: { latest: pendingId } },
+    ]);
+    expect(tags).toEqual([{ tags: {}, latestVersion: null }]);
   });
 
   it.each(["pending", "blocked", "deleted", "foreign"] as const)(

@@ -50,7 +50,6 @@ import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
 import { recordCatalogSearchObservation } from "../lib/catalogSearchObservations";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
-import { experimentalClawsEnabled } from "../lib/experimentalClaws";
 import {
   fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
@@ -101,7 +100,7 @@ import {
   json,
   parsePackagePathSegments,
   publicApiOrigin,
-  resolveTagsBatch,
+  resolvePublicSkillVersions,
   requireApiTokenUserOrResponse,
   requireAdminOrResponse,
   requireModeratorOrResponse,
@@ -344,12 +343,7 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
   }
 }
 
-const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
-const PACKAGE_FAMILY_VALUES_WITH_CLAWS = [...PACKAGE_FAMILY_VALUES, "claw"] as const;
-
-function publicPackageFamilyValues() {
-  return experimentalClawsEnabled() ? PACKAGE_FAMILY_VALUES_WITH_CLAWS : PACKAGE_FAMILY_VALUES;
-}
+const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin", "claw"] as const;
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
 const PACKAGE_LIST_SORT_VALUES = [
@@ -566,6 +560,7 @@ type ReleaseLike = {
   sha256hash?: string;
   vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
   skillSpectorAnalysis?: Doc<"packageReleases">["skillSpectorAnalysis"];
+  endorAnalysis?: Doc<"packageReleases">["endorAnalysis"];
   llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
   staticScan?: Doc<"packageReleases">["staticScan"];
   manualModeration?: Doc<"packageReleases">["manualModeration"];
@@ -719,6 +714,7 @@ function toPackageVersionResponse(release: ReleaseLike, packageName: string) {
     sha256hash: release.sha256hash ?? null,
     vtAnalysis: release.vtAnalysis ?? null,
     skillSpectorAnalysis: release.skillSpectorAnalysis ?? null,
+    ...(release.endorAnalysis ? { endorAnalysis: release.endorAnalysis } : {}),
     llmAnalysis: release.llmAnalysis ?? null,
     staticScan: release.staticScan ?? null,
   };
@@ -756,6 +752,7 @@ function toPackageReleaseSecurityResponse(params: {
       ...(params.release.npmShasum ? { npmShasum: params.release.npmShasum } : {}),
       ...(params.release.npmTarballName ? { npmTarballName: params.release.npmTarballName } : {}),
       createdAt: params.release.createdAt,
+      ...(params.release.endorAnalysis ? { endorAnalysis: params.release.endorAnalysis } : {}),
     },
     trust: {
       scanStatus,
@@ -1277,8 +1274,8 @@ async function resolveSkillTags(
   skillId: Id<"skills">,
   tags: Record<string, Id<"skillVersions">>,
 ): Promise<Record<string, string>> {
-  const [resolved] = await resolveTagsBatch(ctx, [tags], [skillId]);
-  return resolved ?? {};
+  const [resolved] = await resolvePublicSkillVersions(ctx, [{ skillId, tags }]);
+  return resolved.tags;
 }
 
 function isSkillOfficial(skill: SkillPackageDocLike) {
@@ -1638,9 +1635,6 @@ async function parseMultipartPackagePublish(
     parsedPayload,
     "Package publish payload",
   );
-  if (metadata.family === "claw" && !experimentalClawsEnabled()) {
-    throw new Error("Experimental Claw publication is disabled");
-  }
   const tarballPart = getTarballPart(form);
   const fileParts = getFileParts(
     form,
@@ -1736,7 +1730,7 @@ async function listPackages(
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
   const rawCursor = url.searchParams.get("cursor");
-  const familyParam = parseEnumQueryParam(url.searchParams, "family", publicPackageFamilyValues());
+  const familyParam = parseEnumQueryParam(url.searchParams, "family", PACKAGE_FAMILY_VALUES);
   if (!familyParam.ok) return text(familyParam.message, 400, rate.headers);
   const channelParam = parseEnumQueryParam(url.searchParams, "channel", PACKAGE_CHANNEL_VALUES);
   if (!channelParam.ok) return text(channelParam.message, 400, rate.headers);
@@ -4112,7 +4106,7 @@ async function searchPackages(
   const queryText = url.searchParams.get("q")?.trim() ?? "";
   if (!queryText) return text("Missing q query parameter", 400, rate.headers);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 20, 100));
-  const familyParam = parseEnumQueryParam(url.searchParams, "family", publicPackageFamilyValues());
+  const familyParam = parseEnumQueryParam(url.searchParams, "family", PACKAGE_FAMILY_VALUES);
   if (!familyParam.ok) return text(familyParam.message, 400, rate.headers);
   const channelParam = parseEnumQueryParam(url.searchParams, "channel", PACKAGE_CHANNEL_VALUES);
   if (!channelParam.ok) return text(channelParam.message, 400, rate.headers);

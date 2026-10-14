@@ -516,7 +516,19 @@ export function PublisherProfilePage({
     resolveDefaultCatalogTab(loaderPublisher),
   );
   useEffect(() => {
-    setCatalogTab(resolveDefaultCatalogTab(loaderPublisher));
+    const syncTabFromHash = () => {
+      const hash = window.location.hash.slice(1);
+      const tab =
+        hash === "skills" ||
+        hash === "plugins" ||
+        (hash === "stars" && loaderPublisher.kind === "user")
+          ? hash
+          : resolveDefaultCatalogTab(loaderPublisher);
+      setCatalogTab(tab);
+    };
+    syncTabFromHash();
+    window.addEventListener("hashchange", syncTabFromHash);
+    return () => window.removeEventListener("hashchange", syncTabFromHash);
   }, [handle, loaderPublisher]);
   const [catalogSort, setCatalogSort] = useState<ProfileCatalogSort>(DEFAULT_PROFILE_CATALOG_SORT);
   const [catalogSearch, setCatalogSearch] = useState("");
@@ -869,6 +881,7 @@ export function PublisherProfilePage({
                   onChange={(value) => {
                     if (!value) return;
                     setCatalogTab(value as ProfileCatalogTab);
+                    window.location.hash = value;
                     setCatalogSearch("");
                   }}
                 />

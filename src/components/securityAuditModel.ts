@@ -1,4 +1,5 @@
 export { aggregateAuditVerdict } from "clawhub-schema";
+import type { PackageEndorAnalysis } from "clawhub-schema";
 import {
   type AigAnalysis,
   type LlmAnalysis,
@@ -15,6 +16,7 @@ type SecurityAuditSignals = {
   aigAnalysis?: AigAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
+  endorAnalysis?: PackageEndorAnalysis | null;
   staticScan?: {
     status?: string | null;
     summary?: string | null;
@@ -57,6 +59,7 @@ export function getLatestAuditCheckedAt(signals: SecurityAuditSignals) {
     signals.aigAnalysis?.checkedAt,
     signals.llmAnalysis?.checkedAt,
     signals.skillSpectorAnalysis?.checkedAt,
+    signals.endorAnalysis?.checkedAt,
     signals.staticScan?.checkedAt,
   ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   return values.length ? Math.max(...values) : null;

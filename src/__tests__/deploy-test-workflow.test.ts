@@ -1,4 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
@@ -63,6 +66,11 @@ describe("Test deploy workflow", () => {
     });
     expect(job?.if).toContain("github.event_name == 'workflow_dispatch'");
     expect(job?.if).toContain("github.ref == 'refs/heads/main'");
+    expect(job?.if).toContain("github.ref == 'refs/heads/codex/endor-plugin-scan-main-20261001'");
+    expect(job?.if).toContain("github.actor == 'Patrick-Erichsen'");
+    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-endor-to-permanent-test'");
+    expect(job?.if).toContain("inputs.expected_sha == github.sha");
+    expect(revision).toContain('"$ENDOR_TEST_SHA" == "$deploy_sha"');
     expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k'");
     expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test'");
     expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-589-trending-rank-overlay'");
@@ -132,9 +140,9 @@ describe("Test deploy workflow", () => {
     expect(steps.filter((step) => step.env?.CONVEX_DEPLOY_KEY).map((step) => step.name)).toEqual([
       "Check Test configuration",
       "Enable Test rollout modes",
+      "Deploy Convex Test",
       "Stamp Convex build SHA",
       "Stamp Convex deploy time",
-      "Deploy Convex Test",
       "Verify Convex contract",
       "Verify Test rollout capabilities",
       "Apply additive Test fixtures",
@@ -147,6 +155,44 @@ describe("Test deploy workflow", () => {
     expect(steps.find((step) => step.name === "Check Test configuration")?.run).toContain(
       "prod:academic-chihuahua-392\\|*",
     );
+  });
+
+  it("keeps the previous build marker when the Convex deployment fails", async () => {
+    const workflow = await readWorkflow();
+    const steps = workflow.jobs?.["deploy-test"]?.steps ?? [];
+    const root = await mkdtemp(join(tmpdir(), "endor-test-deploy-"));
+    try {
+      const marker = join(root, "marker");
+      const bun = join(root, "bun");
+      const bunx = join(root, "bunx");
+      await writeFile(bun, '#!/usr/bin/env bash\nexit "${TEST_DEPLOY_EXIT:-0}"\n');
+      await writeFile(bunx, '#!/usr/bin/env bash\nprintf "%s" "$5" > "$TEST_BUILD_MARKER"\n');
+      await chmod(bun, 0o755);
+      await chmod(bunx, 0o755);
+      for (const failure of ["1", "0"]) {
+        await writeFile(marker, "previous-sha");
+        for (const step of steps.filter(
+          (s) => s.name === "Deploy Convex Test" || s.name === "Stamp Convex build SHA",
+        )) {
+          const script =
+            step.run?.replace("${{ steps.revision.outputs.deploy_sha }}", "selected-sha") ?? "";
+          const result = spawnSync("bash", ["-c", script], {
+            env: {
+              ...process.env,
+              PATH: `${root}:${process.env.PATH}`,
+              TEST_DEPLOY_EXIT: failure,
+              TEST_BUILD_MARKER: marker,
+            },
+          });
+          if (result.status !== 0) break;
+        }
+        expect(await readFile(marker, "utf8")).toBe(
+          failure === "1" ? "previous-sha" : "selected-sha",
+        );
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("smokes the candidate before assigning the stable alias and verifies it afterward", async () => {

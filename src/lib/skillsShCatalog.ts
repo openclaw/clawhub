@@ -1,5 +1,3 @@
-export const SKILLS_SH_TRUST_LABEL = "Not scanned by ClawHub";
-
 export type SkillsShSearchResult = {
   source: "skills.sh";
   externalId: string;

@@ -1,19 +1,25 @@
 import { Link } from "@tanstack/react-router";
 import { Download } from "lucide-react";
+import { emitAnalytics, publicAnalyticsContentId } from "../lib/analyticsEvents";
 import { formatCompactStat } from "../lib/numberFormat";
-import {
-  SKILLS_SH_TRUST_LABEL,
-  skillsShRepositoryLabel,
-  type SkillsShSearchResult,
-} from "../lib/skillsShCatalog";
+import { skillsShRepositoryLabel, type SkillsShSearchResult } from "../lib/skillsShCatalog";
 import { timeAgo } from "../lib/timeAgo";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { MarketplaceIcon } from "./MarketplaceIcon";
-import { Badge } from "./ui/badge";
 
 export function SkillsShListItem({ result }: { result: SkillsShSearchResult }) {
   return (
-    <Link to={result.route} className="skill-list-item skill-list-item-skill">
+    <Link
+      to={result.route}
+      onClick={() =>
+        emitAnalytics("select_content", {
+          content_type: "catalog_skill",
+          content_id: publicAnalyticsContentId("catalog_skill", result.externalId),
+          ui_location: "catalog",
+        })
+      }
+      className="skill-list-item skill-list-item-skill"
+    >
       <MarketplaceIcon kind="skill" label={result.displayName} />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
@@ -23,9 +29,6 @@ export function SkillsShListItem({ result }: { result: SkillsShSearchResult }) {
             </span>
             <span className="skill-list-item-owner">{skillsShRepositoryLabel(result)}</span>
           </span>
-          <Badge variant="warning" size="sm">
-            {SKILLS_SH_TRUST_LABEL}
-          </Badge>
         </div>
         {result.summary ? (
           <p className="skill-list-item-summary">{truncateText(result.summary, 80)}</p>

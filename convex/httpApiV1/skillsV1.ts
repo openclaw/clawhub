@@ -97,7 +97,7 @@ import {
   publicApiOrigin,
   requireAdminOrResponse,
   requireApiTokenUserOrResponse,
-  resolveTagsBatch,
+  resolvePublicSkillVersions,
   readPublicSkillVersionSelections,
   safeStoredFilePreviewResponse,
   safeStoredFileResponse,
@@ -486,11 +486,13 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
     "- `clean` means ClawHub did not find blocking security issues in this scan.",
     "",
     "VirusTotal results are supporting reputation telemetry. They can help explain a risk signal, but they are not the sole source of ClawHub's final verdict.",
+    "Endor results summarize reachable dependency findings. They supplement the ClawScan verdict; a missing or skipped Endor result is not a clean result.",
     "",
     "## Files",
     "",
     "- `manifest.json`: artifact identity, scan status, timestamps, and writeback state.",
     "- `clawscan.json`: final ClawScan verdict, summary, guidance, and findings.",
+    "- `endor.json`: bounded Endor reachability summary when available.",
     "- `skillspector.json`: SkillSpector structure and agentic-risk signals when available.",
     "- `static-analysis.json`: deterministic scanner findings, reason codes, and static summary.",
     "- `virustotal.json`: external reputation counts and status when available.",
@@ -501,6 +503,7 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
   return buildDeterministicZip([
     { path: "manifest.json", bytes: encodeJsonEntry(manifest) },
     { path: "clawscan.json", bytes: encodeJsonEntry(scanReportPart(status, "clawscan")) },
+    { path: "endor.json", bytes: encodeJsonEntry(scanReportPart(status, "endor")) },
     { path: "skillspector.json", bytes: encodeJsonEntry(scanReportPart(status, "skillspector")) },
     {
       path: "static-analysis.json",
@@ -1579,57 +1582,48 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     };
   }
 
-  // Digest summaries may predate publication or owner-deletion transitions.
-  // Re-read the selected public snapshot, preserving older approved versions.
-  const latestTargets = result.items.filter((item) => item.latestVersion);
-  const latestSelections = await readPublicSkillVersionSelections(
+  // Recheck cached latest and tag targets once per exact parent/version pair,
+  // preserving older approved versions across publication and deletion changes.
+  const resolvedVersions = await resolvePublicSkillVersions(
     ctx,
-    latestTargets.map((item) => ({
+    result.items.map((item) => ({
       skillId: item.skill._id,
-      versionId: item.latestVersion!._id,
+      tags: item.skill.tags,
+      latestVersionId: item.latestVersion?._id,
     })),
   );
-  let latestIndex = 0;
-  result.items = result.items.map((item) => {
-    if (!item.latestVersion) return item;
-    const selection = latestSelections[latestIndex++];
-    return { ...item, latestVersion: selection.status === "available" ? selection.version : null };
+
+  const items = result.items.map((item, idx) => {
+    const { tags, latestVersion } = resolvedVersions[idx];
+    const parsed: PublicSkillVersionParsed | undefined = latestVersion?.parsed;
+    return {
+      ownerHandle: item.ownerHandle,
+      slug: item.skill.slug,
+      displayName: item.skill.displayName,
+      summary: item.skill.summary ?? null,
+      description: parsed?.description ?? null,
+      topics: item.skill.topics,
+      tags,
+      stats: item.skill.stats,
+      createdAt: item.skill.createdAt,
+      updatedAt: item.skill.updatedAt,
+      latestVersion: latestVersion
+        ? {
+            version: latestVersion.version,
+            createdAt: latestVersion.createdAt,
+            changelog: latestVersion.changelog,
+            license: parsed?.license ?? null,
+          }
+        : null,
+      metadata: parsed?.clawdis
+        ? {
+            setup: buildSkillSetup(parsed),
+            os: parsed.clawdis.os ?? null,
+            systems: parsed.clawdis.nix?.systems ?? null,
+          }
+        : null,
+    };
   });
-
-  // Tag targets are checked in bounded batches rather than per-item action RPCs.
-  const resolvedTagsList = await resolveTagsBatch(
-    ctx,
-    result.items.map((item) => item.skill.tags),
-    result.items.map((item) => item.skill._id),
-  );
-
-  const items = result.items.map((item, idx) => ({
-    ownerHandle: item.ownerHandle,
-    slug: item.skill.slug,
-    displayName: item.skill.displayName,
-    summary: item.skill.summary ?? null,
-    description: item.latestVersion?.parsed?.description ?? null,
-    topics: item.skill.topics,
-    tags: resolvedTagsList[idx],
-    stats: item.skill.stats,
-    createdAt: item.skill.createdAt,
-    updatedAt: item.skill.updatedAt,
-    latestVersion: item.latestVersion
-      ? {
-          version: item.latestVersion.version,
-          createdAt: item.latestVersion.createdAt,
-          changelog: item.latestVersion.changelog,
-          license: item.latestVersion.parsed?.license ?? null,
-        }
-      : null,
-    metadata: item.latestVersion?.parsed?.clawdis
-      ? {
-          setup: buildSkillSetup(item.latestVersion.parsed),
-          os: item.latestVersion.parsed.clawdis.os ?? null,
-          systems: item.latestVersion.parsed.clawdis.nix?.systems ?? null,
-        }
-      : null,
-  }));
 
   const responseHeaders =
     sort === "trending" && getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled
@@ -2002,7 +1996,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       );
     }
 
-    const [tags] = await resolveTagsBatch(ctx, [result.skill.tags], [result.skill._id]);
+    const [{ tags }] = await resolvePublicSkillVersions(ctx, [
+      { skillId: result.skill._id, tags: result.skill.tags },
+    ]);
     const latestVersionId =
       result.skill.latestVersionId ?? result.skill.tags?.latest ?? result.latestVersion?._id;
     const descriptionAccessBlock = result.latestVersion

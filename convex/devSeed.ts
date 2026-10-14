@@ -3733,6 +3733,18 @@ export async function seedLocalModerationFixturesHandler(
     },
     llmAnalysis: pluginClawScanRiskAnalysis(now),
     staticScan: scannedStaticScan,
+    endorAnalysis: {
+      status: "completed",
+      checkedAt: now,
+      reachableFunctionCount: 1,
+      findings: [
+        {
+          severity: "high",
+          summary:
+            "Synthetic reachability fixture: a vulnerable function in fixture-parser@1.0.0 is reachable from the plugin entrypoint.",
+        },
+      ],
+    },
     source: { kind: "github", repo: "openclaw/local-dev-fixture", path: "." },
     createdBy: userId,
     publishActor: { kind: "user", userId },

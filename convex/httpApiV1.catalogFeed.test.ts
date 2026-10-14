@@ -135,19 +135,7 @@ describe("catalogFeedV1Handler", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("hides the Claws feed while the experiment is disabled", async () => {
-    const response = await catalogClawsFeedV1Handler(
-      ctx as never,
-      new Request("https://clawhub.ai/api/v1/feeds/claws"),
-    );
-
-    expect(response.status).toBe(404);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(ctx.runQuery).not.toHaveBeenCalled();
-  });
-
-  it("serves the Claws publication while the experiment is enabled", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+  it("serves the Claws publication by default", async () => {
     const response = await catalogClawsFeedV1Handler(
       ctx as never,
       new Request("https://clawhub.ai/api/v1/feeds/claws"),
@@ -163,7 +151,6 @@ describe("catalogFeedV1Handler", () => {
   });
 
   it("rejects a pre-policy stored Claw feed even with a matching cache validator", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const storedCtx = makeStoredClawFeedCtx({
       ...publication,
       feedId: "clawhub-official-claws",
@@ -183,7 +170,6 @@ describe("catalogFeedV1Handler", () => {
   });
 
   it("serves only a policy-stamped Claw feed from a currently active publisher", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const stored = {
       ...publication,
       feedId: "clawhub-official-claws",

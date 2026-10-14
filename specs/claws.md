@@ -49,26 +49,20 @@ Schemas, templates, examples, fixtures, and static assets require no special
 registry role: they remain ordinary declared `workspace.files` covered by the
 artifact digest.
 
-## Experimental contract
+## Launch contract
 
-- Backend Claw publication and read surfaces require
-  `CLAWHUB_EXPERIMENTAL_CLAWS=1`.
-- This hosting gate is independent from OpenClaw's local Labs visibility
-  control; neither enables the other side of the boundary.
-- The gate is not user consent and must not bypass validation, moderation,
-  ownership, or scanner checks.
-- Disabled deployments must not accept Claw publication or expose Claws through
-  Claw-specific discovery surfaces.
-- Public Claw schemas and APIs may change while the gate is required. Removing
-  the gate requires a separate compatibility and migration decision.
+- Backend Claw publication and exact-name reads are available by default.
+- ClawHub remains headless for Claws. OpenClaw owns local Labs visibility,
+  preview, consent, and installation.
+- Claw publication still requires validation, moderation, ownership, and
+  scanner checks.
 
 The initial public catalog (package lists, search, and the Official Claw feed)
 contains only canonical `@openclaw/*` Claws owned by the active OpenClaw
 publisher organization with a current Official designation. Recheck that
 owner's current authority for catalog reads; cached search digest owner fields
 are not sufficient after an organization is deactivated or deleted. This is a
-discovery policy, not a hosting policy. On deployments with the experimental
-gate enabled, other publishers may publish Claws under their own scope and
+discovery policy, not a hosting policy. Other publishers may publish Claws under their own scope and
 their published Claws remain reachable by exact-name metadata and artifact
 downloads, subject to the existing ownership, scanner, moderation, and access
 rules. If a Claw has a publisher row, admission and finalization recheck that

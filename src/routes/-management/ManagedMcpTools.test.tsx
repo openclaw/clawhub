@@ -151,6 +151,95 @@ describe("ManagedMcpTools", () => {
     expect(screen.getByText(/Submission receipt/).textContent).toContain("packageReleases:update");
   });
 
+  it("previews a replacement icon, clears inherited rights, and publishes a new version", async () => {
+    getDefinition.mockResolvedValue(definition);
+    publish.mockResolvedValue({ releaseId: "packageReleases:icon", publicationStatus: "pending" });
+    render(<ManagedMcpTools packageName="@openclaw/deepwiki" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit MCP integration" }));
+    await screen.findByRole("dialog", { name: "Publish an updated MCP integration" });
+    expect(screen.getByRole("img", { name: "Icon for this version" }).getAttribute("src")).toBe(
+      `data:image/png;base64,${definition.icon.pngBase64}`,
+    );
+    fireEvent.change(screen.getByLabelText("Replace icon (PNG, optional)"), {
+      target: { files: [new File(["replacement image"], "official.png", { type: "image/png" })] },
+    });
+    expect((screen.getByLabelText("Icon license or rights") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Icon attribution") as HTMLInputElement).value).toBe("");
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: "Icon for this version" }).getAttribute("src")).toBe(
+        `data:image/png;base64,${btoa("replacement image")}`,
+      ),
+    );
+    for (const [label, value] of [
+      ["Icon license or rights", "Provider brand terms"],
+      ["Icon attribution", "Cognition"],
+      ["Official icon source URL", "https://deepwiki.com/icon.png"],
+      ["Icon license or brand terms URL", "https://cognition.ai/terms"],
+    ]) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    }
+    submitForm();
+    await screen.findByRole("status");
+    expect(publish).toHaveBeenCalledExactlyOnceWith({
+      definition: {
+        ...definition,
+        version: "1.0.1",
+        icon: {
+          pngBase64: btoa("replacement image"),
+          license: "Provider brand terms",
+          attribution: "Cognition",
+          sourceUrl: "https://deepwiki.com/icon.png",
+          licenseUrl: "https://cognition.ai/terms",
+        },
+      },
+    });
+  });
+
+  it("retains icon provenance when an edit keeps the existing image", async () => {
+    const branded = {
+      ...definition,
+      icon: {
+        ...definition.icon,
+        license: "Provider brand terms",
+        sourceUrl: "https://deepwiki.com/icon.png",
+        licenseUrl: "https://cognition.ai/terms",
+      },
+    };
+    getDefinition.mockResolvedValue(branded);
+    publish.mockResolvedValue({ releaseId: "packageReleases:icon", publicationStatus: "pending" });
+    render(<ManagedMcpTools packageName="@openclaw/deepwiki" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit MCP integration" }));
+    await screen.findByRole("dialog", { name: "Publish an updated MCP integration" });
+    submitForm();
+    await screen.findByRole("status");
+    expect(publish).toHaveBeenCalledWith({ definition: { ...branded, version: "1.0.1" } });
+  });
+
+  it.each([
+    ["SVG", () => new File(["<svg/>"], "logo.svg", { type: "image/svg+xml" })],
+    [
+      "oversized PNG",
+      () => new File([new Uint8Array(512 * 1024 + 1)], "large.png", { type: "image/png" }),
+    ],
+  ] as const)(
+    "rejects unsupported replacement images before submission (%s)",
+    async (_label, makeFile) => {
+      getDefinition.mockResolvedValue(definition);
+      render(<ManagedMcpTools packageName="@openclaw/deepwiki" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Edit MCP integration" }));
+      await screen.findByRole("dialog", { name: "Publish an updated MCP integration" });
+      fireEvent.change(screen.getByLabelText("Replace icon (PNG, optional)"), {
+        target: { files: [makeFile()] },
+      });
+      expect(screen.getByRole("alert").textContent).toContain("PNG icon no larger than 512KB");
+      expect(
+        (screen.getByRole("button", { name: "Publish version" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      submitForm();
+      expect(publish).not.toHaveBeenCalled();
+    },
+  );
+
   it("offers a public link only for confirmed publication and clears a previous receipt", async () => {
     publish.mockResolvedValue({
       ok: true,

@@ -8,8 +8,13 @@ import {
   Package,
   Wrench,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { MouseEventHandler, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  analyticsExternalLinkParameters,
+  captureAnalyticsOperation,
+  emitAnalytics,
+} from "../lib/analyticsEvents";
 import { getPublicClawHubSiteUrl } from "../lib/site";
 import { cn } from "../lib/utils";
 import { copyText } from "./InstallCopyButton";
@@ -72,6 +77,7 @@ export function SkillPublishSuccessDialog({
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const [dismissed, setDismissed] = useState(false);
   const hasDismissedRef = useRef(false);
+  const hasViewedRef = useRef(false);
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
   const skillUrl = useMemo(() => buildAbsoluteSkillUrl(skillPath), [skillPath]);
   const compactSkillUrl = useMemo(() => skillUrl.replace(/^https?:\/\//, ""), [skillUrl]);
@@ -86,24 +92,46 @@ export function SkillPublishSuccessDialog({
 
   useEffect(() => {
     if (isOpen) {
+      if (!hasViewedRef.current)
+        emitAnalytics("popup_view", { popup_id: "skill_published", ui_location: "publish" });
+      hasViewedRef.current = true;
       setCopyState("idle");
       setDismissed(false);
       hasDismissedRef.current = false;
     }
   }, [isOpen]);
 
-  function dismiss() {
+  function dismiss(method: "button" | "escape" | "outside" | "programmatic" = "button") {
     if (hasDismissedRef.current) return;
     hasDismissedRef.current = true;
+    hasViewedRef.current = false;
+    emitAnalytics("popup_dismiss", {
+      popup_id: "skill_published",
+      ui_location: "publish",
+      dismiss_method: method,
+    });
     setDismissed(true);
     onDismiss();
   }
 
   async function copySkillLink() {
+    const operation = captureAnalyticsOperation();
     try {
       const didCopy = await copyText(skillUrl);
+      operation?.emit("copy_action", {
+        content_type: "navigation",
+        action_result: didCopy ? "success" : "error",
+        ui_location: "publish",
+        method: "link",
+      });
       setCopyState(didCopy ? "copied" : "failed");
     } catch {
+      operation?.emit("copy_action", {
+        content_type: "navigation",
+        action_result: "error",
+        ui_location: "publish",
+        method: "link",
+      });
       setCopyState("failed");
     }
   }
@@ -123,10 +151,10 @@ export function SkillPublishSuccessDialog({
           dialogContentRef.current?.focus({ preventScroll: true });
         }}
         onEscapeKeyDown={() => {
-          dismiss();
+          dismiss("escape");
         }}
         onInteractOutside={() => {
-          dismiss();
+          dismiss("outside");
         }}
         className="[--discord-accent:#5865F2] [--publish-accent:var(--oc-status-success-fg)] [display:block] w-[min(calc(100vw-2rem),620px)] overflow-hidden rounded-[var(--oc-radius-surface)] border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-elevated)] p-0 shadow-[var(--oc-shadow-lg)] focus:outline-none sm:p-0"
         style={{ display: "block" }}
@@ -262,14 +290,45 @@ export function SkillPublishSuccessDialog({
                 mobileTitle="Share with the OpenClaw community"
                 channelName="#skills"
                 serverName="Friends of the Crustacean 🦞🤝"
-                onClick={() => {
-                  void copyText(discordShareText);
+                onClick={(event) => {
+                  emitAnalytics("select_content", {
+                    content_type: "navigation",
+                    content_id: "share:discord",
+                    ui_location: "publish",
+                    ...analyticsExternalLinkParameters(event.currentTarget, window.location.origin),
+                  });
+                  const operation = captureAnalyticsOperation();
+                  void copyText(discordShareText)
+                    .then((copied) =>
+                      operation?.emit("copy_action", {
+                        content_type: "navigation",
+                        action_result: copied ? "success" : "error",
+                        ui_location: "publish",
+                        method: "discord",
+                      }),
+                    )
+                    .catch(() =>
+                      operation?.emit("copy_action", {
+                        content_type: "navigation",
+                        action_result: "error",
+                        ui_location: "publish",
+                        method: "discord",
+                      }),
+                    );
                 }}
                 icon={<DiscordIcon className="h-3.5 w-3.5 text-white" aria-hidden="true" />}
               />
               <ShareDivider orientation="horizontal" />
               <ShareListAction
                 href={xShareUrl}
+                onClick={(event) =>
+                  emitAnalytics("select_content", {
+                    content_type: "navigation",
+                    content_id: "share:x",
+                    ui_location: "publish",
+                    ...analyticsExternalLinkParameters(event.currentTarget, window.location.origin),
+                  })
+                }
                 title="Share on Twitter"
                 icon={<XIcon className="h-3.5 w-3.5" aria-hidden="true" />}
               />
@@ -279,7 +338,7 @@ export function SkillPublishSuccessDialog({
               <Button
                 type="button"
                 className="min-h-0 border-transparent bg-transparent p-0 text-[color:var(--ink-soft)] hover:not-disabled:border-transparent hover:not-disabled:bg-transparent hover:not-disabled:text-[color:var(--ink)]"
-                onClick={dismiss}
+                onClick={() => dismiss("button")}
               >
                 View skill
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -358,7 +417,7 @@ function ShareListAction({
   inlineDetail?: string;
   channelName?: string;
   serverName?: string;
-  onClick?: () => void;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
   icon: ReactNode;
 }) {
   return (

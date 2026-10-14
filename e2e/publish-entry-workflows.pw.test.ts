@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/productionSmoke";
 import { expectHealthyPage, trackRuntimeErrors } from "./helpers/runtimeErrors";
 
 test("upload shows signed-out publish gate", async ({ page }) => {

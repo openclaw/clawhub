@@ -2,6 +2,7 @@ import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
+import { captureAnalyticsOperation, emitAnalytics } from "../lib/analyticsEvents";
 import { copyText, InstallCopyButton } from "./InstallCopyButton";
 import {
   buildSkillInstallTarget,
@@ -122,13 +123,31 @@ export function SkillInstallSurface({
     });
 
     setPromptMode(mode);
+    emitAnalytics("select_content", {
+      content_type: "install",
+      ui_location: "install",
+      method: mode,
+    });
 
+    const operation = captureAnalyticsOperation();
     void copyText(promptText)
       .then((didCopy) => {
+        operation?.emit("copy_action", {
+          content_type: "install",
+          action_result: didCopy ? "success" : "error",
+          ui_location: "install",
+          method: mode,
+        });
         setPromptCopyState(didCopy ? "copied" : "failed");
         schedulePromptReset();
       })
       .catch(() => {
+        operation?.emit("copy_action", {
+          content_type: "install",
+          action_result: "error",
+          ui_location: "install",
+          method: mode,
+        });
         setPromptCopyState("failed");
         schedulePromptReset();
       });
@@ -251,6 +270,11 @@ export function SkillCommandLineCard({
       installTabOrder.indexOf(tab) > installTabOrder.indexOf(activeInstallTab) ? "right" : "left",
     );
     setActiveInstallTab(tab);
+    emitAnalytics("select_content", {
+      content_type: "install",
+      ui_location: "install",
+      method: tab,
+    });
   };
 
   return (
@@ -315,6 +339,7 @@ export function SkillCommandLineCard({
             )}
           </pre>
           <InstallCopyButton
+            analyticsMethod={activeInstallTab}
             text={activeInstallText}
             ariaLabel={
               activeInstallTab === "prompt"

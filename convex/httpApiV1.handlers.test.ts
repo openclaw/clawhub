@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { getFunctionName } from "convex/server";
+import { ConvexError } from "convex/values";
 import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArk } from "../packages/schema/src/ark";
@@ -538,6 +539,63 @@ describe("httpApiV1 handlers", () => {
     expect(readme).toContain("`malicious` means ClawHub blocked the submitted version");
     expect(readme).toContain("VirusTotal results are supporting reputation telemetry");
     expect(readme).toContain("`clawscan.json`: final ClawScan verdict");
+  });
+
+  it("includes the bounded Endor summary in stored plugin report downloads", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:owner",
+      user: { _id: "users:owner", role: "user" },
+    } as never);
+    const endor = {
+      status: "completed",
+      checkedAt: 2,
+      reachableFunctionCount: 1,
+      findings: [{ severity: "high", summary: "Reachable vulnerable function" }],
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      expect(args).toMatchObject({
+        actorUserId: "users:owner",
+        kind: "plugin",
+        name: "demo-plugin",
+        version: "1.2.3",
+      });
+      return {
+        ok: true,
+        scanId: "plugin:demo-plugin:1.2.3",
+        status: "succeeded",
+        sourceKind: "published",
+        update: false,
+        writtenBack: true,
+        artifact: { kind: "plugin", name: "demo-plugin", version: "1.2.3" },
+        report: {
+          clawscan: { status: "clean", checkedAt: 1 },
+          endor,
+          skillspector: null,
+          staticAnalysis: null,
+          virustotal: null,
+        },
+        createdAt: 1,
+        updatedAt: 2,
+        completedAt: 2,
+      };
+    });
+    const response = await __handlers.skillScanGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request(
+        "https://example.com/api/v1/skills/-/scan/download/demo-plugin?version=1.2.3&kind=plugin",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    const endorEntry = entries["endor.json"];
+    const readmeEntry = entries["README.md"];
+    if (!endorEntry || !readmeEntry) throw new Error("Expected scan report entries missing");
+    expect(JSON.parse(strFromU8(endorEntry))).toEqual(endor);
+    expect(strFromU8(readmeEntry)).toContain(
+      "a missing or skipped Endor result is not a clean result",
+    );
   });
 
   it("forwards the owner namespace when downloading a stored skill report", async () => {
@@ -3365,7 +3423,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
   });
 
-  it("batches latest snapshots and tags across multiple skills", async () => {
+  it("reuses checked version selections across latest snapshots and tags", async () => {
     const selectedSkill0 = {
       _id: "skills:1",
       slug: "skill-a",
@@ -3456,16 +3514,18 @@ describe("httpApiV1 handlers", () => {
     );
     expect(response.status).toBe(200);
     const json = await response.json();
-    // Verify tags are correctly resolved for each skill
     expect(json.items[0].tags.latest).toBe("2.0.0");
     expect(json.items[0].tags.stable).toBe("1.0.0");
     expect(json.items[1].tags.latest).toBe("1.0.0");
-    // Latest snapshots and tag snapshots are batched across skills, not queried per item.
+    expect(
+      json.items.map((item: { latestVersion: { version: string } }) => item.latestVersion.version),
+    ).toEqual(["2.0.0", "1.0.0"]);
+    // Latest and tag selectors share the same bounded checked-query budget.
     const batchCalls = runQuery.mock.calls.filter(
       ([query]) => getFunctionName(query as never) === "skills:getPublicVersionSelectionsInternal",
     );
-    expect(batchCalls).toHaveLength(2);
-    expect(batchCalls.map(([, args]) => (args.selections as unknown[]).length)).toEqual([2, 3]);
+    expect(batchCalls).toHaveLength(1);
+    expect(batchCalls.map(([, args]) => (args.selections as unknown[]).length)).toEqual([3]);
   });
 
   it("lists skills supports sort aliases", async () => {
@@ -11813,6 +11873,26 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("stars add maps wrapped missing-skill errors to 404", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const error = new ConvexError("Skill not found");
+    error.message = "Uncaught ConvexError: Skill not found\n    at handler (convex/stars.ts)";
+    const runQuery = vi.fn().mockResolvedValue({ _id: "skills:1" });
+    const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockRejectedValueOnce(error);
+    const response = await __handlers.starsPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/stars/demo", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+  });
+
   it("stars delete succeeds", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requireApiTokenUser).mockResolvedValue({
@@ -13507,6 +13587,28 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("forwards Featured plugin searches with a spaced topic", async () => {
+    const runQuery = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/search?q=calendar&family=code-plugin&highlightedOnly=true&topic=team%20calendar",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        query: "calendar",
+        family: "code-plugin",
+        highlightedOnly: true,
+        topic: "team calendar",
+      }),
+    );
+  });
+
   it("packages search forwards topics to both unified catalog sources", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -13708,7 +13810,6 @@ describe("httpApiV1 handlers", () => {
       400,
     ],
   ])("does not record %s", async (_case, requestUrl, expectedStatus) => {
-    if (_case === "marked claw family") vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const observationWrites: Record<string, unknown>[] = [];
     const ctx = makeCtx({
       runQuery: vi.fn().mockResolvedValue([]),
@@ -14642,6 +14743,12 @@ describe("httpApiV1 handlers", () => {
               summary: "Looks safe.",
               checkedAt: 1,
             },
+            endorAnalysis: {
+              status: "completed",
+              checkedAt: 2,
+              reachableFunctionCount: 2,
+              findings: [{ severity: "high", summary: "Reachable dependency finding" }],
+            },
             staticScan: {
               status: "malicious",
               reasonCodes: ["malicious.static_fixture"],
@@ -14678,6 +14785,11 @@ describe("httpApiV1 handlers", () => {
         llmAnalysis: {
           status: "clean",
           verdict: "clean",
+        },
+        endorAnalysis: {
+          status: "completed",
+          reachableFunctionCount: 2,
+          findings: [{ severity: "high", summary: "Reachable dependency finding" }],
         },
         verification: {
           scanStatus: "clean",
@@ -15096,6 +15208,11 @@ describe("httpApiV1 handlers", () => {
             npmTarballName: "demo-plugin-1.0.0.tgz",
             verification: { scanStatus: "malicious" },
             manualModeration: { state: "quarantined", reason: "private reviewer note" },
+            endorAnalysis: {
+              status: "skipped",
+              checkedAt: 2,
+              reason: "No supported call graph",
+            },
           },
         };
       }
@@ -15136,6 +15253,11 @@ describe("httpApiV1 handlers", () => {
         npmShasum: "d".repeat(40),
         npmTarballName: "demo-plugin-1.0.0.tgz",
         createdAt: 1,
+        endorAnalysis: {
+          status: "skipped",
+          checkedAt: 2,
+          reason: "No supported call graph",
+        },
       },
       trust: {
         scanStatus: "malicious",
@@ -17841,67 +17963,7 @@ describe("httpApiV1 handlers", () => {
     expect(runAction).not.toHaveBeenCalled();
   });
 
-  it.each(["loose", "direct-tgz", "staged-tgz"] as const)(
-    "disabled Claw publication rejects %s before multipart storage or ticket mutation",
-    async (mode) => {
-      vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "0");
-      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
-      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
-        kind: "user",
-        userId: "users:1",
-        user: { _id: "users:1", handle: "p" },
-      } as never);
-      const runMutation = vi.fn().mockResolvedValue(okRate());
-      const runAction = vi.fn();
-      const storageGet = vi.fn();
-      const storageStore = vi.fn();
-      const form = packagePublishForm(packagePublishMetadata({ family: "claw" }));
-      if (mode === "loose") {
-        form.append("files", new File(["manifest"], "CLAW.md", { type: "text/markdown" }));
-      } else if (mode === "direct-tgz") {
-        const pack = npmPackFixture({
-          "package/package.json": JSON.stringify({ name: "demo-claw", version: "1.0.0" }),
-          "package/CLAW.md": "manifest",
-        });
-        form.append(
-          "clawpack",
-          new File([bytesToArrayBuffer(pack)], "demo-claw-1.0.0.tgz", {
-            type: "application/octet-stream",
-          }),
-        );
-      } else {
-        form.set("clawpack", "storage:clawpack");
-        form.set("clawpackUploadTicket", "packagePublishUploadTickets:1");
-      }
-
-      const response = await __handlers.publishPackageV1Handler(
-        makeCtx({
-          runAction,
-          runMutation,
-          storage: { get: storageGet, store: storageStore },
-        }),
-        new Request("https://example.com/api/v1/packages", {
-          method: "POST",
-          headers: { Authorization: "Bearer clh_test" },
-          body: form,
-        }),
-      );
-
-      expect(response.status).toBe(400);
-      expect(await response.text()).toBe("Experimental Claw publication is disabled");
-      expect(storageGet).not.toHaveBeenCalled();
-      expect(storageStore).not.toHaveBeenCalled();
-      expect(runAction).not.toHaveBeenCalled();
-      expect(
-        runMutation.mock.calls.some(([, args]) =>
-          Boolean(args && typeof args === "object" && "uploadTicket" in args),
-        ),
-      ).toBe(false);
-    },
-  );
-
-  it("rejects loose Claw files before multipart storage when the experiment is enabled", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+  it("rejects loose Claw files before multipart storage", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requirePackagePublishAuth).mockResolvedValue({
       kind: "user",
@@ -18307,7 +18369,6 @@ describe("httpApiV1 handlers", () => {
   it.each(["openclaw", "other"])(
     "multipart Claw publish accepts a valid @%s npm pack without a plugin manifest",
     async (handle) => {
-      vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
       const name = `@${handle}/demo-claw`;
       vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
       vi.mocked(requirePackagePublishAuth).mockResolvedValue({
@@ -18405,7 +18466,6 @@ describe("httpApiV1 handlers", () => {
       message: "Claw artifact SHA-256 mismatch",
     },
   ])("rejects a Claw tarball with mismatched $label before storing it", async (testCase) => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requirePackagePublishAuth).mockResolvedValue({
       kind: "user",
@@ -20312,33 +20372,7 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toBe(moderationMessage);
   });
 
-  it("keeps Claw list and search filters unavailable while the gate is disabled", async () => {
-    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    try {
-      const ctx = makeCtx({});
-      const listResponse = await __handlers.listPackagesV1Handler(
-        ctx,
-        new Request("https://example.com/api/v1/packages?family=claw"),
-      );
-      const searchResponse = await __handlers.packagesGetRouterV1Handler(
-        ctx,
-        new Request("https://example.com/api/v1/packages/search?q=triage&family=claw"),
-      );
-
-      expect(listResponse.status).toBe(400);
-      await expect(listResponse.text()).resolves.toBe("Invalid family query parameter");
-      expect(searchResponse.status).toBe(400);
-      await expect(searchResponse.text()).resolves.toBe("Invalid family query parameter");
-    } finally {
-      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
-    }
-  });
-
-  it("lists and returns safe Claw details while the gate is enabled", async () => {
-    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+  it("lists and returns safe Claw details by default", async () => {
     const latestClawManifestSummary = {
       schemaVersion: 1,
       agent: { id: "triage-latest", name: "Triage Latest", description: "Latest release" },
@@ -20410,44 +20444,39 @@ describe("httpApiV1 handlers", () => {
       return null;
     });
 
-    try {
-      const ctx = makeCtx({ runQuery });
-      const listResponse = await __handlers.listPackagesV1Handler(
-        ctx,
-        new Request("https://example.com/api/v1/packages?family=claw"),
-      );
-      if (listResponse.status !== 200) throw new Error(await listResponse.text());
-      await expect(listResponse.json()).resolves.toMatchObject({
-        items: [{ name: "triage-claw", family: "claw" }],
-      });
+    const ctx = makeCtx({ runQuery });
+    const listResponse = await __handlers.listPackagesV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/packages?family=claw"),
+    );
+    if (listResponse.status !== 200) throw new Error(await listResponse.text());
+    await expect(listResponse.json()).resolves.toMatchObject({
+      items: [{ name: "triage-claw", family: "claw" }],
+    });
 
-      const detailResponse = await __handlers.packagesGetRouterV1Handler(
-        ctx,
-        new Request("https://example.com/api/v1/packages/triage-claw"),
-      );
-      if (detailResponse.status !== 200) throw new Error(await detailResponse.text());
-      await expect(detailResponse.json()).resolves.toMatchObject({
-        package: {
-          name: "triage-claw",
-          family: "claw",
-          clawManifestSummary: latestClawManifestSummary,
-        },
-      });
+    const detailResponse = await __handlers.packagesGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/packages/triage-claw"),
+    );
+    if (detailResponse.status !== 200) throw new Error(await detailResponse.text());
+    await expect(detailResponse.json()).resolves.toMatchObject({
+      package: {
+        name: "triage-claw",
+        family: "claw",
+        clawManifestSummary: latestClawManifestSummary,
+      },
+    });
 
-      const versionResponse = await __handlers.packagesGetRouterV1Handler(
-        ctx,
-        new Request("https://example.com/api/v1/packages/triage-claw/versions/1.0.0"),
-      );
-      if (versionResponse.status !== 200) throw new Error(await versionResponse.text());
-      const versionBody = await versionResponse.json();
-      expect(versionBody).toMatchObject({
-        package: { name: "triage-claw", family: "claw" },
-        version: { version: "1.0.0", clawManifestSummary: exactClawManifestSummary },
-      });
-      expect(JSON.stringify(versionBody)).not.toContain("must-not-project");
-    } finally {
-      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
-    }
+    const versionResponse = await __handlers.packagesGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/packages/triage-claw/versions/1.0.0"),
+    );
+    if (versionResponse.status !== 200) throw new Error(await versionResponse.text());
+    const versionBody = await versionResponse.json();
+    expect(versionBody).toMatchObject({
+      package: { name: "triage-claw", family: "claw" },
+      version: { version: "1.0.0", clawManifestSummary: exactClawManifestSummary },
+    });
+    expect(JSON.stringify(versionBody)).not.toContain("must-not-project");
   });
 });

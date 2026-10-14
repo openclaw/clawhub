@@ -7,6 +7,7 @@ import { buildPackageInventoryDigest } from "./skills";
 import { matchesStorageSha256 } from "./storageDigests";
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
+export const PACKAGE_RECOVERY_PENDING = "package_recovery_pending";
 export type ManualPackageRecovery = {
   kind: "manual-package-recovery";
   fromAttemptId: Id<"publishAttempts">;
@@ -200,6 +201,9 @@ export async function assertPackageRecoveryEligibility(
   runtime?: { now: number },
 ) {
   if (attempt.kind !== "package") throw new ConvexError("Publish attempt not found");
+  if (["pending_checks", "ready_to_finalize", "finalizing"].includes(attempt.status)) {
+    throw new ConvexError(PACKAGE_RECOVERY_PENDING);
+  }
   if (
     attempt.status !== "failed" ||
     release.publicationStatus !== "pending" ||
@@ -234,7 +238,7 @@ export async function assertPackageRecoveryEligibility(
     ((attempt.checkClaimExpiresAt ?? 0) > runtime.now ||
       (attempt.finalizationClaimExpiresAt ?? 0) > runtime.now)
   )
-    throw new ConvexError("Publish attempt still has an active claim");
+    throw new ConvexError(PACKAGE_RECOVERY_PENDING);
   const followup = attempt.packageFollowup as Record<string, unknown> | undefined;
   const pending = release.pendingPublication as Record<string, unknown> | undefined;
   const priorRecovery = manualPackageRecovery(followup);

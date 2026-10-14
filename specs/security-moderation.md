@@ -68,6 +68,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
 - admin: all moderator actions + hard delete skills, change owners, change roles.
 
+## Manual package scan backfill
+
+- The public `packages.backfillPackageReleaseScans` action requires an active
+  authenticated admin before traversing releases or enqueueing any scan work.
+  Anonymous, ordinary-user, moderator, deleted, and deactivated callers must
+  leave scan queues and scheduled backfill work unchanged.
+- Manual clients must send an admin session through Convex Auth. The public
+  wrapper must not accept a caller-supplied user id or rely on queue deduplication
+  as authorization.
+- The internal backfill and its scheduled continuations retain service access
+  without a user session. Cron calls that internal entry point directly; placing
+  the public admin guard inside it would break scheduled maintenance.
+
 ## Ban + unban batches
 
 - Ban/unban skill batches are paginated and may continue after the mutation that
@@ -466,6 +479,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   download must serve the exact stored tarball bytes whose SHA-256 matches that
   value. Trusted publish tokens accepted by an idempotent retry are revoked on
   the same success boundary as a newly created attempt.
+- Every skill and package publish entry point (web actions, CLI and HTTP
+  routes, GitHub import, trusted publishing, and managed MCP) stores a pending
+  version or release plus a publish attempt bound to the exact artifact
+  fingerprint. No deployment toggle or fallback publishes first and scans
+  later. Only a passing pre-publication verdict promotes the release. Repeated
+  scanner failures terminate the attempt as failed, and a worker whose check
+  lease expired cannot submit a verdict, so scanner failures and timeouts leave
+  the release unpublished. AI summary, changelog, and embedding generation run
+  during finalization, after the checks pass.
 - A staged publish attempt is not a successful release. ClawHub dispatches an
   exact pre-publication worker through the production GitHub App as soon as the
   attempt becomes pending; the scheduled worker remains recovery for missed
@@ -712,6 +734,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   read-only, fully paginated exact-version job reconciliation before admission.
 - Package/plugin scan backfills may recompute deterministic static scan results for older releases,
   but those results remain ClawScan context and are not public trust status.
+- `packages.backfillLatestPackageScanStatus` is an admin-only catalog maintenance entry point.
+  Anonymous callers and signed-in non-admins are rejected before any package, release, or
+  search-digest write. An admin call runs the internal paged mutation, which patches drifted
+  scan status and schedules the next batch until the catalog page is done.
 - ClawPack package releases materialize parsed npm-pack artifact entries into the release file
   surface. Static scan, LLM review, package inspect/file APIs, and Codex package ClawScan use those
   stored artifact entries instead of metadata-only `package.json` / `openclaw.plugin.json` rows.
@@ -836,7 +862,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 Admin-managed MCP packages use ordinary package releases as their authority. Both management UI and admin CLI require an active administrator and normal OpenClaw organization publishing access, including definition reads and unpublication. They cannot replace unrelated package identities. Each edit creates a new immutable version; unpublication uses the existing package policy and checks current administrator, publisher, and membership authority in the same transaction as soft deletion. Finalizing a queued managed release rechecks the submitting administrator, the active OpenClaw publisher, and current publishing membership in the same transaction that makes the release public. Revocation while scans run must leave the release unavailable.
 
-Generated wrappers accept only remote public HTTPS HTTP/SSE connections, current categories, credential placeholders, and MIT-licensed PNG icons with attribution. They contain no arbitrary local commands or fetched provider code. OpenClaw wrapper authorship is distinct from remote-service ownership.
+Generated wrappers accept only remote public HTTPS HTTP/SSE connections, current categories, credential placeholders, and PNG icons with attribution and explicit rights metadata. Wrapper code remains MIT-licensed; company artwork can have separate terms and must not inherit that license. Non-MIT icons require public HTTPS source and terms URLs, and the publishing operator must verify permission to redistribute the asset. Recording those URLs does not itself grant permission. They contain no arbitrary local commands or fetched provider code. OpenClaw wrapper authorship is distinct from remote-service ownership.
 
 Managed publication always enters the ordinary staged security pipeline. Neither admin authorship nor the `@openclaw` namespace grants trusted-package scan exemption; subsequent ordinary submissions retaining the managed definition marker also remain subject to checks. A successful package scan says nothing about the remote service's current or future tools.
 

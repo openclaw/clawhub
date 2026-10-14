@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { resolveFrontendBuildEnv } from "./vercel-build-frontend";
 
 describe("Vercel frontend build environment", () => {
+  it("removes only the retired analytics release value without mutating its input", () => {
+    const input = {
+      VERCEL_ENV: "production",
+      VERCEL_GIT_COMMIT_SHA: "a".repeat(40),
+      VITE_CONVEX_URL: "https://wry-manatee-359.convex.cloud",
+      VITE_GA4_RELEASE: "stale-analytics-only",
+      VITE_APP_BUILD_SHA: "application-drift-identity",
+      VERCEL_OIDC_TOKEN: "fixture-token",
+    };
+    const result = resolveFrontendBuildEnv(input);
+    expect(result).not.toHaveProperty("VITE_GA4_RELEASE");
+    expect(result.VITE_APP_BUILD_SHA).toBe(input.VITE_APP_BUILD_SHA);
+    expect(result.VERCEL_GIT_COMMIT_SHA).toBe(input.VERCEL_GIT_COMMIT_SHA);
+    expect(result.VERCEL_OIDC_TOKEN).toBe(input.VERCEL_OIDC_TOKEN);
+    expect(input.VITE_GA4_RELEASE).toBe("stale-analytics-only");
+  });
   it("derives the preview site URL from the Convex CLI injected cloud URL", () => {
     const env = resolveFrontendBuildEnv({
       VERCEL_ENV: "preview",

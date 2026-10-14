@@ -189,6 +189,23 @@ export const PackageSkillSpectorAnalysisSchema = type({
 });
 export type PackageSkillSpectorAnalysis = (typeof PackageSkillSpectorAnalysisSchema)[inferred];
 
+export const PackageEndorAnalysisSchema = type({
+  status: '"completed"',
+  checkedAt: "number",
+  reachableFunctionCount: "number.integer >= 0",
+  findings: type({
+    severity: type("string").atMostLength(64),
+    summary: type("string").atMostLength(2000),
+  })
+    .array()
+    .atMostLength(50),
+}).or({
+  status: '"skipped"|"failed"',
+  checkedAt: "number",
+  reason: type("string").atMostLength(2000),
+});
+export type PackageEndorAnalysis = (typeof PackageEndorAnalysisSchema)[inferred];
+
 export const PackageAigFindingSchema = type({
   ruleId: "string",
   level: "string",
@@ -529,6 +546,7 @@ export const ApiV1PackageVersionResponseSchema = type({
     sha256hash: "string|null?",
     vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
     skillSpectorAnalysis: PackageSkillSpectorAnalysisSchema.or("null").optional(),
+    endorAnalysis: PackageEndorAnalysisSchema.or("null").optional(),
     aigAnalysis: PackageAigAnalysisSchema.or("null").optional(),
     llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
     staticScan: PackageStaticScanSchema.or("null").optional(),
@@ -583,6 +601,7 @@ export const ApiV1PackageSecurityResponseSchema = type({
     npmShasum: "string?",
     npmTarballName: "string?",
     createdAt: "number",
+    endorAnalysis: PackageEndorAnalysisSchema.or("null").optional(),
   }),
   trust: type({
     scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"',

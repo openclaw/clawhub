@@ -22,6 +22,28 @@ const definition = {
 };
 
 describe("managed MCP bundle", () => {
+  it("keeps company icon terms distinct from the wrapper MIT license", () => {
+    const { files } = buildManagedMcpBundle({
+      ...definition,
+      icon: {
+        ...definition.icon,
+        license: "Provider brand terms",
+        attribution: "PostHog logo belongs to PostHog.",
+        sourceUrl: "https://posthog.com/brand/icon.png",
+        licenseUrl: "https://posthog.com/brand",
+      },
+    });
+    const text = (path: string) =>
+      new TextDecoder().decode(files.find((file) => file.path === path)?.bytes);
+    expect(JSON.parse(text("package.json")).license).toBe("SEE LICENSE IN LICENSE");
+    expect(JSON.parse(text(".claude-plugin/plugin.json")).license).toBeUndefined();
+    expect(text("LICENSE")).toContain("does not apply to assets/icon.png");
+    expect(text("NOTICE")).toContain("Source: https://posthog.com/brand/icon.png");
+    expect(text("NOTICE")).toContain("Terms: https://posthog.com/brand");
+    expect(text("NOTICE")).toContain("Provider brand terms");
+    expect(text("NOTICE")).toContain("PostHog logo belongs to PostHog.");
+  });
+
   it("generates installable manifests with credential references and honest authorship", () => {
     const { files, name } = buildManagedMcpBundle(definition);
     expect(name).toBe("@openclaw/posthog");

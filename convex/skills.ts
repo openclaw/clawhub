@@ -132,8 +132,8 @@ import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
 import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
 import {
   fetchText,
+  publishVersionForUser,
   queueHighlightedWebhook,
-  stageSkillPublishAttemptForUser,
   type SkillPublishResult,
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
@@ -175,7 +175,7 @@ import { consumeSkillPublishUploads } from "./skillPublishUploads";
 const MAX_OWNER_SUMMARY_LENGTH = 500;
 const MAX_POINTERLESS_VERSION_SURVIVOR_SCAN = 100;
 
-export { publishVersionForUser } from "./lib/skillPublish";
+export { publishVersionForUser };
 
 type ReadmeResult = { path: string; text: string; sourceBaseUrl?: string };
 type FileTextResult = {
@@ -10202,19 +10202,14 @@ export const publishVersion: ReturnType<typeof action> = action({
           })) as { publisherId: Id<"publishers"> })
         : null;
     const { icon: _legacyIcon, ...publishArgs } = args;
-    return stageSkillPublishAttemptForUser(ctx, userId, publishArgs, {
+    return publishVersionForUser(ctx, userId, publishArgs, {
       ownerPublisherId: target.publisherId,
       ownerHandle: target.handle,
       sourceOwnerPublisherId: source?.publisherId,
       migrateOwner: args.migrateOwner,
-      stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
     });
   },
 });
-
-function stagedPrePublicationPublishesEnabled() {
-  return process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES === "1";
-}
 
 export const generateChangelogPreview = action({
   args: {

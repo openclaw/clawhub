@@ -43,6 +43,59 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 describe("managed MCP admin CLI", () => {
+  it("uploads a local icon with the definition's rights metadata", async () => {
+    const { pngBase64: _png, ...rights } = definition.icon;
+    const file = await input({
+      ...definition,
+      icon: {
+        ...rights,
+        license: "Provider brand terms",
+        sourceUrl: "https://example.com/brand/icon.png",
+        licenseUrl: "https://example.com/brand",
+      },
+    });
+    const icon = `${file}.png`;
+    await writeFile(icon, Buffer.from(definition.icon.pngBase64, "base64"));
+    await cmdPublishManagedMcp(makeGlobalOpts(), file, { icon });
+    expect(http.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          icon: expect.objectContaining({
+            pngBase64: definition.icon.pngBase64,
+            license: "Provider brand terms",
+            sourceUrl: "https://example.com/brand/icon.png",
+            licenseUrl: "https://example.com/brand",
+          }),
+        }),
+      }),
+      undefined,
+    );
+  });
+
+  it("refuses to apply one local icon to a batch", async () => {
+    await expect(
+      cmdPublishManagedMcp(makeGlobalOpts(), await input([definition]), { icon: "icon.png" }),
+    ).rejects.toThrow("--icon requires a single definition");
+    expect(auth.requireAuthToken).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized local icons before authentication", async () => {
+    const file = await input(definition);
+    const icon = `${file}.png`;
+    await writeFile(icon, Buffer.alloc(512 * 1024 + 1));
+    await expect(cmdPublishManagedMcp(makeGlobalOpts(), file, { icon })).rejects.toThrow("512KB");
+    expect(auth.requireAuthToken).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-regular icon inputs before reading their contents", async () => {
+    const file = await input(definition);
+    await expect(
+      cmdPublishManagedMcp(makeGlobalOpts(), file, { icon: directories.at(-1) }),
+    ).rejects.toThrow("regular PNG file");
+    expect(auth.requireAuthToken).not.toHaveBeenCalled();
+  });
+
   it("validates the whole batch before any authenticated publication", async () => {
     const file = await input([
       definition,

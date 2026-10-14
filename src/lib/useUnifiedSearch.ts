@@ -103,7 +103,7 @@ function mergeUnifiedResults(
 ) {
   const merged: UnifiedResult[] = [];
   if (activeType === "all") {
-    merged.push(...skillResults, ...pluginResults, ...creatorResults);
+    merged.push(...pluginResults, ...skillResults, ...creatorResults);
   } else if (activeType === "skills") {
     merged.push(...skillResults);
   } else if (activeType === "plugins") {

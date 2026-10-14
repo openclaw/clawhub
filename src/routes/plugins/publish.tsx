@@ -35,6 +35,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { VersionInput } from "../../components/VersionInput";
+import { captureAnalyticsOperation, emitAnalytics } from "../../lib/analyticsEvents";
 import {
   detectRelativeReadmeAssets,
   type RelativeReadmeAssetReport,
@@ -262,6 +263,7 @@ export function PublishPluginRoute() {
     search.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
   );
   const [name, setName] = useState(search.name ?? "");
+  const analyticsFormStarted = useRef(false);
   const [displayName, setDisplayName] = useState(search.displayName ?? "");
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
   const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
@@ -569,7 +571,15 @@ export function PublishPluginRoute() {
 
   if (!isAuthenticated || !me) {
     return (
-      <main className="py-10">
+      <main
+        onFocusCapture={() => {
+          if (!analyticsFormStarted.current) {
+            analyticsFormStarted.current = true;
+            emitAnalytics("form_start", { form_id: "plugin_publish", ui_location: "publish" });
+          }
+        }}
+        className="py-10"
+      >
         <Container size="narrow">
           <EmptyState
             title="Sign in to publish a plugin"
@@ -969,8 +979,18 @@ export function PublishPluginRoute() {
                 onClick={() => {
                   startTransition(() => {
                     void (async () => {
+                      const operation = captureAnalyticsOperation("plugin_publish");
                       try {
+                        emitAnalytics("form_attempt", {
+                          form_id: "plugin_publish",
+                          ui_location: "publish",
+                        });
                         if (validationError) {
+                          emitAnalytics("form_validation_error", {
+                            form_id: "plugin_publish",
+                            field_name: "form",
+                            error_code: "invalid",
+                          });
                           toast.error(validationError);
                           return;
                         }
@@ -1036,6 +1056,13 @@ export function PublishPluginRoute() {
                           },
                         });
                         const publishResult = parsePluginPublishResult(result);
+                        // The server has accepted the artifact, not confirmed a public release.
+                        operation?.emit("resource_action", {
+                          action: "publish",
+                          content_type: "plugin",
+                          action_result: "accepted",
+                          ui_location: "publish",
+                        });
                         const submittedPackageName =
                           publishResult.packageName ?? canonicalDraftName;
                         const existingPluginHasPage = Boolean(
@@ -1072,6 +1099,12 @@ export function PublishPluginRoute() {
                           });
                         }
                       } catch (publishError) {
+                        operation?.emit("resource_action", {
+                          action: "publish",
+                          content_type: "plugin",
+                          action_result: "error",
+                          ui_location: "publish",
+                        });
                         const message = formatPublishError(publishError);
                         setError(message);
                         if (!isPluginInspectorPublishError(message)) {

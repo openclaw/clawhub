@@ -119,16 +119,43 @@ function pollableDevSeedState<TState extends object>(readState: () => TState) {
   }
 }
 
-function clearExpectedNotFoundNavigationErrors(errors: string[]) {
+function clearExpectedNotFoundNavigationErrors(
+  errors: string[],
+  navigation: { status: number; url: string },
+) {
+  if (navigation.status !== 404) return;
+  const expected = new Set(
+    ["Not Found", ""].map(
+      (reason) =>
+        `console:Failed to load resource: the server responded with a status of 404 (${reason}) @ ${navigation.url}`,
+    ),
+  );
   for (let index = errors.length - 1; index >= 0; index -= 1) {
-    if (
-      errors[index] ===
-      "console:Failed to load resource: the server responded with a status of 404 (Not Found)"
-    ) {
-      errors.splice(index, 1);
-    }
+    if (expected.has(errors[index]!)) errors.splice(index, 1);
   }
 }
+
+test("expected deleted-profile errors require the verified URL and HTTP status", () => {
+  const url = "http://127.0.0.1/deleted-org";
+  const allowed = ["Not Found", ""].map(
+    (reason) =>
+      `console:Failed to load resource: the server responded with a status of 404 (${reason}) @ ${url}`,
+  );
+  const unrelated = [
+    `${allowed[0]}/unrelated`,
+    allowed[0]!.replace("404", "500"),
+    allowed[0]!.replace("console:", "pageerror:"),
+    `console:Content Security Policy blocked script @ ${url}`,
+    "console:Failed to load resource: the server responded with a status of 404 (Not Found)",
+  ];
+  const errors = [...allowed, ...unrelated];
+  clearExpectedNotFoundNavigationErrors(errors, { status: 200, url });
+  expect(errors).toEqual([...allowed, ...unrelated]);
+  clearExpectedNotFoundNavigationErrors(errors, { status: 404, url: `${url}/different` });
+  expect(errors).toEqual([...allowed, ...unrelated]);
+  clearExpectedNotFoundNavigationErrors(errors, { status: 404, url });
+  expect(errors).toEqual(unrelated);
+});
 
 function isExpectedOrgDeletionRuntimeError(error: string) {
   if (!error.includes("Function execution timed out")) return false;
@@ -181,7 +208,7 @@ async function expectPublisherProfileSkillLink(
 }
 
 test("org owners can delete an org and hide its skills and plugins", async ({ page }) => {
-  const errors = trackRuntimeErrors(page);
+  const errors = trackRuntimeErrors(page, { includeConsoleLocation: true });
   const suffix = uniqueSuffix();
   const handle = `pw-org-del-${suffix}`;
   const displayName = `Playwright Delete Org ${suffix}`;
@@ -238,18 +265,23 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
       packageActive: false,
     });
 
-  await page.goto(`/user/${handle}`, { waitUntil: "domcontentloaded" });
+  const deletedProfileResponse = await page.goto(`/user/${handle}`, {
+    waitUntil: "domcontentloaded",
+  });
+  expect(deletedProfileResponse?.status()).toBe(404);
   await waitForHydration(page);
   await expect(page.getByRole("heading", { name: /we couldn't find that page/i })).toBeVisible();
   await expect(page.getByText(skillDisplayName)).toHaveCount(0);
   await expect(page.getByText(packageDisplayName)).toHaveCount(0);
-  clearExpectedNotFoundNavigationErrors(errors);
+  clearExpectedNotFoundNavigationErrors(errors, {
+    status: deletedProfileResponse!.status(),
+    url: deletedProfileResponse!.url(),
+  });
 
   await page.goto(`/plugins/${encodeURIComponent(packageName)}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await expect(page.getByRole("heading", { name: "Plugin not found" })).toBeVisible();
   await expect(page.getByText(new RegExp(escapeRegExp(packageDisplayName)))).toHaveCount(0);
-  clearExpectedNotFoundNavigationErrors(errors);
 
   await expectNoFatalErrorUi(page);
   expect(errors.filter((error) => !isExpectedOrgDeletionRuntimeError(error))).toEqual([]);

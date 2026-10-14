@@ -2084,6 +2084,65 @@ describe("plugin detail route", () => {
     expect(screen.getByText(/Try again in about 15 seconds/i)).toBeTruthy();
   });
 
+  it.each([false, true])(
+    "renders a beta-only plugin's README (filtered first page: %s)",
+    async (filteredFirstPage) => {
+      const release = "0.1.0-beta.1";
+      const readme = "# Beta plugin setup instructions";
+      const route = await loadRoute();
+      vi.mocked(fetchPackageDetail).mockResolvedValueOnce(loaderDataMock.detail);
+      if (filteredFirstPage) {
+        vi.mocked(fetchPackageVersions).mockResolvedValueOnce({ items: [], nextCursor: "next" });
+      }
+      vi.mocked(fetchPackageVersions).mockResolvedValueOnce({
+        items: [{ version: release, createdAt: 1, changelog: "Initial beta", distTags: ["beta"] }],
+        nextCursor: null,
+      });
+      vi.mocked(fetchPackageVersion).mockResolvedValueOnce({
+        package: null,
+        version: { version: release, createdAt: 1, changelog: "Initial beta", files: [] },
+      });
+      vi.mocked(fetchPackageReadme).mockImplementation(async (_name, version) =>
+        version === release ? readme : null,
+      );
+
+      loaderDataMock = await route.__config.loader!({ params: { name: "demo-plugin" } });
+      const Component = route.__config.component as ComponentType;
+      render(<Component />);
+
+      expect(screen.getByText(readme)).toBeTruthy();
+      expect(screen.queryByText("No README available")).toBeNull();
+      expect(loaderDataMock.detail.package?.latestVersion).toBeNull();
+      expect(loaderDataMock.version?.version?.version).toBe(release);
+    },
+  );
+
+  it("keeps an empty plugin page when no published release exists", async () => {
+    const route = await loadRoute();
+    vi.mocked(fetchPackageDetail).mockResolvedValueOnce(loaderDataMock.detail);
+    vi.mocked(fetchPackageReadme).mockResolvedValueOnce(null);
+
+    const result = await route.__config.loader!({ params: { name: "demo-plugin" } });
+
+    expect(result.version).toBeNull();
+    expect(result.readme).toBeNull();
+    expect(fetchPackageVersion).not.toHaveBeenCalled();
+    expect(fetchPackageReadme).not.toHaveBeenCalled();
+  });
+
+  it("keeps plugin details when fallback release discovery is rate limited", async () => {
+    const route = await loadRoute();
+    vi.mocked(fetchPackageDetail).mockResolvedValueOnce(loaderDataMock.detail);
+    vi.mocked(fetchPackageReadme).mockResolvedValueOnce(null);
+    vi.mocked(fetchPackageVersions).mockRejectedValueOnce({ status: 429, retryAfterSeconds: 11 });
+
+    const result = await route.__config.loader!({ params: { name: "demo-plugin" } });
+
+    expect(result.detail.package?.name).toBe("demo-plugin");
+    expect(result.readme).toBeNull();
+    expect(result.rateLimited).toEqual({ scope: "metadata", retryAfterSeconds: 11 });
+  });
+
   it("downgrades rate-limited README/version fetches into partial detail data", async () => {
     const route = await loadRoute();
     const loader = route.__config.loader as ({
@@ -2218,7 +2277,7 @@ describe("plugin detail route", () => {
 
     expect(fetchPackageDetailMock).toHaveBeenCalledTimes(1);
     expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/matrix");
-    expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/matrix");
+    expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/matrix", "2026.3.22");
     expect(fetchPackageVersionMock).toHaveBeenCalledWith("@openclaw/matrix", "2026.3.22");
     expect(fetchPackageVersions).not.toHaveBeenCalled();
   });
@@ -2260,7 +2319,10 @@ describe("plugin detail route", () => {
 
     expect(fetchPackageDetailMock).toHaveBeenCalledTimes(1);
     expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/anthropic-provider");
-    expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/anthropic-provider");
+    expect(fetchPackageReadmeMock).toHaveBeenCalledWith(
+      "@openclaw/anthropic-provider",
+      "2026.3.22",
+    );
     expect(fetchPackageVersionMock).toHaveBeenCalledWith(
       "@openclaw/anthropic-provider",
       "2026.3.22",

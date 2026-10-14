@@ -20,8 +20,7 @@ describe("experimental Claw feed runtime", () => {
     vi.unstubAllEnvs();
   });
 
-  it("stores and serves the exact publication only while the gate is enabled", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+  it("stores and serves the exact publication by default", async () => {
     const t = convexTest(schema, modules);
     registerRateLimiter(t);
     const publisherId = await t.run(async (ctx) => {
@@ -99,15 +98,9 @@ describe("experimental Claw feed runtime", () => {
     const revoked = await t.fetch("/api/v1/feeds/claws");
     expect(revoked.status).toBe(503);
     expect(revoked.headers.get("cache-control")).toBe("no-store");
-
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "0");
-    const disabled = await t.fetch("/api/v1/feeds/claws");
-    expect(disabled.status).toBe(404);
-    expect(disabled.headers.get("cache-control")).toBe("no-store");
   });
 
   it("does not serve a pre-policy snapshot before publishing a restricted replacement", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const t = convexTest(schema, modules);
     registerRateLimiter(t);
     await t.run(async (ctx) => {

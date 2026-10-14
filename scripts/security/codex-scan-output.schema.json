@@ -7,7 +7,8 @@
     "summary",
     "dimensions",
     "scan_findings_in_context",
-    "user_guidance"
+    "user_guidance",
+    "artifact_inspection"
   ],
   "properties": {
     "verdict": { "type": "string", "enum": ["benign", "suspicious", "malicious"] },
@@ -84,6 +85,21 @@
         }
       }
     },
-    "user_guidance": { "type": "string" }
+    "user_guidance": { "type": "string" },
+    "artifact_inspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "challenge", "required_file_sha256", "files_inspected"],
+      "properties": {
+        "status": { "type": "string", "enum": ["completed"] },
+        "challenge": { "type": "string", "minLength": 1 },
+        "required_file_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "files_inspected": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^artifact/" }
+        }
+      }
+    }
   }
 }

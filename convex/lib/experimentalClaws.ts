@@ -1,7 +1,3 @@
-export function experimentalClawsEnabled(env: Record<string, string | undefined> = process.env) {
-  return env.CLAWHUB_EXPERIMENTAL_CLAWS === "1";
-}
-
 export const OPENCLAW_CLAW_SCOPE = "@openclaw/";
 
 export function isOpenClawClawName(name: string) {
@@ -20,11 +16,4 @@ export function isOpenClawClawPublisher(
     owner.deletedAt === undefined &&
     owner.deactivatedAt === undefined
   );
-}
-
-export function isClawFamilyPubliclyVisible(
-  family: string,
-  env: Record<string, string | undefined> = process.env,
-) {
-  return family !== "claw" || experimentalClawsEnabled(env);
 }

@@ -21,14 +21,19 @@ describe("staging worker relays", () => {
       expect(relay.permissions).toEqual({ actions: "write" });
       expect(relay.environment).toBeUndefined();
       expect(JSON.stringify(relay)).not.toContain("secrets.");
-      expect(worker.if).toContain("github.event.client_payload.environment != 'staging'");
-      expect(worker.if).toContain(
-        "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging'",
-      );
+      if (workflowName === "security-scan-codex") {
+        expect(worker.if).toContain("github.event.client_payload.environment == 'Production'");
+        expect(worker.if).not.toContain("github.event.client_payload.environment == 'staging'");
+      } else {
+        expect(worker.if).toContain("github.event.client_payload.environment != 'staging'");
+        expect(worker.if).toContain(
+          "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging'",
+        );
+      }
       expect(worker.environment).toBe(
         workflowName === "prepublication-publish-checks"
           ? "${{ github.ref == 'refs/heads/staging' && 'Staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'Test' || 'Production') }}"
-          : "${{ github.ref == 'refs/heads/staging' && 'Staging' || 'Production' }}",
+          : "${{ inputs.environment || 'Production' }}",
       );
       const guard = worker.steps.findIndex(
         (step: { name?: string }) => step.name === "Verify staging worker target",
@@ -36,8 +41,12 @@ describe("staging worker relays", () => {
       const firstSecret = worker.steps.findIndex((step: unknown) =>
         JSON.stringify(step).includes("secrets."),
       );
-      expect(guard).toBeGreaterThan(-1);
-      expect(guard).toBeLessThan(firstSecret);
+      if (workflowName === "prepublication-publish-checks") {
+        expect(guard).toBeGreaterThan(-1);
+        expect(guard).toBeLessThan(firstSecret);
+      } else {
+        expect(guard).toBe(-1);
+      }
 
       const dir = await mkdtemp(join(tmpdir(), "staging-relay-"));
       try {

@@ -15,19 +15,16 @@ The Claws feed is a separate experimental wire contract. It does not add
 - Route: `/api/v1/feeds/claws`, proxied as `/v1/feeds/claws`
 - Feed id: `clawhub-official-claws`
 - Experimental schema version: `1`
-- Gate: `CLAWHUB_EXPERIMENTAL_CLAWS=1`
 - Entry type: `claw` only
 - Install coordinate: canonical package name plus exact release version
 - Integrity: `sha256:<immutable artifact sha256>`
 - Metadata: bounded `clawManifestSummary`; never the full manifest
 
-The route uses `Cache-Control: no-store` and no surrogate cache in both enabled
-and disabled states, so changing the gate cannot leave an enabled response at
-the edge. Direct responses retain ETag and Last-Modified validators, but the
-experimental feed must not reuse the stable feeds' CDN policy. When disabled,
-it returns `404` before reading stored publication state. It has no unversioned
-Vercel redirect and is not advertised by
-`/.well-known/openclaw-registry.json` while experimental.
+The route uses `Cache-Control: no-store` and no surrogate cache. Direct responses
+retain ETag and Last-Modified validators, but the separate Claw feed does not
+reuse the stable feeds' CDN policy. It returns `503` until a current Official
+snapshot is published. It has no unversioned Vercel redirect and is not
+advertised by `/.well-known/openclaw-registry.json` while experimental.
 
 Eligible releases must be public, official, unblocked, and retain an immutable
 artifact digest plus the bounded summary derived during publication. The exact

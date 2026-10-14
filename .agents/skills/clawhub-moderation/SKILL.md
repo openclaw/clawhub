@@ -18,7 +18,7 @@ internal mutations directly for staff actions.
 - For `email send`, the user must explicitly ask for the email and sign off on
   the final recipient, subject, and body. Dry-run is fine for drafting. Never
   send until both are true, and only use `--send --confirm-user-request
---confirm-user-signoff` after that approval.
+  --confirm-user-signoff` after that approval.
 - Prefer handles for humans. Use `--id` only when the user provides a user id.
 - Never bypass API-token auth, server role checks, or audit logging.
 - After the write, verify state with the CLI/API and report the result.

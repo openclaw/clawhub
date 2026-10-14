@@ -13,7 +13,13 @@ on:
         type: string
       expected_sha:
         description: "Expected git SHA after checkout"
+        required: true
+        type: string
+
+      fixture_slug:
+        description: "Existing seeded preview skill to verify; never creates data"
         required: false
+        default: "02-team-operation"
         type: string
 
 permissions:
@@ -72,58 +78,25 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
-      - name: Verify protected preview public routes
+      - name: Install proof browser
+        run: bunx playwright install --with-deps chromium
+
+      - name: Verify protected preview routes and dormant analytics policy
         env:
           PREVIEW_URL: ${{ inputs.preview_url }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          CLAWHUB_E2E_SKILL_SLUG: ${{ inputs.fixture_slug || '02-team-operation' }}
+          CLAWHUB_E2E_SKILL_OWNER: ""
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: |
-          set -euo pipefail
-          bun run - <<'TS'
-          import { loadSmokeSkillFixture } from './scripts/lib/smokeSkillFixture';
+        run: bun scripts/verify-preview-proof.ts
 
-          const previewUrl = process.env.PREVIEW_URL?.trim();
-          const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
-          if (!previewUrl) throw new Error("PREVIEW_URL is required");
-          if (!bypassSecret) throw new Error("VERCEL_AUTOMATION_BYPASS_SECRET is required");
-
-          const base = new URL(previewUrl);
-          const headers = { "x-vercel-protection-bypass": bypassSecret };
-
-          async function fetchText(path: string) {
-            const response = await fetch(new URL(path, base), { headers });
-            if (!response.ok) {
-              throw new Error(`${path} returned ${response.status} ${response.statusText}`);
-            }
-            return await response.text();
-          }
-
-          const home = await fetchText("/");
-          if (!home.includes("<title>ClawHub")) {
-            throw new Error("Preview home page did not render the ClawHub shell");
-          }
-
-          const detail = await loadSmokeSkillFixture((path) => fetch(new URL(path, base), {
-            headers: { ...headers, accept: "application/json" },
-          }));
-          const skillFile = await fetchText(detail.filePath);
-          if (!skillFile.trim()) {
-            throw new Error("Preview skill file route returned an empty SKILL.md");
-          }
-
-          console.log(
-            JSON.stringify(
-              {
-                previewUrl: base.toString(),
-                skillSlug: detail.skill.slug,
-                ownerHandle: detail.owner.handle,
-                latestVersion: detail.latestVersion?.version ?? null,
-                skillFileBytes: Buffer.byteLength(skillFile),
-              },
-              null,
-              2,
-            ),
-          );
-          TS
+      - name: Preserve proof receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: preview-proof-${{ inputs.expected_sha }}
+          path: .artifacts/preview-proof.json
+          if-no-files-found: warn
 
       - name: Write proof summary
         env:
@@ -134,5 +107,5 @@ jobs:
             echo
             echo "- Git SHA: \`${actual_sha}\`"
             echo "- Preview URL: ${PREVIEW_URL}"
-            echo "- Verified routes: home, resolved skill detail, publisher-scoped SKILL.md (identity in the probe output)"
+            echo "- Verified: seeded skill detail and file, home, strict v2 region/cache/spoof policy, served SHA, reviewed source switch, and zero Google requests with a seeded grant on preview"
           } >> "$GITHUB_STEP_SUMMARY"
