@@ -48,6 +48,7 @@ const SKILLS_SEARCH = {
 // ---------------------------------------------------------------------------
 
 export const PRIMARY_NAV_ITEMS: NavItem[] = [
+  { label: "Claws", to: "/", activePathPrefixes: ["/claws"] },
   {
     label: "Skills",
     to: PublicRegistryPaths.skills,
