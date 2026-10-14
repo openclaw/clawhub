@@ -498,11 +498,7 @@ export default function Header() {
               </Sheet>
             </div>
 
-            <Link
-              to="/"
-              search={{ q: undefined, highlighted: undefined, search: undefined }}
-              className="brand"
-            >
+            <Link to="/" search={{}} className="brand">
               <span className="brand-mark">
                 <img
                   src={CLAWHUB_BRAND_MARK_SRC}

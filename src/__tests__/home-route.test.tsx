@@ -39,7 +39,11 @@ const initialFeatureFlagsFixture = {
 };
 
 const homeListingSectionMock = vi.fn();
-const fetchInitialHomeListingMock = vi.fn(() => Promise.resolve(initialListingFixture));
+const navigateMock = vi.fn();
+let routeSearch: Record<string, unknown> = {};
+const fetchInitialHomeListingMock = vi.fn((_view?: unknown) =>
+  Promise.resolve(initialListingFixture),
+);
 const loadInitialFeatureFlagsMock = vi.fn(() => Promise.resolve(initialFeatureFlagsFixture));
 let featureFlagEnabled = false;
 
@@ -51,9 +55,11 @@ vi.mock("@tanstack/react-router", () => ({
         initialFeatureFlags: initialFeatureFlagsFixture,
         initialListing: initialListingFixture,
       }),
+      useSearch: () => routeSearch,
     };
     return route;
   },
+  useNavigate: () => navigateMock,
   Link: ({ children, className, to }: { children: ReactNode; className?: string; to?: string }) => (
     <a className={className} href={to ?? "/"}>
       {children}
@@ -77,8 +83,9 @@ vi.mock("../components/HomeListingSection", () => ({
   },
 }));
 
-vi.mock("../lib/homeListingData", () => ({
-  fetchInitialHomeListing: () => fetchInitialHomeListingMock(),
+vi.mock("../lib/homeListingData", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/homeListingData")>()),
+  fetchInitialHomeListing: (view: unknown) => fetchInitialHomeListingMock(view),
 }));
 
 vi.mock("../components/HomePopularPublishersSection", () => ({
@@ -99,6 +106,8 @@ describe("home route", () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     homeListingSectionMock.mockClear();
+    navigateMock.mockClear();
+    routeSearch = {};
     fetchInitialHomeListingMock.mockClear();
     loadInitialFeatureFlagsMock.mockClear();
     featureFlagEnabled = false;
@@ -114,7 +123,21 @@ describe("home route", () => {
 
   async function getRouteLoader() {
     const { Route } = await import("../routes/index");
-    return (Route as unknown as { __config: { loader: () => Promise<unknown> } }).__config.loader;
+    const loader = (
+      Route as unknown as {
+        __config: { loader: (ctx: { location: { search: Record<string, unknown> } }) => unknown };
+      }
+    ).__config.loader;
+    return (search: Record<string, unknown> = {}) => loader({ location: { search } });
+  }
+
+  async function getValidateSearch() {
+    const { Route } = await import("../routes/index");
+    return (
+      Route as unknown as {
+        __config: { validateSearch: (search: Record<string, unknown>) => unknown };
+      }
+    ).__config.validateSearch;
   }
 
   async function getRouteHeadLinks() {
@@ -159,12 +182,57 @@ describe("home route", () => {
     expect(screen.queryByText("Trending Now")).toBeNull();
   });
 
-  it("passes the loader listing into the home listing section", async () => {
+  it("passes the loader listing and URL view into the home listing section", async () => {
+    routeSearch = { kind: "skills", tab: "trending" };
     await renderHome();
 
     expect(homeListingSectionMock).toHaveBeenCalledWith({
       initialListing: initialListingFixture,
+      requestedView: { kind: "skills", tab: "trending" },
+      onViewChange: expect.any(Function),
     });
+  });
+
+  it("keeps default views out of the URL and drops unknown values", async () => {
+    const validateSearch = await getValidateSearch();
+
+    expect(validateSearch({ kind: "skills", tab: "new" })).toEqual({ kind: "skills", tab: "new" });
+    expect(validateSearch({ kind: "plugins", tab: "featured" })).toEqual({
+      kind: undefined,
+      tab: undefined,
+    });
+    expect(validateSearch({ kind: "agents", tab: ["trending"] })).toEqual({
+      kind: undefined,
+      tab: undefined,
+    });
+  });
+
+  it("replaces the URL view without scrolling when the listing view changes", async () => {
+    routeSearch = { kind: "skills", tab: "trending" };
+    await renderHome();
+    const { onViewChange } = homeListingSectionMock.mock.calls[0]![0] as {
+      onViewChange: (view: { kind: string; tab: string }) => void;
+    };
+
+    onViewChange({ kind: "plugins", tab: "new" });
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      search: expect.any(Function),
+      replace: true,
+      resetScroll: false,
+    });
+    const { search } = navigateMock.mock.calls[0]![0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(search({ kind: "skills", tab: "trending" })).toEqual({ kind: undefined, tab: "new" });
+  });
+
+  it("loads the URL-requested listing view for direct links", async () => {
+    const loader = await getRouteLoader();
+
+    await loader({ kind: "skills", tab: "official" });
+
+    expect(fetchInitialHomeListingMock).toHaveBeenCalledWith({ kind: "skills", tab: "official" });
   });
 
   it("loads the default home listing and feature flags in the route loader", async () => {
@@ -175,6 +243,7 @@ describe("home route", () => {
       initialListing: initialListingFixture,
     });
     expect(fetchInitialHomeListingMock).toHaveBeenCalledTimes(1);
+    expect(fetchInitialHomeListingMock).toHaveBeenCalledWith({ kind: "plugins", tab: "featured" });
     expect(loadInitialFeatureFlagsMock).toHaveBeenCalledTimes(1);
   });
 
