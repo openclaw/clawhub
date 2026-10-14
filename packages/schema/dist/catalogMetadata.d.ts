@@ -49,6 +49,11 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly icon: "palette";
     readonly description: "Creating, transforming, or understanding images, video, music, and other media. Spoken interaction and transcription belong in Voice.";
 }, {
+    readonly slug: "lobster-packs";
+    readonly label: "Lobster Packs";
+    readonly icon: "shapes";
+    readonly description: "Adding collectible Clawmoji characters to the LobsterDex through packaged artwork, appearance definitions, or animations rendered by OpenClaw. Plugins that only display existing characters do not belong here; general image generation and editing belong in Media.";
+}, {
     readonly slug: "security";
     readonly label: "Security";
     readonly icon: "shield";
@@ -219,7 +224,7 @@ export declare const SKILL_CATEGORY_DEFINITIONS: readonly [{
 }];
 export type PluginCategorySlug = (typeof PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"] | (typeof LEGACY_PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"];
 export type SkillCategorySlug = (typeof SKILL_CATEGORY_DEFINITIONS)[number]["slug"];
-export declare const PLUGIN_CATEGORY_SLUGS: ("agent-orchestration" | "agent-runtimes" | "channels" | "computer-use" | "context" | "data-analytics" | "developer-tools" | "documents-files" | "finance-payments" | "inbox-collaboration" | "infrastructure" | "integrations" | "media" | "memory" | "models" | "other" | "productivity" | "research" | "sales-marketing" | "scheduling" | "security" | "voice" | "web")[];
+export declare const PLUGIN_CATEGORY_SLUGS: ("agent-orchestration" | "agent-runtimes" | "channels" | "computer-use" | "context" | "data-analytics" | "developer-tools" | "documents-files" | "finance-payments" | "inbox-collaboration" | "infrastructure" | "integrations" | "lobster-packs" | "media" | "memory" | "models" | "other" | "productivity" | "research" | "sales-marketing" | "scheduling" | "security" | "voice" | "web")[];
 export declare const SKILL_CATEGORY_SLUGS: ("agents" | "automation" | "communication" | "creative" | "development" | "finance" | "integrations" | "knowledge" | "lifestyle" | "operations" | "other" | "productivity" | "research" | "security")[];
 export declare function isPluginCategorySlug(value: string | null | undefined): value is PluginCategorySlug;
 export declare function isSkillCategorySlug(value: string | null | undefined): value is SkillCategorySlug;

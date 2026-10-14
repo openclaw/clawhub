@@ -1,0 +1,23 @@
+{
+  "reset": true,
+  "resetOwnerHandles": ["lobsterdex-demo"],
+  "rows": [
+    {
+      "kind": "plugin",
+      "name": "@lobsterdex-demo/reef-lobsters",
+      "displayName": "Reef Lobsters",
+      "version": "1.0.0",
+      "readme": "# Reef Lobsters\n\nLocal discovery fixture for a Lobster Pack with custom Clawmoji artwork. This fixture proves category browsing, not pack validation or installation.\n",
+      "summary": "Custom reef-inspired Clawmoji characters for the LobsterDex. Local discovery fixture.",
+      "categories": ["lobster-packs"],
+      "topics": ["clawmoji", "lobsterdex"],
+      "family": "code-plugin",
+      "channel": "community",
+      "dummyOwner": {
+        "handle": "lobsterdex-demo",
+        "displayName": "LobsterDex Demo",
+        "image": "/favicon.ico"
+      }
+    }
+  ]
+}

@@ -87,6 +87,13 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
       "Creating, transforming, or understanding images, video, music, and other media. Spoken interaction and transcription belong in Voice.",
   },
   {
+    slug: "lobster-packs",
+    label: "Lobster Packs",
+    icon: "shapes",
+    description:
+      "Adding collectible Clawmoji characters to the LobsterDex through packaged artwork, appearance definitions, or animations rendered by OpenClaw. Plugins that only display existing characters do not belong here; general image generation and editing belong in Media.",
+  },
+  {
     slug: "security",
     label: "Security",
     icon: "shield",

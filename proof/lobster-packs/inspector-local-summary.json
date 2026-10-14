@@ -1,0 +1,12 @@
+{
+  "status": "pass",
+  "summary": {
+    "breakageCount": 0,
+    "warningCount": 0,
+    "deprecationWarningCount": 0,
+    "issueCount": 0
+  },
+  "inspectorVersion": "0.3.23",
+  "target": "companion OpenClaw checkout",
+  "issues": []
+}

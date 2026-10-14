@@ -1,0 +1,35 @@
+{
+  "status": "pass",
+  "summary": {
+    "breakageCount": 0,
+    "warningCount": 1,
+    "deprecationWarningCount": 0,
+    "issueCount": 1
+  },
+  "inspectorVersion": "0.3.23",
+  "targetOpenClawVersion": "2026.9.6",
+  "requestedOpenClawVersion": "latest",
+  "issues": [
+    {
+      "id": "CRABPOT-3E52F10E",
+      "fixture": "openclaw-lobster-pack-example",
+      "severity": "P2",
+      "owner": "plugin",
+      "code": "manifest-unknown-fields",
+      "decision": "plugin-upstream-fix",
+      "status": "open",
+      "issueClass": "upstream-metadata",
+      "live": false,
+      "deprecated": false,
+      "compatStatus": "none",
+      "title": "openclaw-lobster-pack-example: manifest uses unsupported top-level fields",
+      "evidence": ["lobsterPacks @ openclaw.plugin.json"],
+      "compatRecord": null,
+      "runtimeCoverage": null,
+      "authorRemediation": {
+        "summary": "Move unsupported top-level manifest fields into supported package metadata or remove them.",
+        "docsUrl": "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#manifest-unknown-fields"
+      }
+    }
+  ]
+}

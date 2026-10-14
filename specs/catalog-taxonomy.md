@@ -5,7 +5,7 @@
 - Skills and plugins use separate controlled slug registries from `clawhub-schema`.
 - Category slugs name one concept. Plugin categories combine seven core configuration surfaces
   (Channels, Models, Agent runtimes, Memory, Context, Voice, Web) with product uses and capabilities.
-- The remaining active plugin categories are Computer use, Media, Security, Integrations, Developer tools,
+- The remaining active plugin categories are Computer use, Media, Lobster Packs, Security, Integrations, Developer tools,
   Infrastructure, Documents & files, Inbox & collaboration, Productivity, Scheduling,
   Finance & payments, Sales & marketing, Data & analytics, Agent orchestration, Research, and Other.
 - Tools, Runtime, and Gateway remain accepted for published metadata and old links, but are absent
@@ -17,7 +17,7 @@
   Generated assignments and bundled manifests also contain exactly one active category. Readers
   retain historical declarations, while the reviewed refresh reclassifies retired or multiple
   categories from static source evidence. Current single-purpose declarations remain authoritative.
-- The active registry has 23 categories. `agent-runtimes` uses the `bot` icon after Models. It covers
+- The active registry has 24 categories. `agent-runtimes` uses the `bot` icon after Models. It covers
   execution engines and backends that run the agent loop and manage native sessions. Context
   covers active-context assembly and compaction; Agent orchestration covers coordination and
   delegation. Session mirroring or locks alone do not make a plugin an execution engine.
@@ -52,6 +52,20 @@
   releases without stored category metadata.
 - Package-level `categories` is the canonical latest-version source for detail, profile, API, and
   discovery reads. Release-level manifest summaries are the canonical exact-version source.
+
+## Lobster Packs
+
+- `lobster-packs` follows Media and uses the existing `shapes` icon. It describes packages
+  whose primary purpose is contributing Clawmoji characters to OpenClaw's LobsterDex.
+  Original SVG artwork and sprite animations both fit.
+- A plugin that only consumes the catalog or inventory (for example, a pet display) is not
+  automatically a Lobster Pack. General image generators remain Media.
+- An explicit category declaration remains authoritative. Legacy contribution inference recognizes
+  a nonempty `lobsterPacks` array; it is a discovery hint, not validation of pack contents.
+- The category reuses plugin publishing, version ownership, moderation, and category filters.
+  It grants no trusted/validated badge and does not run or render contributed artwork in ClawHub.
+- OpenClaw owns the pack schema, asset validation, and renderer. Inspector support and consistent
+  artwork previews must use that contract rather than introducing a competing ClawHub renderer.
 
 ## Topics
 
@@ -176,7 +190,7 @@ completion. The retained journal is the audit/rollback record.
 
 Operator entry points (run only against the deliberately selected deployment):
 
-- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v7-prod","batchSize":10}` returns
+- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v8-prod","batchSize":10}` returns
   a cursor and bounded skip/failure diagnostics. Pass each returned cursor to the next call;
   pause between calls. `pluginCategoryRefresh:list` lists that run with normal pagination.
 - For a bounded repair, preview optionally accepts `packageNames` with 1–10 distinct, exact
@@ -204,8 +218,8 @@ Operator entry points (run only against the deliberately selected deployment):
 
 Classification uses `OPENAI_API_KEY` and defaults to `gpt-5.6-luna`, with a dedicated
 `OPENAI_PLUGIN_CATEGORY_MODEL` override independent of skill-summary configuration. The current
-classifier revision is `plugin-single-category-v7`; superseded generated previews cannot be
-accepted or applied. The model receives all 22 purpose definitions and must return exactly one
+classifier revision is `plugin-single-category-v8`; superseded generated previews cannot be
+accepted or applied. The model receives all 24 purpose definitions and must return exactly one
 category. Missing credentials, timeouts, and
 invalid output are recorded as failed fallback classifications. They cannot be accepted unchanged.
 Retry those packages under a new run ID after resolving the failure, or review the exact published

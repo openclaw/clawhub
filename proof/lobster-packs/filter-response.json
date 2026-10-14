@@ -1,0 +1,30 @@
+{
+  "items": [
+    {
+      "categories": ["lobster-packs"],
+      "channel": "community",
+      "createdAt": 1790566769329,
+      "displayName": "Reef Lobsters",
+      "family": "code-plugin",
+      "icon": null,
+      "isOfficial": false,
+      "latestVersion": "1.0.0",
+      "name": "@lobsterdex-demo/reef-lobsters",
+      "ownerHandle": null,
+      "ownerImage": "/favicon.ico",
+      "ownerOfficial": false,
+      "runtimeId": "@lobsterdex-demo/reef-lobsters",
+      "stats": {
+        "downloads": 174,
+        "installs": 54,
+        "stars": 54,
+        "versions": 1
+      },
+      "summary": "Custom reef-inspired Clawmoji characters for the LobsterDex. Local discovery fixture.",
+      "topics": ["clawmoji", "lobsterdex"],
+      "updatedAt": 1790566769329,
+      "verificationTier": "structural"
+    }
+  ],
+  "nextCursor": null
+}
