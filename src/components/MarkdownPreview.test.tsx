@@ -196,11 +196,22 @@ describe("MarkdownPreview — standard markdown still renders", () => {
     expect(code?.textContent).toContain("const x = 1;");
   });
 
-  it("renders mermaid fenced code blocks as diagrams instead of plain code", () => {
+  it("keeps published Mermaid diagrams on their existing layout and look", async () => {
     const container = renderMarkdown("```mermaid\ngraph TD\n  A --> B\n```");
 
     expect(container.querySelector("[data-mermaid-diagram]")).not.toBeNull();
     expect(container.querySelector("pre code.language-mermaid")).toBeNull();
+
+    const { default: mermaid } = await import("mermaid");
+    await waitFor(() => {
+      expect(mermaid.mermaidAPI.getConfig()).toMatchObject({
+        theme: "neutral",
+        layout: "dagre",
+        look: "classic",
+        securityLevel: "strict",
+        startOnLoad: false,
+      });
+    });
   });
 
   it("cleans up temporary Mermaid nodes when rendering falls back", async () => {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Web: update Mermaid to 12.1.0 while preserving the existing layout and appearance of published diagrams.
+
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
 ## 0.24.0 - 2026-09-30

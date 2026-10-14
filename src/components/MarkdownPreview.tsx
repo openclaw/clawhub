@@ -145,6 +145,9 @@ function loadMermaid(): Promise<MermaidApi> {
         startOnLoad: false,
         securityLevel: "strict",
         theme: "neutral",
+        // Published diagrams keep their appearance when Mermaid changes its defaults.
+        layout: "dagre",
+        look: "classic",
       });
       return mermaid;
     });
