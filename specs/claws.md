@@ -73,14 +73,21 @@ prevent further publication.
 This catalog restriction does not apply to skills or plugins.
 
 The Claw feed is a stored snapshot, so a pre-policy snapshot must fail closed
-instead of becoming public when the backend gate is enabled. A new snapshot
-records the restricted policy version, entry count, and current publisher
-identity. The HTTP feed returns no stored bytes until that snapshot is built;
-if its publisher later loses active authority, it fails closed again until an
-empty or newly authorized snapshot replaces it. Rollout must refresh the feed
+after deployment. A new snapshot records the restricted policy version, entry
+count, and current publisher identity. The HTTP feed returns no stored bytes
+until that snapshot is built; if its publisher later loses active authority, it
+fails closed again until an empty or newly authorized snapshot replaces it.
+Rollout must refresh the feed with the production catalog publication workflow
 and verify catalog exclusion, direct package continuity, and revoked Official
-publisher effects before enabling the public Claw catalog. Disabling the
-backend gate is the rollback path; it must not re-expose the old feed payload.
+publisher effects.
+
+There is no Claw feature flag to turn off for rollback. Revert or fix the
+backend on `main` and run the production deploy workflow, retaining the
+fail-closed Claw-feed read guard in the rollback build. A code deploy does not
+restore or clear the stored feed snapshot. Rebuild it under the current policy,
+or replace it with an empty policy-stamped snapshot and prevent the scheduled
+publisher from repopulating it until the incident is resolved. Verify that
+`/v1/feeds/claws` returns no old payload bytes before restoring catalog traffic.
 
 ## Staged implementation
 
