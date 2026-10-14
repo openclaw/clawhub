@@ -141,6 +141,31 @@ completed outcomes; scanner or judge failures fail the job. A failed package
 does not cancel other jobs or remove their reports. The batch remains manually
 triggered and report-only, with no backend submission or deployment.
 
+Set the manual workflow's `saved-endor-only` input to `true` to save Endor scans
+without repeating the AI profiles. It defaults to `false`. This mode validates
+and prepares the same frozen artifact, then calls the existing normalized Endor
+container runner directly. It skips Codex authentication, SkillSpector and ClawScan
+installation, the AI judge, and the Codex sandbox preflight. Completion requires
+Endor alone; findings, including policy exit 128, are informational, while scanner
+errors fail the job. Failed scans still save bounded redacted Endor diagnostics
+and reports through the existing secret-scan and artifact-upload gates.
+After scanning, a source-free container using the same pinned CLI reads the
+reported Project UUID from the configured namespace. Completion also requires a
+persisted Project with that UUID and the selected plugin, version and trial tags;
+its Git HTTP clone URL must match the artifact source when returned. The redacted
+report retains the native Project response and an `identityVerified` flag.
+
+Only this mode alters the trial image's build-context `scan.sh`, asserting the
+known source strings before removing `--dry-run`. It uses the selected package's
+download URL as the Git origin: the canonical versioned ClawHub artifact URL for
+official plugins, or the npm tarball URL for the community trial. Distinct plugins
+and versions therefore do not share the placeholder project identity. Native project and scan
+tags identify the plugin, version and workflow trial. Repository dependency and
+call-graph analysis stay enabled; `--project-name` is reserved for Endor's
+`--package` mode and is not used. Verify dashboard persistence with Codex 2026.9.9
+before starting the remaining 93 plugins. The production image source, worker
+flags, moderation, and deployment remain unchanged.
+
 ### Deployment and rollback order
 
 1. Deploy the additive backend schema and result handlers first. Existing
@@ -160,8 +185,10 @@ Convex rejects those documents because the old schema does not accept
 a revision that retains these optional fields and the compatible result
 handlers. Do not delete stored results just to make the old schema deployable.
 
-Endor runs with `--dry-run`; the plugin audit and its report download contain the
-saved summary. These scans do not create persistent projects in the Endor dashboard.
+The production worker and default hosted trials run Endor with `--dry-run`; the
+plugin audit and its report download contain the saved summary. Those scans do
+not create persistent projects in the Endor dashboard. The opt-in saved Endor
+trial above removes dry-run only from its disposable trial image.
 
 Local plugin batches reuse the same Endor runner, bundled-skill selection, ClawHub
 profile, and judge-result validation. They consume release tarballs and save local

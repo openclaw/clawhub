@@ -13,13 +13,17 @@ on:
           - "@openclaw/discord@2026.9.9"
           - "@openclaw/codex@2026.9.9"
           - "@jason-vaughan/openclaw-google-oauth@0.4.0"
+      saved-endor-only:
+        description: "Save Endor results in its dashboard without running the AI profile"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main' && (!inputs['trial-package'] || inputs['trial-package'] == 'none')
+    if: github.ref == 'refs/heads/main' && !inputs['saved-endor-only'] && (!inputs['trial-package'] || inputs['trial-package'] == 'none')
     permissions:
       contents: read
       packages: write
@@ -107,6 +111,7 @@ jobs:
       TRIAL_PACKAGE: ${{ matrix.package }}
       TRIAL_SHA256: ${{ matrix.sha256 }}
       TRUSTED_OPENCLAW: ${{ matrix.trusted }}
+      SAVED_ENDOR_ONLY: ${{ inputs['saved-endor-only'] }}
       TRIAL_DIR: .artifacts/endor-plugin-trial
       REPORT_DIR: .artifacts/endor-plugin-report
       CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: "900000"
@@ -120,6 +125,7 @@ jobs:
       - uses: ./.github/actions/setup-bun
 
       - uses: actions/setup-python@v7
+        if: ${{ !inputs['saved-endor-only'] }}
         with:
           python-version: "3.12"
 
@@ -133,6 +139,7 @@ jobs:
           else
             url="https://registry.npmjs.org/$package_name/-/${package_name##*/}-$version.tgz"
           fi
+          printf 'TRIAL_ARTIFACT_URL=%s\n' "$url" >> "$GITHUB_ENV"
           mkdir -p "$TRIAL_DIR"
           curl --fail --location --retry 3 --max-filesize 52428800 \
             "$url" --output "$TRIAL_DIR/plugin.tgz"
@@ -145,6 +152,30 @@ jobs:
             throw new Error("Frozen npm artifact identity or plugin manifest mismatch");
           }
           JS
+
+      - name: Enable saved Endor scans in the trial image only
+        if: ${{ inputs['saved-endor-only'] }}
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import shlex
+          from pathlib import Path
+
+          package_name, version = os.environ["TRIAL_PACKAGE"].rsplit("@", 1)
+          origin = os.environ["TRIAL_ARTIFACT_URL"]
+          tags = f"plugin:{package_name},version:{version},trial:{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+          path = Path("scripts/security/endor/scan.sh")
+          script = path.read_text()
+          replacements = {
+              "remote add origin https://example.invalid/clawscan/scan-target.git": f"remote add origin {shlex.quote(origin)}",
+              "endorctl scan --dry-run ": f"endorctl scan --project-tags {shlex.quote(tags)} --tags {shlex.quote(tags)} --exit-on-policy-warning=false ",
+          }
+          for source, replacement in replacements.items():
+              if script.count(source) != 1:
+                  raise ValueError(f"Expected exactly one trial-image source: {source}")
+              script = script.replace(source, replacement)
+          path.write_text(script)
+          PYTHON
 
       - name: Build and check pinned Endor image
         run: |
@@ -161,6 +192,7 @@ jobs:
           printf 'CODEX_SECURITY_SCAN_ENDOR_IMAGE=%s\n' "$image" >> "$GITHUB_ENV"
 
       - name: Install pinned Codex, ClawScan and SkillSpector
+        if: ${{ !inputs['saved-endor-only'] }}
         run: |
           set -euo pipefail
           npm install --global @openai/codex@0.142.3 @openclaw/clawscan@0.2.0
@@ -174,6 +206,7 @@ jobs:
           skillspector --help >/dev/null
 
       - name: Prepare and verify Codex read-only sandbox
+        if: ${{ !inputs['saved-endor-only'] }}
         run: |
           set -euo pipefail
           sudo apt-get update
@@ -186,12 +219,14 @@ jobs:
           '
 
       - name: Authenticate Codex CLI
+        if: ${{ !inputs['saved-endor-only'] }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
 
       - name: Run the report-only ClawHub plugin profile
         id: scan
+        if: ${{ !inputs['saved-endor-only'] }}
         env:
           CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LLM_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -209,9 +244,110 @@ jobs:
           bun scripts/security/scan-local-plugins.ts "${trust[@]}" \
             --out "$TRIAL_DIR/results" "$TRIAL_DIR/plugin.tgz"
 
+      - name: Run saved Endor without the AI profile
+        id: saved-scan
+        if: ${{ inputs['saved-endor-only'] }}
+        env:
+          ENDOR_NAMESPACE: ${{ vars.ENDOR_NAMESPACE }}
+          ENDOR_API: ${{ vars.ENDOR_API }}
+          ENDOR_API_CREDENTIALS_KEY: ${{ secrets.ENDOR_API_CREDENTIALS_KEY }}
+          ENDOR_API_CREDENTIALS_SECRET: ${{ secrets.ENDOR_API_CREDENTIALS_SECRET }}
+        run: |
+          set -euo pipefail
+          bun scripts/security/scan-local-plugins.ts --prepare-only \
+            --out "$TRIAL_DIR/results" "$TRIAL_DIR/plugin.tgz"
+          bun - <<'JS'
+          import { readFile, writeFile } from "node:fs/promises";
+          import { z } from "zod";
+          import { runWorkerCommand } from "./scripts/lib/runWorkerCommand.ts";
+          import { redactWorkerPublicErrorMessage } from "./scripts/lib/workerRedaction.ts";
+          import { writeJobDiagnostic } from "./scripts/security/run-codex-scan-worker.ts";
+          import { runEndorPluginScan, type EndorCommandDiagnostic } from "./scripts/security/run-endor-plugin-scan.ts";
+
+          const reportPath = `${process.env.TRIAL_DIR}/results/report.json`;
+          const reports = JSON.parse(await readFile(reportPath, "utf8"));
+          if (reports.length !== 1 || `${reports[0].name}@${reports[0].version}` !== process.env.TRIAL_PACKAGE) {
+            throw new Error("Saved Endor trial requires one prepared selected package");
+          }
+          const result = reports[0];
+          result.endorSourceUrl = process.env.TRIAL_ARTIFACT_URL;
+          const startedAt = Date.now();
+          const endor: EndorCommandDiagnostic = {};
+          try {
+            result.endorAnalysis = await runEndorPluginScan({
+              workspace: result.workspace,
+              onDiagnostic: (next) => Object.assign(endor, next),
+            });
+            if (result.endorAnalysis.status !== "completed") {
+              throw new Error("Saved Endor analysis did not complete");
+            }
+            const projects = [...(endor.stderr ?? "").matchAll(/^INFO: Scanning Project UUID: ([a-f0-9-]+) Tenant: (\S+)$/gm)];
+            if (projects.length !== 1 || projects[0][2] !== process.env.ENDOR_NAMESPACE) {
+              throw new Error("Saved Endor scan must identify one project in the configured namespace");
+            }
+            const uuid = z.string().uuid().parse(projects[0][1]);
+            const endorKeys = ["ENDOR_API", "ENDOR_NAMESPACE", "ENDOR_API_CREDENTIALS_KEY", "ENDOR_API_CREDENTIALS_SECRET"];
+            const readback = await runWorkerCommand("docker", [
+              "run", "--rm", "--read-only", "--user", "1000:1000", "--cap-drop", "ALL",
+              "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,nosuid,nodev,noexec", "--env", "HOME=/tmp",
+              "--entrypoint", "/usr/local/bin/endorctl",
+              ...endorKeys.filter((key) => process.env[key] !== undefined).flatMap((key) => ["--env", key]),
+              process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE,
+              "api", "get", "-r", "Project", "--uuid", uuid, "-n", process.env.ENDOR_NAMESPACE,
+              "--field-mask", "uuid,meta.name,meta.tags,spec.git", "-o", "json",
+            ], {
+              commandLabel: "Endor saved project readback", cwd: result.workspace,
+              env: Object.fromEntries(["PATH", "HOME", "DOCKER_CONFIG", ...endorKeys]
+                .filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]])),
+              maxStdoutBytes: 1048576, maxStderrBytes: 32768, timeoutMs: 60000,
+            });
+            result.endorSavedProject = JSON.parse(readback.stdout);
+            // GetProject returns the Project itself, as documented by the native API.
+            const project = z.object({
+              uuid: z.string(), meta: z.object({ tags: z.array(z.string()) }),
+              spec: z.object({ git: z.object({ http_clone_url: z.string().optional() }).optional() }).optional(),
+            }).parse(result.endorSavedProject);
+            const expectedTags = [
+              `plugin:${result.name}`, `version:${result.version}`,
+              `trial:${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
+            ];
+            const cloneUrl = project.spec?.git?.http_clone_url;
+            if (project.uuid !== uuid || !expectedTags.every((tag) => project.meta.tags.includes(tag)) ||
+                (cloneUrl !== undefined && cloneUrl !== result.endorSourceUrl.toLowerCase())) {
+              throw new Error("Saved Endor project identity does not match the selected artifact and trial");
+            }
+            result.endorSavedProject.identityVerified = true;
+            result.status = "completed";
+          } catch (error) {
+            result.status = "failed";
+            result.error = redactWorkerPublicErrorMessage(error instanceof Error ? error.message : String(error));
+            endor.error = result.error;
+            result.endorAnalysis ??= {
+              status: "failed", checkedAt: Date.now(), reason: "Saved Endor analysis failed; inspect diagnostics.",
+            };
+          }
+          result.durationMs = Date.now() - startedAt;
+          await writeJobDiagnostic({
+            job: {
+              job: {
+                _id: "local-1", leaseToken: "", targetKind: "packageRelease", source: "local-report",
+                hasMaliciousSignal: false, waitForVtUntil: 0,
+              },
+              target: {
+                package: { name: result.name }, release: { version: result.version, artifactKind: "npm-pack" },
+              },
+            },
+            endor, diagnosticsRoot: `${process.env.TRIAL_DIR}/results/diagnostics`,
+            startedAt, completedAt: Date.now(), status: result.status, error: result.error,
+          });
+          await writeFile(reportPath, JSON.stringify(reports, null, 2) + "\n");
+          console.log(`${process.env.TRIAL_PACKAGE}: saved Endor ${result.status}`);
+          if (result.status !== "completed") process.exitCode = 1;
+          JS
+
       - name: Prepare bounded redacted reports
         id: report
-        if: ${{ !cancelled() && steps.scan.outcome != 'skipped' }}
+        if: ${{ !cancelled() && (steps.scan.outcome != 'skipped' || steps.saved-scan.outcome != 'skipped') }}
         run: |
           set -euo pipefail
           mkdir -p "$REPORT_DIR"
@@ -230,18 +366,19 @@ jobs:
           (( bytes <= 20971520 )) || { echo 'Trial reports exceed 20 MiB' >&2; exit 1; }
           echo 'artifact-ready=true' >> "$GITHUB_OUTPUT"
 
-      - name: Verify Endor and judge completion
+      - name: Verify selected scanners completed
         if: ${{ !cancelled() && steps.report.outputs.artifact-ready == 'true' }}
         run: |
           bun - <<'JS'
           import { readFile } from "node:fs/promises";
           const reports = JSON.parse(await readFile(`${process.env.REPORT_DIR}/report.json`, "utf8"));
+          const savedEndorOnly = process.env.SAVED_ENDOR_ONLY === "true";
           if (reports.length !== 1 || `${reports[0].name}@${reports[0].version}` !== process.env.TRIAL_PACKAGE ||
               reports[0].status !== "completed" || reports[0].endorAnalysis?.status !== "completed" ||
-              !["benign", "suspicious", "malicious"].includes(reports[0].llmAnalysis?.verdict)) {
-            throw new Error("Trial requires completed Endor and judge results for the selected package; inspect diagnostics");
+              (!savedEndorOnly && !["benign", "suspicious", "malicious"].includes(reports[0].llmAnalysis?.verdict))) {
+            throw new Error(`Trial requires completed Endor${savedEndorOnly ? "" : " and judge"} results for the selected package; inspect diagnostics`);
           }
-          console.log(`${process.env.TRIAL_PACKAGE}: Endor completed, judge verdict=${reports[0].llmAnalysis.verdict}`);
+          console.log(`${process.env.TRIAL_PACKAGE}: Endor completed${savedEndorOnly ? "" : `, judge verdict=${reports[0].llmAnalysis.verdict}`}`);
           JS
 
       - name: Scan reports for verified secrets
