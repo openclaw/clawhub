@@ -8,6 +8,7 @@ import {
   getPluginDiscoveryExclusion,
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
+  isClawCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   normalizePluginCategories,
@@ -59,6 +60,7 @@ import {
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
 import { generatePackageChangelogPreview } from "./lib/changelog";
+import { classifyClawCategories } from "./lib/clawCategoryClassification";
 import { sha256Hex } from "./lib/clawpack";
 import {
   ACTIVITY_TREND_DAYS,
@@ -1448,7 +1450,9 @@ function digestMatchesFilters(
   if (!isClawFamilyPubliclyVisible(digest.family)) return false;
   if (digest.scanStatus && args.excludedScanStatuses?.includes(digest.scanStatus)) return false;
   if (args.category) {
-    if (digest.pluginCategory) {
+    if (digest.family === "claw") {
+      if (!(digest.categories ?? []).includes(args.category)) return false;
+    } else if (digest.pluginCategory) {
       if (digest.pluginCategory !== args.category) return false;
     } else if (!(digest.pluginCategoryTags ?? []).includes(args.category)) {
       return false;
@@ -4857,7 +4861,15 @@ async function listPackagePageImpl(
   if (args.families?.length && !args.highlightedOnly && args.sort !== "trending") {
     throw new Error("families is only supported for highlighted or trending package pages");
   }
-  if (args.category && !isPluginCategorySlug(args.category)) {
+  const category =
+    args.family === "claw"
+      ? args.category && (isClawCategorySlug(args.category) || args.category === "other")
+        ? args.category
+        : undefined
+      : isPluginCategorySlug(args.category)
+        ? args.category
+        : undefined;
+  if (args.category && !category) {
     return { page: [], isDone: true, continueCursor: "" };
   }
   const viewerUserId = args.viewerUserId;
@@ -4865,7 +4877,6 @@ async function listPackagePageImpl(
   const canViewPackage = async (digest: PackageDigestLike) =>
     await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache);
   const targetCount = args.paginationOpts.numItems;
-  const category = isPluginCategorySlug(args.category) ? args.category : undefined;
   const topic = args.topic ? normalizeCatalogTopic(args.topic) : undefined;
   const hasCatalogMetadataFilter = Boolean(category || topic);
   if (args.topic !== undefined && !topic) {
@@ -4935,7 +4946,13 @@ async function listPackagePageImpl(
     };
   }
 
-  if (args.officialFirst && category && typeof args.isOfficial !== "boolean") {
+  if (
+    args.officialFirst &&
+    category &&
+    args.family !== "claw" &&
+    isPluginCategorySlug(category) &&
+    typeof args.isOfficial !== "boolean"
+  ) {
     return await listOfficialFirstPackageCategoryPage(ctx, {
       ...args,
       category,
@@ -4957,7 +4974,7 @@ async function listPackagePageImpl(
     return await listStablePackageDiscoveryPage(ctx, {
       channel: args.channel,
       isOfficial: args.isOfficial,
-      category,
+      category: isPluginCategorySlug(category) ? category : undefined,
       topic,
       excludedScanStatuses: args.excludedScanStatuses,
       sort: args.sort,
@@ -5126,7 +5143,7 @@ async function listPackagePageImpl(
           isOfficial,
           sort: effectiveDigestSort,
         })
-      : category
+      : category && family !== "claw" && isPluginCategorySlug(category)
         ? buildPackagePluginCategoryDigestQuery(ctx, {
             category,
             family,
@@ -5476,14 +5493,21 @@ async function searchPackagesImpl(
 ) {
   const queryText = args.query.trim().toLowerCase();
   if (!queryText) return [];
-  if (args.category && !isPluginCategorySlug(args.category)) return [];
+  const category =
+    args.family === "claw"
+      ? args.category && (isClawCategorySlug(args.category) || args.category === "other")
+        ? args.category
+        : undefined
+      : isPluginCategorySlug(args.category)
+        ? args.category
+        : undefined;
+  if (args.category && !category) return [];
   if (args.channel === "private" && !args.viewerUserId) return [];
   const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
   const viewerUserId = args.viewerUserId;
   const membershipCache = new Map<string, Promise<boolean>>();
   const canViewPackage = async (digest: PackageDigestLike) =>
     await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache);
-  const category = isPluginCategorySlug(args.category) ? args.category : undefined;
   const topic = args.topic ? normalizeCatalogTopic(args.topic) : undefined;
   if (args.topic !== undefined && !topic) return [];
   const publicItem = (digest: PackageDigestLike, featuredAt?: number) => {
@@ -5550,7 +5574,7 @@ async function searchPackagesImpl(
           channel: args.channel,
           isOfficial,
         })
-      : category
+      : category && family !== "claw" && isPluginCategorySlug(category)
         ? buildPackagePluginCategoryDigestQuery(ctx, {
             category,
             family,
@@ -5584,7 +5608,7 @@ async function searchPackagesImpl(
   const [highlightedEntries, officialDigestGroups, directDigests] = await Promise.all([
     highlighted,
     official,
-    category && !topic
+    category && !topic && args.family !== "claw"
       ? Promise.resolve([])
       : Promise.all(
           searchFamilies.map(
@@ -5637,7 +5661,11 @@ async function searchPackagesImpl(
       }
     };
 
-    if ((topic && category) || args.createdAfter !== undefined) {
+    if (
+      (topic && category) ||
+      (args.family === "claw" && category) ||
+      args.createdAfter !== undefined
+    ) {
       const scanStates = searchFamilies.map((family) => ({
         family,
         cursor: null as string | null,
@@ -9475,6 +9503,13 @@ async function publishPackageImpl(
       });
       categories = assignment.categories;
       categoryClassification = assignment.classification;
+    } else if (family === "claw") {
+      if (!validatedClaw) throw new Error("Claw package must be validated before classification");
+      categories = await classifyClawCategories({
+        name,
+        manifest: validatedClaw.manifest,
+        documentation: clawManifestEntry?.text,
+      });
     } else {
       const declaredCategories =
         payload.categories ?? normalizeStoredPluginCategoryOverride(existingPackage?.categories);

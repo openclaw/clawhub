@@ -53,6 +53,7 @@ export const ClawManifestSchema = type({
             avatar: "string?",
         }).optional(),
     },
+    categories: StringArraySchema.optional(),
     metadata: type({ "[string]": "string" }).optional(),
     workspace: type({
         "+": "reject",
@@ -136,6 +137,7 @@ export const CLAW_MANIFEST_VALIDATION_PHASE = "schema";
 export const CLAW_MANIFEST_VALIDATION_CODES = {
     invalidManifestShape: "claw_v1_invalid_manifest_shape",
     invalidAgentId: "claw_v1_invalid_agent_id",
+    invalidCategory: "claw_v1_invalid_category",
     nonCanonicalString: "claw_v1_non_canonical_string",
     emptyList: "claw_v1_empty_list",
     legacyProfilePointer: "claw_v1_legacy_profile_pointer",
@@ -163,6 +165,7 @@ export const CLAW_MANIFEST_VALIDATION_CODES = {
     duplicateCronJob: "claw_v1_duplicate_cron_job",
 };
 const AGENT_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
+const CATEGORY_SLUG_PATTERN = /^[a-z][a-z0-9-]*$/;
 const EXACT_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const ENV_REFERENCE_PATTERN = /^\$\{[A-Z_][A-Z0-9_]*\}$/;
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
@@ -463,6 +466,18 @@ export function validateClawManifest(value) {
     const issues = [];
     if (!AGENT_ID_PATTERN.test(parsed.agent.id)) {
         issues.push(validationIssue(CLAW_MANIFEST_VALIDATION_CODES.invalidAgentId, "$.agent.id", "Invalid portable agent id."));
+    }
+    if (parsed.categories !== undefined) {
+        if (parsed.categories.length < 1 || parsed.categories.length > 3) {
+            issues.push(validationIssue(CLAW_MANIFEST_VALIDATION_CODES.invalidCategory, "$.categories", "Declare between one and three categories."));
+        }
+        const seenCategories = new Set();
+        for (const [index, category] of parsed.categories.entries()) {
+            if (!CATEGORY_SLUG_PATTERN.test(category) || seenCategories.has(category)) {
+                issues.push(validationIssue(CLAW_MANIFEST_VALIDATION_CODES.invalidCategory, `$.categories.${index}`, "Categories must be unique lowercase slugs."));
+            }
+            seenCategories.add(category);
+        }
     }
     pushNonEmpty(issues, "$.agent.name", parsed.agent.name);
     pushNonEmpty(issues, "$.agent.description", parsed.agent.description);

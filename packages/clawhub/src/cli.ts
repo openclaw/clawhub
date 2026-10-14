@@ -755,7 +755,7 @@ registerCommand(packageCmd, ["package", "publish"])
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .option(
     "--categories <slugs>",
-    "Deprecated for plugins (ignored); declare one category in openclaw.plugin.json. Claws: comma-separated categories",
+    "Deprecated for plugins and Claws (ignored); declare categories in openclaw.plugin.json or CLAW.md",
   )
   .option("--topics <topics>", "Comma-separated topics")
   .option("--bundle-format <format>", "Bundle format")

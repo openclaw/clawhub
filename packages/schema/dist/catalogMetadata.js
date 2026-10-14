@@ -21,6 +21,84 @@ export const RESERVED_CATALOG_TOPIC_SLUGS = [
     "verified",
 ];
 const CATALOG_TOPIC_FORMAT_CONTROL_RE = /\p{Cf}/u;
+export const CLAW_CATEGORY_DEFINITIONS = [
+    {
+        slug: "personal",
+        label: "Personal",
+        icon: "user",
+        description: "Daily life, household, and personal organization.",
+    },
+    {
+        slug: "health",
+        label: "Health",
+        icon: "heart-pulse",
+        description: "Wellness, fitness, care, and health-related planning.",
+    },
+    {
+        slug: "travel",
+        label: "Travel",
+        icon: "plane",
+        description: "Trips, itineraries, destinations, and travel logistics.",
+    },
+    {
+        slug: "productivity",
+        label: "Productivity",
+        icon: "list-todo",
+        description: "Tasks, notes, focus, and individual work planning.",
+    },
+    {
+        slug: "research",
+        label: "Research",
+        icon: "search",
+        description: "Investigating sources and synthesizing evidence or analysis.",
+    },
+    {
+        slug: "engineering",
+        label: "Engineering",
+        icon: "code-xml",
+        description: "Software development, debugging, and technical systems.",
+    },
+    {
+        slug: "governance",
+        label: "Governance",
+        icon: "shield-check",
+        description: "Policy, compliance, risk, and oversight.",
+    },
+    {
+        slug: "operations",
+        label: "Operations",
+        icon: "settings-2",
+        description: "Running business processes, services, and teams.",
+    },
+    {
+        slug: "finance",
+        label: "Finance",
+        icon: "wallet-cards",
+        description: "Budgets, accounting, investments, and financial decisions.",
+    },
+    {
+        slug: "sales",
+        label: "Sales",
+        icon: "handshake",
+        description: "Customer relationships, outreach, and commercial workflows.",
+    },
+    {
+        slug: "product",
+        label: "Product",
+        icon: "lightbulb",
+        description: "Product discovery, strategy, planning, and delivery.",
+    },
+    {
+        slug: "people",
+        label: "People",
+        icon: "users",
+        description: "Recruiting, hiring, employee support, and team development.",
+    },
+];
+const CLAW_CATEGORY_SLUGS = new Set(CLAW_CATEGORY_DEFINITIONS.map(({ slug }) => slug));
+export function isClawCategorySlug(value) {
+    return CLAW_CATEGORY_SLUGS.has(value);
+}
 export const PLUGIN_CATEGORY_DEFINITIONS = [
     {
         slug: "channels",

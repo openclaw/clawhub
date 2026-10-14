@@ -45,6 +45,7 @@ agent:
   id: github-triage
   name: GitHub Triage
   description: Reviews incoming issues.
+categories: [engineering, productivity]
 workspace:
   files:
     - source: workspace/reference.md
@@ -62,6 +63,15 @@ cronJobs: []
 
 Reviews and classifies incoming GitHub issues.
 ```
+
+`categories` is optional and accepts one to three distinct lowercase slugs.
+ClawHub accepts these categories for new releases: `personal`, `health`,
+`travel`, `productivity`, `research`, `engineering`, `governance`, `operations`,
+`finance`, `sales`, `product`, and `people`. Declared categories take precedence;
+ClawHub rejects unrecognized slugs. When omitted, ClawHub attempts to classify
+the Claw from its manifest and documentation and uses `Other` if classification
+is unavailable. To correct an inferred category, add `categories` to `CLAW.md`
+and publish a new release.
 
 JSON manifests remain compatible. Set `openclaw.claw` to a package-relative
 JSON file such as `openclaw.claw.json`; JSON has no Markdown body, so declare
@@ -181,7 +191,9 @@ Enabled deployments expose Claws through the existing package API:
 
 ```bash
 curl "https://clawhub.ai/api/v1/packages?family=claw"
+curl "https://clawhub.ai/api/v1/packages?family=claw&category=travel"
 curl "https://clawhub.ai/api/v1/packages/search?q=triage&family=claw"
+curl "https://clawhub.ai/api/v1/packages/search?q=trip&family=claw&category=travel"
 curl "https://clawhub.ai/api/v1/packages/@acme%2Fgithub-triage"
 ```
 
@@ -190,6 +202,8 @@ version detail responses may also include `clawManifestSummary`, which reports
 the agent identity, portable resource counts, harness-profile count,
 OpenClaw-profile count, and native extension count without exposing the full
 manifest or profile contents.
+Use `category=other` for Claws that could not be classified. Category filters
+require `family=claw`; unrecognized categories return a validation error.
 
 When `CLAWHUB_EXPERIMENTAL_CLAWS` is disabled, explicit `family=claw` filters
 are rejected, unscoped list and search results omit Claws, and named Claw reads

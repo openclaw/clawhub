@@ -20543,4 +20543,46 @@ describe("httpApiV1 handlers", () => {
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
     }
   });
+
+  it("filters Claw browse and search by the fixed Claw taxonomy", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) =>
+      "paginationOpts" in args ? { page: [], isDone: true, continueCursor: "" } : [],
+    );
+    try {
+      const ctx = makeCtx({ runQuery });
+      const list = await __handlers.listPackagesV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages?family=claw&category=travel"),
+      );
+      expect(list.status).toBe(200);
+      expect(runQuery).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ family: "claw", category: "travel" }),
+      );
+
+      const search = await __handlers.packagesGetRouterV1Handler(
+        ctx,
+        new Request(
+          "https://example.com/api/v1/packages/search?q=trip&family=claw&category=travel",
+        ),
+      );
+      expect(search.status).toBe(200);
+      expect(runQuery).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ family: "claw", category: "travel", query: "trip" }),
+      );
+
+      const invalid = await __handlers.listPackagesV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages?family=claw&category=made-up"),
+      );
+      expect(invalid.status).toBe(400);
+      expect(await invalid.text()).toBe("Invalid Claw category");
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
 });

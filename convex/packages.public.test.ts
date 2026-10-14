@@ -163,7 +163,7 @@ const getVersionSecurityByNameForViewerInternalHandler = (
 const listPublicPageHandler = (
   listPublicPage as unknown as WrappedHandler<
     {
-      family?: "skill" | "code-plugin" | "bundle-plugin";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -200,7 +200,7 @@ const listPublicNewPluginsPageHandler = (
 const listPageForViewerInternalHandler = (
   listPageForViewerInternal as unknown as WrappedHandler<
     {
-      family?: "skill" | "code-plugin" | "bundle-plugin";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
       families?: Array<"skill" | "code-plugin" | "bundle-plugin">;
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
@@ -419,7 +419,7 @@ const searchPublicHandler = (
     {
       query: string;
       limit?: number;
-      family?: "skill" | "code-plugin" | "bundle-plugin";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -5545,6 +5545,56 @@ describe("packages public queries", () => {
       "by_active_recommended_score_version",
       "by_active_category_recommended_score",
     ]);
+  });
+
+  it("filters Claws by their stored category tags without using plugin indexes", async () => {
+    const { ctx, tableNames } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("travel-planner", { family: "claw", categories: ["travel", "personal"] }),
+            makeDigest("budget-coach", { family: "claw", categories: ["finance"] }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "claw",
+      category: "travel",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["travel-planner"]);
+    expect(tableNames).toEqual(["packageSearchDigest"]);
+  });
+
+  it("searches Claws within their stored category tags", async () => {
+    const { ctx, tableNames } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("travel-planner", { family: "claw", categories: ["travel"] }),
+            makeDigest("travel-budget", { family: "claw", categories: ["finance"] }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "travel",
+      family: "claw",
+      category: "travel",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["travel-planner"]);
+    expect(tableNames).toContain("packageSearchDigest");
+    expect(tableNames).not.toContain("packagePluginCategorySearchDigest");
   });
 
   it("uses plugin category digest sort indexes for filtered listings", async () => {

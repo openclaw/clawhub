@@ -3,6 +3,69 @@ export declare const CATALOG_TOPIC_LIMIT = 5;
 export declare const CATALOG_TOPIC_MAX_LENGTH = 48;
 export declare const INTERNAL_UNCATEGORIZED_CATEGORY = "other";
 export declare const RESERVED_CATALOG_TOPIC_SLUGS: readonly ["approved", "audited", "certified", "clawhub", "community", "curated", "endorsed", "featured", "official", "officials", "openclaw", "recommended", "staff-pick", "trusted", "trusted-publisher", "verified"];
+export declare const CLAW_CATEGORY_DEFINITIONS: readonly [{
+    readonly slug: "personal";
+    readonly label: "Personal";
+    readonly icon: "user";
+    readonly description: "Daily life, household, and personal organization.";
+}, {
+    readonly slug: "health";
+    readonly label: "Health";
+    readonly icon: "heart-pulse";
+    readonly description: "Wellness, fitness, care, and health-related planning.";
+}, {
+    readonly slug: "travel";
+    readonly label: "Travel";
+    readonly icon: "plane";
+    readonly description: "Trips, itineraries, destinations, and travel logistics.";
+}, {
+    readonly slug: "productivity";
+    readonly label: "Productivity";
+    readonly icon: "list-todo";
+    readonly description: "Tasks, notes, focus, and individual work planning.";
+}, {
+    readonly slug: "research";
+    readonly label: "Research";
+    readonly icon: "search";
+    readonly description: "Investigating sources and synthesizing evidence or analysis.";
+}, {
+    readonly slug: "engineering";
+    readonly label: "Engineering";
+    readonly icon: "code-xml";
+    readonly description: "Software development, debugging, and technical systems.";
+}, {
+    readonly slug: "governance";
+    readonly label: "Governance";
+    readonly icon: "shield-check";
+    readonly description: "Policy, compliance, risk, and oversight.";
+}, {
+    readonly slug: "operations";
+    readonly label: "Operations";
+    readonly icon: "settings-2";
+    readonly description: "Running business processes, services, and teams.";
+}, {
+    readonly slug: "finance";
+    readonly label: "Finance";
+    readonly icon: "wallet-cards";
+    readonly description: "Budgets, accounting, investments, and financial decisions.";
+}, {
+    readonly slug: "sales";
+    readonly label: "Sales";
+    readonly icon: "handshake";
+    readonly description: "Customer relationships, outreach, and commercial workflows.";
+}, {
+    readonly slug: "product";
+    readonly label: "Product";
+    readonly icon: "lightbulb";
+    readonly description: "Product discovery, strategy, planning, and delivery.";
+}, {
+    readonly slug: "people";
+    readonly label: "People";
+    readonly icon: "users";
+    readonly description: "Recruiting, hiring, employee support, and team development.";
+}];
+export type ClawCategorySlug = (typeof CLAW_CATEGORY_DEFINITIONS)[number]["slug"];
+export declare function isClawCategorySlug(value: string): value is ClawCategorySlug;
 export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "channels";
     readonly label: "Channels";

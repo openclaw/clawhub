@@ -16,6 +16,7 @@ export declare const ClawManifestSchema: import("arktype/internal/variants/objec
             avatar?: string | undefined;
         } | undefined;
     };
+    categories?: string[] | undefined;
     metadata?: {
         [x: string]: string;
     } | undefined;
@@ -132,6 +133,7 @@ export declare const CLAW_MANIFEST_VALIDATION_PHASE: "schema";
 export declare const CLAW_MANIFEST_VALIDATION_CODES: {
     readonly invalidManifestShape: "claw_v1_invalid_manifest_shape";
     readonly invalidAgentId: "claw_v1_invalid_agent_id";
+    readonly invalidCategory: "claw_v1_invalid_category";
     readonly nonCanonicalString: "claw_v1_non_canonical_string";
     readonly emptyList: "claw_v1_empty_list";
     readonly legacyProfilePointer: "claw_v1_legacy_profile_pointer";
