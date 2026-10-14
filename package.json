@@ -207,5 +207,8 @@
     "shell-quote": "1.10.0",
     "socket.io-parser": "4.2.7",
     "ws": "8.21.0"
+  },
+  "patchedDependencies": {
+    "@convex-dev/workpool@0.4.12": "patches/@convex-dev%2Fworkpool@0.4.12.patch"
   }
 }

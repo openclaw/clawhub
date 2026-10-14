@@ -175,6 +175,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@convex-dev/workpool@0.4.12": "patches/@convex-dev%2Fworkpool@0.4.12.patch",
+  },
   "overrides": {
     "ast-v8-to-istanbul": "1.0.5",
     "baseline-browser-mapping": "2.11.20",

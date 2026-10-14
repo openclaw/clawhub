@@ -7,7 +7,7 @@
 - Runtime: use Bun 1.3.14 across CI and deployment tooling to preserve labelled conditional blocks when compiling React server rendering.
 - Tests: revalidate cached npm metadata before installing updated Convex external dependencies, retaining cached package tarballs and bounded fetches.
 
-- Dependencies: refresh production packages and synchronize the Sharp pin; let each package resolve its supported Undici transport and drop the workpool patch now included upstream.
+- Dependencies: refresh production packages and synchronize the Sharp pin; let each package resolve its supported Undici transport and use the unpatched upstream Workpool release. Retain the old Workpool typecheck patch only for the previous-version test fixture.
 
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
