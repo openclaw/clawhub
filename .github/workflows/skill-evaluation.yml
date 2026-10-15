@@ -56,3 +56,22 @@ jobs:
 
           asyncio.run(main())
           PY
+      - name: Reproduce exact canary image with model access disabled
+        if: always()
+        run: |
+          git init -q /tmp/nvidia-skills
+          git -C /tmp/nvidia-skills remote add origin https://github.com/NVIDIA/skills.git
+          git -C /tmp/nvidia-skills fetch -q --depth 1 origin 392ab8ab2587345a9d86240967f666bd59ac82ca
+          git -C /tmp/nvidia-skills checkout -q FETCH_HEAD
+          env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 OPENAI_API_KEY=probe-invalid OPENAI_BASE_URL=http://127.0.0.1:9/v1 SKILL_EVAL_LLM_API_KEY=probe-invalid SKILL_EVAL_LLM_BASE_URL=http://127.0.0.1:9/v1 SKILL_EVAL_LLM_PROVIDER=openai-compatible SKILL_EVAL_LLM_MODEL=gpt-5.4 timeout 240 uv run --project /tmp/evaluator --extra tier3 --frozen skillevaluator tier3 evaluate /tmp/nvidia-skills/skills/vss-ask-video --agents codex --env-mode docker --agent-model codex=gpt-5.4-mini --n-attempts 1 --skip-baseline --n-concurrent 1 --max-agents 1 --progress plain --harbor-keep-jobs --results-dir /tmp/exact-probe || true
+          python3 - <<'PYPROBE'
+          import json
+          from pathlib import Path
+          for path in Path('/tmp/exact-probe').rglob('result.json'):
+              try:
+                  value = json.loads(path.read_text())
+              except Exception:
+                  continue
+              if value.get('exception_info'):
+                  print(json.dumps({'path':str(path),'error':value['exception_info']}))
+          PYPROBE
