@@ -180,19 +180,6 @@ async function publishPackage(
   });
 }
 
-async function createPublisher(
-  request: APIRequestContext,
-  registry: string,
-  token: string,
-  handle: string,
-) {
-  const response = await request.post(`${registry}/api/v1/publishers`, {
-    headers: { Authorization: `Bearer ${token}` },
-    data: { handle, displayName: handle },
-  });
-  expect(response.status(), await response.text()).toBe(201);
-}
-
 async function ensureOpenClawPublisher(
   request: APIRequestContext,
   registry: string,
@@ -242,7 +229,7 @@ async function searchNames(request: APIRequestContext, registry: string, slug: s
   return body.results.map((item) => item.package.name);
 }
 
-test("the official catalog stays @openclaw-only while gated direct Claw access remains available", async ({
+test("personal Claws are discoverable while the official feed stays @openclaw-only", async ({
   request,
 }) => {
   const registry = registryUrl();
@@ -256,12 +243,11 @@ test("the official catalog stays @openclaw-only while gated direct Claw access r
   const visible = clawFixture(root, "openclaw", visibleSlug);
   const race = clawFixture(root, "openclaw", raceSlug);
   const denied = clawFixture(root, "openclaw", deniedSlug);
-  const community = clawFixture(root, "community-proof", `pw-community-${suffix}`);
+  const community = clawFixture(root, tokens.user.handle, `pw-community-${suffix}`);
   const plugin = pluginFixture(root, pluginSlug);
 
   try {
     await ensureOpenClawPublisher(request, registry, tokens.admin.token, tokens.admin.handle);
-    await createPublisher(request, registry, tokens.user.token, "community-proof");
     await setOfficial(request, registry, tokens.admin.token, "add");
 
     const communityPublish = await publishPackage(
@@ -296,7 +282,7 @@ test("the official catalog stays @openclaw-only while gated direct Claw access r
         .update(await communityArtifact.body())
         .digest("hex"),
     ).toBe(community.sha256);
-    expect(await searchNames(request, registry, community.name.split("/")[1] ?? "")).not.toContain(
+    expect(await searchNames(request, registry, community.name.split("/")[1] ?? "")).toContain(
       community.name,
     );
 
@@ -403,7 +389,7 @@ test("the official catalog stays @openclaw-only while gated direct Claw access r
     expect((await afterRevocation.json()) as Record<string, unknown>).toMatchObject({
       package: { channel: "community" },
     });
-    expect(await searchNames(request, registry, visibleSlug)).not.toContain(visible.name);
+    expect(await searchNames(request, registry, visibleSlug)).toContain(visible.name);
     const staleFeed = await request.get(feedUrl, {
       headers: { "If-None-Match": feed.headers().etag ?? "" },
     });
@@ -446,11 +432,12 @@ test("the official catalog stays @openclaw-only while gated direct Claw access r
         registry,
         officialPublish: "pending-to-published",
         officialRead: "200-after-revocation",
-        officialSearch: "included-to-excluded-after-revocation",
+        officialSearch: "included-before-and-after-badge-revocation",
         officialFeed: "200-to-503-after-revocation-then-empty-after-rebuild",
         communityClawPublish: communityPublish.status(),
+        personalClawSearch: "included-without-Official-badge",
         revokedClawPublish: revokedPublish.status(),
-        revocationRace: "finalized-but-not-in-catalog",
+        revocationRace: "finalized-but-not-in-official-feed",
         pluginAfterRevocation: pluginRead.status(),
       })}`,
     );
