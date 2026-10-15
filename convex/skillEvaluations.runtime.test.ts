@@ -140,7 +140,7 @@ describe("skill evaluation runtime queue", () => {
     vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-token");
     const t = convexTest(schema, modules);
-    const skills = [];
+    const skills: Id<"skills">[] = [];
     for (let i = 0; i < 22; i += 1) {
       skills.push(await insertNvidiaSkill(t, { hash: `hash-${i}`, slug: `skill-${i}` }));
     }
