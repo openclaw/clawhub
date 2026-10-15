@@ -272,7 +272,7 @@ describe("package commands", () => {
       versions: { ...process.versions, bun: "1.3.14" },
     });
     try {
-      await expect(cmdValidatePackage({ workdir } as GlobalOpts, workdir)).rejects.toThrow(
+      await expect(cmdValidatePackage(makeOpts(workdir), workdir)).rejects.toThrow(
         "Plugin validation requires Node.js 22.13+ (22.x) or 24+",
       );
       expect(inspectorMocks.pluginRoot.runCheck).not.toHaveBeenCalled();
