@@ -6,7 +6,10 @@ import path from "node:path";
 import { v } from "convex/values";
 import rootPackageJson from "../package.json";
 import { internalAction } from "./_generated/server";
-import { prepareOpenClawInspectorTarget } from "./lib/openClawInspectorTarget";
+import {
+  prepareOpenClawInspectorTarget,
+  type PreparedOpenClawInspectorTarget,
+} from "./lib/openClawInspectorTarget";
 import { normalizeSdkUsageReport, sdkUsageReport } from "./lib/packageSdkUsageContract";
 import { pluginApiRetirement } from "./lib/pluginApiRetirements";
 
@@ -145,12 +148,13 @@ const inspectorMetadataValidator = v.object({
 export function buildPublishInspectorRunCheckOptions(
   root: string,
   generatedAt: string,
-  targetOpenClaw: unknown,
+  preparedTarget: PreparedOpenClawInspectorTarget,
 ) {
   return {
     pluginRoot: root,
     openclawPath: false,
-    targetOpenClaw,
+    targetOpenClaw: preparedTarget.targetOpenClaw,
+    sdkUsageTargetPath: preparedTarget.sdkUsageTargetPath,
     outDir: "reports",
     capture: false,
     mockSdk: true,
@@ -268,7 +272,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
 
       const { openClawTargets, pluginRoot, reports } = await import("@openclaw/plugin-inspector");
       enterStage("OpenClaw target preparation");
-      const targetOpenClaw = await prepareOpenClawInspectorTarget(
+      const preparedTarget = await prepareOpenClawInspectorTarget(
         await resolveOpenClawTargetCacheRoot(),
         {
           readTargetSurface: (options) => reports.readOpenClawTargetSurface(options),
@@ -278,7 +282,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
       const runCheckOptions = buildPublishInspectorRunCheckOptions(
         root,
         new Date().toISOString(),
-        targetOpenClaw,
+        preparedTarget,
       );
       enterStage("inspection");
       const { report } = await pluginRoot.runCheck(runCheckOptions);

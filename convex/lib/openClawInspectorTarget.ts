@@ -25,6 +25,11 @@ const TARGET_DIRECTORY = "openclaw";
 
 type OpenClawTargetSurface = { status?: unknown; [key: string]: unknown };
 
+export type PreparedOpenClawInspectorTarget = {
+  targetOpenClaw: OpenClawTargetSurface;
+  sdkUsageTargetPath: string;
+};
+
 type OpenClawInspectorTargetDeps = {
   readTargetSurface: (options: {
     rootDir: string;
@@ -45,7 +50,7 @@ type ResolvedOpenClaw = {
 type SelectedEntry = { path: string; bytes: Uint8Array };
 
 // Concurrent and warm invocations in one Node process share one download per target.
-const preparedTargets = new Map<string, Promise<Record<string, unknown>>>();
+const preparedTargets = new Map<string, Promise<PreparedOpenClawInspectorTarget>>();
 
 export async function prepareOpenClawInspectorTarget(
   cacheRoot: string,
@@ -78,7 +83,7 @@ async function buildTarget(
       `prepared OpenClaw ${resolved.version} package has no readable public plugin surface`,
     );
   }
-  return {
+  const targetOpenClaw = {
     ...surface,
     configuredPath: `npm:openclaw@${resolved.version}`,
     searchedPaths: [`npm:openclaw@${resolved.version}`],
@@ -97,6 +102,9 @@ async function buildTarget(
     },
     cache: { hit, key },
   };
+  // Only targetOpenClaw becomes report metadata. The local declaration path is
+  // a separate analysis input and must never appear in published reports.
+  return { targetOpenClaw, sdkUsageTargetPath: packageDir };
 }
 
 async function resolveLatestOpenClaw(fetchImpl: typeof fetch): Promise<ResolvedOpenClaw> {

@@ -176,11 +176,10 @@ describe("package inspector publish normalization", () => {
   it("uses the prepared OpenClaw target for publish-time inspection", () => {
     const targetOpenClaw = { status: "ok", version: "2026.7.0" };
     expect(
-      buildPublishInspectorRunCheckOptions(
-        "/tmp/plugin",
-        "2026-07-30T00:00:00.000Z",
+      buildPublishInspectorRunCheckOptions("/tmp/plugin", "2026-07-30T00:00:00.000Z", {
         targetOpenClaw,
-      ),
+        sdkUsageTargetPath: "/tmp/verified-openclaw/package",
+      }),
     ).toEqual(
       expect.objectContaining({
         pluginRoot: "/tmp/plugin",
@@ -188,6 +187,7 @@ describe("package inspector publish normalization", () => {
         targetOpenClaw,
         authorFacing: true,
         sdkUsageInputKind: "artifact",
+        sdkUsageTargetPath: "/tmp/verified-openclaw/package",
       }),
     );
   });
