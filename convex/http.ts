@@ -82,6 +82,11 @@ import {
   packageInspectorNotifyHttp,
   packageInspectorResultsHttp,
 } from "./packageInspectorHttp";
+import {
+  packageSdkUsageHttp,
+  packageSdkUsageCoverageHttp,
+  packageSdkUsagePluginHttp,
+} from "./packageSdkUsageHttp";
 import { skillPresentationAssetHttp } from "./skillPresentationAssetsHttp";
 
 const http = installRateLimitedRoutes(httpRouter());
@@ -336,6 +341,14 @@ http.route({
   method: "POST",
   handler: packageInspectorClaimHttp,
 });
+
+http.route({ path: ApiRoutes.sdkUsage, method: "GET", handler: packageSdkUsageHttp });
+http.route({
+  path: ApiRoutes.sdkUsageCoverage,
+  method: "GET",
+  handler: packageSdkUsageCoverageHttp,
+});
+http.route({ path: ApiRoutes.sdkUsagePlugin, method: "GET", handler: packageSdkUsagePluginHttp });
 
 http.route({
   path: "/api/v1/package-inspector/acknowledge",

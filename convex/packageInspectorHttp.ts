@@ -1,8 +1,10 @@
+import { validate } from "convex-helpers/validators";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import { json, parseJsonPayload, text } from "./httpApiV1/shared";
+import { sdkUsageReport } from "./lib/packageSdkUsageContract";
 import { buildLegacyPackageScanZip } from "./lib/skillZip";
 
 const internalRefs = internal as unknown as {
@@ -69,6 +71,16 @@ export const packageInspectorClaimHttp = httpAction(async (ctx, request) => {
   const inspectorVersion = url.searchParams.get("inspectorVersion")?.trim() || undefined;
   const targetOpenClawVersion = url.searchParams.get("targetOpenClawVersion")?.trim() || undefined;
   const notifyOwners = isTruthyParam(url.searchParams.get("notifyOwners"));
+  const inventorySchemaVersion = url.searchParams.get("inventorySchemaVersion");
+  const inventoryAnalysisVersion = url.searchParams.get("inventoryAnalysisVersion")?.trim();
+  if (
+    (inventorySchemaVersion !== null || inventoryAnalysisVersion) &&
+    (!inventorySchemaVersion ||
+      !Number.isSafeInteger(Number(inventorySchemaVersion)) ||
+      !inventoryAnalysisVersion)
+  ) {
+    return text("Provide inventory schema and analysis versions together", 400);
+  }
   if (!dryRun && !runId) return text("Missing runId", 400);
   type ClaimResult = {
     ok: true;
@@ -91,6 +103,9 @@ export const packageInspectorClaimHttp = httpAction(async (ctx, request) => {
     ...(inspectorVersion ? { inspectorVersion } : {}),
     ...(targetOpenClawVersion ? { targetOpenClawVersion } : {}),
     ...(notifyOwners ? { notifyOwners: true } : {}),
+    ...(inventorySchemaVersion
+      ? { inventorySchemaVersion: Number(inventorySchemaVersion), inventoryAnalysisVersion }
+      : {}),
   };
   const result = dryRun
     ? await runQueryRef<ClaimResult>(
@@ -140,6 +155,7 @@ export const packageInspectorArtifactHttp = httpAction(async (ctx, request) => {
     packageName: string;
     version: string;
     artifactKind: "legacy-zip" | "npm-pack";
+    artifactSha256?: string;
     clawpackStorageId?: string;
     clawpackSha256?: string;
     npmIntegrity?: string;
@@ -159,6 +175,7 @@ export const packageInspectorArtifactHttp = httpAction(async (ctx, request) => {
       "Content-Type": "application/octet-stream",
       "Content-Disposition": `attachment; filename="${artifact.npmTarballName ?? `${artifact.packageName.replaceAll("/", "-")}-${artifact.version}.tgz`}"`,
       "X-ClawHub-Artifact-Type": "npm-pack-tarball",
+      ...(artifact.artifactSha256 ? { "X-ClawHub-Artifact-Sha256": artifact.artifactSha256 } : {}),
     };
     if (artifact.clawpackSha256) {
       headers.ETag = `"sha256:${artifact.clawpackSha256}"`;
@@ -185,6 +202,7 @@ export const packageInspectorArtifactHttp = httpAction(async (ctx, request) => {
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="${artifact.packageName.replaceAll("/", "-")}-${artifact.version}.zip"`,
       "X-ClawHub-Artifact-Type": "legacy-plugin-zip",
+      ...(artifact.artifactSha256 ? { "X-ClawHub-Artifact-Sha256": artifact.artifactSha256 } : {}),
     },
   });
 });
@@ -195,6 +213,20 @@ export const packageInspectorResultsHttp = httpAction(async (ctx, request) => {
   const parsed = await parseJsonPayload(request, {});
   if (!parsed.ok) return parsed.response;
   const payload = parsed.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload))
+    return text("Invalid results object", 400);
+  if (
+    payload.sdkUsage !== undefined &&
+    (!validate(sdkUsageReport, payload.sdkUsage) ||
+      typeof payload.artifactSha256 !== "string" ||
+      !payload.artifactSha256 ||
+      typeof payload.inspectorVersion !== "string" ||
+      !payload.inspectorVersion ||
+      typeof payload.targetOpenClawVersion !== "string" ||
+      !payload.targetOpenClawVersion)
+  ) {
+    return text("Invalid SDK inventory or missing scan/artifact identity", 400);
+  }
   const result = await runMutationRef<{
     ok: true;
     inserted: number;
@@ -206,6 +238,10 @@ export const packageInspectorResultsHttp = httpAction(async (ctx, request) => {
     targetOpenClawVersion: payload.targetOpenClawVersion,
     notifyOwners: payload.notifyOwners === true,
     findings: Array.isArray(payload.findings) ? payload.findings : [],
+    ...(payload.sdkUsage !== undefined
+      ? { sdkUsage: payload.sdkUsage, artifactSha256: payload.artifactSha256 }
+      : {}),
+    ...(payload.inspectionFailed === true ? { inspectionFailed: true } : {}),
   });
   if (payload.notifyOwners === true && result.shouldEmailOwner) {
     try {

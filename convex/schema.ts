@@ -9,6 +9,7 @@ import {
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
+import { sdkUsageEntry, sdkUsageScan } from "./lib/packageSdkUsageContract";
 import {
   pluginCategoryClassificationValidator,
   pluginCategoryReviewValidator,
@@ -1776,6 +1777,7 @@ const packages = defineTable({
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
   latestReleaseId: v.optional(v.id("packageReleases")),
+  sdkUsageScanId: v.optional(v.id("packageInspectorScanStates")),
   latestVersionSummary: v.optional(
     v.object({
       version: v.string(),
@@ -2114,6 +2116,7 @@ const packageInspectorScanStates = defineTable({
   targetOpenClawVersion: v.string(),
   completedAt: v.number(),
   notificationCompletedAt: v.optional(v.number()),
+  sdkUsage: v.optional(sdkUsageScan),
 })
   .index("by_release_and_inspector_version_and_target_openclaw_version", [
     "releaseId",
@@ -2121,6 +2124,16 @@ const packageInspectorScanStates = defineTable({
     "targetOpenClawVersion",
   ])
   .index("by_release_and_completed_at", ["releaseId", "completedAt"]);
+
+const packageSdkUsage = defineTable({
+  ...sdkUsageEntry.fields,
+  packageId: v.id("packages"),
+  releaseId: v.id("packageReleases"),
+  scanId: v.id("packageInspectorScanStates"),
+  evidenceCount: v.number(),
+})
+  .index("by_key", ["key"])
+  .index("by_packageId_and_key", ["packageId", "key"]);
 
 const securityScanJobs = defineTable({
   targetKind: securityScanTargetKindValidator,
@@ -4705,6 +4718,7 @@ export default defineSchema({
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,
   packageInspectorScanStates,
+  packageSdkUsage,
   securityScanJobs,
   securityScanDispatchState,
   skillEvaluationRuns,

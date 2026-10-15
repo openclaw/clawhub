@@ -38,6 +38,7 @@ function makeCtx(options: { softDeleted?: boolean; ownerHandle?: string } = {}) 
     withIndex: () => ({
       unique: async () => (table === "packages" ? pkg : null),
       collect: async () => [],
+      take: async () => [],
     }),
   }));
   const ctx = {

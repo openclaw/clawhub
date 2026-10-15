@@ -38,6 +38,75 @@ describe("package inspector publish normalization", () => {
     expect(result.warnings).toEqual([expect.objectContaining(retirement)]);
     expect(result.breakages).toEqual([]);
   });
+  it.each([
+    { key: "api-member:wrong", identity: "api.registerTool" },
+    { evidence: [{ path: "index.js", line: -1, snippet: "api.registerTool(tool)" }] },
+    { referenceKinds: ["executed"] },
+  ])("keeps publishing independent of malformed SDK inventory: %j", (invalidEntry) => {
+    const result = normalizeInspectorReportForPublish({
+      issues: [],
+      sdkUsage: {
+        schemaVersion: 1,
+        analysisVersion: "1",
+        inputKind: "artifact",
+        status: "complete",
+        entries: [
+          {
+            key: "api-member:api.registerTool",
+            kind: "api-member",
+            identity: "api.registerTool",
+            classification: "runtime",
+            referenceKinds: ["call"],
+            deprecationCodes: [],
+            evidence: [{ path: "index.js", line: 1, snippet: "api.registerTool(tool)" }],
+            ...invalidEntry,
+          },
+        ],
+        unknowns: [],
+        coverage: { filesDiscovered: 1, filesAnalyzed: 1, filesExcluded: 0 },
+      },
+    });
+    expect(result).toMatchObject({
+      status: "pass",
+      warnings: [],
+      breakages: [],
+      sdkUsage: { status: "failed", entries: [] },
+    });
+  });
+
+  it("preserves the full SDK inventory when author-facing filtering removes all findings", () => {
+    const sdkUsage = {
+      schemaVersion: 1,
+      analysisVersion: "1",
+      inputKind: "artifact",
+      status: "complete",
+      entries: [
+        {
+          key: "sdk-export:openclaw/plugin-sdk/core#definePluginEntry",
+          kind: "sdk-export",
+          identity: "openclaw/plugin-sdk/core#definePluginEntry",
+          classification: "runtime",
+          referenceKinds: ["import"],
+          deprecationCodes: [],
+          evidence: [
+            {
+              path: "index.js",
+              line: 1,
+              snippet: 'import { definePluginEntry } from "openclaw/plugin-sdk/core";',
+            },
+          ],
+        },
+      ],
+      unknowns: [],
+      coverage: { filesDiscovered: 1, filesAnalyzed: 1, filesExcluded: 0 },
+    };
+    const result = normalizeInspectorReportForPublish({
+      sdkUsage,
+      issues: [{ code: "informational", message: "No author action" }],
+    });
+    expect(result).toMatchObject({ status: "pass", warnings: [], breakages: [], sdkUsage });
+  });
+
   it("falls back to /tmp when the configured temp directory is unavailable", async () => {
     Object.defineProperty(process, "platform", { value: "linux" });
     const attemptedPrefixes: string[] = [];
@@ -118,6 +187,7 @@ describe("package inspector publish normalization", () => {
         openclawPath: false,
         targetOpenClaw,
         authorFacing: true,
+        sdkUsageInputKind: "artifact",
       }),
     );
   });

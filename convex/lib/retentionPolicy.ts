@@ -186,7 +186,7 @@ export const RETENTION_POLICIES = {
       expirationIndex: "by_expires_at",
       prune: "future publishAttempts cleanup in CLAW-467 staged-publish follow-up",
       retention:
-        "Pending/finalized attempt TTL; later secret and moderation slices refine blocked retention.",
+        "Pending/finalized attempt TTL; later secret and moderation slices refine blocked retention. Temporary SDK inventory files are deleted on finalization/secret blocking, with a scheduled 30-day expiry for abandoned attempts.",
     },
   ),
   catalogClassificationResults: derived(
@@ -204,6 +204,10 @@ export const RETENTION_POLICIES = {
   packageInspectorScanStates: derived(
     "Successful beta scan identities used to skip unchanged release/target/inspector combinations.",
     "packageReleases and successful Plugin Inspector runs",
+  ),
+  packageSdkUsage: derived(
+    "Current plugin/API relationships replaced by Inspector scans; public reads check current release and visibility.",
+    "packageReleases and Plugin Inspector SDK usage reports",
   ),
   securityScanJobs: permanent("Security scan job history and current processing state."),
   securityScanDispatchState: permanent("Security scan worker dispatch coordination state."),

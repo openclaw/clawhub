@@ -106,6 +106,17 @@ import {
 } from "./lib/packageRegistry";
 import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
 import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
+import {
+  isPublicSdkUsageRelease,
+  recordPackageInspectorScan,
+  sdkUsageArtifactSha256,
+} from "./lib/packageSdkUsage";
+import {
+  MAX_SDK_USAGE_ENTRIES,
+  sdkUsageReport,
+  type SdkUsageReport,
+} from "./lib/packageSdkUsageContract";
+import { readStagedSdkUsageReport, stageSdkUsageReport } from "./lib/packageSdkUsageStorage";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import {
   getPackageTrustReasons,
@@ -637,6 +648,7 @@ type PackageInspectorFinding = {
 };
 
 type PackageInspectorPublishResult = {
+  sdkUsage?: SdkUsageReport;
   status: "pass" | "fail";
   summary: {
     breakageCount: number;
@@ -6466,6 +6478,11 @@ async function hardDeletePackageDoc(
     .collect();
   for (const dailyStat of dailyStats) await ctx.db.delete(dailyStat._id);
 
+  const sdkUsageRows = await ctx.db
+    .query("packageSdkUsage")
+    .withIndex("by_packageId_and_key", (q) => q.eq("packageId", pkg._id))
+    .take(MAX_SDK_USAGE_ENTRIES);
+  for (const row of sdkUsageRows) await ctx.db.delete(row._id);
   for (const release of releases) await ctx.db.delete(release._id);
   await ctx.db.delete(pkg._id);
   await ctx.db.insert("auditLogs", {
@@ -9760,6 +9777,7 @@ async function publishPackageImpl(
     }),
   );
 
+  const storedSdkUsage = await stageSdkUsageReport(ctx, inspectorResult?.sdkUsage);
   const staged = await runMutationRef<{
     attemptId: Id<"publishAttempts">;
     status: string;
@@ -9793,6 +9811,7 @@ async function publishPackageImpl(
       version,
       inspectorWarnings: inspectorResult?.warnings ?? [],
       inspectorMetadata: inspectorResult?.metadata,
+      ...storedSdkUsage,
       trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
       trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
       trustedPublishAuthorizationVersion:
@@ -9826,6 +9845,9 @@ async function publishPackageImpl(
           : undefined,
     }),
   }).catch(async (error) => {
+    if (storedSdkUsage.inspectorSdkUsageStorageId) {
+      await ctx.storage.delete(storedSdkUsage.inspectorSdkUsageStorageId).catch(() => undefined);
+    }
     await runMutationRef(ctx, internalRefs.packages.discardPendingPackagePublicationInternal, {
       packageId: pendingResult.packageId,
       releaseId: pendingResult.releaseId,
@@ -10357,6 +10379,8 @@ async function runPackagePublishPostFinalizeFollowups(
     version?: string;
     inspectorWarnings?: PackageInspectorFinding[];
     inspectorMetadata?: PackageInspectorPublishResult["metadata"];
+    inspectorSdkUsage?: SdkUsageReport;
+    inspectorSdkUsageStorageId?: Id<"_storage">;
     trustedPublishTokenId?: Id<"packagePublishTokens">;
     trustedPublishInventoryDigest?: string;
     trustedPublishAuthorizationVersion?: number;
@@ -10383,11 +10407,12 @@ async function runPackagePublishPostFinalizeFollowups(
     };
   };
 
+  const inspectorSdkUsage = await readStagedSdkUsageReport(ctx, followup);
   if (
     followup.ownerUserId &&
     followup.packageName &&
     followup.version &&
-    followup.inspectorWarnings?.length
+    (followup.inspectorWarnings?.length || inspectorSdkUsage)
   ) {
     const insertFindingsResult = await runMutationRef<{
       ok: true;
@@ -10404,6 +10429,7 @@ async function runPackagePublishPostFinalizeFollowups(
       inspectorVersion: followup.inspectorMetadata?.inspectorVersion,
       targetOpenClawVersion: followup.inspectorMetadata?.targetOpenClawVersion,
       findings: followup.inspectorWarnings,
+      ...(inspectorSdkUsage ? { sdkUsage: inspectorSdkUsage } : {}),
     });
     if (insertFindingsResult.shouldEmailOwner) {
       try {
@@ -10990,9 +11016,34 @@ export const insertPackageInspectorWarningsInternal = internalMutation({
     targetOpenClawVersion: v.optional(v.string()),
     findings: v.optional(v.array(packageInspectorFindingInputValidator)),
     warnings: v.optional(v.array(packageInspectorWarningInputValidator)),
+    sdkUsage: v.optional(sdkUsageReport),
   },
   handler: async (ctx, args) => {
-    return await insertPackageInspectorFindings(ctx, args);
+    const result = await insertPackageInspectorFindings(ctx, args);
+    if (args.sdkUsage) {
+      const [pkg, release] = await Promise.all([
+        ctx.db.get(args.packageId),
+        ctx.db.get(args.releaseId),
+      ]);
+      if (
+        !pkg ||
+        !release ||
+        release.packageId !== pkg._id ||
+        !args.inspectorVersion ||
+        !args.targetOpenClawVersion
+      ) {
+        throw new ConvexError("SDK inventory requires a matching release and scan identity");
+      }
+      await recordPackageInspectorScan(ctx, {
+        pkg,
+        release,
+        inspectorVersion: args.inspectorVersion,
+        targetOpenClawVersion: args.targetOpenClawVersion,
+        artifactSha256: sdkUsageArtifactSha256(release),
+        report: args.sdkUsage,
+      });
+    }
+    return result;
   },
 });
 
@@ -11348,6 +11399,7 @@ type PackageInspectorScanBatchItem = {
   packageName: string;
   version: string;
   artifactKind: "legacy-zip" | "npm-pack";
+  artifactSha256: string;
 };
 
 async function listPackageInspectorScanBatch(
@@ -11358,10 +11410,18 @@ async function listPackageInspectorScanBatch(
     inspectorVersion?: string;
     targetOpenClawVersion?: string;
     notifyOwners?: boolean;
+    inventorySchemaVersion?: number;
+    inventoryAnalysisVersion?: string;
   },
 ) {
   const batchSize = Math.max(1, Math.min(Math.round(args.batchSize ?? 25), 50));
   const items: PackageInspectorScanBatchItem[] = [];
+  const skipped: Array<{
+    packageName: string;
+    releaseId: Id<"packageReleases">;
+    version: string;
+    reason: string;
+  }> = [];
   let skippedUnchanged = 0;
   const sourceCursor = args.cursor ?? null;
   // Convex permits only one native paginated query per function. The workflow
@@ -11380,17 +11440,7 @@ async function listPackageInspectorScanBatch(
   for (const release of page.page) {
     if (!isPublishedPackageRelease(release)) continue;
     const pkg = await ctx.db.get(release.packageId);
-    if (
-      !pkg ||
-      pkg.softDeletedAt ||
-      (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") ||
-      pkg.channel === "private" ||
-      isPackageBlockedFromPublic(resolvePublicPackageScanStatus(pkg, release))
-    ) {
-      continue;
-    }
-    const latestReleaseId = pkg.latestReleaseId ?? pkg.tags?.latest;
-    if (latestReleaseId !== release._id) continue;
+    if (!pkg || !isPublicSdkUsageRelease(pkg, release)) continue;
     const { inspectorVersion, targetOpenClawVersion } = args;
     if (inspectorVersion && targetOpenClawVersion) {
       const scanState = await ctx.db
@@ -11402,8 +11452,28 @@ async function listPackageInspectorScanBatch(
             .eq("targetOpenClawVersion", targetOpenClawVersion),
         )
         .unique();
-      if (scanState && (!args.notifyOwners || scanState.notificationCompletedAt)) {
+      const inventoryRequired =
+        args.inventorySchemaVersion !== undefined || args.inventoryAnalysisVersion !== undefined;
+      const inventoryCurrent =
+        scanState?.sdkUsage?.status === "complete" &&
+        scanState.sdkUsage.inputKind === "artifact" &&
+        scanState.sdkUsage.applied &&
+        pkg.sdkUsageScanId === scanState._id &&
+        scanState.sdkUsage.artifactSha256 === sdkUsageArtifactSha256(release) &&
+        scanState.sdkUsage.schemaVersion === args.inventorySchemaVersion &&
+        scanState.sdkUsage.analysisVersion === args.inventoryAnalysisVersion;
+      if (
+        scanState &&
+        (!inventoryRequired || inventoryCurrent) &&
+        (!args.notifyOwners || scanState.notificationCompletedAt)
+      ) {
         skippedUnchanged += 1;
+        skipped.push({
+          packageName: pkg.name,
+          releaseId: release._id,
+          version: release.version,
+          reason: inventoryRequired ? "compatible-complete-inventory" : "unchanged-findings-scan",
+        });
         continue;
       }
     }
@@ -11415,6 +11485,7 @@ async function listPackageInspectorScanBatch(
       packageName: pkg.name,
       version: release.version,
       artifactKind: release.artifactKind ?? "legacy-zip",
+      artifactSha256: sdkUsageArtifactSha256(release),
     });
   }
   const nextCursor = page.isDone ? null : page.continueCursor;
@@ -11422,6 +11493,7 @@ async function listPackageInspectorScanBatch(
     items,
     nextCursor,
     skippedUnchanged,
+    skipped,
   };
 }
 
@@ -11432,6 +11504,8 @@ export const previewPackageInspectorScanBatchInternal = internalQuery({
     inspectorVersion: v.optional(v.string()),
     targetOpenClawVersion: v.optional(v.string()),
     notifyOwners: v.optional(v.boolean()),
+    inventorySchemaVersion: v.optional(v.number()),
+    inventoryAnalysisVersion: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const result = await listPackageInspectorScanBatch(ctx, args);
@@ -11448,6 +11522,8 @@ export const claimPackageInspectorScanBatchInternal = internalMutation({
     inspectorVersion: v.optional(v.string()),
     targetOpenClawVersion: v.optional(v.string()),
     notifyOwners: v.optional(v.boolean()),
+    inventorySchemaVersion: v.optional(v.number()),
+    inventoryAnalysisVersion: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -11476,13 +11552,18 @@ export const claimPackageInspectorScanBatchInternal = internalMutation({
       };
     }
 
-    const { items, nextCursor, skippedUnchanged } = await listPackageInspectorScanBatch(ctx, {
-      cursor: expectedCursor,
-      batchSize: args.batchSize,
-      inspectorVersion: args.inspectorVersion,
-      targetOpenClawVersion: args.targetOpenClawVersion,
-      notifyOwners: args.notifyOwners,
-    });
+    const { items, nextCursor, skippedUnchanged, skipped } = await listPackageInspectorScanBatch(
+      ctx,
+      {
+        cursor: expectedCursor,
+        batchSize: args.batchSize,
+        inspectorVersion: args.inspectorVersion,
+        targetOpenClawVersion: args.targetOpenClawVersion,
+        notifyOwners: args.notifyOwners,
+        inventorySchemaVersion: args.inventorySchemaVersion,
+        inventoryAnalysisVersion: args.inventoryAnalysisVersion,
+      },
+    );
     if (cursorDoc) {
       await ctx.db.patch(cursorDoc._id, {
         cursor: expectedCursor,
@@ -11507,6 +11588,7 @@ export const claimPackageInspectorScanBatchInternal = internalMutation({
       items,
       nextCursor,
       skippedUnchanged,
+      skipped,
     };
   },
 });
@@ -11571,6 +11653,7 @@ export const getPackageInspectorArtifactInternal = internalQuery({
       artifactKind: release.artifactKind ?? ("legacy-zip" as const),
       clawpackStorageId: release.clawpackStorageId,
       clawpackSha256: release.clawpackSha256,
+      artifactSha256: sdkUsageArtifactSha256(release),
       npmIntegrity: release.npmIntegrity,
       npmShasum: release.npmShasum,
       npmTarballName: release.npmTarballName,
@@ -11590,8 +11673,17 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
     targetOpenClawVersion: v.optional(v.string()),
     notifyOwners: v.optional(v.boolean()),
     findings: v.array(packageInspectorFindingInputValidator),
+    sdkUsage: v.optional(sdkUsageReport),
+    artifactSha256: v.optional(v.string()),
+    inspectionFailed: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    if (
+      args.sdkUsage &&
+      (!args.inspectorVersion || !args.targetOpenClawVersion || !args.artifactSha256)
+    ) {
+      throw new ConvexError("SDK inventory requires inspector, target and artifact identities");
+    }
     const [pkg, release] = await Promise.all([
       ctx.db.get(args.packageId),
       ctx.db.get(args.releaseId),
@@ -11605,51 +11697,33 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
     ) {
       throw new ConvexError("Package release not found");
     }
-    const result = await insertPackageInspectorFindings(ctx, {
-      packageId: pkg._id,
-      releaseId: release._id,
-      ownerUserId: pkg.ownerUserId,
-      ownerPublisherId: pkg.ownerPublisherId,
-      packageName: pkg.name,
-      version: release.version,
-      scanSource: "nightly",
-      inspectorVersion: args.inspectorVersion,
-      targetOpenClawVersion: args.targetOpenClawVersion,
-      notifyOwners: args.notifyOwners,
-      findings: args.findings,
-    });
+    const result = args.inspectionFailed
+      ? { ok: true as const, inserted: 0, shouldEmailOwner: false }
+      : await insertPackageInspectorFindings(ctx, {
+          packageId: pkg._id,
+          releaseId: release._id,
+          ownerUserId: pkg.ownerUserId,
+          ownerPublisherId: pkg.ownerPublisherId,
+          packageName: pkg.name,
+          version: release.version,
+          scanSource: "nightly",
+          inspectorVersion: args.inspectorVersion,
+          targetOpenClawVersion: args.targetOpenClawVersion,
+          notifyOwners: args.notifyOwners,
+          findings: args.findings,
+        });
     const { inspectorVersion, targetOpenClawVersion } = args;
     if (inspectorVersion && targetOpenClawVersion) {
-      const completedAt = Date.now();
-      const existingState = await ctx.db
-        .query("packageInspectorScanStates")
-        .withIndex("by_release_and_inspector_version_and_target_openclaw_version", (q) =>
-          q
-            .eq("releaseId", release._id)
-            .eq("inspectorVersion", inspectorVersion)
-            .eq("targetOpenClawVersion", targetOpenClawVersion),
-        )
-        .unique();
-      const state = {
-        packageId: pkg._id,
-        releaseId: release._id,
+      const sdkUsage = await recordPackageInspectorScan(ctx, {
+        pkg,
+        release,
         inspectorVersion,
         targetOpenClawVersion,
-        completedAt,
-        ...(args.notifyOwners === true && !result.shouldEmailOwner
-          ? { notificationCompletedAt: completedAt }
-          : {}),
-      };
-      if (existingState) {
-        await ctx.db.patch(existingState._id, {
-          completedAt,
-          ...(state.notificationCompletedAt
-            ? { notificationCompletedAt: state.notificationCompletedAt }
-            : {}),
-        });
-      } else {
-        await ctx.db.insert("packageInspectorScanStates", state);
-      }
+        notificationComplete: args.notifyOwners === true && !result.shouldEmailOwner,
+        report: args.sdkUsage,
+        artifactSha256: args.artifactSha256,
+      });
+      if (sdkUsage) return { ...result, sdkUsage };
     }
     return result;
   },

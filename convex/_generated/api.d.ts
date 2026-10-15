@@ -133,6 +133,9 @@ import type * as lib_packagePublishRecovery from "../lib/packagePublishRecovery.
 import type * as lib_packageRegistry from "../lib/packageRegistry.js";
 import type * as lib_packageReleaseVisibility from "../lib/packageReleaseVisibility.js";
 import type * as lib_packageRuntimeIdentity from "../lib/packageRuntimeIdentity.js";
+import type * as lib_packageSdkUsage from "../lib/packageSdkUsage.js";
+import type * as lib_packageSdkUsageContract from "../lib/packageSdkUsageContract.js";
+import type * as lib_packageSdkUsageStorage from "../lib/packageSdkUsageStorage.js";
 import type * as lib_packageSearchDigest from "../lib/packageSearchDigest.js";
 import type * as lib_packageSecurity from "../lib/packageSecurity.js";
 import type * as lib_packageStatEvents from "../lib/packageStatEvents.js";
@@ -220,6 +223,8 @@ import type * as packageInspectorNode from "../packageInspectorNode.js";
 import type * as packageLeaderboards from "../packageLeaderboards.js";
 import type * as packagePublishRecovery from "../packagePublishRecovery.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
+import type * as packageSdkUsage from "../packageSdkUsage.js";
+import type * as packageSdkUsageHttp from "../packageSdkUsageHttp.js";
 import type * as packages from "../packages.js";
 import type * as pluginCategoryRefresh from "../pluginCategoryRefresh.js";
 import type * as pluginSearchObservations from "../pluginSearchObservations.js";
@@ -408,6 +413,9 @@ declare const fullApi: ApiFromModules<{
   "lib/packageRegistry": typeof lib_packageRegistry;
   "lib/packageReleaseVisibility": typeof lib_packageReleaseVisibility;
   "lib/packageRuntimeIdentity": typeof lib_packageRuntimeIdentity;
+  "lib/packageSdkUsage": typeof lib_packageSdkUsage;
+  "lib/packageSdkUsageContract": typeof lib_packageSdkUsageContract;
+  "lib/packageSdkUsageStorage": typeof lib_packageSdkUsageStorage;
   "lib/packageSearchDigest": typeof lib_packageSearchDigest;
   "lib/packageSecurity": typeof lib_packageSecurity;
   "lib/packageStatEvents": typeof lib_packageStatEvents;
@@ -495,6 +503,8 @@ declare const fullApi: ApiFromModules<{
   packageLeaderboards: typeof packageLeaderboards;
   packagePublishRecovery: typeof packagePublishRecovery;
   packagePublishTokens: typeof packagePublishTokens;
+  packageSdkUsage: typeof packageSdkUsage;
+  packageSdkUsageHttp: typeof packageSdkUsageHttp;
   packages: typeof packages;
   pluginCategoryRefresh: typeof pluginCategoryRefresh;
   pluginSearchObservations: typeof pluginSearchObservations;

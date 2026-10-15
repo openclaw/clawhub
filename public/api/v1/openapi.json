@@ -1486,6 +1486,433 @@
             }
           }
         }
+      },
+      "SdkUsageStatus": {
+        "type": "string",
+        "enum": [
+          "complete",
+          "partial",
+          "failed",
+          "missing",
+          "incompatible"
+        ]
+      },
+      "SdkUsageEntry": {
+        "type": "object",
+        "required": [
+          "key",
+          "kind",
+          "identity",
+          "classification",
+          "referenceKinds",
+          "deprecationCodes",
+          "evidenceCount",
+          "evidence"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sdk-module",
+              "sdk-export",
+              "api-member",
+              "runtime-member",
+              "hook",
+              "manifest-contract"
+            ]
+          },
+          "identity": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "runtime",
+              "type",
+              "mixed",
+              "declarative"
+            ]
+          },
+          "referenceKinds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "import",
+                "type-import",
+                "reexport",
+                "type-reexport",
+                "side-effect-import",
+                "dynamic-import",
+                "require",
+                "member-access",
+                "call",
+                "type-reference",
+                "hook-registration",
+                "manifest-declaration"
+              ]
+            }
+          },
+          "deprecationCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidenceCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "line",
+                "snippet"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "snippet": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "SdkUsageScan": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/SdkUsageStatus"
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "analysisVersion": {
+            "type": "string"
+          },
+          "inspectorVersion": {
+            "type": "string"
+          },
+          "targetOpenClawVersion": {
+            "type": "string"
+          },
+          "artifactSha256": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "number",
+            "description": "Unix epoch milliseconds"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "entryCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unknownCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "evidenceLimit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unknownLimit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unknowns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "line",
+                "expression",
+                "reason"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "expression": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "coverage": {
+            "type": "object",
+            "required": [
+              "filesDiscovered",
+              "filesAnalyzed",
+              "filesExcluded"
+            ],
+            "properties": {
+              "filesDiscovered": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "filesAnalyzed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "filesExcluded": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "inputKind": {
+            "type": "string",
+            "enum": [
+              "source",
+              "artifact"
+            ],
+            "description": "Only artifact analysis counts as public catalog coverage."
+          }
+        }
+      },
+      "SdkUsageCoveragePage": {
+        "type": "object",
+        "required": [
+          "scope",
+          "counts",
+          "unresolvedReferences",
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string",
+            "const": "page"
+          },
+          "counts": {
+            "type": "object",
+            "required": [
+              "eligible",
+              "complete",
+              "partial",
+              "failed",
+              "missing",
+              "incompatible"
+            ],
+            "properties": {
+              "eligible": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "complete": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "partial": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "missing": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "incompatible": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "unresolvedReferences": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "packageName",
+                "version",
+                "releaseId",
+                "status",
+                "unknownCount"
+              ],
+              "properties": {
+                "packageName": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "releaseId": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/SdkUsageStatus"
+                },
+                "unknownCount": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SdkUsageLookupPage": {
+        "type": "object",
+        "required": [
+          "key",
+          "items",
+          "counts",
+          "nextCursor",
+          "coverage",
+          "coverageUrl"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/SdkUsageEntry"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "packageName",
+                    "version",
+                    "releaseId",
+                    "scan"
+                  ],
+                  "properties": {
+                    "packageName": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "releaseId": {
+                      "type": "string"
+                    },
+                    "scan": {
+                      "$ref": "#/components/schemas/SdkUsageScan"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "counts": {
+            "type": "object",
+            "required": [
+              "scope",
+              "distinctPlugins"
+            ],
+            "properties": {
+              "scope": {
+                "type": "string",
+                "const": "page"
+              },
+              "distinctPlugins": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/SdkUsageCoveragePage"
+          },
+          "coverageUrl": {
+            "type": "string"
+          }
+        }
+      },
+      "SdkUsagePluginPage": {
+        "type": "object",
+        "required": [
+          "packageName",
+          "version",
+          "releaseId",
+          "scan",
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "packageName": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/SdkUsageScan"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SdkUsageEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     }
   },
@@ -1695,24 +2122,24 @@
             }
           }
         ],
-      "responses": {
-        "200": {
-          "description": "Hosted ZIP bytes or a GitHub-backed source handoff descriptor.",
-          "content": {
-            "application/zip": {
-              "schema": {
-                "type": "string",
-                "format": "binary"
-              }
-            },
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GitHubSkillDownloadHandoff"
+        "responses": {
+          "200": {
+            "description": "Hosted ZIP bytes or a GitHub-backed source handoff descriptor.",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubSkillDownloadHandoff"
+                }
               }
             }
           }
         }
-      }
       }
     },
     "/api/v1/packages": {
@@ -3414,6 +3841,209 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WhoamiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sdk-usage": {
+      "get": {
+        "summary": "Find plugins referencing a canonical SDK identity",
+        "description": "Static SDK references in latest eligible public plugin releases. Counts are page-scoped; traverse coverage as well as usage before interpreting an empty result. Live pagination is not a frozen snapshot. No authentication required.",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "example": "api-member:api.registerTool"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque nextCursor from the preceding page. Continue through empty pages until null."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkUsageLookupPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded; honor Retry-After",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sdk-usage/coverage": {
+      "get": {
+        "summary": "Inspect SDK inventory coverage across eligible plugins",
+        "description": "Static SDK references in latest eligible public plugin releases. Counts are page-scoped; traverse coverage as well as usage before interpreting an empty result. Live pagination is not a frozen snapshot. No authentication required.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque nextCursor from the preceding page. Continue through empty pages until null."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkUsageCoveragePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded; honor Retry-After",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sdk-usage/plugin": {
+      "get": {
+        "summary": "Read one plugin’s current SDK inventory",
+        "description": "Static SDK references in latest eligible public plugin releases. Counts are page-scoped; traverse coverage as well as usage before interpreting an empty result. Live pagination is not a frozen snapshot. No authentication required.",
+        "parameters": [
+          {
+            "name": "package",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque nextCursor from the preceding page. Continue through empty pages until null."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkUsagePluginPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded; honor Retry-After",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Plugin does not exist or is not eligible for the public corpus",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }

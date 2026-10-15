@@ -4,9 +4,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { v } from "convex/values";
+import rootPackageJson from "../package.json";
 import { internalAction } from "./_generated/server";
 import { prepareOpenClawInspectorTarget } from "./lib/openClawInspectorTarget";
 import { pluginApiRetirement } from "./lib/pluginApiRetirements";
+import { normalizeSdkUsageReport, sdkUsageReport } from "./lib/packageSdkUsageContract";
 
 type InspectorFinding = {
   id?: string;
@@ -32,6 +34,7 @@ type InspectorAuthorRemediation = {
 };
 
 type InspectorReport = {
+  sdkUsage?: unknown;
   status?: string;
   targetOpenClaw?: unknown;
   summary?: {
@@ -153,9 +156,11 @@ export function buildPublishInspectorRunCheckOptions(
     mockSdk: true,
     allowExecution: false,
     authorFacing: true,
+    sdkUsageInputKind: "artifact",
     generatedAt,
   } as Parameters<(typeof import("@openclaw/plugin-inspector"))["pluginRoot"]["runCheck"]>[0] & {
     authorFacing: true;
+    sdkUsageInputKind: "artifact";
     generatedAt: string;
   };
 }
@@ -217,6 +222,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
     breakages: v.array(findingValidator),
     warnings: v.array(findingValidator),
     metadata: inspectorMetadataValidator,
+    sdkUsage: v.optional(sdkUsageReport),
   }),
   handler: async (ctx, args) => {
     let workspaceRoot: string | undefined;
@@ -388,6 +394,9 @@ export function normalizeInspectorReportForPublish(report: unknown) {
     },
     breakages,
     warnings,
+    ...(parsed.sdkUsage !== undefined
+      ? { sdkUsage: normalizeSdkUsageReport(parsed.sdkUsage) }
+      : {}),
     metadata: {
       inspectorVersion: getBundledInspectorVersion(),
       targetOpenClawVersion: extractTargetOpenClawVersion(parsed.targetOpenClaw),
@@ -477,7 +486,10 @@ function stringValue(value: unknown) {
 }
 
 function getBundledInspectorVersion() {
-  return stringValue(process.env.CLAWHUB_PLUGIN_INSPECTOR_VERSION);
+  return (
+    stringValue(process.env.CLAWHUB_PLUGIN_INSPECTOR_VERSION) ??
+    rootPackageJson.dependencies["@openclaw/plugin-inspector"]
+  );
 }
 
 function extractTargetOpenClawVersion(targetOpenClaw: unknown) {

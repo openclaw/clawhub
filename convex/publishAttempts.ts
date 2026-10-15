@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { manualPackageRecovery } from "./lib/packagePublishRecovery";
+import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
 
@@ -447,6 +448,14 @@ export const createPackagePublishAttemptInternal = internalMutation({
   handler: async (ctx, args) => {
     const existing = await findReusablePublishAttemptByIdempotencyKey(ctx, args.idempotencyKey);
     if (existing) {
+      const unusedInventoryId = sdkUsageReportStorageId(args.packageFollowup);
+      if (
+        unusedInventoryId &&
+        unusedInventoryId !== sdkUsageReportStorageId(existing.packageFollowup)
+      ) {
+        await ctx.storage.delete(unusedInventoryId);
+      }
+
       if (existing.status === "pending_checks") {
         await requestPublishAttemptDispatch(ctx, existing._id);
       }
@@ -591,9 +600,12 @@ function getSecretBlockedStorageIds(attempt: {
   files: Array<{ storageId: Id<"_storage"> }>;
   clawpackStorageId?: Id<"_storage">;
   packageInsertArgs?: unknown;
+  packageFollowup?: unknown;
 }) {
   const storageIds = new Set<Id<"_storage">>(attempt.files.map((file) => file.storageId));
   if (attempt.clawpackStorageId) storageIds.add(attempt.clawpackStorageId);
+  const inventoryId = sdkUsageReportStorageId(attempt.packageFollowup);
+  if (inventoryId) storageIds.add(inventoryId);
   const packageInsertArgs = attempt.packageInsertArgs;
   if (packageInsertArgs && typeof packageInsertArgs === "object") {
     const clawpackStorageId = (packageInsertArgs as { clawpackStorageId?: unknown })
@@ -1339,6 +1351,10 @@ export const recordPackagePublishAttemptFinalizedInternal = internalMutation({
     ) {
       throw new ConvexError("Publish attempt finalization claim is not active.");
     }
+
+    const inventoryId = sdkUsageReportStorageId(attempt.packageFollowup);
+    if (inventoryId && (await ctx.db.system.get(inventoryId)))
+      await ctx.storage.delete(inventoryId);
 
     await ctx.db.patch(attempt._id, {
       status: "finalized",

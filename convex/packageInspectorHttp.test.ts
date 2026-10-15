@@ -74,37 +74,51 @@ describe("package inspector HTTP helpers", () => {
     ]);
   });
 
-  it("keeps owner notifications off when nightly results omit the opt-in", async () => {
-    vi.stubEnv("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN", "worker-token");
-    const runAction = vi.fn();
-    const response = await packageInspectorResultsHttpHandler(
-      {
-        runMutation: vi.fn().mockResolvedValue({
-          ok: true,
-          inserted: 1,
-          shouldEmailOwner: true,
-        }),
-        runAction,
-      },
-      new Request("https://example.com/api/v1/package-inspector/results", {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer worker-token",
-          "Content-Type": "application/json",
+  it.each([undefined, false])(
+    "keeps owner notifications off for an inventory-bearing hard finding with notifyOwners=%s",
+    async (notifyOwners) => {
+      vi.stubEnv("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN", "worker-token");
+      const runAction = vi.fn();
+      const response = await packageInspectorResultsHttpHandler(
+        {
+          runMutation: vi.fn().mockResolvedValue({
+            ok: true,
+            inserted: 1,
+            shouldEmailOwner: true,
+          }),
+          runAction,
         },
-        body: JSON.stringify({
-          packageId: "packages:demo",
-          releaseId: "packageReleases:demo-1",
-          inspectorVersion: "0.5.0",
-          targetOpenClawVersion: "2026.8.0-beta.1",
-          findings: [{ code: "missing-api", message: "API removed" }],
+        new Request("https://example.com/api/v1/package-inspector/results", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer worker-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            packageId: "packages:demo",
+            releaseId: "packageReleases:demo-1",
+            inspectorVersion: "0.5.0",
+            targetOpenClawVersion: "2026.8.0-beta.1",
+            findings: [{ code: "missing-api", message: "API removed" }],
+            notifyOwners,
+            artifactSha256: "a".repeat(64),
+            sdkUsage: {
+              schemaVersion: 1,
+              analysisVersion: "1",
+              inputKind: "artifact",
+              status: "complete",
+              entries: [],
+              unknowns: [],
+              coverage: { filesDiscovered: 1, filesAnalyzed: 1, filesExcluded: 0 },
+            },
+          }),
         }),
-      }),
-    );
+      );
 
-    expect(response.status).toBe(200);
-    expect(runAction).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(200);
+      expect(runAction).not.toHaveBeenCalled();
+    },
+  );
 
   it("passes the exact beta target and inspector version into batch selection", async () => {
     vi.stubEnv("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN", "worker-token");
