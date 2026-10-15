@@ -36,6 +36,77 @@ afterEach(async () => {
 });
 
 describe("OpenAI evaluation capability broker", () => {
+  it("forwards SkillEvaluator's proxied GPT-5 judge request with the native token limit", async () => {
+    const upstreamBaseUrl = await listen(
+      createServer(async (request, response) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(Buffer.from(chunk));
+        const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        response.writeHead("max_tokens" in payload ? 400 : 200, {
+          "content-type": "application/json",
+        });
+        response.end(JSON.stringify(payload));
+      }),
+    );
+    const broker = await startOpenAiCapabilityBroker({
+      allowedModels: ["gpt-5.4"],
+      apiKey: "long-lived-provider-key",
+      upstreamBaseUrl,
+    });
+    brokers.push(broker);
+    const payload = {
+      model: "gpt-5.4",
+      max_tokens: 4096,
+      messages: [{ role: "user", content: "Grade this result" }],
+      stream: false,
+    };
+    const response = await fetch(`http://127.0.0.1:${broker.port}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${broker.capabilityToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    expect(response.status).toBe(200);
+    const { max_tokens, ...rest } = payload;
+    expect(await response.json()).toEqual({ ...rest, max_completion_tokens: max_tokens });
+  });
+
+  it.each([
+    { endpoint: "/v1/chat/completions", payload: { model: "gpt-4.1", max_tokens: 4096 } },
+    {
+      endpoint: "/v1/chat/completions",
+      payload: { model: "gpt-5.4", max_completion_tokens: 8192 },
+    },
+    { endpoint: "/v1/responses", payload: { model: "gpt-5.4", max_output_tokens: 8192 } },
+  ])("preserves other token limit contracts: $endpoint $payload", async ({ endpoint, payload }) => {
+    const upstreamBaseUrl = await listen(
+      createServer(async (request, response) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(Buffer.from(chunk));
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(Buffer.concat(chunks));
+      }),
+    );
+    const broker = await startOpenAiCapabilityBroker({
+      allowedModels: [payload.model],
+      apiKey: "long-lived-provider-key",
+      upstreamBaseUrl,
+    });
+    brokers.push(broker);
+    const response = await fetch(`http://127.0.0.1:${broker.port}${endpoint}`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${broker.capabilityToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(payload);
+  });
+
   it("keeps the provider key in the broker and forwards an allowed model", async () => {
     let upstreamAuthorization: string | undefined;
     const upstreamBaseUrl = await listen(

@@ -482,6 +482,13 @@ pinned subject/judge models, required OpenAI endpoints, a bounded request count,
 disabled provider-side background work, and the lifetime of that one run.
 SkillEvaluator still runs the agent in its secure Docker mode; the capability
 is closed when the evaluator exits.
+SkillEvaluator uses its `openai-compatible` gateway adapter so Codex selects a
+custom HTTP Responses provider instead of trying the native OpenAI WebSocket
+transport against the HTTP broker.
+For GPT-5 Chat Completions, the broker translates the legacy `max_tokens` field
+emitted for proxy URLs into OpenAI's `max_completion_tokens`, preserving its
+value. Native execution errors take precedence over rendered command output;
+fallback diagnostics redact both streams before retaining their bounded tails.
 
 ## UI
 

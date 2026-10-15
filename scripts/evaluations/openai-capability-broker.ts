@@ -80,7 +80,7 @@ export async function startOpenAiCapabilityBroker(args: {
         reject(response, 429, "evaluation capability exhausted");
         return;
       }
-      const body = await readRequestBody(request);
+      let body = await readRequestBody(request);
       let parsed: unknown;
       try {
         parsed = JSON.parse(body.toString("utf8"));
@@ -90,7 +90,7 @@ export async function startOpenAiCapabilityBroker(args: {
       }
       const requestBody =
         parsed && typeof parsed === "object" && !Array.isArray(parsed)
-          ? (parsed as { background?: unknown; model?: unknown })
+          ? (parsed as Record<string, unknown>)
           : undefined;
       const model = requestBody?.model;
       if (typeof model !== "string" || !allowedModels.has(model)) {
@@ -104,6 +104,18 @@ export async function startOpenAiCapabilityBroker(args: {
       ) {
         reject(response, 400, "background evaluation requests are not supported");
         return;
+      }
+
+      // SkillEvaluator uses the legacy field for proxy URLs, but this broker
+      // forwards to OpenAI, where GPT-5 judges require max_completion_tokens.
+      if (
+        url.pathname === "/v1/chat/completions" &&
+        model.startsWith("gpt-5") &&
+        typeof requestBody?.max_tokens === "number" &&
+        requestBody.max_completion_tokens === undefined
+      ) {
+        const { max_tokens, ...payload } = requestBody;
+        body = Buffer.from(JSON.stringify({ ...payload, max_completion_tokens: max_tokens }));
       }
 
       requestsRemaining -= 1;

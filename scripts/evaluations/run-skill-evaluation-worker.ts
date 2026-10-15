@@ -66,6 +66,8 @@ export function evaluationEnvironment(
   const env = commandEnvironment(source);
   env.OPENAI_API_KEY = capability.token;
   env.OPENAI_BASE_URL = capability.baseUrl;
+  env.SKILL_EVAL_LLM_API_KEY = capability.token;
+  env.SKILL_EVAL_LLM_BASE_URL = capability.baseUrl;
   env.SKILL_EVAL_LLM_PROVIDER = run.judgeProvider;
   env.SKILL_EVAL_LLM_MODEL = run.judgeModel;
   env.SKILL_EVAL_JUDGE_MODEL = run.judgeModel;
@@ -119,9 +121,36 @@ async function verifyEvaluatorCheckout(evaluatorProject: string) {
   }
 }
 
-function commandFailure(prefix: string, result: { stdout: string; stderr: string }) {
-  const detail = (result.stderr || result.stdout).trim().slice(-4_000);
-  return redactWorkerPublicText(`${prefix}${detail ? `: ${detail}` : ""}`, 4_500);
+export function commandFailure(
+  prefix: string,
+  result: { stdout: string; stderr: string },
+  resultJson?: string,
+) {
+  if (resultJson) {
+    try {
+      const native = JSON.parse(resultJson) as { execution_errors?: unknown; error?: unknown };
+      const messages = [
+        ...new Set(
+          [native?.execution_errors, native?.error]
+            .flat()
+            .filter((error): error is string => typeof error === "string" && Boolean(error.trim())),
+        ),
+      ].slice(0, 5);
+      if (messages.length) {
+        return redactWorkerPublicText(`${prefix}: ${messages.join("; ")}`, 1_800);
+      }
+    } catch {
+      // Fall back to both command streams when the native report is incomplete.
+    }
+  }
+  // Progress is written to stderr while the final failure report may be on stdout.
+  // Keep both tails within failRun's limit instead of truncating the useful ending.
+  const stdout = redactWorkerPublicText(result.stdout, Number.MAX_SAFE_INTEGER).trim().slice(-750);
+  const stderr = redactWorkerPublicText(result.stderr, Number.MAX_SAFE_INTEGER).trim().slice(-750);
+  const detail = [stdout && `stdout: ${stdout}`, stderr && `stderr: ${stderr}`]
+    .filter(Boolean)
+    .join("\n");
+  return redactWorkerPublicText(`${prefix}${detail ? `: ${detail}` : ""}`, 1_800);
 }
 
 async function skipRun(
@@ -233,10 +262,15 @@ export async function processClaimedEvaluation(args: {
     } finally {
       await broker.close();
     }
-    if (evaluation.exitCode !== 0) {
-      throw new Error(commandFailure("SkillEvaluator Tier 3 evaluation failed", evaluation));
-    }
     const resultPath = await findLatestResultJson(resultsDirectory);
+    if (evaluation.exitCode !== 0) {
+      const resultJson = resultPath
+        ? await readFile(resultPath, "utf8").catch(() => undefined)
+        : undefined;
+      throw new Error(
+        commandFailure("SkillEvaluator Tier 3 evaluation failed", evaluation, resultJson),
+      );
+    }
     if (!resultPath) throw new Error("SkillEvaluator completed without producing result.json");
     const resultJson = await readFile(resultPath, "utf8");
     await client.action(api.skillEvaluations.completeSkillEvaluation, {

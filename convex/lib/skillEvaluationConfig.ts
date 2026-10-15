@@ -5,7 +5,7 @@ export const NVIDIA_SKILL_EVALUATION_CONFIG = {
   evaluatorCommit: "7304d76cde371287b67ea99653409d014b6b9c85",
   agent: "codex",
   agentModel: "gpt-5.4-mini",
-  judgeProvider: "openai",
+  judgeProvider: "openai-compatible",
   judgeModel: "gpt-5.4",
   environment: "docker",
   attemptsPerCase: 2,
