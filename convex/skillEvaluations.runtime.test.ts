@@ -135,6 +135,40 @@ describe("skill evaluation runtime queue", () => {
     expect(await claim()).toEqual([]);
   });
 
+  it("keeps the canary selection when the backfill continues onto another page", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-token");
+    const t = convexTest(schema, modules);
+    const skills = [];
+    for (let i = 0; i < 22; i += 1) {
+      skills.push(await insertNvidiaSkill(t, { hash: `hash-${i}`, slug: `skill-${i}` }));
+    }
+    const adminId = await t.run(async (ctx) => {
+      const sourceId = await ctx.db.insert("githubSkillSources", {
+        repo: "NVIDIA/skills",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      for (const skillId of skills) await ctx.db.patch(skillId, { githubSourceId: sourceId });
+      return ctx.db.insert("users", { role: "admin" });
+    });
+    await t
+      .withIdentity({ subject: adminId })
+      .mutation(api.skillEvaluations.startNvidiaSkillEvaluationBackfill, {
+        confirm: "backfill-nvidia-skill-evaluations",
+        sourcePaths: ["skills/skill-20"],
+      });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const claimed = await t.action(api.skillEvaluations.claimSkillEvaluationJobs, {
+      token: "worker-token",
+      workerId: "worker",
+      limit: 4,
+    });
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0]).toMatchObject({ skillId: skills[20], sourcePath: "skills/skill-20" });
+  });
+
   it("queues a verified NVIDIA skill whose repository comes from its source", async () => {
     vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-token");
