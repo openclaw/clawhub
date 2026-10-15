@@ -140,6 +140,7 @@ describe("SkillEvaluator worker command contract", () => {
       "/evaluator",
       "--extra",
       "tier3",
+      "--frozen",
       "skillevaluator",
       "tier3",
       "validate",

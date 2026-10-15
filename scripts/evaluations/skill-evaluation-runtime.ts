@@ -281,6 +281,7 @@ export function buildTier3Commands(args: {
     args.evaluatorProject,
     "--extra",
     "tier3",
+    "--frozen",
     "skillevaluator",
   ];
   return {

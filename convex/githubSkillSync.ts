@@ -2446,21 +2446,28 @@ export async function applyGitHubSkillVerificationResultHandler(
 
   if (
     (args.scanStatus === "clean" || args.scanStatus === "suspicious") &&
-    skill.githubCurrentRepo &&
     skill.githubPath &&
     skill.githubCurrentCommit &&
     skill.githubCurrentContentHash
   ) {
-    await enqueueNvidiaSkillEvaluation(ctx, {
-      skillId: skill._id,
-      sourceRepo: skill.githubCurrentRepo,
-      sourceCommit: skill.githubCurrentCommit,
-      sourcePath: skill.githubPath,
-      contentHash: skill.githubCurrentContentHash,
-      scanStatus: args.scanStatus,
-      source: "sync",
-      now,
-    });
+    // Legacy NVIDIA catalog entries inherit their repository from the source.
+    const source =
+      !skill.githubCurrentRepo && skill.githubSourceId
+        ? await ctx.db.get(skill.githubSourceId)
+        : null;
+    const sourceRepo = skill.githubCurrentRepo ?? source?.repo;
+    if (sourceRepo) {
+      await enqueueNvidiaSkillEvaluation(ctx, {
+        skillId: skill._id,
+        sourceRepo,
+        sourceCommit: skill.githubCurrentCommit,
+        sourcePath: skill.githubPath,
+        contentHash: skill.githubCurrentContentHash,
+        scanStatus: args.scanStatus,
+        source: "sync",
+        now,
+      });
+    }
   }
 
   return { ok: true as const, promoted: promote };

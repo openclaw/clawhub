@@ -17,6 +17,7 @@ const modules = import.meta.glob("./**/*.ts");
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 async function insertNvidiaSkill(
@@ -78,6 +79,96 @@ function evaluationRow(input: {
 }
 
 describe("skill evaluation runtime queue", () => {
+  it("backfills only selected canaries under the new configuration, then the rest without duplicates", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-token");
+    const t = convexTest(schema, modules);
+    const canary = await insertNvidiaSkill(t, { hash: "canary", slug: "doca-dpa" });
+    const remaining = await insertNvidiaSkill(t, { hash: "remaining", slug: "other" });
+    const adminId = await t.run(async (ctx) => {
+      const sourceId = await ctx.db.insert("githubSkillSources", {
+        repo: "NVIDIA/skills",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      for (const skillId of [canary, remaining]) {
+        await ctx.db.patch(skillId, { githubSourceId: sourceId, githubCurrentRepo: undefined });
+        await ctx.db.insert("skillEvaluationRuns", {
+          ...evaluationRow({
+            skillId,
+            contentHash: skillId === canary ? "canary" : "remaining",
+            scanStatus: "clean",
+            source: "backfill",
+          }),
+          evaluatorRelease: "v0.1.0",
+          configKey: "old-config",
+          status: "skipped",
+          skipReason: "unsupported-config",
+        });
+      }
+      return ctx.db.insert("users", { role: "admin" });
+    });
+    const admin = t.withIdentity({ subject: adminId });
+    await admin.mutation(api.skillEvaluations.startNvidiaSkillEvaluationBackfill, {
+      confirm: "backfill-nvidia-skill-evaluations",
+      sourcePaths: ["skills/doca-dpa"],
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const claim = () =>
+      t.action(api.skillEvaluations.claimSkillEvaluationJobs, {
+        token: "worker-token",
+        workerId: "worker",
+        limit: 4,
+      });
+    const canaryRuns = await claim();
+    expect(canaryRuns).toHaveLength(1);
+    expect(canaryRuns[0]).toMatchObject({ skillId: canary, evaluatorRelease: "v0.5.0" });
+
+    await admin.mutation(api.skillEvaluations.startNvidiaSkillEvaluationBackfill, {
+      confirm: "backfill-nvidia-skill-evaluations",
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const remainingRuns = await claim();
+    expect(remainingRuns).toHaveLength(1);
+    expect(remainingRuns[0]).toMatchObject({ skillId: remaining, evaluatorRelease: "v0.5.0" });
+    expect(await claim()).toEqual([]);
+  });
+
+  it("queues a verified NVIDIA skill whose repository comes from its source", async () => {
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-token");
+    const t = convexTest(schema, modules);
+    const skillId = await insertNvidiaSkill(t, { hash: "current-hash", slug: "doca-dpa" });
+    await t.run(async (ctx) => {
+      const sourceId = await ctx.db.insert("githubSkillSources", {
+        repo: "NVIDIA/skills",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.patch(skillId, { githubSourceId: sourceId, githubCurrentRepo: undefined });
+    });
+
+    await t.mutation(internal.githubSkillSync.applyGitHubSkillVerificationResultInternal, {
+      skillId,
+      contentHash: "current-hash",
+      scanStatus: "clean",
+    });
+
+    const claimed = await t.action(api.skillEvaluations.claimSkillEvaluationJobs, {
+      token: "worker-token",
+      workerId: "worker",
+      limit: 1,
+    });
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0]).toMatchObject({
+      skillId,
+      sourceRepo: "nvidia/skills",
+      source: "sync",
+      status: "running",
+    });
+  });
+
   it("enqueues one run per current content hash and evaluator configuration", async () => {
     vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
     const t = convexTest(schema, modules);

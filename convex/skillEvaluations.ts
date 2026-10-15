@@ -535,10 +535,18 @@ export const requeueExpiredSkillEvaluationLeasesInternal = internalMutation({
 });
 
 export const startNvidiaSkillEvaluationBackfill = mutation({
-  args: { confirm: v.literal("backfill-nvidia-skill-evaluations") },
-  handler: async (ctx) => {
+  args: {
+    confirm: v.literal("backfill-nvidia-skill-evaluations"),
+    sourcePaths: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     assertAdmin(user);
+    if (args.sourcePaths && (args.sourcePaths.length === 0 || args.sourcePaths.length > 20)) {
+      throw new ConvexError(
+        "Select between 1 and 20 source paths, or omit sourcePaths for the full catalog",
+      );
+    }
     const source = await ctx.db
       .query("githubSkillSources")
       .withIndex("by_repo", (q) => q.eq("repo", "NVIDIA/skills"))
@@ -547,7 +555,11 @@ export const startNvidiaSkillEvaluationBackfill = mutation({
     await ctx.scheduler.runAfter(
       0,
       internalRefs.skillEvaluations.backfillNvidiaSkillEvaluationsPageInternal as never,
-      { sourceId: source._id, cursor: null } as never,
+      {
+        sourceId: source._id,
+        cursor: null,
+        ...(args.sourcePaths ? { sourcePaths: args.sourcePaths } : {}),
+      } as never,
     );
     return { started: true as const, sourceId: source._id };
   },
@@ -636,6 +648,7 @@ export const backfillNvidiaSkillEvaluationsPageInternal = internalMutation({
   args: {
     sourceId: v.id("githubSkillSources"),
     cursor: v.union(v.string(), v.null()),
+    sourcePaths: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const page = await ctx.db
@@ -650,6 +663,7 @@ export const backfillNvidiaSkillEvaluationsPageInternal = internalMutation({
         !skill.githubCurrentCommit ||
         !skill.githubCurrentContentHash ||
         !skill.githubPath ||
+        (args.sourcePaths && !args.sourcePaths.includes(skill.githubPath)) ||
         (skill.githubScanStatus !== "clean" && skill.githubScanStatus !== "suspicious")
       ) {
         continue;
@@ -669,7 +683,11 @@ export const backfillNvidiaSkillEvaluationsPageInternal = internalMutation({
       await ctx.scheduler.runAfter(
         0,
         internalRefs.skillEvaluations.backfillNvidiaSkillEvaluationsPageInternal as never,
-        { sourceId: args.sourceId, cursor: page.continueCursor } as never,
+        {
+          sourceId: args.sourceId,
+          cursor: page.continueCursor,
+          ...(args.sourcePaths ? { sourcePaths: args.sourcePaths } : {}),
+        } as never,
       );
     }
     return { queued, isDone: page.isDone, cursor: page.continueCursor };
