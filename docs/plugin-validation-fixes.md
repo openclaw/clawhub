@@ -26,6 +26,15 @@ clawhub package validate <path-to-plugin>
 
 ## Author-facing findings
 
+Plugin pages show an informational API update notice when a deprecated OpenClaw
+API has a scheduled retirement date. Open **API details** to see each API and its
+replacement. The date is the final compatibility day; these notices do not block
+installation. Publishers also see an **API update** item in their dashboard.
+Separate compatibility errors continue to show the existing incompatibility alert.
+
+After updating to the replacement APIs, validate and publish a new version to
+refresh the findings for your plugin's latest release.
+
 | Code                                    | Start here                                                                                                                  |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `package-json-missing`                  | [Add package metadata](./plugin-validation-fixes.md#package-json-missing)                                                   |

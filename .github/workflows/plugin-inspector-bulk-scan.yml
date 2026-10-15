@@ -67,6 +67,11 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Set up Node.js for Plugin Inspector
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.15.0
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -125,7 +130,7 @@ jobs:
           PLUGIN_INSPECTOR_SOURCE_PR: ${{ inputs.source_pr || '' }}
           PLUGIN_INSPECTOR_SOURCE_SHA: ${{ inputs.source_sha || '' }}
           PLUGIN_INSPECTOR_ARTIFACT_DIR: plugin-inspector-bulk-scan-reports
-        run: bun scripts/package-inspector-nightly-scan.ts
+        run: node scripts/package-inspector-nightly-scan.ts
 
       - name: Upload inspector reports
         if: always()

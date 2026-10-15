@@ -115,6 +115,11 @@ import {
 } from "./lib/packageSecurity";
 import { insertPackageInstallStatEvent } from "./lib/packageStatEvents";
 import {
+  collectPluginApiRetirements,
+  pluginApiRetirement,
+  type PluginApiRetirement,
+} from "./lib/pluginApiRetirements";
+import {
   classifyPluginCategories,
   readPluginCategoryDocumentation,
 } from "./lib/pluginCategoryClassification";
@@ -570,6 +575,9 @@ const packageInspectorWarningInputValidator = v.object({
   issueClass: v.optional(v.string()),
   compatStatus: v.optional(v.string()),
   deprecated: v.optional(v.boolean()),
+  deprecatedApi: v.optional(v.string()),
+  replacement: v.optional(v.string()),
+  removeAfter: v.optional(v.string()),
   message: v.string(),
   evidence: v.optional(v.array(v.string())),
   authorRemediation: v.optional(
@@ -590,6 +598,9 @@ const packageInspectorFindingInputValidator = v.object({
   issueClass: v.optional(v.string()),
   compatStatus: v.optional(v.string()),
   deprecated: v.optional(v.boolean()),
+  deprecatedApi: v.optional(v.string()),
+  replacement: v.optional(v.string()),
+  removeAfter: v.optional(v.string()),
   message: v.string(),
   evidence: v.optional(v.array(v.string())),
   authorRemediation: v.optional(
@@ -615,6 +626,9 @@ type PackageInspectorFinding = {
   issueClass?: string;
   compatStatus?: string;
   deprecated?: boolean;
+  deprecatedApi?: string;
+  replacement?: string;
+  removeAfter?: string;
   message: string;
   evidence?: string[];
   authorRemediation?: PackageInspectorAuthorRemediation;
@@ -639,7 +653,7 @@ type PackageInspectorPublishResult = {
 };
 
 function hasAuthorRemediation(finding: PackageInspectorFinding) {
-  return Boolean(finding.authorRemediation?.summary);
+  return Boolean(finding.authorRemediation?.summary || pluginApiRetirement(finding));
 }
 type DbReaderCtx = Pick<QueryCtx | MutationCtx, "db">;
 const BAN_USER_PACKAGES_BATCH_SIZE = 25;
@@ -1101,6 +1115,7 @@ type DashboardPackageListItem = {
   ownerPublisherId?: Id<"publishers">;
   latestVersion: string | null;
   inspectorWarningCount: number;
+  apiRetirements: PluginApiRetirement[];
   topInspectorFinding?: {
     message: string;
     remediation?: string;
@@ -1692,6 +1707,7 @@ async function toDashboardPackageListItem(
     ownerPublisherId: pkg.ownerPublisherId,
     latestVersion: pkg.latestVersionSummary?.version ?? null,
     inspectorWarningCount: inspectorAttention.count,
+    apiRetirements: inspectorAttention.apiRetirements,
     topInspectorFinding: inspectorAttention.topFinding,
     stats: pkg.stats,
     verification: pkg.verification,
@@ -1717,19 +1733,23 @@ async function getInspectorAttentionForRelease(
   latestReleaseId?: Id<"packageReleases">,
 ): Promise<{
   count: number;
+  apiRetirements: PluginApiRetirement[];
   topFinding?: {
     message: string;
     remediation?: string;
   };
 }> {
-  if (!latestReleaseId) return { count: 0 };
+  if (!latestReleaseId) return { count: 0, apiRetirements: [] };
   const findings = await takeAuthorRemediationWarningsByRelease(ctx, latestReleaseId, 101);
-  const count = findings.length > 100 ? 100 : findings.length;
-  const top = findings[0];
-  if (!top) return { count };
+  const apiRetirements = collectPluginApiRetirements(findings);
+  const otherFindings = findings.filter((finding) => !pluginApiRetirement(finding));
+  const count = Math.min(otherFindings.length, 100);
+  const top = otherFindings[0];
+  if (!top) return { count, apiRetirements };
   const remediation = top.authorRemediation?.summary?.trim();
   return {
     count,
+    apiRetirements,
     topFinding: {
       message: top.message,
       remediation: remediation || undefined,
@@ -3312,6 +3332,9 @@ function toPublicPackageInspectorFinding(warning: Doc<"packageInspectorWarnings"
     issueClass: warning.issueClass,
     compatStatus: warning.compatStatus,
     deprecated: warning.deprecated,
+    deprecatedApi: warning.deprecatedApi,
+    replacement: warning.replacement,
+    removeAfter: warning.removeAfter,
     message: warning.message,
     evidence: warning.evidence ?? [],
     authorRemediation: warning.authorRemediation,
@@ -3361,6 +3384,7 @@ export const getPackageInspectorValidationSummaryPublic = query({
         errorCount: 0,
         warningCount: 0,
         incompatibleAfterOpenClawVersion: null,
+        apiRetirements: [],
       };
     }
 
@@ -3377,6 +3401,7 @@ export const getPackageInspectorValidationSummaryPublic = query({
       findingCount: findings.length,
       errorCount: errorFindings.length,
       warningCount: findings.length - errorFindings.length,
+      apiRetirements: collectPluginApiRetirements(findings),
       incompatibleAfterOpenClawVersion:
         errorFindings.find((finding) => finding.targetOpenClawVersion)?.targetOpenClawVersion ??
         null,
@@ -3447,7 +3472,7 @@ function authorRemediationScanLimit(limit: number) {
 }
 
 function hasStoredAuthorRemediation(warning: Doc<"packageInspectorWarnings">) {
-  return Boolean(warning.authorRemediation?.summary);
+  return Boolean(warning.authorRemediation?.summary || pluginApiRetirement(warning));
 }
 
 export const getByNameForStaff = query({
@@ -11093,6 +11118,9 @@ async function insertPackageInspectorFindings(
       issueClass: warning.issueClass,
       compatStatus: warning.compatStatus,
       deprecated: warning.deprecated,
+      deprecatedApi: warning.deprecatedApi,
+      replacement: warning.replacement,
+      removeAfter: warning.removeAfter,
       message: warning.message,
       evidence: warning.evidence,
       authorRemediation: warning.authorRemediation,

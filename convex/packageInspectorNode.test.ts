@@ -16,6 +16,28 @@ afterEach(() => {
 });
 
 describe("package inspector publish normalization", () => {
+  it("preserves structured retirement metadata without requiring separate prose remediation", () => {
+    const retirement = {
+      deprecatedApi: "readAcpSessionEntry",
+      replacement: "readAcpSessionEntryAsync",
+      removeAfter: "2026-12-31",
+    };
+    const result = normalizeInspectorReportForPublish({
+      status: "pass",
+      issues: [
+        {
+          code: "sdk-deprecated-api",
+          level: "warning",
+          issueClass: "deprecation-warning",
+          deprecated: true,
+          message: "An OpenClaw API has a scheduled retirement.",
+          ...retirement,
+        },
+      ],
+    });
+    expect(result.warnings).toEqual([expect.objectContaining(retirement)]);
+    expect(result.breakages).toEqual([]);
+  });
   it("falls back to /tmp when the configured temp directory is unavailable", async () => {
     Object.defineProperty(process, "platform", { value: "linux" });
     const attemptedPrefixes: string[] = [];

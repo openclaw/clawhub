@@ -12,6 +12,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
+import { isLocalDevAuthEnabled } from "./lib/devAuth";
 import { ACTIVITY_TREND_DAYS } from "./lib/downloadTrend";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
@@ -911,6 +912,114 @@ export const seedLocalFixtures: ReturnType<typeof internalAction> = internalActi
     reset: v.optional(v.boolean()),
   },
   handler: seedLocalFixturesHandler,
+});
+
+export const seedPluginApiRetirementFixtures = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    if (!isLocalDevAuthEnabled()) throw new Error("API retirement fixtures require local dev auth");
+    const { userId, publisherId } = await ensureLocalSeedOwner(ctx);
+    const now = Date.now();
+    const names = [
+      "local-api-retirement-plugin",
+      "local-api-retirement-incompatible",
+      "local-api-retirement-current",
+    ];
+    for (const name of names) {
+      const existing = await ctx.db
+        .query("packages")
+        .withIndex("by_name", (q) => q.eq("normalizedName", name))
+        .unique();
+      if (existing) continue;
+      const incompatible = name.endsWith("incompatible");
+      const current = name.endsWith("current");
+      const packageId = await ctx.db.insert("packages", {
+        name,
+        normalizedName: name,
+        displayName: incompatible
+          ? "Local Incompatible API Example"
+          : current
+            ? "Local Current API Example"
+            : "Local API Retirement Example",
+        summary: "Synthetic local plugin for reviewing scheduled OpenClaw API updates.",
+        ownerUserId: userId,
+        ownerPublisherId: publisherId,
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        tags: {},
+        scanStatus: "clean",
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+        createdAt: now,
+        updatedAt: now,
+      });
+      const releaseId = await ctx.db.insert("packageReleases", {
+        packageId,
+        version: "1.0.0",
+        changelog: "Synthetic API retirement example.",
+        distTags: ["latest"],
+        files: [],
+        integritySha256: "synthetic-retirement-fixture",
+        createdBy: userId,
+        createdAt: now,
+        staticScan: {
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Synthetic clean fixture.",
+          engineVersion: "fixture",
+          checkedAt: now,
+        },
+      });
+      await ctx.db.patch(packageId, {
+        latestReleaseId: releaseId,
+        tags: { latest: releaseId },
+        latestVersionSummary: {
+          version: "1.0.0",
+          createdAt: now,
+          changelog: "Synthetic API retirement example.",
+        },
+      });
+      if (current) continue;
+      const finding = {
+        packageId,
+        releaseId,
+        ownerUserId: userId,
+        ownerPublisherId: publisherId,
+        packageName: name,
+        version: "1.0.0",
+        createdAt: now,
+      };
+      await ctx.db.insert("packageInspectorWarnings", {
+        ...finding,
+        findingKind: "warning",
+        scanSource: "nightly",
+        code: "sdk-deprecated-api",
+        level: "warning",
+        issueClass: "deprecation-warning",
+        deprecated: true,
+        deprecatedApi: "openclaw/plugin-sdk/acp-runtime.readAcpSessionEntry",
+        replacement: "readAcpSessionEntryAsync",
+        removeAfter: "2026-12-31",
+        message: "readAcpSessionEntry retires on Dec 31, 2026.",
+        evidence: ["synthetic/plugin.ts:3"],
+        authorRemediation: { summary: "Await readAcpSessionEntryAsync." },
+      });
+      if (incompatible)
+        await ctx.db.insert("packageInspectorWarnings", {
+          ...finding,
+          findingKind: "error",
+          scanSource: "nightly",
+          code: "missing-openclaw-api",
+          level: "breakage",
+          issueClass: "compatibility-error",
+          targetOpenClawVersion: "2026.10.1",
+          message: "A separate synthetic API is unavailable in the target.",
+          authorRemediation: { summary: "Replace the unavailable API." },
+        });
+    }
+    return { names };
+  },
 });
 
 export const seedTestFixtures: ReturnType<typeof internalAction> = internalAction({

@@ -64,6 +64,29 @@ function createPackage(overrides?: Partial<DashboardPackage>): DashboardPackage 
 }
 
 describe("collectAttentionItems", () => {
+  it("offers a separate informational API nudge without warning counts", () => {
+    const apiRetirements = [
+      { deprecatedApi: "oldApi", replacement: "newApi", removeAfter: "2026-12-31" },
+    ];
+    const items = collectAttentionItems([], [createPackage({ apiRetirements })], "local");
+    expect(items).toEqual([
+      expect.objectContaining({
+        issueType: "retirement",
+        severity: "info",
+        apiRetirements,
+        reason: "OpenClaw API update",
+        href: "/plugins/beta-plugin#api-updates",
+      }),
+    ]);
+    const mixed = collectAttentionItems(
+      [],
+      [createPackage({ apiRetirements, inspectorWarningCount: 2 })],
+      "local",
+    );
+    expect(mixed.find((item) => item.issueType === "validation")?.reason).toBe(
+      "2 validation warnings",
+    );
+  });
   it("links skill security attention to the security audit page with moderation preview", () => {
     const items = collectAttentionItems(
       [

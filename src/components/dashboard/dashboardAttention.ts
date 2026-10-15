@@ -1,5 +1,9 @@
 import { buildSkillSecurityAuditHref } from "../../lib/ownerRoute";
-import { buildPluginSecurityAuditHref, buildPluginValidationHref } from "../../lib/pluginRoutes";
+import {
+  buildPluginDetailHref,
+  buildPluginSecurityAuditHref,
+  buildPluginValidationHref,
+} from "../../lib/pluginRoutes";
 import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
 import { buildSkillHref } from "../skillDetailUtils";
 import {
@@ -145,6 +149,25 @@ function pushPackageAttention(
   const warningCount = pkg.inspectorWarningCount ?? 0;
   const security = packageSecurityStatus(pkg);
   const validationPreview = pluginValidationPreview(pkg);
+
+  if (pkg.apiRetirements?.length) {
+    items.push({
+      id: `plugin:${pkg._id}:retirement`,
+      kind: "plugin",
+      packageName: pkg.name,
+      ownerHandle,
+      version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
+      updatedAt: pkg.updatedAt,
+      issueType: "retirement",
+      apiRetirements: pkg.apiRetirements,
+      title: pkg.displayName,
+      reason: "OpenClaw API update",
+      preview: "Review replacement APIs and retirement dates.",
+      severity: "info",
+      href: `${buildPluginDetailHref(pkg.name)}#api-updates`,
+      actionLabel: "View API updates →",
+    });
+  }
 
   if (warningCount > 0) {
     items.push({

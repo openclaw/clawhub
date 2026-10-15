@@ -1808,7 +1808,7 @@ describe("plugin detail route", () => {
     );
   });
 
-  it("shows a public incompatibility alert without exposing validation outputs", async () => {
+  it("keeps public incompatibility alerts alongside API updates without exposing validation outputs", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -1822,6 +1822,13 @@ describe("plugin detail route", () => {
           errorCount: 1,
           warningCount: 0,
           incompatibleAfterOpenClawVersion: "0.9.0",
+          apiRetirements: [
+            {
+              deprecatedApi: "readAcpSessionEntry",
+              replacement: "readAcpSessionEntryAsync",
+              removeAfter: "2026-12-31",
+            },
+          ],
         };
       }
       return null;
@@ -1867,6 +1874,7 @@ describe("plugin detail route", () => {
     expect(
       screen.getByText("This plugin is incompatible with OpenClaw versions greater than 0.9.0."),
     ).toBeTruthy();
+    expect(screen.getByRole("region", { name: "OpenClaw API updates" })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
   });

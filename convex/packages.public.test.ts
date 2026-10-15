@@ -15324,6 +15324,7 @@ describe("packages public queries", () => {
       errorCount: 1,
       warningCount: 0,
       incompatibleAfterOpenClawVersion: "0.10.0",
+      apiRetirements: [],
     });
   });
 
@@ -15372,6 +15373,7 @@ describe("packages public queries", () => {
       errorCount: 0,
       warningCount: 0,
       incompatibleAfterOpenClawVersion: null,
+      apiRetirements: [],
     });
     expect(warningWithIndex).toHaveBeenCalledWith("by_release_created", expect.any(Function));
     expect(warningIndexEq).toHaveBeenCalledWith("releaseId", "packageReleases:demo-2");

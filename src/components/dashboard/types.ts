@@ -1,4 +1,5 @@
 import type { Doc } from "../../../convex/_generated/dataModel";
+import type { PluginApiRetirement } from "../../../convex/lib/pluginApiRetirements";
 
 export type DashboardSkill = Pick<
   Doc<"skills">,
@@ -60,6 +61,7 @@ export type DashboardPackage = {
   icon?: string | null;
   latestVersion?: string | null;
   inspectorWarningCount?: number;
+  apiRetirements?: PluginApiRetirement[];
   topInspectorFinding?: {
     message: string;
     remediation?: string;
@@ -109,11 +111,12 @@ export type DashboardAttentionItem = {
   packageName?: string;
   version?: string;
   updatedAt?: number;
-  issueType: "security" | "validation" | "quality" | "visibility";
+  issueType: "security" | "validation" | "quality" | "visibility" | "retirement";
+  apiRetirements?: PluginApiRetirement[];
   title: string;
   reason: string;
   preview?: string;
-  severity: "destructive" | "warning" | "pending";
+  severity: "destructive" | "warning" | "pending" | "info";
   href: string;
   actionLabel: string;
 };

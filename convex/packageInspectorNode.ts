@@ -6,6 +6,7 @@ import path from "node:path";
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { prepareOpenClawInspectorTarget } from "./lib/openClawInspectorTarget";
+import { pluginApiRetirement } from "./lib/pluginApiRetirements";
 
 type InspectorFinding = {
   id?: string;
@@ -15,6 +16,9 @@ type InspectorFinding = {
   issueClass?: string;
   compatStatus?: string;
   deprecated?: boolean;
+  deprecatedApi?: string;
+  replacement?: string;
+  removeAfter?: string;
   message: string;
   evidence?: string[];
   authorRemediation?: InspectorAuthorRemediation;
@@ -115,6 +119,9 @@ const findingValidator = v.object({
   issueClass: v.optional(v.string()),
   compatStatus: v.optional(v.string()),
   deprecated: v.optional(v.boolean()),
+  deprecatedApi: v.optional(v.string()),
+  replacement: v.optional(v.string()),
+  removeAfter: v.optional(v.string()),
   message: v.string(),
   evidence: v.optional(v.array(v.string())),
   authorRemediation: v.optional(
@@ -419,6 +426,9 @@ function normalizeFinding(value: unknown, defaultLevel: string): InspectorFindin
     issueClass: stringValue(value.issueClass),
     compatStatus: stringValue(value.compatStatus),
     deprecated: typeof value.deprecated === "boolean" ? value.deprecated : undefined,
+    deprecatedApi: stringValue(value.deprecatedApi),
+    replacement: stringValue(value.replacement),
+    removeAfter: stringValue(value.removeAfter),
     message,
     evidence: Array.isArray(value.evidence)
       ? value.evidence.map((entry) => String(entry)).slice(0, 12)
@@ -441,7 +451,7 @@ function normalizeAuthorRemediation(value: unknown): InspectorAuthorRemediation 
 }
 
 function hasAuthorRemediation(finding: InspectorFinding) {
-  return Boolean(finding.authorRemediation?.summary);
+  return Boolean(finding.authorRemediation?.summary || pluginApiRetirement(finding));
 }
 
 function legacyAuthorRemediation(code: string): InspectorAuthorRemediation | undefined {

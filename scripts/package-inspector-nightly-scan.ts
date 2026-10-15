@@ -34,6 +34,9 @@ type NormalizedFinding = {
   issueClass?: string;
   compatStatus?: string;
   deprecated?: boolean;
+  deprecatedApi?: string;
+  replacement?: string;
+  removeAfter?: string;
   message: string;
   evidence?: string[];
   fixture?: string;
@@ -896,6 +899,9 @@ function normalizeFinding(value: unknown, fallbackLevel: string): NormalizedFind
     issueClass: stringValue(record.issueClass),
     compatStatus: stringValue(record.compatStatus),
     deprecated: typeof record.deprecated === "boolean" ? record.deprecated : undefined,
+    deprecatedApi: stringValue(record.deprecatedApi),
+    replacement: stringValue(record.replacement),
+    removeAfter: stringValue(record.removeAfter),
     message,
     evidence: Array.isArray(record.evidence) ? record.evidence.map(String).slice(0, 12) : undefined,
     fixture: stringValue(record.fixture),

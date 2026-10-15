@@ -199,6 +199,7 @@ jobs:
           - name: inspector-version
             specs: |
               e2e/local-auth/plugin-inspector-findings.pw.test.ts
+              e2e/local-auth/plugin-api-retirements.pw.test.ts
               e2e/local-auth/version-delete.pw.test.ts
           - name: publish-generated-card
             specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts

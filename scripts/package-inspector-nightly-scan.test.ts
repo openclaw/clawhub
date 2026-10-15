@@ -35,6 +35,10 @@ describe("package-inspector-nightly-scan", () => {
           level: "warning",
           severity: "P2",
           issueClass: "deprecated-api",
+          deprecated: true,
+          deprecatedApi: "loadSessionStore",
+          replacement: "readSessionEntry",
+          removeAfter: "2026-12-31",
           message: "loadSessionStore reads the whole session store.",
           authorRemediation: {
             summary: "Replace loadSessionStore with targeted session table APIs.",
@@ -47,6 +51,10 @@ describe("package-inspector-nightly-scan", () => {
     expect(findings).toEqual([
       expect.objectContaining({
         code: "sdk-load-session-store",
+        deprecated: true,
+        deprecatedApi: "loadSessionStore",
+        replacement: "readSessionEntry",
+        removeAfter: "2026-12-31",
         authorRemediation: {
           summary: "Replace loadSessionStore with targeted session table APIs.",
           docsUrl: "https://clawhub.ai/docs/plugin-validation-fixes#sdk-load-session-store",

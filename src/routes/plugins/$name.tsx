@@ -29,6 +29,10 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
+import {
+  pluginApiRetirement,
+  type PluginApiRetirement,
+} from "../../../convex/lib/pluginApiRetirements";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
 import {
   DetailHero,
@@ -45,6 +49,7 @@ import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
+import { PluginApiRetirementNotice } from "../../components/PluginApiRetirementNotice";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
@@ -118,7 +123,7 @@ type PluginDetailTab =
   | "mcpServers"
   | "skills";
 
-type PluginInspectorFinding = {
+type PluginInspectorFinding = Partial<PluginApiRetirement> & {
   packageName: string;
   version: string;
   findingKind?: "warning" | "error";
@@ -126,6 +131,7 @@ type PluginInspectorFinding = {
   severity?: string;
   level?: string;
   issueClass?: string;
+  deprecated?: boolean;
   message: string;
   evidence?: string[];
   authorRemediation?: {
@@ -139,6 +145,7 @@ type PluginInspectorFinding = {
 };
 
 type PluginInspectorValidationSummary = {
+  apiRetirements?: PluginApiRetirement[];
   findingCount: number;
   errorCount: number;
   warningCount: number;
@@ -1104,7 +1111,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     manageContext ? { name: manageContext.package.name, limit: 100 } : "skip",
   ) as PluginInspectorFinding[] | undefined;
   const authorInspectorFindings = Array.isArray(inspectorFindings)
-    ? inspectorFindings.filter((finding) => finding.authorRemediation?.summary)
+    ? inspectorFindings.filter(
+        (finding) => finding.authorRemediation?.summary && !pluginApiRetirement(finding),
+      )
     : undefined;
   const displayInspectorFindings =
     authorInspectorFindings && shouldShowDevValidationFindingMocks()
@@ -1811,6 +1820,10 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
               {validationPanel}
               <div className="plugin-install-stack detail-mobile-install">
                 {incompatibilityAlert}
+                <PluginApiRetirementNotice
+                  id="api-updates"
+                  retirements={validationSummary?.apiRetirements ?? []}
+                />
                 <Card className="skill-install-command-card">
                   <CardHeader className="detail-hero-summary-row plugin-install-card-header">
                     <CardTitle className="skill-install-panel-title">Install</CardTitle>

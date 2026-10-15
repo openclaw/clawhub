@@ -4,7 +4,6 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ci, pluginRoot, reports } from "@openclaw/plugin-inspector";
 import ignore from "ignore";
 import mime from "mime";
 import semver from "semver";
@@ -789,6 +788,13 @@ export async function cmdValidatePackage(
   if (options.openclaw?.trim() && options.openclawVersion?.trim()) {
     fail("Choose either --openclaw or --openclaw-version");
   }
+
+  if (process.versions.bun) {
+    fail(
+      "Plugin validation requires Node.js 22.13+ (22.x) or 24+. Run the installed clawhub CLI with Node.js, or use node packages/clawhub/bin/clawdhub.js package validate from a built checkout.",
+    );
+  }
+  const { ci, pluginRoot, reports } = await import("@openclaw/plugin-inspector");
 
   const outDir = options.out?.trim() || "reports";
   const openclawPath = options.openclaw?.trim() ? resolve(opts.workdir, options.openclaw) : false;

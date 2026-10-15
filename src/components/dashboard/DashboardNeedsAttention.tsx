@@ -3,10 +3,15 @@ import { useQuery } from "convex/react";
 import { ChevronRight, EyeOff, Hammer, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
+import {
+  pluginApiRetirement,
+  type PluginApiRetirement,
+} from "../../../convex/lib/pluginApiRetirements";
 import { buildSkillDetailHref } from "../../lib/ownerRoute";
 import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
 import { timeAgo } from "../../lib/timeAgo";
 import { InstallCopyButton } from "../InstallCopyButton";
+import { PluginApiRetirementNotice } from "../PluginApiRetirementNotice";
 import { SkillSpectorAuditPanel } from "../SecurityAuditPage";
 import type { SkillSpectorAnalysis } from "../SkillSecurityScanResults";
 import type { DashboardAttentionItem } from "./types";
@@ -38,13 +43,15 @@ type SkillAuditResult = {
   } | null;
 };
 
-type PluginInspectorFinding = {
+type PluginInspectorFinding = Partial<PluginApiRetirement> & {
   _id?: string;
   code?: string;
   packageName?: string;
   version?: string;
   findingKind?: string;
   issueClass?: string;
+  deprecated?: boolean;
+  level?: string;
   severity?: string;
   message?: string;
   evidence?: string[];
@@ -282,6 +289,9 @@ function DashboardReviewSheetContent({
           {hasPluginValidation ? (
             <PluginValidationSheetReview group={group} findings={pluginFindings} />
           ) : null}
+          <PluginApiRetirementNotice
+            retirements={group.items.flatMap((item) => item.apiRetirements ?? [])}
+          />
         </>
       )}
     </div>
@@ -345,7 +355,8 @@ function PluginValidationSheetReview({
   group: DashboardAttentionGroup;
   findings?: PluginInspectorFinding[];
 }) {
-  const visibleFindings = findings?.length ? findings.filter((finding) => finding.message) : [];
+  const visibleFindings =
+    findings?.filter((finding) => finding.message && !pluginApiRetirement(finding)) ?? [];
   const fallbackFindings: PluginInspectorFinding[] = group.items
     .filter((item) => item.issueType === "validation")
     .map((item) => ({
@@ -632,22 +643,29 @@ function groupAttentionItems(items: DashboardAttentionItem[]) {
 }
 
 function attentionGroupKey(item: DashboardAttentionItem) {
-  return item.id.replace(/:(blocked|pending-scan|review|quality|visibility|validation)$/, "");
+  return item.id.replace(
+    /:(blocked|pending-scan|review|quality|visibility|validation|retirement)$/,
+    "",
+  );
 }
 
 function attentionPriority(item: DashboardAttentionItem) {
-  const severity = { destructive: 30, warning: 20, pending: 10 }[item.severity];
-  const issue = { security: 4, validation: 3, quality: 2, visibility: 1 }[item.issueType];
+  const severity = { destructive: 30, warning: 20, pending: 10, info: 0 }[item.severity];
+  const issue = { security: 4, validation: 3, quality: 2, visibility: 1, retirement: 0 }[
+    item.issueType
+  ];
   return severity + issue;
 }
 
 function severityLabel(severity: DashboardAttentionItem["severity"]) {
+  if (severity === "info") return "API update";
   if (severity === "destructive") return "Blocked";
   if (severity === "pending") return "Scan pending";
   return "Needs review";
 }
 
 function issueTypeLabel(issueType: DashboardAttentionItem["issueType"]) {
+  if (issueType === "retirement") return "API update";
   if (issueType === "validation") return "Validation";
   if (issueType === "quality") return "Quality";
   if (issueType === "visibility") return "Visibility";
@@ -706,9 +724,10 @@ function attentionIssueSummary(item: DashboardAttentionItem) {
 
 function attentionRowLabel(group: DashboardAttentionGroup) {
   const { primary } = group;
+  const issueCount = group.items.filter((item) => item.issueType !== "retirement").length;
   const parts = [
     group.title,
-    `${group.items.length} issue${group.items.length === 1 ? "" : "s"}`,
+    ...(issueCount ? [`${issueCount} issue${issueCount === 1 ? "" : "s"}`] : []),
     ...group.items.map((item) => attentionIssueSummary(item)),
     severityLabel(primary.severity),
   ];

@@ -4,6 +4,10 @@ ClawHub CLI — install, update, search, and publish agent skills plus OpenClaw 
 
 ## Install
 
+Requires Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer, matching Plugin Inspector's runtime requirement.
+
+The Bun shortcut supports ordinary CLI commands. For `package validate`, run the installed CLI under Node.js, or run `node packages/clawhub/bin/clawdhub.js package validate <folder>` after building the CLI in this checkout.
+
 ```bash
 # From this repo (shortcut script at repo root)
 bun clawhub --help

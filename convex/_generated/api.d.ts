@@ -81,6 +81,7 @@ import type * as lib_catalogClassification from "../lib/catalogClassification.js
 import type * as lib_catalogClassifier from "../lib/catalogClassifier.js";
 import type * as lib_catalogSearchObservations from "../lib/catalogSearchObservations.js";
 import type * as lib_changelog from "../lib/changelog.js";
+import type * as lib_clawCategoryClassification from "../lib/clawCategoryClassification.js";
 import type * as lib_clawhubVercelOidc from "../lib/clawhubVercelOidc.js";
 import type * as lib_clawpack from "../lib/clawpack.js";
 import type * as lib_contentTypes from "../lib/contentTypes.js";
@@ -135,6 +136,7 @@ import type * as lib_packageRuntimeIdentity from "../lib/packageRuntimeIdentity.
 import type * as lib_packageSearchDigest from "../lib/packageSearchDigest.js";
 import type * as lib_packageSecurity from "../lib/packageSecurity.js";
 import type * as lib_packageStatEvents from "../lib/packageStatEvents.js";
+import type * as lib_pluginApiRetirements from "../lib/pluginApiRetirements.js";
 import type * as lib_pluginCategoryClassification from "../lib/pluginCategoryClassification.js";
 import type * as lib_pluginCategoryClassificationContract from "../lib/pluginCategoryClassificationContract.js";
 import type * as lib_pluginCategoryReview from "../lib/pluginCategoryReview.js";
@@ -354,6 +356,7 @@ declare const fullApi: ApiFromModules<{
   "lib/catalogClassifier": typeof lib_catalogClassifier;
   "lib/catalogSearchObservations": typeof lib_catalogSearchObservations;
   "lib/changelog": typeof lib_changelog;
+  "lib/clawCategoryClassification": typeof lib_clawCategoryClassification;
   "lib/clawhubVercelOidc": typeof lib_clawhubVercelOidc;
   "lib/clawpack": typeof lib_clawpack;
   "lib/contentTypes": typeof lib_contentTypes;
@@ -408,6 +411,7 @@ declare const fullApi: ApiFromModules<{
   "lib/packageSearchDigest": typeof lib_packageSearchDigest;
   "lib/packageSecurity": typeof lib_packageSecurity;
   "lib/packageStatEvents": typeof lib_packageStatEvents;
+  "lib/pluginApiRetirements": typeof lib_pluginApiRetirements;
   "lib/pluginCategoryClassification": typeof lib_pluginCategoryClassification;
   "lib/pluginCategoryClassificationContract": typeof lib_pluginCategoryClassificationContract;
   "lib/pluginCategoryReview": typeof lib_pluginCategoryReview;

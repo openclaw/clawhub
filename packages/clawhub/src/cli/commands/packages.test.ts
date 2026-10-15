@@ -265,6 +265,23 @@ afterEach(() => {
 });
 
 describe("package commands", () => {
+  it("directs Bun validation callers to the supported Node runtime before loading Inspector", async () => {
+    const workdir = await makeTmpWorkdir();
+    vi.stubGlobal("process", {
+      ...process,
+      versions: { ...process.versions, bun: "1.3.14" },
+    });
+    try {
+      await expect(cmdValidatePackage({ workdir } as GlobalOpts, workdir)).rejects.toThrow(
+        "Plugin validation requires Node.js 22.13+ (22.x) or 24+",
+      );
+      expect(inspectorMocks.pluginRoot.runCheck).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects npm pack file/ancestor collisions before extraction", () => {
     const bytes = npmPackFixture({
       "package/package.json": JSON.stringify({ name: "demo", version: "1.0.0" }),

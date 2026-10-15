@@ -544,6 +544,8 @@ clawhub package verify ./example-plugin-1.2.3.tgz --sha256 <hex>
 
 ### `package validate <source>`
 
+- Requires Node.js 22.13+ on the 22.x line or Node.js 24+; run the installed CLI
+  under Node.js rather than the Bun shortcut for this command.
 - Runs the ClawHub CLI's bundled Plugin Inspector against a local plugin package
   folder.
 - Defaults to offline/static validation, without locating or importing a local
