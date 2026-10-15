@@ -132,11 +132,6 @@ export async function listSkillFiles(root: string, limits?: SkillFileLimits): Pr
   );
 }
 
-/** @deprecated Use listSkillFiles. */
-export async function listTextFiles(root: string) {
-  return await listSkillFiles(root);
-}
-
 type SkillFileHash = { path: string; sha256: string; size: number };
 
 export function sha256Hex(bytes: Uint8Array) {
