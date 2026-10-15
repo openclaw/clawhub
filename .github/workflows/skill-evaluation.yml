@@ -22,7 +22,8 @@ jobs:
           git clone --quiet --branch v0.5.0 --depth 1 https://github.com/NVIDIA/SkillEvaluator.git /tmp/evaluator
           test "$(git -C /tmp/evaluator rev-parse HEAD)" = "7304d76cde371287b67ea99653409d014b6b9c85"
           uv sync --project /tmp/evaluator --extra tier3 --frozen
-      - name: Reproduce Harbor Docker startup without credentials
+      - name: Reproduce disabled-healthcheck failure on bundled Compose
+        continue-on-error: true
         run: |
           docker version --format '{{.Server.Version}}'
           docker compose version
@@ -38,7 +39,7 @@ jobs:
                   root = Path(root)
                   environment = root / 'environment'
                   environment.mkdir()
-                  (environment / 'Dockerfile').write_text('FROM python:3.12-slim\nWORKDIR /app\nCMD ["sleep", "infinity"]\n')
+                  (environment / 'Dockerfile').write_text('FROM python:3.12-slim\nHEALTHCHECK NONE\nWORKDIR /app\nCMD ["sleep", "infinity"]\n')
                   sandbox = DockerEnvironment(
                       environment_dir=environment,
                       environment_name='skillevaluator-runner-probe',
@@ -56,22 +57,40 @@ jobs:
 
           asyncio.run(main())
           PY
-      - name: Reproduce exact canary image with model access disabled
-        if: always()
+      - uses: docker/setup-compose-action@54042514f505b273907334ae2b9cdbb9a0213c1a # v2.4.0
+        with:
+          version: v5.1.4
+      - name: Verify disabled-healthcheck startup on pinned Compose
         run: |
-          git init -q /tmp/nvidia-skills
-          git -C /tmp/nvidia-skills remote add origin https://github.com/NVIDIA/skills.git
-          git -C /tmp/nvidia-skills fetch -q --depth 1 origin 392ab8ab2587345a9d86240967f666bd59ac82ca
-          git -C /tmp/nvidia-skills checkout -q FETCH_HEAD
-          env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 OPENAI_API_KEY=probe-invalid OPENAI_BASE_URL=http://127.0.0.1:9/v1 SKILL_EVAL_LLM_API_KEY=probe-invalid SKILL_EVAL_LLM_BASE_URL=http://127.0.0.1:9/v1 SKILL_EVAL_LLM_PROVIDER=openai-compatible SKILL_EVAL_LLM_MODEL=gpt-5.4 timeout 240 uv run --project /tmp/evaluator --extra tier3 --frozen skillevaluator tier3 evaluate /tmp/nvidia-skills/skills/vss-ask-video --agents codex --env-mode docker --agent-model codex=gpt-5.4-mini --n-attempts 1 --skip-baseline --n-concurrent 1 --max-agents 1 --progress plain --harbor-keep-jobs --results-dir /tmp/exact-probe || true
-          python3 - <<'PYPROBE'
-          import json
+          docker version --format '{{.Server.Version}}'
+          docker compose version
+          env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 uv run --project /tmp/evaluator --frozen --extra tier3 python - <<'PY'
+          import asyncio, tempfile
           from pathlib import Path
-          for path in Path('/tmp/exact-probe').rglob('result.json'):
-              try:
-                  value = json.loads(path.read_text())
-              except Exception:
-                  continue
-              if value.get('exception_info'):
-                  print(json.dumps({'path':str(path),'error':value['exception_info']}))
-          PYPROBE
+          from harbor.environments.docker.docker import DockerEnvironment
+          from harbor.models.task.config import EnvironmentConfig
+          from harbor.models.trial.paths import TrialPaths
+
+          async def main():
+              with tempfile.TemporaryDirectory(prefix='harbor-runner-probe-') as root:
+                  root = Path(root)
+                  environment = root / 'environment'
+                  environment.mkdir()
+                  (environment / 'Dockerfile').write_text('FROM python:3.12-slim\nHEALTHCHECK NONE\nWORKDIR /app\nCMD ["sleep", "infinity"]\n')
+                  sandbox = DockerEnvironment(
+                      environment_dir=environment,
+                      environment_name='skillevaluator-runner-probe',
+                      session_id='skillevaluator-runner-probe-env',
+                      trial_paths=TrialPaths(trial_dir=root / 'trial'),
+                      task_env_config=EnvironmentConfig(),
+                  )
+                  try:
+                      await sandbox.start(force_build=True)
+                      result = await sandbox.exec('python --version')
+                      print(result.model_dump_json())
+                      assert result.return_code == 0
+                  finally:
+                      await sandbox.stop(delete=True)
+
+          asyncio.run(main())
+          PY
