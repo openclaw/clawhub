@@ -43,9 +43,10 @@ it("retains consumed quota and queued reports when component implementations cha
     // not a backend deployment or schema migration.
     const registration = {
       ...t,
-      registerComponent: (
+      registerComponent: <ComponentApi = unknown>(
         ...[name, componentSchema, modules]: Parameters<typeof t.registerComponent>
-      ) => t.registerComponent(name, componentSchema, implementations[name] ?? modules),
+      ) =>
+        t.registerComponent<ComponentApi>(name, componentSchema, implementations[name] ?? modules),
     };
     rateLimiter.register(registration);
     workpool.register(registration, "searchReports");

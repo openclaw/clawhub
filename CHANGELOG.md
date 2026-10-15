@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Dependencies: patch vulnerable DOMPurify, Next.js preview tooling, shell-quote, and source-map-js versions.
+- Dependencies: refresh supported React, TanStack, Radix, email, CLI utility, lint, format, and test packages while retaining the current Node and compiler compatibility contracts.
+
 - Tests: update Vitest and its V8 coverage provider together to 5.0.3; retain registered auth callbacks across per-test mock cleanup.
 - Tests: update jsdom to 30.1.2 and allow its required Undici 8 transport while keeping the CLI on Undici 7.
 - Runtime: use Bun 1.3.14 across CI and deployment tooling to preserve labelled conditional blocks when compiling React server rendering.
