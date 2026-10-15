@@ -1,68 +1,58 @@
-name: Skill Evaluation Worker
+name: Skill Evaluation Docker Probe
 
 on:
-  repository_dispatch:
-    types: [clawhub-skill-evaluation]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  evaluate:
-    name: NVIDIA SkillEvaluator Tier 3 (${{ matrix.worker }})
+  probe:
     runs-on: blacksmith-16vcpu-ubuntu-2404
-    timeout-minutes: 180
-    environment: Production
-    strategy:
-      fail-fast: false
-      matrix:
-        worker: [1, 2, 3, 4]
-    concurrency:
-      group: clawhub-skill-evaluation-worker-${{ matrix.worker }}
-      cancel-in-progress: false
-    env:
-      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
-      SKILL_EVALUATION_WORKER_ID: github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.worker }}
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: ./.github/actions/setup-bun
-
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-
       - uses: astral-sh/setup-uv@v7
         with:
           version: "0.10.11"
-
-      - name: Install pinned SkillEvaluator release
-        env:
-          SKILL_EVALUATOR_DIR: ${{ runner.temp }}/SkillEvaluator
+      - name: Install evaluator
         run: |
-          set -euo pipefail
-          git clone --quiet --filter=blob:none --branch v0.5.0 --depth 1 \
-            https://github.com/NVIDIA/SkillEvaluator.git "$SKILL_EVALUATOR_DIR"
-          test "$(git -C "$SKILL_EVALUATOR_DIR" rev-parse HEAD)" = \
-            "7304d76cde371287b67ea99653409d014b6b9c85"
-          uv sync --project "$SKILL_EVALUATOR_DIR" --extra tier3 --frozen
-          uv run --project "$SKILL_EVALUATOR_DIR" skillevaluator --version
-
-      - name: Install pinned Codex CLI
+          git clone --quiet --branch v0.5.0 --depth 1 https://github.com/NVIDIA/SkillEvaluator.git /tmp/evaluator
+          test "$(git -C /tmp/evaluator rev-parse HEAD)" = "7304d76cde371287b67ea99653409d014b6b9c85"
+          uv sync --project /tmp/evaluator --extra tier3 --frozen
+      - name: Reproduce Harbor Docker startup without credentials
         run: |
-          set -euo pipefail
-          npm install -g @openai/codex@0.148.0
-          codex --version
+          docker version --format '{{.Server.Version}}'
+          docker compose version
+          env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 uv run --project /tmp/evaluator --frozen --extra tier3 python - <<'PY'
+          import asyncio, tempfile
+          from pathlib import Path
+          from harbor.environments.docker.docker import DockerEnvironment
+          from harbor.models.task.config import EnvironmentConfig
+          from harbor.models.trial.paths import TrialPaths
 
-      - name: Verify Docker runtime
-        run: docker info >/dev/null
+          async def main():
+              with tempfile.TemporaryDirectory(prefix='harbor-runner-probe-') as root:
+                  root = Path(root)
+                  environment = root / 'environment'
+                  environment.mkdir()
+                  (environment / 'Dockerfile').write_text('FROM python:3.12-slim\nWORKDIR /app\nCMD ["sleep", "infinity"]\n')
+                  sandbox = DockerEnvironment(
+                      environment_dir=environment,
+                      environment_name='skillevaluator-runner-probe',
+                      session_id='skillevaluator-runner-probe-env',
+                      trial_paths=TrialPaths(trial_dir=root / 'trial'),
+                      task_env_config=EnvironmentConfig(),
+                  )
+                  try:
+                      await sandbox.start(force_build=True)
+                      result = await sandbox.exec('python --version')
+                      print(result.model_dump_json())
+                      assert result.return_code == 0
+                  finally:
+                      await sandbox.stop(delete=True)
 
-      - name: Run skill evaluation worker
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
-          SKILL_EVALUATOR_DIR: ${{ runner.temp }}/SkillEvaluator
-        run: bun scripts/evaluations/run-skill-evaluation-worker.ts
+          asyncio.run(main())
+          PY
