@@ -5,6 +5,13 @@ import { mkdir, readFile, readdir, rm, rmdir, stat, writeFile } from "node:fs/pr
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import {
+  failedSdkUsageReport,
+  normalizeSdkUsageReport,
+  SDK_USAGE_ANALYSIS_VERSION,
+  SDK_USAGE_SCHEMA_VERSION,
+  type SdkUsageReport,
+} from "../convex/lib/packageSdkUsageContract";
 
 type ClaimItem = {
   packageId: string;
@@ -14,6 +21,7 @@ type ClaimItem = {
   packageName: string;
   version: string;
   artifactKind?: string;
+  artifactSha256?: string;
   downloadUrl: string;
 };
 
@@ -23,7 +31,17 @@ type ClaimResponse = {
   dryRun?: boolean;
   nextCursor?: string | null;
   skippedUnchanged?: number;
+  skipped?: SkippedRelease[];
   items: ClaimItem[];
+};
+
+type SkippedRelease = { packageName: string; releaseId: string; version: string; reason: string };
+type CoverageRelease = {
+  packageName: string;
+  releaseId: string;
+  version: string;
+  status: "complete" | "partial" | "failed" | "missing" | "incompatible";
+  unknownCount: number;
 };
 
 type NormalizedFinding = {
@@ -59,12 +77,15 @@ type ImpactEntry = {
   warningCount: number;
   targetOpenClawVersion?: string;
   findings: NormalizedFinding[];
+  sdkUsage?: { status: string; entryCount: number; unknownCount: number };
+  scanError?: string;
 };
 
 type UploadResult = {
   ok: true;
   inserted: number;
   shouldEmailOwner: boolean;
+  sdkUsage?: { status: string; applied: boolean; entryCount: number; unknownCount: number };
 };
 
 type NotificationResult = {
@@ -182,12 +203,19 @@ export async function runPackageInspectorNightlyScan() {
   if (!targetOpenClawVersion) throw new Error("Unable to resolve an exact OpenClaw target");
   await mkdir(artifactRoot, { recursive: true });
   const scanStartedAt = Date.now();
+  const initialRoster = notificationOnly ? [] : await readCoverageRoster();
+  if (!notificationOnly)
+    await writeFile(
+      path.join(artifactRoot, "initial-roster.json"),
+      `${JSON.stringify(initialRoster, null, 2)}\n`,
+    );
 
   let hadWorkerFailure = false;
   const impactEntries: ImpactEntry[] = [];
   let claimed = 0;
   let scanned = 0;
   let skippedUnchanged = 0;
+  const skipped: SkippedRelease[] = [];
   let notificationAttempts = 0;
   let notificationsSent = 0;
   let cursor: string | null = null;
@@ -231,6 +259,7 @@ export async function runPackageInspectorNightlyScan() {
       const nextCursor = claim.nextCursor ?? null;
       claimed += claim.items.length;
       skippedUnchanged += claim.skippedUnchanged ?? 0;
+      skipped.push(...(claim.skipped ?? []));
       let batchFailed = false;
 
       for (const item of claim.items) {
@@ -242,7 +271,7 @@ export async function runPackageInspectorNightlyScan() {
         );
         if (result.failed) {
           hadWorkerFailure = true;
-          batchFailed = true;
+          batchFailed ||= !result.failureRecorded;
         }
         if (result.impactEntry) impactEntries.push(result.impactEntry);
         if (result.scanned) scanned += 1;
@@ -271,10 +300,26 @@ export async function runPackageInspectorNightlyScan() {
   }
 
   const scanDurationMs = Date.now() - scanStartedAt;
+  let reconciledRoster: CoverageRelease[] = [];
+  let reconciliationError: string | undefined;
+  if (!notificationOnly) {
+    try {
+      reconciledRoster = await readCoverageRoster();
+    } catch (error) {
+      reconciliationError = error instanceof Error ? error.message : String(error);
+      hadWorkerFailure = true;
+    }
+  }
+  const unresolved = reconciledRoster.filter(
+    (item) =>
+      (targetPackageNames.length === 0 || targetPackageNames.includes(item.packageName)) &&
+      (item.status !== "complete" || item.unknownCount > 0),
+  );
   const summary = summarizeImpact({
     claimed,
     scanned,
     skippedUnchanged,
+    skipped,
     batches,
     truncated,
     nextCursor: cursor,
@@ -287,6 +332,16 @@ export async function runPackageInspectorNightlyScan() {
     scanStartedAt: new Date(scanStartedAt).toISOString(),
     scanDurationMs,
     entries: impactEntries,
+    corpus: notificationOnly
+      ? undefined
+      : {
+          scope: targetPackageNames.length ? "targeted" : "full-latest-public",
+          initial: initialRoster,
+          reconciled: reconciledRoster,
+          reconciliationComplete: !reconciliationError,
+          unresolved,
+          ...(reconciliationError ? { error: reconciliationError } : {}),
+        },
   });
   await writeFile(
     path.join(artifactRoot, "run-summary.json"),
@@ -306,9 +361,58 @@ export async function runPackageInspectorNightlyScan() {
       : `Bulk scan target OpenClaw ${summary.targetOpenClawVersion}: scanned=${summary.scannedReleases}, skippedUnchanged=${summary.skippedUnchangedReleases}, errors=${summary.pluginsWithErrors}, warnings=${summary.pluginsWithWarnings}.`,
   );
 
-  if (hadWorkerFailure) {
+  if (
+    hadWorkerFailure ||
+    (!dryRun && unresolved.length > 0) ||
+    impactEntries.some((entry) => entry.sdkUsage?.status !== "complete")
+  ) {
     process.exitCode = 1;
   }
+}
+
+async function readCoverageRoster(): Promise<CoverageRelease[]> {
+  const items = new Map<string, CoverageRelease>();
+  const cursors = new Set<string | null>();
+  let cursor: string | null = null;
+  do {
+    if (cursors.has(cursor) || cursors.size >= 10_000)
+      throw new Error("SDK coverage pagination did not complete");
+    cursors.add(cursor);
+    const url = new URL("/api/v1/sdk-usage/coverage", siteUrl);
+    url.searchParams.set("limit", "100");
+    if (cursor) url.searchParams.set("cursor", cursor);
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`SDK coverage lookup failed: HTTP ${response.status}`);
+    const page = (await response.json()) as {
+      scope?: string;
+      items?: CoverageRelease[];
+      nextCursor?: string | null;
+    };
+    if (
+      page.scope !== "page" ||
+      !Array.isArray(page.items) ||
+      !(page.nextCursor === null || typeof page.nextCursor === "string")
+    )
+      throw new Error("SDK coverage returned an invalid page");
+    for (const item of page.items) {
+      if (
+        !item.packageName ||
+        !item.releaseId ||
+        !item.version ||
+        !["complete", "partial", "failed", "missing", "incompatible"].includes(item.status) ||
+        !Number.isSafeInteger(item.unknownCount) ||
+        item.unknownCount < 0
+      )
+        throw new Error("SDK coverage returned an invalid release");
+      if (items.has(item.packageName))
+        throw new Error(
+          `SDK coverage changed while paging ${item.packageName}; rerun reconciliation`,
+        );
+      items.set(item.packageName, item);
+    }
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  return [...items.values()].sort((a, b) => a.packageName.localeCompare(b.packageName));
 }
 
 export async function loadNotificationManifest(
@@ -436,6 +540,7 @@ async function inspectPackageItem(
   await mkdir(reportDir, { recursive: true });
   try {
     const artifactKind = await downloadPackageArtifactForScan(item, workRoot, pluginRoot);
+    if (!item.artifactSha256) throw new Error("Scan artifact has no immutable identity");
     const scanRoot = await prepareExtractedPluginRoot(pluginRoot, artifactKind, item.packageName);
     if (!inspectorModule.pluginRoot || !inspectorModule.ci || !inspectorModule.reports) {
       throw new Error("The bundled Plugin Inspector bulk APIs are unavailable");
@@ -443,6 +548,7 @@ async function inspectPackageItem(
     const scan = await inspectorModule.pluginRoot.runCheck({
       allowExecution: false,
       authorFacing: true,
+      sdkUsageInputKind: "artifact",
       capture: false,
       configPath: resolveInspectorConfigPath(scanRoot),
       mockSdk: true,
@@ -461,6 +567,11 @@ async function inspectPackageItem(
       `${JSON.stringify(inspectorModule.reports.sanitizeArtifact(report), null, 2)}\n`,
     );
     await writeFile(path.join(reportDir, "stderr.txt"), "");
+    // Inventory support is additive: legacy reports still contain valid author findings.
+    const sdkUsage =
+      normalizeSdkUsageReport(report.sdkUsage) ??
+      failedSdkUsageReport("Plugin Inspector returned no SDK usage inventory");
+    let persistedInventory: NonNullable<ImpactEntry["sdkUsage"]> = inventorySummary(sdkUsage);
     const findings = normalizeFindings(report);
     const targetOpenClawVersion = extractTargetOpenClawVersion(report.targetOpenClaw);
     if (targetOpenClawVersion !== preparedTarget.exactVersion) {
@@ -478,6 +589,8 @@ async function inspectPackageItem(
           targetOpenClawVersion,
           notifyOwners,
           findings,
+          sdkUsage,
+          artifactSha256: item.artifactSha256,
         },
       );
       await writeFile(
@@ -487,25 +600,67 @@ async function inspectPackageItem(
       console.log(
         `Uploaded ${item.packageName}@${item.version}: findings=${findings.length}, inserted=${uploadResult.inserted}, shouldEmailOwner=${uploadResult.shouldEmailOwner}`,
       );
+      if (!uploadResult.sdkUsage)
+        throw new Error("ClawHub did not acknowledge SDK inventory persistence");
+      persistedInventory = {
+        status: uploadResult.sdkUsage.applied
+          ? uploadResult.sdkUsage.status
+          : uploadResult.sdkUsage.status === "complete"
+            ? "superseded"
+            : uploadResult.sdkUsage.status,
+        entryCount: uploadResult.sdkUsage.entryCount,
+        unknownCount: uploadResult.sdkUsage.unknownCount,
+      };
     }
     return {
       failed: false,
+      failureRecorded: false,
       scanned: true,
       notificationAttempted: false,
       notificationSent: false,
-      impactEntry: toImpactEntry(item, findings, targetOpenClawVersion),
+      impactEntry: {
+        ...toImpactEntry(item, findings, targetOpenClawVersion),
+        sdkUsage: persistedInventory,
+      },
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await writeFile(path.join(reportDir, "error.txt"), message);
     console.error(`Plugin Inspector bulk scan failed for ${item.packageName}@${item.version}`);
     console.error(message);
+    let failureRecorded = false;
+    const sdkUsage = failedSdkUsageReport(message);
+    if (!dryRun && item.artifactSha256) {
+      try {
+        await postJson<UploadResult>(`${siteUrl}/api/v1/package-inspector/results`, {
+          packageId: item.packageId,
+          releaseId: item.releaseId,
+          inspectorVersion,
+          targetOpenClawVersion: preparedTarget.exactVersion,
+          artifactSha256: item.artifactSha256,
+          notifyOwners: false,
+          inspectionFailed: true,
+          findings: [],
+          sdkUsage,
+        });
+        failureRecorded = true;
+      } catch (persistenceError) {
+        console.error(
+          `Could not persist scan failure for ${item.packageName}: ${String(persistenceError)}`,
+        );
+      }
+    }
     return {
       failed: true,
+      failureRecorded,
       scanned: false,
       notificationAttempted: false,
       notificationSent: false,
-      impactEntry: undefined,
+      impactEntry: {
+        ...toImpactEntry(item, [], preparedTarget.exactVersion),
+        sdkUsage: inventorySummary(sdkUsage),
+        scanError: message,
+      },
     };
   } finally {
     await rm(workRoot, { recursive: true, force: true });
@@ -533,6 +688,12 @@ export async function downloadPackageArtifactForScan(
   }
 
   const artifactKind = resolveArtifactKind(item.artifactKind, artifact.headers);
+  const downloadedIdentity = artifact.headers.get("X-ClawHub-Artifact-Sha256");
+  if (downloadedIdentity) {
+    if (item.artifactSha256 && item.artifactSha256 !== downloadedIdentity)
+      throw new Error("Scan artifact identity changed after claim");
+    item.artifactSha256 = downloadedIdentity;
+  }
   const artifactPath = path.join(
     workRoot,
     artifactKind === "npm-pack" ? "plugin.tgz" : "plugin.zip",
@@ -684,6 +845,8 @@ async function claimBatch(
   url.searchParams.set("inspectorVersion", inspectorVersion);
   url.searchParams.set("targetOpenClawVersion", targetOpenClawVersion);
   url.searchParams.set("notifyOwners", notifyOwners ? "true" : "false");
+  url.searchParams.set("inventorySchemaVersion", String(SDK_USAGE_SCHEMA_VERSION));
+  url.searchParams.set("inventoryAnalysisVersion", SDK_USAGE_ANALYSIS_VERSION);
   if (!dryRun) url.searchParams.set("runId", runId);
   if (cursor) url.searchParams.set("cursor", cursor);
   return await postJson<ClaimResponse>(url.toString(), {});
@@ -961,6 +1124,15 @@ export function summarizeImpact(args: {
   claimed: number;
   scanned: number;
   skippedUnchanged?: number;
+  skipped?: SkippedRelease[];
+  corpus?: {
+    scope: string;
+    initial: CoverageRelease[];
+    reconciled: CoverageRelease[];
+    reconciliationComplete: boolean;
+    unresolved: CoverageRelease[];
+    error?: string;
+  };
   batches: number;
   truncated: boolean;
   nextCursor: string | null;
@@ -1025,6 +1197,8 @@ export function summarizeImpact(args: {
     claimedReleases: args.claimed,
     scannedReleases: args.scanned,
     skippedUnchangedReleases: args.skippedUnchanged ?? 0,
+    skipped: args.skipped ?? [],
+    ...(args.corpus ? { corpus: args.corpus } : {}),
     pluginsWithFindings: args.entries.filter((entry) => entry.findingCount > 0).length,
     pluginsWithErrors,
     pluginsWithWarnings,
@@ -1033,11 +1207,34 @@ export function summarizeImpact(args: {
     totalWarnings,
     findingFrequency: [...frequency.values()].sort((a, b) => b.count - a.count),
     packages: args.entries.filter((entry) => entry.findingCount > 0),
+    inventories: args.entries.map(
+      ({ packageId, releaseId, packageName, version, sdkUsage, scanError }) => ({
+        packageId,
+        releaseId,
+        packageName,
+        version,
+        sdkUsage,
+        ...(scanError ? { scanError } : {}),
+      }),
+    ),
+    inventoryCompleteReleases: args.entries.filter((entry) => entry.sdkUsage?.status === "complete")
+      .length,
+    inventoryIncompleteReleases: args.entries.filter(
+      (entry) => entry.sdkUsage && entry.sdkUsage.status !== "complete",
+    ).length,
   };
 }
 
 function getInspectorVersion() {
   return process.env.PLUGIN_INSPECTOR_VERSION ?? resolveBundledPluginInspectorVersion();
+}
+
+function inventorySummary(report: SdkUsageReport) {
+  return {
+    status: report.status,
+    entryCount: report.entries.length,
+    unknownCount: report.unknowns.length,
+  };
 }
 
 export function renderImpactMarkdown(summary: ReturnType<typeof summarizeImpact>) {
