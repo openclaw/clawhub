@@ -64,7 +64,7 @@ async function writePluginZip(
 ) {
   const entrypoint =
     args.kind === "warning"
-      ? 'import { loadSessionStore } from "openclaw/plugin-sdk/config-runtime";\nexport const demo = true;\n'
+      ? 'import { loadSessionStore, getSessionEntry } from "openclaw/plugin-sdk/config-runtime";\nexport const demo = true;\n'
       : "export const demo = true;\n";
   const zipBytes = zipSync({
     [`${args.name}/package.json`]: strToU8(pluginPackageJson(args)),
@@ -520,6 +520,42 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
     "Replace deprecated loadSessionStore whole-store access with row-scoped session helpers.",
   );
   await captureProof(page, testInfo, "04-plugin-public-warnings");
+
+  const siteUrl = process.env.VITE_CONVEX_SITE_URL;
+  if (!siteUrl) throw new Error("VITE_CONVEX_SITE_URL is required");
+  const inventoryResponse = await page.request.get(
+    `${siteUrl}/api/v1/sdk-usage/plugin?package=${encodeURIComponent(warningName)}`,
+  );
+  expect(inventoryResponse.ok()).toBe(true);
+  const inventory = await inventoryResponse.json();
+  expect(inventory.scan).toMatchObject({ status: "complete", inputKind: "artifact" });
+  expect(inventory.items).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        key: "sdk-export:openclaw/plugin-sdk/config-runtime#loadSessionStore",
+        deprecationCodes: ["sdk-load-session-store"],
+      }),
+      expect.objectContaining({
+        key: "sdk-export:openclaw/plugin-sdk/config-runtime#getSessionEntry",
+        deprecationCodes: [],
+      }),
+    ]),
+  );
+  const usageResponse = await page.request.get(
+    `${siteUrl}/api/v1/sdk-usage?key=${encodeURIComponent("sdk-export:openclaw/plugin-sdk/config-runtime#getSessionEntry")}`,
+  );
+  expect(usageResponse.ok()).toBe(true);
+  const usage = await usageResponse.json();
+  expect(
+    usage.items.filter((item: { packageName: string }) => item.packageName === warningName),
+  ).toHaveLength(1);
+  expect(usage.coverage.counts.complete).toBeGreaterThanOrEqual(1);
+  const inventoryProofPath = testInfo.outputPath("published-sdk-inventory.json");
+  await writeFile(inventoryProofPath, JSON.stringify({ inventory, usage }, null, 2));
+  await testInfo.attach("published-sdk-inventory.json", {
+    path: inventoryProofPath,
+    contentType: "application/json",
+  });
 
   await expectHealthyInspectorPage(page, errors);
 });
