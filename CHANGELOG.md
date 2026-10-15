@@ -5,7 +5,7 @@
 - Tooling: accept Bun's environment-file loading diagnostic in local dependency audits while preserving tool-error and malware failures.
 - Plugins: show informational notices for OpenClaw APIs with scheduled retirement dates, with replacement details and a publisher dashboard nudge.
 - Dependencies: update Plugin Inspector to 0.4.0 in the app and CLI to retain structured API retirement guidance; the CLI now requires Node.js 22.13+ on the 22.x line or Node.js 24+.
-- CLI/Scans: load Plugin Inspector only for validation and run bulk scans under Node.js; ordinary Bun CLI commands remain available, while local plugin validation explains its Node.js requirement.
+- CLI/Scans: load Plugin Inspector only for validation, select Node.js 24 for hosted Convex actions, and run bulk scans under Node.js; ordinary Bun CLI commands remain available, while local plugin validation explains its Node.js requirement.
 
 - Dependencies: patch vulnerable DOMPurify, Next.js preview tooling, shell-quote, and source-map-js versions.
 - Dependencies: refresh supported React, TanStack, Radix, email, CLI utility, lint, format, and test packages while retaining the current Node and compiler compatibility contracts.

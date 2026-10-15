@@ -7,9 +7,16 @@ installability or security verdict.
 
 Complete structured retirement guidance is sufficient even without a separate
 `authorRemediation.summary`. Both publish and bulk-scan normalization preserve it.
-Inspector 0.4.0 runs on Node.js 22.13+ (22.x) or 24+; bulk scans explicitly use
-Node.js, and the CLI loads Inspector only for local validation so ordinary Bun
+Inspector 0.4.0 runs on Node.js 22.13+ (22.x) or 24+; hosted Convex actions select
+Node.js 24 in `convex.json`, bulk scans explicitly use Node.js, and the CLI loads Inspector only for local validation so ordinary Bun
 commands do not import its Node-only module graph.
+
+Convex defaults to Node.js 20 without an explicit runtime selection. Its runtime
+upgrade can take a few minutes after a deployment; release operators should apply
+the Node.js 24 configuration before shipping the Inspector upgrade when avoiding
+a temporary publish-validation interruption is required. Local self-hosted Convex
+uses its executor's Node.js version, so local browser proof alone cannot verify
+the hosted runtime selection. Verify the exact merged revision with Deploy Test.
 
 The public latest-release summary exposes only the API name, replacement guidance,
 and valid calendar date. It must never expose source evidence, private findings,
