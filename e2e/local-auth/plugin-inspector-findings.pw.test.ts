@@ -62,7 +62,10 @@ async function writePluginZip(
     kind: PluginFixtureKind;
   },
 ) {
-  const entrypoint = "export const demo = true;\n";
+  const entrypoint =
+    args.kind === "warning"
+      ? 'import { loadSessionStore } from "openclaw/plugin-sdk/config-runtime";\nexport const demo = true;\n'
+      : "export const demo = true;\n";
   const zipBytes = zipSync({
     [`${args.name}/package.json`]: strToU8(pluginPackageJson(args)),
     [`${args.name}/openclaw.plugin.json`]: strToU8(
@@ -105,6 +108,16 @@ async function submitPluginForChecks(page: Page, displayName: string) {
 
 async function captureProof(page: Page, testInfo: TestInfo, name: string) {
   if (process.env.CLAWHUB_CAPTURE_PLUGIN_INSPECTOR_PROOF !== "1") return;
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await new Promise(requestAnimationFrame);
+    await Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+        .map((animation) => animation.finished.catch(() => {})),
+    );
+  });
   await page.screenshot({
     path: testInfo.outputPath(`${name}.png`),
     fullPage: true,
@@ -494,6 +507,18 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
   ).toBeVisible();
   await expect(page.getByText(/manifest-name-missing/)).toBeVisible();
   await expect(page.getByText(/manifest display name is missing/i)).toBeVisible();
+  const deprecation = page.locator(".plugin-warning-item").filter({
+    has: page.locator(".plugin-warning-item-code", { hasText: /^sdk-load-session-store$/ }),
+  });
+  await expect(deprecation).toBeVisible();
+  await expect(deprecation).toContainText("deprecated whole-store session helper");
+  if (await deprecation.evaluate((element) => element.tagName === "DETAILS")) {
+    await deprecation.locator("summary").click();
+  }
+  await expect(deprecation.locator(".plugin-warning-fix-copy")).toBeVisible();
+  await expect(deprecation.locator(".plugin-warning-fix-copy")).toHaveText(
+    "Replace deprecated loadSessionStore whole-store access with row-scoped session helpers.",
+  );
   await captureProof(page, testInfo, "04-plugin-public-warnings");
 
   await expectHealthyInspectorPage(page, errors);
