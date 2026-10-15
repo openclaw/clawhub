@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Tooling: accept Bun's environment-file loading diagnostic in local dependency audits while preserving tool-error and malware failures.
+
 - Dependencies: patch vulnerable DOMPurify, Next.js preview tooling, shell-quote, and source-map-js versions.
 - Dependencies: refresh supported React, TanStack, Radix, email, CLI utility, lint, format, and test packages while retaining the current Node and compiler compatibility contracts.
 

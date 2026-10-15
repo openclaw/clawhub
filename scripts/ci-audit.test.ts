@@ -99,6 +99,31 @@ describe("ci-audit", () => {
     expect(log).not.toHaveBeenCalled();
   });
 
+  it("accepts Bun's local environment loading diagnostics without hiding failures", () => {
+    const jsonOutput = JSON.stringify({ katex: [{ title: "KaTeX advisory", severity: "low" }] });
+    const stderr = '[0.08ms] ".env.local", ".env"\nbun audit v1.3.14 (0d9b296a)\n';
+    const log = vi.fn();
+    expect(auditExitCode({ exitCode: 1, output: jsonOutput, jsonOutput, stderr }, log)).toBe(0);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::warning .*katex/));
+    expect(
+      auditExitCode(
+        {
+          exitCode: 1,
+          output: jsonOutput,
+          jsonOutput,
+          stderr: `${stderr}error: registry failure\n`,
+        },
+        () => {},
+      ),
+    ).toBe(1);
+    const malware = JSON.stringify({
+      fixture: [{ title: "Malware in fixture", cwe: ["CWE-506"] }],
+    });
+    expect(
+      auditExitCode({ exitCode: 1, output: malware, jsonOutput: malware, stderr }, () => {}),
+    ).toBe(1);
+  });
+
   it("fails closed on unexpected stderr even with advisory JSON", () => {
     const log = vi.fn();
     const jsonOutput = JSON.stringify({ dompurify: [{ title: "DOMPurify advisory" }] });
