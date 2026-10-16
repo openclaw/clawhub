@@ -1211,9 +1211,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const isDownloadBlocked =
     pkg.scanStatus === "malicious" || latestRelease?.verification?.scanStatus === "malicious";
   const skillInstallOwner = owner?.handle ?? pkg.ownerHandle ?? "owner";
+  // A tag keeps unscoped package names from matching bundled plugin shortcuts.
+  const pluginInstallTarget = pkg.name.includes("/") ? pkg.name : `${pkg.name}@latest`;
   const installSnippet =
     pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
-      ? `openclaw plugins install ${pkg.name}`
+      ? `openclaw plugins install ${pluginInstallTarget}`
       : `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;

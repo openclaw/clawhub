@@ -254,12 +254,14 @@ describe("plugin detail route", () => {
   });
 
   it.each([
-    { family: "code-plugin", name: "demo-plugin" },
-    { family: "code-plugin", name: "@composio/composio" },
-    { family: "bundle-plugin", name: "demo-bundle" },
+    { family: "code-plugin", name: "demo-plugin", target: "demo-plugin@latest" },
+    { family: "code-plugin", name: "discord", target: "discord@latest" },
+    { family: "code-plugin", name: "@composio/composio", target: "@composio/composio" },
+    { family: "code-plugin", name: "owner/plugin", target: "owner/plugin" },
+    { family: "bundle-plugin", name: "demo-bundle", target: "demo-bundle@latest" },
   ] as const)(
     "shows and copies the default ClawHub command for $name",
-    async ({ family, name }) => {
+    async ({ family, name, target }) => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       vi.stubGlobal("navigator", { clipboard: { writeText } });
       loaderDataMock.detail.package = { ...loaderDataMock.detail.package!, family, name };
@@ -269,11 +271,11 @@ describe("plugin detail route", () => {
       const { container } = render(<Component />);
 
       expect(container.querySelector(".skill-install-command")?.textContent).toBe(
-        `openclaw plugins install ${name}`,
+        `openclaw plugins install ${target}`,
       );
       fireEvent.click(screen.getByRole("button", { name: "Copy plugin install command" }));
       await waitFor(() =>
-        expect(writeText).toHaveBeenCalledWith(`openclaw plugins install ${name}`),
+        expect(writeText).toHaveBeenCalledWith(`openclaw plugins install ${target}`),
       );
     },
   );
@@ -1772,7 +1774,7 @@ describe("plugin detail route", () => {
     expect(screen.getByText("sha512-demo")).toBeTruthy();
     expect(screen.getByText("openclaw plugins install")).toBeTruthy();
     expect(
-      screen.getByText("demo-plugin", { selector: ".skill-install-command-target" }),
+      screen.getByText("demo-plugin@latest", { selector: ".skill-install-command-target" }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",

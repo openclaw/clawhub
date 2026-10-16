@@ -61,6 +61,10 @@ For example, `openclaw plugins install @composio/composio` resolves through
 ClawHub. The optional `clawhub:<package>` prefix still works. Use
 `openclaw plugins install npm:<package>` to install directly from npm.
 
+For an unscoped package, use `openclaw plugins install episodic-claw@latest`.
+ClawHub pages include `@latest` on unscoped names to distinguish registry packages
+from OpenClaw's bundled plugin shortcuts.
+
 ## Sign in for publishing
 
 Install the ClawHub CLI:

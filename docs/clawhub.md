@@ -66,6 +66,10 @@ Plugin package names resolve through ClawHub by default, including scoped names
 such as `@composio/composio`. The optional `clawhub:<package>` prefix still works.
 Use `openclaw plugins install npm:<package>` to install directly from npm.
 
+Unscoped package commands include `@latest`, such as
+`openclaw plugins install episodic-claw@latest`, to avoid matching a bundled plugin
+shortcut with the same name.
+
 Plugin installs validate advertised `pluginApi` and `minGatewayVersion`
 compatibility before archive install runs. When a package version publishes a
 ClawPack artifact, OpenClaw prefers the exact uploaded npm-pack `.tgz`, verifies
