@@ -462,6 +462,31 @@ describe("public SDK usage from serialized Inspector reports", () => {
     },
   );
 
+  it.each([undefined, 50])(
+    "finishes one-plugin coverage in one page regardless of release history (cutoff %s)",
+    async (releasedSince) => {
+      const { t, releaseId } = await fixture();
+      await t.run(async (ctx) => {
+        const { _id, _creationTime, ...release } = (await ctx.db.get(releaseId))!;
+        for (let i = 1; i <= 105; i++) {
+          await ctx.db.insert("packageReleases", {
+            ...release,
+            version: `0.0.${i}`,
+            createdAt: i,
+          });
+        }
+        await ctx.db.patch(releaseId, { createdAt: 1000 });
+      });
+      const filter = releasedSince === undefined ? "" : `&releasedSince=${releasedSince}`;
+      const response = await t.fetch(`/api/v1/sdk-usage/coverage?limit=20${filter}`);
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.items).toMatchObject([{ releaseId, releaseCreatedAt: 1000, status: "missing" }]);
+      expect(body.counts.eligible).toBe(1);
+      expect(body.nextCursor).toBeNull();
+    },
+  );
+
   it.each([undefined, 1000])(
     "returns exact counts across all pages with release cutoff %s",
     async (releasedSince) => {

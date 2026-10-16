@@ -135,7 +135,7 @@ Returns `{ key, items, nextCursor, counts, coverage, coverageUrl }`. Each item i
 the package, version, release, and `releaseCreatedAt` (Unix milliseconds), followed
 by the usage entry and scan metadata.
 `counts` contains `{ scope: "page", distinctPlugins }`. `coverage` is the first coverage
-page (up to 100 scanned release records); follow its cursor at `coverageUrl`.
+page (up to 100 packages); follow its cursor at `coverageUrl`.
 
 Usage entries contain `key`, `kind`, `identity`, `classification` (`runtime`, `type`,
 `mixed`, or `declarative`), `referenceKinds`, `deprecationCodes`, and source `evidence`.
@@ -152,6 +152,8 @@ Each roster item contains `packageName`, `version`, `releaseId`, `releaseCreated
 `status`, and `unknownCount`.
 This lets clients reconcile which plugins were actually inspected, including plugins
 with no observed SDK usage.
+Coverage examines each package's current release, so historical releases do not add
+pages. If a deployment invalidates a cursor, restart from the first page.
 
 #### `GET /api/v1/sdk-usage/plugin?package=example-plugin`
 

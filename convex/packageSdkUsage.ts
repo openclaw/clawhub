@@ -4,7 +4,6 @@ import { internalQuery } from "./_generated/server";
 import { internalMutation } from "./functions";
 import {
   currentSdkUsageScan,
-  isPublicSdkUsageRelease,
   publicSdkUsageRelease,
   publicSdkUsageScan,
   sdkUsageStatus,
@@ -67,21 +66,17 @@ export const lookupInternal = internalQuery({
 export const coverageInternal = internalQuery({
   args: { releasedSince: v.optional(v.number()), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
-    const page = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_active_created", (q) => {
-        const active = q.eq("softDeletedAt", undefined);
-        return args.releasedSince === undefined
-          ? active
-          : active.gte("createdAt", args.releasedSince);
-      })
-      .paginate(args.paginationOpts);
+    // Coverage concerns one current release per plugin. Paging release history
+    // makes clients traverse every old version; package creation order is also
+    // stable when listings or scan results change during a traversal.
+    const page = await ctx.db.query("packages").order("asc").paginate(args.paginationOpts);
     const counts = { eligible: 0, complete: 0, partial: 0, failed: 0, missing: 0, incompatible: 0 };
     let unresolvedReferences = 0;
     const items = [];
-    for (const release of page.page) {
-      const pkg = await ctx.db.get(release.packageId);
-      if (!pkg || !isPublicSdkUsageRelease(pkg, release)) continue;
+    for (const pkg of page.page) {
+      const release = await publicSdkUsageRelease(ctx, pkg);
+      if (!release) continue;
+      if (args.releasedSince !== undefined && release.createdAt < args.releasedSince) continue;
       const scan = await currentSdkUsageScan(ctx, pkg, release);
       const status = sdkUsageStatus(scan);
       const unknownCount = scan?.sdkUsage?.unknownCount ?? 0;
