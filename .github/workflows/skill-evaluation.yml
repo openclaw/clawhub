@@ -115,6 +115,27 @@ jobs:
           test "$(git -C "$SKILL_EVALUATOR_DIR" rev-parse HEAD)" = \
             "7304d76cde371287b67ea99653409d014b6b9c85"
           uv sync --project "$SKILL_EVALUATOR_DIR" --extra tier3 --frozen
+          # Harbor 0.24.0 leaves a trailing dot when truncating trial names.
+          # Compose turns it into a hyphen before __, producing an invalid image tag.
+          uv run --project "$SKILL_EVALUATOR_DIR" --frozen --extra tier3 python - <<'PY'
+          from importlib.metadata import version
+          from pathlib import Path
+          import harbor.models.trial.config as config
+
+          if version("harbor") != "0.24.0":
+              raise RuntimeError("Revalidate the trial-name compatibility fix for this Harbor version")
+          path = Path(config.__file__)
+          source = path.read_text()
+          original = "task_name[:32].rstrip('_-')"
+          corrected = "task_name[:32].rstrip('_-.')"
+          if source.count(original) != 1 or corrected in source:
+              raise RuntimeError("Unexpected Harbor trial-name implementation")
+          # Replace the installed file without modifying uv's hardlinked wheel cache.
+          staged = path.with_suffix(".clawhub-tmp")
+          staged.write_text(source.replace(original, corrected))
+          staged.replace(path)
+          print("Applied Harbor 0.24.0 trailing-dot trial-name compatibility fix")
+          PY
           uv run --project "$SKILL_EVALUATOR_DIR" skillevaluator --version
 
       - name: Install pinned Codex CLI

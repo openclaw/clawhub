@@ -454,8 +454,14 @@ blocks promotion or installation. Unchanged syncs do not enqueue another run.
 Legacy catalog skills inherit the repository from their GitHub source when no
 per-skill repository is stored; verification must still enqueue those skills.
 
-The worker pins SkillEvaluator v0.5.0 and its release commit. After changing the
-configuration, the admin backfill creates new configuration-specific jobs while
+The worker pins SkillEvaluator v0.5.0 and its release commit. Its frozen Harbor
+0.24.0 dependency receives a guarded compatibility fix that strips trailing dots
+alongside underscores and hyphens from truncated trial names. Otherwise Compose
+can generate invalid image references such as `doca-compress-explicit-positive-__…`.
+The fix changes container naming only; datasets, scoring, and paired baselines
+remain unchanged. Revalidate or remove it when upgrading Harbor.
+
+After changing the configuration, the admin backfill creates new configuration-specific jobs while
 preserving prior outcomes. Its optional `sourcePaths` selection limits a canary
 to 1–20 exact paths across every page; omitting it selects the full eligible
 catalog. Repeating the backfill does not duplicate already-observed jobs.
