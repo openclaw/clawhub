@@ -1,4 +1,4 @@
-name: Skill Evaluation Full Docker Diagnostic
+name: Skill Evaluation Pinned Production Diagnostic
 
 on:
   workflow_dispatch:
@@ -10,10 +10,14 @@ jobs:
   probe:
     runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 115
+    strategy:
+      fail-fast: false
+      matrix:
+        skill: [nemotron-retrieval-recipes, bionemo-msa-structure-prediction-pipeline]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: a893d232b75c5a0f1e304adbf8234a602e659e3b
+          ref: 0f9d31ba070a0c41851a2c4be91e902bfafae84b
           persist-credentials: false
       - uses: ./.github/actions/setup-bun
       - uses: actions/setup-python@v7
@@ -53,7 +57,21 @@ jobs:
       - name: Diagnose one exact evaluation without queue access
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DIAGNOSTIC_SKILL: ${{ matrix.skill }}
         run: |
+          # Observe rejected methods/paths only; do not change capability scope.
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path('scripts/evaluations/openai-capability-broker.ts')
+          s = p.read_text()
+          signature = '  upstreamBaseUrl?: string;'
+          rejection = '        reject(response, 404, "unsupported evaluation endpoint");'
+          assert s.count(signature) == 1 and s.count(rejection) == 1
+          assert 'upstream.status === 520 ? 502 : upstream.status' in s
+          s = s.replace(signature, signature + '\n  onRejectedEndpoint?: (method: string | undefined, path: string) => void;')
+          s = s.replace(rejection, '        args.onRejectedEndpoint?.(request.method, url.pathname);\n' + rejection)
+          p.write_text(s)
+          PYTHON
           cat > diagnostic-concurrency.ts <<'TS'
           import { lstat, readFile, readdir, rm } from 'node:fs/promises';
           import { join, relative } from 'node:path';
@@ -65,6 +83,8 @@ jobs:
           import { maskGitHubActionsSecret, maskKnownWorkerSecrets, redactWorkerPublicText } from './scripts/lib/workerRedaction';
 
           maskKnownWorkerSecrets();
+          const skill = process.env.DIAGNOSTIC_SKILL;
+          if (!['nemotron-retrieval-recipes', 'bionemo-msa-structure-prediction-pipeline'].includes(skill ?? '')) throw new Error('Invalid diagnostic skill');
           const apiKey = process.env.OPENAI_API_KEY;
           if (!apiKey) throw new Error('Missing diagnostic model credential');
           delete process.env.OPENAI_API_KEY;
@@ -73,14 +93,16 @@ jobs:
           const snapshot = await materializeNvidiaSkillsSnapshot('392ab8ab2587345a9d86240967f666bd59ac82ca');
           let broker: Awaited<ReturnType<typeof startOpenAiCapabilityBroker>> | undefined;
           try {
-            const skillDirectory = join(snapshot.checkout, 'skills/nemotron-retrieval-recipes');
+            const skillDirectory = join(snapshot.checkout, `skills/${skill}`);
             const resultsDirectory = join(snapshot.root, 'results');
             const commands = buildTier3Commands({ evaluatorProject: '/tmp/evaluator', skillDirectory, resultsDirectory, agent: config.agent, agentModel: config.agentModel, attempts: config.attemptsPerCase, environment: config.environment });
+            if (commands.evaluate[commands.evaluate.indexOf('--n-concurrent') + 1] !== '4') throw new Error('Expected actual production four-slot command');
+            console.log(JSON.stringify({ actualCommandConcurrency: 4, productionCheckout: '0f9d31ba070a0c41851a2c4be91e902bfafae84b', skill }));
             const validation = await runCommand(commands.validate, { cwd: snapshot.checkout, env: commandEnvironment(), timeoutMs: 300_000 });
             if (validation.exitCode !== 0) throw new Error(safe(validation.stdout + validation.stderr));
             const gateway = await runCommand(['docker', 'network', 'inspect', 'bridge', '--format', '{{(index .IPAM.Config 0).Gateway}}'], { env: commandEnvironment() });
             if (gateway.exitCode !== 0 || !gateway.stdout.trim()) throw new Error('Docker gateway unavailable');
-            broker = await startOpenAiCapabilityBroker({ allowedModels: [config.agentModel, config.judgeModel], apiKey });
+            broker = await startOpenAiCapabilityBroker({ allowedModels: [config.agentModel, config.judgeModel], apiKey, onRejectedEndpoint(method, path) { console.log(JSON.stringify({ brokerRejectedEndpoint: { method, path: safe(path).slice(0, 400) } })); } });
             secrets.push(broker.capabilityToken);
             maskGitHubActionsSecret(broker.capabilityToken);
             async function trialProgress() {
@@ -94,11 +116,11 @@ jobs:
                 if (trial.exception_info) progress.exceptions++;
                 if (trial.environment_setup?.finished_at) progress.environmentSetupsCompleted++;
               }
-              console.log(JSON.stringify({ diagnosticProgress: 'nemotron-retrieval-recipes', ...progress }));
+              console.log(JSON.stringify({ diagnosticProgress: skill, ...progress }));
             }
             const progressTimer = setInterval(() => { void trialProgress().catch(() => {}); }, 60_000);
             progressTimer.unref();
-            console.log('Running pinned nemotron-retrieval-recipes evaluation with a 105-minute diagnostic budget.');
+            console.log(`Running pinned ${skill} evaluation with a 105-minute diagnostic budget.`);
             const startedAt = Date.now();
             const result = await runCommand([...commands.evaluate, '--harbor-keep-jobs'], { cwd: snapshot.checkout, env: evaluationEnvironment(config, { baseUrl: `http://${gateway.stdout.trim()}:${broker.port}/v1`, token: broker.capabilityToken }), timeoutMs: 105 * 60_000 });
             clearInterval(progressTimer);
@@ -119,9 +141,19 @@ jobs:
               }
             }
             await inspect(resultsDirectory);
+            let errorContexts = 0;
+            const diagnosticFiles = new Bun.Glob('**/*.{json,jsonl,txt,log}');
+            for await (const file of diagnosticFiles.scan({ cwd: resultsDirectory, absolute: true, onlyFiles: true, followSymlinks: false })) {
+              if (errorContexts >= 5 || (await lstat(file)).size > 2 * 1024 * 1024) continue;
+              const contents = await readFile(file, 'utf8');
+              const offset = contents.indexOf('unsupported evaluation endpoint');
+              if (offset < 0) continue;
+              console.log(JSON.stringify({ brokerErrorContextFile: relative(resultsDirectory, file), context: safe(contents.slice(Math.max(0, offset - 2500), offset + 1500)) }));
+              errorContexts++;
+            }
             const resultPath = await findLatestResultJson(resultsDirectory);
             const native = resultPath ? JSON.parse(await readFile(resultPath, 'utf8')) : undefined;
-            console.log(JSON.stringify({ diagnostic: 'nemotron-retrieval-recipes-concurrency-four-retry-compatible', durationMs: Date.now() - startedAt, trialConcurrency: 4, exitCode: result.exitCode, executionStatus: native?.execution_status, agentStatus: native?.agents?.codex?.execution_status, exceptions, nativeError: safe(JSON.stringify(native?.execution_errors ?? native?.error ?? [])) }));
+            console.log(JSON.stringify({ diagnostic: `${skill}-verified-production-four-slots`, durationMs: Date.now() - startedAt, trialConcurrency: 4, exitCode: result.exitCode, executionStatus: native?.execution_status, agentStatus: native?.agents?.codex?.execution_status, exceptions, nativeError: safe(JSON.stringify(native?.execution_errors ?? native?.error ?? [])) }));
             if (result.exitCode === 0) console.log(JSON.stringify({ validatedProductionMetrics: parseSkillEvaluatorResultJson(JSON.stringify(native), 'codex').metrics }));
             process.exitCode = result.exitCode;
           } catch (error) {
