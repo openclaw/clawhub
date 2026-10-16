@@ -44,7 +44,8 @@ function pluginPackageJson(args: { name: string; displayName: string; kind: Plug
       repository: `https://github.com/openclaw/${args.name}.git`,
       pluginInspector,
       openclaw: {
-        extensions: ["./dist/index.js"],
+        extensions: [args.kind === "warning" ? "./src/index.ts" : "./dist/index.js"],
+        ...(args.kind === "warning" ? { runtimeExtensions: ["./dist/index.js"] } : {}),
         compat: { pluginApi: ">=2026.3.24-beta.2" },
         build: { openclawVersion: "2026.3.24-beta.2" },
       },
@@ -64,7 +65,7 @@ async function writePluginZip(
 ) {
   const entrypoint =
     args.kind === "warning"
-      ? 'import { loadSessionStore } from "openclaw/plugin-sdk/config-runtime";\nimport { getSessionEntry, getSessionEntryAsync } from "openclaw/plugin-sdk/session-store-runtime";\nexport const demo = true;\n'
+      ? 'import { loadSessionStore } from "openclaw/plugin-sdk/config-runtime";\nimport { getSessionEntry, getSessionEntryAsync } from "openclaw/plugin-sdk/session-store-runtime";\nexport default function register(api) { api.registerTool({ name: "sdk-inventory-proof" }); }\n'
       : "export const demo = true;\n";
   const zipBytes = zipSync({
     [`${args.name}/package.json`]: strToU8(pluginPackageJson(args)),
@@ -531,6 +532,11 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
   expect(inventory.scan).toMatchObject({ status: "complete", inputKind: "artifact" });
   expect(inventory.items).toEqual(
     expect.arrayContaining([
+      expect.objectContaining({
+        key: "api-member:api.registerTool",
+        classification: "runtime",
+        evidence: expect.arrayContaining([expect.objectContaining({ path: "dist/index.js" })]),
+      }),
       expect.objectContaining({
         key: "sdk-export:openclaw/plugin-sdk/config-runtime#loadSessionStore",
         deprecationCodes: ["sdk-load-session-store"],
