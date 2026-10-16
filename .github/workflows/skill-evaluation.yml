@@ -1,4 +1,4 @@
-name: Skill Evaluation Full Docker Diagnostic
+name: Skill Evaluation DeepStream Setup Diagnostic
 
 on:
   workflow_dispatch:
@@ -9,13 +9,8 @@ permissions:
 jobs:
   probe:
     runs-on: blacksmith-16vcpu-ubuntu-2404
-    timeout-minutes: 35
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: a893d232b75c5a0f1e304adbf8234a602e659e3b
-          persist-credentials: false
-      - uses: ./.github/actions/setup-bun
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -25,97 +20,50 @@ jobs:
       - uses: docker/setup-compose-action@54042514f505b273907334ae2b9cdbb9a0213c1a # v2.4.0
         with:
           version: v5.1.4
-      - name: Install pinned evaluator and agent
+      - name: Install pinned public evaluator and source inputs
         run: |
           git clone --quiet --branch v0.5.0 --depth 1 https://github.com/NVIDIA/SkillEvaluator.git /tmp/evaluator
           test "$(git -C /tmp/evaluator rev-parse HEAD)" = "7304d76cde371287b67ea99653409d014b6b9c85"
           uv sync --project /tmp/evaluator --extra tier3 --frozen
-          uv run --project /tmp/evaluator --frozen --extra tier3 python - <<'PY'
-          from importlib.metadata import version
+          git init --quiet /tmp/nvidia-skills
+          git -C /tmp/nvidia-skills remote add origin https://github.com/NVIDIA/skills.git
+          git -C /tmp/nvidia-skills sparse-checkout set skills/deepstream-import-vision-model
+          git -C /tmp/nvidia-skills fetch --quiet --depth 1 --filter=blob:none origin 392ab8ab2587345a9d86240967f666bd59ac82ca
+          git -C /tmp/nvidia-skills checkout --quiet --detach FETCH_HEAD
+      - name: Reproduce the generated DeepStream Docker setup error
+        run: |
+          env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 uv run --project /tmp/evaluator --frozen --extra tier3 python -u - <<'PY'
+          import asyncio, json, tempfile, tomllib
           from pathlib import Path
-          import harbor.models.trial.config as config
+          from harbor.models.task.config import EnvironmentConfig
+          from harbor.models.trial.paths import TrialPaths
+          from skillevaluator.tier3.harbor.adapter import generate_harbor_tasks
+          from skillevaluator.tier3.harbor.secure_docker_environment import SkillEvaluatorSecureDockerEnvironment
 
-          if version("harbor") != "0.24.0":
-              raise RuntimeError("Revalidate the trial-name compatibility fix for this Harbor version")
-          path = Path(config.__file__)
-          source = path.read_text()
-          original = "task_name[:32].rstrip('_-')"
-          corrected = "task_name[:32].rstrip('_-.')"
-          if source.count(original) != 1 or corrected in source:
-              raise RuntimeError("Unexpected Harbor trial-name implementation")
-          # Replace the installed file without modifying uv's hardlinked wheel cache.
-          staged = path.with_suffix(".clawhub-tmp")
-          staged.write_text(source.replace(original, corrected))
-          staged.replace(path)
-          print("Applied Harbor 0.24.0 trailing-dot trial-name compatibility fix")
+          async def main():
+              with tempfile.TemporaryDirectory(prefix='deepstream-setup-probe-') as directory:
+                  root = Path(directory)
+                  source = Path('/tmp/nvidia-skills/skills/deepstream-import-vision-model')
+                  tasks = generate_harbor_tasks(source, root / 'tasks', arm_suffix='-with-skill')
+                  task = tasks[0]
+                  config = tomllib.loads((task / 'task.toml').read_text())
+                  sandbox = SkillEvaluatorSecureDockerEnvironment(
+                      environment_dir=task / 'environment',
+                      environment_name='skillevaluator-' + task.name + '-with-skill',
+                      session_id='deepstream-dependency-probe',
+                      trial_paths=TrialPaths(trial_dir=root / 'trial'),
+                      task_env_config=EnvironmentConfig.model_validate(config.get('environment', {})),
+                  )
+                  failure = None
+                  try:
+                      await sandbox.start(force_build=False)
+                  except Exception as error:
+                      failure = str(error)
+                      print(json.dumps({'task': task.name, 'setupError': failure[-16000:]}), flush=True)
+                  finally:
+                      await sandbox.stop(delete=True)
+                  assert failure and 'Invalid requirement' in failure and 'torchvision' in failure, 'Expected inline-comment requirement failure was not reproduced'
+                  print(json.dumps({'diagnostic': 'deepstream-import-vision-model', 'result': 'invalid-inline-requirement-reproduced-in-generated-Docker-build'}), flush=True)
+
+          asyncio.run(main())
           PY
-          npm install -g @openai/codex@0.148.0
-      - name: Diagnose one exact evaluation without queue access
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          cat > diagnostic-doca.ts <<'TS'
-          import { lstat, readFile, readdir, rm } from 'node:fs/promises';
-          import { join, relative } from 'node:path';
-          import { NVIDIA_SKILL_EVALUATION_CONFIG as config } from './convex/lib/skillEvaluationConfig';
-          import { commandEnvironment, evaluationEnvironment } from './scripts/evaluations/run-skill-evaluation-worker';
-          import { startOpenAiCapabilityBroker } from './scripts/evaluations/openai-capability-broker';
-          import { buildTier3Commands, findLatestResultJson, materializeNvidiaSkillsSnapshot, runCommand } from './scripts/evaluations/skill-evaluation-runtime';
-          import { maskGitHubActionsSecret, maskKnownWorkerSecrets, redactWorkerPublicText } from './scripts/lib/workerRedaction';
-
-          maskKnownWorkerSecrets();
-          const apiKey = process.env.OPENAI_API_KEY;
-          if (!apiKey) throw new Error('Missing diagnostic model credential');
-          delete process.env.OPENAI_API_KEY;
-          const secrets = [apiKey];
-          const safe = (value: string) => redactWorkerPublicText(secrets.reduce((text, secret) => text.replaceAll(secret, '[redacted-secret]'), value), Number.MAX_SAFE_INTEGER);
-          const snapshot = await materializeNvidiaSkillsSnapshot('392ab8ab2587345a9d86240967f666bd59ac82ca');
-          let broker: Awaited<ReturnType<typeof startOpenAiCapabilityBroker>> | undefined;
-          try {
-            const skillDirectory = join(snapshot.checkout, 'skills/doca-compress');
-            const resultsDirectory = join(snapshot.root, 'results');
-            const commands = buildTier3Commands({ evaluatorProject: '/tmp/evaluator', skillDirectory, resultsDirectory, agent: config.agent, agentModel: config.agentModel, attempts: config.attemptsPerCase, environment: config.environment });
-            const validation = await runCommand(commands.validate, { cwd: snapshot.checkout, env: commandEnvironment(), timeoutMs: 300_000 });
-            if (validation.exitCode !== 0) throw new Error(safe(validation.stdout + validation.stderr));
-            const gateway = await runCommand(['docker', 'network', 'inspect', 'bridge', '--format', '{{(index .IPAM.Config 0).Gateway}}'], { env: commandEnvironment() });
-            if (gateway.exitCode !== 0 || !gateway.stdout.trim()) throw new Error('Docker gateway unavailable');
-            broker = await startOpenAiCapabilityBroker({ allowedModels: [config.agentModel, config.judgeModel], apiKey });
-            secrets.push(broker.capabilityToken);
-            maskGitHubActionsSecret(broker.capabilityToken);
-            console.log('Running pinned doca-compress evaluation; retaining local Harbor exceptions until cleanup.');
-            const result = await runCommand([...commands.evaluate, '--harbor-keep-jobs'], { cwd: snapshot.checkout, env: evaluationEnvironment(config, { baseUrl: `http://${gateway.stdout.trim()}:${broker.port}/v1`, token: broker.capabilityToken }), timeoutMs: 25 * 60_000 });
-            await broker.close();
-            broker = undefined;
-            console.log(JSON.stringify({ exitCode: result.exitCode, stdoutTail: safe(result.stdout).slice(-12_000), stderrTail: safe(result.stderr).slice(-12_000) }));
-            let exceptions = 0;
-            async function inspect(directory: string) {
-              for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
-                if (exceptions >= 4) return;
-                const path = join(directory, entry.name);
-                if (entry.isDirectory()) await inspect(path);
-                else if (entry.isFile() && entry.name === 'exception.txt' && (await lstat(path)).size <= 1024 * 1024) {
-                  console.log(JSON.stringify({ exception: relative(resultsDirectory, path), detail: safe(await readFile(path, 'utf8')).slice(-20_000) }));
-                  exceptions++;
-                }
-              }
-            }
-            await inspect(resultsDirectory);
-            const resultPath = await findLatestResultJson(resultsDirectory);
-            const native = resultPath ? JSON.parse(await readFile(resultPath, 'utf8')) : undefined;
-            console.log(JSON.stringify({ diagnostic: 'doca-compress', exitCode: result.exitCode, executionStatus: native?.execution_status, agentStatus: native?.agents?.codex?.execution_status, exceptions, nativeError: safe(JSON.stringify(native?.execution_errors ?? native?.error ?? [])) }));
-            process.exitCode = result.exitCode;
-          } catch (error) {
-            console.log(JSON.stringify({ diagnosticError: safe(error instanceof Error ? error.stack ?? error.message : String(error)) }));
-            process.exitCode = 1;
-          } finally {
-            if (broker) await broker.close();
-            await rm(snapshot.root, { recursive: true, force: true });
-          }
-          TS
-          bun diagnostic-doca.ts
-      - name: Final host capacity
-        if: always()
-        run: |
-          df -h /tmp
-          free -m
-          docker system df
