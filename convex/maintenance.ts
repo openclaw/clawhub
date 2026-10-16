@@ -24,7 +24,10 @@ import {
 import { recomputePublisherStats } from "./lib/publisherStats";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { isSkillCardPath } from "./lib/skillCards";
-import { NVIDIA_SKILL_EVALUATION_CONFIG_KEY } from "./lib/skillEvaluationConfig";
+import {
+  NVIDIA_SKILL_EVALUATION_CONFIG,
+  NVIDIA_SKILL_EVALUATION_CONFIG_KEY,
+} from "./lib/skillEvaluationConfig";
 import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
 import {
   computeQualitySignals,
@@ -43,6 +46,76 @@ const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 20;
 const MAX_MAX_BATCHES = 200;
+
+export const prioritizeQueuedSkillEvaluationsInternal = internalMutation({
+  args: {
+    runs: v.array(v.object({ runId: v.id("skillEvaluationRuns"), expectedAttempts: v.number() })),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    if (
+      args.runs.length < 1 ||
+      args.runs.length > 20 ||
+      new Set(args.runs.map((run) => run.runId)).size !== args.runs.length ||
+      args.runs.some(
+        (run) => !Number.isSafeInteger(run.expectedAttempts) || run.expectedAttempts < 0,
+      )
+    ) {
+      throw new ConvexError("Select 1–20 unique runs with nonnegative integer attempt counts");
+    }
+    const now = Date.now();
+    const selected: Array<Doc<"skillEvaluationRuns">> = [];
+    const rejected: Array<{ runId: Id<"skillEvaluationRuns">; reason: string }> = [];
+    for (const expected of args.runs) {
+      const run = await ctx.db.get(expected.runId);
+      let reason: string | undefined;
+      if (!run || run.status !== "queued") reason = "not-queued";
+      else if (run.source !== "backfill") reason = "not-backfill";
+      else if (
+        run.configKey !== NVIDIA_SKILL_EVALUATION_CONFIG_KEY ||
+        run.sourceRepo !== NVIDIA_SKILL_EVALUATION_CONFIG.sourceRepo
+      )
+        reason = "configuration-changed";
+      else if (run.attempts !== expected.expectedAttempts) reason = "attempts-changed";
+      else if (run.nextRunAt > now) reason = "retry-not-due";
+      else {
+        const skill = await ctx.db.get(run.skillId);
+        const source = skill?.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
+        const repo = (skill?.githubCurrentRepo ?? source?.repo)?.trim().toLowerCase();
+        if (
+          !skill ||
+          skill.softDeletedAt ||
+          skill.moderationStatus === "removed" ||
+          skill.githubCurrentStatus !== "present" ||
+          skill.githubCurrentContentHash !== run.contentHash ||
+          repo !== run.sourceRepo
+        )
+          reason = "stale-version";
+      }
+      if (reason) rejected.push({ runId: expected.runId, reason });
+      else if (run) selected.push(run);
+    }
+    // Validate the whole selection before writing; a concurrent claim or retry
+    // must not turn a reviewed batch into a partial priority change.
+    if (rejected.length) return { eligible: false, prioritized: 0, rejected, changes: [] };
+    const changes = selected
+      .filter((run) => run.nextRunAt !== 0)
+      .map((run) => ({
+        runId: run._id,
+        sourcePath: run.sourcePath,
+        attempts: run.attempts,
+        previousNextRunAt: run.nextRunAt,
+        nextRunAt: 0,
+      }));
+    if (args.dryRun !== false) return { eligible: true, prioritized: 0, rejected, changes };
+    for (const change of changes) {
+      // Priority only: retain status, attempt/error history, and evaluation inputs.
+      await ctx.db.patch(change.runId, { nextRunAt: 0, updatedAt: now });
+    }
+    if (changes.length) await requestSkillEvaluationDispatch(ctx);
+    return { eligible: true, prioritized: changes.length, rejected, changes };
+  },
+});
 
 export const retryFailedSkillEvaluationInternal = internalMutation({
   args: {

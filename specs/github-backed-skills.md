@@ -473,6 +473,13 @@ Public evaluation maintenance mutations, including targeted prioritization and
 backfill scheduling, require an active admin before reading or changing queues.
 Anonymous callers and non-admin users cannot requeue evaluations or schedule
 worker dispatch; the existing admin scheduling behavior remains available.
+The retained internal `maintenance:prioritizeQueuedSkillEvaluationsInternal`
+operator command can move 1–20 explicitly selected, already-due NVIDIA backfill
+runs ahead of other backfill work so larger evaluations can start earlier. It
+defaults to a dry run and validates the entire batch's current configuration,
+content, queued state, and expected attempt counts before writing. It changes
+only queue priority and update time, preserving retry backoff, attempt/error
+history, active leases, terminal outcomes, and the priority of new sync work.
 
 The worker discovers only SkillEvaluator's supported upstream `evals/` layout.
 Missing, conflicting, or unsupported eval inputs produce a durable skipped
