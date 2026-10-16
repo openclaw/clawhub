@@ -459,7 +459,7 @@ configuration, the admin backfill creates new configuration-specific jobs while
 preserving prior outcomes. Its optional `sourcePaths` selection limits a canary
 to 1–20 exact paths across every page; omitting it selects the full eligible
 catalog. Repeating the backfill does not duplicate already-observed jobs.
-Sixteen GitHub worker lanes claim jobs independently, with one active job per
+Thirty-two GitHub worker lanes claim jobs independently, with one active job per
 lane across workflow dispatches. Workers claim the next skill after each
 completed, skipped, or failed evaluation instead of exiting after one skill.
 They stop when no work is claimable or after a 170-minute claim window, leaving

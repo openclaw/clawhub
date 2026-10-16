@@ -17,7 +17,41 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        worker: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        worker:
+          [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+          ]
     concurrency:
       group: clawhub-skill-evaluation-worker-${{ matrix.worker }}
       cancel-in-progress: false
@@ -65,7 +99,7 @@ jobs:
         with:
           version: v5.1.4
 
-      # Spread the initial claims instead of sending sixteen actions at once.
+      # Spread the initial claims instead of sending all claim actions at once.
       - name: Stagger worker startup
         env:
           WORKER_SLOT: ${{ matrix.worker }}

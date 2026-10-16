@@ -55,7 +55,7 @@ describe("skill evaluation workflow", () => {
     });
     expect(job.strategy).toEqual({
       "fail-fast": false,
-      matrix: { worker: Array.from({ length: 16 }, (_, index) => index + 1) },
+      matrix: { worker: Array.from({ length: 32 }, (_, index) => index + 1) },
     });
     expect(job.env?.SKILL_EVALUATION_WORKER_ID).toContain("${{ matrix.worker }}");
     expect(install?.run).toContain("--branch v0.5.0");
