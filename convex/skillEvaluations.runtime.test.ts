@@ -79,6 +79,94 @@ function evaluationRow(input: {
 }
 
 describe("skill evaluation runtime queue", () => {
+  it("previews and retries one failed run without erasing attempt history or duplicating work", async () => {
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-token");
+    const t = convexTest(schema, modules);
+    const skillId = await insertNvidiaSkill(t, { hash: "current", slug: "demo" });
+    const runId = await t.run((ctx) =>
+      ctx.db.insert("skillEvaluationRuns", {
+        ...evaluationRow({
+          skillId,
+          contentHash: "current",
+          scanStatus: "clean",
+          source: "backfill",
+        }),
+        status: "failed",
+        attempts: 3,
+        completedAt: 100,
+        lastError: "Docker startup failed",
+      }),
+    );
+    const args = { runId, expectedAttempts: 3 };
+    expect(await t.mutation(internal.maintenance.retryFailedSkillEvaluationInternal, args)).toEqual(
+      {
+        eligible: true,
+        requeued: false,
+        attempts: 3,
+      },
+    );
+    expect((await t.run((ctx) => ctx.db.get(runId)))?.status).toBe("failed");
+    expect(
+      await t.mutation(internal.maintenance.retryFailedSkillEvaluationInternal, {
+        ...args,
+        dryRun: false,
+      }),
+    ).toEqual({ eligible: true, requeued: true, attempts: 3 });
+    const [claimed] = await t.action(api.skillEvaluations.claimSkillEvaluationJobs, {
+      token: "worker-token",
+      workerId: "recovery-worker",
+      limit: 1,
+    });
+    expect(claimed).toMatchObject({ _id: runId, attempts: 4, lastError: "Docker startup failed" });
+    expect(claimed.completedAt).toBeUndefined();
+    expect(
+      await t.mutation(internal.maintenance.retryFailedSkillEvaluationInternal, {
+        ...args,
+        dryRun: false,
+      }),
+    ).toEqual({ eligible: false, requeued: false, reason: "not-failed" });
+    expect(
+      await t.action(api.skillEvaluations.failSkillEvaluation, {
+        token: "worker-token",
+        runId,
+        leaseToken: claimed.leaseToken,
+        error: "still broken",
+      }),
+    ).toMatchObject({ retry: false });
+  });
+
+  it.each(["configuration", "attempts", "source"] as const)(
+    "refuses a failed-run repair after the %s changes",
+    async (changed) => {
+      vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
+      const t = convexTest(schema, modules);
+      const skillId = await insertNvidiaSkill(t, { hash: "current", slug: "demo" });
+      const runId = await t.run((ctx) =>
+        ctx.db.insert("skillEvaluationRuns", {
+          ...evaluationRow({
+            skillId,
+            contentHash: changed === "source" ? "old" : "current",
+            scanStatus: "clean",
+            source: "backfill",
+          }),
+          configKey:
+            changed === "configuration" ? "old-config" : NVIDIA_SKILL_EVALUATION_CONFIG_KEY,
+          status: "failed",
+          attempts: changed === "attempts" ? 4 : 3,
+        }),
+      );
+      expect(
+        await t.mutation(internal.maintenance.retryFailedSkillEvaluationInternal, {
+          runId,
+          expectedAttempts: 3,
+          dryRun: false,
+        }),
+      ).toMatchObject({ eligible: false, requeued: false });
+      expect((await t.run((ctx) => ctx.db.get(runId)))?.status).toBe("failed");
+    },
+  );
+
   it("backfills only selected canaries under the new configuration, then the rest without duplicates", async () => {
     vi.useFakeTimers();
     vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");

@@ -24,6 +24,7 @@ import {
 import { recomputePublisherStats } from "./lib/publisherStats";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { isSkillCardPath } from "./lib/skillCards";
+import { NVIDIA_SKILL_EVALUATION_CONFIG_KEY } from "./lib/skillEvaluationConfig";
 import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
 import {
   computeQualitySignals,
@@ -36,11 +37,56 @@ import { computeIsSuspicious } from "./lib/skillSafety";
 import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
 import { ACTIVE_PUBLISH_ATTEMPT_STATUSES } from "./publishAttempts";
+import { requestSkillEvaluationDispatch } from "./skillEvaluationDispatch";
 
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 20;
 const MAX_MAX_BATCHES = 200;
+
+export const retryFailedSkillEvaluationInternal = internalMutation({
+  args: {
+    runId: v.id("skillEvaluationRuns"),
+    expectedAttempts: v.number(),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    const rejected = (reason: string) => ({ eligible: false, requeued: false, reason });
+    if (!run || run.status !== "failed") return rejected("not-failed");
+    if (run.configKey !== NVIDIA_SKILL_EVALUATION_CONFIG_KEY)
+      return rejected("configuration-changed");
+    if (run.attempts !== args.expectedAttempts) return rejected("attempts-changed");
+    const skill = await ctx.db.get(run.skillId);
+    const source = skill?.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
+    const repo = (skill?.githubCurrentRepo ?? source?.repo)?.trim().toLowerCase();
+    if (
+      !skill ||
+      skill.softDeletedAt ||
+      skill.moderationStatus === "removed" ||
+      skill.githubCurrentStatus !== "present" ||
+      skill.githubCurrentContentHash !== run.contentHash ||
+      repo !== run.sourceRepo
+    )
+      return rejected("stale-version");
+    if (args.dryRun !== false) return { eligible: true, requeued: false, attempts: run.attempts };
+    const now = Date.now();
+    // Preserve attempts and lastError: an operator retry must not erase history
+    // or grant a fresh automatic retry budget after an infrastructure repair.
+    await ctx.db.patch(run._id, {
+      status: "queued",
+      nextRunAt: now,
+      completedAt: undefined,
+      leaseToken: undefined,
+      leaseExpiresAt: undefined,
+      workerId: undefined,
+      startedAt: undefined,
+      updatedAt: now,
+    });
+    await requestSkillEvaluationDispatch(ctx);
+    return { eligible: true, requeued: true, attempts: run.attempts };
+  },
+});
 
 type PluginIconCandidate = {
   packageId: Id<"packages">;
