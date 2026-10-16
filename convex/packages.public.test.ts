@@ -11602,156 +11602,177 @@ describe("packages public queries", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
-  it("publishes a profile-bearing Claw through the staged release pipeline", async () => {
-    const longClawDescription = "x".repeat(1_100);
-    const artifactSha256 = "a".repeat(64);
-    const storedFiles = new Map<string, string>([
-      [
-        "storage:package",
-        JSON.stringify({
-          name: "demo-claw",
-          version: "1.0.0",
-          openclaw: { claw: "manifests/CLAW.md" },
-        }),
-      ],
-      [
-        "storage:claw",
-        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\n---\nRun the demo workflow precisely.\n`,
-      ],
-      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
-      ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
-      ["storage:bootstrap", "Ask which repositories the user owns.\n"],
-    ]);
-    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
-      if (args.minimumRole === "publisher") {
-        return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
-      }
-      if (args.family === "claw") {
-        return { ok: true, packageId: "packages:claw", releaseId: "releases:claw-1" };
-      }
-      return null;
-    });
-    const actor = {
-      _id: "users:owner",
-      role: "user",
-      githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-    };
-    const sequentialReads = [null, actor, actor, null, null];
-    const ctx = {
-      runQuery: vi.fn(async (ref: FunctionReference<"query">) => {
-        if (getFunctionName(ref) === "publishers:getByIdInternal") {
-          return {
-            _id: "publishers:owner",
-            kind: "user",
-            handle: "owner",
-            linkedUserId: "users:owner",
-          };
+  it.each([false, true])(
+    "publishes a profile-bearing Claw with selected avatar=%s",
+    async (withAvatar) => {
+      const avatarBytes = new Uint8Array(
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      );
+      const avatar = `data:image/png;base64,${Buffer.from(avatarBytes).toString("base64")}`;
+      const longClawDescription = "x".repeat(1_100);
+      const artifactSha256 = "a".repeat(64);
+      const storedFiles = new Map<string, string>([
+        [
+          "storage:package",
+          JSON.stringify({
+            name: "demo-claw",
+            version: "1.0.0",
+            openclaw: { claw: "manifests/CLAW.md" },
+          }),
+        ],
+        [
+          "storage:claw",
+          `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\n${withAvatar ? `  identity:\n    avatar: ${JSON.stringify(avatar)}\n` : ""}---\nRun the demo workflow precisely.\n`,
+        ],
+        ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
+        ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
+        ["storage:bootstrap", "Ask which repositories the user owns.\n"],
+      ]);
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if ("sha256" in args && "contentType" in args) return args;
+        if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
+        if (args.minimumRole === "publisher") {
+          return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
         }
-        return sequentialReads.shift() ?? null;
-      }),
-      runMutation,
-      scheduler: { runAfter: vi.fn() },
-      storage: {
-        get: vi.fn(async (storageId: string) => {
-          const content = storedFiles.get(storageId);
-          return content === undefined ? null : new Blob([content]);
+        if (args.family === "claw") {
+          return { ok: true, packageId: "packages:claw", releaseId: "releases:claw-1" };
+        }
+        return null;
+      });
+      const actor = {
+        _id: "users:owner",
+        role: "user",
+        githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+      };
+      const sequentialReads = [null, actor, actor, null, null];
+      const ctx = {
+        runQuery: vi.fn(async (ref: FunctionReference<"query">) => {
+          if (getFunctionName(ref) === "publishers:getByIdInternal") {
+            return {
+              _id: "publishers:owner",
+              kind: "user",
+              handle: "owner",
+              linkedUserId: "users:owner",
+            };
+          }
+          return sequentialReads.shift() ?? null;
         }),
-        store: vi.fn(async () => "storage:legacy-zip"),
-      },
-      runAction: makePublishRunActionMock(),
-    };
-
-    await expect(
-      publishPackageForUserInternalHandler(ctx as never, {
-        actorUserId: "users:owner",
-        payload: {
-          name: "demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
-          version: "1.0.0",
-          changelog: "init",
-          expectedArtifactSha256: artifactSha256,
-          files: [
-            { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
-            {
-              path: "manifests/CLAW.md",
-              size: 1,
-              storageId: "storage:claw",
-              sha256: "claw",
-            },
-            {
-              path: "profiles/openclaw.yml",
-              size: 1,
-              storageId: "storage:profile",
-              sha256: "profile",
-            },
-            {
-              path: "profiles/codex.yml",
-              size: 1,
-              storageId: "storage:codex-profile",
-              sha256: "codex-profile",
-            },
-            {
-              path: "BOOTSTRAP.md",
-              size: 1,
-              storageId: "storage:bootstrap",
-              sha256: "bootstrap",
-            },
-          ],
-          artifact: {
-            kind: "npm-pack",
-            storageId: "storage:archive",
-            sha256: artifactSha256,
-            size: 3,
-            format: "tgz",
-            npmIntegrity: "sha512-demo",
-            npmShasum: "b".repeat(40),
-            npmTarballName: "demo-claw-1.0.0.tgz",
-            npmUnpackedSize: 3,
-            npmFileCount: 3,
-          },
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            const content = storedFiles.get(storageId);
+            return content === undefined ? null : new Blob([content]);
+          }),
+          store: vi.fn(async () => "storage:legacy-zip"),
         },
-      }),
-    ).resolves.toEqual({
-      ok: true,
-      status: "pending",
-      packageId: "packages:claw",
-      releaseId: "releases:claw-1",
-      publicationStatus: "pending",
-      attemptId: STAGED_PACKAGE_ATTEMPT.attemptId,
-      packageName: "demo-claw",
-      version: "1.0.0",
-      artifactSha256,
-    });
-
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        family: "claw",
-        summary: expect.any(String),
-        artifactKind: "npm-pack",
-        clawpackStorageId: "storage:archive",
-        clawpackSha256: artifactSha256,
-        clawpackSize: 3,
-        clawManifestSummary: expect.objectContaining({
-          agent: expect.objectContaining({
-            id: "demo-claw",
-            description: "x".repeat(1_024),
-          }),
-          workspace: expect.objectContaining({
-            bootstrapFiles: ["BOOTSTRAP.md", "SOUL.md"],
-          }),
+        runAction: vi.fn(async function (
+          this: PublishScanStorage,
+          ref: FunctionReference<"action">,
+          args: unknown,
+        ) {
+          return getFunctionName(ref) === "skillPresentationImageNode:validateRasterInternal"
+            ? true
+            : makePublishRunActionMock().call(this, ref, args);
         }),
-        pluginManifestSummary: undefined,
-      }),
-    );
-    const publishMutationArgs = runMutation.mock.calls.find(
-      ([, args]) => args.family === "claw",
-    )?.[1];
-    expect(publishMutationArgs?.summary).toBe("x".repeat(1_024));
-    expect(publishMutationArgs).not.toHaveProperty("extractedClawManifest");
-  });
+      };
+
+      await expect(
+        publishPackageForUserInternalHandler(ctx as never, {
+          actorUserId: "users:owner",
+          payload: {
+            name: "demo-claw",
+            displayName: "Demo Claw",
+            family: "claw",
+            version: "1.0.0",
+            changelog: "init",
+            expectedArtifactSha256: artifactSha256,
+            files: [
+              { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+              {
+                path: "manifests/CLAW.md",
+                size: 1,
+                storageId: "storage:claw",
+                sha256: "claw",
+              },
+              {
+                path: "profiles/openclaw.yml",
+                size: 1,
+                storageId: "storage:profile",
+                sha256: "profile",
+              },
+              {
+                path: "profiles/codex.yml",
+                size: 1,
+                storageId: "storage:codex-profile",
+                sha256: "codex-profile",
+              },
+              {
+                path: "BOOTSTRAP.md",
+                size: 1,
+                storageId: "storage:bootstrap",
+                sha256: "bootstrap",
+              },
+            ],
+            artifact: {
+              kind: "npm-pack",
+              storageId: "storage:archive",
+              sha256: artifactSha256,
+              size: 3,
+              format: "tgz",
+              npmIntegrity: "sha512-demo",
+              npmShasum: "b".repeat(40),
+              npmTarballName: "demo-claw-1.0.0.tgz",
+              npmUnpackedSize: 3,
+              npmFileCount: 3,
+            },
+          },
+        }),
+      ).resolves.toEqual({
+        ok: true,
+        status: "pending",
+        packageId: "packages:claw",
+        releaseId: "releases:claw-1",
+        publicationStatus: "pending",
+        attemptId: STAGED_PACKAGE_ATTEMPT.attemptId,
+        packageName: "demo-claw",
+        version: "1.0.0",
+        artifactSha256,
+      });
+
+      expect(runMutation).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          family: "claw",
+          summary: expect.any(String),
+          ...(withAvatar ? { icon: `/api/v1/skill-icons/${await sha256Hex(avatarBytes)}` } : {}),
+          artifactKind: "npm-pack",
+          clawpackStorageId: "storage:archive",
+          clawpackSha256: artifactSha256,
+          clawpackSize: 3,
+          clawManifestSummary: expect.objectContaining({
+            agent: expect.objectContaining({
+              id: "demo-claw",
+              description: "x".repeat(1_024),
+            }),
+            workspace: expect.objectContaining({
+              bootstrapFiles: ["BOOTSTRAP.md", "SOUL.md"],
+            }),
+          }),
+          pluginManifestSummary: undefined,
+        }),
+      );
+      const publishMutationArgs = runMutation.mock.calls.find(
+        ([, args]) => args.family === "claw",
+      )?.[1];
+      if (!withAvatar) expect(publishMutationArgs).not.toHaveProperty("icon");
+      expect(publishMutationArgs?.summary).toBe("x".repeat(1_024));
+      expect(publishMutationArgs).not.toHaveProperty("extractedClawManifest");
+    },
+  );
 
   it("reuses an in-flight staged Claw publish for the same user and artifact", async () => {
     const artifactSha256 = "a".repeat(64);

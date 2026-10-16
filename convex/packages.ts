@@ -61,6 +61,7 @@ import {
 } from "./lib/artifactModeration";
 import { generatePackageChangelogPreview } from "./lib/changelog";
 import { classifyClawCategories } from "./lib/clawCategoryClassification";
+import { resolveClawIcon } from "./lib/clawIcons";
 import { sha256Hex } from "./lib/clawpack";
 import {
   ACTIVITY_TREND_DAYS,
@@ -9643,7 +9644,7 @@ async function publishPackageImpl(
     : undefined;
   const icon =
     family === "claw"
-      ? undefined
+      ? validatedClaw && (await resolveClawIcon(ctx, validatedClaw.manifest, files))
       : await resolvePackageIcon(ctx, {
           files,
           ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),

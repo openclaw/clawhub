@@ -192,6 +192,26 @@ retains the exact artifact plus a non-sensitive summary for later search and
 detail surfaces; downloads return those same bytes and digest, and ClawHub does
 not duplicate the full manifest into Convex storage.
 
+## Design a Blobster identity
+
+`POST /api/v1/blobsters/generate` accepts an authenticated ClawHub API token and
+a JSON body containing only `prompt` (1–8,000 characters). Submit the description
+the creator has reviewed; the endpoint does not read agent files or conversation
+history. It returns `{ name, description, svg }` for preview, without changing the
+agent or publishing a package. Keep, discard, and regenerate are caller actions.
+
+The model designs clothing and props as SVG shapes. ClawHub validates those shapes
+and renders the fixed Blobster body and face. Generation uses `OPENAI_API_KEY`,
+supports an `OPENAI_BLOBSTER_MODEL` override, and sends `store: false` to the model
+provider. The endpoint allows six requests per minute per account and returns
+`503` if the instance has no model credential.
+
+Save the selected image in `agent.identity.avatar`, as a portable image data URL
+or a declared workspace file. Publishing derives the listing icon from that same
+avatar. Supported catalog formats are PNG, JPEG, WebP and SVG up to 512KB; invalid
+or larger images retain the normal catalog fallback. The exact Claw artifact
+continues to carry the agent's identity for installation.
+
 ## Discover published Claws
 
 ClawHub exposes Claws through the existing package API:

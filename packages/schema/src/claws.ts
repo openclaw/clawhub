@@ -394,6 +394,15 @@ function portablePathKey(value: string): string {
   return caseFold(value.replaceAll("\\", "/").normalize("NFC"));
 }
 
+/** Resolve the identity avatar against the same portable paths used by validation. */
+export function resolveClawAvatarSource(manifest: ClawManifest): string | undefined {
+  const avatar = manifest.agent.identity?.avatar;
+  if (!avatar || AVATAR_DATA_URL_PATTERN.test(avatar)) return avatar;
+  return manifest.workspace?.files?.find(
+    (file) => portablePathKey(file.path) === portablePathKey(avatar),
+  )?.source;
+}
+
 function isPortableAvatar(value: string): boolean {
   if (AVATAR_DATA_URL_PATTERN.test(value)) {
     if (value.length > AVATAR_MAX_DATA_URL_CHARS) return false;
