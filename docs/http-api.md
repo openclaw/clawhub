@@ -107,6 +107,15 @@ Follow `nextCursor` until it is `null`, including after an empty page. Counts de
 only their page, never the whole catalog. Pages are live reads, not a frozen snapshot;
 deduplicate by package and release and retry if releases change during traversal.
 
+Usage lookup and coverage also accept `releasedSince`: an inclusive Unix timestamp
+in milliseconds. This selects plugins whose **latest public release** was published
+at or after that instant. Listing edits and rescan times do not change release age.
+Use the same cutoff on both endpoints so consumer counts and coverage describe the
+same population. Responses echo `releasedSince` (`null` when unfiltered), and the
+returned `coverageUrl` preserves it. Keep the cutoff unchanged while paging.
+For a calendar-month window, calculate the UTC cutoff once before querying and
+state that exact instant in the answer.
+
 #### `GET /api/v1/sdk-usage?key=api-member%3Aapi.registerTool`
 
 `key` is required and uses one of these canonical forms:
@@ -121,7 +130,8 @@ deduplicate by package and release and retry if releases change during traversal
 | Manifest contract | `manifest-contract:manifest.contracts.tools:example_tool`      |
 
 Returns `{ key, items, nextCursor, counts, coverage, coverageUrl }`. Each item identifies
-the package, version, and release, followed by the usage entry and scan metadata.
+the package, version, release, and `releaseCreatedAt` (Unix milliseconds), followed
+by the usage entry and scan metadata.
 `counts` contains `{ scope: "page", distinctPlugins }`. `coverage` is the first coverage
 page (up to 100 scanned release records); follow its cursor at `coverageUrl`.
 
@@ -136,13 +146,14 @@ warnings and remediation remain available through the existing validation UI.
 
 Returns `{ scope: "page", counts, unresolvedReferences, items, nextCursor }`.
 `counts` includes `eligible`, `complete`, `partial`, `failed`, `missing`, and `incompatible`.
-Each roster item contains `packageName`, `version`, `releaseId`, `status`, and `unknownCount`.
+Each roster item contains `packageName`, `version`, `releaseId`, `releaseCreatedAt`,
+`status`, and `unknownCount`.
 This lets clients reconcile which plugins were actually inspected, including plugins
 with no observed SDK usage.
 
 #### `GET /api/v1/sdk-usage/plugin?package=example-plugin`
 
-`package` is required. Returns `{ packageName, version, releaseId, scan, items, nextCursor }`.
+`package` is required. Returns `{ packageName, version, releaseId, releaseCreatedAt, scan, items, nextCursor }`.
 Missing or ineligible public plugins return `404`. A plugin without a current usable
 inventory returns empty `items` and an explicit `missing`, `failed`, or `incompatible`
 scan status. A successfully inspected plugin with no references returns `complete`

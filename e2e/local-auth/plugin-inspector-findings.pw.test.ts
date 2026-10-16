@@ -554,8 +554,34 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
     usage.items.filter((item: { packageName: string }) => item.packageName === warningName),
   ).toHaveLength(1);
   expect(usage.coverage.counts.complete).toBeGreaterThanOrEqual(1);
+  expect(Number.isSafeInteger(inventory.releaseCreatedAt)).toBe(true);
+  const filteredProof = [];
+  for (const releasedSince of [inventory.releaseCreatedAt, inventory.releaseCreatedAt + 1]) {
+    const response = await page.request.get(
+      `${siteUrl}/api/v1/sdk-usage?key=${encodeURIComponent("sdk-export:openclaw/plugin-sdk/session-store-runtime#getSessionEntryAsync")}&releasedSince=${releasedSince}`,
+    );
+    expect(response.ok()).toBe(true);
+    const filteredUsage = await response.json();
+    expect(filteredUsage.releasedSince).toBe(releasedSince);
+    const coverageResponse = await page.request.get(`${siteUrl}${filteredUsage.coverageUrl}`);
+    expect(coverageResponse.ok()).toBe(true);
+    const filteredCoverage = await coverageResponse.json();
+    expect(filteredCoverage.releasedSince).toBe(releasedSince);
+    const expectedCount = releasedSince === inventory.releaseCreatedAt ? 1 : 0;
+    for (const result of [filteredUsage, filteredCoverage]) {
+      expect(
+        result.items.filter((item: { packageName: string }) => item.packageName === warningName),
+      ).toHaveLength(expectedCount);
+      expect(
+        result.items.every(
+          (item: { releaseCreatedAt: number }) => item.releaseCreatedAt >= releasedSince,
+        ),
+      ).toBe(true);
+    }
+    filteredProof.push({ releasedSince, usage: filteredUsage, coverage: filteredCoverage });
+  }
   const inventoryProofPath = testInfo.outputPath("published-sdk-inventory.json");
-  await writeFile(inventoryProofPath, JSON.stringify({ inventory, usage }, null, 2));
+  await writeFile(inventoryProofPath, JSON.stringify({ inventory, usage, filteredProof }, null, 2));
   await testInfo.attach("published-sdk-inventory.json", {
     path: inventoryProofPath,
     contentType: "application/json",

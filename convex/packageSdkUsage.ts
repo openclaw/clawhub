@@ -18,7 +18,11 @@ export const deleteTemporaryReportInternal = internalMutation({
 });
 
 export const lookupInternal = internalQuery({
-  args: { key: v.string(), paginationOpts: paginationOptsValidator },
+  args: {
+    key: v.string(),
+    releasedSince: v.optional(v.number()),
+    paginationOpts: paginationOptsValidator,
+  },
   handler: async (ctx, args) => {
     const page = await ctx.db
       .query("packageSdkUsage")
@@ -29,6 +33,7 @@ export const lookupInternal = internalQuery({
       const pkg = await ctx.db.get(row.packageId);
       const release = await publicSdkUsageRelease(ctx, pkg);
       if (!pkg || !release || release._id !== row.releaseId) continue;
+      if (args.releasedSince !== undefined && release.createdAt < args.releasedSince) continue;
       const scan = await currentSdkUsageScan(ctx, pkg, release);
       const status = sdkUsageStatus(scan);
       if (!scan || scan._id !== row.scanId || (status !== "complete" && status !== "partial"))
@@ -45,11 +50,13 @@ export const lookupInternal = internalQuery({
         packageName: pkg.name,
         version: release.version,
         releaseId,
+        releaseCreatedAt: release.createdAt,
         ...usage,
         scan: publicSdkUsageScan(scan),
       });
     }
     return {
+      releasedSince: args.releasedSince ?? null,
       items,
       nextCursor: page.isDone ? null : page.continueCursor,
       counts: { scope: "page" as const, distinctPlugins: items.length },
@@ -58,11 +65,16 @@ export const lookupInternal = internalQuery({
 });
 
 export const coverageInternal = internalQuery({
-  args: { paginationOpts: paginationOptsValidator },
+  args: { releasedSince: v.optional(v.number()), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
     const page = await ctx.db
       .query("packageReleases")
-      .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+      .withIndex("by_active_created", (q) => {
+        const active = q.eq("softDeletedAt", undefined);
+        return args.releasedSince === undefined
+          ? active
+          : active.gte("createdAt", args.releasedSince);
+      })
       .paginate(args.paginationOpts);
     const counts = { eligible: 0, complete: 0, partial: 0, failed: 0, missing: 0, incompatible: 0 };
     let unresolvedReferences = 0;
@@ -80,11 +92,13 @@ export const coverageInternal = internalQuery({
         packageName: pkg.name,
         version: release.version,
         releaseId: release._id,
+        releaseCreatedAt: release.createdAt,
         status,
         unknownCount,
       });
     }
     return {
+      releasedSince: args.releasedSince ?? null,
       scope: "page" as const,
       counts,
       unresolvedReferences,
@@ -109,6 +123,7 @@ export const pluginInventoryInternal = internalQuery({
       packageName: pkg.name,
       version: release.version,
       releaseId: release._id,
+      releaseCreatedAt: release.createdAt,
       scan: publicSdkUsageScan(scan),
     };
     if (status !== "complete" && status !== "partial")

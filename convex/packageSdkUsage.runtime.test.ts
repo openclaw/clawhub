@@ -98,6 +98,33 @@ async function fixture() {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("public SDK usage from serialized Inspector reports", () => {
+  it("filters consumers and coverage by latest release date, not a recent scan or listing edit", async () => {
+    const { t, packageId, releaseId, ingest } = await fixture();
+    const releasedSince = Date.parse("2026-07-16T12:00:00.000Z");
+    await t.run(async (ctx) => {
+      await ctx.db.patch(releaseId, { createdAt: releasedSince - 1 });
+      await ctx.db.patch(packageId, { updatedAt: releasedSince + 1000 });
+    });
+    await ingest(inventory());
+    const query = `/api/v1/sdk-usage?key=${encodeURIComponent(key)}&releasedSince=${releasedSince}`;
+    const old = await (await t.fetch(query)).json();
+    expect(old.items).toEqual([]);
+    expect(old.coverage.counts.eligible).toBe(0);
+    expect(old.releasedSince).toBe(releasedSince);
+    expect(old.coverageUrl).toBe(`/api/v1/sdk-usage/coverage?releasedSince=${releasedSince}`);
+
+    await t.run((ctx) => ctx.db.patch(releaseId, { createdAt: releasedSince }));
+    const recent = await (await t.fetch(query)).json();
+    expect(recent.items).toMatchObject([{ releaseId, releaseCreatedAt: releasedSince }]);
+    expect(recent.coverage).toMatchObject({
+      releasedSince,
+      counts: { eligible: 1, complete: 1 },
+      items: [{ releaseId, releaseCreatedAt: releasedSince }],
+    });
+    const plugin = await (await t.fetch("/api/v1/sdk-usage/plugin?package=sdk-plugin")).json();
+    expect(plugin.releaseCreatedAt).toBe(releasedSince);
+  });
+
   it("does not count a source-checkout scan as published-artifact coverage", async () => {
     const { ingest, lookup } = await fixture();
     const response = await ingest({ ...inventory(), inputKind: "source" });
@@ -133,6 +160,28 @@ describe("public SDK usage from serialized Inspector reports", () => {
     ]) {
       expect((await t.fetch(url)).status).toBe(400);
     }
+  });
+
+  it("rejects invalid release cutoffs on both public cohort endpoints", async () => {
+    const { t } = await fixture();
+    for (const value of ["", "-1", "1.5", "NaN", "Infinity", "8640000000000001"])
+      for (const endpoint of [
+        `/api/v1/sdk-usage?key=${encodeURIComponent(key)}&`,
+        "/api/v1/sdk-usage/coverage?",
+      ])
+        expect((await t.fetch(`${endpoint}releasedSince=${value}`)).status).toBe(400);
+  });
+
+  it.each(["missing", "failed"])("keeps recent %s scans in filtered coverage", async (status) => {
+    const { t, releaseId, ingest } = await fixture();
+    await t.run((ctx) => ctx.db.patch(releaseId, { createdAt: 1000 }));
+    if (status === "failed") await ingest({ ...inventory([]), status: "failed" });
+    const result = await (await t.fetch("/api/v1/sdk-usage/coverage?releasedSince=1000")).json();
+    expect(result).toMatchObject({
+      releasedSince: 1000,
+      counts: { eligible: 1, complete: 0, [status]: 1 },
+      items: [{ releaseId, releaseCreatedAt: 1000, status }],
+    });
   });
   it.each(["inline", "stored", "expired"])(
     "finalizes a warning-free publish with explicit inventory state (%s)",
@@ -413,71 +462,76 @@ describe("public SDK usage from serialized Inspector reports", () => {
     },
   );
 
-  it("returns exact plugin counts after complete usage and coverage traversal beyond one page", async () => {
-    const { t, packageId, releaseId } = await fixture();
-    const ids = await t.run(async (ctx) => {
-      const {
-        _id: _packageId,
-        _creationTime: _packageCreated,
-        ...pkg
-      } = (await ctx.db.get(packageId))!;
-      const {
-        _id: _releaseId,
-        _creationTime: _releaseCreated,
-        ...release
-      } = (await ctx.db.get(releaseId))!;
-      const items = [{ packageId, releaseId }];
-      for (let i = 1; i < 105; i++) {
-        const name = `sdk-plugin-${i}`;
-        const nextPackageId = await ctx.db.insert("packages", {
-          ...pkg,
-          name,
-          normalizedName: name,
-          latestReleaseId: undefined,
-          tags: {},
-        });
-        const nextReleaseId = await ctx.db.insert("packageReleases", {
-          ...release,
-          packageId: nextPackageId,
-        });
-        await ctx.db.patch(nextPackageId, {
-          latestReleaseId: nextReleaseId,
-          tags: { latest: nextReleaseId },
-        });
-        items.push({ packageId: nextPackageId, releaseId: nextReleaseId });
-      }
-      return items;
-    });
-    for (const item of ids)
-      await t.mutation(internal.packages.ingestPackageInspectorScanResultsInternal, {
-        ...item,
-        inspectorVersion: "inventory-test",
-        targetOpenClawVersion: "2026.10.14",
-        artifactSha256,
-        notifyOwners: false,
-        findings: [],
-        sdkUsage: inventory(),
+  it.each([undefined, 1000])(
+    "returns exact counts across all pages with release cutoff %s",
+    async (releasedSince) => {
+      const { t, packageId, releaseId } = await fixture();
+      const ids = await t.run(async (ctx) => {
+        const {
+          _id: _packageId,
+          _creationTime: _packageCreated,
+          ...pkg
+        } = (await ctx.db.get(packageId))!;
+        const {
+          _id: _releaseId,
+          _creationTime: _releaseCreated,
+          ...release
+        } = (await ctx.db.get(releaseId))!;
+        const items = [{ packageId, releaseId }];
+        for (let i = 1; i < 105; i++) {
+          const name = `sdk-plugin-${i}`;
+          const nextPackageId = await ctx.db.insert("packages", {
+            ...pkg,
+            name,
+            normalizedName: name,
+            latestReleaseId: undefined,
+            tags: {},
+          });
+          const nextReleaseId = await ctx.db.insert("packageReleases", {
+            ...release,
+            packageId: nextPackageId,
+            createdAt: i < 45 ? 1 : 1000,
+          });
+          await ctx.db.patch(nextPackageId, {
+            latestReleaseId: nextReleaseId,
+            tags: { latest: nextReleaseId },
+          });
+          items.push({ packageId: nextPackageId, releaseId: nextReleaseId });
+        }
+        return items;
       });
-    for (const endpoint of [
-      `/api/v1/sdk-usage?key=${encodeURIComponent(key)}`,
-      "/api/v1/sdk-usage/coverage?",
-    ]) {
-      let cursor: string | null = null;
-      const releases = new Set<string>();
-      let count = 0;
-      do {
-        const url = `${endpoint}&limit=40${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
-        const response = await t.fetch(url);
-        expect(response.status).toBe(200);
-        const body = await response.json();
-        for (const item of body.items) releases.add(item.releaseId);
-        count += body.counts.distinctPlugins ?? body.counts.eligible;
-        cursor = body.nextCursor;
-      } while (cursor !== null);
-      expect(releases.size).toBe(105);
-      expect(count).toBe(105);
-    }
-  });
+      for (const item of ids)
+        await t.mutation(internal.packages.ingestPackageInspectorScanResultsInternal, {
+          ...item,
+          inspectorVersion: "inventory-test",
+          targetOpenClawVersion: "2026.10.14",
+          artifactSha256,
+          notifyOwners: false,
+          findings: [],
+          sdkUsage: inventory(),
+        });
+      for (const endpoint of [
+        `/api/v1/sdk-usage?key=${encodeURIComponent(key)}`,
+        "/api/v1/sdk-usage/coverage?",
+      ]) {
+        let cursor: string | null = null;
+        const releases = new Set<string>();
+        let count = 0;
+        do {
+          const filter = releasedSince === undefined ? "" : `&releasedSince=${releasedSince}`;
+          const url = `${endpoint}&limit=40${filter}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+          const response = await t.fetch(url);
+          expect(response.status).toBe(200);
+          const body = await response.json();
+          for (const item of body.items) releases.add(item.releaseId);
+          count += body.counts.distinctPlugins ?? body.counts.eligible;
+          cursor = body.nextCursor;
+        } while (cursor !== null);
+        expect(releases.size).toBe(releasedSince === undefined ? 105 : 60);
+        expect(count).toBe(releasedSince === undefined ? 105 : 60);
+      }
+    },
+  );
 
   it("returns every API through a paginated per-plugin inventory, including more than 100 identities", async () => {
     const { t, ingest } = await fixture();
