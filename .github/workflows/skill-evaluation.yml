@@ -1,4 +1,4 @@
-name: Skill Evaluation Pinned Production Diagnostic
+name: Skill Evaluation Request Budget Diagnostic
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: 0f9d31ba070a0c41851a2c4be91e902bfafae84b
+          ref: 862cec73cc8309f595bb0831e93bc44e3d0e1e5c
           persist-credentials: false
       - uses: ./.github/actions/setup-bun
       - uses: actions/setup-python@v7
@@ -59,23 +59,6 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DIAGNOSTIC_SKILL: ${{ matrix.skill }}
         run: |
-          # Observe rejected methods/paths only; do not change capability scope.
-          python3 - <<'PYTHON'
-          from pathlib import Path
-          p = Path('scripts/evaluations/openai-capability-broker.ts')
-          s = p.read_text()
-          signature = '  upstreamBaseUrl?: string;'
-          rejection = '        reject(response, 404, "unsupported evaluation endpoint");'
-          assert s.count(signature) == 1 and s.count(rejection) == 1
-          assert 'upstream.status === 520 ? 502 : upstream.status' in s
-          s = s.replace(signature, signature + '\n  onRejectedEndpoint?: (method: string | undefined, path: string) => void;')
-          s = s.replace(rejection, '        args.onRejectedEndpoint?.(request.method, url.pathname);\n' + rejection)
-          s = s.replace('  let requestsRemaining = args.maxRequests ?? DEFAULT_MAX_REQUESTS;', '  let requestsRemaining = args.maxRequests ?? DEFAULT_MAX_REQUESTS;\n  let budgetRejections = 0;\n  const upstreamStatuses: Record<number, number> = {};')
-          s = s.replace('      if (requestsRemaining <= 0) {', '      if (requestsRemaining <= 0) {\n        budgetRejections++;')
-          s = s.replace('        copyResponseHeaders(upstream, response);', '        upstreamStatuses[upstream.status] = (upstreamStatuses[upstream.status] ?? 0) + 1;\n        copyResponseHeaders(upstream, response);')
-          s = s.replace('    capabilityToken,\n    port:', '    diagnosticStats() { return { requestsRemaining, budgetRejections, upstreamStatuses }; },\n    capabilityToken,\n    port:')
-          p.write_text(s)
-          PYTHON
           cat > diagnostic-concurrency.ts <<'TS'
           import { lstat, readFile, readdir, rm } from 'node:fs/promises';
           import { join, relative } from 'node:path';
@@ -101,12 +84,14 @@ jobs:
             const resultsDirectory = join(snapshot.root, 'results');
             const commands = buildTier3Commands({ evaluatorProject: '/tmp/evaluator', skillDirectory, resultsDirectory, agent: config.agent, agentModel: config.agentModel, attempts: config.attemptsPerCase, environment: config.environment });
             if (commands.evaluate[commands.evaluate.indexOf('--n-concurrent') + 1] !== '4') throw new Error('Expected actual production four-slot command');
-            console.log(JSON.stringify({ actualCommandConcurrency: 4, productionCheckout: '0f9d31ba070a0c41851a2c4be91e902bfafae84b', skill }));
+            console.log(JSON.stringify({ actualCommandConcurrency: 4, productionCheckout: '862cec73cc8309f595bb0831e93bc44e3d0e1e5c', skill }));
             const validation = await runCommand(commands.validate, { cwd: snapshot.checkout, env: commandEnvironment(), timeoutMs: 300_000 });
             if (validation.exitCode !== 0) throw new Error(safe(validation.stdout + validation.stderr));
             const gateway = await runCommand(['docker', 'network', 'inspect', 'bridge', '--format', '{{(index .IPAM.Config 0).Gateway}}'], { env: commandEnvironment() });
             if (gateway.exitCode !== 0 || !gateway.stdout.trim()) throw new Error('Docker gateway unavailable');
-            broker = await startOpenAiCapabilityBroker({ allowedModels: [config.agentModel, config.judgeModel], apiKey, onRejectedEndpoint(method, path) { console.log(JSON.stringify({ brokerRejectedEndpoint: { method, path: safe(path).slice(0, 400) } })); } });
+            broker = await startOpenAiCapabilityBroker({ allowedModels: [config.agentModel, config.judgeModel], apiKey });
+            if (broker.usage().requestLimit !== 8_192) throw new Error('Expected production request allowance of 8,192');
+            console.log(JSON.stringify({ verifiedRequestLimit: broker.usage().requestLimit }));
             secrets.push(broker.capabilityToken);
             maskGitHubActionsSecret(broker.capabilityToken);
             async function trialProgress() {
@@ -129,7 +114,7 @@ jobs:
             const result = await runCommand([...commands.evaluate, '--harbor-keep-jobs'], { cwd: snapshot.checkout, env: evaluationEnvironment(config, { baseUrl: `http://${gateway.stdout.trim()}:${broker.port}/v1`, token: broker.capabilityToken }), timeoutMs: 105 * 60_000 });
             clearInterval(progressTimer);
             await trialProgress().catch(() => {});
-            console.log(JSON.stringify({ brokerDiagnosticStats: broker.diagnosticStats() }));
+            console.log(JSON.stringify({ brokerDiagnosticStats: broker.usage() }));
             await broker.close();
             broker = undefined;
             console.log(JSON.stringify({ exitCode: result.exitCode, stdoutTail: safe(result.stdout).slice(-12_000), stderrTail: safe(result.stderr).slice(-12_000) }));
