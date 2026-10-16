@@ -459,8 +459,14 @@ configuration, the admin backfill creates new configuration-specific jobs while
 preserving prior outcomes. Its optional `sourcePaths` selection limits a canary
 to 1–20 exact paths across every page; omitting it selects the full eligible
 catalog. Repeating the backfill does not duplicate already-observed jobs.
-Four GitHub worker lanes claim jobs independently, with one active job per lane
-across workflow dispatches. One failed lane does not cancel the others.
+Sixteen GitHub worker lanes claim jobs independently, with one active job per
+lane across workflow dispatches. Workers claim the next skill after each
+completed, skipped, or failed evaluation instead of exiting after one skill.
+They stop when no work is claimable or after a 170-minute claim window, leaving
+a full three-hour lease and ten-minute margin before the six-hour workflow
+timeout. Each claim retains its own lease and short-lived model capability;
+workers never reserve waiting skills in advance. One failed lane does not
+cancel the others.
 
 Public evaluation maintenance mutations, including targeted prioritization and
 backfill scheduling, require an active admin before reading or changing queues.

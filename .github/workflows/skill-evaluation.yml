@@ -12,12 +12,12 @@ jobs:
   evaluate:
     name: NVIDIA SkillEvaluator Tier 3 (${{ matrix.worker }})
     runs-on: blacksmith-16vcpu-ubuntu-2404
-    timeout-minutes: 180
+    timeout-minutes: 360
     environment: Production
     strategy:
       fail-fast: false
       matrix:
-        worker: [1, 2, 3, 4]
+        worker: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     concurrency:
       group: clawhub-skill-evaluation-worker-${{ matrix.worker }}
       cancel-in-progress: false

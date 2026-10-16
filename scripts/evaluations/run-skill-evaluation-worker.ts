@@ -25,6 +25,9 @@ type WorkerClient = Pick<ConvexHttpClient, "action">;
 const logger = createWorkerLogger({ name: "skill-evaluation-worker" });
 const EVALUATION_TIMEOUT_MS = 160 * 60 * 1000;
 const VALIDATION_TIMEOUT_MS = 5 * 60 * 1000;
+// A six-hour runner must leave a full three-hour lease for the last claim,
+// plus ten minutes for setup and cleanup. Claim only one skill at a time.
+const CLAIM_WINDOW_MS = 170 * 60 * 1000;
 
 function requireEnv(name: string) {
   const value = process.env[name]?.trim();
@@ -327,25 +330,36 @@ export async function runSkillEvaluationWorker(options?: {
   }
   const evaluatorProject = resolve(options?.evaluatorProject ?? requireEnv("SKILL_EVALUATOR_DIR"));
   await verifyEvaluatorCheckout(evaluatorProject);
-  const claimed = await client.action(api.skillEvaluations.claimSkillEvaluationJobs, {
-    token,
-    workerId: options?.workerId ?? workerId(),
-    limit: 1,
-    leaseMs: 3 * 60 * 60 * 1000,
-  });
-  const run = claimed[0] as ClaimedEvaluation | undefined;
-  if (!run) {
-    logger.info({ event: "skill_evaluation_queue_empty" }, "no skill evaluation jobs available");
-    return { claimed: 0, failed: 0 };
+  const claimDeadline = Date.now() + CLAIM_WINDOW_MS;
+  const id = options?.workerId ?? workerId();
+  const totals = { claimed: 0, failed: 0 };
+  while (Date.now() < claimDeadline) {
+    const claimed = await client.action(api.skillEvaluations.claimSkillEvaluationJobs, {
+      token,
+      workerId: id,
+      limit: 1,
+      leaseMs: 3 * 60 * 60 * 1000,
+    });
+    const run = claimed[0] as ClaimedEvaluation | undefined;
+    if (!run) {
+      logger.info({ event: "skill_evaluation_queue_empty" }, "no skill evaluation jobs available");
+      break;
+    }
+    totals.claimed += 1;
+    const result = await processClaimedEvaluation({
+      client,
+      evaluatorProject,
+      openAiApiKey,
+      run,
+      token,
+    });
+    if (result.outcome === "failed") totals.failed += 1;
   }
-  const result = await processClaimedEvaluation({
-    client,
-    evaluatorProject,
-    openAiApiKey,
-    run,
-    token,
-  });
-  return { claimed: 1, failed: result.outcome === "failed" ? 1 : 0 };
+  logger.info(
+    { event: "skill_evaluation_worker_finished", ...totals },
+    "evaluation worker finished",
+  );
+  return totals;
 }
 
 if (import.meta.main) {

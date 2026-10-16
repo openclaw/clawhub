@@ -48,12 +48,15 @@ describe("skill evaluation workflow", () => {
     });
     expect(job["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");
     expect(job.environment).toBe("Production");
-    expect(job["timeout-minutes"]).toBe(180);
+    expect(job["timeout-minutes"]).toBe(360);
     expect(job.concurrency).toEqual({
       group: "clawhub-skill-evaluation-worker-${{ matrix.worker }}",
       "cancel-in-progress": false,
     });
-    expect(job.strategy).toEqual({ "fail-fast": false, matrix: { worker: [1, 2, 3, 4] } });
+    expect(job.strategy).toEqual({
+      "fail-fast": false,
+      matrix: { worker: Array.from({ length: 16 }, (_, index) => index + 1) },
+    });
     expect(job.env?.SKILL_EVALUATION_WORKER_ID).toContain("${{ matrix.worker }}");
     expect(install?.run).toContain("--branch v0.5.0");
     expect(install?.run).toContain("7304d76cde371287b67ea99653409d014b6b9c85");
