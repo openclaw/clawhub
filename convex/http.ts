@@ -2,6 +2,7 @@ import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
 import { httpRouter } from "convex/server";
 import { agentSkillsHttp } from "./agentSkillsHttp";
 import { auth } from "./auth";
+import { generateBlobsterHttp } from "./blobsterHttp";
 import { downloadZip, recordArchiveDownloadMetric } from "./downloads";
 import {
   cliPublishHttp,
@@ -92,6 +93,7 @@ import { skillPresentationAssetHttp } from "./skillPresentationAssetsHttp";
 const http = installRateLimitedRoutes(httpRouter());
 
 auth.addHttpRoutes(http);
+http.route({ path: "/api/v1/blobsters/generate", method: "POST", handler: generateBlobsterHttp });
 http.route({
   path: "/api/v1/search-insights/reports",
   method: "POST",

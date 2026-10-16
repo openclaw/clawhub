@@ -13,6 +13,7 @@ export const RATE_LIMITS = {
   trustedPublish: { ip: 3000, key: 12000, adminKey: 120000 },
   download: { ip: 1200, key: 6000, adminKey: 60000 },
   export: { ip: 10, key: 60, adminKey: 60 },
+  blobster: { ip: 6, key: 6, adminKey: 6 },
 } as const;
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -72,6 +73,9 @@ const HTTP_RATE_LIMIT_CONFIGS = {
   exportIp: fixedWindowRateLimit(RATE_LIMITS.export.ip),
   exportKey: fixedWindowRateLimit(RATE_LIMITS.export.key),
   exportAdminKey: fixedWindowRateLimit(RATE_LIMITS.export.adminKey),
+  blobsterIp: fixedWindowRateLimit(RATE_LIMITS.blobster.ip),
+  blobsterKey: fixedWindowRateLimit(RATE_LIMITS.blobster.key),
+  blobsterAdminKey: fixedWindowRateLimit(RATE_LIMITS.blobster.adminKey),
 } as const satisfies Record<HttpRateLimitName, RateLimitConfig>;
 
 export function markRateLimitApplied(request: Request, headers: HeadersInit): void {
