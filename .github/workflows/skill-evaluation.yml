@@ -42,7 +42,7 @@ jobs:
           from pathlib import Path
           from harbor.models.task.config import EnvironmentConfig
           from harbor.models.trial.paths import TrialPaths
-          from skillevaluator.tier3.harbor.adapter import build_eval_base_image, generate_harbor_tasks
+          from skillevaluator.tier3.harbor.adapter import generate_harbor_tasks
           from skillevaluator.tier3.harbor.secure_docker_environment import SkillEvaluatorSecureDockerEnvironment
 
           async def main():
@@ -51,16 +51,15 @@ jobs:
                   root = Path(root)
                   for skill in ('doca-public-knowledge-map', 'doca-compress', 'doca-programming-guide'):
                       source = Path('/tmp/nvidia-skills/skills') / skill
-                      base_image = build_eval_base_image(source)
-                      print(json.dumps({'skill': skill, 'base_image': base_image}), flush=True)
-                      tasks = generate_harbor_tasks(source, root / skill, base_image=base_image, arm_suffix='-with-skill')
+                      # Production uses the upstream default: standalone per-task Dockerfiles.
+                      tasks = generate_harbor_tasks(source, root / skill, arm_suffix='-with-skill')
                       for index, task in enumerate(tasks):
                           if skill == 'doca-programming-guide' and 'negative' not in task.name:
                               continue
                           task_config = tomllib.loads((task / 'task.toml').read_text())
                           sandbox = SkillEvaluatorSecureDockerEnvironment(
                               environment_dir=task / 'environment',
-                              environment_name='skillevaluator-' + task.name,
+                              environment_name='skillevaluator-' + task.name + '-with-skill',
                               session_id=f'probe-{skill}-{index}',
                               trial_paths=TrialPaths(trial_dir=root / 'trials' / f'{skill}-{index}'),
                               task_env_config=EnvironmentConfig.model_validate(task_config.get('environment', {})),
@@ -68,7 +67,7 @@ jobs:
                           outcome = {'skill': skill, 'task': task.name, 'status': 'failed'}
                           print(json.dumps({'starting': task.name}), flush=True)
                           try:
-                              await sandbox.start(force_build=True)
+                              await sandbox.start(force_build=False)
                               result = await sandbox.exec('python --version', timeout_sec=30)
                               print(result.model_dump_json(), flush=True)
                               assert result.return_code == 0
