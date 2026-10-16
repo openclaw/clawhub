@@ -1,4 +1,4 @@
-name: Skill Evaluation Full Docker Diagnostic
+name: Skill Evaluation Docker Name Reproduction
 
 on:
   workflow_dispatch:
@@ -9,13 +9,8 @@ permissions:
 jobs:
   probe:
     runs-on: blacksmith-16vcpu-ubuntu-2404
-    timeout-minutes: 35
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: a893d232b75c5a0f1e304adbf8234a602e659e3b
-          persist-credentials: false
-      - uses: ./.github/actions/setup-bun
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -25,78 +20,54 @@ jobs:
       - uses: docker/setup-compose-action@54042514f505b273907334ae2b9cdbb9a0213c1a # v2.4.0
         with:
           version: v5.1.4
-      - name: Install pinned evaluator and agent
+      - name: Install exact Harbor dependency through pinned evaluator
         run: |
           git clone --quiet --branch v0.5.0 --depth 1 https://github.com/NVIDIA/SkillEvaluator.git /tmp/evaluator
           test "$(git -C /tmp/evaluator rev-parse HEAD)" = "7304d76cde371287b67ea99653409d014b6b9c85"
           uv sync --project /tmp/evaluator --extra tier3 --frozen
-          npm install -g @openai/codex@0.148.0
-      - name: Diagnose one exact evaluation without queue access
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - name: Compare original and trailing-dot-safe trial names
         run: |
-          cat > diagnostic-doca.ts <<'TS'
-          import { lstat, readFile, readdir, rm } from 'node:fs/promises';
-          import { join, relative } from 'node:path';
-          import { NVIDIA_SKILL_EVALUATION_CONFIG as config } from './convex/lib/skillEvaluationConfig';
-          import { commandEnvironment, evaluationEnvironment } from './scripts/evaluations/run-skill-evaluation-worker';
-          import { startOpenAiCapabilityBroker } from './scripts/evaluations/openai-capability-broker';
-          import { buildTier3Commands, findLatestResultJson, materializeNvidiaSkillsSnapshot, runCommand } from './scripts/evaluations/skill-evaluation-runtime';
-          import { maskGitHubActionsSecret, maskKnownWorkerSecrets, redactWorkerPublicText } from './scripts/lib/workerRedaction';
+          env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 uv run --project /tmp/evaluator --frozen --extra tier3 python -u - <<'PY'
+          import inspect, json, re, subprocess, tempfile, textwrap
+          from pathlib import Path
+          from types import SimpleNamespace
+          from harbor.models.trial.config import TrialConfig
 
-          maskKnownWorkerSecrets();
-          const apiKey = process.env.OPENAI_API_KEY;
-          if (!apiKey) throw new Error('Missing diagnostic model credential');
-          delete process.env.OPENAI_API_KEY;
-          const secrets = [apiKey];
-          const safe = (value: string) => redactWorkerPublicText(secrets.reduce((text, secret) => text.replaceAll(secret, '[redacted-secret]'), value), Number.MAX_SAFE_INTEGER);
-          const snapshot = await materializeNvidiaSkillsSnapshot('392ab8ab2587345a9d86240967f666bd59ac82ca');
-          let broker: Awaited<ReturnType<typeof startOpenAiCapabilityBroker>> | undefined;
-          try {
-            const skillDirectory = join(snapshot.checkout, 'skills/doca-compress');
-            const resultsDirectory = join(snapshot.root, 'results');
-            const commands = buildTier3Commands({ evaluatorProject: '/tmp/evaluator', skillDirectory, resultsDirectory, agent: config.agent, agentModel: config.agentModel, attempts: config.attemptsPerCase, environment: config.environment });
-            const validation = await runCommand(commands.validate, { cwd: snapshot.checkout, env: commandEnvironment(), timeoutMs: 300_000 });
-            if (validation.exitCode !== 0) throw new Error(safe(validation.stdout + validation.stderr));
-            const gateway = await runCommand(['docker', 'network', 'inspect', 'bridge', '--format', '{{(index .IPAM.Config 0).Gateway}}'], { env: commandEnvironment() });
-            if (gateway.exitCode !== 0 || !gateway.stdout.trim()) throw new Error('Docker gateway unavailable');
-            broker = await startOpenAiCapabilityBroker({ allowedModels: [config.agentModel, config.judgeModel], apiKey });
-            secrets.push(broker.capabilityToken);
-            maskGitHubActionsSecret(broker.capabilityToken);
-            console.log('Running pinned doca-compress evaluation; retaining local Harbor exceptions until cleanup.');
-            const result = await runCommand([...commands.evaluate, '--harbor-keep-jobs'], { cwd: snapshot.checkout, env: evaluationEnvironment(config, { baseUrl: `http://${gateway.stdout.trim()}:${broker.port}/v1`, token: broker.capabilityToken }), timeoutMs: 25 * 60_000 });
-            await broker.close();
-            broker = undefined;
-            console.log(JSON.stringify({ exitCode: result.exitCode, stdoutTail: safe(result.stdout).slice(-12_000), stderrTail: safe(result.stderr).slice(-12_000) }));
-            let exceptions = 0;
-            async function inspect(directory: string) {
-              for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
-                if (exceptions >= 4) return;
-                const path = join(directory, entry.name);
-                if (entry.isDirectory()) await inspect(path);
-                else if (entry.isFile() && entry.name === 'exception.txt' && (await lstat(path)).size <= 1024 * 1024) {
-                  console.log(JSON.stringify({ exception: relative(resultsDirectory, path), detail: safe(await readFile(path, 'utf8')).slice(-20_000) }));
-                  exceptions++;
-                }
-              }
-            }
-            await inspect(resultsDirectory);
-            const resultPath = await findLatestResultJson(resultsDirectory);
-            const native = resultPath ? JSON.parse(await readFile(resultPath, 'utf8')) : undefined;
-            console.log(JSON.stringify({ diagnostic: 'doca-compress', exitCode: result.exitCode, exceptions, nativeError: safe(JSON.stringify(native?.execution_errors ?? native?.error ?? [])) }));
-            process.exitCode = result.exitCode;
-          } catch (error) {
-            console.log(JSON.stringify({ diagnosticError: safe(error instanceof Error ? error.stack ?? error.message : String(error)) }));
-            process.exitCode = 1;
-          } finally {
-            if (broker) await broker.close();
-            await rm(snapshot.root, { recursive: true, force: true });
-          }
-          TS
-          bun diagnostic-doca.ts
-      - name: Final host capacity
-        if: always()
-        run: |
-          df -h /tmp
-          free -m
-          docker system df
+          original = TrialConfig.generate_trial_name
+          source = textwrap.dedent(inspect.getsource(original))
+          assert source.count("rstrip('_-')") == 1
+          namespace = dict(original.__globals__)
+          exec(source.replace("rstrip('_-')", "rstrip('_-.' )"), namespace)
+          corrected = namespace['generate_trial_name']
+          cases = [
+              'doca-compress.explicit-positive.v1',
+              'doca-compress.implicit-positive.v2',
+              'doca-gpunetio.explicit-positive.v1',
+              'doca-urom-svc.explicit-positive.v1',
+              'doca-programming-guide.negative.v1',
+              'doca-flow-dpa-provider.negative.v1',
+              'doca-public-knowledge-map.explicit-positive.v1',
+          ]
+          results = []
+          with tempfile.TemporaryDirectory(prefix='docker-name-repro-') as directory:
+              root = Path(directory)
+              (root / 'Dockerfile').write_text('FROM scratch\nLABEL diagnostic="image-name-only"\n')
+              compose = root / 'compose.json'
+              compose.write_text(json.dumps({'services': {'main': {'build': {'context': directory}}}}))
+              for task_name in cases:
+                  task = SimpleNamespace(task=SimpleNamespace(get_task_id=lambda: SimpleNamespace(get_name=lambda: task_name)))
+                  for phase, generate in [('original', original), ('corrected', corrected)]:
+                      trial = generate(task)
+                      project = re.sub(r'[^a-z0-9_-]', '-', (trial + '__env').lower())
+                      result = subprocess.run(['docker', 'compose', '--project-name', project, '-f', str(compose), 'build'], capture_output=True, text=True)
+                      output = result.stdout + result.stderr
+                      expected_failure = phase == 'original' and task_name[:32].endswith('.')
+                      assert (result.returncode != 0) == expected_failure, output
+                      if expected_failure:
+                          assert 'invalid reference format' in output, output
+                      row = {'task': task_name, 'phase': phase, 'project': project, 'exitCode': result.returncode, 'invalidReference': 'invalid reference format' in output}
+                      results.append(row)
+                      print(json.dumps(row), flush=True)
+          print('DOCKER_NAME_RESULTS=' + json.dumps(results), flush=True)
+          assert sum(row['invalidReference'] for row in results) == 6
+          PY
