@@ -9,7 +9,7 @@ permissions:
 jobs:
   probe:
     runs-on: blacksmith-16vcpu-ubuntu-2404
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/setup-python@v7
         with:
@@ -17,80 +17,81 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           version: "0.10.11"
-      - name: Install evaluator
+      - uses: docker/setup-compose-action@54042514f505b273907334ae2b9cdbb9a0213c1a # v2.4.0
+        with:
+          version: v5.1.4
+      - name: Install pinned evaluator and public skill inputs
         run: |
           git clone --quiet --branch v0.5.0 --depth 1 https://github.com/NVIDIA/SkillEvaluator.git /tmp/evaluator
           test "$(git -C /tmp/evaluator rev-parse HEAD)" = "7304d76cde371287b67ea99653409d014b6b9c85"
           uv sync --project /tmp/evaluator --extra tier3 --frozen
-      - name: Reproduce disabled-healthcheck failure on bundled Compose
-        continue-on-error: true
+          git init --quiet /tmp/nvidia-skills
+          git -C /tmp/nvidia-skills remote add origin https://github.com/NVIDIA/skills.git
+          git -C /tmp/nvidia-skills sparse-checkout set skills/doca-compress skills/doca-programming-guide skills/doca-public-knowledge-map
+          git -C /tmp/nvidia-skills fetch --quiet --depth 1 --filter=blob:none origin 392ab8ab2587345a9d86240967f666bd59ac82ca
+          git -C /tmp/nvidia-skills checkout --quiet --detach FETCH_HEAD
+          test "$(git -C /tmp/nvidia-skills rev-parse HEAD)" = "392ab8ab2587345a9d86240967f666bd59ac82ca"
+      - name: Reproduce generated DOCA environments without model credentials
         run: |
           docker version --format '{{.Server.Version}}'
           docker compose version
-          env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 uv run --project /tmp/evaluator --frozen --extra tier3 python - <<'PY'
-          import asyncio, tempfile
+          df -h /tmp
+          free -m
+          env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 uv run --project /tmp/evaluator --frozen --extra tier3 python -u - <<'PY'
+          import asyncio, json, tempfile, tomllib, traceback
           from pathlib import Path
-          from harbor.environments.docker.docker import DockerEnvironment
           from harbor.models.task.config import EnvironmentConfig
           from harbor.models.trial.paths import TrialPaths
+          from skillevaluator.tier3.harbor.adapter import build_eval_base_image, generate_harbor_tasks
+          from skillevaluator.tier3.harbor.secure_docker_environment import SkillEvaluatorSecureDockerEnvironment
 
           async def main():
-              with tempfile.TemporaryDirectory(prefix='harbor-runner-probe-') as root:
+              outcomes = []
+              with tempfile.TemporaryDirectory(prefix='doca-setup-probe-') as root:
                   root = Path(root)
-                  environment = root / 'environment'
-                  environment.mkdir()
-                  (environment / 'Dockerfile').write_text('FROM python:3.12-slim\nHEALTHCHECK NONE\nWORKDIR /app\nCMD ["sleep", "infinity"]\n')
-                  sandbox = DockerEnvironment(
-                      environment_dir=environment,
-                      environment_name='skillevaluator-runner-probe',
-                      session_id='skillevaluator-runner-probe-env',
-                      trial_paths=TrialPaths(trial_dir=root / 'trial'),
-                      task_env_config=EnvironmentConfig(),
-                  )
-                  try:
-                      await sandbox.start(force_build=True)
-                      result = await sandbox.exec('python --version')
-                      print(result.model_dump_json())
-                      assert result.return_code == 0
-                  finally:
-                      await sandbox.stop(delete=True)
+                  for skill in ('doca-public-knowledge-map', 'doca-compress', 'doca-programming-guide'):
+                      source = Path('/tmp/nvidia-skills/skills') / skill
+                      base_image = build_eval_base_image(source)
+                      print(json.dumps({'skill': skill, 'base_image': base_image}), flush=True)
+                      tasks = generate_harbor_tasks(source, root / skill, base_image=base_image, arm_suffix='-with-skill')
+                      for index, task in enumerate(tasks):
+                          if skill == 'doca-programming-guide' and 'negative' not in task.name:
+                              continue
+                          task_config = tomllib.loads((task / 'task.toml').read_text())
+                          sandbox = SkillEvaluatorSecureDockerEnvironment(
+                              environment_dir=task / 'environment',
+                              environment_name='skillevaluator-' + task.name,
+                              session_id=f'probe-{skill}-{index}',
+                              trial_paths=TrialPaths(trial_dir=root / 'trials' / f'{skill}-{index}'),
+                              task_env_config=EnvironmentConfig.model_validate(task_config.get('environment', {})),
+                          )
+                          outcome = {'skill': skill, 'task': task.name, 'status': 'failed'}
+                          print(json.dumps({'starting': task.name}), flush=True)
+                          try:
+                              await sandbox.start(force_build=True)
+                              result = await sandbox.exec('python --version', timeout_sec=30)
+                              print(result.model_dump_json(), flush=True)
+                              assert result.return_code == 0
+                              outcome['status'] = 'passed'
+                          except Exception as error:
+                              traceback.print_exc()
+                              outcome['error'] = str(error)
+                          finally:
+                              try:
+                                  await sandbox.stop(delete=True)
+                              except Exception as error:
+                                  traceback.print_exc()
+                                  outcome['cleanup_error'] = str(error)
+                          outcomes.append(outcome)
+                          print(json.dumps(outcome), flush=True)
+              print('DOCA_SETUP_PROBE_RESULTS=' + json.dumps(outcomes), flush=True)
+              assert outcomes and all(row['status'] == 'passed' and 'cleanup_error' not in row for row in outcomes)
 
           asyncio.run(main())
           PY
-      - uses: docker/setup-compose-action@54042514f505b273907334ae2b9cdbb9a0213c1a # v2.4.0
-        with:
-          version: v5.1.4
-      - name: Verify disabled-healthcheck startup on pinned Compose
+      - name: Final host capacity
+        if: always()
         run: |
-          docker version --format '{{.Server.Version}}'
-          docker compose version
-          env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 uv run --project /tmp/evaluator --frozen --extra tier3 python - <<'PY'
-          import asyncio, tempfile
-          from pathlib import Path
-          from harbor.environments.docker.docker import DockerEnvironment
-          from harbor.models.task.config import EnvironmentConfig
-          from harbor.models.trial.paths import TrialPaths
-
-          async def main():
-              with tempfile.TemporaryDirectory(prefix='harbor-runner-probe-') as root:
-                  root = Path(root)
-                  environment = root / 'environment'
-                  environment.mkdir()
-                  (environment / 'Dockerfile').write_text('FROM python:3.12-slim\nHEALTHCHECK NONE\nWORKDIR /app\nCMD ["sleep", "infinity"]\n')
-                  sandbox = DockerEnvironment(
-                      environment_dir=environment,
-                      environment_name='skillevaluator-runner-probe',
-                      session_id='skillevaluator-runner-probe-env',
-                      trial_paths=TrialPaths(trial_dir=root / 'trial'),
-                      task_env_config=EnvironmentConfig(),
-                  )
-                  try:
-                      await sandbox.start(force_build=True)
-                      result = await sandbox.exec('python --version')
-                      print(result.model_dump_json())
-                      assert result.return_code == 0
-                  finally:
-                      await sandbox.stop(delete=True)
-
-          asyncio.run(main())
-          PY
+          df -h /tmp
+          free -m
+          docker system df
