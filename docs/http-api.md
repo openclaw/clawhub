@@ -108,8 +108,10 @@ only their page, never the whole catalog. Pages are live reads, not a frozen sna
 deduplicate by package and release and retry if releases change during traversal.
 
 Usage lookup and coverage also accept `releasedSince`: an inclusive Unix timestamp
-in milliseconds. This selects plugins whose **latest public release** was published
-at or after that instant. Listing edits and rescan times do not change release age.
+in milliseconds. This selects plugins whose **latest eligible public release** was
+uploaded at or after that instant, using its immutable `createdAt` timestamp.
+Public approval may happen later. Listing edits and rescan times do not change
+release age.
 Use the same cutoff on both endpoints so consumer counts and coverage describe the
 same population. Responses echo `releasedSince` (`null` when unfiltered), and the
 returned `coverageUrl` preserves it. Keep the cutoff unchanged while paging.
