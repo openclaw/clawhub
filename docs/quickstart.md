@@ -45,10 +45,10 @@ Search from OpenClaw:
 openclaw plugins search "calendar"
 ```
 
-Install a plugin from ClawHub, the default registry:
+On released OpenClaw versions through `2026.10.4`, use an explicit ClawHub source:
 
 ```bash
-openclaw plugins install <package>
+openclaw plugins install clawhub:<package>
 ```
 
 Update installed plugins:
@@ -57,13 +57,21 @@ Update installed plugins:
 openclaw plugins update --all
 ```
 
-For example, `openclaw plugins install @composio/composio` resolves through
-ClawHub. The optional `clawhub:<package>` prefix still works. Use
-`openclaw plugins install npm:<package>` to install directly from npm.
+Updated main/dev builds with ClawHub-default support accept the shorter command:
+
+```bash
+openclaw plugins install @composio/composio
+```
+
+The shorter form is not supported as a ClawHub default by released versions
+through `2026.10.4`. The explicit `clawhub:<package>` form works on both old and
+updated builds. Use `openclaw plugins install npm:<package>` to install directly
+from npm.
 
 For an unscoped package, use `openclaw plugins install episodic-claw@latest`.
-ClawHub pages include `@latest` on unscoped names to distinguish registry packages
-from OpenClaw's bundled plugin shortcuts.
+This shorter form also requires an updated build. ClawHub pages include `@latest`
+on unscoped names to distinguish registry packages from OpenClaw's bundled plugin
+shortcuts.
 
 ## Sign in for publishing
 

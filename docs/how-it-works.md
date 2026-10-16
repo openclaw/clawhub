@@ -46,13 +46,17 @@ metadata before installing. Package records can include API compatibility,
 minimum gateway version, host targets, environment requirements, and artifact
 digests.
 
-Plugin package names resolve through ClawHub by default:
+Released OpenClaw versions through `2026.10.4` select ClawHub with a prefix:
 
 ```bash
-openclaw plugins install <package>
+openclaw plugins install clawhub:<package>
 ```
 
-The optional `clawhub:<package>` prefix still works. Use
+Updated main/dev builds with ClawHub-default support also accept
+`openclaw plugins install @composio/composio` without a prefix. Unscoped package
+names use `@latest`, such as `episodic-claw@latest`, to avoid bundled plugin
+shortcuts. Keep the explicit `clawhub:` form on released versions through
+`2026.10.4`; it also works on updated builds. Use
 `openclaw plugins install npm:<package>` to install directly from npm.
 
 ## Publishing
@@ -75,7 +79,7 @@ OpenClaw install commands use ClawHub as a package source:
 
 ```bash
 openclaw skills install @openclaw/demo
-openclaw plugins install <package>
+openclaw plugins install clawhub:<package>
 ```
 
 OpenClaw records install source metadata so updates can resolve the same

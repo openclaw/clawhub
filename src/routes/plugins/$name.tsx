@@ -1213,10 +1213,30 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const skillInstallOwner = owner?.handle ?? pkg.ownerHandle ?? "owner";
   // A tag keeps unscoped package names from matching bundled plugin shortcuts.
   const pluginInstallTarget = pkg.name.includes("/") ? pkg.name : `${pkg.name}@latest`;
-  const installSnippet =
+  const installCommands =
     pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
-      ? `openclaw plugins install ${pluginInstallTarget}`
-      : `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
+      ? [
+          {
+            label: "Current stable OpenClaw · through 2026.10.4",
+            command: `openclaw plugins install clawhub:${pkg.name}`,
+            copyLabel: "Copy current stable plugin install command",
+            note: null,
+          },
+          {
+            label: "Updated OpenClaw · main/dev",
+            command: `openclaw plugins install ${pluginInstallTarget}`,
+            copyLabel: "Copy updated plugin install command",
+            note: "Requires a build with ClawHub-default support.",
+          },
+        ]
+      : [
+          {
+            label: null,
+            command: `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`,
+            copyLabel: "Copy skill install command",
+            note: null,
+          },
+        ];
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
@@ -1828,25 +1848,34 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   <CardHeader className="detail-hero-summary-row plugin-install-card-header">
                     <CardTitle className="skill-install-panel-title">Install</CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <div className="skill-install-command-wrap">
-                      <div className="skill-install-command-shell skill-install-command-shell-cli">
-                        <span className="skill-install-command-prompt" aria-hidden="true">
-                          $
-                        </span>
-                        <pre className="skill-install-command">
-                          <OpenClawCliInstallCommand command={installSnippet} />
-                        </pre>
-                        <InstallCopyButton
-                          text={installSnippet}
-                          ariaLabel="Copy plugin install command"
-                          showLabel={false}
-                          variant="ghost"
-                          size="icon-sm"
-                          className="skill-install-command-inline-button"
-                        />
+                  <CardContent className="gap-5">
+                    {installCommands.map(({ label, command, copyLabel, note }) => (
+                      <div
+                        className="skill-install-command-wrap gap-2"
+                        key={command}
+                        role="group"
+                        aria-label={label ?? undefined}
+                      >
+                        {label ? <p className="skill-install-panel-copy">{label}</p> : null}
+                        <div className="skill-install-command-shell skill-install-command-shell-cli">
+                          <span className="skill-install-command-prompt" aria-hidden="true">
+                            $
+                          </span>
+                          <pre className="skill-install-command">
+                            <OpenClawCliInstallCommand command={command} />
+                          </pre>
+                          <InstallCopyButton
+                            text={command}
+                            ariaLabel={copyLabel}
+                            showLabel={false}
+                            variant="ghost"
+                            size="icon-sm"
+                            className="skill-install-command-inline-button"
+                          />
+                        </div>
+                        {note ? <p className="skill-install-panel-copy">{note}</p> : null}
                       </div>
-                    </div>
+                    ))}
                   </CardContent>
                 </Card>
               </div>

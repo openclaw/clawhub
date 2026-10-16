@@ -32,7 +32,7 @@ Search and install plugins with OpenClaw:
 
 ```bash
 openclaw plugins search "calendar"
-openclaw plugins install <package>
+openclaw plugins install clawhub:<package>
 openclaw plugins update --all
 ```
 
@@ -47,11 +47,11 @@ pnpm add -g clawhub
 
 ## What ClawHub hosts
 
-| Surface        | What it stores                                               | Typical command                          |
-| -------------- | ------------------------------------------------------------ | ---------------------------------------- |
-| Skills         | Versioned text bundles with `SKILL.md` plus supporting files | `openclaw skills install @openclaw/demo` |
-| Code plugins   | OpenClaw plugin packages with compatibility metadata         | `openclaw plugins install <package>`     |
-| Bundle plugins | Packaged plugin bundles for OpenClaw distribution            | `clawhub package publish <source>`       |
+| Surface        | What it stores                                               | Typical command                              |
+| -------------- | ------------------------------------------------------------ | -------------------------------------------- |
+| Skills         | Versioned text bundles with `SKILL.md` plus supporting files | `openclaw skills install @openclaw/demo`     |
+| Code plugins   | OpenClaw plugin packages with compatibility metadata         | `openclaw plugins install clawhub:<package>` |
+| Bundle plugins | Packaged plugin bundles for OpenClaw distribution            | `clawhub package publish <source>`           |
 
 ClawHub tracks semver versions, tags such as `latest`, changelogs, files,
 downloads, stars, and security scan summaries. Public pages show current registry
@@ -62,11 +62,13 @@ state so users can inspect a skill or plugin before installing it.
 Native OpenClaw commands install into the active OpenClaw workspace and persist
 source metadata so later update commands can stay on ClawHub.
 
-Plugin package names resolve through ClawHub by default, including scoped names
-such as `@composio/composio`. The optional `clawhub:<package>` prefix still works.
-Use `openclaw plugins install npm:<package>` to install directly from npm.
+Released OpenClaw versions through `2026.10.4` require the `clawhub:<package>`
+prefix to select ClawHub. Updated main/dev builds with ClawHub-default support can
+omit it, for example `openclaw plugins install @composio/composio`. The explicit
+prefix works on both old and updated builds. Use
+`openclaw plugins install npm:<package>` to install directly from npm.
 
-Unscoped package commands include `@latest`, such as
+On updated builds, unscoped package commands include `@latest`, such as
 `openclaw plugins install episodic-claw@latest`, to avoid matching a bundled plugin
 shortcut with the same name.
 

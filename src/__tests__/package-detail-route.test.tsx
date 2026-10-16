@@ -260,7 +260,7 @@ describe("plugin detail route", () => {
     { family: "code-plugin", name: "owner/plugin", target: "owner/plugin" },
     { family: "bundle-plugin", name: "demo-bundle", target: "demo-bundle@latest" },
   ] as const)(
-    "shows and copies the default ClawHub command for $name",
+    "shows and copies stable and updated OpenClaw commands for $name",
     async ({ family, name, target }) => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       vi.stubGlobal("navigator", { clipboard: { writeText } });
@@ -268,12 +268,30 @@ describe("plugin detail route", () => {
       const route = await loadRoute();
       const Component = route.__config.component as ComponentType;
 
-      const { container } = render(<Component />);
+      render(<Component />);
 
-      expect(container.querySelector(".skill-install-command")?.textContent).toBe(
+      const stable = screen.getByRole("group", {
+        name: "Current stable OpenClaw · through 2026.10.4",
+      });
+      const updated = screen.getByRole("group", { name: "Updated OpenClaw · main/dev" });
+      expect(stable.querySelector(".skill-install-command")?.textContent).toBe(
+        `openclaw plugins install clawhub:${name}`,
+      );
+      expect(updated.querySelector(".skill-install-command")?.textContent).toBe(
         `openclaw plugins install ${target}`,
       );
-      fireEvent.click(screen.getByRole("button", { name: "Copy plugin install command" }));
+      expect(
+        within(updated).getByText("Requires a build with ClawHub-default support."),
+      ).toBeTruthy();
+      fireEvent.click(
+        within(stable).getByRole("button", { name: "Copy current stable plugin install command" }),
+      );
+      await waitFor(() =>
+        expect(writeText).toHaveBeenCalledWith(`openclaw plugins install clawhub:${name}`),
+      );
+      fireEvent.click(
+        within(updated).getByRole("button", { name: "Copy updated plugin install command" }),
+      );
       await waitFor(() =>
         expect(writeText).toHaveBeenCalledWith(`openclaw plugins install ${target}`),
       );
@@ -1772,7 +1790,7 @@ describe("plugin detail route", () => {
     expect(screen.getByText("ClawPack")).toBeTruthy();
     expect(screen.getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
     expect(screen.getByText("sha512-demo")).toBeTruthy();
-    expect(screen.getByText("openclaw plugins install")).toBeTruthy();
+    expect(screen.getAllByText("openclaw plugins install")).toHaveLength(2);
     expect(
       screen.getByText("demo-plugin@latest", { selector: ".skill-install-command-target" }),
     ).toBeTruthy();
