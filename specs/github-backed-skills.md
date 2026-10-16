@@ -466,7 +466,8 @@ They stop when no work is claimable or after a 170-minute claim window, leaving
 a full three-hour lease and ten-minute margin before the six-hour workflow
 timeout. Each claim retains its own lease and short-lived model capability;
 workers never reserve waiting skills in advance. One failed lane does not
-cancel the others.
+cancel the others. Initial startup is staggered by five seconds per lane to
+avoid a burst of simultaneous claim actions against the shared backend.
 
 Public evaluation maintenance mutations, including targeted prioritization and
 backfill scheduling, require an active admin before reading or changing queues.

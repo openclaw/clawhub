@@ -65,6 +65,12 @@ jobs:
         with:
           version: v5.1.4
 
+      # Spread the initial claims instead of sending sixteen actions at once.
+      - name: Stagger worker startup
+        env:
+          WORKER_SLOT: ${{ matrix.worker }}
+        run: sleep "$(( (WORKER_SLOT - 1) * 5 ))"
+
       - name: Run skill evaluation worker
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
