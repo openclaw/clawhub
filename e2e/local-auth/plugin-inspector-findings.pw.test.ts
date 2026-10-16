@@ -64,7 +64,7 @@ async function writePluginZip(
 ) {
   const entrypoint =
     args.kind === "warning"
-      ? 'import { loadSessionStore, getSessionEntry } from "openclaw/plugin-sdk/config-runtime";\nexport const demo = true;\n'
+      ? 'import { loadSessionStore } from "openclaw/plugin-sdk/config-runtime";\nimport { getSessionEntry, getSessionEntryAsync } from "openclaw/plugin-sdk/session-store-runtime";\nexport const demo = true;\n'
       : "export const demo = true;\n";
   const zipBytes = zipSync({
     [`${args.name}/package.json`]: strToU8(pluginPackageJson(args)),
@@ -536,13 +536,17 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
         deprecationCodes: ["sdk-load-session-store"],
       }),
       expect.objectContaining({
-        key: "sdk-export:openclaw/plugin-sdk/config-runtime#getSessionEntry",
+        key: "sdk-export:openclaw/plugin-sdk/session-store-runtime#getSessionEntryAsync",
         deprecationCodes: [],
+      }),
+      expect.objectContaining({
+        key: "sdk-export:openclaw/plugin-sdk/session-store-runtime#getSessionEntry",
+        deprecationCodes: ["sdk-deprecated-api"],
       }),
     ]),
   );
   const usageResponse = await page.request.get(
-    `${siteUrl}/api/v1/sdk-usage?key=${encodeURIComponent("sdk-export:openclaw/plugin-sdk/config-runtime#getSessionEntry")}`,
+    `${siteUrl}/api/v1/sdk-usage?key=${encodeURIComponent("sdk-export:openclaw/plugin-sdk/session-store-runtime#getSessionEntryAsync")}`,
   );
   expect(usageResponse.ok()).toBe(true);
   const usage = await usageResponse.json();
