@@ -253,6 +253,31 @@ describe("plugin detail route", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    { family: "code-plugin", name: "demo-plugin" },
+    { family: "code-plugin", name: "@composio/composio" },
+    { family: "bundle-plugin", name: "demo-bundle" },
+  ] as const)(
+    "shows and copies the default ClawHub command for $name",
+    async ({ family, name }) => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal("navigator", { clipboard: { writeText } });
+      loaderDataMock.detail.package = { ...loaderDataMock.detail.package!, family, name };
+      const route = await loadRoute();
+      const Component = route.__config.component as ComponentType;
+
+      const { container } = render(<Component />);
+
+      expect(container.querySelector(".skill-install-command")?.textContent).toBe(
+        `openclaw plugins install ${name}`,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Copy plugin install command" }));
+      await waitFor(() =>
+        expect(writeText).toHaveBeenCalledWith(`openclaw plugins install ${name}`),
+      );
+    },
+  );
+
   it("uses mobile About and Stats tabs below 901px", async () => {
     setViewportWidth(488);
     loaderDataMock = {
@@ -1746,7 +1771,9 @@ describe("plugin detail route", () => {
     expect(screen.getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
     expect(screen.getByText("sha512-demo")).toBeTruthy();
     expect(screen.getByText("openclaw plugins install")).toBeTruthy();
-    expect(screen.getByText("clawhub:demo-plugin")).toBeTruthy();
+    expect(
+      screen.getByText("demo-plugin", { selector: ".skill-install-command-target" }),
+    ).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",
     );

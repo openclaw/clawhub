@@ -121,9 +121,9 @@ describe("SkillInstallSurface", () => {
   });
 
   it("splits plugin install commands into muted verb and highlighted target", () => {
-    render(<OpenClawCliInstallCommand command="openclaw plugins install clawhub:demo-plugin" />);
+    render(<OpenClawCliInstallCommand command="openclaw plugins install @composio/composio" />);
 
     expect(screen.getByText("openclaw plugins install")).toBeTruthy();
-    expect(screen.getByText("clawhub:demo-plugin")).toBeTruthy();
+    expect(screen.getByText("@composio/composio")).toBeTruthy();
   });
 });

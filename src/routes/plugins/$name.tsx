@@ -1212,11 +1212,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     pkg.scanStatus === "malicious" || latestRelease?.verification?.scanStatus === "malicious";
   const skillInstallOwner = owner?.handle ?? pkg.ownerHandle ?? "owner";
   const installSnippet =
-    pkg.family === "code-plugin"
-      ? `openclaw plugins install clawhub:${pkg.name}`
-      : pkg.family === "bundle-plugin"
-        ? `openclaw plugins install clawhub:${pkg.name}`
-        : `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
+    pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
+      ? `openclaw plugins install ${pkg.name}`
+      : `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;

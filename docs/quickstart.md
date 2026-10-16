@@ -45,10 +45,10 @@ Search from OpenClaw:
 openclaw plugins search "calendar"
 ```
 
-Install a ClawHub-hosted plugin with an explicit ClawHub source:
+Install a plugin from ClawHub, the default registry:
 
 ```bash
-openclaw plugins install clawhub:<package>
+openclaw plugins install <package>
 ```
 
 Update installed plugins:
@@ -57,8 +57,9 @@ Update installed plugins:
 openclaw plugins update --all
 ```
 
-Use the `clawhub:` prefix when you want OpenClaw to resolve the package through
-ClawHub rather than npm or another source.
+For example, `openclaw plugins install @composio/composio` resolves through
+ClawHub. The optional `clawhub:<package>` prefix still works. Use
+`openclaw plugins install npm:<package>` to install directly from npm.
 
 ## Sign in for publishing
 

@@ -32,7 +32,7 @@ Search and install plugins with OpenClaw:
 
 ```bash
 openclaw plugins search "calendar"
-openclaw plugins install clawhub:<package>
+openclaw plugins install <package>
 openclaw plugins update --all
 ```
 
@@ -47,11 +47,11 @@ pnpm add -g clawhub
 
 ## What ClawHub hosts
 
-| Surface        | What it stores                                               | Typical command                              |
-| -------------- | ------------------------------------------------------------ | -------------------------------------------- |
-| Skills         | Versioned text bundles with `SKILL.md` plus supporting files | `openclaw skills install @openclaw/demo`     |
-| Code plugins   | OpenClaw plugin packages with compatibility metadata         | `openclaw plugins install clawhub:<package>` |
-| Bundle plugins | Packaged plugin bundles for OpenClaw distribution            | `clawhub package publish <source>`           |
+| Surface        | What it stores                                               | Typical command                          |
+| -------------- | ------------------------------------------------------------ | ---------------------------------------- |
+| Skills         | Versioned text bundles with `SKILL.md` plus supporting files | `openclaw skills install @openclaw/demo` |
+| Code plugins   | OpenClaw plugin packages with compatibility metadata         | `openclaw plugins install <package>`     |
+| Bundle plugins | Packaged plugin bundles for OpenClaw distribution            | `clawhub package publish <source>`       |
 
 ClawHub tracks semver versions, tags such as `latest`, changelogs, files,
 downloads, stars, and security scan summaries. Public pages show current registry
@@ -62,9 +62,9 @@ state so users can inspect a skill or plugin before installing it.
 Native OpenClaw commands install into the active OpenClaw workspace and persist
 source metadata so later update commands can stay on ClawHub.
 
-Use `clawhub:<package>` when a plugin install should resolve through ClawHub.
-Bare npm-safe plugin specs may resolve through npm during launch cutovers, and
-`npm:<package>` stays npm-only when a source must be explicit.
+Plugin package names resolve through ClawHub by default, including scoped names
+such as `@composio/composio`. The optional `clawhub:<package>` prefix still works.
+Use `openclaw plugins install npm:<package>` to install directly from npm.
 
 Plugin installs validate advertised `pluginApi` and `minGatewayVersion`
 compatibility before archive install runs. When a package version publishes a

@@ -46,12 +46,14 @@ metadata before installing. Package records can include API compatibility,
 minimum gateway version, host targets, environment requirements, and artifact
 digests.
 
-Use an explicit ClawHub install source when you want the registry to be the
-source of truth:
+Plugin package names resolve through ClawHub by default:
 
 ```bash
-openclaw plugins install clawhub:<package>
+openclaw plugins install <package>
 ```
+
+The optional `clawhub:<package>` prefix still works. Use
+`openclaw plugins install npm:<package>` to install directly from npm.
 
 ## Publishing
 
@@ -73,7 +75,7 @@ OpenClaw install commands use ClawHub as a package source:
 
 ```bash
 openclaw skills install @openclaw/demo
-openclaw plugins install clawhub:<package>
+openclaw plugins install <package>
 ```
 
 OpenClaw records install source metadata so updates can resolve the same

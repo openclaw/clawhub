@@ -135,12 +135,14 @@ clawhub update @openclaw/demo --force
 
 ## A plugin install fails in OpenClaw
 
-- Use an explicit ClawHub source:
+- Plugin package names resolve through ClawHub by default:
 
 ```bash
-openclaw plugins install clawhub:<package>
+openclaw plugins install <package>
 ```
 
+- The optional `clawhub:<package>` prefix still works. If the plugin is only
+  available on npm, use `openclaw plugins install npm:<package>`.
 - Check the package detail page for scan status and compatibility metadata.
 - Confirm your OpenClaw version satisfies the package's advertised
   compatibility range.
