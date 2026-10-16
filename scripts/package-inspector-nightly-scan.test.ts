@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { spawnSync } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -27,6 +28,17 @@ afterEach(async () => {
 });
 
 describe("package-inspector-nightly-scan", () => {
+  it("loads through the workflow's native Node entrypoint before checking credentials", () => {
+    const result = spawnSync("node", ["scripts/package-inspector-nightly-scan.ts"], {
+      cwd: process.cwd(),
+      env: { ...process.env, CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN: "" },
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN is required");
+  });
   it("preserves author remediation when normalizing inspector issues for upload", () => {
     const findings = normalizeFindings({
       issues: [

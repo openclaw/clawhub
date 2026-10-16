@@ -11,7 +11,7 @@ import {
   SDK_USAGE_ANALYSIS_VERSION,
   SDK_USAGE_SCHEMA_VERSION,
   type SdkUsageReport,
-} from "../convex/lib/packageSdkUsageContract";
+} from "../convex/lib/packageSdkUsageContract.ts";
 
 type ClaimItem = {
   packageId: string;
