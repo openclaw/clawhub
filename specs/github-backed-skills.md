@@ -148,6 +148,13 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
 - Detail storage retains at most one preferred `SKILL.md` or `README.md`,
   capped at 64 KiB. The complete upstream file tree is never persisted for an
   unclaimed mirror row.
+- Malformed source identities remain at their original captured page/offset for
+  quarantine; they must not abort source measurement or shift later rows/ranks.
+  Capture keeps the existing string-typed row shape, using a per-position
+  `missing:<page>:<offset>` value for missing IDs and empty identity fields for
+  non-string values. These placeholders cannot form accepted skill identities.
+  Duplicate-ID checks count real nonempty string IDs; metadata sampling skips
+  rows that cannot supply the required string fields and exact skills.sh URL.
 - Snapshot ingestion uses bounded page/offset cursors. Pause is checked before
   another source batch is fetched; resume continues at the exact stored cursor.
   Reconciliation tombstones disappeared rows and reactivates later
