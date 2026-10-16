@@ -466,11 +466,16 @@ preserving prior outcomes. Its optional `sourcePaths` selection limits a canary
 to 1–20 exact paths across every page; omitting it selects the full eligible
 catalog. Repeating the backfill does not duplicate already-observed jobs.
 Sixty-four GitHub worker lanes claim jobs independently, with one active job per
-lane across workflow dispatches. Workers claim the next skill after each
+lane across workflow dispatches. Each evaluation uses four Harbor trial slots
+across its paired arms and one model agent. Per-trial resource limits, attempts,
+and baseline scoring remain unchanged. Workers claim the next skill after each
 completed, skipped, or failed evaluation instead of exiting after one skill.
-They stop when no work is claimable or after a 170-minute claim window, leaving
-a full three-hour lease and ten-minute margin before the six-hour workflow
-timeout. Each claim retains its own lease and short-lived model capability;
+They stop when no work is claimable or after a 60-minute claim window. Retiring
+between evaluations reduces late claims on aging runners after observed runner
+disconnects at approximately 129 minutes. It does not interrupt the current
+evaluation or guarantee a provider lifetime; each claim retains its full timeout,
+three-hour lease, and short-lived model capability. The workflow timeout remains
+six hours, so the last claim has time to finish within that limit;
 workers never reserve waiting skills in advance. One failed lane does not
 cancel the others. Initial startup is staggered by five seconds per lane to
 avoid a burst of simultaneous claim actions against the shared backend.

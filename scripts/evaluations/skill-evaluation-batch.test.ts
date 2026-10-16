@@ -85,10 +85,10 @@ describe("SkillEvaluator continuous worker", () => {
     expect(process.env.SECURITY_SCAN_WORKER_TOKEN).toBeUndefined();
   });
 
-  it("reserves time for an entire evaluation before claiming another job", async () => {
+  it("retires between evaluations after one hour without claiming another job", async () => {
     const action = vi.fn(async (reference, _args) => {
       if (getFunctionName(reference).endsWith(":claimSkillEvaluationJobs")) return [run("first")];
-      vi.advanceTimersByTime(170 * 60_000);
+      vi.advanceTimersByTime(60 * 60_000);
       return { ok: true };
     });
     expect(await runSkillEvaluationWorker({ ...options, client: { action } })).toEqual({

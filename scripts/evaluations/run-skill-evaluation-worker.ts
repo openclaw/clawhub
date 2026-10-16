@@ -25,9 +25,9 @@ type WorkerClient = Pick<ConvexHttpClient, "action">;
 const logger = createWorkerLogger({ name: "skill-evaluation-worker" });
 const EVALUATION_TIMEOUT_MS = 160 * 60 * 1000;
 const VALIDATION_TIMEOUT_MS = 5 * 60 * 1000;
-// A six-hour runner must leave a full three-hour lease for the last claim,
-// plus ten minutes for setup and cleanup. Claim only one skill at a time.
-const CLAIM_WINDOW_MS = 170 * 60 * 1000;
+// Recycle workers between evaluations instead of claiming late in an aging
+// runner's lifetime. An already claimed skill keeps its full timeout and lease.
+const CLAIM_WINDOW_MS = 60 * 60 * 1000;
 
 function requireEnv(name: string) {
   const value = process.env[name]?.trim();
