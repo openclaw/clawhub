@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 
-import { createServer, type Server } from "node:http";
+import { createServer, request as httpRequest, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { startOpenAiCapabilityBroker } from "./openai-capability-broker";
 
@@ -208,6 +208,126 @@ describe("OpenAI evaluation capability broker", () => {
 
     expect((await request()).status).toBe(200);
     expect((await request()).status).toBe(429);
+  });
+
+  it("supports a complete paired workload beyond 1,024 requests and reports usage", async () => {
+    let forwarded = 0;
+    const upstreamBaseUrl = await listen(
+      createServer((_request, response) => {
+        forwarded += 1;
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end("{}");
+      }),
+    );
+    const broker = await startOpenAiCapabilityBroker({
+      allowedModels: ["gpt-subject"],
+      apiKey: "host-key",
+      upstreamBaseUrl,
+    });
+    brokers.push(broker);
+    for (let attempt = 0; attempt < 1_025; attempt += 1) {
+      const response = await fetch(`http://127.0.0.1:${broker.port}/v1/responses`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${broker.capabilityToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ model: "gpt-subject" }),
+      });
+      await response.text();
+      expect(response.status).toBe(200);
+    }
+    expect(forwarded).toBe(1_025);
+    expect(broker.usage()).toEqual({
+      requestLimit: 8_192,
+      forwardedRequests: 1_025,
+      budgetRejections: 0,
+      providerRateLimitResponses: 0,
+    });
+  }, 20_000);
+
+  it("distinguishes provider rate limits from the local capability budget", async () => {
+    const upstreamBaseUrl = await listen(
+      createServer((_request, response) => {
+        response.writeHead(429, { "content-type": "application/json" });
+        response.end("{}");
+      }),
+    );
+    const broker = await startOpenAiCapabilityBroker({
+      allowedModels: ["gpt-subject"],
+      apiKey: "host-key",
+      maxRequests: 1,
+      upstreamBaseUrl,
+    });
+    brokers.push(broker);
+    const request = () =>
+      fetch(`http://127.0.0.1:${broker.port}/v1/responses`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${broker.capabilityToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ model: "gpt-subject" }),
+      });
+    expect((await request()).status).toBe(429);
+    expect((await request()).status).toBe(429);
+    expect(broker.usage()).toEqual({
+      requestLimit: 1,
+      forwardedRequests: 1,
+      budgetRejections: 1,
+      providerRateLimitResponses: 1,
+    });
+    const snapshot = broker.usage();
+    snapshot.budgetRejections = 0;
+    expect(broker.usage().budgetRejections).toBe(1);
+  });
+
+  it("reserves the last request only once when streamed bodies finish together", async () => {
+    let forwarded = 0;
+    const upstreamBaseUrl = await listen(
+      createServer((_request, response) => {
+        forwarded += 1;
+        response.end("{}");
+      }),
+    );
+    const broker = await startOpenAiCapabilityBroker({
+      allowedModels: ["gpt-subject"],
+      apiKey: "host-key",
+      maxRequests: 1,
+      upstreamBaseUrl,
+    });
+    brokers.push(broker);
+    const pending = Array.from({ length: 2 }, () => {
+      let finish!: () => void;
+      const status = new Promise<number | undefined>((resolve, reject) => {
+        const request = httpRequest(
+          `http://127.0.0.1:${broker.port}/v1/responses`,
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${broker.capabilityToken}`,
+              "content-type": "application/json",
+              "content-length": Buffer.byteLength('{"model":"gpt-subject"}'),
+            },
+          },
+          (response) => {
+            response.resume();
+            response.on("end", () => resolve(response.statusCode));
+          },
+        );
+        request.on("error", reject);
+        request.write('{"model":');
+        finish = () => request.end('"gpt-subject"}');
+      });
+      return { finish, status };
+    });
+    // Keep both authenticated requests open before either JSON body completes.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    for (const request of pending) request.finish();
+    expect((await Promise.all(pending.map((request) => request.status))).sort()).toEqual([
+      200, 429,
+    ]);
+    expect(forwarded).toBe(1);
   });
 
   it("rejects background Responses work without calling the provider", async () => {

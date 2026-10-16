@@ -264,14 +264,27 @@ export async function processClaimedEvaluation(args: {
       });
     } finally {
       await broker.close();
+      logger.info(
+        { event: "skill_evaluation_provider_usage", runId: run._id, ...broker.usage() },
+        "evaluation provider usage",
+      );
     }
     const resultPath = await findLatestResultJson(resultsDirectory);
     if (evaluation.exitCode !== 0) {
       const resultJson = resultPath
         ? await readFile(resultPath, "utf8").catch(() => undefined)
         : undefined;
+      const usage = broker.usage();
+      const requestFailures =
+        usage.budgetRejections || usage.providerRateLimitResponses
+          ? ` (request limit=${usage.requestLimit}, broker budget rejections=${usage.budgetRejections}, provider HTTP 429 responses=${usage.providerRateLimitResponses})`
+          : "";
       throw new Error(
-        commandFailure("SkillEvaluator Tier 3 evaluation failed", evaluation, resultJson),
+        commandFailure(
+          `SkillEvaluator Tier 3 evaluation failed${requestFailures}`,
+          evaluation,
+          resultJson,
+        ),
       );
     }
     if (!resultPath) throw new Error("SkillEvaluator completed without producing result.json");

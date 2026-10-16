@@ -507,6 +507,13 @@ pinned subject/judge models, required OpenAI endpoints, a bounded request count,
 disabled provider-side background work, and the lifetime of that one run.
 SkillEvaluator still runs the agent in its secure Docker mode; the capability
 is closed when the evaluator exits.
+The allowance is 8,192 forwarded requests for the entire paired evaluation,
+including subject turns and judge calls. A 1,024-request allowance exhausted
+partway through larger datasets, turning otherwise successful provider calls
+into local 429 failures. Request reservations happen after body validation,
+without yielding between checking and decrementing the allowance. Worker logs
+record the forwarded count, local budget rejections, and upstream 429 responses;
+failure summaries retain the latter two counts before native error details.
 SkillEvaluator uses its `openai-compatible` gateway adapter so Codex selects a
 custom HTTP Responses provider instead of trying the native OpenAI WebSocket
 transport against the HTTP broker.
