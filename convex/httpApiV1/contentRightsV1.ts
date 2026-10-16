@@ -14,6 +14,9 @@ type ProxyDependencies = {
   fetch: typeof fetch;
 };
 
+// Admin Hermit proxy: do not hold the Convex action if forms.openclaw.ai stalls.
+export const HERMIT_CONTENT_RIGHTS_FETCH_TIMEOUT_MS = 10_000;
+
 const hermitCasePath = (caseId: string, correspondence = false) =>
   `/api/clawhub-content-rights/cases/${encodeURIComponent(caseId)}${
     correspondence ? "/correspondence" : ""
@@ -44,21 +47,23 @@ export async function proxyHermitContentRightsRequest(
 
   try {
     if (request.method === "GET" && segments.length === 1) {
-      return proxyResponse(
+      return await proxyResponse(
         await dependencies.fetch(`${baseUrl}${hermitCasePath(caseId)}`, {
           method: "GET",
           headers,
+          signal: AbortSignal.timeout(HERMIT_CONTENT_RIGHTS_FETCH_TIMEOUT_MS),
         }),
       );
     }
     if (request.method === "POST" && segments.length === 2 && segments[1] === "correspondence") {
       const form = await request.formData();
       form.set("actor", actorUserId);
-      return proxyResponse(
+      return await proxyResponse(
         await dependencies.fetch(`${baseUrl}${hermitCasePath(caseId, true)}`, {
           method: "POST",
           headers,
           body: form,
+          signal: AbortSignal.timeout(HERMIT_CONTENT_RIGHTS_FETCH_TIMEOUT_MS),
         }),
       );
     }
