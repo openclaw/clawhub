@@ -89,6 +89,39 @@ or replace it with an empty policy-stamped snapshot and prevent the scheduled
 publisher from repopulating it until the incident is resolved. Verify that
 `/v1/feeds/claws` returns no old payload bytes before restoring catalog traffic.
 
+## Identity avatar trust boundary
+
+Blobster generation is an authenticated, paid operation. The HTTP route owns
+the per-account admission quota, while the handler requires a current API token
+and active account both before reading the request body and immediately before
+calling the provider. Body streaming can outlive admission: a revoked token or
+deleted/deactivated account must receive `401` without provider I/O when the
+body finishes. Admission quotas and cached optional identity are not authority
+to spend after revocation.
+
+Only the creator-reviewed `prompt` is disclosed to the provider. The strict,
+bounded request rejects extra fields; generation never reads workspace files,
+`SOUL.md`, or conversation history. Provider credentials stay server-side, the
+provider receives `store: false`, and responses are not cached. Missing provider
+configuration gives the creator an operator-contact action. Generation returns
+a preview; selecting, saving, and publishing remain separate caller actions.
+
+Model output is untrusted. The renderer validates the bounded design schema,
+parses each layer, and reconstructs only allowlisted static SVG shapes and
+attributes around the fixed body and face. It rejects scripts, references,
+external resources, foreign markup, and excessive geometry or nesting instead
+of forwarding model markup. Visual checks at tiny avatar sizes remain necessary;
+structural validation does not guarantee a readable design.
+
+Published catalog icons derive from `agent.identity.avatar`, the same portable
+identity installed with the Claw. There is no competing catalog icon field.
+Data URLs and declared workspace images pass the existing bounded image
+validation; workspace bytes must match their uploaded digest. Valid images use
+the existing content-addressed presentation asset store. Unsupported, undecodable,
+or oversized images retain the catalog fallback, while missing or changed
+uploaded bytes fail publication. Icon derivation does not change the exact
+artifact or bypass existing publication authority, scanner, and moderation rules.
+
 ## Staged implementation
 
 1. Add the shared grouped manifest contract, safe summary, and storage model

@@ -43,7 +43,17 @@ export const generateBlobsterHttp = httpAction(async (ctx, request) => {
   const prompt = await readPrompt(request);
   if (!prompt) return text("Provide a description of 1–8,000 characters.", 400);
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return text("Blobster generation is not configured on this ClawHub instance.", 503);
+  if (!apiKey)
+    return text(
+      "Blobster generation is not configured. Contact the instance operator to enable generation.",
+      503,
+    );
+  try {
+    // A streamed body can outlive admission. Recheck current authority before paid I/O.
+    await requireApiTokenUser(ctx, request);
+  } catch {
+    return text("Sign in to ClawHub to generate a Blobster.", 401);
+  }
   try {
     // Only the explicitly submitted text leaves ClawHub. No workspace or SOUL reads.
     return json(await generateBlobster(prompt, apiKey));

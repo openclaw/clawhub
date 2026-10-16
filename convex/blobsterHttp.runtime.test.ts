@@ -18,20 +18,29 @@ const design = {
   layers: { back: "", left_prop: "", right_prop: "", shell_overlay: "", accessory: "" },
 };
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 async function fixture() {
   const t = convexTest(schema, modules);
   registerRateLimiter(t);
   const token = "blobster-test-token";
   const tokenHash = await hashToken(token);
-  const tokenId = await t.run(async (ctx) => {
+  const ids = await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { handle: "blobster-creator" });
-    return ctx.db.insert("apiTokens", {
+    const tokenId = await ctx.db.insert("apiTokens", {
       userId,
       label: "fixture",
       prefix: "fixture",
       tokenHash,
       createdAt: 1,
     });
+    return { tokenId, userId };
   });
   const generate = (body: unknown, auth = true) =>
     t.fetch(path, {
@@ -42,7 +51,7 @@ async function fixture() {
         ...(auth ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
-  return { t, tokenId, generate };
+  return { t, ...ids, token, generate };
 }
 
 afterEach(() => {
@@ -60,6 +69,67 @@ describe("Blobster HTTP boundary", () => {
     expect((await generate({ prompt: "gardener" })).status).toBe(401);
     expect(fetcher).not.toHaveBeenCalled();
   });
+
+  it.each(["active", "revoked", "deactivated", "deleted"] as const)(
+    "revalidates %s authority after an admitted request body stalls",
+    async (authority) => {
+      const { t, tokenId, userId, token } = await fixture();
+      vi.stubEnv("OPENAI_API_KEY", "test-key");
+      const fetcher = vi.fn(async () =>
+        Response.json({
+          output: [
+            { type: "message", content: [{ type: "output_text", text: JSON.stringify(design) }] },
+          ],
+        }),
+      );
+      vi.stubGlobal("fetch", fetcher);
+      const reading = deferred();
+      const release = deferred();
+      const body = new ReadableStream<Uint8Array>(
+        {
+          async pull(controller) {
+            reading.resolve();
+            await release.promise;
+            controller.enqueue(new TextEncoder().encode(JSON.stringify({ prompt: "gardener" })));
+            controller.close();
+          },
+        },
+        { highWaterMark: 0 },
+      );
+      const request = {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body,
+        duplex: "half" as const,
+      };
+      const response = t.fetch(path, request);
+      await Promise.race([
+        reading.promise,
+        response.then(() => {
+          throw new Error("Request ended before reading its body");
+        }),
+      ]);
+      try {
+        // Token touch proves real admission completed before the body pause.
+        expect(await t.run(async (ctx) => (await ctx.db.get(tokenId))?.lastUsedAt)).toBeDefined();
+        expect(fetcher).not.toHaveBeenCalled();
+        await t.run(async (ctx) => {
+          if (authority === "revoked") await ctx.db.patch(tokenId, { revokedAt: Date.now() });
+          if (authority === "deactivated")
+            await ctx.db.patch(userId, { deactivatedAt: Date.now() });
+          if (authority === "deleted") await ctx.db.patch(userId, { deletedAt: Date.now() });
+        });
+      } finally {
+        release.resolve();
+      }
+      expect({ status: (await response).status, providerCalls: fetcher.mock.calls.length }).toEqual(
+        {
+          status: authority === "active" ? 200 : 401,
+          providerCalls: authority === "active" ? 1 : 0,
+        },
+      );
+    },
+  );
 
   it.each([
     { prompt: "" },
@@ -99,7 +169,9 @@ describe("Blobster HTTP boundary", () => {
   it("reports unconfigured generation and masks provider failures", async () => {
     const { generate } = await fixture();
     vi.stubEnv("OPENAI_API_KEY", "");
-    expect((await generate({ prompt: "gardener" })).status).toBe(503);
+    const unconfigured = await generate({ prompt: "gardener" });
+    expect(unconfigured.status).toBe(503);
+    expect(await unconfigured.text()).toContain("Contact the instance operator");
     vi.stubEnv("OPENAI_API_KEY", "test-key");
     vi.stubGlobal(
       "fetch",
