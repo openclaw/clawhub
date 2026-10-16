@@ -237,4 +237,47 @@ describe("OpenAI evaluation capability broker", () => {
     expect(response.status).toBe(400);
     expect(upstreamRequests).toBe(0);
   });
+
+  it.each([520, 502, 429, 401, 200])(
+    "normalizes only upstream 520 for bounded evaluator retries (status %i)",
+    async (upstreamStatus) => {
+      let upstreamRequests = 0;
+      const body = `provider response: ${upstreamStatus}`;
+      const upstreamBaseUrl = await listen(
+        createServer((_request, response) => {
+          upstreamRequests += 1;
+          response.writeHead(upstreamStatus, {
+            "content-type": "text/plain",
+            "retry-after": "2",
+            "x-request-id": "provider-request",
+          });
+          response.end(body);
+        }),
+      );
+      const broker = await startOpenAiCapabilityBroker({
+        allowedModels: ["gpt-judge"],
+        apiKey: "long-lived-provider-key",
+        maxRequests: 1,
+        upstreamBaseUrl,
+      });
+      brokers.push(broker);
+      const request = () =>
+        fetch(`http://127.0.0.1:${broker.port}/v1/chat/completions`, {
+          body: JSON.stringify({ model: "gpt-judge" }),
+          headers: {
+            authorization: `Bearer ${broker.capabilityToken}`,
+            "content-type": "application/json",
+          },
+          method: "POST",
+        });
+
+      const response = await request();
+      expect(response.status).toBe(upstreamStatus === 520 ? 502 : upstreamStatus);
+      expect(await response.text()).toBe(body);
+      expect(response.headers.get("retry-after")).toBe("2");
+      expect(response.headers.get("x-request-id")).toBe("provider-request");
+      expect((await request()).status).toBe(429);
+      expect(upstreamRequests).toBe(1);
+    },
+  );
 });

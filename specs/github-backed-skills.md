@@ -512,7 +512,11 @@ custom HTTP Responses provider instead of trying the native OpenAI WebSocket
 transport against the HTTP broker.
 For GPT-5 Chat Completions, the broker translates the legacy `max_tokens` field
 emitted for proxy URLs into OpenAI's `max_completion_tokens`, preserving its
-value. Native execution errors take precedence over rendered command output;
+value. It normalizes upstream HTTP 520 to 502 so the pinned evaluator's existing
+bounded retries and judge deadline cover this gateway failure. Response bodies,
+retry headers, and the per-request capability allowance are preserved; the broker
+does not add its own retry loop.
+Native execution errors take precedence over rendered command output;
 fallback diagnostics redact both streams before retaining their bounded tails.
 
 ## UI

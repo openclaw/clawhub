@@ -129,7 +129,8 @@ export async function startOpenAiCapabilityBroker(args: {
           signal: controller.signal,
         });
         copyResponseHeaders(upstream, response);
-        response.writeHead(upstream.status);
+        // The pinned evaluator retries 502 within its judge deadline, but not 520.
+        response.writeHead(upstream.status === 520 ? 502 : upstream.status);
         if (!upstream.body) {
           response.end();
           return;
