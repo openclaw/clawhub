@@ -7,8 +7,8 @@ import { v } from "convex/values";
 import rootPackageJson from "../package.json";
 import { internalAction } from "./_generated/server";
 import { prepareOpenClawInspectorTarget } from "./lib/openClawInspectorTarget";
-import { pluginApiRetirement } from "./lib/pluginApiRetirements";
 import { normalizeSdkUsageReport, sdkUsageReport } from "./lib/packageSdkUsageContract";
+import { pluginApiRetirement } from "./lib/pluginApiRetirements";
 
 type InspectorFinding = {
   id?: string;
