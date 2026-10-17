@@ -36,7 +36,7 @@ describe("Claw discovery", () => {
   });
   it("ranks categories by their total downloads, counts repeated tags once, and ranks their Claws", () => {
     const groups = popularClawCategories([
-      claw("a", 500, ["coding"]),
+      claw("a", 500, ["engineering"]),
       claw("b", 400, ["research", "research"]),
       claw("c", 300, ["research"]),
     ]);
@@ -44,11 +44,18 @@ describe("Claw discovery", () => {
       groups.map((group) => [group.slug, group.downloads, group.items.map((item) => item.name)]),
     ).toEqual([
       ["research", 700, ["b", "c"]],
-      ["coding", 500, ["a"]],
+      ["engineering", 500, ["a"]],
     ]);
   });
+  it("only ranks canonical Claw categories, excluding legacy and uncategorized values", () => {
+    expect(
+      popularClawCategories([claw("a", 10, ["coding", "other", "__internal", "engineering"])]).map(
+        (group) => group.slug,
+      ),
+    ).toEqual(["engineering"]);
+  });
   it("searches names, descriptions and creators within the selected category", () => {
-    const items = [claw("Sift", 3, ["research"]), claw("Patch", 2, ["coding"])];
+    const items = [claw("Sift", 3, ["research"]), claw("Patch", 2, ["engineering"])];
     expect(filterClaws(items, " maker careful ", "research").map((item) => item.name)).toEqual([
       "Sift",
     ]);
@@ -56,7 +63,7 @@ describe("Claw discovery", () => {
   });
   it("reads every public page before ranking and keeps real featured selections separate", async () => {
     const a = claw("a", 2, ["research"]),
-      b = claw("b", 1, ["coding"]);
+      b = claw("b", 1, ["engineering"]);
     query.mockImplementation((_ref, args) =>
       Promise.resolve(
         args.highlightedOnly

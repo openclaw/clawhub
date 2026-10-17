@@ -1,7 +1,7 @@
+import { CLAW_CATEGORY_DEFINITIONS, isClawCategorySlug } from "clawhub-schema";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
-import { getPluginCategoryBySlug, getSkillCategoryBySlug } from "./categories";
 
 export type ClawListing = FunctionReturnType<typeof api.packages.listPublicPage>["page"][number];
 export type ClawDiscovery = { items: ClawListing[]; featured: ClawListing[] };
@@ -40,8 +40,7 @@ export async function fetchClawDiscovery(): Promise<ClawDiscovery> {
 
 export function clawCategoryLabel(slug: string) {
   return (
-    getSkillCategoryBySlug(slug)?.label ??
-    getPluginCategoryBySlug(slug)?.label ??
+    CLAW_CATEGORY_DEFINITIONS.find((category) => category.slug === slug)?.label ??
     slug.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
   );
 }
@@ -50,7 +49,7 @@ export function popularClawCategories(items: ClawListing[]) {
   const groups = new Map<string, { slug: string; downloads: number; items: ClawListing[] }>();
   for (const item of items) {
     for (const slug of new Set(item.categories ?? [])) {
-      if (!slug || slug.startsWith("__")) continue;
+      if (!isClawCategorySlug(slug)) continue;
       const group = groups.get(slug) ?? { slug, downloads: 0, items: [] };
       group.downloads += item.stats.downloads;
       group.items.push(item);

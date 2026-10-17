@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { CLAW_CATEGORY_DEFINITIONS } from "clawhub-schema";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const fetchDiscovery = vi.hoisted(() => vi.fn());
@@ -94,7 +95,7 @@ describe("Claw discovery surface", () => {
       ...claw,
       name: `claw-${index}`,
       displayName: `Claw ${index}`,
-      categories: [`category-${Math.floor(index / 5)}`],
+      categories: [CLAW_CATEGORY_DEFINITIONS[Math.floor(index / 5)]!.slug],
     }));
     const { container } = render(<ClawDiscovery initialData={{ items, featured: [items[0]] }} />);
     expect(container.querySelectorAll(".claw-category")).toHaveLength(6);

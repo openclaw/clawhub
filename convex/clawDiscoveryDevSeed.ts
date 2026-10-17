@@ -1,3 +1,4 @@
+import { v } from "convex/values";
 import { internalMutation } from "./functions";
 import { assertLocalDevSeedAllowed } from "./lib/devSeed";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
@@ -5,8 +6,8 @@ import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/pac
 // Deterministic local catalog, deliberately separate from the public catalog.
 // These entries exercise discovery and read-only details, not installation.
 export const seed = internalMutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { hidden: v.optional(v.boolean()) },
+  handler: async (ctx, args) => {
     assertLocalDevSeedAllowed("Claw discovery");
     const now = Date.now();
     let owner = await ctx.db
@@ -24,6 +25,37 @@ export const seed = internalMutation({
       owner = await ctx.db.get(id);
     }
     if (!owner) throw new Error("Missing fixture owner");
+    let publisher = await ctx.db
+      .query("publishers")
+      .withIndex("by_handle", (q) => q.eq("handle", "openclaw"))
+      .unique();
+    if (!publisher) {
+      const publisherId = await ctx.db.insert("publishers", {
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw (local fixture)",
+        createdAt: now,
+        updatedAt: now,
+      });
+      publisher = await ctx.db.get(publisherId);
+    }
+    if (!publisher || publisher.kind !== "org" || publisher.deletedAt || publisher.deactivatedAt) {
+      throw new Error("Claw discovery fixtures require an active local OpenClaw organization");
+    }
+    // Exercise the real public catalog boundary; never bypass it for visual proof.
+    if (
+      !(await ctx.db
+        .query("officialPublishers")
+        .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+        .unique())
+    ) {
+      await ctx.db.insert("officialPublishers", {
+        publisherId: publisher._id,
+        reason: "Local Field guide fixture",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
     const groups = [
       {
         category: "research",
@@ -36,7 +68,7 @@ export const seed = internalMutation({
         ],
       },
       {
-        category: "coding",
+        category: "engineering",
         names: ["Patch", "Code Cartographer", "Test Pilot", "Release Notes"],
         summaries: [
           "A thoughtful second pair of eyes for your next pull request.",
@@ -56,7 +88,7 @@ export const seed = internalMutation({
         ],
       },
       {
-        category: "writing",
+        category: "operations",
         names: ["Marginalia", "First Draft", "Plainspoken", "Copy Desk"],
         summaries: [
           "An attentive editor for ideas that deserve a clearer voice.",
@@ -66,7 +98,7 @@ export const seed = internalMutation({
         ],
       },
       {
-        category: "data-analysis",
+        category: "finance",
         names: ["Signal", "Table Talk", "Trendline", "Data Detective"],
         summaries: [
           "Explore a dataset and explain what the numbers say.",
@@ -76,7 +108,7 @@ export const seed = internalMutation({
         ],
       },
       {
-        category: "design",
+        category: "product",
         names: ["Studio", "Contrast", "Canvas", "Wayfinder"],
         summaries: [
           "Explore a design direction with a careful creative partner.",
@@ -88,26 +120,30 @@ export const seed = internalMutation({
     ];
     for (const [groupIndex, group] of groups.entries()) {
       for (const [index, displayName] of group.names.entries()) {
-        const name = `@field-guide-dev/${displayName.toLowerCase().replaceAll(" ", "-")}`;
-        if (
-          await ctx.db
-            .query("packages")
-            .withIndex("by_name", (q) => q.eq("normalizedName", name))
-            .first()
-        )
+        const name = `@openclaw/field-guide-dev-${displayName.toLowerCase().replaceAll(" ", "-")}`;
+        const existing = await ctx.db
+          .query("packages")
+          .withIndex("by_name", (q) => q.eq("normalizedName", name))
+          .first();
+        if (existing) {
+          if (existing.ownerUserId !== owner._id) throw new Error("Fixture name is already in use");
+          await ctx.db.patch(existing._id, { softDeletedAt: args.hidden ? now : undefined });
           continue;
+        }
         const packageId = await ctx.db.insert("packages", {
           name,
           normalizedName: name,
           displayName,
           summary: group.summaries[index],
           ownerUserId: owner._id,
+          ownerPublisherId: publisher._id,
           family: "claw",
           channel: "community",
-          isOfficial: false,
+          isOfficial: true,
           tags: {},
           categories: [group.category],
           scanStatus: "clean",
+          softDeletedAt: args.hidden ? now : undefined,
           stats: {
             downloads: (6 - groupIndex) * 1000 - index * 170,
             installs: (6 - groupIndex) * 100 - index * 10,
@@ -151,8 +187,8 @@ export const seed = internalMutation({
         if (pkg)
           await upsertPackageSearchDigest(ctx, {
             ...extractPackageDigestFields(pkg),
-            ownerHandle: owner.handle,
-            ownerKind: "user",
+            ownerHandle: publisher.handle,
+            ownerKind: "org",
           });
         if (index === 0 && groupIndex < 4)
           await ctx.db.insert("packageBadges", {
@@ -163,6 +199,6 @@ export const seed = internalMutation({
           });
       }
     }
-    return { claws: 24, owner: owner.handle };
+    return { claws: 24, owner: publisher.handle };
   },
 });
