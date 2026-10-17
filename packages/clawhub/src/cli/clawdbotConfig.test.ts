@@ -8,6 +8,13 @@ import { resolveClawdbotDefaultWorkspace } from "./clawdbotConfig.js";
 
 const originalEnv = { ...process.env };
 
+// Workspace values are interpolated into JSON5 string literals below. On
+// Windows they contain backslashes, which JSON5 would otherwise read as
+// (partially invalid) escape sequences and corrupt the stored path.
+function jsonPath(value: string): string {
+  return value.replace(/\\/g, "\\\\");
+}
+
 afterEach(() => {
   process.env = { ...originalEnv };
 });
@@ -30,9 +37,9 @@ describe("resolveClawdbotDefaultWorkspace", () => {
 
     const config = `{
       agents: {
-        defaults: { workspace: "${workspaceMain}", },
+        defaults: { workspace: "${jsonPath(workspaceMain)}", },
         list: [
-          { id: 'main', workspace: "${workspaceList}", default: true },
+          { id: 'main', workspace: "${jsonPath(workspaceList)}", default: true },
         ],
       },
     }`;
@@ -58,8 +65,8 @@ describe("resolveClawdbotDefaultWorkspace", () => {
     const config = `{
       agents: {
         list: [
-          { id: 'main', workspace: "${workspaceMain}", default: true },
-          { id: 'work', workspace: "${workspaceWork}" },
+          { id: 'main', workspace: "${jsonPath(workspaceMain)}", default: true },
+          { id: 'work', workspace: "${jsonPath(workspaceWork)}" },
         ],
       },
     }`;
@@ -83,7 +90,7 @@ describe("resolveClawdbotDefaultWorkspace", () => {
     process.env.OPENCLAW_CONFIG_PATH = join(openclawStateDir, "openclaw.json");
 
     const config = `{
-      agent: { workspace: "${join(base, "workspace-main")}" },
+      agent: { workspace: "${jsonPath(join(base, "workspace-main"))}" },
     }`;
     await mkdir(join(base, "config"), { recursive: true });
     await writeFile(configPath, config, "utf8");
@@ -99,6 +106,9 @@ describe("resolveClawdbotDefaultWorkspace", () => {
     const configPath = join(base, "clawdbot.json");
     const openclawStateDir = join(base, "openclaw-state");
 
+    // On Windows resolveHome() prefers USERPROFILE over HOME, so drop it to
+    // keep the test targeting the HOME fallback it documents.
+    delete process.env.USERPROFILE;
     process.env.HOME = customHome;
     process.env.CLAWDBOT_STATE_DIR = stateDir;
     process.env.CLAWDBOT_CONFIG_PATH = configPath;
@@ -121,6 +131,9 @@ describe("resolveClawdbotDefaultWorkspace", () => {
     const base = await mkdtemp(join(tmpdir(), "clawhub-home-trailing-"));
     const customHome = join(base, "custom-home");
 
+    // On Windows resolveHome() prefers USERPROFILE over HOME, so drop it to
+    // keep the test targeting the HOME fallback it documents.
+    delete process.env.USERPROFILE;
     process.env.HOME = `${customHome}/`;
 
     expect(resolveHome()).toBe(customHome);
@@ -137,7 +150,7 @@ describe("resolveClawdbotDefaultWorkspace", () => {
     await mkdir(stateDir, { recursive: true });
     const config = `{
       agents: {
-        defaults: { workspace: "${workspace}", },
+        defaults: { workspace: "${jsonPath(workspace)}", },
       },
     }`;
     await writeFile(configPath, config, "utf8");
@@ -162,7 +175,7 @@ describe("resolveClawdbotDefaultWorkspace", () => {
     );
     await writeFile(
       openclawConfigPath,
-      `{ agents: { defaults: { workspace: "${workspace}" } } }`,
+      `{ agents: { defaults: { workspace: "${jsonPath(workspace)}" } } }`,
       "utf8",
     );
 
