@@ -57,20 +57,25 @@ artifact digest.
 - Claw publication still requires validation, moderation, ownership, and
   scanner checks.
 
-The initial public catalog (package lists, search, and the Official Claw feed)
-contains only canonical `@openclaw/*` Claws owned by the active OpenClaw
-publisher organization with a current Official designation. Recheck that
-owner's current authority for catalog reads; cached search digest owner fields
-are not sufficient after an organization is deactivated or deleted. This is a
-discovery policy, not a hosting policy. Other publishers may publish Claws under their own scope and
+The public catalog (package lists and search) includes eligible community and
+official Claws. Every catalog read rechecks that the current publisher row is
+active and its handle matches the package scope; cached search digest owner
+fields are not sufficient after a publisher is deactivated, deleted, or renamed.
+The existing publication, visibility, access, moderation, and scanner gates
+still apply. Community entries carry creator attribution without an Official
+badge. An Official designation is not required for community discovery.
+
+The separate Official Claw feed contains only canonical `@openclaw/*` Claws
+owned by the active OpenClaw publisher organization with a current Official
+designation. Other publishers may publish Claws under their own scope and
 their published Claws remain reachable by exact-name metadata and artifact
 downloads, subject to the existing ownership, scanner, moderation, and access
 rules. If a Claw has a publisher row, admission and finalization recheck that
 it is active and matches the package scope. Legacy user-owned Claws without a
-publisher row continue through the existing user-owner and scan path. Losing
-an Official designation does not by itself withdraw a published artifact or
-prevent further publication.
-This catalog restriction does not apply to skills or plugins.
+publisher row continue through the existing user-owner and scan path, but are
+not admitted to the public Claw catalog. Losing an Official designation does
+not by itself withdraw a published artifact, remove an otherwise eligible
+Claw from community discovery, or prevent further publication.
 
 The Claw feed is a stored snapshot, so a pre-policy snapshot must fail closed
 after deployment. A new snapshot records the restricted policy version, entry
@@ -78,8 +83,9 @@ count, and current publisher identity. The HTTP feed returns no stored bytes
 until that snapshot is built; if its publisher later loses active authority, it
 fails closed again until an empty or newly authorized snapshot replaces it.
 Rollout must refresh the feed with the production catalog publication workflow
-and verify catalog exclusion, direct package continuity, and revoked Official
-publisher effects.
+and verify eligible community discovery, exclusion of private, pending, blocked,
+and scope-mismatched packages, direct package continuity, and revoked Official
+publisher effects on the separate feed.
 
 There is no Claw feature flag to turn off for rollback. Revert or fix the
 backend on `main` and run the production deploy workflow, retaining the
