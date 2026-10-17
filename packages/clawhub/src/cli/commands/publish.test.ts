@@ -627,6 +627,39 @@ describe("cmdPublish", () => {
     }
   });
 
+  it("keeps a restored ignored root manifest in path order with other files", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "ignored-manifest-order");
+      await mkdir(folder, { recursive: true });
+      // *.md hides SKILL.md from collection, so the manifest is restored
+      // after the collection-time sort; the final publish list must still
+      // be in path order next to the second eligible file.
+      await writeFile(join(folder, ".gitignore"), "*.md\n", "utf8");
+      await writeFile(join(folder, "a.txt"), "a\n", "utf8");
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+
+      mockPublishResponse({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      await cmdPublish(makeOpts(workdir), "ignored-manifest-order", {
+        slug: "ignored-manifest-order",
+        name: "Ignored Manifest Order",
+        version: "1.0.0",
+        changelog: "",
+        tags: "latest",
+      });
+
+      const files = publishPayload().files as Array<{ path: string }>;
+      expect(files.map((file) => file.path)).toEqual(["SKILL.md", "a.txt"]);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("includes owner handle for org-owned skill publishes", async () => {
     const workdir = await makeTmpWorkdir();
     try {
