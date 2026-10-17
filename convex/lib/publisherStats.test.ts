@@ -251,4 +251,257 @@ describe("publisher stat maintenance", () => {
     expect(ctx.db.patch).not.toHaveBeenCalled();
     expect(ctx.db.query).not.toHaveBeenCalled();
   });
+
+  it("does not count a staged package that has no published release", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+      },
+    };
+
+    await adjustPublisherStatsForPackageChange(
+      ctx as never,
+      null,
+      makePackage({
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        stats: { downloads: 9, installs: 8, stars: 7, versions: 0 },
+      }),
+    );
+
+    expect(ctx.db.get).not.toHaveBeenCalled();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("counts a package when its first release is published", async () => {
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publishers:alice",
+          publishedSkills: 0,
+          publishedPackages: 0,
+          totalInstalls: 0,
+          totalDownloads: 0,
+          totalStars: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        })),
+        patch,
+        query: vi.fn(),
+      },
+    };
+
+    await adjustPublisherStatsForPackageChange(
+      ctx as never,
+      makePackage({
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        stats: { downloads: 10, installs: 4, stars: 2, versions: 0 },
+      }),
+      makePackage({
+        latestReleaseId: "packageReleases:one",
+        stats: { downloads: 10, installs: 4, stars: 2, versions: 1 },
+      }),
+    );
+
+    expect(patch).toHaveBeenCalledWith("publishers:alice", {
+      publishedSkills: 0,
+      publishedPackages: 1,
+      totalInstalls: 4,
+      totalDownloads: 10,
+      totalStars: 2,
+    });
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("counts a private package that already has a release", async () => {
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publishers:alice",
+          publishedSkills: 0,
+          publishedPackages: 0,
+          totalInstalls: 0,
+          totalDownloads: 0,
+          totalStars: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        })),
+        patch,
+        query: vi.fn(),
+      },
+    };
+
+    await adjustPublisherStatsForPackageChange(
+      ctx as never,
+      null,
+      makePackage({
+        channel: "private",
+        latestReleaseId: "packageReleases:private",
+        stats: { downloads: 3, installs: 2, stars: 1, versions: 1 },
+      }),
+    );
+
+    expect(patch).toHaveBeenCalledWith("publishers:alice", {
+      publishedSkills: 0,
+      publishedPackages: 1,
+      totalInstalls: 2,
+      totalDownloads: 3,
+      totalStars: 1,
+    });
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("counts a package that already has a version summary when the version counter is zero", async () => {
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publishers:alice",
+          publishedSkills: 0,
+          publishedPackages: 0,
+          totalInstalls: 0,
+          totalDownloads: 0,
+          totalStars: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        })),
+        patch,
+        query: vi.fn(),
+      },
+    };
+
+    await adjustPublisherStatsForPackageChange(
+      ctx as never,
+      null,
+      makePackage({
+        latestReleaseId: undefined,
+        latestVersionSummary: { version: "1.0.0" },
+        stats: { downloads: 1, installs: 2, stars: 3, versions: 0 },
+      }),
+    );
+
+    expect(patch).toHaveBeenCalledWith("publishers:alice", {
+      publishedSkills: 0,
+      publishedPackages: 1,
+      totalInstalls: 2,
+      totalDownloads: 1,
+      totalStars: 3,
+    });
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("counts a package that already has a release id when the version counter is zero", async () => {
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publishers:alice",
+          publishedSkills: 0,
+          publishedPackages: 0,
+          totalInstalls: 0,
+          totalDownloads: 0,
+          totalStars: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        })),
+        patch,
+        query: vi.fn(),
+      },
+    };
+
+    await adjustPublisherStatsForPackageChange(
+      ctx as never,
+      null,
+      makePackage({
+        latestReleaseId: "packageReleases:kept",
+        latestVersionSummary: undefined,
+        stats: { downloads: 5, installs: 6, stars: 7, versions: 0 },
+      }),
+    );
+
+    expect(patch).toHaveBeenCalledWith("publishers:alice", {
+      publishedSkills: 0,
+      publishedPackages: 1,
+      totalInstalls: 6,
+      totalDownloads: 5,
+      totalStars: 7,
+    });
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("recomputes publisher package totals from published releases only", async () => {
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "publishers:alice"
+            ? {
+                _id: id,
+                kind: "user",
+                handle: "alice",
+                displayName: "Alice",
+                linkedUserId: "users:alice",
+                createdAt: 1,
+                updatedAt: 1,
+              }
+            : null,
+        ),
+        patch,
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string) => {
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return { collect: vi.fn(async () => []) };
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return {
+                collect: vi.fn(async () => [
+                  makePackage({
+                    _id: "packages:staged",
+                    latestReleaseId: undefined,
+                    latestVersionSummary: undefined,
+                    stats: { downloads: 100, installs: 100, stars: 100, versions: 0 },
+                  }),
+                  makePackage({
+                    _id: "packages:live",
+                    channel: "private",
+                    latestReleaseId: "packageReleases:live",
+                    stats: { downloads: 7, installs: 3, stars: 1, versions: 1 },
+                  }),
+                ]),
+              };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    await adjustPublisherStatsForPackageChange(
+      ctx as never,
+      null,
+      makePackage({
+        _id: "packages:live",
+        channel: "private",
+        latestReleaseId: "packageReleases:live",
+        stats: { downloads: 7, installs: 3, stars: 1, versions: 1 },
+      }),
+    );
+
+    expect(patch).toHaveBeenCalledWith("publishers:alice", {
+      publishedSkills: 0,
+      publishedPackages: 1,
+      totalInstalls: 3,
+      totalDownloads: 7,
+      totalStars: 1,
+      skillTotalInstalls: 0,
+      skillTotalDownloads: 0,
+      skillTotalStars: 0,
+    });
+  });
 });
