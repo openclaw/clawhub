@@ -53,6 +53,24 @@ The backend's HTTP transport timeout for the initial push is raised so a slow
 external-deps build cannot be retried into the executor's shared build directory.
 No test timeout or backend execution limit is raised.
 
+A nightly run that throws stores `inspectionFailed` on that inspector and
+target tuple, plus a failed SDK inventory when one was supplied. That flag
+describes the latest attempt only. `findingsCompletedAt` is set when a run
+actually stores a findings scan, and a later crash of the same tuple must
+not clear it. The moderator validation report uses the newer of the newest
+`findingsCompletedAt` and the newest pre-field success `completedAt`.
+Copying an older tuple forward must not hide a newer row that still has
+only `completedAt`. Rows written before that field existed still count
+as findings scans when `inspectionFailed` is absent. A later crash of that
+same tuple copies the old `completedAt` into `findingsCompletedAt` before
+replacing the attempt time. The report walks the whole `completedAt` index
+with `getPage`, not native pagination, so one report page can read every
+release. It does not stop after a fixed number of newer crashes. The crashed
+release stays eligible for the next
+inventory claim. A later successful run of the same tuple clears
+`inspectionFailed` and refreshes `findingsCompletedAt`. A failed run does
+not mark owner notification complete.
+
 The earlier generated-card browser failure included one-second execution
 timeouts in multiple unrelated queries and mutations. It is not evidence of a
 runtime-identity regression. Re-run its unchanged publish/scan/card lifecycle

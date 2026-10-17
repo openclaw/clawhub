@@ -4570,6 +4570,64 @@ function normalizePackageValidationFinding(warning: Doc<"packageInspectorWarning
   return { severity, code: warning.code, message: warning.message };
 }
 
+async function latestCompletedFindingsScan(
+  ctx: Pick<QueryCtx, "db">,
+  releaseId: Id<"packageReleases">,
+) {
+  // Rows written after this change record findingsCompletedAt only for a
+  // finished findings scan. A later crash on that same tuple leaves the
+  // timestamp in place, so the index still returns it. That timestamp can be
+  // older than a pre-field success that has not been copied forward yet.
+  const indexed = await ctx.db
+    .query("packageInspectorScanStates")
+    .withIndex("by_release_and_findings_completed_at", (q) => q.eq("releaseId", releaseId))
+    .order("desc")
+    .first();
+  const indexedFindingsAt = indexed?.findingsCompletedAt;
+  const indexedScan = indexedFindingsAt !== undefined ? indexed : null;
+
+  // Older rows have completedAt and no findingsCompletedAt. Skip crashes and
+  // rows already represented by findingsCompletedAt. A fixed window would hide
+  // a success behind enough newer failed targets. getPage can run once per
+  // release in this query. Native .paginate() cannot: a second call throws
+  // MultiplePaginatedDatabaseQueries.
+  let startIndexKey: IndexKey = [releaseId];
+  let startInclusive = true;
+  while (true) {
+    const page = await getPage(ctx, {
+      table: "packageInspectorScanStates",
+      index: "by_release_and_completed_at",
+      startIndexKey,
+      startInclusive,
+      endIndexKey: [releaseId],
+      endInclusive: true,
+      order: "desc",
+      absoluteMaxRows: 25,
+      schema,
+    });
+    const found = page.page.find(
+      (state) =>
+        state.findingsCompletedAt === undefined &&
+        state.inspectionFailed !== true &&
+        (indexedFindingsAt === undefined || state.completedAt > indexedFindingsAt),
+    );
+    if (found) return found;
+    const oldest = page.page.at(-1);
+    if (
+      indexedScan &&
+      indexedFindingsAt !== undefined &&
+      oldest &&
+      oldest.completedAt <= indexedFindingsAt
+    ) {
+      return indexedScan;
+    }
+    const nextKey = page.indexKeys.at(-1);
+    if (!page.hasMore || !nextKey) return indexedScan;
+    startIndexKey = nextKey;
+    startInclusive = false;
+  }
+}
+
 export const listPluginValidationReportPageInternal = internalQuery({
   args: {
     cursor: v.optional(v.string()),
@@ -4594,11 +4652,7 @@ export const listPluginValidationReportPageInternal = internalQuery({
       if (!digest.latestReleaseId) continue;
       const release = await ctx.db.get(digest.latestReleaseId);
       if (!isPublishedPackageRelease(release, digest.packageId)) continue;
-      const scanState = await ctx.db
-        .query("packageInspectorScanStates")
-        .withIndex("by_release_and_completed_at", (q) => q.eq("releaseId", release._id))
-        .order("desc")
-        .first();
+      const scanState = await latestCompletedFindingsScan(ctx, release._id);
       // CLAW-626 reconciles nightly findings per release and preserves publish/static findings.
       // Matching the selected tuple also fails closed if stale nightly rows survive a partial rollout.
       const storedWarnings = await ctx.db
@@ -4638,7 +4692,9 @@ export const listPluginValidationReportPageInternal = internalQuery({
         },
         scan: {
           status,
-          scannedAt: scanState?.completedAt ?? null,
+          // A later crash refreshes completedAt. The report shows when the
+          // findings scan finished, which stays on findingsCompletedAt.
+          scannedAt: scanState?.findingsCompletedAt ?? scanState?.completedAt ?? null,
           target: scanState
             ? { channel: "beta" as const, version: scanState.targetOpenClawVersion }
             : null,
@@ -11464,6 +11520,7 @@ async function listPackageInspectorScanBatch(
         scanState.sdkUsage.analysisVersion === args.inventoryAnalysisVersion;
       if (
         scanState &&
+        scanState.inspectionFailed !== true &&
         (!inventoryRequired || inventoryCurrent) &&
         (!args.notifyOwners || scanState.notificationCompletedAt)
       ) {
@@ -11719,7 +11776,9 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
         release,
         inspectorVersion,
         targetOpenClawVersion,
-        notificationComplete: args.notifyOwners === true && !result.shouldEmailOwner,
+        notificationComplete:
+          args.inspectionFailed !== true && args.notifyOwners === true && !result.shouldEmailOwner,
+        inspectionFailed: args.inspectionFailed === true,
         report: args.sdkUsage,
         artifactSha256: args.artifactSha256,
       });

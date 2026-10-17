@@ -2116,6 +2116,10 @@ const packageInspectorScanStates = defineTable({
   targetOpenClawVersion: v.string(),
   completedAt: v.number(),
   notificationCompletedAt: v.optional(v.number()),
+  // Set only when this tuple stored a findings scan. A later crash must not clear it.
+  findingsCompletedAt: v.optional(v.number()),
+  // The latest attempt crashed. Absent on rows written before this field existed.
+  inspectionFailed: v.optional(v.boolean()),
   sdkUsage: v.optional(sdkUsageScan),
 })
   .index("by_release_and_inspector_version_and_target_openclaw_version", [
@@ -2123,7 +2127,8 @@ const packageInspectorScanStates = defineTable({
     "inspectorVersion",
     "targetOpenClawVersion",
   ])
-  .index("by_release_and_completed_at", ["releaseId", "completedAt"]);
+  .index("by_release_and_completed_at", ["releaseId", "completedAt"])
+  .index("by_release_and_findings_completed_at", ["releaseId", "findingsCompletedAt"]);
 
 const packageSdkUsage = defineTable({
   ...sdkUsageEntry.fields,
