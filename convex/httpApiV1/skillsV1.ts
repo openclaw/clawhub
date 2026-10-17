@@ -791,7 +791,10 @@ type SecurityVerdictTargetResult = {
   } | null;
   version:
     | (VerifySecurityVersion &
-        Pick<Doc<"skillVersions">, "_id" | "version" | "createdAt" | "softDeletedAt">)
+        Pick<
+          Doc<"skillVersions">,
+          "_id" | "version" | "createdAt" | "softDeletedAt" | "publicationStatus"
+        >)
     | null;
 } | null;
 
@@ -1165,6 +1168,15 @@ async function buildSecurityVerdictItem(
 
   const version = result.version;
   if (!version) {
+    return buildSecurityVerdictError(
+      item,
+      "version_not_found",
+      "Version not found",
+      "version.not_found",
+    );
+  }
+  // Withheld versions stay undiscoverable even when also soft-deleted.
+  if (version.publicationStatus && version.publicationStatus !== "published") {
     return buildSecurityVerdictError(
       item,
       "version_not_found",
