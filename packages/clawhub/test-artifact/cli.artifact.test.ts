@@ -622,6 +622,93 @@ describe("built CLI artifact", () => {
     expect(output.commit).toBeTypeOf("string");
   });
 
+  async function makePackingFixture() {
+    const root = await makeTmpDir("clawhub-artifact-pack-");
+    const pluginDir = join(root, "demo-plugin");
+    const tempRoot = join(root, "tmp");
+    const emptyPath = join(root, "empty-path");
+    await mkdir(join(pluginDir, "dist"), { recursive: true });
+    await mkdir(tempRoot);
+    await mkdir(emptyPath);
+    await writeFile(
+      join(pluginDir, "package.json"),
+      JSON.stringify({
+        name: "@scope/demo-plugin",
+        version: "1.0.0",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: ">=2026.3.24-beta.2" },
+          build: { openclawVersion: "2026.3.24-beta.2" },
+        },
+      }),
+    );
+    await writeFile(join(pluginDir, "openclaw.plugin.json"), '{"id":"demo.plugin"}');
+    await writeFile(join(pluginDir, "dist", "index.js"), "export const demo = true;\n");
+    return { root, pluginDir, tempRoot, emptyPath };
+  }
+
+  function packingArgs(workdir: string, pluginDir: string) {
+    return [
+      distCliPath,
+      "--workdir",
+      workdir,
+      "--registry",
+      "http://127.0.0.1:1",
+      "package",
+      "publish",
+      pluginDir,
+      "--source-repo",
+      "openclaw/demo-plugin",
+      "--source-commit",
+      "abc123",
+      "--dry-run",
+      "--json",
+    ];
+  }
+
+  it("cleans folder-publish temporary packs when npm is missing in the real CLI process", async () => {
+    const { root, pluginDir, tempRoot, emptyPath } = await makePackingFixture();
+    const env = {
+      ...process.env,
+      PATH: emptyPath,
+      TMPDIR: tempRoot,
+      TMP: tempRoot,
+      TEMP: tempRoot,
+    };
+    const result = spawnSync(process.execPath, packingArgs(root, pluginDir), {
+      encoding: "utf8",
+      env,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("npm was not found on PATH");
+    expect(result.stderr).toContain("prebuilt .tgz");
+    expect(await readdir(tempRoot)).toEqual([]);
+
+    const pack = spawnSync(
+      process.execPath,
+      [distCliPath, "--workdir", root, "package", "pack", pluginDir, "--json"],
+      { encoding: "utf8", env },
+    );
+    expect(pack.status).toBe(1);
+    expect(pack.stderr).toContain("npm was not found on PATH");
+  });
+
+  it("reports a missing explicit workdir without npm installation advice in the real CLI", async () => {
+    const { root, pluginDir, tempRoot } = await makePackingFixture();
+    const missingWorkdir = join(root, "missing-workdir");
+    const result = runNode(packingArgs(missingWorkdir, pluginDir), {
+      TMPDIR: tempRoot,
+      TMP: tempRoot,
+      TEMP: tempRoot,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Cannot access working directory");
+    expect(result.stderr).toContain(missingWorkdir);
+    expect(result.stderr).not.toContain("install Node.js");
+    expect(await readdir(tempRoot)).toEqual([]);
+  });
+
   it("sends one explicit install telemetry event from the built install command", async () => {
     const { registry, requests } = await startLocalRegistry();
     const workdir = await makeTmpDir("clawhub-artifact-install-");
