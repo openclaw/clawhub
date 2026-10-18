@@ -188,7 +188,12 @@ async function failRun(
     error: message,
   });
   logger.error(
-    { event: "skill_evaluation_failed", retry: result.retry, runId: run._id },
+    {
+      event: "skill_evaluation_failed",
+      publicReason: message,
+      retry: result.retry,
+      runId: run._id,
+    },
     "skill evaluation failed",
   );
 }

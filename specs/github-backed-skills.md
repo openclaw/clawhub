@@ -514,6 +514,9 @@ into local 429 failures. Request reservations happen after body validation,
 without yielding between checking and decrementing the allowance. Worker logs
 record the forwarded count, local budget rejections, and upstream 429 responses;
 failure summaries retain the latter two counts before native error details.
+The `skill_evaluation_failed` log event includes the same bounded, redacted
+`publicReason` stored with the failed run, so CI exposes actionable diagnostics
+without logging raw errors or worker credentials.
 SkillEvaluator uses its `openai-compatible` gateway adapter so Codex selects a
 custom HTTP Responses provider instead of trying the native OpenAI WebSocket
 transport against the HTTP broker.
