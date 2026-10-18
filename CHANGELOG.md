@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Tests: align production HTTP smoke and preview-proof homepage checks with the Claws homepage title.
 - Workers: include bounded, redacted skill evaluation failure reasons in CI logs so operators can diagnose failed runs.
 - Tooling: accept Bun's environment-file loading diagnostic in local dependency audits while preserving tool-error and malware failures.
 - Plugins: show informational notices for OpenClaw APIs with scheduled retirement dates, with replacement details and a publisher dashboard nudge.

@@ -154,7 +154,7 @@ describe("prod http smoke", () => {
   it("serves the home page shell from prod", async () => {
     const html = await fetchHtml("/");
 
-    expect(html).toContain("<title>ClawHub");
+    expect(html).toContain("<title>Claws · ClawHub</title>");
     expect(html).toContain('href="/skills"');
     expect(html).toMatch(/href="\/(?:skills\/publish|publish-skill)"/);
     expect(html).not.toContain("Something went wrong!");

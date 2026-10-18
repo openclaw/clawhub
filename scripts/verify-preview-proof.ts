@@ -70,7 +70,7 @@ export async function runPreviewProof({
   receipt.skill_file_bytes = Buffer.byteLength(fileText);
   receipt.stage = "home";
   const home = await request("/");
-  if (!home.ok || !(await home.text()).includes("<title>ClawHub"))
+  if (!home.ok || !(await home.text()).includes("<title>Claws · ClawHub</title>"))
     throw new PreviewProofFailure("HOME_INVALID");
   receipt.stage = "analytics_policy_and_browser";
   const analyticsEvidence: Record<string, unknown> = {};

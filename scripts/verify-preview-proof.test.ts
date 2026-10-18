@@ -24,7 +24,7 @@ describe("exact-head preview proof orchestration", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json(detail))
       .mockResolvedValueOnce(new Response("# Seeded skill"))
-      .mockResolvedValueOnce(new Response("<title>ClawHub</title>"));
+      .mockResolvedValueOnce(new Response("<title>Claws · ClawHub</title>"));
     const analyticsProof = vi.fn().mockResolvedValue({ google_requests: 0 });
     const receipt = await runPreviewProof({ env, fetchImpl, analyticsProof, readHead: () => sha });
     expect(fetchImpl.mock.calls.map((call) => String(call[0]))).toEqual([
@@ -59,7 +59,7 @@ describe("exact-head preview proof orchestration", () => {
   });
   it("retains the required nonempty file and homepage checks", async () => {
     for (const [file, home, error] of [
-      ["", "<title>ClawHub</title>", "FILE_EMPTY"],
+      ["", "<title>Claws · ClawHub</title>", "FILE_EMPTY"],
       ["# Skill", "wrong page", "HOME_INVALID"],
     ]) {
       const fetchImpl = vi
@@ -113,7 +113,7 @@ it.each([
     fetchImpl
       .mockResolvedValueOnce(Response.json(detail))
       .mockResolvedValueOnce(new Response("# Skill"))
-      .mockResolvedValueOnce(new Response("<title>ClawHub</title>"));
+      .mockResolvedValueOnce(new Response("<title>Claws · ClawHub</title>"));
     analyticsProof.mockImplementation(async (_origin, _credential, _sha, evidence) => {
       const errors: string[] = [];
       const failures: Parameters<typeof routePreviewRequest>[5] = [];
@@ -187,7 +187,7 @@ it("fails closed rather than publishing returned data containing the read creden
     .fn<typeof fetch>()
     .mockResolvedValueOnce(Response.json(detail))
     .mockResolvedValueOnce(new Response("# Skill"))
-    .mockResolvedValueOnce(new Response("<title>ClawHub</title>"));
+    .mockResolvedValueOnce(new Response("<title>Claws · ClawHub</title>"));
   const stdout: string[] = [];
   try {
     const receipt = await runAndWritePreviewProof(
