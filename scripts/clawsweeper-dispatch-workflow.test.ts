@@ -22,29 +22,36 @@ function executeExactReview(run: string, event: object, environment: Record<stri
   const eventPath = join(directory, "event.json");
   const capturePath = join(directory, "dispatch.json");
   const scriptPath = join(directory, "dispatch.sh");
-  const ghPath = join(directory, "gh");
+  const curlPath = join(directory, "curl");
 
   try {
     writeFileSync(eventPath, JSON.stringify(event), "utf8");
     writeFileSync(scriptPath, `#!/usr/bin/env bash\nset -euo pipefail\n${run}\n`, "utf8");
     writeFileSync(
-      ghPath,
+      curlPath,
       [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        'test "$#" -eq 6',
-        'test "$1" = "api"',
-        'test "$2" = "repos/openclaw/clawsweeper/dispatches"',
-        'test "$3" = "--method"',
-        'test "$4" = "POST"',
-        'test "$5" = "--input"',
-        'test "$6" = "-"',
-        'cat > "$GH_CAPTURE"',
+        'if [[ "${*: -1}" == "$ACTIONS_ID_TOKEN_REQUEST_URL" ]]; then',
+        '  printf \'{"value":"proof-oidc-token"}\'',
+        "  exit 0",
+        "fi",
+        'data="" output=""',
+        "while (( $# )); do",
+        '  case "$1" in',
+        '    --data) data="$2"; shift 2 ;;',
+        '    --output) output="$2"; shift 2 ;;',
+        "    *) shift ;;",
+        "  esac",
+        "done",
+        'printf "%s" "$data" > "$CURL_CAPTURE"',
+        'printf "{}" > "$output"',
+        'printf "200"',
       ].join("\n"),
       "utf8",
     );
     chmodSync(scriptPath, 0o755);
-    chmodSync(ghPath, 0o755);
+    chmodSync(curlPath, 0o755);
 
     const result = spawnSync("bash", [scriptPath], {
       cwd: process.cwd(),
@@ -52,18 +59,18 @@ function executeExactReview(run: string, event: object, environment: Record<stri
       env: {
         ...process.env,
         ...environment,
-        GH_CAPTURE: capturePath,
-        GH_TOKEN: "proof-token",
+        CURL_CAPTURE: capturePath,
         GITHUB_EVENT_PATH: eventPath,
+        ACTIONS_ID_TOKEN_REQUEST_URL: "https://oidc.example/token",
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "proof-request-token",
+        TARGET_DISPATCH_URL: "https://clawsweeper.example/github/target-dispatch",
+        RUNNER_TEMP: directory,
         PATH: `${directory}:${process.env.PATH ?? ""}`,
         SUPERSEDES_IN_PROGRESS: "false",
       },
     });
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-    return JSON.parse(readFileSync(capturePath, "utf8")) as {
-      event_type: string;
-      client_payload: Record<string, unknown>;
-    };
+    return JSON.parse(readFileSync(capturePath, "utf8")) as Record<string, unknown>;
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -95,8 +102,9 @@ describe("ClawSweeper dispatch workflow", () => {
     expect(run).toContain("updated_at: updatedAt");
     expect(run).toContain('body: typeof pullRequest.body === "string" ? pullRequest.body : ""');
     expect(run).toContain('label: String(event.label?.name || "")');
-    expect(run).toContain('ingress_route:"target_dispatcher"');
-    expect(run).toContain("ingress_fingerprint:$ingress_fingerprint");
+    expect(run).toContain('result.ingress_route = "target_dispatcher"');
+    expect(run).toContain("result.ingress_fingerprint = crypto");
+    expect(run).toContain('"$ACTIONS_ID_TOKEN_REQUEST_URL"');
   });
 
   behaviorIt("serializes PR identity and leaves issue dispatches unpaired", async () => {
@@ -140,18 +148,19 @@ describe("ClawSweeper dispatch workflow", () => {
       )
       .digest("hex");
     expect(prPayload).toEqual({
-      event_type: "clawsweeper_item",
-      client_payload: {
-        target_repo: "openclaw/clawhub",
-        target_branch: "trunk",
-        item_number: 3359,
-        item_kind: "pull_request",
-        source_event: "pull_request_target",
-        source_action: "synchronize",
-        supersedes_in_progress: false,
-        ingress_route: "target_dispatcher",
-        ingress_fingerprint: fingerprint,
+      target_repo: "openclaw/clawhub",
+      target_branch: "trunk",
+      item_number: 3359,
+      item_kind: "pull_request",
+      source_event: "pull_request_target",
+      source_action: "synchronize",
+      supersedes_in_progress: false,
+      queue_claim: {
+        source_updated_at: pullRequest.updated_at,
+        source_head_sha: "a".repeat(40),
       },
+      ingress_route: "target_dispatcher",
+      ingress_fingerprint: fingerprint,
     });
 
     const issuePayload = executeExactReview(
@@ -166,7 +175,7 @@ describe("ClawSweeper dispatch workflow", () => {
         SOURCE_ACTION: "opened",
       },
     );
-    expect(issuePayload.client_payload).toEqual({
+    expect(issuePayload).toEqual({
       target_repo: "openclaw/clawhub",
       target_branch: "trunk",
       item_number: 3360,
@@ -174,6 +183,7 @@ describe("ClawSweeper dispatch workflow", () => {
       source_event: "issues",
       source_action: "opened",
       supersedes_in_progress: false,
+      queue_claim: {},
     });
   });
 });
