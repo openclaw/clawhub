@@ -139,10 +139,6 @@ export default function Header() {
   const { theme, mode, setMode } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
-  const searchingClaws =
-    location.pathname === "/" ||
-    location.pathname === "/claws" ||
-    location.pathname.startsWith("/claws/");
 
   const avatar = me?.image ?? (me?.email ? gravatarUrl(me.email) : undefined);
   const rawHandle = me?.handle ?? me?.displayName ?? "user";
@@ -167,7 +163,7 @@ export default function Header() {
   const isAppleSearchShortcut = useAppleSearchShortcut();
   const trimmedNavSearchQuery = navSearchQuery.trim();
   const hasNavSearchQuery = trimmedNavSearchQuery.length > 0;
-  const showTypeahead = typeaheadOpen && !searchingClaws;
+  const showTypeahead = typeaheadOpen;
   const showMobileTypeahead = showTypeahead && hasNavSearchQuery;
   const {
     skillResults,
@@ -180,7 +176,7 @@ export default function Header() {
     manualCatalogSearch: manualCatalogSearchRef.current,
     detectPluginHasMore: false,
     debounceMs: 180,
-    enabled: typeaheadOpen && hasNavSearchQuery && !searchingClaws,
+    enabled: typeaheadOpen && hasNavSearchQuery,
     limits: { skills: 4, plugins: 4, creators: 4 },
   });
   const typeaheadSkillItems = useMemo<TypeaheadItem[]>(() => {
@@ -308,10 +304,6 @@ export default function Header() {
   };
 
   const openSearchResults = (type?: TypeaheadSection) => {
-    if (searchingClaws) {
-      void navigate({ to: "/claws", search: { q: trimmedNavSearchQuery } });
-      return;
-    }
     if (type !== "creators")
       emitPublicSearchSubmission(trimmedNavSearchQuery, type ?? "all", "header");
     void navigateWithManualCatalogSearch(manualCatalogSearchRef.current, () =>
@@ -405,7 +397,7 @@ export default function Header() {
       }
       return;
     }
-    if (searchingClaws || typeaheadItems.length === 0) return;
+    if (typeaheadItems.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setTypeaheadActiveIndex((index) => (index + 1) % typeaheadItems.length);
@@ -452,12 +444,16 @@ export default function Header() {
                     </SheetTitle>
                   </SheetHeader>
                   <div className="mobile-nav-section">
+                    <SheetClose asChild>
+                      <Link to="/" className="mobile-nav-link">
+                        Home
+                      </Link>
+                    </SheetClose>
                     {PRIMARY_NAV_ITEMS.map((item) => (
                       <SheetClose key={item.to + item.label} asChild>
                         <Link
                           to={item.to}
                           search={(item.search ?? {}) as never}
-                          activeOptions={{ exact: item.to === "/" }}
                           className="mobile-nav-link"
                         >
                           {item.label}
@@ -484,7 +480,6 @@ export default function Header() {
                           <Link
                             to={item.to}
                             search={(item.search ?? {}) as never}
-                            activeOptions={{ exact: item.to === "/" }}
                             className="mobile-nav-link"
                           >
                             {item.label}
@@ -572,18 +567,16 @@ export default function Header() {
                   ref={navSearchInputRef}
                   className="navbar-search-input"
                   type="search"
-                  role={searchingClaws ? "searchbox" : "combobox"}
-                  placeholder={
-                    searchingClaws ? "Search Claws" : "Search skills, plugins, and creators"
-                  }
+                  role="combobox"
+                  placeholder="Search skills, plugins, and creators"
                   value={navSearchQuery}
                   onChange={(e) => handleNavSearchChange(e.target.value)}
                   onFocus={() => setTypeaheadOpen(true)}
                   onKeyDown={handleSearchKeyDown}
-                  aria-label={searchingClaws ? "Search Claws" : "Search"}
-                  aria-autocomplete={searchingClaws ? undefined : "list"}
+                  aria-label="Search"
+                  aria-autocomplete="list"
                   aria-expanded={showTypeahead}
-                  aria-controls={searchingClaws ? undefined : "navbar-search-typeahead"}
+                  aria-controls="navbar-search-typeahead"
                   aria-activedescendant={activeTypeaheadId}
                   autoComplete="off"
                 />
@@ -772,18 +765,16 @@ export default function Header() {
                 ref={mobileSearchInputRef}
                 className="navbar-search-input"
                 type="search"
-                role={searchingClaws ? "searchbox" : "combobox"}
-                placeholder={
-                  searchingClaws ? "Search Claws" : "Search skills, plugins, and creators"
-                }
+                role="combobox"
+                placeholder="Search skills, plugins, and creators"
                 value={navSearchQuery}
                 onChange={(e) => handleNavSearchChange(e.target.value)}
                 onFocus={() => setTypeaheadOpen(true)}
                 onKeyDown={handleSearchKeyDown}
-                aria-label={searchingClaws ? "Search Claws" : "Search"}
-                aria-autocomplete={searchingClaws ? undefined : "list"}
+                aria-label="Search"
+                aria-autocomplete="list"
                 aria-expanded={showMobileTypeahead}
-                aria-controls={searchingClaws ? undefined : "navbar-search-typeahead"}
+                aria-controls="navbar-search-typeahead"
                 aria-activedescendant={activeTypeaheadId}
                 autoComplete="off"
                 autoFocus
@@ -835,10 +826,7 @@ function HeaderNavTab({
   item: HeaderNavItem;
   pathname: string;
 }) {
-  const isActiveByPrefix = item.activePathPrefixes?.some(
-    (prefix) =>
-      pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
-  );
+  const isActiveByPrefix = item.activePathPrefixes?.some((prefix) => pathname.startsWith(prefix));
 
   if (item.href) {
     return (
@@ -857,7 +845,6 @@ function HeaderNavTab({
       to={item.to}
       className={className}
       search={(item.search ?? {}) as never}
-      activeOptions={{ exact: item.to === "/" }}
       data-status={isActiveByPrefix ? "active" : undefined}
     >
       {item.label}

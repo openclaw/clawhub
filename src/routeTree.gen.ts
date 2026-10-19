@@ -26,8 +26,6 @@ import { Route as StarsRouteImport } from './routes/stars'
 import { Route as UploadRouteImport } from './routes/upload'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as AuthDocsRouteImport } from './routes/auth/docs'
-import { Route as ClawsIndexRouteImport } from './routes/claws/index'
-import { Route as ClawsNameRouteImport } from './routes/claws/$name'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as CliDeviceRouteImport } from './routes/cli/device'
 import { Route as OfficialIndexRouteImport } from './routes/official/index'
@@ -148,16 +146,6 @@ const OwnerSlugRoute = OwnerSlugRouteImport.update({
 const AuthDocsRoute = AuthDocsRouteImport.update({
   id: '/auth/docs',
   path: '/auth/docs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClawsIndexRoute = ClawsIndexRouteImport.update({
-  id: '/claws/',
-  path: '/claws/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClawsNameRoute = ClawsNameRouteImport.update({
-  id: '/claws/$name',
-  path: '/claws/$name',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CliAuthRoute = CliAuthRouteImport.update({
@@ -369,7 +357,6 @@ export interface FileRoutesByFullPath {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/auth/docs': typeof AuthDocsRoute
-  '/claws/$name': typeof ClawsNameRoute
   '/cli/auth': typeof CliAuthRoute
   '/cli/device': typeof CliDeviceRoute
   '/orgs/$handle': typeof OrgsHandleRoute
@@ -382,7 +369,6 @@ export interface FileRoutesByFullPath {
   '/skills/publish': typeof SkillsPublishRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
-  '/claws/': typeof ClawsIndexRoute
   '/official/': typeof OfficialIndexRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
@@ -426,7 +412,6 @@ export interface FileRoutesByTo {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/auth/docs': typeof AuthDocsRoute
-  '/claws/$name': typeof ClawsNameRoute
   '/cli/auth': typeof CliAuthRoute
   '/cli/device': typeof CliDeviceRoute
   '/orgs/$handle': typeof OrgsHandleRoute
@@ -439,7 +424,6 @@ export interface FileRoutesByTo {
   '/skills/publish': typeof SkillsPublishRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
-  '/claws': typeof ClawsIndexRoute
   '/official': typeof OfficialIndexRoute
   '/packages': typeof PackagesIndexRoute
   '/plugins': typeof PluginsIndexRoute
@@ -484,7 +468,6 @@ export interface FileRoutesById {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/auth/docs': typeof AuthDocsRoute
-  '/claws/$name': typeof ClawsNameRoute
   '/cli/auth': typeof CliAuthRoute
   '/cli/device': typeof CliDeviceRoute
   '/orgs/$handle': typeof OrgsHandleRoute
@@ -497,7 +480,6 @@ export interface FileRoutesById {
   '/skills/publish': typeof SkillsPublishRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
-  '/claws/': typeof ClawsIndexRoute
   '/official/': typeof OfficialIndexRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
@@ -543,7 +525,6 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/auth/docs'
-    | '/claws/$name'
     | '/cli/auth'
     | '/cli/device'
     | '/orgs/$handle'
@@ -556,7 +537,6 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/u/$handle'
     | '/user/$handle'
-    | '/claws/'
     | '/official/'
     | '/packages/'
     | '/plugins/'
@@ -600,7 +580,6 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/auth/docs'
-    | '/claws/$name'
     | '/cli/auth'
     | '/cli/device'
     | '/orgs/$handle'
@@ -613,7 +592,6 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/u/$handle'
     | '/user/$handle'
-    | '/claws'
     | '/official'
     | '/packages'
     | '/plugins'
@@ -657,7 +635,6 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/auth/docs'
-    | '/claws/$name'
     | '/cli/auth'
     | '/cli/device'
     | '/orgs/$handle'
@@ -670,7 +647,6 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/u/$handle'
     | '/user/$handle'
-    | '/claws/'
     | '/official/'
     | '/packages/'
     | '/plugins/'
@@ -715,7 +691,6 @@ export interface RootRouteChildren {
   UploadRoute: typeof UploadRoute
   OwnerSlugRoute: typeof OwnerSlugRouteWithChildren
   AuthDocsRoute: typeof AuthDocsRoute
-  ClawsNameRoute: typeof ClawsNameRoute
   CliAuthRoute: typeof CliAuthRoute
   CliDeviceRoute: typeof CliDeviceRoute
   OrgsHandleRoute: typeof OrgsHandleRoute
@@ -728,7 +703,6 @@ export interface RootRouteChildren {
   SkillsPublishRoute: typeof SkillsPublishRoute
   UHandleRoute: typeof UHandleRoute
   UserHandleRoute: typeof UserHandleRoute
-  ClawsIndexRoute: typeof ClawsIndexRoute
   OfficialIndexRoute: typeof OfficialIndexRoute
   PackagesIndexRoute: typeof PackagesIndexRoute
   PluginsIndexRoute: typeof PluginsIndexRoute
@@ -861,20 +835,6 @@ declare module '@tanstack/react-router' {
       path: '/auth/docs'
       fullPath: '/auth/docs'
       preLoaderRoute: typeof AuthDocsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/claws/': {
-      id: '/claws/'
-      path: '/claws'
-      fullPath: '/claws/'
-      preLoaderRoute: typeof ClawsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/claws/$name': {
-      id: '/claws/$name'
-      path: '/claws/$name'
-      fullPath: '/claws/$name'
-      preLoaderRoute: typeof ClawsNameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cli/auth': {
@@ -1225,7 +1185,6 @@ const rootRouteChildren: RootRouteChildren = {
   UploadRoute: UploadRoute,
   OwnerSlugRoute: OwnerSlugRouteWithChildren,
   AuthDocsRoute: AuthDocsRoute,
-  ClawsNameRoute: ClawsNameRoute,
   CliAuthRoute: CliAuthRoute,
   CliDeviceRoute: CliDeviceRoute,
   OrgsHandleRoute: OrgsHandleRoute,
@@ -1238,7 +1197,6 @@ const rootRouteChildren: RootRouteChildren = {
   SkillsPublishRoute: SkillsPublishRoute,
   UHandleRoute: UHandleRoute,
   UserHandleRoute: UserHandleRoute,
-  ClawsIndexRoute: ClawsIndexRoute,
   OfficialIndexRoute: OfficialIndexRoute,
   PackagesIndexRoute: PackagesIndexRoute,
   PluginsIndexRoute: PluginsIndexRoute,
