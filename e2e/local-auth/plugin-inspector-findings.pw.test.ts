@@ -553,7 +553,7 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
     "CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN",
     workerToken,
     "--deployment",
-    deployment,
+    "local",
   ]);
   const scan = await exec("bun", ["scripts/package-inspector-nightly-scan.ts"], {
     env: {
