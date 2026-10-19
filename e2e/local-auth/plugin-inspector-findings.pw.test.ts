@@ -538,23 +538,15 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
   // Exercise the real deferred worker against this isolated backend and published artifact.
   // Never let the test's worker token or targeted scan reach a hosted deployment.
   const deployment = process.env.CONVEX_DEPLOYMENT;
+  const workerToken = process.env.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN;
   if (
     new URL(siteUrl).hostname !== "127.0.0.1" ||
     !deployment ||
-    !/^(?:anonymous|local):/.test(deployment)
+    !/^(?:anonymous|local):/.test(deployment) ||
+    !workerToken
   ) {
     throw new Error("Deferred inventory proof requires an isolated local Convex deployment");
   }
-  const workerToken = "local-plugin-inspector-e2e-worker-token";
-  await exec("bunx", [
-    "convex",
-    "env",
-    "set",
-    "CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN",
-    workerToken,
-    "--deployment",
-    "local",
-  ]);
   const scan = await exec("bun", ["scripts/package-inspector-nightly-scan.ts"], {
     env: {
       ...process.env,
