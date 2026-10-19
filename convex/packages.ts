@@ -116,7 +116,7 @@ import {
   sdkUsageReport,
   type SdkUsageReport,
 } from "./lib/packageSdkUsageContract";
-import { readStagedSdkUsageReport, stageSdkUsageReport } from "./lib/packageSdkUsageStorage";
+import { readStagedSdkUsageReport } from "./lib/packageSdkUsageStorage";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import {
   getPackageTrustReasons,
@@ -648,7 +648,6 @@ type PackageInspectorFinding = {
 };
 
 type PackageInspectorPublishResult = {
-  sdkUsage?: SdkUsageReport;
   status: "pass" | "fail";
   summary: {
     breakageCount: number;
@@ -9777,7 +9776,6 @@ async function publishPackageImpl(
     }),
   );
 
-  const storedSdkUsage = await stageSdkUsageReport(ctx, inspectorResult?.sdkUsage);
   const staged = await runMutationRef<{
     attemptId: Id<"publishAttempts">;
     status: string;
@@ -9811,7 +9809,6 @@ async function publishPackageImpl(
       version,
       inspectorWarnings: inspectorResult?.warnings ?? [],
       inspectorMetadata: inspectorResult?.metadata,
-      ...storedSdkUsage,
       trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
       trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
       trustedPublishAuthorizationVersion:
@@ -9845,9 +9842,6 @@ async function publishPackageImpl(
           : undefined,
     }),
   }).catch(async (error) => {
-    if (storedSdkUsage.inspectorSdkUsageStorageId) {
-      await ctx.storage.delete(storedSdkUsage.inspectorSdkUsageStorageId).catch(() => undefined);
-    }
     await runMutationRef(ctx, internalRefs.packages.discardPendingPackagePublicationInternal, {
       packageId: pendingResult.packageId,
       releaseId: pendingResult.releaseId,
@@ -10407,6 +10401,8 @@ async function runPackagePublishPostFinalizeFollowups(
     };
   };
 
+  // Publishes no longer stage inventories; this applies reports staged by
+  // attempts created before that cutover until their 30-day attempt TTL.
   const inspectorSdkUsage = await readStagedSdkUsageReport(ctx, followup);
   if (
     followup.ownerUserId &&

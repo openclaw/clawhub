@@ -30,6 +30,22 @@ modules. Loading the `clawhub-schema` barrel (ArkType schemas) costs about
 files, 22 MB) that measured 390 MB peak locally versus 252 MB with the
 `clawhub-schema/textFiles` import, and the production action hit 512 MiB.
 
+The publish gate does not request a Plugin SDK usage inventory. Inspector
+0.4.1+ builds that inventory as a TypeScript program and type checker over
+every packed source file, bundled `node_modules` included, plus the target's
+declarations. With Inspector 0.4.3 against OpenClaw 2026.10.5 that measured
+783 MB max RSS for the discord ClawPack (105 files), 783 MB for matrix (1,854
+files) and 1,003 MB for whatsapp (1,680 files), versus 249/222/204 MB with
+Inspector 0.4.0; matrix and whatsapp also exhaust a 384 MB V8 heap. Every
+2026.10.5 publish of those three failed with a 512 MiB Node action OOM or a
+five-minute CLI timeout. Compatibility findings are identical with and without
+the artifact inventory, so publication gates on findings only and discards the
+source-kind inventory Inspector 0.4.x always returns. Artifact inventories are
+owned by the daily Package Inspector scan, which runs outside Convex and fills
+releases whose inventory is missing or stale; a new release reports `missing`
+until then. Attempts staged before this cutover still apply their stored
+inventory at finalization until the 30-day attempt TTL expires.
+
 Isolated successful retries establish recovery only, not a concurrency,
 capacity, or memory root cause. On recurrence, retain the stage/request id and
 obtain backend disk/inode and executor diagnostics before changing resource

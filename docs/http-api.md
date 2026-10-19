@@ -160,8 +160,10 @@ pages. If a deployment invalidates a cursor, restart from the first page.
 `package` is required. Returns `{ packageName, version, releaseId, releaseCreatedAt, scan, items, nextCursor }`.
 Missing or ineligible public plugins return `404`. A plugin without a current usable
 inventory returns empty `items` and an explicit `missing`, `failed`, or `incompatible`
-scan status. A successfully inspected plugin with no references returns `complete`
-and empty `items`.
+scan status. Inventories come from the daily Package Inspector scan, not from
+publication, so a newly published release reports `missing` until that scan inspects
+it. A successfully inspected plugin with no references returns `complete` and empty
+`items`.
 
 Scan metadata includes `inputKind` (`artifact` for eligible inventories), the inventory schema/analysis versions, Inspector version,
 target OpenClaw version, artifact hash, completion time, coverage counters, entry and

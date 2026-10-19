@@ -38,73 +38,23 @@ describe("package inspector publish normalization", () => {
     expect(result.warnings).toEqual([expect.objectContaining(retirement)]);
     expect(result.breakages).toEqual([]);
   });
-  it.each([
-    { key: "api-member:wrong", identity: "api.registerTool" },
-    { evidence: [{ path: "index.js", line: -1, snippet: "api.registerTool(tool)" }] },
-    { referenceKinds: ["executed"] },
-  ])("keeps publishing independent of malformed SDK inventory: %j", (invalidEntry) => {
+  it("leaves SDK inventories to the Package Inspector scan", () => {
+    // Inspector 0.4.x always reports an inventory. Without the artifact target
+    // it covers only root source files, so publish must not persist it.
     const result = normalizeInspectorReportForPublish({
       issues: [],
       sdkUsage: {
         schemaVersion: 1,
         analysisVersion: "1",
-        inputKind: "artifact",
+        inputKind: "source",
         status: "complete",
-        entries: [
-          {
-            key: "api-member:api.registerTool",
-            kind: "api-member",
-            identity: "api.registerTool",
-            classification: "runtime",
-            referenceKinds: ["call"],
-            deprecationCodes: [],
-            evidence: [{ path: "index.js", line: 1, snippet: "api.registerTool(tool)" }],
-            ...invalidEntry,
-          },
-        ],
+        entries: [],
         unknowns: [],
-        coverage: { filesDiscovered: 1, filesAnalyzed: 1, filesExcluded: 0 },
+        coverage: { filesDiscovered: 106, filesAnalyzed: 2, filesExcluded: 104 },
       },
     });
-    expect(result).toMatchObject({
-      status: "pass",
-      warnings: [],
-      breakages: [],
-      sdkUsage: { status: "failed", entries: [] },
-    });
-  });
-
-  it("preserves the full SDK inventory when author-facing filtering removes all findings", () => {
-    const sdkUsage = {
-      schemaVersion: 1,
-      analysisVersion: "1",
-      inputKind: "artifact",
-      status: "complete",
-      entries: [
-        {
-          key: "sdk-export:openclaw/plugin-sdk/core#definePluginEntry",
-          kind: "sdk-export",
-          identity: "openclaw/plugin-sdk/core#definePluginEntry",
-          classification: "runtime",
-          referenceKinds: ["import"],
-          deprecationCodes: [],
-          evidence: [
-            {
-              path: "index.js",
-              line: 1,
-              snippet: 'import { definePluginEntry } from "openclaw/plugin-sdk/core";',
-            },
-          ],
-        },
-      ],
-      unknowns: [],
-      coverage: { filesDiscovered: 1, filesAnalyzed: 1, filesExcluded: 0 },
-    };
-    const result = normalizeInspectorReportForPublish({
-      sdkUsage,
-      issues: [{ code: "informational", message: "No author action" }],
-    });
-    expect(result).toMatchObject({ status: "pass", warnings: [], breakages: [], sdkUsage });
+    expect(result).toMatchObject({ status: "pass", warnings: [], breakages: [] });
+    expect(result).not.toHaveProperty("sdkUsage");
   });
 
   it("falls back to /tmp when the configured temp directory is unavailable", async () => {
@@ -176,20 +126,33 @@ describe("package inspector publish normalization", () => {
   it("uses the prepared OpenClaw target for publish-time inspection", () => {
     const targetOpenClaw = { status: "ok", version: "2026.7.0" };
     expect(
-      buildPublishInspectorRunCheckOptions("/tmp/plugin", "2026-07-30T00:00:00.000Z", {
+      buildPublishInspectorRunCheckOptions(
+        "/tmp/plugin",
+        "2026-07-30T00:00:00.000Z",
         targetOpenClaw,
-        sdkUsageTargetPath: "/tmp/verified-openclaw/package",
-      }),
+      ),
     ).toEqual(
       expect.objectContaining({
         pluginRoot: "/tmp/plugin",
         openclawPath: false,
         targetOpenClaw,
         authorFacing: true,
-        sdkUsageInputKind: "artifact",
-        sdkUsageTargetPath: "/tmp/verified-openclaw/package",
       }),
     );
+  });
+
+  it("does not request an artifact SDK inventory inside the publish action", () => {
+    // An artifact inventory type-checks every packed file, including bundled
+    // node_modules, and exceeded the 512 MiB Node action limit for large plugins.
+    const options = buildPublishInspectorRunCheckOptions(
+      "/tmp/plugin",
+      "2026-07-30T00:00:00.000Z",
+      {
+        status: "ok",
+      },
+    );
+    expect(options).not.toHaveProperty("sdkUsageTargetPath");
+    expect(options).not.toHaveProperty("sdkUsageInputKind");
   });
 
   it("keeps legacy author-facing hard findings without remediation metadata", () => {
