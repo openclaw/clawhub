@@ -403,16 +403,16 @@ describe("restored UI design contract", () => {
     expect(compact).not.toContain(".navbar-search {\n    display: none;");
   });
 
-  it("keeps the field guide homepage and the existing secondary discovery sections", () => {
+  it("requires the static hero and canonical home catalog without later sections", () => {
     const homeSource = home();
     const listingSource = read("src/components/HomeListingSection.tsx");
     const appsSource = read("src/components/HomeAppsSection.tsx");
     const publishersSource = read("src/components/HomePopularPublishersSection.tsx");
     const css = styles();
 
-    expect(homeSource).toContain('className="claws-home home-v2-main oc-app-surface"');
-    expect(homeSource).toContain("Find a Claw for the job.");
-    expect(homeSource).toContain("ClawDiscovery");
+    expect(homeSource).toContain('className="home-v2-main oc-app-surface"');
+    expect(homeSource).toContain("home-v2-headline oc-hero-title");
+    expect(homeSource).toContain('<span className="home-v2-action-word home-v2-static-headline">');
     expect(cssRule(css, ".home-v2-headline")).not.toMatch(/(?:cursor: default|user-select: none)/);
     expect(cssRule(css, ".home-v2-static-headline")).toContain("color: var(--oc-accent-primary)");
     expect(css.lastIndexOf(".home-v2-static-headline")).toBeGreaterThan(
@@ -451,7 +451,7 @@ describe("restored UI design contract", () => {
     expect(homeSource).not.toContain("Ship.");
     expect(homeSource).not.toContain("Build.");
     expect(homeSource).not.toContain("Create.");
-    expect(homeSource).toContain("Tools for your agents");
+    expect(homeSource).toContain("Discover skills and plugins from top creators");
     expect(homeSource).not.toContain("home-v2-sub-stat");
     expect(homeSource).toContain("HomeListingSection");
     expect(homeSource).not.toContain("What are you looking for?");

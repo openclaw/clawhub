@@ -44,11 +44,8 @@ async function getSeedFixture(request: APIRequestContext, path: string) {
   return lastResponse!;
 }
 
-async function expectHomeHeroCentered(page: Page) {
-  const hero = page.locator(".claw-hero");
-  await expect(hero.getByRole("heading", { name: "Find a Claw for the job." })).toBeVisible();
-  await expect(hero.getByRole("searchbox", { name: "Search Claws" })).toBeVisible();
-  const metrics = await hero.evaluate((element) => {
+async function expectHomeHeroBackgroundCentered(page: Page) {
+  const metrics = await page.locator(".home-v2-hero-bg").evaluate((element) => {
     const rect = element.getBoundingClientRect();
     return {
       backgroundCenter: rect.left + rect.width / 2,
@@ -100,7 +97,7 @@ function publicRouteCases(): PublicRouteCase[] {
       path: () => "/",
       assert: async (page) => {
         await expect(page.locator("body")).toContainText("ClawHub");
-        await expectHomeHeroCentered(page);
+        await expectHomeHeroBackgroundCentered(page);
       },
     },
     {

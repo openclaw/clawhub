@@ -48,7 +48,6 @@ const SKILLS_SEARCH = {
 // ---------------------------------------------------------------------------
 
 export const PRIMARY_NAV_ITEMS: NavItem[] = [
-  { label: "Claws", to: "/", activePathPrefixes: ["/claws"] },
   {
     label: "Skills",
     to: PublicRegistryPaths.skills,
@@ -229,7 +228,7 @@ export const FOOTER_ECOSYSTEM_PROJECTS: FooterEcosystemProject[] = [
   {
     label: "ClickClack",
     href: "https://clickclack.chat",
-    blurb: "Chat for claws",
+    blurb: "Agent chat",
     logoUrl: openclawEcosystemAsset("/ecosystem/logos/clickclack.svg"),
   },
   {

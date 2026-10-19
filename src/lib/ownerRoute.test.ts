@@ -8,8 +8,6 @@ import {
 
 describe("owner route segments", () => {
   it("uses the legacy profile route for official alias collisions", () => {
-    expect(buildPublisherProfileHref("claws")).toBe("/user/claws");
-    expect(buildPublisherProfileHref("clawsweeper")).toBe("/clawsweeper");
     expect(buildPublisherProfileHref("tencent")).toBe("/user/tencent");
     expect(buildPublisherProfileHref("steipete")).toBe("/steipete");
   });

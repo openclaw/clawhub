@@ -30,10 +30,7 @@ export function buildPublisherProfileHref(handle: string) {
 }
 
 export function isLegacyPublisherProfileHandle(handle: string) {
-  // Preserve a profile entry point when a catalog route takes over an existing handle.
-  return (
-    handle.trim().toLowerCase() === "claws" || Boolean(getOpenClawExtensionPackageName(handle))
-  );
+  return Boolean(getOpenClawExtensionPackageName(handle));
 }
 
 export function buildSkillDetailHref(owner: string, slug: string) {

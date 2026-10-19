@@ -12,7 +12,6 @@ type HeaderAuthStatus = {
   me: Record<string, unknown> | null;
 };
 
-let headerPathname = "/skills";
 const navigateMock = vi.fn();
 const { profileHandleMock, signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
   profileHandleMock: vi.fn(),
@@ -112,7 +111,7 @@ vi.mock("@tanstack/react-router", () => ({
       </a>
     );
   },
-  useLocation: () => ({ pathname: headerPathname }),
+  useLocation: () => ({ pathname: "/" }),
   useNavigate: () => navigateMock,
 }));
 
@@ -263,7 +262,6 @@ const scrollIntoViewMock = vi.fn();
 
 describe("Header", () => {
   beforeEach(() => {
-    headerPathname = "/skills";
     vi.clearAllMocks();
     Element.prototype.scrollIntoView = scrollIntoViewMock;
     authStatusMock.mockReturnValue({
@@ -310,7 +308,7 @@ describe("Header", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
-    expect(screen.getAllByText("Claws")).toHaveLength(2);
+    expect(screen.getAllByText("Home")).toHaveLength(1);
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
     expect(screen.getAllByText("Official")).toHaveLength(2);
@@ -718,7 +716,7 @@ describe("Header", () => {
     expect(screen.queryByText('See creator results for "zzzz"')).toBeNull();
   });
 
-  it("shows Claws above Skills in the mobile menu", () => {
+  it("shows Home above Skills in the mobile menu", () => {
     render(<Header />);
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
@@ -731,7 +729,7 @@ describe("Header", () => {
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels.slice(0, 5)).toEqual(["Claws", "Skills", "Plugins", "Official", "Docs"]);
+    expect(labels.slice(0, 5)).toEqual(["Home", "Skills", "Plugins", "Official", "Docs"]);
     expect(
       document.querySelector(".mobile-nav-appearance-section .navbar-theme-switcher"),
     ).toBeTruthy();
@@ -758,7 +756,7 @@ describe("Header", () => {
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels).toEqual(["Claws", "Skills", "Plugins", "Official", "Docs"]);
+    expect(labels).toEqual(["Home", "Skills", "Plugins", "Official", "Docs"]);
   });
 
   it("links profile and bookmarks from the signed-in avatar menu", () => {
@@ -847,27 +845,5 @@ describe("Header", () => {
     expect(skillRow?.querySelector(".official-badge")).toBeTruthy();
     expect(pluginRow?.querySelector(".official-badge")).toBeTruthy();
     expect(creatorRow?.querySelector(".official-badge")).toBeTruthy();
-  });
-});
-
-it("searches Claws from the consumer homepage", async () => {
-  headerPathname = "/";
-  render(<Header />);
-  const input = screen.getAllByPlaceholderText("Search Claws")[0];
-  fireEvent.change(input, { target: { value: "Sift" } });
-  fireEvent.submit(input.closest("form")!);
-  expect(navigateMock).toHaveBeenCalledWith({ to: "/claws", search: { q: "Sift" } });
-  expect(screen.queryByText("Weather Skill")).toBeNull();
-});
-
-it("keeps unified search on publisher handles beginning with claws", () => {
-  headerPathname = "/clawsweeper";
-  render(<Header />);
-  const input = screen.getAllByPlaceholderText("Search skills, plugins, and creators")[0];
-  fireEvent.change(input, { target: { value: "review" } });
-  fireEvent.submit(input.closest("form")!);
-  expect(navigateMock).toHaveBeenCalledWith({
-    to: "/search",
-    search: { q: "review", type: undefined },
   });
 });
