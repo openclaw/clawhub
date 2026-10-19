@@ -48,6 +48,10 @@ export class EndorContainerCleanupError extends Error {
 }
 
 const unknownRecordSchema = z.record(z.string(), z.unknown());
+const packageReleaseSchema = z.object({
+  package: z.object({ name: z.string().min(1) }),
+  release: z.object({ version: z.string().min(1) }),
+});
 const endorFindingSchema = z.object({
   meta: z
     .object({
@@ -293,16 +297,39 @@ async function resolvePackageArtifactRoot(workspace: string) {
   return undefined;
 }
 
-export function isEndorPluginScanEnabled(env: NodeJS.ProcessEnv = process.env) {
-  return env.CODEX_SECURITY_SCAN_ENDOR_ENABLED === "1";
+export function isEndorPluginScanEnabled(
+  packageName: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const packages = env.CODEX_SECURITY_SCAN_ENDOR_PACKAGES?.split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  return (
+    env.CODEX_SECURITY_SCAN_ENDOR_ENABLED === "1" &&
+    (!packages?.length || (packageName !== undefined && packages.includes(packageName)))
+  );
 }
 
 export async function runEndorPluginScan(input: {
   env?: NodeJS.ProcessEnv;
   onDiagnostic?: (diagnostic: Partial<EndorCommandDiagnostic>) => void;
+  packageRelease?: { package?: unknown; release?: unknown };
   workspace: string;
 }): Promise<EndorAnalysis> {
   const env = input.env ?? process.env;
+  // Only claimed release metadata can identify a saved scan; artifact manifests
+  // and signed download URLs are untrusted or contain temporary credentials.
+  const release = input.packageRelease
+    ? packageReleaseSchema.parse(input.packageRelease)
+    : undefined;
+  const savedScanArgs = release
+    ? [
+        `https://clawhub.ai/api/v1/packages/${release.package.name.split("/").map(encodeURIComponent).join("/")}/versions/${encodeURIComponent(release.release.version)}/artifact/download`,
+        // Bundle versions can contain commas; escape tag delimiters without
+        // changing ordinary package/version labels or colliding with literal %.
+        `plugin:${release.package.name},version:${release.release.version.replace(/[%,]/g, (character) => encodeURIComponent(character))}`,
+      ]
+    : [];
   const sourceRoot = await resolvePackageArtifactRoot(input.workspace);
   if (!sourceRoot) {
     return {
@@ -364,6 +391,7 @@ export async function runEndorPluginScan(input: {
     image,
     "clawhub-endor-scan",
     "/workspace",
+    ...savedScanArgs,
   ];
   input.onDiagnostic?.({ args: ["docker", ...args] });
   const commandEnv = endorRuntimeEnv(input.workspace, env, ENDOR_ENV_KEYS);

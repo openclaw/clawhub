@@ -333,6 +333,8 @@ function pluginPackageJob(jobId: string): ClaimedJob {
     source: "publish",
     targetKind: "packageRelease",
     target: {
+      package: { name: "@openclaw/fixture-plugin" },
+      release: { version: "1.0.0" },
       files: [
         {
           path: "package/package.json",
@@ -378,6 +380,7 @@ function fakeEndorDockerBody(input: {
 }) {
   return `case "$2" in
   create)
+    printf '%s\\n' "$@" > ${JSON.stringify(join(dirname(input.cleanupMarker), "endor-create-args"))}
     args=("$@")
     for ((index = 0; index < \${#args[@]}; index++)); do
       if [[ "\${args[$index]}" == "--mount" ]]; then
@@ -416,6 +419,7 @@ async function configureEndorFakeCommands(input: {
 }) {
   vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", input.clawScan);
   vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "1");
+  vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", "");
   vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_IMAGE", "clawscan-endor:test");
   vi.stubEnv("ENDOR_NAMESPACE", "fixture-namespace");
   vi.stubEnv("ENDOR_TOKEN", "fixture-token");
@@ -1128,7 +1132,118 @@ JSON`,
     },
   );
 
+  it.each([
+    { status: "completed", exitCode: 0, output: endorArtifactJson() },
+    { status: "failed", exitCode: 17, output: "{}" },
+  ])("saves $status Endor analysis without passing it to the judge by default", async (scan) => {
+    const workspace = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const cleanupMarker = join(workspace, "endor-cleaned");
+    const metadataLog = join(workspace, "judge-metadata.json");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `test -f ${JSON.stringify(cleanupMarker)}
+test ! -f endor-analysis.json
+cp metadata.json ${JSON.stringify(metadataLog)}
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config|--context) exit 98 ;;
+    --scanner-result) [[ "$2" != endor=* ]] || exit 99; shift 2 ;;
+    --output) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+cat > "$out" <<'JSON'
+${clawScanArtifactJson({ verdict: "benign" })}
+JSON`,
+    );
+    await configureEndorFakeCommands({
+      clawScan: fakeClawScan,
+      dockerBody: fakeEndorDockerBody({
+        cleanupMarker,
+        exitCode: scan.exitCode,
+        startOutput: scan.output,
+      }),
+      workspace,
+    });
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "");
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", " @openclaw/other, @openclaw/fixture-plugin ");
+    const job = pluginPackageJob(`securityScanJobs:endor-report-only-${scan.status}`);
+    job.target.release = {
+      ...job.target.release,
+      endorAnalysis: { status: "completed", reachableFunctionCount: 99 },
+    };
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+
+    await expect(processJob(client, "worker-auth", job, undefined)).resolves.toEqual({
+      completed: true,
+      hardFailed: false,
+      retryableFailed: false,
+    });
+    expect(client.action).toHaveBeenCalledTimes(1);
+    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+      endorAnalysis:
+        scan.status === "completed"
+          ? {
+              status: "completed",
+              reachableFunctionCount: 1,
+              findings: [{ severity: "high", summary: "GHSA-reachable" }],
+            }
+          : { status: "failed", reason: "Endor analysis failed. Request a rescan to try again." },
+      llmAnalysis: { status: "clean", verdict: "benign" },
+    });
+    const metadata = JSON.parse(await readFile(metadataLog, "utf8"));
+    expect(metadata.target.release).not.toHaveProperty("endorAnalysis");
+    const createArgs = (await readFile(join(workspace, "endor-create-args"), "utf8"))
+      .trim()
+      .split("\n");
+    expect(createArgs.slice(-4)).toEqual([
+      "clawhub-endor-scan",
+      "/workspace",
+      "https://clawhub.ai/api/v1/packages/%40openclaw/fixture-plugin/versions/1.0.0/artifact/download",
+      "plugin:@openclaw/fixture-plugin,version:1.0.0",
+    ]);
+  });
+
+  it("does not launch Endor for a plugin outside the configured rollout cohort", async () => {
+    const workspace = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const dockerLog = join(workspace, "unexpected-docker-call");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then out="$2"; shift 2; else shift; fi
+done
+cat > "$out" <<'JSON'
+${clawScanArtifactJson({ verdict: "benign" })}
+JSON`,
+    );
+    await configureEndorFakeCommands({
+      clawScan: fakeClawScan,
+      dockerBody: `touch ${JSON.stringify(dockerLog)}; exit 99`,
+      workspace,
+    });
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", " @openclaw/discord, @openclaw/codex ");
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+    await expect(
+      processJob(
+        client,
+        "worker-auth",
+        pluginPackageJob("securityScanJobs:outside-cohort"),
+        undefined,
+      ),
+    ).resolves.toEqual({ completed: true, hardFailed: false, retryableFailed: false });
+    expect(client.action).toHaveBeenCalledTimes(1);
+    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+      llmAnalysis: { status: "clean", verdict: "benign" },
+    });
+    expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("endorAnalysis");
+    await expect(readFile(dockerLog)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("judges reachable Endor evidence after Docker cleanup with one ClawScan call", async () => {
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "1");
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const callLog = join(workspace, "clawscan-calls.log");
@@ -1218,6 +1333,7 @@ JSON`,
   });
 
   it("passes failed Endor analysis to the judge and completes the moderation result", async () => {
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "1");
     const workspace = await tempDir();
     const diagnosticsRoot = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
@@ -1277,6 +1393,7 @@ JSON`,
   });
 
   it("prepares bundled SkillSpector while Endor is active, then judges after both finish", async () => {
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "1");
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const callLog = join(workspace, "clawscan-calls.log");
@@ -1459,6 +1576,7 @@ exit 19`,
   });
 
   it("records an Endor timeout as scanner health while completing moderation", async () => {
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "1");
     const workspace = await tempDir();
     const diagnosticsRoot = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
