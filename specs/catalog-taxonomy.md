@@ -176,7 +176,7 @@ completion. The retained journal is the audit/rollback record.
 
 Operator entry points (run only against the deliberately selected deployment):
 
-- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v7-prod","batchSize":10}` returns
+- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v8-prod","batchSize":10}` returns
   a cursor and bounded skip/failure diagnostics. Pass each returned cursor to the next call;
   pause between calls. `pluginCategoryRefresh:list` lists that run with normal pagination.
 - For a bounded repair, preview optionally accepts `packageNames` with 1–10 distinct, exact
@@ -202,9 +202,9 @@ Operator entry points (run only against the deliberately selected deployment):
 - `pluginCategoryRefresh:rollback` accepts one applied journal ID with
   `confirm: "rollback-plugin-category-refresh"`. Preserve the journal and verification output.
 
-Classification uses `OPENAI_API_KEY` and defaults to `gpt-5.6-luna`, with a dedicated
+Classification uses `OPENAI_API_KEY` and defaults to `gpt-6-luna`, with a dedicated
 `OPENAI_PLUGIN_CATEGORY_MODEL` override independent of skill-summary configuration. The current
-classifier revision is `plugin-single-category-v7`; superseded generated previews cannot be
+classifier revision is `plugin-single-category-v8`; superseded generated previews cannot be
 accepted or applied. The model receives all 22 purpose definitions and must return exactly one
 category. Missing credentials, timeouts, and
 invalid output are recorded as failed fallback classifications. They cannot be accepted unchanged.

@@ -454,10 +454,10 @@ export async function operate(
     const names = await client.envNames();
     const model = names.includes("OPENAI_PLUGIN_CATEGORY_MODEL")
       ? (await client.model()).trim()
-      : "gpt-5.6-luna";
+      : "gpt-6-luna";
     const config = {
       hasApiKey: names.includes("OPENAI_API_KEY"),
-      usesLuna: model === "gpt-5.6-luna",
+      usesLuna: model === "gpt-6-luna",
     };
     if (options.mode === "status")
       return {
@@ -467,7 +467,7 @@ export async function operate(
       };
     requireValue(
       config.hasApiKey && config.usesLuna,
-      "Production classifier requires OPENAI_API_KEY and gpt-5.6-luna.",
+      "Production classifier requires OPENAI_API_KEY and gpt-6-luna.",
     );
     return previewPages(client, options, checkpoint);
   }

@@ -58,6 +58,8 @@ export async function startOpenAiCapabilityBroker(args: {
   allowedModels: readonly string[];
   apiKey: string;
   maxRequests?: number;
+  reasoningEffort?: { responses: "medium"; chat: "high" };
+  serviceTier?: "default";
   upstreamBaseUrl?: string;
 }) {
   const allowedModels = new Set(args.allowedModels);
@@ -80,7 +82,7 @@ export async function startOpenAiCapabilityBroker(args: {
         reject(response, 404, "unsupported evaluation endpoint");
         return;
       }
-      let body = await readRequestBody(request);
+      const body = await readRequestBody(request);
       let parsed: unknown;
       try {
         parsed = JSON.parse(body.toString("utf8"));
@@ -106,16 +108,49 @@ export async function startOpenAiCapabilityBroker(args: {
         return;
       }
 
-      // SkillEvaluator uses the legacy field for proxy URLs, but this broker
-      // forwards to OpenAI, where GPT-5 judges require max_completion_tokens.
+      const payload = { ...requestBody };
+      // Sol tool calls require Responses. The pinned Codex adapter already uses
+      // that wire API; never silently downgrade or lossy-translate tool calls.
       if (
         url.pathname === "/v1/chat/completions" &&
-        model.startsWith("gpt-5") &&
-        typeof requestBody?.max_tokens === "number" &&
-        requestBody.max_completion_tokens === undefined
+        /^gpt-6(?:\.\d+)?-sol(?:-|$)/.test(model) &&
+        ((Array.isArray(payload.tools) && payload.tools.length > 0) ||
+          (Array.isArray(payload.functions) && payload.functions.length > 0))
       ) {
-        const { max_tokens, ...payload } = requestBody;
-        body = Buffer.from(JSON.stringify({ ...payload, max_completion_tokens: max_tokens }));
+        reject(response, 400, "Sol tool calls require the Responses API");
+        return;
+      }
+      if (args.reasoningEffort) {
+        if (url.pathname === "/v1/responses") {
+          const reasoning = payload.reasoning;
+          payload.reasoning = {
+            ...(reasoning && typeof reasoning === "object" && !Array.isArray(reasoning)
+              ? reasoning
+              : {}),
+            effort: args.reasoningEffort.responses,
+          };
+        } else if (url.pathname === "/v1/chat/completions") {
+          payload.reasoning_effort = args.reasoningEffort.chat;
+          // SkillEvaluator supplies temperature=0 for grading. Sol reasoning
+          // requests do not support custom sampling, so omit it at this boundary.
+          delete payload.temperature;
+          delete payload.top_p;
+        }
+      }
+      // Standard by default; an explicit caller tier remains an override.
+      if (args.serviceTier && payload.service_tier === undefined)
+        payload.service_tier = args.serviceTier;
+
+      // SkillEvaluator uses the legacy field for proxy URLs, but OpenAI's
+      // reasoning families require max_completion_tokens (not just GPT-5).
+      if (
+        url.pathname === "/v1/chat/completions" &&
+        /^(?:gpt-[5-9](?:[.-]|$)|o[134](?:-|$))/.test(model) &&
+        typeof payload.max_tokens === "number"
+      ) {
+        if (payload.max_completion_tokens === undefined)
+          payload.max_completion_tokens = payload.max_tokens;
+        delete payload.max_tokens;
       }
 
       // Reserve after reading/validating the body so concurrent requests cannot
@@ -130,7 +165,7 @@ export async function startOpenAiCapabilityBroker(args: {
       activeRequests.add(controller);
       try {
         const upstream = await fetch(`${upstreamBaseUrl}${url.pathname}${url.search}`, {
-          body,
+          body: JSON.stringify(payload),
           headers: upstreamHeaders(request, args.apiKey),
           method: "POST",
           signal: controller.signal,

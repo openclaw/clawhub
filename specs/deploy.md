@@ -261,7 +261,7 @@ worker run. Compare terminal claim failures separately from successful job count
 Skill Card input reuse adds optional receipts to existing versions and jobs; no
 backfill is required. The worker currently omits the recipe hash, so automatic
 workflow runs remain compatible with the backend before its manual deployment.
-Sol/medium/fast is enabled; input reuse is prepared but not active.
+Luna/medium/Standard is the default; input reuse is prepared but not active.
 
 Activate recipe-hash claims in the separate worker change only after a successful
 Convex deployment of the preparation commit or a descendant containing it. Verify
