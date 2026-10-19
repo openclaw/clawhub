@@ -21,6 +21,7 @@ import {
   type StoredLlmAnalysis,
   writeArtifactWorkspace,
 } from "./run-codex-scan-worker";
+import { configuredClawScanJudgeModel, securityScannerEnvironment } from "./securityModelPolicy";
 
 type ClaimedPrePublicationAttempt = {
   attemptId: Id<"publishAttempts">;
@@ -110,18 +111,7 @@ const CHILD_RUNTIME_ENV_KEYS = [
   "COMSPEC",
   "PATHEXT",
 ] as const;
-// ClawScan's judge and scanners require these provider settings. The pinned scanner
-// process is the trust boundary; never add worker tokens or ambient endpoints.
-const CLAWSCAN_PROVIDER_ENV_KEYS = [
-  "CODEX_API_KEY",
-  "DEFAULT_BASE_URL",
-  "DEFAULT_MODEL",
-  "LLM_API_KEY",
-  "OPENAI_API_KEY",
-  "REASONING_EFFORT",
-  "SKILLSPECTOR_MODEL",
-  "SKILLSPECTOR_REASONING_EFFORT",
-] as const;
+
 const logger = createWorkerLogger({ name: "prepublication-worker" });
 
 export function parseArgs(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env) {
@@ -507,7 +497,7 @@ function storedAnalysisFromClawScanArtifact(
   const confidence = readString(result, ["confidence"]);
   const findings = readString(result, ["findings"]);
   const guidance = readString(result, ["guidance"]);
-  const model = readString(result, ["model"]);
+  const model = configuredClawScanJudgeModel(judge);
   const summary = readString(result, ["summary"]);
   const checkedAt = Date.now();
   let aigAnalysis: AigAnalysis | undefined;
@@ -592,7 +582,10 @@ export async function runNativeClawScan(
 
   const output = await runCommand(command, args, {
     cwd: workspace,
-    env: restrictedChildEnvironment(workspace, CLAWSCAN_PROVIDER_ENV_KEYS),
+    env: {
+      ...restrictedChildEnvironment(workspace),
+      ...securityScannerEnvironment(process.env),
+    },
     timeoutMs: clawScanTimeoutMs(),
   });
   if (output.code !== 0) {

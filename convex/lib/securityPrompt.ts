@@ -1,5 +1,5 @@
-export function getLlmEvalModel(): string {
-  return process.env.OPENAI_EVAL_MODEL ?? "gpt-5.5";
+export function getLlmEvalModel(env: Record<string, string | undefined> = process.env): string {
+  return env.OPENAI_EVAL_MODEL?.trim() || "gpt-6.1-sol";
 }
 export type LlmEvalReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type LlmEvalServiceTier = "auto" | "default" | "flex" | "priority";
@@ -12,17 +12,21 @@ const LLM_EVAL_REASONING_EFFORTS = new Set<LlmEvalReasoningEffort>([
   "xhigh",
 ]);
 const LLM_EVAL_SERVICE_TIERS = new Set<LlmEvalServiceTier>(["auto", "default", "flex", "priority"]);
-export function getLlmEvalReasoningEffort(): LlmEvalReasoningEffort {
-  const effort = process.env.OPENAI_EVAL_REASONING_EFFORT ?? "xhigh";
+export function getLlmEvalReasoningEffort(
+  env: Record<string, string | undefined> = process.env,
+): LlmEvalReasoningEffort {
+  const effort = env.OPENAI_EVAL_REASONING_EFFORT ?? "high";
   return LLM_EVAL_REASONING_EFFORTS.has(effort as LlmEvalReasoningEffort)
     ? (effort as LlmEvalReasoningEffort)
-    : "xhigh";
+    : "high";
 }
-export function getLlmEvalServiceTier(): LlmEvalServiceTier {
-  const serviceTier = process.env.OPENAI_EVAL_SERVICE_TIER ?? "priority";
+export function getLlmEvalServiceTier(
+  env: Record<string, string | undefined> = process.env,
+): LlmEvalServiceTier {
+  const serviceTier = env.OPENAI_EVAL_SERVICE_TIER ?? "default";
   return LLM_EVAL_SERVICE_TIERS.has(serviceTier as LlmEvalServiceTier)
     ? (serviceTier as LlmEvalServiceTier)
-    : "priority";
+    : "default";
 }
 export const LLM_EVAL_MAX_OUTPUT_TOKENS = 16000;
 

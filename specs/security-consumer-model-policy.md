@@ -1,0 +1,104 @@
+# Security consumer model policy (2026-10-19)
+
+## Intent and independent lanes
+
+ClawHub's security consumers use three independent model lanes. A scanner's
+`DEFAULT_MODEL` must never become the final verdict model or SkillSpector model.
+
+- **Final ClawScan judge:** `gpt-6.1-sol`, high reasoning, Standard service.
+  The reviewed bundled `clawhub` profile selects this judge; changing an AIG
+  environment variable cannot change a hardcoded profile command.
+- **A.I.G and SkillSpector:** each uses `gpt-6.1-sol`, medium reasoning by default.
+  AIG uses `DEFAULT_MODEL` / `REASONING_EFFORT`; SkillSpector uses
+  `SKILLSPECTOR_MODEL` / `SKILLSPECTOR_REASONING_EFFORT`. Explicit scanner settings
+  survive the workers' restricted subprocess environments. Custom providers retain
+  their own defaults instead of receiving an OpenAI model accidentally.
+- **Endor-enabled judge:** the generated ClawHub profile uses `gpt-6.1-sol`, high
+  reasoning, explicitly `service_tier=default`. This change does **not** enable Endor.
+  Existing enablement, image-digest requirements and fail-closed behavior remain.
+
+The local dry run sends Responses requests with the same final-judge default,
+reasoning and Standard (`service_tier=default`, not `priority`) policy. Existing
+`OPENAI_EVAL_MODEL`, `OPENAI_EVAL_REASONING_EFFORT` and
+`OPENAI_EVAL_SERVICE_TIER` overrides remain supported for that evaluator and the
+generated Endor judge. The ordinary production judge remains selected by the
+reviewed ClawScan profile, not by those local evaluator environment variables.
+
+## Source and transport boundary
+
+The previously installed ClawScan npm 0.2.0 profile hardcoded GPT-5.5. Stock
+SkillSpector and AIG installations also used older defaults and Chat Completions
+paths. Environment-only changes cannot implement this policy: official GPT-6.1
+Sol function/tool calls require Responses rather than Chat Completions.
+
+`clawscan-source-commit.txt` pins a full, reviewed ClawScan source commit. The
+workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
+with Go 1.27.2, and retains the matching source tree for host scanner installation.
+No mutable `main`, `latest`, or unapproved public ClawScan release is consumed.
+The workflows pin Codex CLI 0.160.0, including on runners with an ambient CLI.
+
+The host scanners consume **the same** source pins, Responses patches and offline
+real-adapter tests as that ClawScan revision's runtime image:
+
+- SkillSpector: NVIDIA source commit
+  `95a52d89fa16f608f0b18ccee76b0918ea4b7eef`, with the maintained LangChain
+  Responses path and its upstream `uv.lock` (`uv sync --locked --no-dev`).
+- AIG: Tencent AI-Infra-Guard source commit
+  `a5c5a72c2e5b88fc6e5b27e0c86110943c4d350b` (`skill-scan` package), with the
+  ClawScan-owned Responses streaming adapter. The existing hash-locked AIG 0.2.2
+  runtime dependency set is installed first; only the AIG package is replaced
+  from patched source with `--no-deps`. In particular, its OpenAI SDK stays 2.8.1.
+- The source pins are read from the reviewed ClawScan Dockerfile and checked as
+  full commit IDs, so host/image implementations cannot silently drift. Patch
+  applicability and the real installed adapter tests are mandatory install gates.
+- The maintained resolver is pinned to uv 0.12.5. Pytest 9.0.2 is test-only. Source
+  revisions and runtime dependencies are pinned; Python isolated-build backend
+  dependencies are not claimed to be fully hash-reproducible.
+
+The adapter implementation stays upstream in ClawScan; ClawHub must not grow a
+second independent OpenAI adapter. Offline transport contracts prove serialization,
+function round trips where applicable, and fail-closed stream/error handling. They
+do not establish live model verdict quality or justify changing moderation policy.
+
+## Honest judge provenance
+
+Stored `llmAnalysis.model` / `clawscanAnalysis.model` is the **configured judge
+identity** from execution metadata (`judge.configuredModel`, or a supported
+literal `--model` in `judge.command`). It is not provider-returned identity.
+Model-authored `judge.result.model` is untrusted evidence and is never promoted
+into provenance. Legacy artifacts without execution metadata remain unknown;
+never relabel their history using today's default.
+
+The local Responses evaluator records the requested identity in `model` and,
+when actually returned by the provider, keeps that separate as `providerModel`.
+Its supplied environment controls the evaluator; it must not accidentally read
+ambient process model settings instead.
+
+## Regression gates
+
+- True worker subprocess tests capture both scanner models and reasoning efforts
+  with default and distinct explicit settings, and verify worker credentials and
+  ambient endpoint overrides are not forwarded.
+- The generated Endor judge is executed against a fake Codex executable, proving
+  the actual argv, high/override effort, Standard tier and safe shell quoting.
+- Workflow/installer contracts cover exact source fetches, patch application,
+  hash-locked AIG dependencies, locked SkillSpector installation, adapter tests and
+  all three security consumer workflows. Invalid/mutable commit pins fail closed.
+- Final verdict mappings cover configured model retention and missing/untrusted
+  provenance. Local dry-run HTTP assertions cover requested and returned models.
+
+Any release/deployment, queue processing, Endor activation, public ClawScan
+publication or replacement of these source pins needs separate authorization.
+
+## Required upstream handoff gate
+
+Before activating the workflow switch, the reviewed ClawScan source must serialize
+actual judge execution metadata: `judge.command` (the executed harness template)
+or an honestly derived `judge.configuredModel`. The consumer accepts either; it
+must not infer the model from model-authored output or silently stamp its current
+default onto an artifact. A real local worker -> ClawScan -> fake-Codex check
+against the initial upstream candidate found that `JudgeResult` exposed neither
+field, even though Codex actually received Sol/high. Until upstream supplies this
+metadata, the consumer intentionally leaves stored model provenance unknown.
+The reviewed merged revision, including that fix, must then populate the source
+commit lock before this change is a releasable workflow candidate.

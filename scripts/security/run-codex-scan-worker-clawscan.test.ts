@@ -189,6 +189,7 @@ function clawScanArtifactJson(options?: {
   endorAnalysis?: EndorAnalysis;
   includeCompletedAt?: boolean;
   judgeResult?: Record<string, unknown>;
+  judgeCommand?: string;
   omitAigRaw?: boolean;
   scannerStatuses?: Partial<Record<"aig" | "clawscan-static" | "skillspector", string>>;
   verdict?: ClawScanVerdict;
@@ -255,6 +256,7 @@ function clawScanArtifactJson(options?: {
     },
     judge: {
       status: "completed",
+      ...(options?.judgeCommand ? { command: options.judgeCommand } : {}),
       promptSha256: "prompt-sha-1",
       outputSchemaSha256: "schema-sha-1",
       result: options?.judgeResult ?? completeJudgeResult(verdict),
@@ -455,15 +457,17 @@ describe("run-codex-scan-worker clawscan authority", () => {
     });
   });
 
-  it("passes scanner model settings and only the approved provider endpoint to ClawScan", async () => {
-    const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"), { recursive: true });
-    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Safe skill\n");
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    const environmentLog = join(workspace, "clawscan-environment.log");
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `printf '%s\\n' "\${DEFAULT_BASE_URL-}" "\${OPENAI_BASE_URL-}" "\${OPENAI_API_KEY-}" "\${SECURITY_SCAN_WORKER_TOKEN-}" "\${DEFAULT_MODEL-}" "\${REASONING_EFFORT-}" "\${SKILLSPECTOR_MODEL-}" "\${SKILLSPECTOR_REASONING_EFFORT-}" "\${ENDOR_TOKEN-}" "\${ENDOR_API_CREDENTIALS_KEY-}" "\${ENDOR_API_CREDENTIALS_SECRET-}" > ${JSON.stringify(environmentLog)}
+  it.each([false, true])(
+    "passes default/overridden scanner settings to the real subprocess (override=%s)",
+    async (overrides) => {
+      const workspace = await tempDir();
+      await mkdir(join(workspace, "artifact"), { recursive: true });
+      await writeFile(join(workspace, "artifact", "SKILL.md"), "# Safe skill\n");
+      const fakeClawScan = join(workspace, "fake-clawscan");
+      const environmentLog = join(workspace, "clawscan-environment.log");
+      await writeFakeClawScanCommand(
+        fakeClawScan,
+        `printf '%s\\n' "\${DEFAULT_BASE_URL-}" "\${OPENAI_BASE_URL-}" "\${OPENAI_API_KEY-}" "\${SECURITY_SCAN_WORKER_TOKEN-}" "\${DEFAULT_MODEL-}" "\${REASONING_EFFORT-}" "\${SKILLSPECTOR_MODEL-}" "\${SKILLSPECTOR_REASONING_EFFORT-}" "\${ENDOR_TOKEN-}" "\${ENDOR_API_CREDENTIALS_KEY-}" "\${ENDOR_API_CREDENTIALS_SECRET-}" > ${JSON.stringify(environmentLog)}
 out=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -479,50 +483,51 @@ done
 cat > "$out" <<'JSON'
 ${clawScanArtifactJson({ verdict: "benign" })}
 JSON`,
-    );
+      );
 
-    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
-    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX", "off");
-    vi.stubEnv("DEFAULT_BASE_URL", "https://api.openai.com/v1");
-    vi.stubEnv("OPENAI_BASE_URL", "https://unapproved.example.invalid/v1");
-    vi.stubEnv("OPENAI_API_KEY", "mock-provider-key");
-    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "mock-worker-token");
-    vi.stubEnv("DEFAULT_MODEL", "gpt-6-luna");
-    vi.stubEnv("REASONING_EFFORT", "high");
-    vi.stubEnv("SKILLSPECTOR_MODEL", "gpt-6-luna");
-    vi.stubEnv("SKILLSPECTOR_REASONING_EFFORT", "high");
-    vi.stubEnv("ENDOR_TOKEN", "mock-endor-token");
-    vi.stubEnv("ENDOR_API_CREDENTIALS_KEY", "mock-endor-key");
-    vi.stubEnv("ENDOR_API_CREDENTIALS_SECRET", "mock-endor-secret");
+      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
+      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX", "off");
+      vi.stubEnv("DEFAULT_BASE_URL", "https://api.openai.com/v1");
+      vi.stubEnv("OPENAI_BASE_URL", "https://unapproved.example.invalid/v1");
+      vi.stubEnv("OPENAI_API_KEY", "mock-provider-key");
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "mock-worker-token");
+      vi.stubEnv("DEFAULT_MODEL", overrides ? "aig-override" : undefined);
+      vi.stubEnv("REASONING_EFFORT", overrides ? "high" : undefined);
+      vi.stubEnv("SKILLSPECTOR_MODEL", overrides ? "skillspector-override" : undefined);
+      vi.stubEnv("SKILLSPECTOR_REASONING_EFFORT", overrides ? "low" : undefined);
+      vi.stubEnv("ENDOR_TOKEN", "mock-endor-token");
+      vi.stubEnv("ENDOR_API_CREDENTIALS_KEY", "mock-endor-key");
+      vi.stubEnv("ENDOR_API_CREDENTIALS_SECRET", "mock-endor-secret");
 
-    const onDiagnostic = vi.fn();
-    await runClawScan(
-      skillVersionJob("securityScanJobs:restricted-environment"),
-      workspace,
-      onDiagnostic,
-    );
+      const onDiagnostic = vi.fn();
+      await runClawScan(
+        skillVersionJob("securityScanJobs:restricted-environment"),
+        workspace,
+        onDiagnostic,
+      );
 
-    expect(onDiagnostic).toHaveBeenCalledWith(
-      expect.objectContaining({
-        args: expect.arrayContaining(["--sandbox", "off"]),
-      }),
-    );
+      expect(onDiagnostic).toHaveBeenCalledWith(
+        expect.objectContaining({
+          args: expect.arrayContaining(["--sandbox", "off"]),
+        }),
+      );
 
-    expect((await readFile(environmentLog, "utf8")).split("\n")).toEqual([
-      "https://api.openai.com/v1",
-      "",
-      "mock-provider-key",
-      "",
-      "gpt-6-luna",
-      "high",
-      "gpt-6-luna",
-      "high",
-      "",
-      "",
-      "",
-      "",
-    ]);
-  });
+      expect((await readFile(environmentLog, "utf8")).split("\n")).toEqual([
+        "https://api.openai.com/v1",
+        "",
+        "mock-provider-key",
+        "",
+        overrides ? "aig-override" : "gpt-6.1-sol",
+        overrides ? "high" : "medium",
+        overrides ? "skillspector-override" : "gpt-6.1-sol",
+        overrides ? "low" : "medium",
+        "",
+        "",
+        "",
+        "",
+      ]);
+    },
+  );
 
   it.each([
     {
@@ -809,7 +814,11 @@ JSON`,
       const workspace = await tempDir();
       const fakeClawScan = join(workspace, "fake-clawscan");
       const argsLog = join(workspace, "clawscan-args.log");
-      const artifactJson = clawScanArtifactJson({ verdict });
+      const artifactJson = clawScanArtifactJson({
+        verdict,
+        judgeCommand:
+          "codex exec --model gpt-6.1-sol -c model_reasoning_effort=high -c service_tier=default",
+      });
       await writeFakeClawScanCommand(
         fakeClawScan,
         `if [[ -n "\${VIRUSTOTAL_API_KEY:-}" ]]; then
@@ -887,7 +896,7 @@ JSON`,
         const payload = client.action.mock.calls[0]?.[1] as
           | { llmAnalysis?: { model?: string }; scannerReportsStorageId?: string }
           | undefined;
-        expect(payload?.llmAnalysis?.model).toBeUndefined();
+        expect(payload?.llmAnalysis?.model).toBe("gpt-6.1-sol");
         if (reportsSupported) {
           expect(payload?.scannerReportsStorageId).toBe("storage:scanner-report");
           const original = JSON.parse(artifactJson);

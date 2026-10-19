@@ -5,6 +5,8 @@ import {
   assembleSkillEvalUserMessage,
   detectInjectionPatterns,
   getLlmEvalServiceTier,
+  getLlmEvalModel,
+  getLlmEvalReasoningEffort,
   parseLlmEvalResponse,
   prepareArtifactText,
   SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
@@ -300,16 +302,27 @@ describe("securityPrompt", () => {
     expect(parsed?.verdict).toBe("suspicious");
   });
 
-  it("defaults LLM evals to OpenAI priority service tier", () => {
+  it("defaults the final judge independently and preserves valid overrides", () => {
+    expect(getLlmEvalModel({})).toBe("gpt-6.1-sol");
+    expect(getLlmEvalReasoningEffort({})).toBe("high");
+    expect(getLlmEvalModel({ OPENAI_EVAL_MODEL: "custom-judge", DEFAULT_MODEL: "aig-only" })).toBe(
+      "custom-judge",
+    );
+    expect(getLlmEvalReasoningEffort({ OPENAI_EVAL_REASONING_EFFORT: "xhigh" })).toBe("xhigh");
+    expect(getLlmEvalReasoningEffort({ OPENAI_EVAL_REASONING_EFFORT: "invalid" })).toBe("high");
+    expect(getLlmEvalServiceTier({ OPENAI_EVAL_SERVICE_TIER: "priority" })).toBe("priority");
+  });
+
+  it("defaults LLM evals to OpenAI Standard service tier", () => {
     const previous = process.env.OPENAI_EVAL_SERVICE_TIER;
     delete process.env.OPENAI_EVAL_SERVICE_TIER;
 
     try {
-      expect(getLlmEvalServiceTier()).toBe("priority");
+      expect(getLlmEvalServiceTier()).toBe("default");
       process.env.OPENAI_EVAL_SERVICE_TIER = "flex";
       expect(getLlmEvalServiceTier()).toBe("flex");
       process.env.OPENAI_EVAL_SERVICE_TIER = "not-a-tier";
-      expect(getLlmEvalServiceTier()).toBe("priority");
+      expect(getLlmEvalServiceTier()).toBe("default");
     } finally {
       if (previous === undefined) {
         delete process.env.OPENAI_EVAL_SERVICE_TIER;

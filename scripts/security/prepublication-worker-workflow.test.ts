@@ -195,7 +195,10 @@ describe("pre-publication publish worker workflow", () => {
       CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
       CONVEX_DEPLOY_KEY: "${{ secrets.CONVEX_DEPLOY_KEY }}",
       DEFAULT_BASE_URL: "https://api.openai.com/v1",
-      DEFAULT_MODEL: "gpt-5.6",
+      DEFAULT_MODEL: "${{ vars.DEFAULT_MODEL || 'gpt-6.1-sol' }}",
+      REASONING_EFFORT: "${{ vars.REASONING_EFFORT || 'medium' }}",
+      SKILLSPECTOR_MODEL: "${{ vars.SKILLSPECTOR_MODEL || 'gpt-6.1-sol' }}",
+      SKILLSPECTOR_REASONING_EFFORT: "${{ vars.SKILLSPECTOR_REASONING_EFFORT || 'medium' }}",
       LLM_API_KEY: "${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
     });
@@ -210,13 +213,12 @@ describe("pre-publication publish worker workflow", () => {
     expect(runStep?.run).not.toContain("--version");
     expect(runStep?.run).not.toContain("--max-jobs");
     expect(steps.find((step) => step.name === "Install ClawScan CLI")?.run).toContain(
-      "npm install -g @openclaw/clawscan@0.1.8",
+      "sh scripts/security/install-clawscan.sh",
     );
     const skillspectorInstall = steps.find((step) => step.name === "Install SkillSpector")?.run;
     expect(skillspectorInstall).toContain(
-      "git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc",
+      "sh scripts/security/install-clawscan-scanners.sh skillspector",
     );
-    expect(skillspectorInstall).toContain("skillspector --help");
     expect(steps).toContainEqual(
       expect.objectContaining({
         uses: "actions/setup-python@v7",
@@ -224,25 +226,19 @@ describe("pre-publication publish worker workflow", () => {
       }),
     );
     const aigInstall = steps.find((step) => step.name === "Install A.I.G scanner")?.run;
-    expect(aigInstall).toContain(
-      "python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt",
-    );
-    expect(aigInstall).not.toContain("pip install 'aig-skill-scan==0.2.1'");
-    expect(aigInstall).not.toContain('version("aig-skill-scan") == "0.2.1"');
-    expect(aigInstall).toContain('version("aig-skill-scan") == "0.2.2"');
-    expect(aigInstall).not.toContain("aig-skill-scan-0.2.1-gpt5.patch");
-    expect(aigInstall).not.toContain("f18ae642d62be142192d6bd4c21c4ea7e098bbc8");
-    expect(aigInstall).toContain('assert "temperature=" not in inspect.getsource(LLM.chat_stream)');
-    expect(aigInstall).toContain("aig-skill-scan --help");
+    expect(aigInstall).toContain("sh scripts/security/install-clawscan-scanners.sh aig");
     expect(steps.find((step) => step.name === "Install Codex CLI")?.run).toContain(
-      "npm install -g @openai/codex@0.142.3",
+      "npm install -g @openai/codex@0.160.0",
     );
     expect(steps.find((step) => step.name === "Authenticate Codex CLI")).toBeUndefined();
     expect(JSON.stringify(job)).not.toContain("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");
     expect(runStep?.env).toEqual({
       CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
       DEFAULT_BASE_URL: "https://api.openai.com/v1",
-      DEFAULT_MODEL: "gpt-5.6",
+      DEFAULT_MODEL: "${{ vars.DEFAULT_MODEL || 'gpt-6.1-sol' }}",
+      REASONING_EFFORT: "${{ vars.REASONING_EFFORT || 'medium' }}",
+      SKILLSPECTOR_MODEL: "${{ vars.SKILLSPECTOR_MODEL || 'gpt-6.1-sol' }}",
+      SKILLSPECTOR_REASONING_EFFORT: "${{ vars.SKILLSPECTOR_REASONING_EFFORT || 'medium' }}",
       LLM_API_KEY: "${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",

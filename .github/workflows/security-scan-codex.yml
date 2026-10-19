@@ -101,10 +101,9 @@ jobs:
       CODEX_SECURITY_SCAN_ASSIGNED_JOBS: ${{ inputs['assigned-jobs'] || '' }}
       CODEX_SECURITY_SCAN_LANE: ${{ matrix.lane }}
       CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '900000' }}
-      CODEX_SECURITY_SCAN_CLAWSCAN_VERSION: ${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_VERSION || '0.2.0' }}
       CODEX_SECURITY_SCAN_ENDOR_ENABLED: ${{ vars.CODEX_SECURITY_SCAN_ENDOR_ENABLED || '0' }}
       CODEX_SECURITY_SCAN_ENDOR_IMAGE: ${{ vars.CODEX_SECURITY_SCAN_ENDOR_IMAGE }}
-      # The runner is disposable and installs the reviewed, hash-locked host scanners above.
+      # The runner is disposable and installs the reviewed, source-pinned host scanners below.
       CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX: "off"
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
       CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: codex-security-scan-diagnostics-${{ matrix.shard }}
@@ -185,17 +184,13 @@ jobs:
       - name: Install Codex CLI
         run: |
           set -euo pipefail
-          if ! command -v codex >/dev/null 2>&1; then
-            npm install -g @openai/codex@0.142.3
-          fi
+          npm install -g @openai/codex@0.160.0
           codex --version
 
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          [[ "$CODEX_SECURITY_SCAN_CLAWSCAN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'ClawScan requires an exact release version'; exit 1; }
-          npm install -g "@openclaw/clawscan@$CODEX_SECURITY_SCAN_CLAWSCAN_VERSION"
-          clawscan --version
+          sh scripts/security/install-clawscan.sh
 
       - name: Prepare Endor scanner
         if: ${{ inputs.environment != 'Test' && env.CODEX_SECURITY_SCAN_ENDOR_ENABLED == '1' }}
@@ -214,20 +209,12 @@ jobs:
       - name: Install A.I.G scanner
         run: |
           set -euo pipefail
-          python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt
-          python -c 'from importlib.metadata import version; assert version("aig-skill-scan") == "0.2.2"'
-          python -c 'import inspect; from skill_scan.utils.llm import LLM; assert "temperature=" not in inspect.getsource(LLM.chat_stream)'
-          aig-skill-scan --help >/dev/null
+          sh scripts/security/install-clawscan-scanners.sh aig
 
       - name: Install SkillSpector
         run: |
           set -euo pipefail
-          python -m venv "$RUNNER_TEMP/skillspector-venv"
-          source "$RUNNER_TEMP/skillspector-venv/bin/activate"
-          python -m pip install --upgrade pip
-          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc'
-          echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
-          skillspector --help >/dev/null
+          sh scripts/security/install-clawscan-scanners.sh skillspector
 
       - name: Authenticate Codex CLI
         env:
@@ -238,7 +225,10 @@ jobs:
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           DEFAULT_BASE_URL: https://api.openai.com/v1
-          DEFAULT_MODEL: gpt-5.6
+          DEFAULT_MODEL: ${{ vars.DEFAULT_MODEL || 'gpt-6.1-sol' }}
+          REASONING_EFFORT: ${{ vars.REASONING_EFFORT || 'medium' }}
+          SKILLSPECTOR_MODEL: ${{ vars.SKILLSPECTOR_MODEL || 'gpt-6.1-sol' }}
+          SKILLSPECTOR_REASONING_EFFORT: ${{ vars.SKILLSPECTOR_REASONING_EFFORT || 'medium' }}
           LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ steps.test-auth.outputs.token || secrets.SECURITY_SCAN_WORKER_TOKEN }}

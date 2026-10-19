@@ -27,10 +27,11 @@ async function writePlugin(root: string) {
   return folder;
 }
 
-function makeOpenAiFetch(result: Record<string, unknown>) {
-  return vi.fn(async () => {
+function makeOpenAiFetch(result: Record<string, unknown>, providerModel?: string) {
+  return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
     return new Response(
       JSON.stringify({
+        ...(providerModel ? { model: providerModel } : {}),
         output: [
           {
             type: "message",
@@ -127,6 +128,55 @@ describe("runLocalClawScanDryRun", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it.each([false, true])(
+    "uses the production judge policy in its Responses request (override=%s)",
+    async (override) => {
+      const root = await makeTmpWorkdir();
+      try {
+        const plugin = await writePlugin(root);
+        const fetchImpl = makeOpenAiFetch(
+          {
+            verdict: "benign",
+            confidence: "high",
+            summary: "Coherent plugin.",
+            dimensions: {},
+            user_guidance: "Review before installing.",
+          },
+          "provider-snapshot",
+        );
+        const result = await runLocalClawScanDryRun({
+          cwd: root,
+          path: plugin,
+          kind: "plugin",
+          fetchImpl,
+          env: {
+            OPENAI_API_KEY: "fixture-key",
+            ...(override
+              ? {
+                  OPENAI_EVAL_MODEL: "custom-judge",
+                  OPENAI_EVAL_REASONING_EFFORT: "low",
+                  OPENAI_EVAL_SERVICE_TIER: "flex",
+                }
+              : {}),
+            DEFAULT_MODEL: "aig-must-not-change-judge",
+            SKILLSPECTOR_MODEL: "skillspector-must-not-change-judge",
+          },
+        });
+        const [url, init] = fetchImpl.mock.calls[0];
+        expect(url).toBe("https://api.openai.com/v1/responses");
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          model: override ? "custom-judge" : "gpt-6.1-sol",
+          reasoning: { effort: override ? "low" : "high" },
+          service_tier: override ? "flex" : "default",
+        });
+        expect(result.llmAnalysis.model).toBe(override ? "custom-judge" : "gpt-6.1-sol");
+        expect(result.llmAnalysis.providerModel).toBe("provider-snapshot");
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("runs static scan and mocked LLM scan for a plugin folder", async () => {
     const root = await makeTmpWorkdir();

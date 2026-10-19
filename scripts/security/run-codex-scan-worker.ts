@@ -34,6 +34,7 @@ import {
   type SecurityScanJobHealth,
   type SecurityScanQueueHealth,
 } from "./security-scan-worker-summary";
+import { configuredClawScanJudgeModel, securityScannerEnvironment } from "./securityModelPolicy";
 
 export type ClaimedJob = {
   scannerReportsUploadUrl?: string | null;
@@ -71,6 +72,7 @@ export type StoredLlmAnalysis = {
   dimensions?: LlmEvalDimension[];
   guidance?: string;
   findings?: string;
+  // Configured judge identity from execution metadata, not provider-returned identity.
   model?: string;
   checkedAt: number;
 };
@@ -157,6 +159,7 @@ export type ClawScanCommandDiagnostic = {
   timedOut?: boolean;
   mapping?: {
     judge?: {
+      configuredModel?: string;
       outputSchemaSha256?: string;
       promptSha256?: string;
       status?: string;
@@ -211,18 +214,7 @@ const CHILD_RUNTIME_ENV_KEYS = [
   "COMSPEC",
   "PATHEXT",
 ] as const;
-// ClawScan's judge and scanners require these provider settings. The pinned scanner
-// process is the trust boundary; never add worker tokens or ambient endpoints.
-const SCANNER_PROVIDER_ENV_KEYS = [
-  "CODEX_API_KEY",
-  "DEFAULT_BASE_URL",
-  "DEFAULT_MODEL",
-  "LLM_API_KEY",
-  "OPENAI_API_KEY",
-  "REASONING_EFFORT",
-  "SKILLSPECTOR_MODEL",
-  "SKILLSPECTOR_REASONING_EFFORT",
-] as const;
+
 const MAX_DIAGNOSTIC_TEXT_CHARS = 20_000;
 const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
@@ -447,6 +439,7 @@ const DIAGNOSTIC_PUBLIC_TEXT_PATHS = new Set([
   "clawscanartifact.judge.result.summary",
   "clawscanartifact.scanners.*.status",
   "clawscanartifact.scanners.*.outputpath",
+  "clawscanmapping.judge.configuredmodel",
   "clawscanmapping.judge.status",
   "clawscanmapping.judge.verdict",
   "clawscanmapping.judge.promptsha256",
@@ -454,6 +447,7 @@ const DIAGNOSTIC_PUBLIC_TEXT_PATHS = new Set([
   "clawscanmapping.scanners.aigstatus",
   "clawscanmapping.scanners.skillspectorstatus",
   "clawscanmapping.scanners.staticstatus",
+  "llmanalysis.model",
   "llmanalysis.confidence",
   "llmanalysis.status",
   "llmanalysis.verdict",
@@ -926,10 +920,11 @@ function codexEnv(workspace: string) {
     TMP: workspace,
     TMPDIR: workspace,
   };
-  for (const key of [...CHILD_RUNTIME_ENV_KEYS, ...SCANNER_PROVIDER_ENV_KEYS]) {
+  for (const key of CHILD_RUNTIME_ENV_KEYS) {
     const value = process.env[key];
     if (value !== undefined) env[key] = value;
   }
+  Object.assign(env, securityScannerEnvironment(process.env));
   const codexHome = resolveCodexWorkerHome(process.env, LOCAL_CODEX_HOME);
   if (codexHome) {
     mkdirSync(codexHome, { recursive: true });
@@ -1427,8 +1422,10 @@ function verdictToStatus(verdict: string) {
 function toStoredLlmAnalysis(
   parsed: NonNullable<ReturnType<typeof parseLlmEvalResponse>>,
   checkedAt = Date.now(),
+  model?: string,
 ) {
   return {
+    ...(model ? { model } : {}),
     status: verdictToStatus(parsed.verdict),
     verdict: parsed.verdict,
     confidence: parsed.confidence,
@@ -1835,6 +1832,7 @@ function clawScanDiagnosticMapping(
   const scannerStatuses = readClawScanScannerStatuses(artifact, scannerSet);
   return {
     judge: {
+      configuredModel: configuredClawScanJudgeModel(judge),
       outputSchemaSha256: readString(judge ?? {}, ["outputSchemaSha256", "outputSchemaSHA"]),
       promptSha256: readString(judge ?? {}, ["promptSha256", "promptSHA"]),
       status: readString(judge ?? {}, ["status"]),
@@ -1926,7 +1924,7 @@ function validateClawScanArtifactForClawHubProfile(
 
   return {
     aigAnalysis,
-    llmAnalysis: toStoredLlmAnalysis(parsed, checkedAt),
+    llmAnalysis: toStoredLlmAnalysis(parsed, checkedAt, configuredClawScanJudgeModel(judge)),
     mapping: clawScanDiagnosticMapping(artifact, scannerSet),
     skillSpectorAnalysis: normalizeSkillSpectorAnalysis(rawSkillSpector, checkedAt),
     scannerReportsJson: JSON.stringify({

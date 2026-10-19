@@ -62,7 +62,9 @@ type LocalLlmAnalysis = {
   findings?: string;
   agenticRiskFindings?: LlmEvalResponse["agenticRiskFindings"];
   riskSummary?: LlmEvalResponse["riskSummary"];
+  // Requested identity, not a claim about a provider-returned snapshot.
   model: string;
+  providerModel?: string;
   checkedAt: number;
 };
 
@@ -123,6 +125,7 @@ export async function runLocalClawScanDryRun(
       ? await buildSkillArtifact(source, now)
       : await buildPluginArtifact(source, now);
   const llmAnalysis = await evaluateWithLlm({
+    env,
     apiKey,
     ctx: artifact.evalCtx,
     fetchImpl: options.fetchImpl ?? fetch,
@@ -284,22 +287,23 @@ async function buildPluginArtifact(source: string, now: () => number) {
 }
 
 async function evaluateWithLlm(params: {
+  env: LocalClawScanDryRunEnv;
   apiKey: string;
   ctx: SkillEvalContext;
   fetchImpl: typeof fetch;
   now: () => number;
   useSkillPrompt: boolean;
 }): Promise<LocalLlmAnalysis> {
-  const model = getLlmEvalModel();
+  const model = getLlmEvalModel(params.env);
   const requestBody = JSON.stringify({
     model,
-    service_tier: getLlmEvalServiceTier(),
+    service_tier: getLlmEvalServiceTier(params.env),
     instructions: SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
     input: params.useSkillPrompt
       ? assembleSkillEvalUserMessage(params.ctx)
       : assembleEvalUserMessage(params.ctx),
     reasoning: {
-      effort: getLlmEvalReasoningEffort(),
+      effort: getLlmEvalReasoningEffort(params.env),
     },
     max_output_tokens: LLM_EVAL_MAX_OUTPUT_TOKENS,
     text: {
@@ -322,7 +326,15 @@ async function evaluateWithLlm(params: {
     throw new Error(`OpenAI API error (${response.status}): ${errorText.slice(0, 200)}`);
   }
 
-  const raw = extractResponseText((await response.json()) as unknown);
+  const providerResponse: unknown = await response.json();
+  const providerModel =
+    providerResponse &&
+    typeof providerResponse === "object" &&
+    "model" in providerResponse &&
+    typeof providerResponse.model === "string"
+      ? providerResponse.model
+      : undefined;
+  const raw = extractResponseText(providerResponse);
   if (!raw) throw new Error("Empty response from OpenAI");
   const parsed = parseLlmEvalResponse(raw);
   if (!parsed) throw new Error("Failed to parse LLM evaluation response");
@@ -339,6 +351,7 @@ async function evaluateWithLlm(params: {
     agenticRiskFindings: result.agenticRiskFindings,
     riskSummary: result.riskSummary,
     model,
+    ...(providerModel ? { providerModel } : {}),
     checkedAt: params.now(),
   };
 }

@@ -1,6 +1,16 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT } from "../../convex/lib/securityPrompt";
+import {
+  getLlmEvalModel,
+  getLlmEvalReasoningEffort,
+  getLlmEvalServiceTier,
+  SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
+} from "../../convex/lib/securityPrompt";
+import { SECURITY_PROVIDER_ENV_KEYS } from "./securityModelPolicy";
+
+function shellQuote(value: string) {
+  return "'" + value.replaceAll("'", "'\"'\"'") + "'";
+}
 
 const judgePrompt = `${SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT}
 
@@ -35,7 +45,7 @@ Return the required JSON object only.
 export async function writeClawHubEndorProfile(workspace: string, outputSchemaPath: string) {
   const promptPath = join(workspace, "clawhub-endor-prompt.md");
   const configPath = join(workspace, "clawhub-endor-profile.json");
-  const judgeCommand = `[ -n "$CODEX_API_KEY" ] || export CODEX_API_KEY="$OPENAI_API_KEY"; codex exec --cd {{ workspace }} --model gpt-5.5 --sandbox {{ judge_sandbox }} --skip-git-repo-check --ignore-user-config -c approval_policy=never -c model_reasoning_effort=high -c service_tier=fast -c 'shell_environment_policy.inherit="core"' -c shell_environment_policy.ignore_default_excludes=false --output-schema {{ output_schema:${outputSchemaPath} }} --output-last-message {{ output }} --ephemeral --json - < {{ prompt:${promptPath} }}`;
+  const judgeCommand = `[ -n "$CODEX_API_KEY" ] || export CODEX_API_KEY="$OPENAI_API_KEY"; codex exec --cd {{ workspace }} --model ${shellQuote(getLlmEvalModel())} --sandbox {{ judge_sandbox }} --skip-git-repo-check --ignore-user-config -c approval_policy=never -c model_reasoning_effort=${getLlmEvalReasoningEffort()} -c service_tier=${getLlmEvalServiceTier()} -c 'shell_environment_policy.inherit="core"' -c shell_environment_policy.ignore_default_excludes=false --output-schema {{ output_schema:${outputSchemaPath} }} --output-last-message {{ output }} --ephemeral --json - < {{ prompt:${promptPath} }}`;
   await writeFile(promptPath, judgePrompt, "utf8");
   await writeFile(
     configPath,
@@ -54,14 +64,7 @@ export async function writeClawHubEndorProfile(workspace: string, outputSchemaPa
             },
           ],
           sandbox: {
-            env: [
-              "OPENAI_API_KEY",
-              "CODEX_API_KEY",
-              "SKILLSPECTOR_PROVIDER",
-              "LLM_API_KEY",
-              "DEFAULT_MODEL",
-              "DEFAULT_BASE_URL",
-            ],
+            env: [...SECURITY_PROVIDER_ENV_KEYS],
           },
           judge: { command: judgeCommand },
         },
