@@ -17,7 +17,7 @@ Deployments are not interchangeable, and most incidents start with a command aim
 4. MCP safety defaults: start the official MCP scoped non-prod (`--deployment dev`). The two prod flags are DIFFERENT risk levels — keep them split: a read-only prod audit (advisor/insights reading data/logs/insights) passes ONLY `--cautiously-allow-production-pii` (read tools); `--dangerously-enable-production-deployments` (which enables MUTATING prod tools) stays OFF unless the user explicitly asked to CHANGE prod this session. Never pair them by default — 'look at prod' must not silently grant 'mutate prod'.
 5. READ-ONLY session mode: when the user says 'read-only' / 'don't change anything', honor it absolutely for the rest of the session — no deploy, no env set/remove, no mutations via `run`, no imports; start the MCP with `--disable-tools run,envSet,envRemove`.
 6. Wrong-deployment diagnosis: when a deploy 'didn't change anything', do NOT re-deploy harder. Re-run step 1 — the deploy almost certainly landed on a different deployment than the one being observed.
-7. Ambiguity = stop: if you cannot determine which deployment a command will hit, find out (status tool; compare `npx convex env list` fingerprints) — never guess.
+7. Ambiguity = stop: if you cannot determine which deployment a command will hit, find out (status tool) — never guess.
 
 ## Rules
 
