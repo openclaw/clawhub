@@ -45,6 +45,9 @@ describe("reviewed ClawScan installation", () => {
     const root = await mkdtemp(join(tmpdir(), "clawscan-install-reject-"));
     try {
       await copyFile(join(scripts, "install-clawscan.sh"), join(root, "install.sh"));
+      await expect(
+        run("sh", [join(root, "install.sh")], { env: { PATH: process.env.PATH } }),
+      ).rejects.toThrow();
       for (const pin of ["main", "latest", "abc123", "a".repeat(41), "a".repeat(40) + "\nmain"]) {
         await writeFile(join(root, "clawscan-source-commit.txt"), pin);
         await expect(
