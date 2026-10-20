@@ -11,6 +11,12 @@ const run = promisify(execFile);
 const scripts = resolve("scripts/security");
 
 describe("reviewed ClawScan installation", () => {
+  it("ships a full immutable source lock for the workflow installers", async () => {
+    expect(await readFile(join(scripts, "clawscan-source-commit.txt"), "utf8")).toMatch(
+      /^[a-f0-9]{40}\n$/,
+    );
+  });
+
   it.each([
     "security-scan-codex",
     "prepublication-publish-checks",

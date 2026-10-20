@@ -5,7 +5,8 @@
 ClawHub's security consumers use three independent model lanes. A scanner's
 `DEFAULT_MODEL` must never become the final verdict model or SkillSpector model.
 
-- **Final ClawScan judge:** `gpt-6.1-sol`, high reasoning, Standard service.
+- **Final ClawScan judge:** `gpt-6.1-sol`, high reasoning, explicitly
+  configured with Codex `service_tier="default"` (Standard service).
   The reviewed bundled `clawhub` profile selects this judge; changing an AIG
   environment variable cannot change a hardcoded profile command.
 - **A.I.G and SkillSpector:** each uses `gpt-6.1-sol`, medium reasoning and an
@@ -35,10 +36,18 @@ SkillSpector and AIG installations also used older defaults and Chat Completions
 paths. Environment-only changes cannot implement this policy: official GPT-6.1
 Sol function/tool calls require Responses rather than Chat Completions.
 
-`clawscan-source-commit.txt` pins a full, reviewed ClawScan source commit. The
+`clawscan-source-commit.txt` pins merged ClawScan commit
+`5be7f8e97fa474f0aa9eb443f38d9e3d5f51226b` (upstream PR #68). The
 workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
 with Go 1.27.2, and retains the matching source tree for host scanner installation.
 No mutable `main`, `latest`, or unapproved public ClawScan release is consumed.
+
+Codex 0.160 normalizes its explicit `service_tier="default"` configuration by
+omitting `service_tier` from the Responses request; its protocol implementation
+intentionally tests this behavior. Therefore, keep the configured judge tier,
+wire-field presence, and provider-returned tier separate in acceptance evidence.
+Do not describe an omitted judge wire field as an explicit API request. The
+direct Python scanners do send the explicit API field.
 The workflows pin Codex CLI 0.160.0, including on runners with an ambient CLI.
 
 The host scanners consume **the same** source pins, Responses patches and offline
@@ -114,5 +123,8 @@ stamp its current default onto an artifact. A real local worker -> ClawScan ->
 fake-Codex check against the initial candidate found missing execution metadata,
 even though Codex received Sol/high; the upstream follow-up adds runner-derived
 configured-request provenance. This does not attest provider-returned identity.
-The reviewed merged revision, including that fix, must populate the source
-commit lock before this change is a releasable workflow candidate.
+The source lock now selects the reviewed merged revision containing that fix,
+explicit Standard-tier configuration in both bundled Codex judges, explicit
+`service_tier: "default"` requests in both scanner adapters, and provider-aware
+scanner defaults. Fresh installation and real-provider
+acceptance must use that exact lock, not an earlier provisional binary.
