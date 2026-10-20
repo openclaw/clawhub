@@ -805,7 +805,7 @@ printf '%s\n' "\${SECURITY_SCAN_WORKER_TOKEN-}" > "${workspace}/clawscan-worker-
 printf '%s\n' "\${DEFAULT_BASE_URL-}" > "${workspace}/clawscan-default-base-url.txt"
 printf '%s\n' "\${OPENAI_BASE_URL-}" > "${workspace}/clawscan-openai-base-url.txt"
 printf '%s\n' "\${OPENAI_API_KEY-}" > "${workspace}/clawscan-provider-key.txt"
-printf '%s\n' "\${DEFAULT_MODEL-}" "\${REASONING_EFFORT-}" "\${SKILLSPECTOR_MODEL-}" "\${SKILLSPECTOR_REASONING_EFFORT-}" > "${workspace}/clawscan-model-settings.txt"
+printf '%s\n' "\${DEFAULT_MODEL-}" "\${REASONING_EFFORT-}" "\${SKILLSPECTOR_MODEL-}" "\${SKILLSPECTOR_REASONING_EFFORT-}" "\${AIG_SERVICE_TIER-}" "\${SKILLSPECTOR_SERVICE_TIER-}" > "${workspace}/clawscan-model-settings.txt"
 output=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output" ]; then
@@ -836,6 +836,8 @@ JSON
       vi.stubEnv("REASONING_EFFORT", overrides ? "high" : undefined);
       vi.stubEnv("SKILLSPECTOR_MODEL", overrides ? "skillspector-override" : undefined);
       vi.stubEnv("SKILLSPECTOR_REASONING_EFFORT", overrides ? "low" : undefined);
+      vi.stubEnv("AIG_SERVICE_TIER", overrides ? "flex" : undefined);
+      vi.stubEnv("SKILLSPECTOR_SERVICE_TIER", overrides ? "priority" : undefined);
 
       try {
         await expect(
@@ -889,8 +891,8 @@ JSON
         expect(process.env.SECURITY_SCAN_WORKER_TOKEN).toBe("mock-completion-token");
         expect(await readFile(join(workspace, "clawscan-model-settings.txt"), "utf8")).toBe(
           overrides
-            ? "aig-override\nhigh\nskillspector-override\nlow\n"
-            : "gpt-6.1-sol\nmedium\ngpt-6.1-sol\nmedium\n",
+            ? "aig-override\nhigh\nskillspector-override\nlow\nflex\npriority\n"
+            : "gpt-6.1-sol\nmedium\ngpt-6.1-sol\nmedium\n\n\n",
         );
       } finally {
         if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;

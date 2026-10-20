@@ -1,6 +1,7 @@
 // These are independent live model lanes. Never inherit A.I.G's generic model
 // setting into SkillSpector or the final judge.
 export const SECURITY_PROVIDER_ENV_KEYS = [
+  "AIG_SERVICE_TIER",
   "CODEX_API_KEY",
   "DEFAULT_BASE_URL",
   "DEFAULT_MODEL",
@@ -10,6 +11,7 @@ export const SECURITY_PROVIDER_ENV_KEYS = [
   "SKILLSPECTOR_PROVIDER",
   "SKILLSPECTOR_MODEL",
   "SKILLSPECTOR_REASONING_EFFORT",
+  "SKILLSPECTOR_SERVICE_TIER",
 ] as const;
 
 export function securityScannerEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

@@ -471,7 +471,7 @@ describe("run-codex-scan-worker clawscan authority", () => {
       const environmentLog = join(workspace, "clawscan-environment.log");
       await writeFakeClawScanCommand(
         fakeClawScan,
-        `printf '%s\\n' "\${DEFAULT_BASE_URL-}" "\${OPENAI_BASE_URL-}" "\${OPENAI_API_KEY-}" "\${SECURITY_SCAN_WORKER_TOKEN-}" "\${DEFAULT_MODEL-}" "\${REASONING_EFFORT-}" "\${SKILLSPECTOR_MODEL-}" "\${SKILLSPECTOR_REASONING_EFFORT-}" "\${ENDOR_TOKEN-}" "\${ENDOR_API_CREDENTIALS_KEY-}" "\${ENDOR_API_CREDENTIALS_SECRET-}" > ${JSON.stringify(environmentLog)}
+        `printf '%s\\n' "\${DEFAULT_BASE_URL-}" "\${OPENAI_BASE_URL-}" "\${OPENAI_API_KEY-}" "\${SECURITY_SCAN_WORKER_TOKEN-}" "\${DEFAULT_MODEL-}" "\${REASONING_EFFORT-}" "\${SKILLSPECTOR_MODEL-}" "\${SKILLSPECTOR_REASONING_EFFORT-}" "\${AIG_SERVICE_TIER-}" "\${SKILLSPECTOR_SERVICE_TIER-}" "\${ENDOR_TOKEN-}" "\${ENDOR_API_CREDENTIALS_KEY-}" "\${ENDOR_API_CREDENTIALS_SECRET-}" > ${JSON.stringify(environmentLog)}
 out=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -499,6 +499,8 @@ JSON`,
       vi.stubEnv("REASONING_EFFORT", overrides ? "high" : undefined);
       vi.stubEnv("SKILLSPECTOR_MODEL", overrides ? "skillspector-override" : undefined);
       vi.stubEnv("SKILLSPECTOR_REASONING_EFFORT", overrides ? "low" : undefined);
+      vi.stubEnv("AIG_SERVICE_TIER", overrides ? "flex" : undefined);
+      vi.stubEnv("SKILLSPECTOR_SERVICE_TIER", overrides ? "priority" : undefined);
       vi.stubEnv("ENDOR_TOKEN", "mock-endor-token");
       vi.stubEnv("ENDOR_API_CREDENTIALS_KEY", "mock-endor-key");
       vi.stubEnv("ENDOR_API_CREDENTIALS_SECRET", "mock-endor-secret");
@@ -525,6 +527,8 @@ JSON`,
         overrides ? "high" : "medium",
         overrides ? "skillspector-override" : "gpt-6.1-sol",
         overrides ? "low" : "medium",
+        overrides ? "flex" : "",
+        overrides ? "priority" : "",
         "",
         "",
         "",

@@ -18,6 +18,9 @@ describe("security consumer model policy", () => {
       securityScannerEnvironment({
         DEFAULT_MODEL: "aig-model",
         REASONING_EFFORT: "low",
+        AIG_SERVICE_TIER: "flex",
+        SKILLSPECTOR_SERVICE_TIER: "priority",
+        OPENAI_EVAL_SERVICE_TIER: "auto",
         OPENAI_EVAL_MODEL: "judge-model",
         SECURITY_SCAN_WORKER_TOKEN: "worker-secret",
         OPENAI_BASE_URL: "https://unapproved.invalid",
@@ -25,6 +28,8 @@ describe("security consumer model policy", () => {
     ).toEqual({
       DEFAULT_MODEL: "aig-model",
       REASONING_EFFORT: "low",
+      AIG_SERVICE_TIER: "flex",
+      SKILLSPECTOR_SERVICE_TIER: "priority",
       SKILLSPECTOR_PROVIDER: "openai",
       SKILLSPECTOR_MODEL: "gpt-6.1-sol",
       SKILLSPECTOR_REASONING_EFFORT: "medium",

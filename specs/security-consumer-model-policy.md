@@ -8,9 +8,13 @@ ClawHub's security consumers use three independent model lanes. A scanner's
 - **Final ClawScan judge:** `gpt-6.1-sol`, high reasoning, Standard service.
   The reviewed bundled `clawhub` profile selects this judge; changing an AIG
   environment variable cannot change a hardcoded profile command.
-- **A.I.G and SkillSpector:** each uses `gpt-6.1-sol`, medium reasoning by default.
+- **A.I.G and SkillSpector:** each uses `gpt-6.1-sol`, medium reasoning and an
+  explicit Standard (`service_tier=default`) request by default.
   AIG uses `DEFAULT_MODEL` / `REASONING_EFFORT`; SkillSpector uses
-  `SKILLSPECTOR_MODEL` / `SKILLSPECTOR_REASONING_EFFORT`. Explicit scanner settings
+  `SKILLSPECTOR_MODEL` / `SKILLSPECTOR_REASONING_EFFORT`. Independent
+  `AIG_SERVICE_TIER` / `SKILLSPECTOR_SERVICE_TIER` overrides accept only
+  `default`, `flex`, `priority`, or `auto`; judge-tier settings never bleed into
+  these scanner lanes. Explicit scanner settings
   survive the workers' restricted subprocess environments. Custom providers retain
   their own defaults instead of receiving an OpenAI model accidentally.
 - **Endor-enabled judge:** the generated ClawHub profile uses `gpt-6.1-sol`, high
@@ -102,12 +106,13 @@ publication or replacement of these source pins needs separate authorization.
 ## Required upstream handoff gate
 
 Before activating the workflow switch, the reviewed ClawScan source must serialize
-actual judge execution metadata: `judge.command` (the executed harness template)
-or an honestly derived `judge.configuredModel`. The consumer accepts either; it
-must not infer the model from model-authored output or silently stamp its current
-default onto an artifact. A real local worker -> ClawScan -> fake-Codex check
-against the initial upstream candidate found that `JudgeResult` exposed neither
-field, even though Codex actually received Sol/high. Until upstream supplies this
-metadata, the consumer intentionally leaves stored model provenance unknown.
-The reviewed merged revision, including that fix, must then populate the source
+actual judge execution metadata: an honestly derived `judge.configuredModel`.
+The consumer also accepts a supported literal model from legacy `judge.command`,
+but upstream deliberately omits the full command to avoid disclosing embedded
+credentials. It must not infer the model from model-authored output or silently
+stamp its current default onto an artifact. A real local worker -> ClawScan ->
+fake-Codex check against the initial candidate found missing execution metadata,
+even though Codex received Sol/high; the upstream follow-up adds runner-derived
+configured-request provenance. This does not attest provider-returned identity.
+The reviewed merged revision, including that fix, must populate the source
 commit lock before this change is a releasable workflow candidate.
