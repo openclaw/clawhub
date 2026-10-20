@@ -815,7 +815,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"command":"codex exec --model gpt-6.1-sol -c model_reasoning_effort=high -c service_tier=default","status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"configuredModel":"gpt-6.1-sol","status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
 JSON
 `,
       );

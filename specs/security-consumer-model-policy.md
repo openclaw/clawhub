@@ -53,7 +53,9 @@ real-adapter tests as that ClawScan revision's runtime image:
   applicability and the real installed adapter tests are mandatory install gates.
 - The maintained resolver is pinned to uv 0.12.5. Pytest 9.0.2 is test-only. Source
   revisions and runtime dependencies are pinned; Python isolated-build backend
-  dependencies are not claimed to be fully hash-reproducible.
+  dependencies are not claimed to be fully hash-reproducible. The AIG hash lock
+  additionally admits the published macOS arm64 CPython 3.12 wheels for `jiter`
+  and `pydantic-core`, without replacing the existing Ubuntu runner hashes.
 
 The adapter implementation stays upstream in ClawScan; ClawHub must not grow a
 second independent OpenAI adapter. Offline transport contracts prove serialization,
@@ -86,6 +88,13 @@ ambient process model settings instead.
   all three security consumer workflows. Invalid/mutable commit pins fail closed.
 - Final verdict mappings cover configured model retention and missing/untrusted
   provenance. Local dry-run HTTP assertions cover requested and returned models.
+- Before rollout, run the matched, freshly installed scanners and real judge on
+  two tiny synthetic text-only skills: a benign greeting and obvious credential
+  exfiltration/prompt-injection instructions. Do not execute artifact code. Bound
+  requests and elapsed time, retain only redacted transport metadata and verdicts,
+  and distinguish configured judge identity from provider-returned scanner models.
+  Require an explicit Standard-tier request, not merely an observed default tier.
+  This is a wiring/sanity gate, not a statistical moderation-quality evaluation.
 
 Any release/deployment, queue processing, Endor activation, public ClawScan
 publication or replacement of these source pins needs separate authorization.

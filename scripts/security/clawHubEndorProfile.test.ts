@@ -26,7 +26,7 @@ describe("disabled Endor profile judge", () => {
         const configPath = await writeClawHubEndorProfile(workspace, schema);
         const config = JSON.parse(await readFile(configPath, "utf8"));
         const profile = config.profiles.clawhub;
-        expect(isEndorPluginScanEnabled()).toBe(false);
+        expect(isEndorPluginScanEnabled("synthetic-model-policy-proof")).toBe(false);
         expect(profile.sandbox.env).toEqual(
           expect.arrayContaining([
             "DEFAULT_MODEL",

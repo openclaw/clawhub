@@ -189,7 +189,7 @@ function clawScanArtifactJson(options?: {
   endorAnalysis?: EndorAnalysis;
   includeCompletedAt?: boolean;
   judgeResult?: Record<string, unknown>;
-  judgeCommand?: string;
+  configuredJudgeModel?: string;
   omitAigRaw?: boolean;
   scannerStatuses?: Partial<Record<"aig" | "clawscan-static" | "skillspector", string>>;
   verdict?: ClawScanVerdict;
@@ -256,7 +256,7 @@ function clawScanArtifactJson(options?: {
     },
     judge: {
       status: "completed",
-      ...(options?.judgeCommand ? { command: options.judgeCommand } : {}),
+      ...(options?.configuredJudgeModel ? { configuredModel: options.configuredJudgeModel } : {}),
       promptSha256: "prompt-sha-1",
       outputSchemaSha256: "schema-sha-1",
       result: options?.judgeResult ?? completeJudgeResult(verdict),
@@ -820,8 +820,7 @@ JSON`,
       const argsLog = join(workspace, "clawscan-args.log");
       const artifactJson = clawScanArtifactJson({
         verdict,
-        judgeCommand:
-          "codex exec --model gpt-6.1-sol -c model_reasoning_effort=high -c service_tier=default",
+        configuredJudgeModel: "gpt-6.1-sol",
       });
       await writeFakeClawScanCommand(
         fakeClawScan,
