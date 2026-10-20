@@ -37,8 +37,12 @@ async function fixture(body: string) {
   return { root, source, bin, env };
 }
 
-async function run(test: Awaited<ReturnType<typeof fixture>>, timeoutMs = 10_000) {
-  return runWorkerCommand("/bin/sh", [scanScript, test.source], {
+async function run(
+  test: Awaited<ReturnType<typeof fixture>>,
+  timeoutMs = 10_000,
+  savedScanArgs: string[] = [],
+) {
+  return runWorkerCommand("/bin/sh", [scanScript, test.source, ...savedScanArgs], {
     commandLabel: "Endor wrapper",
     cwd: test.root,
     env: test.env,
@@ -126,28 +130,30 @@ describe("Endor custom-scanner wrapper", () => {
     expect(failure.stderr).toContain("Endor");
   });
 
-  it("scans a fresh snapshot and keeps credentials away from package managers", async () => {
-    const test = await fixture("");
-    const observation = join(test.root, "observation.json");
-    execFileSync("git", ["init", "-q", test.source]);
-    execFileSync("git", [
-      "-C",
-      test.source,
-      "remote",
-      "add",
-      "origin",
-      "https://example.invalid/untrusted",
-    ]);
-    const sourceConfig = await readFile(join(test.source, ".git", "config"), "utf8");
-    for (const name of ["npm", "yarn"]) {
+  it.each([false, true])(
+    "scans a fresh snapshot with saved identity=%s and isolated credentials",
+    async (saved) => {
+      const test = await fixture("");
+      const observation = join(test.root, "observation.json");
+      execFileSync("git", ["init", "-q", test.source]);
+      execFileSync("git", [
+        "-C",
+        test.source,
+        "remote",
+        "add",
+        "origin",
+        "https://example.invalid/untrusted",
+      ]);
+      const sourceConfig = await readFile(join(test.source, ".git", "config"), "utf8");
+      for (const name of ["npm", "yarn"]) {
+        await writeFile(
+          join(test.bin, name),
+          `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.env));\n`,
+        );
+      }
       await writeFile(
-        join(test.bin, name),
-        `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.env));\n`,
-      );
-    }
-    await writeFile(
-      join(test.bin, "endorctl"),
-      `#!/usr/bin/env node
+        join(test.bin, "endorctl"),
+        `#!/usr/bin/env node
 const fs = require("node:fs");
 const { execFileSync } = require("node:child_process");
 fs.writeFileSync(${JSON.stringify(observation)}, JSON.stringify({
@@ -161,24 +167,44 @@ fs.writeFileSync(${JSON.stringify(observation)}, JSON.stringify({
 fs.writeFileSync("generated-by-endor", "disposable");
 process.stdout.write(${JSON.stringify(JSON.stringify(emptyReport))});
 `,
-    );
-    expect(JSON.parse((await run(test)).stdout)).toEqual(emptyReport);
-    const observed = JSON.parse(await readFile(observation, "utf8"));
-    expect(observed.cwd).not.toBe(test.source);
-    expect(observed.token).toBe("fixture-token");
-    expect(observed.origin).toBe("https://example.invalid/clawscan/scan-target.git");
-    expect(observed.args).toContain("--dry-run");
-    expect(observed.args).toContain("--build=false");
-    for (const resolver of [observed.npm, observed.yarn]) {
-      expect(resolver.NPM_CONFIG_IGNORE_SCRIPTS).toBe("true");
-      expect(resolver.YARN_IGNORE_PATH).toBe("1");
-      expect(resolver.YARN_IGNORE_SCRIPTS).toBe("true");
-      expect(JSON.stringify(resolver)).not.toContain("fixture-token");
-      expect(JSON.stringify(resolver)).not.toContain("fixture-key");
-      expect(JSON.stringify(resolver)).not.toContain("fixture-secret");
-      expect(JSON.stringify(resolver)).not.toContain("fixture-unrelated");
-    }
-    expect(await readFile(join(test.source, ".git", "config"), "utf8")).toBe(sourceConfig);
-    await expect(readFile(join(test.source, "generated-by-endor"))).rejects.toThrow();
-  });
+      );
+      const sourceUrl =
+        "https://clawhub.ai/api/v1/packages/%40openclaw/fixture/versions/1.0.0/artifact/download";
+      const tags = "plugin:@openclaw/fixture,version:1.0.0";
+      expect(JSON.parse((await run(test, 10_000, saved ? [sourceUrl, tags] : [])).stdout)).toEqual(
+        emptyReport,
+      );
+      const observed = JSON.parse(await readFile(observation, "utf8"));
+      expect(observed.cwd).not.toBe(test.source);
+      expect(observed.token).toBe("fixture-token");
+      expect(observed.origin).toBe(
+        saved ? sourceUrl : "https://example.invalid/clawscan/scan-target.git",
+      );
+      if (saved) {
+        expect(observed.args).not.toContain("--dry-run");
+        expect(observed.args.slice(0, 6)).toEqual([
+          "scan",
+          "--exit-on-policy-warning=false",
+          "--project-tags",
+          tags,
+          "--tags",
+          tags,
+        ]);
+      } else {
+        expect(observed.args).toContain("--dry-run");
+      }
+      expect(observed.args).toContain("--build=false");
+      for (const resolver of [observed.npm, observed.yarn]) {
+        expect(resolver.NPM_CONFIG_IGNORE_SCRIPTS).toBe("true");
+        expect(resolver.YARN_IGNORE_PATH).toBe("1");
+        expect(resolver.YARN_IGNORE_SCRIPTS).toBe("true");
+        expect(JSON.stringify(resolver)).not.toContain("fixture-token");
+        expect(JSON.stringify(resolver)).not.toContain("fixture-key");
+        expect(JSON.stringify(resolver)).not.toContain("fixture-secret");
+        expect(JSON.stringify(resolver)).not.toContain("fixture-unrelated");
+      }
+      expect(await readFile(join(test.source, ".git", "config"), "utf8")).toBe(sourceConfig);
+      await expect(readFile(join(test.source, "generated-by-endor"))).rejects.toThrow();
+    },
+  );
 });

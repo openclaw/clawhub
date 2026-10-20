@@ -16,19 +16,16 @@ supports paced batches and preserves active jobs.
 ## Result contract
 
 - Apply Endor to package-release jobs. Skill scans keep their existing scanner set.
-- Run the ClawHub-owned Endor wrapper in a dedicated Docker container. Pass its
-  bounded result through ClawScan's native `--scanner-result` input alongside
-  SkillSpector and ClawScan static evidence. The custom `clawhub` profile keeps
-  the existing judge workspace and artifact-inspection contract while explicitly
-  putting Endor's result in the one judge prompt. Pass sanitized job, package,
-  and policy metadata through ClawScan's `--context` so the judge receives it as
-  `metadata.json`. Omit the release's stored Endor summary from that metadata:
-  the judge must see only this run's result, so an earlier completed scan cannot
-  contradict a failed or skipped one.
-- The ClawHub judge decides the existing moderation verdict from the totality of
-  artifact and scanner evidence. A dependency vulnerability is supplemental
-  evidence; it does not independently quarantine a package or change its download
-  policy.
+- Run the ClawHub-owned Endor wrapper in a dedicated Docker container. Save its
+  result in Endor and its bounded summary on the release. Endor is report-only
+  by default: findings, failed analyses, and skipped analyses do not reach the
+  ClawScan judge or change publication, quarantine, or download policy. The
+  existing judge verdict still controls moderation.
+- Only `CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED=1` opts into passing this run's
+  result through ClawScan's native `--scanner-result` input and custom `clawhub`
+  profile. Sanitized job, package, and policy metadata reach that judge through
+  `--context`. Always omit the release's stored Endor summary from judge metadata,
+  including report-only runs, so previous findings cannot influence moderation.
 - Display only findings tagged `FINDING_TAGS_REACHABLE_FUNCTION`. A reachable
   dependency or a potentially reachable function does not satisfy that filter.
 - Store a bounded summary on the exact package release. Keep the total count
@@ -36,8 +33,9 @@ supports paced batches and preserves active jobs.
   scanner reports; worker diagnostics remain bounded and redacted.
 - An unsupported package is explicitly not analyzed. A scanner-analysis failure is saved
   as a failed analysis with a safe reason, never a successful empty report.
-  The failed or skipped status also reaches the judge; it cannot appear as a clean
-  scan. The moderation result still completes and can quarantine the release.
+  The moderation result still completes and can quarantine the release based on
+  its existing evidence. Failed or skipped Endor status reaches the judge only
+  when judge integration is explicitly enabled.
   Scanner-analysis failures do not retry the whole job; owners or admins can
   request a rescan. Primary scanner failures retain the existing job
   failure/retry path. Container ownership or cleanup failures are fatal to the
@@ -58,8 +56,13 @@ development dependencies. Runtime dependencies remain unchanged.
 ## Hosted rollout
 
 The worker is off for Endor until `CODEX_SECURITY_SCAN_ENDOR_ENABLED=1` is set.
-Enable it only after the backend result contract is deployed and the following
-worker configuration is available:
+`CODEX_SECURITY_SCAN_ENDOR_PACKAGES` optionally restricts it to comma-separated
+package names; whitespace is trimmed and an empty list means all package jobs.
+Begin with `@openclaw/discord,@openclaw/codex,@openclaw/slack` and inspect saved
+projects, release summaries, failures, and queue health before expanding. Keep
+`CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED` unset or `0` during this report-only
+rollout. Enable scanning only after the backend result contract is deployed and
+the following worker configuration is available:
 
 - `CODEX_SECURITY_SCAN_CLAWSCAN_VERSION`: an exact released ClawScan version with
   custom profiles and scanner-result injection. The default is `0.2.0`. Endor
@@ -109,7 +112,7 @@ manual rollout actions.
    releases without Endor fields remain readable, and workers that omit Endor
    results can still complete jobs.
 2. Configure the released scanner version, image digest, and credentials while
-   Endor remains disabled. Enable it for a small plugin batch, then inspect the
+   Endor remains disabled. Set the package allowlist before enabling it, then inspect the
    stored summaries, failures, and queue health before expanding.
 3. To stop Endor, disable the worker flag and allow active jobs to finish or stop
    their workers. Keep the additive backend schema and result handlers deployed.
@@ -122,9 +125,19 @@ Convex rejects those documents because the old schema does not accept
 a revision that retains these optional fields and the compatible result
 handlers. Do not delete stored results just to make the old schema deployable.
 
-Endor runs with `--dry-run`; the plugin audit and its report download contain the
-saved summary. These scans do not create persistent projects in the Endor dashboard.
+Claimed plugin jobs create persistent Endor projects using a fresh Git origin:
+`https://clawhub.ai/api/v1/packages/<package>/versions/<version>/artifact/download`.
+Encode every path segment, including the scope's `@`. The claimed package name
+and release version supply the identity; submitted manifests, submitted Git
+configuration, and signed artifact-download URLs never supply it. The versioned
+origin gives each release a separate project. Set both native `--project-tags`
+and `--tags` to `plugin:<name>,version:<version>`; percent-encode literal commas
+and percent signs in version tag values so bundle versions remain unambiguous.
+Saved scans use `--exit-on-policy-warning=false`; findings remain report data.
+The plugin audit and its report download retain the bounded summary.
 
+Without an explicit claimed package identity, the runner retains `--dry-run`
+and a dummy origin, so local plugin batches do not create Endor projects.
 Local plugin batches reuse the same Endor runner, bundled-skill selection, ClawHub
 profile, and judge-result validation. They consume release tarballs and save local
 reports without claiming jobs or submitting moderation changes. First-party trust

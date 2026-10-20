@@ -6,11 +6,7 @@ import path from "node:path";
 import { v } from "convex/values";
 import rootPackageJson from "../package.json";
 import { internalAction } from "./_generated/server";
-import {
-  prepareOpenClawInspectorTarget,
-  type PreparedOpenClawInspectorTarget,
-} from "./lib/openClawInspectorTarget";
-import { normalizeSdkUsageReport, sdkUsageReport } from "./lib/packageSdkUsageContract";
+import { prepareOpenClawInspectorTarget } from "./lib/openClawInspectorTarget";
 import { pluginApiRetirement } from "./lib/pluginApiRetirements";
 
 type InspectorFinding = {
@@ -37,7 +33,6 @@ type InspectorAuthorRemediation = {
 };
 
 type InspectorReport = {
-  sdkUsage?: unknown;
   status?: string;
   targetOpenClaw?: unknown;
   summary?: {
@@ -145,26 +140,27 @@ const inspectorMetadataValidator = v.object({
   targetOpenClawVersion: v.optional(v.string()),
 });
 
+// The publish gate needs only compatibility findings. An artifact SDK inventory
+// builds a TypeScript program over every packed file, including bundled
+// node_modules, and peaks far above the 512 MiB Node action limit for large
+// channel plugins. The daily Package Inspector scan owns artifact inventories.
 export function buildPublishInspectorRunCheckOptions(
   root: string,
   generatedAt: string,
-  preparedTarget: PreparedOpenClawInspectorTarget,
+  targetOpenClaw: unknown,
 ) {
   return {
     pluginRoot: root,
     openclawPath: false,
-    targetOpenClaw: preparedTarget.targetOpenClaw,
-    sdkUsageTargetPath: preparedTarget.sdkUsageTargetPath,
+    targetOpenClaw,
     outDir: "reports",
     capture: false,
     mockSdk: true,
     allowExecution: false,
     authorFacing: true,
-    sdkUsageInputKind: "artifact",
     generatedAt,
   } as Parameters<(typeof import("@openclaw/plugin-inspector"))["pluginRoot"]["runCheck"]>[0] & {
     authorFacing: true;
-    sdkUsageInputKind: "artifact";
     generatedAt: string;
   };
 }
@@ -226,7 +222,6 @@ export const runPackageInspectorForPublishInternal = internalAction({
     breakages: v.array(findingValidator),
     warnings: v.array(findingValidator),
     metadata: inspectorMetadataValidator,
-    sdkUsage: v.optional(sdkUsageReport),
   }),
   handler: async (ctx, args) => {
     let workspaceRoot: string | undefined;
@@ -272,7 +267,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
 
       const { openClawTargets, pluginRoot, reports } = await import("@openclaw/plugin-inspector");
       enterStage("OpenClaw target preparation");
-      const preparedTarget = await prepareOpenClawInspectorTarget(
+      const targetOpenClaw = await prepareOpenClawInspectorTarget(
         await resolveOpenClawTargetCacheRoot(),
         {
           readTargetSurface: (options) => reports.readOpenClawTargetSurface(options),
@@ -282,7 +277,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
       const runCheckOptions = buildPublishInspectorRunCheckOptions(
         root,
         new Date().toISOString(),
-        preparedTarget,
+        targetOpenClaw,
       );
       enterStage("inspection");
       const { report } = await pluginRoot.runCheck(runCheckOptions);
@@ -398,9 +393,6 @@ export function normalizeInspectorReportForPublish(report: unknown) {
     },
     breakages,
     warnings,
-    ...(parsed.sdkUsage !== undefined
-      ? { sdkUsage: normalizeSdkUsageReport(parsed.sdkUsage) }
-      : {}),
     metadata: {
       inspectorVersion: getBundledInspectorVersion(),
       targetOpenClawVersion: extractTargetOpenClawVersion(parsed.targetOpenClaw),

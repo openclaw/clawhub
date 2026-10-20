@@ -113,8 +113,14 @@ function runScan(
   workspace: string,
   extraEnv: NodeJS.ProcessEnv = {},
   onDiagnostic?: (diagnostic: Partial<EndorCommandDiagnostic>) => void,
+  packageRelease?: Parameters<typeof runEndorPluginScan>[0]["packageRelease"],
 ) {
-  return runEndorPluginScan({ workspace, env: env(workspace, extraEnv), onDiagnostic });
+  return runEndorPluginScan({
+    workspace,
+    env: env(workspace, extraEnv),
+    onDiagnostic,
+    packageRelease,
+  });
 }
 
 describe("runEndorPluginScan", () => {
@@ -159,6 +165,10 @@ describe("runEndorPluginScan", () => {
         SECURITY_SCAN_WORKER_TOKEN: "must-not-reach-endor",
       },
       (next) => diagnostics.push(next),
+      {
+        package: { name: "@openclaw/claimed-bundle" },
+        release: { version: "2026-10,stable" },
+      },
     );
 
     expect(result).toMatchObject({
@@ -194,6 +204,10 @@ describe("runEndorPluginScan", () => {
     expect(createArgs).toContain(
       `type=bind,source=${join(workspace, "endor-artifact")},target=/workspace,readonly`,
     );
+    expect(createArgs.slice(-2)).toEqual([
+      "https://clawhub.ai/api/v1/packages/%40openclaw/claimed-bundle/versions/2026-10%2Cstable/artifact/download",
+      "plugin:@openclaw/claimed-bundle,version:2026-10%2Cstable",
+    ]);
     expect(await readFile(join(workspace, "docker-create-env"), "utf8")).toBe(
       "fixture-namespace|fixture-token|||/tmp/fixture-home|/tmp/fixture-docker-config|\n",
     );

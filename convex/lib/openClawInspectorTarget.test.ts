@@ -99,9 +99,10 @@ describe("prepareOpenClawInspectorTarget", () => {
         { name: "package/README.md", body: "# OpenClaw" },
       ]),
     );
-    const readTargetSurface = vi.fn(async (_options: { rootDir: string }) => ({
+    const readTargetSurface = vi.fn(async ({ rootDir }: { rootDir: string }) => ({
       status: "ok",
       hookNames: ["x"],
+      rootDir,
     }));
     const root = await cacheRoot();
     const deps = { fetch: fetchImpl, readTargetSurface, eligibilityVersion: (v: string) => v };
@@ -109,7 +110,7 @@ describe("prepareOpenClawInspectorTarget", () => {
     const target = await prepareOpenClawInspectorTarget(root, deps);
     expect(await prepareOpenClawInspectorTarget(root, deps)).toBe(target);
 
-    expect(target.targetOpenClaw).toMatchObject({
+    expect(target).toMatchObject({
       status: "ok",
       version: "2026.9.7",
       configuredPath: "npm:openclaw@2026.9.7",
@@ -118,8 +119,6 @@ describe("prepareOpenClawInspectorTarget", () => {
       cache: { hit: false },
     });
     const packageDir = readTargetSurface.mock.calls[0]?.[0].rootDir as string;
-    expect(target.sdkUsageTargetPath).toBe(packageDir);
-    expect(JSON.stringify(target.targetOpenClaw)).not.toContain(root);
     expect(await readdir(packageDir)).toEqual(["dist", "package.json"]);
     expect(await readFile(path.join(packageDir, "dist/api.d.ts"), "utf8")).toContain(
       "OpenClawPluginApi",
@@ -149,8 +148,8 @@ describe("prepareOpenClawInspectorTarget", () => {
     const fetchAgain = registryFetch(archive);
     const again = await fresh.prepareOpenClawInspectorTarget(root, deps(fetchAgain));
 
-    expect(first.targetOpenClaw.cache).toMatchObject({ hit: false });
-    expect(again.targetOpenClaw.cache).toMatchObject({ hit: true });
+    expect(first.cache).toMatchObject({ hit: false });
+    expect(again.cache).toMatchObject({ hit: true });
     expect(fetchAgain.mock.calls.some(([url]) => urlOf(url).endsWith(".tgz"))).toBe(false);
   });
 

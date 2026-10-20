@@ -2109,11 +2109,14 @@ export async function processJob(
   let status: JobDiagnosticInput["status"] = "failed";
   try {
     await writeArtifactWorkspace(job, workspace);
-    const shouldRunEndor = job.job.targetKind === "packageRelease" && isEndorPluginScanEnabled();
+    const shouldRunEndor =
+      job.job.targetKind === "packageRelease" &&
+      isEndorPluginScanEnabled(readString(asRecord(job.target.package) ?? {}, ["name"]));
     const [endorResult, skillSpectorResult] = await Promise.allSettled([
       shouldRunEndor
         ? runEndorPluginScan({
             workspace,
+            packageRelease: job.target,
             onDiagnostic: (next) => {
               Object.assign(endor, next);
             },
@@ -2147,7 +2150,7 @@ export async function processJob(
       (next) => {
         Object.assign(clawscan, next);
       },
-      endorAnalysis,
+      process.env.CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED === "1" ? endorAnalysis : undefined,
       skillSpectorResult.value,
     );
     llmAnalysis = mapped.llmAnalysis;

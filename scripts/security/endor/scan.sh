@@ -1,5 +1,11 @@
 #!/bin/sh
 set -eu
+source_url=${2:-https://example.invalid/clawscan/scan-target.git}
+if [ "$#" -eq 3 ]; then
+  set -- "$1" --exit-on-policy-warning=false --project-tags "$3" --tags "$3"
+else
+  set -- "$1" --dry-run
+fi
 # The worker mounts the normalized package read-only. All writes stay in the container.
 if [ ! -f "$1/package.json" ]; then
   echo "Endor requires package.json at the target root" >&2
@@ -71,8 +77,9 @@ git -C "$scan_root" config user.name ClawScan
 git -C "$scan_root" config user.email clawscan@example.invalid
 git -C "$scan_root" add --all --force
 git -C "$scan_root" commit -q --allow-empty -m "ClawScan scan snapshot"
-git -C "$scan_root" remote add origin https://example.invalid/clawscan/scan-target.git
+git -C "$scan_root" remote add origin "$source_url"
 cd "$scan_root"
+shift
 report=$(mktemp)
 diagnostic=$(mktemp)
 status_file=$(mktemp)
@@ -80,7 +87,7 @@ status_file=$(mktemp)
 # Keep the scanner's status separately: POSIX pipelines return tee's status.
 {
   status=0
-  endorctl scan --dry-run --dependencies --languages=javascript,typescript --call-graph-languages=javascript,typescript --build=false --output-type=json --path "$scan_root" >"$report" || status=$?
+  endorctl scan "$@" --dependencies --languages=javascript,typescript --call-graph-languages=javascript,typescript --build=false --output-type=json --path "$scan_root" >"$report" || status=$?
   printf '%s\n' "$status" >"$status_file"
 } 2>&1 | tee "$diagnostic" >&2
 status=$(cat "$status_file")

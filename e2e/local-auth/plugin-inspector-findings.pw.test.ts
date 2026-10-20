@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import { expect, type APIRequestContext, type Page, test, type TestInfo } from "@playwright/test";
 import { strToU8, zipSync } from "fflate";
 import {
@@ -27,6 +29,8 @@ test.setTimeout(600_000);
 if (process.env.CLAWHUB_CAPTURE_PLUGIN_INSPECTOR_PROOF === "1") {
   test.use({ video: "on" });
 }
+
+const exec = promisify(execFile);
 
 type PluginFixtureKind = "hard-error" | "warning";
 
@@ -524,9 +528,46 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
 
   const siteUrl = process.env.VITE_CONVEX_SITE_URL;
   if (!siteUrl) throw new Error("VITE_CONVEX_SITE_URL is required");
-  const inventoryResponse = await page.request.get(
-    `${siteUrl}/api/v1/sdk-usage/plugin?package=${encodeURIComponent(warningName)}`,
-  );
+  const inventoryUrl = `${siteUrl}/api/v1/sdk-usage/plugin?package=${encodeURIComponent(warningName)}`;
+  const beforeScanResponse = await page.request.get(inventoryUrl);
+  expect(beforeScanResponse.ok()).toBe(true);
+  const beforeScan = await beforeScanResponse.json();
+  expect(beforeScan.scan).toMatchObject({ status: "missing" });
+  expect(beforeScan.items).toEqual([]);
+
+  // Exercise the real deferred worker against this isolated backend and published artifact.
+  // Never let the test's worker token or targeted scan reach a hosted deployment.
+  const deployment = process.env.CONVEX_DEPLOYMENT;
+  const workerToken = process.env.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN;
+  if (
+    new URL(siteUrl).hostname !== "127.0.0.1" ||
+    !deployment ||
+    !/^(?:anonymous|local):/.test(deployment) ||
+    !workerToken
+  ) {
+    throw new Error("Deferred inventory proof requires an isolated local Convex deployment");
+  }
+  // Match the nightly workflow: Inspector uses native Node APIs unavailable in pinned Bun.
+  const scan = await exec("node", ["scripts/package-inspector-nightly-scan.ts"], {
+    env: {
+      ...process.env,
+      CLAWHUB_SITE_URL: siteUrl,
+      CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN: workerToken,
+      PLUGIN_INSPECTOR_PACKAGE_NAMES: warningName,
+      PLUGIN_INSPECTOR_ARTIFACT_DIR: testInfo.outputPath("deferred-inventory-scan"),
+      PLUGIN_INSPECTOR_NOTIFY_OWNERS: "false",
+      PLUGIN_INSPECTOR_NOTIFICATION_ONLY: "false",
+      PLUGIN_INSPECTOR_DRY_RUN: "false",
+    },
+    timeout: 180_000,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  await testInfo.attach("deferred-inventory-scan.log", {
+    body: scan.stdout + scan.stderr,
+    contentType: "text/plain",
+  });
+
+  const inventoryResponse = await page.request.get(inventoryUrl);
   expect(inventoryResponse.ok()).toBe(true);
   const inventory = await inventoryResponse.json();
   expect(inventory.scan).toMatchObject({ status: "complete", inputKind: "artifact" });
@@ -587,7 +628,10 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
     filteredProof.push({ releasedSince, usage: filteredUsage, coverage: filteredCoverage });
   }
   const inventoryProofPath = testInfo.outputPath("published-sdk-inventory.json");
-  await writeFile(inventoryProofPath, JSON.stringify({ inventory, usage, filteredProof }, null, 2));
+  await writeFile(
+    inventoryProofPath,
+    JSON.stringify({ beforeScan, inventory, usage, filteredProof }, null, 2),
+  );
   await testInfo.attach("published-sdk-inventory.json", {
     path: inventoryProofPath,
     contentType: "application/json",
