@@ -9625,13 +9625,10 @@ async function publishPackageImpl(
         scanStatus: initialScanStatus,
       }
     : undefined;
-  const icon =
-    family === "claw"
-      ? undefined
-      : await resolvePackageIcon(ctx, {
-          files,
-          ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
-        });
+  const icon = await resolvePackageIcon(ctx, {
+    files,
+    ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
+  });
   const pluginManifestSummary =
     family === "claw"
       ? undefined

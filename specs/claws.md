@@ -49,6 +49,17 @@ Schemas, templates, examples, fixtures, and static assets require no special
 registry role: they remain ordinary declared `workspace.files` covered by the
 artifact digest.
 
+## Catalog artwork
+
+A Claw may package `assets/icon.png` for its catalog artwork, independently of
+its portable `agent.identity.avatar`. Publication validates the PNG bytes,
+decodability, size and uploaded digest through the shared package-icon path.
+Only the resulting content-addressed `/api/v1/skill-icons/<sha256>` asset is
+projected into the Official Claw feed; arbitrary URLs are not accepted there.
+Missing or invalid artwork preserves the consumer's fallback. Claws do not use
+the bundled-plugin GitHub asset recovery path. Artifact and security gates are
+unchanged, and catalog metadata becomes visible only after publication.
+
 ## Launch contract
 
 - Backend Claw publication and exact-name reads are available by default.

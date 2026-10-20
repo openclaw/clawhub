@@ -202,6 +202,9 @@ async function buildEntry(
       type: "claw",
       id,
       title,
+      ...(icon && isHostedSkillPresentationIconPath(icon)
+        ? { icon: catalogFeedIconUrl(icon) }
+        : {}),
       version,
       state: "available",
       publisher: {
