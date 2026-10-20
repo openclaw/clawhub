@@ -107,7 +107,7 @@ describe("pre-publication publish worker workflow", () => {
       required: true,
       default: "blacksmith-8vcpu-ubuntu-2404",
       type: "choice",
-      options: ["blacksmith-8vcpu-ubuntu-2404", "ubuntu-latest"],
+      options: ["blacksmith-8vcpu-ubuntu-2404", "ubuntu-22.04"],
     });
     expect(workflow.on?.workflow_dispatch?.inputs?.kind).toMatchObject({
       required: false,

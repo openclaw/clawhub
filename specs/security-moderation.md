@@ -593,6 +593,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   file. Missing or mismatched inspection receipts fail the judge and use the
   normal scan failure/retry lifecycle; a low-confidence verdict cannot replace
   successful artifact inspection.
+- Manual prepublication recovery uses the existing Blacksmith runner or pinned
+  GitHub-hosted Ubuntu 22.04. Ubuntu 24.04 fails the current judge's nested
+  bubblewrap setup with `RTM_NEWADDR: Operation not permitted`; switching to
+  `ubuntu-latest` must require a passing real judge inspection proof first.
+  Recovery must preserve the read-only judge sandbox and inspection receipt checks.
 - Every worker run publishes a GitHub Actions summary and uploads a structured
   summary with its secret-scanned diagnostics. The summary reports ClawScan
   completions, failures, timeouts, scanner-stage and judge-stage failures,

@@ -41,7 +41,9 @@ on:
         type: choice
         options:
           - "blacksmith-8vcpu-ubuntu-2404"
-          - "ubuntu-latest"
+          # Ubuntu 24.04's AppArmor policy breaks the read-only judge's bwrap
+          # setup (RTM_NEWADDR). Keep recovery pinned to the proven host image.
+          - "ubuntu-22.04"
       target-environment:
         description: "Convex deployment to process for manual recovery"
         required: true
