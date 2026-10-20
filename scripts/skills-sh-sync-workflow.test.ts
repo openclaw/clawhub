@@ -23,13 +23,13 @@ describe("skills.sh production synchronization workflow", () => {
         }
       >;
       on?: {
-        schedule?: Array<{ cron?: string }>;
+        schedule?: Array<{ cron?: string; timezone?: string }>;
         workflow_dispatch?: unknown;
       };
       permissions?: Record<string, string>;
     };
 
-    expect(workflow.on?.schedule).toEqual([{ cron: "17 * * * *" }]);
+    expect(workflow.on?.schedule).toEqual([{ cron: "0 3 * * *", timezone: "America/Los_Angeles" }]);
     expect(workflow.on?.workflow_dispatch).toBeDefined();
     const deploy = parseYaml(await readFile(".github/workflows/deploy.yml", "utf8")) as {
       concurrency?: { group?: string; queue?: string; "cancel-in-progress"?: boolean };

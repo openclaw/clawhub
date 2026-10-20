@@ -172,9 +172,12 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
   snapshot deltas, and weekly sparklines must not be relabeled as that metric.
 - Trending pages within the mirror window are captured immutably before application.
   Older observations cannot overwrite newer fields, identical replays are
-  idempotent, and a same-timestamp payload drift is rejected. At most ten IDs
-  missing because of pagination drift may hydrate through the existing mirror
-  normalizer in one run; exceeding that bound fails closed.
+  idempotent, and a same-timestamp payload drift is rejected. Trending rows
+  absent from the mirrored leaderboard window are expected (the views rank
+  differently) and are counted as `trendingMissing`. At most one batch (50) of
+  them may hydrate through the existing mirror normalizer per run; the rest are
+  skipped, and the next leaderboard run tombstones hydrated rows outside its
+  window.
 - `.github/workflows/skills-sh-sync.yml` runs the production sync once a day at
   03:00 `America/Los_Angeles`. Canonical Trending admits skills.sh rows only
   from a completed Trending run younger than 50 hours, so one missed daily run
