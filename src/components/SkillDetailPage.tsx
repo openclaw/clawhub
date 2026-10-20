@@ -473,6 +473,9 @@ export function SkillDetailPage({
       : null;
 
   const staffSkill = isStaff && skill ? (skill as Doc<"skills">) : null;
+  const isPendingPublication =
+    modInfo?.reason === "pending.publication" ||
+    staffSkill?.moderationReason === "pending.publication";
   const moderationStatus =
     staffSkill?.moderationStatus ?? (staffSkill?.softDeletedAt ? "hidden" : undefined);
   const isHidden = moderationStatus === "hidden" || Boolean(staffSkill?.softDeletedAt);
@@ -480,11 +483,13 @@ export function SkillDetailPage({
   const isAutoHidden = isHidden && staffSkill?.moderationReason === "auto.reports";
   const staffVisibilityTag = isRemoved
     ? "Removed"
-    : isAutoHidden
-      ? "Auto-hidden"
-      : isHidden
-        ? "Hidden"
-        : null;
+    : isPendingPublication
+      ? null
+      : isAutoHidden
+        ? "Auto-hidden"
+        : isHidden
+          ? "Hidden"
+          : null;
   const staffModerationNote = staffVisibilityTag
     ? buildStaffVisibilityAlert({
         artifactKind: "skill",
@@ -953,6 +958,7 @@ export function SkillDetailPage({
       ownerHandle={ownerHandle}
       latestVersion={latestVersion}
       modInfo={modInfo}
+      isPendingPublication={isPendingPublication}
       canManage={canManage}
       isAuthenticated={isAuthenticated}
       isStaff={isStaff}
@@ -1038,6 +1044,7 @@ export function SkillDetailPage({
         onCompareIntent={() => setShouldPrefetchCompare(true)}
         readmeContent={readmeContent}
         readmeError={displayedReadmeError}
+        isPendingPublication={isPendingPublication}
         skillCardContent={displayedSkillCard}
         skillCardError={displayedSkillCardError}
         hasSkillCard={hasSkillCard}

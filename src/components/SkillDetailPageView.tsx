@@ -139,6 +139,7 @@ export type SkillDetailPageViewProps = {
   ownerHandle: string | null;
   latestVersion: SkillDetailLatestVersion;
   modInfo: SkillModerationInfo | null;
+  isPendingPublication?: boolean;
   canManage: boolean;
   isAuthenticated: boolean;
   isStaff: boolean;
@@ -193,6 +194,7 @@ export function SkillDetailPageView({
   ownerHandle,
   latestVersion,
   modInfo,
+  isPendingPublication = false,
   canManage,
   isAuthenticated,
   isStaff,
@@ -374,7 +376,17 @@ export function SkillDetailPageView({
   return (
     <main className={cn("section detail-page-section skill-detail-page", pageClassName)}>
       <DetailPageShell>
-        {modInfo?.isPendingScan ? (
+        {isPendingPublication ? (
+          <div className="pending-banner">
+            <div className="pending-banner-content">
+              <strong>Pending publication</strong>
+              <p>
+                This skill is visible to its publisher and ClawHub staff, but not yet public or
+                installable. ClawHub is completing security and publication checks.
+              </p>
+            </div>
+          </div>
+        ) : modInfo?.isPendingScan ? (
           <div className="pending-banner">
             <div className="pending-banner-content">
               <strong>Security scan in progress</strong>
@@ -589,17 +601,19 @@ export function SkillDetailPageView({
             </>
           }
         >
-          <div className="detail-mobile-install">
-            {installContent ?? (
-              <SkillCommandLineCard
-                slug={skill.slug}
-                displayName={skill.displayName}
-                ownerHandle={ownerHandle}
-                ownerId={installOwnerId}
-                clawdis={clawdis}
-              />
-            )}
-          </div>
+          {!isPendingPublication ? (
+            <div className="detail-mobile-install">
+              {installContent ?? (
+                <SkillCommandLineCard
+                  slug={skill.slug}
+                  displayName={skill.displayName}
+                  ownerHandle={ownerHandle}
+                  ownerId={installOwnerId}
+                  clawdis={clawdis}
+                />
+              )}
+            </div>
+          ) : null}
 
           <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>
             <div

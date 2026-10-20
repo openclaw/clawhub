@@ -1769,6 +1769,57 @@ describe("SkillDetailPage", () => {
     ).toBeTruthy();
   });
 
+  it("shows a pending publication notice to the signed-in owner after public SSR misses", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: ownerId, role: "user" },
+    });
+    useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (getFunctionName(query as never) !== "skills:getBySlug") return undefined;
+      return {
+        skill: {
+          _id: skillId,
+          slug: "weather",
+          displayName: "Weather",
+          summary: "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          tags: {},
+          stats: { stars: 0, downloads: 0 },
+        },
+        owner: {
+          _id: ownerPublisherId,
+          _creationTime: 0,
+          kind: "user",
+          handle: "steipete",
+          displayName: "Peter",
+          linkedUserId: ownerId,
+        },
+        latestVersion: null,
+        moderationInfo: {
+          isPendingScan: false,
+          isMalwareBlocked: false,
+          isSuspicious: false,
+          isHiddenByMod: true,
+          isRemoved: false,
+          reason: "pending.publication",
+        },
+      };
+    });
+
+    render(<SkillDetailPage slug="weather" canonicalOwner="steipete" initialData={null} />);
+
+    expect((await screen.findAllByRole("heading", { name: "Weather" })).length).toBeGreaterThan(0);
+    expect(screen.getByText("Pending publication")).toBeTruthy();
+    expect(screen.getByText(/not yet public or installable/i)).toBeTruthy();
+    expect(screen.getByText("Files pending security checks")).toBeTruthy();
+    expect(screen.queryByText("No README available")).toBeNull();
+    expect(screen.queryByRole("article", { name: "Install" })).toBeNull();
+    expect(screen.queryByText("Skill hidden")).toBeNull();
+  });
+
   it("redirects legacy routes to canonical owner/slug", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
