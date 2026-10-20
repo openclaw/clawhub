@@ -824,7 +824,7 @@ Use each category's description to choose the main reason someone installs the
 plugin. New plugin releases may declare exactly one category in
 `openclaw.plugin.json`, for example `"categories": ["developer-tools"]`. When the
 declaration is absent, ClawHub generates one category from bounded manifest,
-package, and documentation evidence using `gpt-5.6-luna` by default. Operators can
+package, and documentation evidence using `gpt-6-luna` by default. Operators can
 override this with `OPENAI_PLUGIN_CATEGORY_MODEL`; the skill-summary model setting
 does not affect plugin classification.
 

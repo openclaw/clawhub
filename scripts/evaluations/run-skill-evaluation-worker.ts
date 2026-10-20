@@ -5,7 +5,7 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import {
   NVIDIA_SKILL_EVALUATION_CONFIG,
-  NVIDIA_SKILL_EVALUATION_CONFIG_KEY,
+  resolveSkillEvaluationRecipe,
 } from "../../convex/lib/skillEvaluationConfig";
 import { createWorkerLogger } from "../lib/workerLogger";
 import { maskKnownWorkerSecrets, redactWorkerPublicText } from "../lib/workerRedaction";
@@ -88,23 +88,6 @@ async function dockerBridgeGateway() {
     throw new Error("Docker bridge gateway is unavailable for the evaluation credential broker");
   }
   return gateway;
-}
-
-function pinnedConfigurationMatches(run: ClaimedEvaluation) {
-  const config = NVIDIA_SKILL_EVALUATION_CONFIG;
-  return (
-    run.sourceRepo === config.sourceRepo &&
-    run.configKey === NVIDIA_SKILL_EVALUATION_CONFIG_KEY &&
-    run.evaluatorRepository === config.evaluatorRepository &&
-    run.evaluatorRelease === config.evaluatorRelease &&
-    run.evaluatorCommit === config.evaluatorCommit &&
-    run.agent === config.agent &&
-    run.agentModel === config.agentModel &&
-    run.judgeProvider === config.judgeProvider &&
-    run.judgeModel === config.judgeModel &&
-    run.environment === config.environment &&
-    run.attemptsPerCase === config.attemptsPerCase
-  );
 }
 
 async function verifyEvaluatorCheckout(evaluatorProject: string) {
@@ -209,7 +192,8 @@ export async function processClaimedEvaluation(args: {
   const startedAt = Date.now();
   let snapshotRoot: string | undefined;
   try {
-    if (!pinnedConfigurationMatches(run)) {
+    const recipe = resolveSkillEvaluationRecipe(run);
+    if (!recipe) {
       await skipRun(client, token, run, "unsupported-config: worker configuration changed");
       return { outcome: "skipped" as const };
     }
@@ -256,6 +240,18 @@ export async function processClaimedEvaluation(args: {
     const broker = await startOpenAiCapabilityBroker({
       allowedModels: [run.agentModel, run.judgeModel],
       apiKey: openAiApiKey,
+      // The pinned evaluator emits Responses for the agent and Chat for judges.
+      // Apply role policy here because upstream pins agent effort to high and
+      // does not expose a judge reasoning setting. Legacy recipes stay unchanged.
+      ...("recipeVersion" in recipe
+        ? {
+            reasoningEffort: {
+              responses: recipe.agentReasoningEffort,
+              chat: recipe.judgeReasoningEffort,
+            },
+            serviceTier: recipe.serviceTier,
+          }
+        : {}),
     });
     let evaluation;
     try {

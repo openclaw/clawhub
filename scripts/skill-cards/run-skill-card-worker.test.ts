@@ -112,13 +112,20 @@ describe("run-skill-card-worker Codex skill setup", () => {
     }
   });
 
-  it("defaults to Sol medium fast and fingerprints the effective recipe", async () => {
+  it("defaults to Luna medium Standard and fingerprints the effective recipe", async () => {
     const settings = skillCardGenerationSettings({});
     expect(settings).toEqual({
-      model: "gpt-6-sol",
+      model: "gpt-6-luna",
       reasoningEffort: "medium",
-      serviceTier: "fast",
+      serviceTier: "default",
     });
+    expect(
+      skillCardGenerationSettings({
+        SKILL_CARD_CODEX_MODEL: "custom-model",
+        SKILL_CARD_CODEX_REASONING_EFFORT: "high",
+        SKILL_CARD_CODEX_SERVICE_TIER: "fast",
+      }),
+    ).toEqual({ model: "custom-model", reasoningEffort: "high", serviceTier: "fast" });
     const tool = await tempDir();
     const automation = join(tool, "AI Transparency Card Automation");
     await mkdir(automation);
@@ -129,7 +136,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
     for (const override of [
       { model: "other-model" },
       { reasoningEffort: "high" },
-      { serviceTier: "default" },
+      { serviceTier: "fast" },
     ]) {
       expect(await skillCardGenerationHash(tool, { ...settings, ...override })).not.toBe(hash);
     }

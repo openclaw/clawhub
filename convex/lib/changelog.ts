@@ -1,9 +1,9 @@
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { applicationReasoning } from "./applicationModelPolicy";
 import { extractResponseText } from "./openaiResponse";
 
-const CHANGELOG_MODEL = process.env.OPENAI_CHANGELOG_MODEL ?? "gpt-4.1";
 const CHANGELOG_TIMEOUT_MS = 10_000;
 const MAX_README_CHARS = 8_000;
 const MAX_PATHS_IN_PROMPT = 30;
@@ -97,6 +97,7 @@ async function generateWithOpenAI(args: {
     .filter(Boolean)
     .join("\n\n");
 
+  const model = process.env.OPENAI_CHANGELOG_MODEL ?? "gpt-6-luna";
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -104,10 +105,12 @@ async function generateWithOpenAI(args: {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: CHANGELOG_MODEL,
+      model,
+      reasoning: applicationReasoning(model, "low"),
+      service_tier: "default",
       instructions: `Write a concise changelog for this ${subjectLabel.toLowerCase()} version. Audience: everyone. Output plain text. Prefer 2–6 bullet points. If it is a big change, include a short 1-line summary first, then bullets. Don’t mention that you are AI. Don’t invent details; only use the inputs.`,
       input,
-      max_output_tokens: 220,
+      max_output_tokens: 2_048,
     }),
     signal: AbortSignal.timeout(CHANGELOG_TIMEOUT_MS),
   });

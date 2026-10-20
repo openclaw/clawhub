@@ -49,9 +49,9 @@ type SkillCardReceipt =
 
 export function skillCardGenerationSettings(env: NodeJS.ProcessEnv = process.env) {
   return {
-    model: env.SKILL_CARD_CODEX_MODEL ?? "gpt-6-sol",
+    model: env.SKILL_CARD_CODEX_MODEL ?? "gpt-6-luna",
     reasoningEffort: env.SKILL_CARD_CODEX_REASONING_EFFORT ?? "medium",
-    serviceTier: env.SKILL_CARD_CODEX_SERVICE_TIER ?? "fast",
+    serviceTier: env.SKILL_CARD_CODEX_SERVICE_TIER ?? "default",
   };
 }
 

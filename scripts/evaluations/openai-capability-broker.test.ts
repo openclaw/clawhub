@@ -36,42 +36,45 @@ afterEach(async () => {
 });
 
 describe("OpenAI evaluation capability broker", () => {
-  it("forwards SkillEvaluator's proxied GPT-5 judge request with the native token limit", async () => {
-    const upstreamBaseUrl = await listen(
-      createServer(async (request, response) => {
-        const chunks: Buffer[] = [];
-        for await (const chunk of request) chunks.push(Buffer.from(chunk));
-        const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        response.writeHead("max_tokens" in payload ? 400 : 200, {
+  it.each(["gpt-5.4", "gpt-6-luna", "gpt-6.1-sol"])(
+    "normalizes the proxied %s judge token limit",
+    async (model) => {
+      const upstreamBaseUrl = await listen(
+        createServer(async (request, response) => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) chunks.push(Buffer.from(chunk));
+          const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          response.writeHead("max_tokens" in payload ? 400 : 200, {
+            "content-type": "application/json",
+          });
+          response.end(JSON.stringify(payload));
+        }),
+      );
+      const broker = await startOpenAiCapabilityBroker({
+        allowedModels: [model],
+        apiKey: "long-lived-provider-key",
+        upstreamBaseUrl,
+      });
+      brokers.push(broker);
+      const payload = {
+        model,
+        max_tokens: 4096,
+        messages: [{ role: "user", content: "Grade this result" }],
+        stream: false,
+      };
+      const response = await fetch(`http://127.0.0.1:${broker.port}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${broker.capabilityToken}`,
           "content-type": "application/json",
-        });
-        response.end(JSON.stringify(payload));
-      }),
-    );
-    const broker = await startOpenAiCapabilityBroker({
-      allowedModels: ["gpt-5.4"],
-      apiKey: "long-lived-provider-key",
-      upstreamBaseUrl,
-    });
-    brokers.push(broker);
-    const payload = {
-      model: "gpt-5.4",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: "Grade this result" }],
-      stream: false,
-    };
-    const response = await fetch(`http://127.0.0.1:${broker.port}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${broker.capabilityToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    expect(response.status).toBe(200);
-    const { max_tokens, ...rest } = payload;
-    expect(await response.json()).toEqual({ ...rest, max_completion_tokens: max_tokens });
-  });
+        },
+        body: JSON.stringify(payload),
+      });
+      expect(response.status).toBe(200);
+      const { max_tokens, ...rest } = payload;
+      expect(await response.json()).toEqual({ ...rest, max_completion_tokens: max_tokens });
+    },
+  );
 
   it.each([
     { endpoint: "/v1/chat/completions", payload: { model: "gpt-4.1", max_tokens: 4096 } },
@@ -106,6 +109,78 @@ describe("OpenAI evaluation capability broker", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(payload);
   });
+
+  it.each([
+    {
+      endpoint: "/v1/responses",
+      input: {
+        reasoning: { effort: "high", summary: "auto" },
+        tools: [{ type: "function", name: "greet" }],
+      },
+      expected: {
+        reasoning: { effort: "medium", summary: "auto" },
+        tools: [{ type: "function", name: "greet" }],
+      },
+    },
+    {
+      endpoint: "/v1/chat/completions",
+      input: { temperature: 0, top_p: 1, max_tokens: 4096, max_completion_tokens: 8192 },
+      expected: { reasoning_effort: "high", max_completion_tokens: 8192 },
+    },
+    {
+      endpoint: "/v1/responses",
+      input: { service_tier: "flex" },
+      expected: { reasoning: { effort: "medium" }, service_tier: "flex" },
+    },
+  ])("applies the versioned role recipe at $endpoint", async ({ endpoint, input, expected }) => {
+    const upstreamBaseUrl = await listen(
+      createServer(async (request, response) => {
+        expect(request.url).toBe(endpoint);
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(Buffer.from(chunk));
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(Buffer.concat(chunks));
+      }),
+    );
+    const broker = await startOpenAiCapabilityBroker({
+      allowedModels: ["gpt-6.1-sol"],
+      apiKey: "host-key",
+      upstreamBaseUrl,
+      reasoningEffort: { responses: "medium", chat: "high" },
+      serviceTier: "default",
+    });
+    brokers.push(broker);
+    const response = await fetch("http://127.0.0.1:" + broker.port + endpoint, {
+      method: "POST",
+      headers: { authorization: "Bearer " + broker.capabilityToken },
+      body: JSON.stringify({ model: "gpt-6.1-sol", ...input }),
+    });
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({ model: "gpt-6.1-sol", service_tier: "default", ...expected });
+    expect(payload).not.toHaveProperty("max_tokens");
+    expect(payload).not.toHaveProperty("temperature");
+    expect(payload).not.toHaveProperty("top_p");
+  });
+
+  it.each(["tools", "functions"])(
+    "rejects Sol Chat %s rather than downgrading its tool API",
+    async (field) => {
+      const broker = await startOpenAiCapabilityBroker({
+        allowedModels: ["gpt-6.1-sol"],
+        apiKey: "host-key",
+      });
+      brokers.push(broker);
+      const response = await fetch("http://127.0.0.1:" + broker.port + "/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: "Bearer " + broker.capabilityToken },
+        body: JSON.stringify({ model: "gpt-6.1-sol", [field]: [{ name: "greet" }] }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain("Responses API");
+      expect(broker.usage().forwardedRequests).toBe(0);
+    },
+  );
 
   it("keeps the provider key in the broker and forwards an allowed model", async () => {
     let upstreamAuthorization: string | undefined;
