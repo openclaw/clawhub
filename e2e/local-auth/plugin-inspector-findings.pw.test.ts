@@ -547,7 +547,8 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
   ) {
     throw new Error("Deferred inventory proof requires an isolated local Convex deployment");
   }
-  const scan = await exec("bun", ["scripts/package-inspector-nightly-scan.ts"], {
+  // Match the nightly workflow: Inspector uses native Node APIs unavailable in pinned Bun.
+  const scan = await exec("node", ["scripts/package-inspector-nightly-scan.ts"], {
     env: {
       ...process.env,
       CLAWHUB_SITE_URL: siteUrl,
