@@ -9,6 +9,7 @@ import {
   retainTopCanonicalTrendingCandidates,
   retainCanonicalTrendingLaneCandidates,
   sortCanonicalTrendingPools,
+  SKILLS_SH_TRENDING_RUN_MAX_AGE_MS,
   type CanonicalTrendingCandidate,
 } from "./canonicalTrending";
 
@@ -61,6 +62,21 @@ describe("canonical Trending ordering", () => {
     expect(isFreshExternalTrendingRun({ runId: null, completedAt: 9_999 }, 10_000, 2_000)).toBe(
       false,
     );
+  });
+
+  it("keeps the daily skills.sh Trending run fresh across one missed sync", () => {
+    const hour = 60 * 60 * 1_000;
+    const now = 1_000 * hour;
+    const fresh = (ageMs: number) =>
+      isFreshExternalTrendingRun(
+        { runId: "run-1", completedAt: now - ageMs },
+        now,
+        SKILLS_SH_TRENDING_RUN_MAX_AGE_MS,
+      );
+    // Next daily run lands 23-25h later across DST; one missed run plus a late schedule stays in.
+    expect(fresh(25 * hour)).toBe(true);
+    expect(fresh(49 * hour)).toBe(true);
+    expect(fresh(50 * hour)).toBe(false);
   });
 
   it("interleaves complete pools as a continuous 40/20/40 feed", () => {

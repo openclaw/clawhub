@@ -976,7 +976,7 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   // Regression: on 2026-10-05 the default all-time view grew from ~9.9k rows to its ~93k serving
-  // window and every hourly sync failed with "proof source total 92838 exceeds 50000 rows".
+  // window and every scheduled sync failed with "proof source total 92838 exceeds 50000 rows".
   it("mirrors only the top window of an oversized leaderboard", async () => {
     const upstreamTotal = 93_052;
     const row = (index: number) => ({

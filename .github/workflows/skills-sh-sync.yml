@@ -3,7 +3,9 @@ run-name: ${{ inputs.deploy_experiment_sha != '' && '2026-10-05 single skills.sh
 
 on:
   schedule:
-    - cron: "17 * * * *"
+    # Daily at 03:00 Pacific; GitHub applies the DST offset for the named timezone.
+    - cron: "0 3 * * *"
+      timezone: "America/Los_Angeles"
   workflow_dispatch:
     inputs:
       deploy_experiment_sha:

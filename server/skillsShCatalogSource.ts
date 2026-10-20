@@ -24,7 +24,7 @@ const MAX_PROOF_SNAPSHOT_BYTES = 32 * 1024;
 const MAX_PROOF_SOURCE_ROWS = 50_000;
 // skills.sh ranks the all-time view by installs and serves up to a 100k-row window (2026-10), and
 // ranks the trending view by recent growth. A mirrored leaderboard row costs ~0.4s of detail and
-// audit work, so the hourly sync mirrors only the top rows of each view to finish in ~35 minutes.
+// audit work, so the daily sync mirrors only the top rows of each view to finish in ~35 minutes.
 // Lower-ranked rows are deliberately not mirrored; leaderboard reconciliation tombstones previously
 // mirrored rows that fall out of the window and reactivates them if they return.
 const SKILLS_SH_MIRROR_WINDOW_ROWS = 4_000;

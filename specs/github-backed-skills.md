@@ -149,7 +149,7 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
   capped at 64 KiB. The complete upstream file tree is never persisted for an
   unclaimed mirror row.
 - The mirror source is a bounded top window, not the whole upstream feed. Each
-  hourly sync captures at most the top 4,000 rows of the all-time view (ranked
+  sync captures at most the top 4,000 rows of the all-time view (ranked
   by installs) and of `view=trending`. skills.sh serves up to a 100k-row
   all-time window, and a mirrored leaderboard row costs about 0.4s of detail and
   audit work, so mirroring the full feed would take about ten hours per run.
@@ -175,9 +175,10 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
   idempotent, and a same-timestamp payload drift is rejected. At most ten IDs
   missing because of pagination drift may hydrate through the existing mirror
   normalizer in one run; exceeding that bound fails closed.
-- The mirror has no scheduler in this stage. Production activation, public
-  search/detail/install behavior, claims, and publisher attachment require
-  separately accepted work.
+- `.github/workflows/skills-sh-sync.yml` runs the production sync once a day at
+  03:00 `America/Los_Angeles`. Canonical Trending admits skills.sh rows only
+  from a completed Trending run younger than 50 hours, so one missed daily run
+  does not drop skills.sh from Trending.
 
 ## Publisher Gate
 

@@ -7,6 +7,10 @@ export const CANONICAL_TRENDING_WINDOW_HOURS = 24;
 export const CANONICAL_TRENDING_FIRST_PAGE_SIZE = 20;
 export const CANONICAL_TRENDING_PUBLISHER_CAP = 2;
 export const CANONICAL_TRENDING_LANE_LIMIT = 1_000;
+// skills.sh syncs once a day (.github/workflows/skills-sh-sync.yml). Keep its last completed
+// Trending run for two sync intervals plus slack so one missed run, a DST shift, or a delayed
+// GitHub schedule does not drop skills.sh from Trending.
+export const SKILLS_SH_TRENDING_RUN_MAX_AGE_MS = 50 * 60 * 60 * 1_000;
 
 export function isFreshExternalTrendingRun(
   run: { runId: string | null; completedAt: number | null },
