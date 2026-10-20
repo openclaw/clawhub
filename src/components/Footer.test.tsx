@@ -88,6 +88,40 @@ describe("Footer", () => {
     expect(screen.getByText("© 2026 OpenClaw Foundation")).toBeTruthy();
   });
 
+  it("routes support to official OpenClaw support while preserving social links", () => {
+    render(<Footer />);
+
+    const community = screen.getByRole("heading", { name: "Community" }).closest(".footer-col");
+    const links = within(community as HTMLElement);
+    expect(links.getByRole("link", { name: "Support" }).getAttribute("href")).toBe(
+      "https://community.openclaw.ai/",
+    );
+    expect(links.getByRole("link", { name: "Discord" }).getAttribute("href")).toBe(
+      "https://discord.gg/clawd",
+    );
+    expect(links.getByRole("link", { name: "GitHub" }).getAttribute("href")).toBe(
+      "https://github.com/openclaw/clawhub",
+    );
+  });
+
+  it("exposes support in the expanded mobile community section", async () => {
+    mockMatchMedia(true);
+    render(<Footer />);
+
+    const communityToggle = screen.getByRole("button", { name: "Community" });
+    await waitFor(() => expect(communityToggle.getAttribute("aria-expanded")).toBe("false"));
+    fireEvent.click(communityToggle);
+
+    expect(communityToggle.getAttribute("aria-expanded")).toBe("true");
+    const links = document.getElementById("footer-section-community-links");
+    expect(links?.getAttribute("data-open")).toBe("true");
+    expect(
+      within(links as HTMLElement)
+        .getByRole("link", { name: "Support" })
+        .getAttribute("href"),
+    ).toBe("https://community.openclaw.ai/");
+  });
+
   it("keeps offscreen imagery lazy and dimensioned", () => {
     const { container } = render(<Footer />);
     const images = Array.from(container.querySelectorAll("img"));

@@ -316,6 +316,27 @@ describe("Header", () => {
     expect(screen.queryByText("About")).toBeNull();
   });
 
+  it("routes desktop, overflow, and mobile support links to official OpenClaw support", () => {
+    render(<Header />);
+
+    const topNav = screen.getByRole("navigation", { name: "Primary navigation" });
+    const desktopSupport = topNav.querySelector(
+      '.navbar-calm-rail-link-secondary[href="https://community.openclaw.ai/"]',
+    );
+    const overflowSupport = topNav.querySelector(
+      '.navbar-calm-more-link[href="https://community.openclaw.ai/"]',
+    );
+    expect(desktopSupport?.textContent).toBe("Support");
+    expect(overflowSupport?.textContent).toBe("Support");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+
+    const mobileMenu = screen.getByRole("dialog");
+    expect(within(mobileMenu).getByRole("link", { name: "Support" }).getAttribute("href")).toBe(
+      "https://community.openclaw.ai/",
+    );
+  });
+
   it("renders theme mode controls as a compact row between Settings and Sign out", () => {
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -756,7 +777,7 @@ describe("Header", () => {
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels).toEqual(["Home", "Skills", "Plugins", "Official", "Docs"]);
+    expect(labels).toEqual(["Home", "Skills", "Plugins", "Official", "Docs", "Support"]);
   });
 
   it("links profile and bookmarks from the signed-in avatar menu", () => {

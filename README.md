@@ -22,8 +22,11 @@ experimental whole-agent Claw packages.
   <a href="VISION.md">Vision</a> ·
   <a href="docs/clawhub.md">Docs</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a href="https://community.openclaw.ai/">Support</a> ·
   <a href="https://discord.gg/clawd">Discord</a>
 </p>
+
+For questions and help, visit [official OpenClaw support](https://community.openclaw.ai/).
 
 ## What you can do with it
 
