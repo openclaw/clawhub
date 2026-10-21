@@ -16,7 +16,7 @@ git -C "$source_dir" remote add origin https://github.com/openclaw/clawscan.git
 git -C "$source_dir" fetch --quiet --depth 1 origin "$source_commit"
 git -C "$source_dir" checkout --quiet --detach FETCH_HEAD
 [ "$(git -C "$source_dir" rev-parse HEAD)" = "$source_commit" ]
-export GOTOOLCHAIN=go1.27.2
+export GOTOOLCHAIN=go1.27.3
 bin_dir="$RUNNER_TEMP/clawscan-bin"
 mkdir -p "$bin_dir"
 (cd "$source_dir" && go build -trimpath -o "$bin_dir/clawscan" ./cmd/clawscan)

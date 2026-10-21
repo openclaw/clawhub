@@ -39,7 +39,7 @@ Sol function/tool calls require Responses rather than Chat Completions.
 `clawscan-source-commit.txt` pins merged ClawScan commit
 `5be7f8e97fa474f0aa9eb443f38d9e3d5f51226b` (upstream PR #68). The
 workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
-with Go 1.27.2, and retains the matching source tree for host scanner installation.
+with Go 1.27.3, and retains the matching source tree for host scanner installation.
 No mutable `main`, `latest`, or unapproved public ClawScan release is consumed.
 
 Codex 0.160 normalizes its explicit `service_tier="default"` configuration by
@@ -64,7 +64,7 @@ real-adapter tests as that ClawScan revision's runtime image:
 - The source pins are read from the reviewed ClawScan Dockerfile and checked as
   full commit IDs, so host/image implementations cannot silently drift. Patch
   applicability and the real installed adapter tests are mandatory install gates.
-- The maintained resolver is pinned to uv 0.12.5. Pytest 9.0.2 is test-only. Source
+- The maintained resolver is pinned to uv 0.13.4. Pytest 9.0.2 is test-only. Source
   revisions and runtime dependencies are pinned; Python isolated-build backend
   dependencies are not claimed to be fully hash-reproducible. The AIG hash lock
   additionally admits the published macOS arm64 CPython 3.12 wheels for `jiter`
