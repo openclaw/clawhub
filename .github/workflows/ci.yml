@@ -55,7 +55,7 @@ jobs:
       - name: Set up OpenClaw Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.15.0
+          node-version: 24.22.1
 
       - name: Install pinned OpenClaw dependencies
         working-directory: .artifacts/openclaw-contract
@@ -134,7 +134,7 @@ jobs:
       - name: Set up Node.js for CLI compatibility
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.15.0
+          node-version: 24.22.1
 
       - uses: ./.github/actions/setup-bun
 
