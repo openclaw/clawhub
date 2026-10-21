@@ -637,6 +637,7 @@ export const ApiV1PackageVersionResponseSchema = type({
     version: "string",
     createdAt: "number",
     changelog: "string",
+    icon: "string|null?",
     distTags: "string[]?",
     files: "unknown",
     compatibility: PackageCompatibilitySchema.or("null").optional(),

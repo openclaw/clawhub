@@ -825,6 +825,7 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
         version: string;
         createdAt: number;
         changelog: string;
+        icon?: string | null | undefined;
         distTags?: string[] | undefined;
         files: unknown;
         compatibility?: {
@@ -1225,6 +1226,7 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
         version: string;
         createdAt: number;
         changelog: string;
+        icon?: string | null | undefined;
         distTags?: string[] | undefined;
         files: unknown;
         compatibility?: {

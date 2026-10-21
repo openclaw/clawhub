@@ -156,6 +156,14 @@ it("publishes a Claw's packaged PNG through the validated content-addressed imag
     name: "@openclaw/artwork-claw",
     icon: `/api/v1/skill-icons/${await sha256Hex(png)}`,
   });
+  const versionResponse = await t.fetch(
+    "/api/v1/packages/%40openclaw%2Fartwork-claw/versions/1.0.0",
+  );
+  expect(versionResponse.status).toBe(200);
+  expect((await versionResponse.json()).version).toMatchObject({
+    version: "1.0.0",
+    icon: `/api/v1/skill-icons/${await sha256Hex(png)}`,
+  });
   await t.action(internal.catalogFeed.publish, {
     expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
   });

@@ -551,6 +551,7 @@ type ReleaseLike = {
   version: string;
   createdAt: number;
   changelog: string;
+  icon?: Doc<"packageReleases">["icon"];
   distTags?: string[];
   files: Array<{
     path: string;
@@ -706,6 +707,7 @@ function toPackageVersionResponse(release: ReleaseLike, packageName: string) {
     version: release.version,
     createdAt: release.createdAt,
     changelog: release.changelog,
+    icon: release.icon ?? null,
     distTags: release.distTags ?? [],
     files: release.files.map((file) => ({
       path: file.path,
