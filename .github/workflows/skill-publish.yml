@@ -300,10 +300,12 @@ jobs:
                       f"got {name}={value!r}."
                   )
 
-          results = {"wouldPublish": [], "published": [], "alreadySynced": [], "skipped": [], "failed": []}
+          results = {"wouldPublish": [], "published": [], "pendingPublication": [], "submitted": [], "alreadySynced": [], "skipped": [], "failed": []}
           status_keys = {
               "would-publish": "wouldPublish",
               "published": "published",
+              "pending-publication": "pendingPublication",
+              "submitted": "submitted",
               "unchanged": "alreadySynced",
           }
 
