@@ -20,6 +20,7 @@ import {
   downloadIncidentArchive,
   incidentManifest,
   receiptIncidentManifest,
+  smallTimeoutManifest,
   verifyDiagnosticTree,
   type DiagnosticManifest,
 } from "./clawscan-diagnostic-input";
@@ -45,6 +46,33 @@ afterEach(async () => {
     await unlock(root);
     await rm(root, { recursive: true, force: true });
   }
+});
+
+it("pins the one-file production timeout without adding uploaded source or arbitrary URLs", async () => {
+  expect(smallTimeoutManifest.files).toEqual([
+    {
+      path: "SKILL.md",
+      sha256: "140e137653e0e5dbde7b95e22f4d8377c464e4bf4f881e01a324a54ce6c42f5f",
+      size: 7877,
+    },
+  ]);
+  expect(smallTimeoutManifest.archiveSha256).toBe(
+    "b1b2e3362fd727cd13988de006eb1609e76b523d85b4ff2c7092a8884faee051",
+  );
+  expect(smallTimeoutManifest.manifestSha256).toBe(
+    "b06b8903a4afb89700cf881f8733b692fff1d35dc9373cee88d3efd8bcfa0862",
+  );
+  const fetchArchive = vi.fn().mockResolvedValue(new Response("controlled transport bytes"));
+  vi.stubGlobal("fetch", fetchArchive);
+  await downloadIncidentArchive("small-timeout-paired");
+  expect(fetchArchive.mock.calls[0]?.[0]).toBe(
+    "https://clawhub.ai/api/v1/download?slug=fitatu-diary&version=1.1.1",
+  );
+  const root = await temp();
+  await expect(
+    extractDiagnosticArchive(Buffer.from("changed"), join(root, "input"), smallTimeoutManifest),
+  ).rejects.toThrow("archive identity");
+  expect(await readdir(root)).toEqual([]);
 });
 
 it("pins the bounded two-file receipt incident without adding uploaded source", async () => {

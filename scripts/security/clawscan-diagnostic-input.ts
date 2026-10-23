@@ -3,6 +3,7 @@ import { chmod, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promi
 import { dirname, join } from "node:path";
 import { fromBufferPromise } from "yauzl";
 import receiptIncident from "./fixtures/judge-receipt-incident.json";
+import smallTimeout from "./fixtures/judge-small-timeout.json";
 import incident from "./fixtures/judge-timeout-incident.json";
 
 export const INCIDENT_ARCHIVE_URL =
@@ -15,6 +16,7 @@ export type DiagnosticManifest = {
 };
 export const incidentManifest: DiagnosticManifest = incident;
 export const receiptIncidentManifest: DiagnosticManifest = receiptIncident;
+export const smallTimeoutManifest: DiagnosticManifest = smallTimeout;
 const hash = (data: Uint8Array | string) => createHash("sha256").update(data).digest("hex");
 const safePath = (path: string) =>
   path.length > 0 &&
@@ -170,12 +172,14 @@ export async function extractDiagnosticArchive(
 }
 
 export async function downloadIncidentArchive(
-  fixture: "incident" | "receipt-incident" = "incident",
+  fixture: "incident" | "receipt-incident" | "small-timeout-paired" = "incident",
 ) {
   const url =
-    fixture === "receipt-incident"
-      ? "https://clawhub.ai/api/v1/download?slug=onlinewebdirectory&version=1.0.1"
-      : INCIDENT_ARCHIVE_URL;
+    fixture === "small-timeout-paired"
+      ? "https://clawhub.ai/api/v1/download?slug=fitatu-diary&version=1.1.1"
+      : fixture === "receipt-incident"
+        ? "https://clawhub.ai/api/v1/download?slug=onlinewebdirectory&version=1.0.1"
+        : INCIDENT_ARCHIVE_URL;
   const response = await fetch(url, {
     signal: AbortSignal.timeout(60_000),
     redirect: "error",
