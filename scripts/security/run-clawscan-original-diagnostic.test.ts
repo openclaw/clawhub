@@ -94,7 +94,7 @@ it("does not overlap later controls after unknown process cleanup or controller 
 
 it("pins original logical manifests separately from public and reconstructed compressed archives", async () => {
   expect(ORIGINAL_BASELINE_SOURCE).toBe("9662307780b2834791e2b0be8b166b44f4144ef4");
-  expect(ORIGINAL_CANDIDATE_SOURCE).toBe("d4dc23c1525f2dd7d82e0b4ef087116daef6bbf0");
+  expect(ORIGINAL_CANDIDATE_SOURCE).toBe("fd5f18ad3365f623d4165740b124cd7f142d0556");
   for (const [fixture, count, bytes, manifestSha256] of [
     ["175", 175, 2530728, "a306ba4c3f30e8c42cc247070245661ab6fb5032cba6e4b3ae0b62239d7c223f"],
     ["290", 290, 14953416, "1b070ff79edb1ae7faf33aeb00fb4deeaa18fd385a64951fa3e0868d22c424c5"],
