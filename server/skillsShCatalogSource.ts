@@ -747,11 +747,11 @@ export function buildSkillsShMirrorObservation(
   row: SkillsShCatalogListRow,
   sourcePageHtml?: string,
 ) {
-  const externalId = row.id.trim().toLowerCase();
-  const slug = row.slug.trim().toLowerCase();
-  const source = row.source.trim().toLowerCase();
+  const externalId = typeof row.id === "string" ? row.id.trim().toLowerCase() : "";
+  const slug = typeof row.slug === "string" ? row.slug.trim().toLowerCase() : "";
+  const source = typeof row.source === "string" ? row.source.trim().toLowerCase() : "";
   const upstreamSourceType = normalizeUpstreamSourceType(row.sourceType);
-  const installUrl = row.installUrl?.trim() || null;
+  const installUrl = typeof row.installUrl === "string" ? row.installUrl.trim() || null : null;
   const identityError = (reason: SkillsShMirrorQuarantineReason) =>
     new SkillsShMirrorIdentityError(
       reason,
@@ -762,8 +762,8 @@ export function buildSkillsShMirrorObservation(
   const base = {
     externalId,
     slug,
-    displayName: row.name.trim() || slug,
-    sourceUrl: row.url.trim(),
+    displayName: typeof row.name === "string" ? row.name.trim() || slug : slug,
+    sourceUrl: typeof row.url === "string" ? row.url.trim() : "",
     upstreamInstalls: row.installs,
     upstreamSourceType,
   };
@@ -828,11 +828,16 @@ function safeMirrorIdentityError(row: SkillsShCatalogListRow, error: unknown) {
   return quarantinedMirrorRow(row, reason);
 }
 
+function mirrorIdentityText(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return "missing";
+  return value.trim().toLowerCase().slice(0, maxLength) || "missing";
+}
+
 function quarantinedMirrorRow(row: SkillsShCatalogListRow, reason: SkillsShMirrorQuarantineReason) {
-  const externalId = row.id.trim().toLowerCase().slice(0, 512) || "missing";
+  const externalId = mirrorIdentityText(row.id, 512);
   const upstreamSourceType = normalizeUpstreamSourceType(row.sourceType);
-  const source = row.source.trim().toLowerCase().slice(0, 256) || "missing";
-  const installUrl = row.installUrl?.trim() || null;
+  const source = mirrorIdentityText(row.source, 256);
+  const installUrl = typeof row.installUrl === "string" ? row.installUrl.trim() || null : null;
   console.warn(
     `Quarantined skills.sh mirror row: ${externalId} ` +
       `(reason=${reason}, ` +
@@ -1484,6 +1489,7 @@ export async function measureSkillsShTrendingSource(
   const pace = createRequestPacer(minimumApiRequestIntervalMs);
   const startedAt = performance.now();
   const present = new Set<string>();
+  let identityRows = 0;
   const sourcePages: SkillsShMirrorCapturedSourcePage[] = [];
   const requestedPages: SkillsShTrendingSourceMeasurement["evidence"]["requestedPages"] = [];
   let page = 0;
@@ -1522,8 +1528,9 @@ export async function measureSkillsShTrendingSource(
       upstreamTotal,
       catalogTotal,
     });
-    const identityHash = skillsShPageIdentityHash(windowed.data);
-    const contentHash = skillsShPageContentHash(windowed.data);
+    const capturedRows = capturedSkillsShCatalogRows(windowed.data, page);
+    const identityHash = skillsShPageIdentityHash(capturedRows, page);
+    const contentHash = skillsShPageContentHash(windowed.data, page);
     requestedPages.push({
       page,
       count: windowed.data.length,
@@ -1531,7 +1538,6 @@ export async function measureSkillsShTrendingSource(
       identityHash,
       contentHash,
     });
-    const capturedRows = capturedSkillsShCatalogRows(windowed.data);
     if (capturedRows.length > 0) {
       const captured = {
         page,
@@ -1552,7 +1558,11 @@ export async function measureSkillsShTrendingSource(
     if (observedRows > catalogTotal) {
       throw new Error("skills.sh trending source exceeded its reported total");
     }
-    for (const row of windowed.data) present.add(row.id.trim().toLowerCase());
+    for (const row of windowed.data) {
+      if (typeof row.id !== "string" || !row.id.trim()) continue;
+      identityRows += 1;
+      present.add(row.id.trim().toLowerCase());
+    }
     if (!windowed.hasMore) break;
     if (
       observedRows >= catalogTotal ||
@@ -1567,7 +1577,7 @@ export async function measureSkillsShTrendingSource(
       `skills.sh trending source observed ${observedRows} of ${catalogTotal ?? 0} rows`,
     );
   }
-  const duplicateIds = observedRows - present.size;
+  const duplicateIds = identityRows - present.size;
   if (duplicateIds !== 0) {
     throw new Error(`skills.sh trending source contains ${duplicateIds} duplicate identities`);
   }
@@ -1698,25 +1708,34 @@ function normalizedTaxonomyFields(value: unknown) {
     .sort();
 }
 
-function skillsShPageIdentityHash(rows: SkillsShCatalogListRow[]) {
-  return sha256Hex(rows.map((row) => `${row.id.trim().toLowerCase()}\n`).join(""));
+export function skillsShPageIdentityHash(rows: SkillsShCatalogListRow[], _page = 0) {
+  // Hash the id text that is already stored. A legacy blank id stays an empty
+  // line. A later capture's missing:<page>:<offset> placeholder stays itself.
+  return sha256Hex(
+    rows
+      .map((row) => `${typeof row.id === "string" ? row.id.trim().toLowerCase() : ""}\n`)
+      .join(""),
+  );
 }
 
-function capturedSkillsShCatalogRows(rows: SkillsShCatalogListRow[]) {
-  return rows.map((row) => ({
-    id: row.id,
-    installUrl: row.installUrl,
+function capturedSkillsShCatalogRows(rows: SkillsShCatalogListRow[], page = 0) {
+  return rows.map((row, index) => ({
+    // Keep source positions in the existing string-typed capture contract.
+    // A missing ID gets a per-position, non-identity value so Trending replay
+    // does not treat two quarantined rows as a repeated real skill.
+    id: typeof row.id === "string" && row.id.trim() ? row.id : `missing:${page}:${index}`,
+    installUrl: typeof row.installUrl === "string" ? row.installUrl : null,
     installs: row.installs,
-    name: row.name,
-    slug: row.slug,
-    source: row.source,
-    sourceType: row.sourceType,
-    url: row.url,
+    name: typeof row.name === "string" ? row.name : "",
+    slug: typeof row.slug === "string" ? row.slug : "",
+    source: typeof row.source === "string" ? row.source : "",
+    sourceType: typeof row.sourceType === "string" ? row.sourceType : "",
+    url: typeof row.url === "string" ? row.url : "",
   }));
 }
 
-function skillsShPageContentHash(rows: SkillsShCatalogListRow[]) {
-  return sha256Hex(JSON.stringify(capturedSkillsShCatalogRows(rows)));
+function skillsShPageContentHash(rows: SkillsShCatalogListRow[], page = 0) {
+  return sha256Hex(JSON.stringify(capturedSkillsShCatalogRows(rows, page)));
 }
 
 function parseSkillsShPageFieldEvidence(html: string) {
@@ -1879,6 +1898,7 @@ export async function measureSkillsShMirrorProofSource(
   assertIntegerInRange("minimumApiRequestIntervalMs", minimumApiRequestIntervalMs, 0, 1_000);
   const pace = createRequestPacer(minimumApiRequestIntervalMs);
   const present = new Set<string>();
+  let identityRows = 0;
   const rowKeys = new Set<string>();
   const taxonomyFields = new Set<string>();
   const requestedPages: SkillsShMirrorProofEvidence["pagination"]["requestedPages"] = [];
@@ -1924,9 +1944,9 @@ export async function measureSkillsShMirrorProofSource(
       upstreamTotal,
       catalogTotal,
     });
-    const identityHash = skillsShPageIdentityHash(windowed.data);
-    const contentHash = skillsShPageContentHash(windowed.data);
-    const capturedRows = capturedSkillsShCatalogRows(windowed.data);
+    const capturedRows = capturedSkillsShCatalogRows(windowed.data, page);
+    const identityHash = skillsShPageIdentityHash(capturedRows, page);
+    const contentHash = skillsShPageContentHash(windowed.data, page);
     const captured =
       windowed.data.length > 0
         ? {
@@ -1967,10 +1987,25 @@ export async function measureSkillsShMirrorProofSource(
       });
     }
     for (const row of windowed.data) {
-      present.add(row.id.trim().toLowerCase());
+      // Missing IDs still occupy a captured row, but are not duplicate identities.
+      if (typeof row.id === "string" && row.id.trim()) {
+        identityRows += 1;
+        present.add(row.id.trim().toLowerCase());
+      }
       for (const key of sortedObjectKeys(row)) rowKeys.add(key);
       for (const key of normalizedTaxonomyFields(row)) taxonomyFields.add(key);
-      if (!sampleRow && row.id.split("/").length === 3) sampleRow = row;
+      if (
+        !sampleRow &&
+        typeof row.id === "string" &&
+        row.id.split("/").length === 3 &&
+        typeof row.source === "string" &&
+        row.source.trim() &&
+        typeof row.slug === "string" &&
+        row.slug.trim() &&
+        typeof row.url === "string" &&
+        hasExactSkillsShPagePath(row.url, row.id.trim().toLowerCase().split("/"))
+      )
+        sampleRow = row;
     }
     if (!windowed.hasMore) break;
     if (
@@ -1987,9 +2022,9 @@ export async function measureSkillsShMirrorProofSource(
   if (observedRows !== catalogTotal) {
     throw new Error(`skills.sh proof source observed ${observedRows} of ${catalogTotal} rows`);
   }
-  if (present.size !== observedRows) {
+  if (present.size !== identityRows) {
     throw new Error(
-      `skills.sh proof source contains duplicate identities: ${observedRows - present.size}`,
+      `skills.sh proof source contains duplicate identities: ${identityRows - present.size}`,
     );
   }
   if (!firstPage || !finalNonemptyPage || !sampleRow) {
@@ -2096,7 +2131,7 @@ export async function measureSkillsShMirrorProofSource(
         finalNonemptyPage,
         firstBeyondEndPage,
         uniqueIds: present.size,
-        duplicateIds: observedRows - present.size,
+        duplicateIds: identityRows - present.size,
       },
       fields: {
         sampledExternalId: sampleRow.id,
@@ -2335,7 +2370,7 @@ export async function fetchSkillsShMirrorBatch(
     offset: args.offset,
     pageLength: sourcePage.data.length,
     sourceTotal: sourcePage.pagination.total,
-    sourcePageIdentityHash: skillsShPageIdentityHash(sourcePage.data),
+    sourcePageIdentityHash: skillsShPageIdentityHash(sourcePage.data, args.page),
     hasMore: sourcePage.pagination.hasMore,
     sourceRequests,
     sourceBytes: sourcePageResponse.sourceBytes + rowSourceBytes,
