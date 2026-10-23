@@ -10,13 +10,26 @@ import {
   ORIGINAL_CANDIDATE_SOURCE,
   materializeOriginalInput,
 } from "./clawscan-diagnostic-original";
-import { validateOriginalSdkInventory } from "./clawscan-diagnostic-runtime";
+import * as scannerRuntime from "./clawscan-diagnostic-runtime";
 import * as diagnosticRuntime from "./run-clawscan-diagnostic";
 import {
   mainOriginalDiagnostic,
   runOriginalDiagnosticCases,
   runSkillSpectorDiagnosticProcess,
 } from "./run-clawscan-original-diagnostic";
+
+const sourceApproval = vi.hoisted(() => ({ override: undefined as string | null | undefined }));
+vi.mock("./clawscan-diagnostic-original", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./clawscan-diagnostic-original")>();
+  return {
+    ...actual,
+    get ORIGINAL_CANDIDATE_SOURCE() {
+      return sourceApproval.override === undefined
+        ? actual.ORIGINAL_CANDIDATE_SOURCE
+        : sourceApproval.override;
+    },
+  };
+});
 
 it("fixes the four serial no-retry scanner controls, while full profile is separately selected", async () => {
   expect(originalDiagnosticCases("original-scanner-only").map((entry) => entry.id)).toEqual([
@@ -81,6 +94,7 @@ it("does not overlap later controls after unknown process cleanup or controller 
 
 it("pins original logical manifests separately from public and reconstructed compressed archives", async () => {
   expect(ORIGINAL_BASELINE_SOURCE).toBe("9662307780b2834791e2b0be8b166b44f4144ef4");
+  expect(ORIGINAL_CANDIDATE_SOURCE).toBe("e1659ed4c0b1e12983692ea7147743f705ee112e");
   for (const [fixture, count, bytes, manifestSha256] of [
     ["175", 175, 2530728, "a306ba4c3f30e8c42cc247070245661ab6fb5032cba6e4b3ae0b62239d7c223f"],
     ["290", 290, 14953416, "1b070ff79edb1ae7faf33aeb00fb4deeaa18fd385a64951fa3e0868d22c424c5"],
@@ -116,7 +130,9 @@ it("requires actual locked SDK versions and strips unrecognized inventory fields
     langgraph: "1.2.6",
     httpx: "0.28.1",
   };
-  expect(validateOriginalSdkInventory({ ...inventory, arbitrary: "PRIVATE" })).toEqual(inventory);
+  expect(
+    scannerRuntime.validateOriginalSdkInventory({ ...inventory, arbitrary: "PRIVATE" }),
+  ).toEqual(inventory);
   for (const invalid of [
     null,
     [],
@@ -124,42 +140,51 @@ it("requires actual locked SDK versions and strips unrecognized inventory fields
     { ...inventory, openai: "3.37.0" },
     { ...inventory, "langchain-openai": "1.7.2" },
   ])
-    expect(() => validateOriginalSdkInventory(invalid)).toThrow();
+    expect(() => scannerRuntime.validateOriginalSdkInventory(invalid)).toThrow();
 });
 
-it("refuses an unapproved candidate before installation, downloading, or provider calls", async () => {
-  if (ORIGINAL_CANDIDATE_SOURCE !== null) return;
-  const root = await mkdtemp(join(tmpdir(), "original-unapproved-test-"));
-  const originalUmask = process.umask();
-  vi.stubEnv("RUNNER_TEMP", root);
-  vi.stubEnv("GITHUB_OUTPUT", join(root, "github-output"));
-  const guard = vi
-    .spyOn(diagnosticRuntime, "assertDisposableDiagnosticEnvironment")
-    .mockImplementation(() => root);
-  const fetchMock = vi.fn();
-  vi.stubGlobal("fetch", fetchMock);
-  try {
-    await expect(mainOriginalDiagnostic("original-scanner-only")).rejects.toThrow(
-      "Exact candidate source approval",
-    );
-    expect(fetchMock).not.toHaveBeenCalled();
-    const { readdir } = await import("node:fs/promises");
-    const [directory] = await readdir(root);
-    expect(
-      JSON.parse(await readFile(join(root, directory!, "summary.json"), "utf8")),
-    ).toMatchObject({
-      status: "candidate_source_not_approved",
-      productionRecoverySamples: 0,
-      attempts: [],
-    });
-  } finally {
-    guard.mockRestore();
-    vi.unstubAllEnvs();
-    vi.unstubAllGlobals();
-    process.umask(originalUmask);
-    await rm(root, { recursive: true, force: true });
-  }
-});
+it.each([null, "not-a-source", ORIGINAL_BASELINE_SOURCE])(
+  "refuses an unapproved candidate %s before installation, downloading, or provider calls",
+  async (source) => {
+    sourceApproval.override = source;
+    const root = await mkdtemp(join(tmpdir(), "original-unapproved-test-"));
+    const originalUmask = process.umask();
+    vi.stubEnv("RUNNER_TEMP", root);
+    vi.stubEnv("GITHUB_OUTPUT", join(root, "github-output"));
+    const guard = vi
+      .spyOn(diagnosticRuntime, "assertDisposableDiagnosticEnvironment")
+      .mockImplementation(() => root);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const install = vi
+      .spyOn(scannerRuntime, "installOriginalRuntime")
+      .mockRejectedValue(new Error("Unapproved runtime install attempted"));
+    try {
+      await expect(mainOriginalDiagnostic("original-scanner-only")).rejects.toThrow(
+        "Exact candidate source approval",
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(install).not.toHaveBeenCalled();
+      const { readdir } = await import("node:fs/promises");
+      const [directory] = await readdir(root);
+      expect(
+        JSON.parse(await readFile(join(root, directory!, "summary.json"), "utf8")),
+      ).toMatchObject({
+        status: "candidate_source_not_approved",
+        productionRecoverySamples: 0,
+        attempts: [],
+      });
+    } finally {
+      guard.mockRestore();
+      install.mockRestore();
+      sourceApproval.override = undefined;
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+      process.umask(originalUmask);
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 
 it("retains a nonzero scanner terminal independently of judge time and suppresses raw process output", async () => {
   const root = await mkdtemp(join(tmpdir(), "scanner-process-test-"));
