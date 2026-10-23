@@ -1,5 +1,9 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 /* @vitest-environment node */
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
@@ -15,6 +19,51 @@ type WorkflowStep = {
 };
 
 describe("package publish reusable workflow", () => {
+  it("resolves an exact prebuilt Claw artifact while rejecting skill overrides", async () => {
+    const workflow = parseYaml(await readFile(".github/workflows/package-publish.yml", "utf8"));
+    const step = workflow.jobs.publish.steps.find(
+      (candidate: WorkflowStep) => candidate.name === "Resolve publish command",
+    ) as WorkflowStep;
+    const root = mkdtempSync(join(tmpdir(), "claw-workflow-"));
+    try {
+      mkdirSync(join(root, "clawhub-source/packages/clawhub/src"), { recursive: true });
+      writeFileSync(join(root, "clawhub-source/packages/clawhub/src/cli.ts"), "");
+      const artifact = join(root, "approved.tgz");
+      writeFileSync(artifact, "fixture");
+      const env = {
+        ...process.env,
+        ...Object.fromEntries(Object.keys(step.env ?? {}).map((key) => [key, ""])),
+        GITHUB_WORKSPACE: root,
+        RUNNER_TEMP: root,
+        GITHUB_OUTPUT: join(root, "output"),
+        GITHUB_REPOSITORY: "openclaw/awesome-claws",
+        GITHUB_SHA: "a".repeat(40),
+        GITHUB_REF: "refs/heads/main",
+        INPUT_DRY_RUN: "true",
+        INPUT_FAMILY: "claw",
+        PREBUILT_PACKAGE_ARTIFACT_PATH: artifact,
+      };
+      const result = spawnSync("bash", ["-c", step.run!], { env, encoding: "utf8" });
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(join(root, "clawhub-package-publish-command.sh"), "utf8")).toContain(
+        "--family claw",
+      );
+      expect(result.stdout).toContain(artifact);
+      const inspector = workflow.jobs.publish.steps.find(
+        (candidate: WorkflowStep) => candidate.name === "Run plugin validation",
+      ) as WorkflowStep;
+      expect(inspector.if).toBe("inputs.family != 'claw'");
+      const rejected = spawnSync("bash", ["-c", step.run!], {
+        env: { ...env, INPUT_FAMILY: "skill" },
+        encoding: "utf8",
+      });
+      expect(rejected.status).not.toBe(0);
+      expect(rejected.stderr).toContain("Invalid package family override");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("waits for definitive publication by default", async () => {
     const workflow = parseYaml(await readFile(".github/workflows/package-publish.yml", "utf8")) as {
       jobs: {
