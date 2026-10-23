@@ -33,7 +33,6 @@ vi.mock("./clawscan-diagnostic-original", async (importOriginal) => {
   );
   return {
     ...actual,
-    ORIGINAL_CANDIDATE_SOURCE: "1".repeat(40),
     originalManifests: manifests,
     downloadOriginalInput: vi.fn(async () => ({ archive: Buffer.from("inert") })),
     materializeOriginalInput: vi.fn(
@@ -55,13 +54,25 @@ vi.mock("./clawscan-diagnostic-original", async (importOriginal) => {
 vi.mock("./clawscan-diagnostic-runtime", async () => {
   const { chmod, writeFile } = await import("node:fs/promises");
   return {
-    installOriginalRuntime: vi.fn(async (root: string, pin: string) => {
+    installOriginalRuntime: vi.fn(async (root: string, pin: string, fullProfile: boolean) => {
       const script = join(root, "fake-python");
       const driver = join(root, "inert-controller.cjs");
       await writeFile(script, `#!/bin/sh\nexec '${process.execPath}' '${driver}' "$@"\n`, {
         mode: 0o700,
       });
       await chmod(script, 0o700);
+      if (fullProfile) {
+        await writeFile(
+          driver,
+          `const fs=require('node:fs');const args=process.argv.slice(2);if(args.length!==7||JSON.stringify(args.slice(1,6))!==JSON.stringify(['--profile','clawhub','--sandbox','off','--output']))process.exit(9);const count=fs.readdirSync(args[0]).length;if(![175,290].includes(count))process.exit(8);process.stderr.write('[clawscan-progress] '+JSON.stringify({schemaVersion:'clawscan-progress-v1',event:'phase_start',phase:'scanner:skillspector',elapsedMs:0,command:'PRIVATE'})+'\\n');console.log('PRIVATE');`,
+        );
+        return {
+          binary: script,
+          python: join(root, "never-invoked-scanner-only"),
+          scannerBin: root,
+          metadata: { source: pin, runtimeImage: "N/A" },
+        };
+      }
       await writeFile(
         driver,
         `const fs=require('node:fs');const args=process.argv.slice(2);if(JSON.stringify(args.slice(0,4))!==JSON.stringify(['-I','-c','from skillspector.cli import app; app()','scan']))process.exit(9);const count=fs.readdirSync(args[4]).length;fs.writeFileSync(args.at(-1),JSON.stringify({execution_successful:true,issues:[{message:'PRIVATE'}],suppressed_count:0,analysis_completeness:{is_complete:false,status:'partial',execution_successful:true,total_components:count,scanned_components:count-1,fully_inspected_files:count-1,partially_inspected_files:1,entirely_uninspected_files:0,findings_before_filtering:1,findings_after_filtering:1,ledger_exceptions:[{reason_code:'artifact_count_limit',path:'PRIVATE',message:'PRIVATE'}],limitations:['PRIVATE'],analyzer_statuses:[{analyzer_id:'mcp_tool_poisoning',status:'degraded',planned_work:2,completed:1,partial:1,skipped:0,failed:0,unaccounted:0}]}}),{mode:0o600});console.log('PRIVATE');console.error('PRIVATE');process.exit(${pin.startsWith("966") ? 3 : 0});`,
@@ -76,7 +87,103 @@ vi.mock("./clawscan-diagnostic-runtime", async () => {
   };
 });
 
+it.each([
+  ["original-candidate-full", ["candidate175", "candidate290"], ["175", "290"]],
+  ["original-candidate-290-full", ["candidate290"], ["290"]],
+] as const)(
+  "runs %s as full profile without baseline, fallback or retries",
+  async (mode, ids, fixtures) => {
+    vi.clearAllMocks();
+    const root = await mkdtemp(join(tmpdir(), "original-full-controller-test-"));
+    const oldUmask = process.umask();
+    const oldExitCode = process.exitCode;
+    const guard = vi
+      .spyOn(diagnostic, "assertDisposableDiagnosticEnvironment")
+      .mockReturnValue(root);
+    const network = vi.fn(() => {
+      throw new Error("Network prohibited in inert controller proof");
+    });
+    vi.stubGlobal("fetch", network);
+    vi.stubEnv("RUNNER_TEMP", root);
+    vi.stubEnv("GITHUB_OUTPUT", join(root, "github-output"));
+    vi.stubEnv("OPENAI_API_KEY", "unused-inert-test-key");
+    vi.stubEnv("CODEX_API_KEY", "unused-inert-test-key");
+    try {
+      await mainOriginalDiagnostic(mode);
+      expect(network).not.toHaveBeenCalled();
+      expect(runtime.installOriginalRuntime).toHaveBeenCalledTimes(1);
+      expect(runtime.installOriginalRuntime).toHaveBeenCalledWith(
+        expect.any(String),
+        "fd5f18ad3365f623d4165740b124cd7f142d0556",
+        true,
+        expect.any(Object),
+      );
+      expect(vi.mocked(original.downloadOriginalInput).mock.calls).toEqual(
+        fixtures.map((fixture) => [fixture]),
+      );
+      expect(original.materializeOriginalInput).toHaveBeenCalledTimes(ids.length);
+      const safe = (await readdir(root)).find((name) =>
+        name.startsWith("clawscan-original-safe-"),
+      )!;
+      expect((await readdir(join(root, safe))).sort()).toEqual([
+        "attestation.json",
+        "events.jsonl",
+        "summary.json",
+      ]);
+      const raw = await readFile(join(root, safe, "summary.json"), "utf8");
+      const summary = JSON.parse(raw);
+      expect(summary).toMatchObject({
+        mode,
+        maximumScans: ids.length,
+        status: "finished",
+        processBudgetMs: 900000,
+        cleanupAllowanceMs: 60000,
+        automaticRetries: 0,
+        excludedFromSlos: true,
+        recoveryEvidence: false,
+        acceptedPublication: false,
+        productionRecoverySamples: 0,
+        runtimeRemoval: "completed",
+      });
+      expect(summary.attempts.map((entry: { id: string }) => entry.id)).toEqual(ids);
+      for (const entry of summary.attempts) {
+        expect(entry.result).toMatchObject({
+          complete: false,
+          source: "fd5f18ad3365f623d4165740b124cd7f142d0556",
+          treeVerification: "verified",
+          cleanupConfirmed: true,
+          result: {
+            processStatus: "completed",
+            artifact: "missing",
+            consumerValidation: "unknown",
+            exposure: {
+              judgeInvocations: null,
+              judgeOperationalFailures: null,
+              recoveredReceiptRetries: null,
+            },
+            lastProgress: { event: "phase_start", phase: "scanner:skillspector" },
+            terminal: { presence: "missing" },
+          },
+        });
+      }
+      expect(raw).not.toMatch(/PRIVATE|unused-inert-test-key/);
+      expect(
+        (await readdir(root)).some((name) => name.startsWith("clawscan-original-private-")),
+      ).toBe(false);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      guard.mockRestore();
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+      process.umask(oldUmask);
+      process.exitCode = oldExitCode;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
 it("runs the actual controller over four inert supervised processes, retaining failures and uploading only projected metadata", async () => {
+  vi.clearAllMocks();
   const root = await mkdtemp(join(tmpdir(), "original-controller-test-"));
   const oldUmask = process.umask();
   const oldExitCode = process.exitCode;

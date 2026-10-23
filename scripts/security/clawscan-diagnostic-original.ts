@@ -7,7 +7,10 @@ export const ORIGINAL_BASELINE_SOURCE = "9662307780b2834791e2b0be8b166b44f4144ef
 export const ORIGINAL_CANDIDATE_SOURCE: string | null = "fd5f18ad3365f623d4165740b124cd7f142d0556";
 export const ORIGINAL_MAXIMUM_BYTES = 16 * 1024 * 1024;
 export type OriginalFixture = "175" | "290";
-export type OriginalMode = "original-scanner-only" | "original-candidate-full";
+export type OriginalMode =
+  | "original-scanner-only"
+  | "original-candidate-full"
+  | "original-candidate-290-full";
 export const originalManifests: Record<OriginalFixture, DiagnosticManifest> = {
   "175": { ...original175, manifestCanonicalization: "path,size,sha256" },
   "290": { ...original290, manifestCanonicalization: "path,size,sha256" },
@@ -37,6 +40,8 @@ export function originalDiagnosticCases(mode: OriginalMode) {
       { id: "candidate175", source: "candidate", fixture: "175" },
       { id: "candidate290", source: "candidate", fixture: "290" },
     ] as const;
+  if (mode === "original-candidate-290-full")
+    return [{ id: "candidate290", source: "candidate", fixture: "290" }] as const;
   throw new Error("Invalid original diagnostic mode");
 }
 

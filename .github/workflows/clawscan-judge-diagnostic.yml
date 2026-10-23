@@ -15,6 +15,7 @@ on:
             small-timeout-paired,
             original-scanner-only,
             original-candidate-full,
+            original-candidate-290-full,
           ]
         default: tiny
       source:
@@ -54,7 +55,7 @@ jobs:
       - name: Install pinned Codex without login
         run: npm install -g @openai/codex@0.160.0
       - name: Select bounded installer source
-        if: ${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' }}
+        if: ${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' }}
         env:
           SOURCE_CHOICE: ${{ inputs.source }}
           FIXTURE_CHOICE: ${{ inputs.fixture }}
@@ -71,7 +72,7 @@ jobs:
           printf 'DIAGNOSTIC_INSTALLER=%s\n' "$installer" >> "$GITHUB_ENV"
           sh "$installer/install-clawscan.sh"
       - name: Install matched reviewed scanner sources and Responses adapters
-        if: ${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' }}
+        if: ${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' }}
         run: |
           set -euo pipefail
           sh "$DIAGNOSTIC_INSTALLER/install-clawscan-scanners.sh" aig

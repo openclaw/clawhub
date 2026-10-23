@@ -233,7 +233,8 @@ export async function mainOriginalDiagnostic(mode: OriginalMode) {
       PYTHONNOUSERSITE: "1",
       PYTHONDONTWRITEBYTECODE: "1",
     };
-    const fullProfile = mode === "original-candidate-full";
+    const fullProfile =
+      mode === "original-candidate-full" || mode === "original-candidate-290-full";
     const installs = new Map<string, Promise<Awaited<ReturnType<typeof installOriginalRuntime>>>>();
     const inputs = new Map<OriginalFixture, ReturnType<typeof downloadOriginalInput>>();
     const attestations: Record<string, unknown> = { baseline: null, candidate: null };

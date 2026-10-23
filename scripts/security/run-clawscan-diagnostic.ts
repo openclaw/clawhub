@@ -294,12 +294,14 @@ export async function main(args = process.argv.slice(2)) {
   if (
     args.length === 4 &&
     args[0] === "--fixture" &&
-    ["original-scanner-only", "original-candidate-full"].includes(args[1]) &&
+    ["original-scanner-only", "original-candidate-full", "original-candidate-290-full"].includes(
+      args[1],
+    ) &&
     args[2] === "--source" &&
     args[3] === "reviewed"
   ) {
     const { mainOriginalDiagnostic } = await import("./run-clawscan-original-diagnostic");
-    return mainOriginalDiagnostic(args[1] as "original-scanner-only" | "original-candidate-full");
+    return mainOriginalDiagnostic(args[1] as import("./clawscan-diagnostic-original").OriginalMode);
   }
   if (
     args.length !== 4 ||

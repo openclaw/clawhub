@@ -92,6 +92,39 @@ it("does not overlap later controls after unknown process cleanup or controller 
   }
 });
 
+it("selects exactly candidate290 once without retries in the dedicated full-profile mode", async () => {
+  const mode = "original-candidate-290-full";
+  expect(originalDiagnosticCases(mode)).toEqual([
+    { id: "candidate290", source: "candidate", fixture: "290" },
+  ]);
+  for (const failsSetup of [false, true]) {
+    const attempt = vi.fn(async () => {
+      if (failsSetup) throw new Error("inert setup failure");
+      return { cleanup: "unknown" };
+    });
+    const checkpoint = vi.fn();
+    const result = await runOriginalDiagnosticCases({
+      mode,
+      attempt,
+      cleanupConfirmed: () => false,
+      checkpoint,
+    });
+    expect(attempt).toHaveBeenCalledExactlyOnceWith({
+      id: "candidate290",
+      source: "candidate",
+      fixture: "290",
+    });
+    expect(checkpoint).toHaveBeenCalledTimes(2);
+    expect(result).toEqual([
+      {
+        id: "candidate290",
+        status: failsSetup ? "setup_or_controller_failed" : "finished",
+        result: failsSetup ? null : { cleanup: "unknown" },
+      },
+    ]);
+  }
+});
+
 it("pins original logical manifests separately from public and reconstructed compressed archives", async () => {
   expect(ORIGINAL_BASELINE_SOURCE).toBe("9662307780b2834791e2b0be8b166b44f4144ef4");
   expect(ORIGINAL_CANDIDATE_SOURCE).toBe("fd5f18ad3365f623d4165740b124cd7f142d0556");

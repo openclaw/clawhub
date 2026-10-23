@@ -153,6 +153,7 @@ it("rejects the real CLI before touching any runtime or credentials on the Mac",
       "small-timeout-paired",
       "original-scanner-only",
       "original-candidate-full",
+      "original-candidate-290-full",
     ]) {
       await expect(main(["--fixture", fixture, "--source", "reviewed"])).rejects.toThrow(
         "Disposable Blacksmith",
@@ -189,6 +190,7 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "small-timeout-paired",
     "original-scanner-only",
     "original-candidate-full",
+    "original-candidate-290-full",
   ]);
   expect(workflow.on.workflow_dispatch.inputs.source.options).toEqual(["reviewed", "incident"]);
   const job = workflow.jobs.diagnostic;
@@ -198,6 +200,14 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
   expect(job["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");
   expect(job.environment).toBe("Production");
   expect(workflow.permissions).toEqual({ contents: "read" });
+  for (const name of [
+    "Select bounded installer source",
+    "Install matched reviewed scanner sources and Responses adapters",
+  ]) {
+    expect(job.steps.find((step: { name?: string }) => step.name === name).if).toBe(
+      "${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' }}",
+    );
+  }
   const probe = job.steps.find((step: { id?: string }) => step.id === "probe");
   expect(probe.env.OPENAI_API_KEY).toBe("${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}");
   expect(probe.env.CODEX_API_KEY).toBe("${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}");
