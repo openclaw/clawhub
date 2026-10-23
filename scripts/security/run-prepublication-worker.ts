@@ -690,6 +690,7 @@ export async function processPrePublicationAttempt(
     deps.onExposure?.(exposure);
   };
   if (attempt.status === "ready_to_finalize") {
+    exposure = noClawScanExposure(false);
     scanDisposition = "finalization_only";
     try {
       const result = await completeAttempt(
@@ -748,6 +749,7 @@ export async function processPrePublicationAttempt(
     }
     const trufflehog = await runTruffleHog(workspace);
     if (trufflehog.status === "blocked") {
+      exposure = noClawScanExposure(false);
       scanDisposition = "secret_blocked";
       truffleHogBlocked = true;
       completionStarted = true;
@@ -790,6 +792,7 @@ export async function processPrePublicationAttempt(
           existingAigAnalysis.checkedAt === existingClawscanAnalysis.checkedAt))
     ) {
       clawscanAnalysis = existingClawscanAnalysis;
+      exposure = noClawScanExposure(false);
       scanDisposition = "exact_artifact_reuse";
       aigAnalysis = attempt.kind === "skill" ? existingAigAnalysis : undefined;
       clawscan = clawScanCheckResult(clawscanAnalysis);

@@ -97,6 +97,9 @@ execution, eligible scan attempts and native judge-command invocations. Eligibil
 is evidenced by a completed or failed built-in static scanner in a final ClawHub
 artifact; a missing artifact or unproven input rejection remains unknown. It is
 not inferred from CLI exit 0 or a workflow conclusion.
+Preparation and download failures before a new scan also leave eligibility unknown,
+even when the control flow proves that no judge was invoked. They must not be
+silently excluded as publisher-caused rejections.
 
 The bounded native `judge.attempts` records supply invocation and operational-failure
 counts, including the first failed receipt even when the second attempt succeeds.

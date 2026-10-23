@@ -441,6 +441,27 @@ async function configureEndorFakeCommands(input: {
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
+  it("keeps scan eligibility unknown when artifact preparation fails before any judge call", async () => {
+    const job = skillVersionJob("securityScanJobs:input-unproven");
+    job.target.files![0]!.sha256 = "0".repeat(64);
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry: false })) };
+    const onHealth = vi.fn();
+    await expect(
+      processJob(client, "worker-auth", job, undefined, onHealth),
+    ).resolves.toMatchObject({ completed: false });
+    expect(onHealth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exposure: {
+          scanExecution: "not_started",
+          eligibleScanAttempt: null,
+          judgeInvocations: 0,
+          judgeOperationalFailures: 0,
+          recoveredReceiptRetries: 0,
+        },
+      }),
+    );
+  });
+
   it.each([
     ["repeated failure", 2, 2, false],
     ["single failure", 1, 1, false],
@@ -2378,7 +2399,7 @@ fi
 exec sleep 10`,
     );
     vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
-    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "250");
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "1000");
     const diagnostic: ClawScanCommandDiagnostic = {};
     const job = skillVersionJob("securityScanJobs:phase-timeout");
     const startedAt = Date.now();

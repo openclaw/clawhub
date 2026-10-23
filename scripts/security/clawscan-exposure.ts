@@ -8,10 +8,10 @@ export type ClawScanExposure = {
   recoveredReceiptRetries: number | null;
 };
 
-export function noClawScanExposure(): ClawScanExposure {
+export function noClawScanExposure(eligibleScanAttempt: false | null = null): ClawScanExposure {
   return {
     scanExecution: "not_started",
-    eligibleScanAttempt: false,
+    eligibleScanAttempt,
     judgeInvocations: 0,
     judgeOperationalFailures: 0,
     recoveredReceiptRetries: 0,
