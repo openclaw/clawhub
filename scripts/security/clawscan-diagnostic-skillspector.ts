@@ -21,6 +21,103 @@ const counts = [
   "unaccounted",
 ] as const;
 const states = ["completed", "not_applicable", "degraded", "failed", "skipped", "unavailable"];
+const targetLimitReasons = [
+  "static_parse_limit",
+  "obfuscated_instruction_text",
+  "output_limit",
+  "runtime_limit",
+] as const;
+const limitMetricKeys = [
+  "observed_characters",
+  "observed_bytes",
+  "observed_findings",
+  "observed_artifacts",
+  "observed_depth",
+  "observed_records",
+  "observed_seconds",
+  "limit_characters",
+  "limit_bytes",
+  "limit_findings",
+  "limit_artifacts",
+  "limit_depth",
+  "limit_records",
+  "limit_seconds",
+] as const;
+const labelHash = (value: unknown) =>
+  typeof value === "string" && value.length > 0 && Buffer.byteLength(value) <= 1_000_000
+    ? createHash("sha256").update(value).digest("hex")
+    : null;
+
+function projectLimitDetails(
+  root: Record<string, unknown>,
+  completeness?: Record<string, unknown>,
+) {
+  const bounded = (value: unknown, maximum: number): unknown[] | null =>
+    Array.isArray(value) && value.length <= maximum ? value : null;
+  const exceptions = bounded(completeness?.ledger_exceptions, 100_000);
+  const analyzers = bounded(completeness?.analyzer_statuses, 64);
+  const issues = bounded(root.issues, 100_000);
+  const targetExceptionCounts: Record<string, number> = {};
+  const targetExceptions = [];
+  let targetCount = 0;
+  let associatedIdsTruncated = false;
+  for (const value of exceptions ?? []) {
+    const item = record(value);
+    const reason = targetLimitReasons.find((candidate) => candidate === item?.reason_code);
+    if (!item || !reason) continue;
+    targetExceptionCounts[reason] = (targetExceptionCounts[reason] ?? 0) + 1;
+    targetCount++;
+    if (Array.isArray(item.analyzers) && item.analyzers.length > 16) associatedIdsTruncated = true;
+    if (targetExceptions.length >= 128) continue;
+    const associated = bounded(item.analyzers, 16);
+    targetExceptions.push({
+      reason,
+      pathSha256: labelHash(item.path),
+      phaseSha256: labelHash(item.phase),
+      analyzerSha256: associated?.map(labelHash) ?? null,
+      analyzerCount: Array.isArray(item.analyzers) ? count(item.analyzers.length) : null,
+      startLine: count(item.start_line),
+      endLine: count(item.end_line),
+      metrics: Object.fromEntries(
+        limitMetricKeys
+          .filter((key) => Object.hasOwn(item, key))
+          .map((key) => {
+            const metric = item[key];
+            const valid =
+              typeof metric === "number" &&
+              Number.isFinite(metric) &&
+              metric >= 0 &&
+              metric <= 1_000_000_000_000 &&
+              (key.endsWith("_seconds") || Number.isSafeInteger(metric));
+            return [key, valid ? metric : null];
+          }),
+      ),
+    });
+  }
+  const findingIds = issues?.map((issue) => labelHash(record(issue)?.finding_id)) ?? null;
+  const validIds = findingIds?.filter((id) => id !== null) ?? null;
+  return {
+    sourceExceptionCount: exceptions?.length ?? null,
+    targetExceptionCounts: exceptions === null ? null : targetExceptionCounts,
+    targetExceptions,
+    detailsTruncated: exceptions === null ? null : targetCount > 128 || associatedIdsTruncated,
+    analyzerIdSha256:
+      analyzers?.map((analyzer) => labelHash(record(analyzer)?.analyzer_id)) ?? null,
+    referenceCoveragePresent:
+      analyzers?.some((analyzer) => record(analyzer)?.analyzer_id === "reference_coverage") ?? null,
+    structuredRolesPresent:
+      analyzers?.some((analyzer) => record(analyzer)?.analyzer_id === "structured_skill_roles") ??
+      null,
+    findingIds:
+      findingIds !== null && validIds !== null
+        ? {
+            valid: validIds.length,
+            unique: new Set(validIds).size,
+            missingOrInvalid: findingIds.length - validIds.length,
+          }
+        : null,
+  };
+}
 
 export function projectSkillSpectorReport(value: unknown) {
   const root = record(value);
@@ -117,6 +214,7 @@ export function projectSkillSpectorReport(value: unknown) {
       ? completeness.status
       : "unknown";
   return {
+    ...(root ? { limits: projectLimitDetails(root, completeness) } : {}),
     executionSuccessful,
     completeness: {
       isComplete,

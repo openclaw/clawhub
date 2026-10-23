@@ -223,7 +223,14 @@ input identity and terminal report hash/presence. Terminal projection includes
 strict root execution success, completeness, bounded analyzer states/counts,
 allowlisted reason-code counts and findings counts. Invalid/absent fields remain
 unknown/failure, not zero/success; partial MCP `artifact_count_limit` results stay
-partial. Full-profile output additionally retains actual consumer acceptance,
+partial. Limit attribution retains numeric bounds and hashed path, phase and
+analyzer labels for at most 128 selected exception records, with at most 16
+associated analyzer hashes per record. Total selected-reason counts remain
+separate; truncation is explicit. Auxiliary-analyzer presence and finding-ID
+cardinalities help investigate unknown enums and discrepant counts without
+retaining source text or rewriting findings. These details do not change the
+process or inspection completion checks.
+Full-profile output additionally retains actual consumer acceptance,
 fixed scanner/judge states and security verdict. Raw 0600 reports remain only in
 restricted ephemeral runtime storage and are removed, never uploaded. Every
 synthetic/nonpublishing control contributes **zero** production recovery samples.
