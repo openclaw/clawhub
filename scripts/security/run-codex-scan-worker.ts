@@ -1855,7 +1855,7 @@ function clawScanDiagnosticMapping(
   };
 }
 
-function validateClawScanArtifactForClawHubProfile(
+export function validateClawScanArtifactForClawHubProfile(
   artifact: Record<string, unknown>,
   scannerSet = REQUIRED_CLAWHUB_SCANNERS,
   endorAnalysis?: EndorAnalysis,

@@ -1,0 +1,89 @@
+name: Nonproduction ClawScan judge diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      fixture:
+        description: "Diagnostic only, excluded from SLOs; exact incident or harmless control"
+        required: true
+        type: choice
+        options: [tiny, incident]
+        default: tiny
+      source:
+        description: "Reviewed repository pin or exact installed incident baseline (never latest)"
+        required: true
+        type: choice
+        options: [reviewed, incident]
+        default: reviewed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nonproduction-clawscan-judge-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnostic:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    environment: Production
+    timeout-minutes: 45
+    env:
+      CLAWSCAN_DIAGNOSTIC_RUNNER: blacksmith-16vcpu-ubuntu-2404
+      GOTOOLCHAIN: go1.27.3
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.22.1
+      - uses: ./.github/actions/setup-bun
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install pinned Codex without login
+        run: npm install -g @openai/codex@0.160.0
+      - name: Select bounded installer source
+        env:
+          SOURCE_CHOICE: ${{ inputs.source }}
+        run: |
+          set -euo pipefail
+          installer=$(mktemp -d "$RUNNER_TEMP/clawscan-diagnostic-installer.XXXXXX")
+          cp scripts/security/install-clawscan.sh scripts/security/install-clawscan-scanners.sh scripts/security/aig-worker-requirements.txt scripts/security/clawscan-source-commit.txt "$installer/"
+          case "$SOURCE_CHOICE" in
+            reviewed) ;;
+            incident) printf '%s\n' e9d0e9e05506d9e9aa9725fe2f4da20e2870db9b > "$installer/clawscan-source-commit.txt" ;;
+            *) exit 1 ;;
+          esac
+          printf 'DIAGNOSTIC_INSTALLER=%s\n' "$installer" >> "$GITHUB_ENV"
+          sh "$installer/install-clawscan.sh"
+      - name: Install matched reviewed scanner sources and Responses adapters
+        run: |
+          set -euo pipefail
+          sh "$DIAGNOSTIC_INSTALLER/install-clawscan-scanners.sh" aig
+          sh "$DIAGNOSTIC_INSTALLER/install-clawscan-scanners.sh" skillspector
+      - name: Run isolated nonpublishing diagnostic
+        id: probe
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
+          FIXTURE_CHOICE: ${{ inputs.fixture }}
+          SOURCE_CHOICE: ${{ inputs.source }}
+          DEFAULT_MODEL: ${{ vars.DEFAULT_MODEL || 'gpt-6.1-sol' }}
+          REASONING_EFFORT: ${{ vars.REASONING_EFFORT || 'medium' }}
+          SKILLSPECTOR_MODEL: ${{ vars.SKILLSPECTOR_MODEL || 'gpt-6.1-sol' }}
+          SKILLSPECTOR_REASONING_EFFORT: ${{ vars.SKILLSPECTOR_REASONING_EFFORT || 'medium' }}
+        run: bun scripts/security/run-clawscan-diagnostic.ts --fixture "$FIXTURE_CHOICE" --source "$SOURCE_CHOICE"
+      - name: Upload allowlisted metadata only
+        if: ${{ !cancelled() && steps.probe.outputs.safe-output != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: NONPRODUCTION_DIAGNOSTIC-${{ github.run_id }}
+          path: |
+            ${{ steps.probe.outputs.safe-output }}/summary.json
+            ${{ steps.probe.outputs.safe-output }}/events.jsonl
+            ${{ steps.probe.outputs.safe-output }}/attestation.json
+          if-no-files-found: error
+          retention-days: 7

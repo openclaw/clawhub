@@ -126,6 +126,46 @@ A.I.G 0.2.1 cannot inspect packaged Python bytecode. Until Tencent ships its
 rejects skills containing `.pyc`, `.pyo`, or `.pyd` files before A.I.G runs.
 ClawScan also detects packaged Python bytecode independently.
 
+## Operator-only judge diagnostic
+
+The manual **Nonproduction ClawScan judge diagnostic** workflow runs only from
+`main`, on `blacksmith-16vcpu-ubuntu-2404`. Its `Production` environment supplies
+existing CI key references, not registry access. It does not claim jobs, create
+verdicts, publish artifacts, or call the production backend. Dispatch remains an
+operator decision, not a recovery gate.
+
+Choose `fixture=tiny` for a harmless control or `fixture=incident` for the exact
+91 original files (317855 bytes) from `chinese-official-writing` version `2.0.43`.
+The fixed public ZIP hash is checked **before decompression**, then every original
+path, type, size and hash is verified. Only the known generated `_meta.json` and
+`skill-card.md` entries are excluded. A changed archive fails closed; the public
+ZIP is not the original VirusTotal ZIP. No package entrypoint is installed or run
+by the harness.
+
+`source=reviewed` uses `scripts/security/clawscan-source-commit.txt`;
+`source=incident` selects only the installed incident revision
+`e9d0e9e05506d9e9aa9725fe2f4da20e2870db9b`. Both use the existing source installer
+and matched scanner installers. Runtime attestation checks source/binary identity,
+Go 1.27.3, Python 3.12, Node 24.22.1, Codex 0.160.0, and the approved production
+scanner settings before any provider invocation. Changed production scanner
+settings require separate review, not silent substitution.
+
+The process has a fresh `HOME`/`CODEX_HOME`, ENV-only keys, both progress opt-ins,
+the unchanged ClawHub profile and read-only inner judge, a 900000-ms process cap
+and at most 60000 ms for cleanup. Only `summary.json`, `events.jsonl` and
+`attestation.json` are uploaded. They contain fixed enums, bounded numbers,
+source/version pins and explicit environment differences—not raw output, prompts,
+commands, errors or final artifacts. Raw artifacts and runtime state are ephemeral.
+Missing or malformed final metadata leaves judge counts unknown, never zero.
+Event loss/limits and unconfirmed group cleanup are explicit; progress cannot
+establish a verdict, invocation count, provider cause or recovery.
+
+All output is `NONPRODUCTION_DIAGNOSTIC`, excluded from SLOs. A successful workflow
+or control is not proof that the incident is fixed. Any relevant production
+rollout still needs a new unchanged-version observation epoch and all existing
+timeout, judge, unresolved, sample/confidence, latency, queue, artifact and security
+gates.
+
 ## Risk analysis
 
 Risk analysis is powered internally by ClawScan, ClawHub's own security audit

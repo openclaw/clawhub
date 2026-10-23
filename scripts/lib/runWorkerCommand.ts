@@ -3,6 +3,15 @@ import { spawn } from "node:child_process";
 const DEFAULT_MAX_STDOUT_BYTES = 32 * 1024 * 1024;
 const DEFAULT_MAX_STDERR_BYTES = 1024 * 1024;
 
+export type WorkerCommandTermination = {
+  elapsedMs: number;
+  cleanupMs: number;
+  processGroup: "absent" | "unknown";
+  exitCode: number | null;
+  timedOut: boolean;
+  outputLimitExceeded: "stdout" | "stderr" | null;
+};
+
 export class CommandFailure extends Error {
   exitCode: number | null;
   outputLimitExceeded?: "stdout" | "stderr";
@@ -38,6 +47,10 @@ export async function runWorkerCommand(
     input?: string;
     maxStdoutBytes?: number;
     maxStderrBytes?: number;
+    captureOutput?: boolean;
+    cleanupProcessGroup?: boolean;
+    onStderrChunk?: (chunk: Buffer) => void;
+    onTermination?: (termination: WorkerCommandTermination) => void;
     timeoutMs: number;
   },
 ) {
@@ -52,6 +65,7 @@ export async function runWorkerCommand(
     }
   }
   return await new Promise<{ stdout: string; stderr: string }>((resolvePromise, reject) => {
+    const startedAt = Date.now();
     const child = spawn(command, args, {
       cwd: options.cwd,
       detached: process.platform !== "win32",
@@ -61,9 +75,30 @@ export async function runWorkerCommand(
     const output = { stdout: "", stderr: "" };
     const outputBytes = { stdout: 0, stderr: 0 };
     let outputLimitExceeded: "stdout" | "stderr" | undefined;
+    let observerFailed = false;
     let timedOut = false;
     let settled = false;
     let forceKillTimeout: NodeJS.Timeout | undefined;
+    let cleanupTimeout: NodeJS.Timeout | undefined;
+    let cleanupStartedAt: number | undefined;
+    const reportTermination = (exitCode: number | null) => {
+      let processGroup: "absent" | "unknown" = "unknown";
+      if (process.platform !== "win32" && child.pid) {
+        try {
+          process.kill(-child.pid, 0);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ESRCH") processGroup = "absent";
+        }
+      }
+      options.onTermination?.({
+        elapsedMs: Date.now() - startedAt,
+        cleanupMs: cleanupStartedAt === undefined ? 0 : Date.now() - cleanupStartedAt,
+        processGroup,
+        exitCode,
+        timedOut,
+        outputLimitExceeded: outputLimitExceeded ?? null,
+      });
+    };
     const killProcessTree = (signal: NodeJS.Signals) => {
       if (process.platform !== "win32" && child.pid) {
         try {
@@ -77,17 +112,46 @@ export async function runWorkerCommand(
     };
     const terminateProcessTree = () => {
       if (forceKillTimeout) return;
+      cleanupStartedAt = Date.now();
       killProcessTree("SIGTERM");
       forceKillTimeout = setTimeout(() => killProcessTree("SIGKILL"), 10_000);
       forceKillTimeout.unref();
+      cleanupTimeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        killProcessTree("SIGKILL");
+        clearTimers();
+        child.stdout.destroy();
+        child.stderr.destroy();
+        child.unref();
+        reportTermination(null);
+        reject(
+          new CommandFailure(
+            "Worker cleanup could not be confirmed",
+            null,
+            output.stdout,
+            output.stderr,
+            timedOut,
+            outputLimitExceeded,
+          ),
+        );
+      }, 60_000);
     };
     const appendOutput = (stream: "stdout" | "stderr", chunk: Buffer) => {
       if (outputLimitExceeded) return;
       const maxBytes = stream === "stdout" ? maxStdoutBytes : maxStderrBytes;
       const remaining = Math.max(0, maxBytes - outputBytes[stream]);
       const accepted = chunk.subarray(0, remaining);
-      output[stream] += accepted.toString("utf8");
+      if (options.captureOutput !== false) output[stream] += accepted.toString("utf8");
       outputBytes[stream] += accepted.byteLength;
+      if (stream === "stderr" && accepted.byteLength && !observerFailed) {
+        try {
+          options.onStderrChunk?.(accepted);
+        } catch {
+          observerFailed = true;
+          terminateProcessTree();
+        }
+      }
       if (accepted.byteLength < chunk.byteLength) {
         outputLimitExceeded = stream;
         terminateProcessTree();
@@ -100,6 +164,7 @@ export async function runWorkerCommand(
     const clearTimers = () => {
       clearTimeout(timeout);
       if (forceKillTimeout) clearTimeout(forceKillTimeout);
+      if (cleanupTimeout) clearTimeout(cleanupTimeout);
     };
     child.stdout.on("data", (chunk: Buffer) => appendOutput("stdout", chunk));
     child.stderr.on("data", (chunk: Buffer) => appendOutput("stderr", chunk));
@@ -108,14 +173,29 @@ export async function runWorkerCommand(
       settled = true;
       clearTimers();
       if (timedOut) killProcessTree("SIGKILL");
+      reportTermination(null);
       reject(error);
     });
     child.on("close", (code) => {
       if (settled) return;
       settled = true;
       clearTimers();
-      if (timedOut || outputLimitExceeded) killProcessTree("SIGKILL");
+      if (timedOut || outputLimitExceeded || observerFailed || options.cleanupProcessGroup)
+        killProcessTree("SIGKILL");
+      reportTermination(code);
       const label = options.commandLabel ?? command;
+      if (observerFailed) {
+        reject(
+          new CommandFailure(
+            "Worker diagnostic observer failed",
+            code,
+            output.stdout,
+            output.stderr,
+            timedOut,
+          ),
+        );
+        return;
+      }
       if (outputLimitExceeded) {
         const maxBytes = outputLimitExceeded === "stdout" ? maxStdoutBytes : maxStderrBytes;
         reject(
