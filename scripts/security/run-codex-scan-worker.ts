@@ -914,6 +914,7 @@ async function fileExists(path: string) {
 
 function codexEnv(workspace: string) {
   const env: NodeJS.ProcessEnv = {
+    CLAWSCAN_PROGRESS: "1",
     NO_COLOR: "1",
     SKILLSPECTOR_PROVIDER: process.env.SKILLSPECTOR_PROVIDER || "openai",
     TEMP: workspace,

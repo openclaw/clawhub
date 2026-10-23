@@ -7,13 +7,14 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
-import type { ClaimedJob } from "./run-codex-scan-worker";
+import type { ClaimedJob, ClawScanCommandDiagnostic } from "./run-codex-scan-worker";
 import {
   aggregateSkillSpectorAnalyses,
   normalizeAigAnalysis,
   processJob,
   resolveBundledSkillSpectorScanInputs,
   runClawScan,
+  writeJobDiagnostic,
 } from "./run-codex-scan-worker";
 
 const tempDirs: string[] = [];
@@ -2138,6 +2139,66 @@ echo "this should never complete"`,
       if (previousTimeout === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS;
       else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS = previousTimeout;
     }
+  });
+
+  it("retains opt-in phase evidence through the outer timeout diagnostic path", async () => {
+    const workspace = await tempDir();
+    const diagnosticsRoot = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const event =
+      '[clawscan-progress] {"schemaVersion":"clawscan-progress-v1","event":"command_start","phase":"scanner:skillspector","elapsedMs":1,"pid":42}';
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `if [ "\${CLAWSCAN_PROGRESS-}" = "1" ]; then
+  printf '%s\\n' '${event}' >&2
+fi
+exec sleep 10`,
+    );
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "250");
+    const diagnostic: ClawScanCommandDiagnostic = {};
+    const job = skillVersionJob("securityScanJobs:phase-timeout");
+    const startedAt = Date.now();
+    await expect(
+      runClawScan(job, workspace, (update) => Object.assign(diagnostic, update)),
+    ).rejects.toThrow("timed out");
+    expect(diagnostic.timedOut).toBe(true);
+    expect(diagnostic.rawArtifact).toBeUndefined();
+    expect(diagnostic.stderr).toContain(event);
+    await writeJobDiagnostic({
+      clawscan: diagnostic,
+      completedAt: Date.now(),
+      diagnosticsRoot,
+      job,
+      startedAt,
+      status: "failed",
+    });
+    const retained = await readFile(
+      join(diagnosticsRoot, "securityScanJobs_phase-timeout", "clawscan.stderr.redacted.log"),
+      "utf8",
+    );
+    expect(retained).toContain(event);
+  });
+
+  it("never accepts a progress checkpoint as a completed scan artifact", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    printf '%s\\n' '{"schemaVersion":"clawscan-progress-v1","event":"phase_end","phase":"judge","elapsedMs":3}' > "$2"
+    break
+  fi
+  shift
+done`,
+    );
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
+    await expect(
+      runClawScan(skillVersionJob("securityScanJobs:checkpoint-only"), workspace, () => {}),
+    ).rejects.toThrow();
   });
 
   it("terminates the full ClawScan process tree on timeout", async () => {
