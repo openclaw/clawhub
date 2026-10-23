@@ -2481,8 +2481,9 @@ wait "$child_pid"`,
     const previousTimeout = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS = "500";
-    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "Date"] });
     let descendantPid: number | undefined;
+    let scanSettled = false;
 
     try {
       const scanPromise = runClawScan(
@@ -2490,10 +2491,15 @@ wait "$child_pid"`,
         workspace,
         () => {},
       );
-      void scanPromise.catch(() => undefined);
+      void scanPromise
+        .finally(() => {
+          scanSettled = true;
+        })
+        .catch(() => undefined);
       descendantPid = await readStartedPid(descendantPidPath);
       await vi.advanceTimersByTimeAsync(10_500);
-      await expect(scanPromise).rejects.toThrow("timed out");
+      await vi.waitFor(() => expect(scanSettled).toBe(true), { timeout: 60_000, interval: 25 });
+      await expect(scanPromise).rejects.toMatchObject({ timedOut: true });
       vi.useRealTimers();
 
       let descendantRunning = true;
