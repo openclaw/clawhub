@@ -16,6 +16,11 @@ import {
   runClawScan,
   writeJobDiagnostic,
 } from "./run-codex-scan-worker";
+import {
+  calculateSecurityScanWorkerHealthSummary,
+  renderSecurityScanWorkerSummaryMarkdown,
+  type SecurityScanJobHealth,
+} from "./security-scan-worker-summary";
 
 const tempDirs: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -436,6 +441,223 @@ async function configureEndorFakeCommands(input: {
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
+  it.each([
+    ["repeated failure", 2, 2, false],
+    ["single failure", 1, 1, false],
+    ["legacy metadata", null, null, true],
+    ["malformed attempts", null, null, true],
+    ["unknown attempt status", null, null, true],
+    ["invalid duration", null, null, true],
+    ["inconsistent result", null, null, true],
+    ["retry never started", null, null, false],
+    ["nonreceipt retry", null, null, true],
+    ["invalid verdict", 1, 0, false],
+    ["missing artifact", null, null, false],
+    ["progress artifact", null, null, false],
+  ] as const)(
+    "reports %s without inventing exposure or a verdict",
+    async (scenario, invocations, failures, accepted) => {
+      const workspace = await tempDir();
+      const artifact = JSON.parse(clawScanArtifactJson());
+      const receiptError = "Judge did not provide the required artifact inspection receipt.";
+      const first = {
+        status: "failed",
+        error: receiptError,
+        result: null,
+        durationMs: 100,
+        challenge: "a".repeat(64),
+        requiredFile: "artifact/SKILL.md",
+        requiredFileSha256: "c".repeat(64),
+      };
+      const last = {
+        ...first,
+        status: "completed",
+        error: "",
+        challenge: "b".repeat(64),
+        result: artifact.judge.result,
+      };
+      artifact.judge.error = "";
+      artifact.judge.attempts = [first, last];
+      if (
+        scenario === "repeated failure" ||
+        scenario === "single failure" ||
+        scenario === "retry never started"
+      ) {
+        artifact.judge.status = "failed";
+        artifact.judge.error = receiptError;
+        artifact.judge.result = null;
+        artifact.judge.attempts =
+          scenario === "single failure"
+            ? [first]
+            : [first, { ...last, status: "failed", error: receiptError, result: null }];
+      }
+      if (scenario === "legacy metadata") {
+        delete artifact.judge.attempts;
+        artifact.judge.invocations = 0;
+      }
+      if (scenario === "malformed attempts") artifact.judge.attempts = { count: 0 };
+      if (scenario === "unknown attempt status") last.status = "green";
+      if (scenario === "invalid duration") last.durationMs = -1;
+      if (scenario === "inconsistent result") last.result = { verdict: "suspicious" };
+      if (scenario === "retry never started")
+        artifact.judge.attempts[1] = {
+          status: "failed",
+          error: "Judge retry could not start: private-error-body",
+          durationMs: 0,
+          result: null,
+        };
+      if (scenario === "nonreceipt retry")
+        first.error = "Judge command produced invalid JSON: private-error-body";
+      if (scenario === "invalid verdict") {
+        artifact.judge.result = { verdict: "benign" };
+        artifact.judge.attempts = [{ ...last, result: artifact.judge.result }];
+      }
+      const command = join(workspace, "fake-clawscan");
+      const raw =
+        scenario === "progress artifact"
+          ? '{"schemaVersion":"clawscan-progress-v1","event":"phase_end","phase":"judge"}'
+          : JSON.stringify(artifact);
+      await writeFakeClawScanCommand(
+        command,
+        scenario === "missing artifact"
+          ? 'echo "[clawscan-progress] judge completed" >&2'
+          : `while [[ "$1" != --output ]]; do shift; done\ncat > "$2" <<'JSON'\n${raw}\nJSON\nexit ${scenario === "repeated failure" ? 1 : 0}`,
+      );
+      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", command);
+      const diagnostic: ClawScanCommandDiagnostic = {};
+      const verdictAccepted = await runClawScan(
+        skillVersionJob("securityScanJobs:exposure"),
+        workspace,
+        (next) => Object.assign(diagnostic, next),
+      ).then(
+        () => true,
+        () => false,
+      );
+      expect(verdictAccepted).toBe(accepted);
+      expect(diagnostic.exposure).toEqual({
+        scanExecution: "started",
+        eligibleScanAttempt:
+          scenario === "missing artifact" || scenario === "progress artifact" ? null : true,
+        judgeInvocations: invocations,
+        judgeOperationalFailures: failures,
+        recoveredReceiptRetries: invocations === null ? null : 0,
+      });
+      expect(JSON.stringify(diagnostic.exposure)).not.toContain("private-error-body");
+      const summary = calculateSecurityScanWorkerHealthSummary({
+        durationMs: 1000,
+        outcomes: [
+          {
+            completed: verdictAccepted,
+            durationMs: 100,
+            judgeStageFailed: !accepted,
+            scannerStageFailed: false,
+            timedOut: false,
+            exposure: diagnostic.exposure,
+          },
+        ],
+        pool: {
+          totalClaimed: 1,
+          totalClaimFailures: 0,
+          totalCompleted: Number(accepted),
+          totalFailed: Number(!accepted),
+          totalRetryableFailed: 0,
+        },
+        workerId: "fixture",
+      });
+      expect(summary.clawscan.exposure.unknownJudgeRuns).toBe(invocations === null ? 1 : 0);
+      expect(summary.clawscan.exposure.judgeOperationalFailures).toBe(failures ?? 0);
+    },
+  );
+
+  it("retains a failed receipt invocation after a successful second receipt through worker summaries", async () => {
+    const workspace = await tempDir();
+    const diagnostics = await tempDir();
+    const artifact = JSON.parse(clawScanArtifactJson({ verdict: "malicious" }));
+    artifact.judge.result.artifact_inspection.challenge = "b".repeat(64);
+    artifact.judge.result.artifact_inspection.required_file_sha256 = "c".repeat(64);
+    const receiptAttempt = (status: string, challenge: string, error: string, result: unknown) => ({
+      status,
+      challenge: challenge.repeat(64),
+      requiredFile: "artifact/SKILL.md",
+      requiredFileSha256: "c".repeat(64),
+      durationMs: 100,
+      error,
+      result,
+    });
+    artifact.judge.error = "";
+    artifact.judge.attempts = [
+      receiptAttempt(
+        "failed",
+        "a",
+        "Judge did not provide the required artifact inspection receipt.",
+        { private: "unpublished-body" },
+      ),
+      receiptAttempt("completed", "b", "", artifact.judge.result),
+    ];
+    const command = join(workspace, "fake-clawscan");
+    await writeFakeClawScanCommand(
+      command,
+      `while [[ "$1" != --output ]]; do shift; done\ncat > "$2" <<'JSON'\n${JSON.stringify(artifact)}\nJSON`,
+    );
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", command);
+    const outcomes: SecurityScanJobHealth[] = [];
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+    await expect(
+      processJob(
+        client,
+        "worker-auth",
+        skillVersionJob("securityScanJobs:receipt-retry"),
+        diagnostics,
+        (health) => outcomes.push(health),
+      ),
+    ).resolves.toMatchObject({ completed: true });
+    const expectedExposure = {
+      eligibleScanAttempt: true,
+      scanExecution: "started",
+      judgeInvocations: 2,
+      judgeOperationalFailures: 1,
+      recoveredReceiptRetries: 1,
+    };
+    expect(outcomes[0]).toMatchObject({
+      exposure: expectedExposure,
+      verdict: "malicious",
+      judgeStageFailed: false,
+    });
+    const diagnostic = JSON.parse(
+      await readFile(
+        join(diagnostics, "securityScanJobs_receipt-retry", "diagnostic.json"),
+        "utf8",
+      ),
+    );
+    expect(diagnostic.clawscanResult.exposure).toEqual(expectedExposure);
+    const summary = calculateSecurityScanWorkerHealthSummary({
+      durationMs: 1000,
+      outcomes,
+      pool: {
+        totalClaimed: 1,
+        totalClaimFailures: 0,
+        totalCompleted: 1,
+        totalFailed: 0,
+        totalRetryableFailed: 0,
+      },
+      workerId: "fixture",
+    });
+    expect(summary.clawscan).toMatchObject({
+      completed: 1,
+      judgeStageFailures: 0,
+      exposure: {
+        judgeInvocations: 2,
+        judgeOperationalFailures: 1,
+        recoveredReceiptRetries: 1,
+        unknownJudgeRuns: 0,
+      },
+    });
+    expect(renderSecurityScanWorkerSummaryMarkdown(summary)).toContain(
+      "| Judge operationally failed invocations (known) | 1 |",
+    );
+    expect(JSON.stringify(summary)).not.toContain("unpublished-body");
+    expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("exposure");
+  });
   it("drops non-finite and invalid A.I.G SARIF line numbers", () => {
     const analysis = normalizeAigAnalysis(
       '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[{"ruleId":"T04","message":{"text":"Finding"},"locations":[{"physicalLocation":{"region":{"startLine":1e400,"endLine":-1}}}]}]}]}',

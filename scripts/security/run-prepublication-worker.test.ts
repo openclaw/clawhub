@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
+import { summarizeClawScanExposure } from "./clawscan-exposure";
 import {
   DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS,
   claimBatchDrainedQueue,
@@ -19,6 +20,13 @@ import {
 } from "./run-prepublication-worker";
 
 const tempDirs: string[] = [];
+const noNewExposure = {
+  scanExecution: "not_started",
+  eligibleScanAttempt: false,
+  judgeInvocations: 0,
+  judgeOperationalFailures: 0,
+  recoveredReceiptRetries: 0,
+};
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -223,6 +231,104 @@ describe("pre-publication worker", () => {
     expect(client.action.mock.calls[0]?.[1].trufflehog).not.toHaveProperty("exitCode");
   });
 
+  it.each(["recovered receipt", "repeated failure", "malformed metadata", "missing artifact"])(
+    "reports native %s exposure without publishing metadata",
+    async (scenario) => {
+      const root = await tempDir();
+      const command = join(root, "fake-clawscan");
+      const result = {
+        verdict: "malicious",
+        confidence: "high",
+        summary: "Security block, not clean.",
+      };
+      const first = {
+        status: "failed",
+        error: "Judge did not provide the required artifact inspection receipt.",
+        result: { private: "unpublished-body" },
+        durationMs: 100,
+        challenge: "a".repeat(64),
+        requiredFile: "artifact/package.json",
+        requiredFileSha256: "c".repeat(64),
+      };
+      const last = { ...first, status: "completed", error: "", challenge: "b".repeat(64), result };
+      const failed = scenario === "repeated failure";
+      const artifact = {
+        schemaVersion: "clawscan-run-v1",
+        profile: "clawhub",
+        completedAt: "2026-10-22T00:00:00Z",
+        scanners: {
+          "clawscan-static": { status: "completed" },
+          skillspector: { status: "completed" },
+        },
+        judge: {
+          status: failed ? "failed" : "completed",
+          error: failed ? first.error : "",
+          result: failed ? null : result,
+          attempts:
+            scenario === "malformed metadata"
+              ? []
+              : [
+                  first,
+                  failed ? { ...last, status: "failed", error: first.error, result: null } : last,
+                ],
+        },
+      };
+      await writeFile(
+        command,
+        `#!/bin/sh\nset -eu\ntest -z "\${CLAWSCAN_PROGRESS:-}"\nwhile [ "$1" != --output ]; do shift; done\n${scenario === "missing artifact" ? ":" : `cat > "$2" <<'JSON'\n${JSON.stringify(artifact)}\nJSON`}\nprintf '%s\\n' '[clawscan-progress] {"private":"unpublished-progress"}' >&2\nexit ${failed ? 1 : 0}\n`,
+      );
+      await chmod(command, 0o755);
+      vi.stubEnv("PREPUBLICATION_CLAWSCAN_COMMAND", command);
+      vi.stubEnv("CLAWSCAN_PROGRESS", "1");
+      const onExposure = vi.fn();
+      const client = {
+        action: vi.fn().mockResolvedValue({
+          status: failed || scenario === "missing artifact" ? "failed" : "blocked",
+        }),
+      };
+      await processPrePublicationAttempt(
+        client,
+        "worker-token",
+        { ...attempt, kind: "package" },
+        {
+          onExposure,
+          writeWorkspace: vi.fn().mockResolvedValue(undefined),
+          runTruffleHog: vi.fn().mockResolvedValue({ status: "clean" }),
+        },
+      );
+      expect(onExposure).toHaveBeenCalledTimes(1);
+      expect(onExposure).toHaveBeenCalledWith({
+        scanExecution: "started",
+        eligibleScanAttempt: scenario === "missing artifact" ? null : true,
+        judgeInvocations:
+          scenario === "malformed metadata" || scenario === "missing artifact" ? null : 2,
+        judgeOperationalFailures:
+          scenario === "malformed metadata" || scenario === "missing artifact"
+            ? null
+            : failed
+              ? 2
+              : 1,
+        recoveredReceiptRetries:
+          scenario === "malformed metadata" || scenario === "missing artifact"
+            ? null
+            : failed
+              ? 0
+              : 1,
+      });
+      const payload = client.action.mock.calls[0]?.[1];
+      expect(payload.clawscan.status).toBe(
+        failed || scenario === "missing artifact" ? "failed" : "blocked",
+      );
+      expect(payload).not.toHaveProperty("exposure");
+      expect(payload.clawscan.summary).not.toContain("unpublished-progress");
+      expect(
+        JSON.stringify(
+          summarizeClawScanExposure(onExposure.mock.calls.map(([exposure]) => exposure)),
+        ),
+      ).not.toContain("unpublished-body");
+    },
+  );
+
   it("reuses a completed ClawScan verdict from the exact staged artifact", async () => {
     const client = {
       action: vi.fn().mockResolvedValue({ status: "finalized" }),
@@ -233,6 +339,7 @@ describe("pre-publication worker", () => {
       summary: "TruffleHog found no verified secrets.",
     });
     const runClawScan = vi.fn();
+    const onExposure = vi.fn();
     const existingClawscanAnalysis = {
       checkedAt: 123,
       confidence: "high",
@@ -255,6 +362,7 @@ describe("pre-publication worker", () => {
         "worker-token",
         { ...attempt, existingAigAnalysis, existingClawscanAnalysis },
         {
+          onExposure,
           runClawScan,
           runTruffleHog,
           writeWorkspace: vi.fn().mockResolvedValue(undefined),
@@ -264,6 +372,7 @@ describe("pre-publication worker", () => {
 
     expect(runTruffleHog).toHaveBeenCalledTimes(1);
     expect(runClawScan).not.toHaveBeenCalled();
+    expect(onExposure).toHaveBeenCalledWith(noNewExposure);
     expect(client.action).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -553,6 +662,7 @@ describe("pre-publication worker", () => {
   });
 
   it("blocks secret-positive attempts without running ClawScan", async () => {
+    const onExposure = vi.fn();
     const client = {
       action: vi.fn().mockResolvedValue({ status: "blocked" }),
     };
@@ -565,6 +675,7 @@ describe("pre-publication worker", () => {
 
     await expect(
       processPrePublicationAttempt(client, "worker-token", attempt, {
+        onExposure,
         runClawScan,
         runTruffleHog,
         writeWorkspace: vi.fn().mockResolvedValue(undefined),
@@ -572,6 +683,7 @@ describe("pre-publication worker", () => {
     ).resolves.toMatchObject({ completed: true });
 
     expect(runClawScan).not.toHaveBeenCalled();
+    expect(onExposure).toHaveBeenCalledWith(noNewExposure);
     expect(client.action).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -619,6 +731,7 @@ describe("pre-publication worker", () => {
   });
 
   it("retries ready-to-finalize attempts without rerunning scanners", async () => {
+    const onExposure = vi.fn();
     const client = {
       action: vi.fn().mockResolvedValue({ status: "finalized" }),
     };
@@ -632,6 +745,7 @@ describe("pre-publication worker", () => {
         "worker-token",
         { ...attempt, status: "ready_to_finalize", files: [] },
         {
+          onExposure,
           runClawScan,
           runTruffleHog,
           writeWorkspace,
@@ -640,6 +754,7 @@ describe("pre-publication worker", () => {
     ).resolves.toMatchObject({ completed: true });
 
     expect(writeWorkspace).not.toHaveBeenCalled();
+    expect(onExposure).toHaveBeenCalledWith(noNewExposure);
     expect(runTruffleHog).not.toHaveBeenCalled();
     expect(runClawScan).not.toHaveBeenCalled();
     expect(client.action).toHaveBeenCalledWith(

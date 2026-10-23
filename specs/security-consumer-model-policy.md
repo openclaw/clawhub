@@ -37,7 +37,8 @@ paths. Environment-only changes cannot implement this policy: official GPT-6.1
 Sol function/tool calls require Responses rather than Chat Completions.
 
 `clawscan-source-commit.txt` pins merged ClawScan commit
-`5be7f8e97fa474f0aa9eb443f38d9e3d5f51226b` (upstream PR #68). The
+`e9d0e9e05506d9e9aa9725fe2f4da20e2870db9b` (upstream PR #77, including
+the bounded receipt retry from PR #76). The
 workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
 with Go 1.27.3, and retains the matching source tree for host scanner installation.
 No mutable `main`, `latest`, or unapproved public ClawScan release is consumed.
@@ -88,6 +89,37 @@ The local Responses evaluator records the requested identity in `model` and,
 when actually returned by the provider, keeps that separate as `providerModel`.
 Its supplied environment controls the evaluator; it must not accidentally read
 ambient process model settings instead.
+
+## Operator exposure, not verdict evidence
+
+Worker health keeps raw claimed/completed/failed counts separate from scan
+execution, eligible scan attempts and native judge-command invocations. Eligibility
+is evidenced by a completed or failed built-in static scanner in a final ClawHub
+artifact; a missing artifact or unproven input rejection remains unknown. It is
+not inferred from CLI exit 0 or a workflow conclusion.
+
+The bounded native `judge.attempts` records supply invocation and operational-failure
+counts, including the first failed receipt even when the second attempt succeeds.
+Only a failed receipt followed by a completed fresh-challenge attempt is counted
+as recovered. Missing, malformed, inconsistent or pre-command-start retry metadata
+leaves judge exposure unknown; legacy top-level status is not an invocation count.
+These are native command attempts, not provider HTTP request/tool-call counts.
+Known aggregate counts are partial whenever unknown runs remain.
+
+Metadata validation is independent of scanner, receipt and verdict validation.
+It cannot accept or reject a security verdict. A completed malicious verdict or a
+correct secret block is not a clean scan. Newly reported exposure fields contain
+only bounded execution state, boolean/null eligibility and numeric/null counts;
+never result contents, inspection paths/challenges or error bodies.
+
+Shared/priority workers retain opt-in phase stderr in existing redacted diagnostics.
+Prepublication emits aggregate operator exposure without opting into progress
+stderr, and strips prefixed progress records from public check summaries. Its
+exact-artifact reuse, secret-check short circuits and finalization-only retries
+record no **new** scan or judge invocation, not zero historical exposure. Dedicated
+prepublication progress retention remains pending. No exposure fields are added
+to publication payloads or stored verdicts, and green workflows do not prove scan
+health or service recovery.
 
 ## Regression gates
 
