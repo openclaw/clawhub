@@ -7,8 +7,12 @@ installability or security verdict.
 
 Complete structured retirement guidance is sufficient even without a separate
 `authorRemediation.summary`. Both publish and bulk-scan normalization preserve it.
-Inspector 0.4.0 runs on Node.js 22.13+ (22.x) or 24+; hosted Convex actions select
-Node.js 24 in `convex.json`, bulk scans explicitly use Node.js, and the CLI loads Inspector only for local validation so ordinary Bun
+Inspector 0.4.0 runs on Node.js 22.13+ (22.x) or 24+. Inspector 0.4.4 omits a
+packed-target retirement notice when the selected OpenClaw package does not
+publicly export every replacement name, so a host that still only exports
+`getSessionEntry` does not tell the author to switch to `getSessionEntryAsync`.
+Hosted Convex actions select Node.js 24 in `convex.json`, bulk scans explicitly
+use Node.js, and the CLI loads Inspector only for local validation so ordinary Bun
 commands do not import its Node-only module graph.
 
 Convex defaults to Node.js 20 without an explicit runtime selection. Its runtime
