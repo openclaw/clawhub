@@ -2391,10 +2391,15 @@ echo "this should never complete"`,
     const fakeClawScan = join(workspace, "fake-clawscan");
     const event =
       '[clawscan-progress] {"schemaVersion":"clawscan-progress-v1","event":"command_start","phase":"scanner:skillspector","elapsedMs":1,"pid":42}';
+    const childEvent =
+      '[clawscan-progress] {"schemaVersion":"clawscan-progress-v1","event":"child_event","phase":"judge","elapsedMs":2,"pid":42,"sequence":1,"childEvent":"item.started","childItem":"command_execution","childState":"in_progress","command":"PRIVATE-HOSTILE-FIELD","prompt":"PRIVATE-HOSTILE-FIELD","stderr":"PRIVATE-HOSTILE-FIELD"}';
     await writeFakeClawScanCommand(
       fakeClawScan,
       `if [ "\${CLAWSCAN_PROGRESS-}" = "1" ]; then
   printf '%s\\n' '${event}' >&2
+fi
+if [ "\${CLAWSCAN_CHILD_PROGRESS-}" = "1" ]; then
+  printf '%s\\n' '${childEvent}' >&2
 fi
 exec sleep 10`,
     );
@@ -2403,12 +2408,17 @@ exec sleep 10`,
     const diagnostic: ClawScanCommandDiagnostic = {};
     const job = skillVersionJob("securityScanJobs:phase-timeout");
     const startedAt = Date.now();
-    await expect(
-      runClawScan(job, workspace, (update) => Object.assign(diagnostic, update)),
-    ).rejects.toThrow("timed out");
+    const pending = runClawScan(job, workspace, (update) => Object.assign(diagnostic, update));
+    await expect
+      .poll(() => diagnostic.progress?.some((record) => record.childItem === "command_execution"))
+      .toBe(true);
+    await expect(pending).rejects.toThrow("timed out");
     expect(diagnostic.timedOut).toBe(true);
     expect(diagnostic.rawArtifact).toBeUndefined();
     expect(diagnostic.stderr).toContain(event);
+    expect(diagnostic.stderr).not.toContain("PRIVATE-HOSTILE-FIELD");
+    expect(diagnostic.exposure?.judgeInvocations).toBeNull();
+    expect(diagnostic.termination?.timedOut).toBe(true);
     await writeJobDiagnostic({
       clawscan: diagnostic,
       completedAt: Date.now(),
@@ -2422,6 +2432,13 @@ exec sleep 10`,
       "utf8",
     );
     expect(retained).toContain(event);
+    const safeProgress = await readFile(
+      join(diagnosticsRoot, "securityScanJobs_phase-timeout", "clawscan.progress.jsonl"),
+      "utf8",
+    );
+    expect(safeProgress).toContain('"childState":"in_progress"');
+    expect(safeProgress).not.toContain("PRIVATE-HOSTILE-FIELD");
+    expect(JSON.stringify(diagnostic)).not.toContain("PRIVATE-HOSTILE-FIELD");
   });
 
   it("never accepts a progress checkpoint as a completed scan artifact", async () => {

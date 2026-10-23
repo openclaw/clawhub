@@ -275,11 +275,12 @@ describe("pre-publication worker", () => {
       };
       await writeFile(
         command,
-        `#!/bin/sh\nset -eu\ntest -z "\${CLAWSCAN_PROGRESS:-}"\nwhile [ "$1" != --output ]; do shift; done\n${scenario === "missing artifact" ? ":" : `cat > "$2" <<'JSON'\n${JSON.stringify(artifact)}\nJSON`}\nprintf '%s\\n' '[clawscan-progress] {"private":"unpublished-progress"}' >&2\nexit ${failed ? 1 : 0}\n`,
+        `#!/bin/sh\nset -eu\ntest -z "\${CLAWSCAN_PROGRESS:-}"\ntest -z "\${CLAWSCAN_CHILD_PROGRESS:-}"\nwhile [ "$1" != --output ]; do shift; done\n${scenario === "missing artifact" ? ":" : `cat > "$2" <<'JSON'\n${JSON.stringify(artifact)}\nJSON`}\nprintf '%s\\n' '[clawscan-progress] {"private":"unpublished-progress"}' >&2\nexit ${failed ? 1 : 0}\n`,
       );
       await chmod(command, 0o755);
       vi.stubEnv("PREPUBLICATION_CLAWSCAN_COMMAND", command);
       vi.stubEnv("CLAWSCAN_PROGRESS", "1");
+      vi.stubEnv("CLAWSCAN_CHILD_PROGRESS", "1");
       const onExposure = vi.fn();
       const client = {
         action: vi.fn().mockResolvedValue({

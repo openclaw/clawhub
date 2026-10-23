@@ -12,7 +12,11 @@ import { parseLlmEvalResponse, type LlmEvalDimension } from "../../convex/lib/se
 import { readWorkerAssignment } from "../../packages/clawhub-admin/src/scanAssignments";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 import { materializeVerifiedArtifactFiles } from "../lib/artifactMaterialization";
-import { CommandFailure, runWorkerCommand } from "../lib/runWorkerCommand";
+import {
+  CommandFailure,
+  runWorkerCommand,
+  type WorkerCommandTermination,
+} from "../lib/runWorkerCommand";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskGitHubActionsSecret,
@@ -28,6 +32,11 @@ import {
   noClawScanExposure,
   unknownClawScanExposure,
 } from "./clawscan-exposure";
+import {
+  createClawScanProgressCollector,
+  parseClawScanProgress,
+  type SafeClawScanProgress,
+} from "./clawscan-progress";
 import {
   EndorContainerCleanupError,
   isEndorPluginScanEnabled,
@@ -156,6 +165,9 @@ type BundledSkillSpectorScanInput = {
 };
 
 export type ClawScanCommandDiagnostic = {
+  progress?: SafeClawScanProgress[];
+  progressCounts?: { retained: number; rejected: number; limited: number };
+  termination?: WorkerCommandTermination;
   exposure?: ClawScanExposure;
   args?: string[];
   artifactPath?: string;
@@ -766,6 +778,13 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
       structured: false,
     },
   );
+  const clawscanProgressPath = input.clawscan?.progress ? "clawscan.progress.jsonl" : undefined;
+  if (clawscanProgressPath) {
+    await writeFile(
+      join(jobDir, clawscanProgressPath),
+      input.clawscan!.progress!.map((event) => JSON.stringify(event)).join("\n") + "\n",
+    );
+  }
   const clawscanScannerOutputs =
     input.clawscan?.rawArtifact && input.clawscan?.artifactPath
       ? await copyClawScanScannerOutputs({
@@ -819,6 +838,9 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
     status: input.status,
     target: sanitizedTargetForDiagnostic(input.job.target),
     clawscanResult: {
+      progressPath: clawscanProgressPath,
+      progressCounts: input.clawscan?.progressCounts,
+      termination: input.clawscan?.termination,
       exposure: input.clawscan?.exposure ?? unknownClawScanExposure(),
       args: input.clawscan?.args,
       exitCode: input.clawscan?.exitCode,
@@ -923,6 +945,7 @@ async function fileExists(path: string) {
 function codexEnv(workspace: string) {
   const env: NodeJS.ProcessEnv = {
     CLAWSCAN_PROGRESS: "1",
+    CLAWSCAN_CHILD_PROGRESS: "1",
     NO_COLOR: "1",
     SKILLSPECTOR_PROVIDER: process.env.SKILLSPECTOR_PROVIDER || "openai",
     TEMP: workspace,
@@ -945,7 +968,15 @@ function codexEnv(workspace: string) {
 async function runCommand(
   command: string,
   args: string[],
-  options: { cwd: string; input?: string; omitEnv?: string[]; timeoutMs: number },
+  options: {
+    cwd: string;
+    input?: string;
+    omitEnv?: string[];
+    timeoutMs: number;
+    onStderrChunk?: (chunk: Buffer) => void;
+    onTermination?: (termination: WorkerCommandTermination) => void;
+    cleanupProcessGroup?: boolean;
+  },
 ) {
   const env = codexEnv(options.cwd);
   for (const name of options.omitEnv ?? []) delete env[name];
@@ -954,6 +985,9 @@ async function runCommand(
     env,
     input: options.input,
     timeoutMs: options.timeoutMs,
+    onStderrChunk: options.onStderrChunk,
+    onTermination: options.onTermination,
+    cleanupProcessGroup: options.cleanupProcessGroup,
   });
 }
 
@@ -1991,6 +2025,20 @@ export async function runClawScan(
   }
   onDiagnostic({ args: [command, ...args], artifactPath });
   onDiagnostic({ exposure: clawScanExposure() });
+  const events: SafeClawScanProgress[] = [];
+  const progress = createClawScanProgressCollector((event) => events.push(event));
+  onDiagnostic({ progress: events, progressCounts: progress.counts });
+  const sanitizedProgressStderr = (stderr: string) =>
+    stderr
+      .split(/\r?\n/)
+      .map((line) => {
+        if (!line.includes("[clawscan-progress]")) return line;
+        const safe = parseClawScanProgress(line);
+        return safe
+          ? `[clawscan-progress] ${JSON.stringify(safe)}`
+          : "[clawscan-progress] [invalid record omitted]";
+      })
+      .join("\n");
 
   const captureArtifact = async () => {
     if (!(await fileExists(artifactPath))) return undefined;
@@ -2016,23 +2064,28 @@ export async function runClawScan(
       cwd: workspace,
       omitEnv: ["VIRUSTOTAL_API_KEY"],
       timeoutMs: clawScanTimeoutMs(),
+      onStderrChunk: progress.write,
+      onTermination: (termination) => onDiagnostic({ termination }),
+      cleanupProcessGroup: true,
     });
     onDiagnostic({
       exitCode: 0,
-      stderr: output.stderr,
+      stderr: sanitizedProgressStderr(output.stderr),
       stdout: output.stdout,
     });
   } catch (error) {
     if (error instanceof CommandFailure) {
       onDiagnostic({
         exitCode: error.exitCode,
-        stderr: error.stderr,
+        stderr: sanitizedProgressStderr(error.stderr),
         stdout: error.stdout,
         timedOut: error.timedOut,
       });
     }
     await captureArtifact();
     throw error;
+  } finally {
+    progress.end();
   }
 
   const artifact = await captureArtifact();
