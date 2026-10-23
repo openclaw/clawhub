@@ -51,6 +51,7 @@ type SkillDetailTabsProps = {
   onCompareIntent: () => void;
   readmeContent: string | null;
   readmeError: string | null;
+  isPendingPublication?: boolean;
   skillCardContent: string | null;
   skillCardError: string | null;
   hasSkillCard: boolean;
@@ -76,6 +77,7 @@ export function SkillDetailTabs({
   onCompareIntent,
   readmeContent,
   readmeError,
+  isPendingPublication = false,
   skillCardContent,
   skillCardError,
   hasSkillCard,
@@ -265,6 +267,13 @@ export function SkillDetailTabs({
                 </button>
               ) : null}
             </>
+          ) : isPendingPublication ? (
+            <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
+              <p className="empty-state-title">Files pending security checks</p>
+              <p className="empty-state-body">
+                The SKILL.md preview will be available when publication completes.
+              </p>
+            </div>
           ) : readmeError ? (
             <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
               <p className="empty-state-title">No README available</p>

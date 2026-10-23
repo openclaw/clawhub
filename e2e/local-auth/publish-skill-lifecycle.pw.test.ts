@@ -477,6 +477,20 @@ test("clean skill publish stays private until TruffleHog and ClawScan pass", asy
   await expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
   await expect(await publishedSkillVersionExists(page, { ownerHandle, slug, version })).toBe(false);
 
+  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.locator("h1.skill-page-title", { hasText: displayName })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByText("Pending publication", { exact: true })).toBeVisible();
+  await expect(page.getByText(/not yet public or installable/i)).toBeVisible();
+  await expect(page.getByText("Files pending security checks")).toBeVisible();
+  await expect(page.getByRole("article", { name: "Install" })).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("owner-pending-publication.png"),
+    fullPage: true,
+  });
+
   const result = (await completeMockPrePublicationChecks({
     kind: "skill",
     slug,
