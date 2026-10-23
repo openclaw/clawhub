@@ -475,6 +475,53 @@ describe("publishAttempts", () => {
     expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBeGreaterThanOrEqual(30 * 60 * 1000);
   });
 
+  it.each([undefined, "bundle-plugin", "code-plugin"])(
+    "carries the registry family through a package check claim with stored family=%s",
+    async (storedFamily) => {
+      const attempt = {
+        _id: "publishAttempts:bundle",
+        kind: "package",
+        status: "pending_checks",
+        userId: "users:publisher",
+        packageId: "packages:bundle",
+        slug: "bundle",
+        version: "1.0.0",
+        artifactFingerprint: "exact-fingerprint",
+        files: [],
+        scanContext: {
+          ...(storedFamily ? { package: { family: storedFamily } } : {}),
+          release: { artifactKind: "legacy-zip" },
+        },
+        createdAt: Date.now(),
+      };
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) =>
+            id === attempt.packageId ? { family: "bundle-plugin" } : null,
+          ),
+          normalizeId: vi.fn(),
+          patch: vi.fn(),
+          query: vi.fn(() => ({
+            withIndex: vi.fn(() => ({
+              order: vi.fn(() => ({ take: vi.fn(async () => [attempt]) })),
+            })),
+          })),
+        },
+      };
+      const claim = claimPendingChecksHandler(ctx, { claimId: "checks:bundle" });
+      if (storedFamily === "code-plugin") {
+        await expect(claim).rejects.toThrow("does not match its registry family");
+      } else {
+        await expect(claim).resolves.toMatchObject({
+          scanContext: {
+            package: { family: "bundle-plugin" },
+            release: { artifactKind: "legacy-zip" },
+          },
+        });
+      }
+    },
+  );
+
   it("claims fresh staged publishes before older scanner retries", async () => {
     const now = Date.now();
     const freshAttempt = {

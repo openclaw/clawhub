@@ -15,6 +15,7 @@ import {
   parseArk,
   resolvePluginCategories,
   resolveStoredPluginCategories,
+  selectPluginManifest,
   validateOpenClawExternalCodePluginPackageContents,
   type PackageArtifactSummary,
   type ApiV1PackageVersionPublicationResponse,
@@ -99,7 +100,6 @@ import {
   normalizePublishFiles,
   readStorageText,
   readOptionalTextFile,
-  REAL_BUNDLE_MANIFESTS,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
@@ -9370,23 +9370,36 @@ async function publishPackageImpl(
           label: "Claw package.json",
           strictUtf8: true,
         }
-      : undefined,
+      : { exactPath: true, maxBytes: 256 * 1024, label: "Plugin package.json", strictUtf8: true },
   );
   const pluginManifestEntry = await readOptionalTextFile(
     ctx,
     files,
     (path) => path === "openclaw.plugin.json",
+    { exactPath: true, maxBytes: 256 * 1024, label: "Native plugin manifest", strictUtf8: true },
   );
-  let detectedBundleFormat: string | undefined;
-  let bundleManifestEntry: Awaited<ReturnType<typeof readOptionalTextFile>> | undefined;
-  for (const marker of REAL_BUNDLE_MANIFESTS) {
-    const entry = await readOptionalTextFile(ctx, files, (path) => path === marker.path);
-    if (entry) {
-      bundleManifestEntry = entry;
-      detectedBundleFormat = marker.format;
-      break;
+  const selectedManifest = (() => {
+    if (family === "claw") return undefined;
+    try {
+      return selectPluginManifest({
+        family,
+        paths: files.map((file) => file.path),
+        bundleFormat: payload.bundle?.format,
+      });
+    } catch (error) {
+      throw new ConvexError(error instanceof Error ? error.message : "Invalid plugin family");
     }
-  }
+  })();
+  const detectedBundleFormat = selectedManifest?.format;
+  const bundleManifestEntry =
+    family === "bundle-plugin" && selectedManifest
+      ? await readOptionalTextFile(ctx, files, (path) => path === selectedManifest.path, {
+          exactPath: true,
+          maxBytes: 256 * 1024,
+          label: "Bundle plugin manifest",
+          strictUtf8: true,
+        })
+      : undefined;
   const readmeEntry = await readOptionalTextFile(
     ctx,
     files,
@@ -9423,7 +9436,7 @@ async function publishPackageImpl(
     maxDepth: MAX_STORED_PACKAGE_METADATA_DEPTH,
   });
   if (family !== "claw" && packageJson) ensurePluginNameMatchesPackage(name, packageJson);
-  if (family !== "claw" && !pluginManifest) {
+  if (family === "code-plugin" && !pluginManifest) {
     throw new ConvexError("openclaw.plugin.json is required for plugin packages");
   }
   const clawTextByPath = new Map<string, string>();
@@ -9505,11 +9518,7 @@ async function publishPackageImpl(
       ? extractBundlePluginArtifacts({
           packageName: name,
           packageJson,
-          pluginManifest:
-            pluginManifest ??
-            (() => {
-              throw new ConvexError("openclaw.plugin.json is required for plugin packages");
-            })(),
+          pluginManifest,
           bundleManifest,
           bundleMetadata:
             payload.bundle || detectedBundleFormat
@@ -9634,11 +9643,7 @@ async function publishPackageImpl(
       ? undefined
       : {
           ...derivePluginManifestSummary({
-            pluginManifest:
-              pluginManifest ??
-              (() => {
-                throw new ConvexError("openclaw.plugin.json is required for plugin packages");
-              })(),
+            pluginManifest: pluginManifest ?? bundleManifest ?? {},
             ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
             compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
             ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
@@ -10307,6 +10312,7 @@ function buildPackagePublishAttemptScanContext(insertArgs: Record<string, unknow
       : {};
   return stripUndefinedForStoredAttempt({
     trustedOpenClawPlugin: verification.trustedOpenClawPlugin === true ? true : undefined,
+    package: { family: insertArgs.family },
     release: {
       staticScan: insertArgs.staticScan,
       pluginManifestSummary: insertArgs.pluginManifestSummary,

@@ -16,6 +16,22 @@ import {
 import { buildPackageInventoryDigest } from "./skills";
 
 describe("packageRegistry", () => {
+  it("derives bundle identity from the canonical name, never a native envelope or upload hint", () => {
+    expect(
+      extractBundlePluginArtifacts({
+        packageName: "upload-name",
+        pluginManifest: { id: "native-id" },
+        bundleManifest: { name: "Canonical Bundle" },
+      }).runtimeId,
+    ).toBe("canonical-bundle");
+    expect(() =>
+      extractBundlePluginArtifacts({
+        packageName: "upload-name",
+        pluginManifest: {},
+        bundleManifest: {},
+      }),
+    ).toThrow("bundle manifest must declare a name");
+  });
   it.each([
     "../escape",
     "scope/name",
@@ -735,6 +751,7 @@ describe("packageRegistry", () => {
       },
       pluginManifest: { id: "matrix-bundle" },
       bundleManifest: {
+        name: "matrix-bundle",
         hostTargets: ["openclaw"],
       },
     });
@@ -749,6 +766,7 @@ describe("packageRegistry", () => {
       packageName: "demo-bundle",
       packageJson: { name: "demo-bundle" },
       pluginManifest: { id: "demo-bundle" },
+      bundleManifest: { name: "demo-bundle" },
     });
 
     expect(result.runtimeId).toBe("demo-bundle");

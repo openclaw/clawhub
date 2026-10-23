@@ -280,6 +280,40 @@ Suggested storage model:
 
 ## Publishing Model
 
+### Family-aware plugin input contract
+
+Publication and worker selection discriminate the existing `code-plugin` and
+`bundle-plugin` families before interpreting identity. Native manifests retain
+their required `id`, install-path grammar, config schema, entrypoint and source
+gates. Supported bundles have exactly one `.codex-plugin/plugin.json`,
+`.claude-plugin/plugin.json`, or `.cursor-plugin/plugin.json`; identity comes
+only from canonical name slugging. No missing-name directory fallback or
+upload-provided identity is permitted. Portable root Agent manifests are not
+part of this declared bundle support. Do not silently accept unknown formats.
+
+Family and optional format/id claims must agree with artifact metadata. Native
+entrypoints belong to the native family. Explicit family selection can choose
+native versus bundle manifests in a mixed artifact; multiple foreign bundle
+markers remain ambiguous and fail admission. The worker passes the exact
+selected manifest to ClawScan, which resolves it back to the full artifact root.
+Legacy extracted artifacts are never relocated by a nested `package.json`.
+Bounded UTF-8 metadata reads must not escape the artifact. Never generate an id,
+inject a plugin manifest, rewrite archive bytes, or discard companion files to
+achieve admission. All scanner, judge, moderation and pending-publication gates
+remain mandatory. Historical release bytes and stored identities are unchanged.
+New pending attempts carry the admitted package family into worker metadata.
+Claims for older attempts recover that metadata from their existing registry
+record, never by guessing from filenames; contradictory stored claims fail.
+
+This is the discriminated-family parsing pattern, not a compatibility fallback:
+select one known parser, validate its own identity, and reject ambiguity or
+contradictory claims before staging. OpenClaw source revision
+`36bd762422b348173b951819eef29e7fb2d307c3`, `src/plugins/bundle-manifest.ts`
+(`slugifyPluginId`, `loadBundleManifest`, `detectBundleManifestFormat`) and
+`src/plugins/manifest.ts` (`loadPluginManifest`) anchor the separate contracts.
+ClawHub remains stricter about named bundles and unambiguous inventory, rather
+than relying on machine-dependent directory fallbacks or marker precedence.
+
 ClawHub should stay open to community publishing.
 
 Policy:

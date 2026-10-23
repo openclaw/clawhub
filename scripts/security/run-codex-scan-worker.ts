@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { PLUGIN_BUNDLE_MANIFESTS, selectPluginManifest } from "clawhub-schema";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -2161,18 +2162,34 @@ async function resolveScanArtifactRoot(workspace: string, job: ClaimedJob) {
 }
 
 export async function resolveClawScanTarget(workspace: string, job: ClaimedJob) {
-  const root = await resolveScanArtifactRoot(workspace, job);
-  const manifests = ["SKILL.md", "openclaw.plugin.json"];
+  const root =
+    job.job.targetKind === "packageRelease" && job.target.release?.artifactKind === "legacy-zip"
+      ? "./artifact"
+      : await resolveScanArtifactRoot(workspace, job);
+  const manifests = [
+    "SKILL.md",
+    "openclaw.plugin.json",
+    ...PLUGIN_BUNDLE_MANIFESTS.map((marker) => marker.path),
+  ];
   const present = await Promise.all(
-    manifests.map(async (name) =>
-      (await lstat(join(workspace, root, name)).catch(() => null))?.isFile(),
-    ),
+    manifests.map(async (name) => {
+      if (name.includes("/")) {
+        const parent = await lstat(join(workspace, root, dirname(name))).catch(() => null);
+        if (parent && !parent.isDirectory()) throw new Error("Unsafe bundle manifest directory");
+      }
+      return (await lstat(join(workspace, root, name)).catch(() => null))?.isFile();
+    }),
   );
-  // ClawScan rejects dual-manifest directories. An explicit manifest selects the
-  // claimed kind while ClawScan still scans the entire dual-layout directory.
-  return present.every(Boolean)
-    ? `${root}/${manifests[job.job.targetKind === "packageRelease" ? 1 : 0]}`
-    : root;
+  if (job.job.targetKind === "packageRelease") {
+    const pkg = job.target.package as Record<string, unknown> | undefined;
+    if (pkg?.family === "claw") return root;
+    const selected = selectPluginManifest({
+      family: pkg?.family,
+      paths: manifests.filter((_, index) => present[index]),
+    });
+    return `${root}/${selected.path}`;
+  }
+  return present[0] && present.slice(1).some(Boolean) ? `${root}/SKILL.md` : root;
 }
 
 export function scanHealthClassification(input: {

@@ -726,6 +726,13 @@ clawhub publisher create opik --display-name "Opik"
 - Code-plugin folders are packed into a ClawPack npm tarball before upload so
   OpenClaw installs can verify the exact artifact. Bundle-plugin folders still
   use the extracted-file publish path.
+- Bundles need exactly one supported bundle marker with a non-empty `name`, not
+  an added `openclaw.plugin.json` envelope. The name determines the canonical
+  bundle runtime identity. `--bundle-format` must match the marker's `codex`,
+  `claude`, or `cursor` format. Multiple bundle markers are rejected. Explicit
+  native entrypoints take precedence during family detection; use the matching
+  family rather than rewriting a manifest. All original files remain uploaded
+  and inspected, including companion skill and native manifests.
 - For GitHub sources, source attribution is auto-populated from the repo, resolved commit, ref, and subpath.
 - For local folders, source attribution is auto-detected from local git when the origin remote points at GitHub.
 - External code plugins must declare `openclaw.compat.pluginApi` and

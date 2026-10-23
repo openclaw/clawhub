@@ -638,15 +638,32 @@ function buildSkillAttemptScanContext(attempt: {
   });
 }
 
-function buildPackageAttemptScanContext(attempt: {
-  scanContext?: unknown;
-  packageInsertArgs?: unknown;
-}) {
-  if (attempt.scanContext) return attempt.scanContext;
+function buildPackageAttemptScanContext(
+  attempt: {
+    scanContext?: unknown;
+    packageInsertArgs?: unknown;
+  },
+  packageFamily: unknown,
+) {
+  const scanContext = asRecord(attempt.scanContext);
+  const packageContext = asRecord(scanContext.package);
   const packageInsertArgs = asRecord(attempt.packageInsertArgs);
+  const family = packageFamily ?? packageInsertArgs.family ?? packageContext.family;
+  if (packageContext.family !== undefined && packageContext.family !== family) {
+    throw new ConvexError("Package scan family does not match its registry family");
+  }
+  if (packageInsertArgs.family !== undefined && packageInsertArgs.family !== family) {
+    throw new ConvexError("Package publish family does not match its registry family");
+  }
+  if (attempt.scanContext)
+    return withoutUndefined({
+      ...scanContext,
+      package: withoutUndefined({ ...packageContext, family }),
+    });
   const verification = asRecord(packageInsertArgs.verification);
   return withoutUndefined({
     trustedOpenClawPlugin: verification.trustedOpenClawPlugin === true ? true : undefined,
+    package: withoutUndefined({ family }),
     release: withoutUndefined({
       staticScan: packageInsertArgs.staticScan,
       pluginManifestSummary: packageInsertArgs.pluginManifestSummary,
@@ -1049,6 +1066,10 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
         }
       }
 
+      const packageFamily =
+        attempt.kind === "package" && attempt.packageId
+          ? (await ctx.db.get(attempt.packageId))?.family
+          : undefined;
       return {
         attemptId: attempt._id,
         status: attempt.status,
@@ -1073,7 +1094,7 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
             }
           : {
               clawpackStorageId: publishAttemptClawpackStorageId(attempt),
-              scanContext: buildPackageAttemptScanContext(attempt),
+              scanContext: buildPackageAttemptScanContext(attempt, packageFamily),
             }),
         ...(existingClawscanAnalysis ? { existingClawscanAnalysis } : {}),
         ...(existingAigAnalysis ? { existingAigAnalysis } : {}),
