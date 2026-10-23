@@ -2772,7 +2772,7 @@ describe("package commands", () => {
           sourceRepo: "openclaw/demo-plugin",
           sourceCommit: "abc123",
         }),
-      ).rejects.toThrow("openclaw.plugin.json required");
+      ).rejects.toThrow("openclaw.plugin.json is required");
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
@@ -3333,66 +3333,71 @@ describe("package commands", () => {
     }
   });
 
-  it("publishes a bundle plugin package with real bundle marker detection", async () => {
-    const workdir = await makeTmpWorkdir();
-    try {
-      const folder = join(workdir, "demo-bundle");
-      await mkdir(join(folder, "dist"), { recursive: true });
-      await mkdir(join(folder, ".codex-plugin"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        JSON.stringify({
+  it.each([true, false])(
+    "publishes canonical bundle bytes with native envelope=%s",
+    async (nativeEnvelope) => {
+      const workdir = await makeTmpWorkdir();
+      try {
+        const folder = join(workdir, "demo-bundle");
+        await mkdir(join(folder, "dist"), { recursive: true });
+        await mkdir(join(folder, ".codex-plugin"), { recursive: true });
+        await writeFile(
+          join(folder, "package.json"),
+          JSON.stringify({
+            name: "demo-bundle",
+            displayName: "Demo Bundle",
+            version: "0.4.0",
+          }),
+          "utf8",
+        );
+        if (nativeEnvelope) {
+          await writeFile(
+            join(folder, "openclaw.plugin.json"),
+            JSON.stringify({ id: "demo.bundle" }),
+            "utf8",
+          );
+        }
+        await writeFile(
+          join(folder, ".codex-plugin", "plugin.json"),
+          JSON.stringify({ name: "Demo Bundle", skills: ["skills"] }),
+          "utf8",
+        );
+        await writeFile(join(folder, "dist", "plugin.wasm"), "binary", "utf8");
+
+        httpMocks.apiRequestForm.mockResolvedValueOnce({
+          ok: true,
+          packageId: "pkg_bundle",
+          releaseId: "rel_bundle",
+        });
+
+        await cmdPublishPackage(makeOpts(workdir), "demo-bundle", {
+          bundleFormat: "codex",
+          hostTargets: "desktop,mobile",
+        });
+
+        expect(getPublishPayload()).toEqual({
           name: "demo-bundle",
           displayName: "Demo Bundle",
+          family: "bundle-plugin",
           version: "0.4.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.bundle" }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, ".codex-plugin", "plugin.json"),
-        JSON.stringify({ name: "Demo Bundle", skills: ["skills"] }),
-        "utf8",
-      );
-      await writeFile(join(folder, "dist", "plugin.wasm"), "binary", "utf8");
-
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        packageId: "pkg_bundle",
-        releaseId: "rel_bundle",
-      });
-
-      await cmdPublishPackage(makeOpts(workdir), "demo-bundle", {
-        bundleFormat: "openclaw-bundle",
-        hostTargets: "desktop,mobile",
-      });
-
-      expect(getPublishPayload()).toEqual({
-        name: "demo-bundle",
-        displayName: "Demo Bundle",
-        family: "bundle-plugin",
-        version: "0.4.0",
-        changelog: "",
-        tags: ["latest"],
-        bundle: {
-          format: "openclaw-bundle",
-          hostTargets: ["desktop", "mobile"],
-        },
-      });
-      expect(getUploadedFileNames()).toEqual([
-        ".codex-plugin/plugin.json",
-        "dist/plugin.wasm",
-        "openclaw.plugin.json",
-        "package.json",
-      ]);
-    } finally {
-      await rm(workdir, { recursive: true, force: true });
-    }
-  });
+          changelog: "",
+          tags: ["latest"],
+          bundle: {
+            format: "codex",
+            hostTargets: ["desktop", "mobile"],
+          },
+        });
+        expect(getUploadedFileNames()).toEqual([
+          ".codex-plugin/plugin.json",
+          "dist/plugin.wasm",
+          ...(nativeEnvelope ? ["openclaw.plugin.json"] : []),
+          "package.json",
+        ]);
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("prefers openclaw.plugin.json over skills markers when detecting package family", async () => {
     const workdir = await makeTmpWorkdir();
@@ -3482,7 +3487,7 @@ describe("package commands", () => {
           sourceRepo: "openclaw/demo-plugin",
           sourceCommit: "abc123",
         }),
-      ).rejects.toThrow("openclaw.plugin.json required");
+      ).rejects.toThrow("openclaw.plugin.json is required");
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
@@ -3574,7 +3579,7 @@ describe("package commands", () => {
     }
   });
 
-  it("rejects bundle-plugin publish when openclaw.plugin.json is missing", async () => {
+  it("rejects bundle-plugin publish without a supported bundle marker", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "demo-bundle");
@@ -3587,7 +3592,7 @@ describe("package commands", () => {
 
       await expect(
         cmdPublishPackage(makeOpts(workdir), "demo-bundle", { family: "bundle-plugin" }),
-      ).rejects.toThrow("openclaw.plugin.json required");
+      ).rejects.toThrow("requires exactly one supported bundle manifest");
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });

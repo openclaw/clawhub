@@ -331,10 +331,16 @@ describe("pre-publication worker", () => {
       await processPrePublicationAttempt(
         client,
         "worker-token",
-        { ...attempt, kind: "package" },
+        { ...attempt, kind: "package", scanContext: { package: { family: "code-plugin" } } },
         {
           onExposure,
-          writeWorkspace: vi.fn().mockResolvedValue(undefined),
+          writeWorkspace: async (_job, workspace) => {
+            await mkdir(join(workspace, "artifact"), { recursive: true });
+            await writeFile(
+              join(workspace, "artifact/openclaw.plugin.json"),
+              '{"id":"fixture-plugin"}',
+            );
+          },
           runTruffleHog: vi.fn().mockResolvedValue({ status: "clean" }),
         },
       );
@@ -1115,7 +1121,7 @@ JSON
                 targetKind: "packageRelease",
                 waitForVtUntil: 0,
               },
-              target: {},
+              target: { package: { family: "code-plugin" } },
             },
             workspace,
           ),

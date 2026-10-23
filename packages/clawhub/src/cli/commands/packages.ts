@@ -46,6 +46,9 @@ import {
   MAX_PACKAGE_CLAWPACK_BYTES,
   MAX_PACKAGE_MULTIPART_BYTES,
   normalizeOpenClawExternalPluginCompatibility,
+  PLUGIN_BUNDLE_MANIFESTS,
+  selectPluginManifest,
+  bundlePluginRuntimeId,
   type PackageArtifactSummary,
   type PackageCompatibility,
   type PackageFamily,
@@ -2503,14 +2506,8 @@ async function uploadClawPackToStorage(
   return { storageId: result.storageId, uploadTicket };
 }
 
-const REAL_BUNDLE_MANIFESTS = [
-  { path: ".codex-plugin/plugin.json", format: "codex" },
-  { path: ".claude-plugin/plugin.json", format: "claude" },
-  { path: ".cursor-plugin/plugin.json", format: "cursor" },
-] as const;
-
 function hasRealBundleManifest(fileSet: Set<string>) {
-  return REAL_BUNDLE_MANIFESTS.some((marker) => fileSet.has(marker.path));
+  return PLUGIN_BUNDLE_MANIFESTS.some((marker) => fileSet.has(marker.path));
 }
 
 function hasLooseBundleMarker(fileSet: Set<string>) {
@@ -2545,6 +2542,13 @@ function detectPackageFamily(
   if (typeof openclaw?.claw === "string") {
     return "claw";
   }
+  if (
+    fileSet.has("openclaw.plugin.json") &&
+    Array.isArray(openclaw?.extensions) &&
+    openclaw.extensions.length > 0
+  ) {
+    return "code-plugin";
+  }
   if (hasRealBundleManifest(fileSet)) return "bundle-plugin";
   if (fileSet.has("openclaw.plugin.json")) return "code-plugin";
   if (hasLooseBundleMarker(fileSet)) return "bundle-plugin";
@@ -2555,8 +2559,10 @@ async function readBundleManifestInfo(
   filesOnDisk: PackageFile[],
   folder: string,
   parsedClawpack: ReturnType<typeof parseClawPack> | undefined,
+  selectedPath: string | undefined,
 ) {
-  for (const marker of REAL_BUNDLE_MANIFESTS) {
+  for (const marker of PLUGIN_BUNDLE_MANIFESTS) {
+    if (marker.path !== selectedPath) continue;
     const manifest =
       readJsonEntry(filesOnDisk, marker.path) ??
       (parsedClawpack ? null : await readJsonFile(join(folder, marker.path)));
@@ -2674,9 +2680,23 @@ async function preparePackagePublishPlan(
   const pluginManifest =
     readJsonEntry(filesOnDisk, "openclaw.plugin.json") ??
     (parsedClawpack ? null : await readJsonFile(join(folder, "openclaw.plugin.json")));
-  const bundleManifestInfo = await readBundleManifestInfo(filesOnDisk, folder, parsedClawpack);
-  const bundleManifest = bundleManifestInfo.manifest;
   const family = detectPackageFamily(fileSet, packageJson, options.family);
+  const selectedManifest =
+    family === "claw"
+      ? undefined
+      : selectPluginManifest({
+          family,
+          paths: filesOnDisk.map((file) => file.relPath),
+          bundleFormat: options.bundleFormat?.trim() || undefined,
+        });
+  const bundleManifestInfo = await readBundleManifestInfo(
+    filesOnDisk,
+    folder,
+    parsedClawpack,
+    family === "bundle-plugin" ? selectedManifest?.path : undefined,
+  );
+  const bundleManifest = bundleManifestInfo.manifest;
+  if (family === "bundle-plugin") bundlePluginRuntimeId(bundleManifest ?? undefined);
   const name =
     options.name?.trim() ||
     parsedClawpack?.packageName ||
@@ -2703,7 +2723,7 @@ async function preparePackagePublishPlan(
   if (!name) fail("--name required");
   if (!displayName) fail("--display-name required");
   if (!version) fail("--version required");
-  if (family !== "claw" && !fileSet.has("openclaw.plugin.json")) {
+  if (family === "code-plugin" && !fileSet.has("openclaw.plugin.json")) {
     fail("openclaw.plugin.json required");
   }
   if ((family === "code-plugin" || family === "claw") && !semver.valid(version)) {

@@ -505,7 +505,7 @@ const assertCanGenerateChangelogPreviewInternalHandler = (
 )._handler;
 
 const packageManifestFile = {
-  path: "openclaw.plugin.json",
+  path: ".claude-plugin/plugin.json",
   size: 32,
   storageId: "storage:manifest",
   sha256: "manifest",
@@ -515,7 +515,7 @@ const packageManifestFile = {
 function makePackageManifestStorage() {
   return {
     get: vi.fn(async (id: string) =>
-      id === "storage:manifest" ? new Blob([JSON.stringify({ id: "demo.plugin" })]) : null,
+      id === "storage:manifest" ? new Blob([JSON.stringify({ name: "demo-plugin" })]) : null,
     ),
     store: vi.fn(async () => "storage:legacy-zip"),
   };
@@ -12326,7 +12326,7 @@ describe("packages public queries", () => {
 
   it("binds a split-ref trusted publish to the frozen candidate source", async () => {
     const candidateSha = "b".repeat(40);
-    const manifestBytes = new TextEncoder().encode(JSON.stringify({ id: "demo.plugin" }));
+    const manifestBytes = new TextEncoder().encode(JSON.stringify({ name: "demo-plugin" }));
     const inventoryDigest = await buildPackageInventoryDigest([
       {
         path: packageManifestFile.path,
@@ -13595,7 +13595,7 @@ describe("packages public queries", () => {
           files: [],
         },
       }),
-    ).rejects.toThrow("openclaw.plugin.json is required");
+    ).rejects.toThrow("requires exactly one supported bundle manifest");
   });
 
   it.each(["publishRelease", "publishPackageForUserInternal"] as const)(
@@ -13900,7 +13900,7 @@ describe("packages public queries", () => {
           JSON.stringify({
             name: "demo-plugin",
             openclaw: {
-              extensions: ["./dist/index.js"],
+              ...(bundleManifest ? {} : { extensions: ["./dist/index.js"] }),
               hostTargets: ["darwin-arm64", "linux-x64"],
               environment: {},
               compat: { pluginApi: "^1.0.0" },
@@ -14127,6 +14127,7 @@ describe("packages public queries", () => {
     });
     await expect(
       publishWithManifestIcon(undefined, {
+        name: "demo-plugin",
         channels: ["whatsapp"],
         providers: ["openrouter"],
         kind: "memory",
@@ -16782,7 +16783,7 @@ describe("packages public queries", () => {
           files: [],
         },
       }),
-    ).rejects.toThrow("openclaw.plugin.json is required");
+    ).rejects.toThrow("requires exactly one supported bundle manifest");
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
@@ -16838,7 +16839,7 @@ describe("packages public queries", () => {
           files: [],
         },
       }),
-    ).rejects.toThrow("openclaw.plugin.json is required");
+    ).rejects.toThrow("requires exactly one supported bundle manifest");
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),

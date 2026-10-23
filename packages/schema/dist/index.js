@@ -12,6 +12,7 @@ export * from "./openclawContract.js";
 export * from "./openClawExtensionSlugs.js";
 export * from "./packages.js";
 export * from "./pluginCategories.js";
+export * from "./pluginInput.js";
 export * from "./promotionsFeed.js";
 export * from "./rolloutCapabilities.js";
 export * from "./securityAudit.js";

@@ -1647,8 +1647,17 @@ Publishes a code-plugin or bundle-plugin release.
 Validation highlights:
 
 - `family` must be `code-plugin` or `bundle-plugin`.
-- Plugin packages require `openclaw.plugin.json`. ClawPack `.tgz` uploads must
-  contain it at `package/openclaw.plugin.json`.
+- Code plugins require `openclaw.plugin.json` with their native `id`. ClawPack
+  `.tgz` uploads must contain it at `package/openclaw.plugin.json`.
+- Bundle plugins require exactly one of `.codex-plugin/plugin.json`,
+  `.claude-plugin/plugin.json`, or `.cursor-plugin/plugin.json`, with a non-empty
+  `name`. Their runtime identity is OpenClaw's lowercase, hyphen-normalized name,
+  never a native envelope, upload hint, or temporary directory name. Path-like,
+  control-character, or unidentifiable names are rejected. A supplied bundle
+  `format` or `id` must match the selected manifest. Multiple bundle markers and
+  unknown formats are rejected. Native package entrypoints require `code-plugin`.
+- Plugin metadata files are bounded to 256 KiB and must be UTF-8 JSON objects.
+  Selecting a manifest does not remove any files from security inspection.
 - Code plugins require `package.json`, source repo metadata, source commit
   metadata, config schema metadata, `openclaw.compat.pluginApi`, and
   `openclaw.build.openclawVersion`.
