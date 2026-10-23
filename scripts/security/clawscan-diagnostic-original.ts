@@ -4,7 +4,7 @@ import original175 from "./fixtures/judge-original-175.json";
 import original290 from "./fixtures/judge-original-290.json";
 
 export const ORIGINAL_BASELINE_SOURCE = "9662307780b2834791e2b0be8b166b44f4144ef4";
-export const ORIGINAL_CANDIDATE_SOURCE: string | null = "e1659ed4c0b1e12983692ea7147743f705ee112e";
+export const ORIGINAL_CANDIDATE_SOURCE: string | null = "d4dc23c1525f2dd7d82e0b4ef087116daef6bbf0";
 export const ORIGINAL_MAXIMUM_BYTES = 16 * 1024 * 1024;
 export type OriginalFixture = "175" | "290";
 export type OriginalMode = "original-scanner-only" | "original-candidate-full";
