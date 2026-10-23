@@ -70,7 +70,7 @@ export async function runWorkerCommand(
     }
   }
   return await new Promise<{ stdout: string; stderr: string }>((resolvePromise, reject) => {
-    const startedAt = Date.now();
+    const startedAt = performance.now();
     const child = spawn(command, args, {
       cwd: options.cwd,
       detached: process.platform !== "win32",
@@ -97,9 +97,10 @@ export async function runWorkerCommand(
       return "unknown";
     };
     const reportTermination = (exitCode: number | null, processGroup = processGroupState()) => {
+      const finishedAt = performance.now();
       options.onTermination?.({
-        elapsedMs: Date.now() - startedAt,
-        cleanupMs: cleanupStartedAt === undefined ? 0 : Date.now() - cleanupStartedAt,
+        elapsedMs: Math.floor(finishedAt - startedAt),
+        cleanupMs: cleanupStartedAt === undefined ? 0 : Math.floor(finishedAt - cleanupStartedAt),
         processGroup,
         exitCode,
         timedOut,
@@ -119,7 +120,7 @@ export async function runWorkerCommand(
     };
     const terminateProcessTree = () => {
       if (forceKillTimeout) return;
-      cleanupStartedAt = Date.now();
+      cleanupStartedAt = performance.now();
       killProcessTree("SIGTERM");
       forceKillTimeout = setTimeout(() => killProcessTree("SIGKILL"), 10_000);
       forceKillTimeout.unref();
@@ -191,12 +192,12 @@ export async function runWorkerCommand(
       const cleanupRequired =
         timedOut || outputLimitExceeded || observerFailed || options.cleanupProcessGroup;
       if (cleanupRequired) {
-        cleanupStartedAt ??= Date.now();
+        cleanupStartedAt ??= performance.now();
         killProcessTree("SIGKILL");
         if (process.platform !== "win32" && child.pid) {
           await new Promise<void>((resolveCleanup) => {
             const check = () => {
-              const remainingMs = cleanupStartedAt! + 60_000 - Date.now();
+              const remainingMs = cleanupStartedAt! + 60_000 - performance.now();
               if (processGroupState() === "absent" || remainingMs <= 0) {
                 resolveCleanup();
                 return;

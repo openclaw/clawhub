@@ -2481,7 +2481,7 @@ wait "$child_pid"`,
     const previousTimeout = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS = "500";
-    vi.useFakeTimers({ toFake: ["setTimeout", "Date"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
     let descendantPid: number | undefined;
     let scanSettled = false;
 
