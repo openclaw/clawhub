@@ -41,6 +41,10 @@ vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
 vi.mock("@openclaw/plugin-inspector", () => inspectorMocks);
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+});
 
 const {
   cmdDeletePackage,
@@ -2581,6 +2585,54 @@ describe("package commands", () => {
       expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
         `Packed @scope/demo-plugin@1.0.0 -> ${packPath}`,
       );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["ENOENT", "EACCES"])("preserves thrown npm packing errors (%s)", async (code) => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await mkdir(join(workdir, "packs"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      const spawnError = Object.assign(new Error(`spawnSync npm ${code}`), { code });
+      vi.mocked(spawnSync).mockImplementationOnce(() => ({
+        error: spawnError,
+        status: null,
+        stdout: "",
+        stderr: "",
+        output: [],
+        pid: 0,
+        signal: null,
+      }));
+
+      const packed = cmdPackPackage(makeOpts(workdir), "demo-plugin", { packDestination: "packs" });
+      if (code === "ENOENT") {
+        await expect(packed).rejects.toMatchObject({
+          message: expect.stringContaining("npm was not found on PATH"),
+          cause: spawnError,
+        });
+      } else {
+        await expect(packed).rejects.toBe(spawnError);
+      }
+      expect(uiMocks.fail).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
