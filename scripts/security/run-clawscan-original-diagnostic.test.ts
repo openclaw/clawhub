@@ -270,15 +270,37 @@ it("retains terminal scanner evidence after more than the worker stderr limit", 
   try {
     const script = join(root, "python");
     const driver = join(root, "driver.cjs");
-    await writeFile(script, `#!/bin/sh\nexec '${process.execPath}' '${driver}' "$@"\n`, { mode: 0o700 });
-    await writeFile(driver, `const fs=require('node:fs');const bytes=Buffer.alloc(2*1024*1024,120);let offset=0;while(offset<bytes.length)offset+=fs.writeSync(2,bytes,offset);fs.writeFileSync(process.argv.at(-1),JSON.stringify({execution_successful:true,analysis_completeness:{is_complete:false,status:'partial'},issues:[{description:'inert retained finding'}]}),{mode:0o600});`);
-    const result = await runSkillSpectorDiagnosticProcess(script, join(root, "inert"), join(root, "terminal.json"), {
-      cwd: root, env: { PATH: process.env.PATH }, timeoutMs: 5000,
+    await writeFile(script, `#!/bin/sh\nexec '${process.execPath}' '${driver}' "$@"\n`, {
+      mode: 0o700,
     });
+    await writeFile(
+      driver,
+      `const fs=require('node:fs');const bytes=Buffer.alloc(2*1024*1024,120);let offset=0;while(offset<bytes.length)offset+=fs.writeSync(2,bytes,offset);fs.writeFileSync(process.argv.at(-1),JSON.stringify({execution_successful:true,analysis_completeness:{is_complete:false,status:'partial'},issues:[{description:'inert retained finding'}]}),{mode:0o600});`,
+    );
+    const result = await runSkillSpectorDiagnosticProcess(
+      script,
+      join(root, "inert"),
+      join(root, "terminal.json"),
+      {
+        cwd: root,
+        env: { PATH: process.env.PATH },
+        timeoutMs: 5000,
+      },
+    );
     expect(result).toMatchObject({
-      processStatus: "completed", stderrPolicy: "discarded",
-      termination: { exitCode: 0, timedOut: false, outputLimitExceeded: null, processGroup: "absent" },
-      terminal: { presence: "present", completeness: { isComplete: false, status: "partial" }, findings: { reported: 1 } },
+      processStatus: "completed",
+      stderrPolicy: "discarded",
+      termination: {
+        exitCode: 0,
+        timedOut: false,
+        outputLimitExceeded: null,
+        processGroup: "absent",
+      },
+      terminal: {
+        presence: "present",
+        completeness: { isComplete: false, status: "partial" },
+        findings: { reported: 1 },
+      },
     });
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -75,15 +75,22 @@ it("terminates instead of throwing raw observer errors out of the stream handler
 });
 
 it("can drain discarded diagnostic stderr while retaining the default stderr guard", async () => {
-  const script = "require('node:fs').writeSync(2, Buffer.alloc(2 * 1024 * 1024, 120));process.stdout.write('done')";
+  const script =
+    "require('node:fs').writeSync(2, Buffer.alloc(2 * 1024 * 1024, 120));process.stdout.write('done')";
   await expect(
     runWorkerCommand(process.execPath, ["-e", script], {
-      cwd: tmpdir(), env: {}, timeoutMs: 5000, captureOutput: false,
+      cwd: tmpdir(),
+      env: {},
+      timeoutMs: 5000,
+      captureOutput: false,
     }),
   ).rejects.toMatchObject({ outputLimitExceeded: "stderr" });
   await expect(
     runWorkerCommand(process.execPath, ["-e", script], {
-      cwd: tmpdir(), env: {}, timeoutMs: 5000, discardStderr: true,
+      cwd: tmpdir(),
+      env: {},
+      timeoutMs: 5000,
+      discardStderr: true,
     }),
   ).resolves.toEqual({ stdout: "done", stderr: "" });
 });
@@ -91,7 +98,11 @@ it("can drain discarded diagnostic stderr while retaining the default stderr gua
 it("keeps stdout bounded when diagnostic stderr is discarded", async () => {
   await expect(
     runWorkerCommand(process.execPath, ["-e", "process.stdout.write('x'.repeat(256))"], {
-      cwd: tmpdir(), env: {}, timeoutMs: 5000, discardStderr: true, maxStdoutBytes: 128,
+      cwd: tmpdir(),
+      env: {},
+      timeoutMs: 5000,
+      discardStderr: true,
+      maxStdoutBytes: 128,
     }),
   ).rejects.toMatchObject({ outputLimitExceeded: "stdout" });
 });
@@ -99,7 +110,11 @@ it("keeps stdout bounded when diagnostic stderr is discarded", async () => {
 it("rejects discarding stderr that an observer requires", async () => {
   await expect(
     runWorkerCommand(process.execPath, ["-e", ""], {
-      cwd: tmpdir(), env: {}, timeoutMs: 5000, discardStderr: true, onStderrChunk: () => {},
+      cwd: tmpdir(),
+      env: {},
+      timeoutMs: 5000,
+      discardStderr: true,
+      onStderrChunk: () => {},
     }),
   ).rejects.toThrow("Cannot discard observed stderr");
 });
