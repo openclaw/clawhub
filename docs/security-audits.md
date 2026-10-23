@@ -136,6 +136,8 @@ operator decision, not a recovery gate.
 
 Choose `fixture=tiny` for a harmless control or `fixture=incident` for the exact
 91 original files (317855 bytes) from `chinese-official-writing` version `2.0.43`.
+`fixture=receipt-incident` selects only the two original files (10009 bytes) from
+`onlinewebdirectory` version `1.0.1`, the selected-path receipt incident.
 The fixed public ZIP hash is checked **before decompression**, then every original
 path, type, size and hash is verified. Only the known generated `_meta.json` and
 `skill-card.md` entries are excluded. A changed archive fails closed; the public
@@ -165,6 +167,14 @@ or control is not proof that the incident is fixed. Any relevant production
 rollout still needs a new unchanged-version observation epoch and all existing
 timeout, judge, unresolved, sample/confidence, latency, queue, artifact and security
 gates.
+
+The shared worker artifact validator accepts unversioned v1 inspection receipts
+and explicit numeric v2 receipts. V2 retains the required file and the complete
+additional inspected-file array, and binds the returned path, hash and challenge
+to the final native attempt's provenance. Unsupported versions, mixed fields and
+inconsistent or missing native provenance fail closed. Prepublication uses this
+same validator, strips both progress opt-ins, and keeps inspection diagnostics out
+of the stored public policy output. Legacy Endor profiles deliberately remain v1.
 
 ## Risk analysis
 

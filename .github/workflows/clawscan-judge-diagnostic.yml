@@ -7,7 +7,7 @@ on:
         description: "Diagnostic only, excluded from SLOs; exact incident or harmless control"
         required: true
         type: choice
-        options: [tiny, incident]
+        options: [tiny, incident, receipt-incident]
         default: tiny
       source:
         description: "Reviewed repository pin or exact installed incident baseline (never latest)"

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fromBufferPromise } from "yauzl";
+import receiptIncident from "./fixtures/judge-receipt-incident.json";
 import incident from "./fixtures/judge-timeout-incident.json";
 
 export const INCIDENT_ARCHIVE_URL =
@@ -13,6 +14,7 @@ export type DiagnosticManifest = {
   files: { path: string; sha256: string; size: number }[];
 };
 export const incidentManifest: DiagnosticManifest = incident;
+export const receiptIncidentManifest: DiagnosticManifest = receiptIncident;
 const hash = (data: Uint8Array | string) => createHash("sha256").update(data).digest("hex");
 const safePath = (path: string) =>
   path.length > 0 &&
@@ -167,8 +169,14 @@ export async function extractDiagnosticArchive(
   return identity;
 }
 
-export async function downloadIncidentArchive() {
-  const response = await fetch(INCIDENT_ARCHIVE_URL, {
+export async function downloadIncidentArchive(
+  fixture: "incident" | "receipt-incident" = "incident",
+) {
+  const url =
+    fixture === "receipt-incident"
+      ? "https://clawhub.ai/api/v1/download?slug=onlinewebdirectory&version=1.0.1"
+      : INCIDENT_ARCHIVE_URL;
+  const response = await fetch(url, {
     signal: AbortSignal.timeout(60_000),
     redirect: "error",
   });

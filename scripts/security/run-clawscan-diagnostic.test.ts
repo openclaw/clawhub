@@ -118,7 +118,11 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
   const workflow = parseYaml(raw);
   expect(Object.keys(workflow.on)).toEqual(["workflow_dispatch"]);
   expect(Object.keys(workflow.on.workflow_dispatch.inputs)).toEqual(["fixture", "source"]);
-  expect(workflow.on.workflow_dispatch.inputs.fixture.options).toEqual(["tiny", "incident"]);
+  expect(workflow.on.workflow_dispatch.inputs.fixture.options).toEqual([
+    "tiny",
+    "incident",
+    "receipt-incident",
+  ]);
   expect(workflow.on.workflow_dispatch.inputs.source.options).toEqual(["reviewed", "incident"]);
   const job = workflow.jobs.diagnostic;
   expect(job["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");

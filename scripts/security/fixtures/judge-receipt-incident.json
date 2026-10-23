@@ -1,0 +1,16 @@
+{
+  "archiveSha256": "2d3a046cbb228b419bf9c70830455b9298fd4cba3e8c329da28ce82c10eb11f7",
+  "manifestSha256": "088e365057b52d490726396be318e5c0a1ec20db400d44d461661259e02db3bd",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "882038546e93fda3004ce167494076b9c90a4dc4266289a552058cbf5fc75e99",
+      "size": 4193
+    },
+    {
+      "path": "owd.mjs",
+      "sha256": "56ab1f20be945a5dc372f544c12a4d7c2b27cc0ec0c0180dd8d18235696127d1",
+      "size": 5816
+    }
+  ]
+}

@@ -17,7 +17,9 @@ import { zipSync } from "fflate";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   extractDiagnosticArchive,
+  downloadIncidentArchive,
   incidentManifest,
+  receiptIncidentManifest,
   verifyDiagnosticTree,
   type DiagnosticManifest,
 } from "./clawscan-diagnostic-input";
@@ -30,6 +32,7 @@ async function temp() {
   return root;
 }
 afterEach(async () => {
+  vi.unstubAllGlobals();
   const unlock = async (root: string) => {
     await chmod(root, 0o700);
     for (const name of await readdir(root)) {
@@ -42,6 +45,42 @@ afterEach(async () => {
     await unlock(root);
     await rm(root, { recursive: true, force: true });
   }
+});
+
+it("pins the bounded two-file receipt incident without adding uploaded source", async () => {
+  expect(receiptIncidentManifest.files).toEqual([
+    {
+      path: "SKILL.md",
+      sha256: "882038546e93fda3004ce167494076b9c90a4dc4266289a552058cbf5fc75e99",
+      size: 4193,
+    },
+    {
+      path: "owd.mjs",
+      sha256: "56ab1f20be945a5dc372f544c12a4d7c2b27cc0ec0c0180dd8d18235696127d1",
+      size: 5816,
+    },
+  ]);
+  expect(receiptIncidentManifest.archiveSha256).toBe(
+    "2d3a046cbb228b419bf9c70830455b9298fd4cba3e8c329da28ce82c10eb11f7",
+  );
+  expect(hash(JSON.stringify(receiptIncidentManifest.files))).toBe(
+    receiptIncidentManifest.manifestSha256,
+  );
+  const fetchArchive = vi.fn().mockResolvedValue(new Response("controlled transport bytes"));
+  vi.stubGlobal("fetch", fetchArchive);
+  expect((await downloadIncidentArchive("receipt-incident")).toString()).toBe(
+    "controlled transport bytes",
+  );
+  expect(fetchArchive.mock.calls[0]?.[0]).toBe(
+    "https://clawhub.ai/api/v1/download?slug=onlinewebdirectory&version=1.0.1",
+  );
+  await expect(
+    extractDiagnosticArchive(
+      Buffer.from("changed"),
+      join(await temp(), "input"),
+      receiptIncidentManifest,
+    ),
+  ).rejects.toThrow("archive identity");
 });
 
 function fixture(entries = { "SKILL.md": Buffer.from("Harmless original\n") }) {

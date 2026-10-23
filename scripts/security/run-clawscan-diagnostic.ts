@@ -12,6 +12,7 @@ import {
   downloadIncidentArchive,
   extractDiagnosticArchive,
   incidentManifest,
+  receiptIncidentManifest,
   verifyDiagnosticTree,
 } from "./clawscan-diagnostic-input";
 import { clawScanExposure } from "./clawscan-exposure";
@@ -109,7 +110,7 @@ export async function runDiagnosticProcess(
 
 async function attestRuntime(
   source: "reviewed" | "incident",
-  fixture: "tiny" | "incident",
+  fixture: "tiny" | "incident" | "receipt-incident",
   root: string,
   env: NodeJS.ProcessEnv,
 ) {
@@ -192,7 +193,7 @@ async function attestRuntime(
       differencesFromIncident: [
         "manual singleton, no shared-shard concurrency or queue/claim/backend context",
         "fresh HOME/CODEX_HOME, environment-only CI key; no Codex login/auth-cache",
-        ...(fixture === "incident"
+        ...(fixture !== "tiny"
           ? [
               "public archive container differs from original VT ZIP; original bytes verified before execution",
             ]
@@ -231,12 +232,12 @@ export async function main(args = process.argv.slice(2)) {
   if (
     args.length !== 4 ||
     args[0] !== "--fixture" ||
-    !["tiny", "incident"].includes(args[1]) ||
+    !["tiny", "incident", "receipt-incident"].includes(args[1]) ||
     args[2] !== "--source" ||
     !["reviewed", "incident"].includes(args[3])
   )
     throw new Error("Only bounded fixture/source choices are supported");
-  const fixture = args[1] as "tiny" | "incident";
+  const fixture = args[1] as "tiny" | "incident" | "receipt-incident";
   const source = args[3] as "reviewed" | "incident";
   const runtime = await mkdtemp(join(process.env.RUNNER_TEMP, "clawscan-diagnostic-private-"));
   const output = await mkdtemp(join(process.env.RUNNER_TEMP, "clawscan-diagnostic-safe-"));
@@ -273,15 +274,20 @@ export async function main(args = process.argv.slice(2)) {
     await writeFile(join(output, "attestation.json"), JSON.stringify(installed.metadata, null, 2));
     const target = join(runtime, "input");
     let identity: { files: number; bytes: number; manifestSha256?: string };
-    if (fixture === "incident")
-      identity = await extractDiagnosticArchive(await downloadIncidentArchive(), target);
+    const manifest = fixture === "receipt-incident" ? receiptIncidentManifest : incidentManifest;
+    if (fixture !== "tiny")
+      identity = await extractDiagnosticArchive(
+        await downloadIncidentArchive(fixture),
+        target,
+        manifest,
+      );
     else {
       await mkdir(target, { mode: 0o700 });
       await writeFile(join(target, "SKILL.md"), tinyContent, { mode: 0o400 });
       await chmod(target, 0o500);
       identity = { files: 1, bytes: Buffer.byteLength(tinyContent) };
     }
-    if (fixture === "incident") await verifyDiagnosticTree(target, incidentManifest);
+    if (fixture !== "tiny") await verifyDiagnosticTree(target, manifest);
     const apiKey = process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY;
     if (!apiKey) throw new Error("Existing CI key reference required");
     Object.assign(
