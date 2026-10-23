@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "godaddy": {
+      "url": "https://api.godaddy.com/v1/domains/mcp",
+      "transport": "streamable-http"
+    }
+  }
+}

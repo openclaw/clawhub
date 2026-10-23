@@ -1,0 +1,12 @@
+{
+  "id": "godaddy-mcp",
+  "name": "GoDaddy Domains",
+  "description": "Find domain suggestions and check public domain availability through GoDaddy\u2019s official MCP service.",
+  "version": "1.0.0",
+  "categories": ["infrastructure"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

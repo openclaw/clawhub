@@ -1,0 +1,12 @@
+{
+  "name": "excalidraw-mcp",
+  "displayName": "Excalidraw",
+  "version": "1.0.0",
+  "description": "Create and inspect diagrams through Excalidraw\u2019s official hosted MCP service.",
+  "author": {
+    "name": "OpenClaw",
+    "url": "https://github.com/openclaw/clawhub"
+  },
+  "license": "MIT",
+  "mcpServers": "./.mcp.json"
+}
