@@ -53,6 +53,12 @@ it("retains only safe live diagnostics through actual process-group kill; progre
         recoveredReceiptRetries: null,
       },
       termination: { timedOut: true },
+      lastProgress: {
+        event: "child_event",
+        phase: "judge",
+        childItem: "command_execution",
+        childState: "in_progress",
+      },
     });
     expect(JSON.stringify(result) + (await readFile(eventsPath, "utf8"))).not.toContain("PRIVATE");
     expect(result.termination!.cleanupMs).toBeLessThan(60_000);
@@ -84,6 +90,55 @@ it("does not turn missing, malformed, partial or progress-only final metadata in
       expect(result.consumerValidation).not.toBe("validated_ephemerally_not_published");
       expect(JSON.stringify(result)).not.toContain("PRIVATE");
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("keeps last progress null without events and discloses the existing retention limit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "diagnostic-last-progress-test-"));
+  try {
+    const silent = await runDiagnosticProcess(process.execPath, ["-e", ""], {
+      cwd: root,
+      env: {},
+      timeoutMs: 1200,
+      eventsPath: join(root, "silent.jsonl"),
+      artifactPath: join(root, "missing.json"),
+    });
+    expect(silent.lastProgress).toBeNull();
+    const result = await runDiagnosticProcess(
+      process.execPath,
+      [
+        "-e",
+        `
+        const fs = require('node:fs');
+        for (let index = 0; index < 2049; index++) {
+          fs.writeSync(2, '[clawscan-progress] ' + JSON.stringify({
+            schemaVersion: 'clawscan-progress-v1', event: 'phase_start',
+            phase: 'scanner:skillspector', elapsedMs: index,
+            path: 'PRIVATE', message: 'PRIVATE', provider: 'PRIVATE'
+          }) + '\\n');
+        }
+        `,
+      ],
+      {
+        cwd: root,
+        env: {},
+        timeoutMs: 1200,
+        eventsPath: join(root, "limited.jsonl"),
+        artifactPath: join(root, "missing.json"),
+      },
+    );
+    expect(result.lastProgress).toEqual({
+      schemaVersion: "clawscan-progress-v1",
+      event: "phase_start",
+      phase: "scanner:skillspector",
+      elapsedMs: 2047,
+    });
+    expect(result.diagnosticRecords).toEqual({ retained: 2048, rejected: 0, limited: 1 });
+    expect(result.exposure.judgeInvocations).toBeNull();
+    expect(result.artifact).toBe("missing");
+    expect(JSON.stringify(result)).not.toContain("PRIVATE");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

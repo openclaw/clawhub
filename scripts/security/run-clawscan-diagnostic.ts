@@ -22,7 +22,7 @@ import {
   validDiagnosticEventContext,
 } from "./clawscan-diagnostic-pair";
 import { clawScanExposure } from "./clawscan-exposure";
-import { createClawScanProgressCollector } from "./clawscan-progress";
+import { createClawScanProgressCollector, type SafeClawScanProgress } from "./clawscan-progress";
 import { validateClawScanArtifactForClawHubProfile } from "./run-codex-scan-worker";
 import { securityScannerEnvironment } from "./securityModelPolicy";
 
@@ -112,12 +112,14 @@ export async function runDiagnosticProcess(
   if (options.eventContext && !validDiagnosticEventContext(options.eventContext))
     throw new Error("Invalid paired event context");
   if (!options.eventContext) await writeFile(options.eventsPath, "", { flag: "wx", mode: 0o600 });
-  const progress = createClawScanProgressCollector((event) =>
+  let lastProgress: SafeClawScanProgress | null = null;
+  const progress = createClawScanProgressCollector((event) => {
     appendFileSync(
       options.eventsPath,
       `${JSON.stringify(options.eventContext ? { schemaVersion: "clawscan-paired-event-v1", leg: options.eventContext.leg, processIndex: options.eventContext.processIndex, progress: event } : event)}\n`,
-    ),
-  );
+    );
+    lastProgress = event;
+  });
   let termination: WorkerCommandTermination | null = null;
   let processStatus = "completed";
   try {
@@ -155,6 +157,7 @@ export async function runDiagnosticProcess(
     processStatus,
     termination: termination as WorkerCommandTermination | null,
     diagnosticRecords: progress.counts,
+    lastProgress: lastProgress as SafeClawScanProgress | null,
     ...(await diagnosticArtifactMetadata(options.artifactPath, options.eventContext !== undefined)),
   };
 }
