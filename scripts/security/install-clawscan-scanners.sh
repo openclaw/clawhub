@@ -34,7 +34,7 @@ git -C "$source_dir" checkout --quiet --detach FETCH_HEAD
 git -C "$source_dir" apply --check "$runtime_dir/patches/$scanner-responses.patch"
 git -C "$source_dir" apply "$runtime_dir/patches/$scanner-responses.patch"
 # Pin the existing maintained resolver; SkillSpector ships an upstream uv.lock.
-python -m pip install "uv==0.13.4"
+python -m pip install "uv==0.13.5"
 if [ "$scanner" = skillspector ]; then
   uv sync --locked --no-dev --project "$source_dir"
   venv="$source_dir/.venv"

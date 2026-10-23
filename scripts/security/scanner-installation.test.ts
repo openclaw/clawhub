@@ -24,7 +24,7 @@ describe("reviewed ClawScan installation", () => {
   ])("installs the matched binary and both Responses adapters in %s", async (name) => {
     const workflow = parseYaml(await readFile(".github/workflows/" + name + ".yml", "utf8"));
     const jobs = Object.values(workflow.jobs) as Array<{
-      steps?: Array<{ name?: string; run?: string }>;
+      steps?: Array<{ name?: string; run?: string; uses?: string }>;
     }>;
     const steps = jobs.flatMap((job) => job.steps ?? []);
     const binary = steps.findIndex((step) => step.name === "Install ClawScan CLI");
@@ -40,8 +40,8 @@ describe("reviewed ClawScan installation", () => {
         "sh scripts/security/install-clawscan-scanners.sh " + adapter,
       );
     }
-    expect(steps.find((step) => step.name === "Install Codex CLI")?.run).toContain(
-      "@openai/codex@0.160.0",
+    expect(steps.find((step) => step.name === "Install Codex CLI")?.uses).toBe(
+      "./.github/actions/setup-codex",
     );
     expect(JSON.stringify(workflow)).not.toContain("@openclaw/clawscan@");
     expect(JSON.stringify(workflow)).not.toContain("69dcdfb74487d361ba4c811d088cfdea2ff3a9dc");

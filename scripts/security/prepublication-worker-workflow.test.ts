@@ -227,8 +227,8 @@ describe("pre-publication publish worker workflow", () => {
     );
     const aigInstall = steps.find((step) => step.name === "Install A.I.G scanner")?.run;
     expect(aigInstall).toContain("sh scripts/security/install-clawscan-scanners.sh aig");
-    expect(steps.find((step) => step.name === "Install Codex CLI")?.run).toContain(
-      "npm install -g @openai/codex@0.160.0",
+    expect(steps.find((step) => step.name === "Install Codex CLI")?.uses).toBe(
+      "./.github/actions/setup-codex",
     );
     expect(steps.find((step) => step.name === "Authenticate Codex CLI")).toBeUndefined();
     expect(JSON.stringify(job)).not.toContain("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");
