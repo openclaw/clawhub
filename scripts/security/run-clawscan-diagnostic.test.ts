@@ -91,15 +91,17 @@ it("does not turn missing, malformed, partial or progress-only final metadata in
 
 it("rejects the real CLI before touching any runtime or credentials on the Mac", async () => {
   if (process.platform === "darwin") {
-    await expect(main(["--fixture", "incident", "--source", "reviewed"])).rejects.toThrow(
-      "Disposable Blacksmith",
-    );
+    for (const fixture of ["tiny", "incident", "receipt-incident", "small-timeout-paired"]) {
+      await expect(main(["--fixture", fixture, "--source", "reviewed"])).rejects.toThrow(
+        "Disposable Blacksmith",
+      );
+    }
     const result = await promisify(execFile)(
       "bun",
       [
         "scripts/security/run-clawscan-diagnostic.ts",
         "--fixture",
-        "incident",
+        "small-timeout-paired",
         "--source",
         "reviewed",
       ],
@@ -122,9 +124,11 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "tiny",
     "incident",
     "receipt-incident",
+    "small-timeout-paired",
   ]);
   expect(workflow.on.workflow_dispatch.inputs.source.options).toEqual(["reviewed", "incident"]);
   const job = workflow.jobs.diagnostic;
+  expect(job["timeout-minutes"]).toBe(80);
   expect(job["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");
   expect(job.environment).toBe("Production");
   expect(workflow.permissions).toEqual({ contents: "read" });
@@ -144,4 +148,61 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     /CONVEX|WORKER_TOKEN|repository_dispatch|codex login|auth\.json|@latest|\*\.json/,
   );
   expect(DIAGNOSTIC_PROCESS_BUDGET_MS).toBe(900000);
+});
+
+it("projects only fixed stage enums independently of consumer acceptance without changing legacy metadata", async () => {
+  const root = await mkdtemp(join(tmpdir(), "diagnostic-stage-test-"));
+  try {
+    const path = join(root, "artifact.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: "clawscan-run-v1",
+        profile: "clawhub",
+        scanners: {
+          aig: { status: "PRIVATE/path/key" },
+          skillspector: { status: "skipped" },
+          endor: { status: "failed", error: "PRIVATE" },
+          unknown: { status: "completed" },
+        },
+        judge: { status: "PRIVATE error" },
+      }),
+    );
+    const legacy = await diagnosticArtifactMetadata(path);
+    expect(Object.keys(legacy)).toEqual(["artifact", "consumerValidation", "exposure"]);
+    const paired = await diagnosticArtifactMetadata(path, true);
+    expect(paired.stages).toEqual({
+      scanners: {
+        "clawscan-static": "unknown",
+        aig: "unknown",
+        skillspector: "skipped",
+        endor: "failed",
+      },
+      judge: "unknown",
+    });
+    expect(paired.securityVerdict).toBeNull();
+    expect(paired.exposure.judgeInvocations).toBeNull();
+    expect(JSON.stringify(paired)).not.toContain("PRIVATE");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("refuses arbitrary concurrent event labels and unbounded indices before spawning", async () => {
+  const root = await mkdtemp(join(tmpdir(), "diagnostic-envelope-test-"));
+  try {
+    for (const processIndex of [0, 5, 1.5]) {
+      await expect(
+        runDiagnosticProcess("not-a-command", [], {
+          cwd: root,
+          env: {},
+          eventsPath: join(root, "events.jsonl"),
+          artifactPath: join(root, "artifact.json"),
+          eventContext: { leg: "initial-four", processIndex },
+        }),
+      ).rejects.toThrow("Invalid paired event context");
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

@@ -13,8 +13,14 @@ import {
   extractDiagnosticArchive,
   incidentManifest,
   receiptIncidentManifest,
+  smallTimeoutManifest,
   verifyDiagnosticTree,
 } from "./clawscan-diagnostic-input";
+import {
+  type DiagnosticEventContext,
+  runPairedDiagnostic,
+  validDiagnosticEventContext,
+} from "./clawscan-diagnostic-pair";
 import { clawScanExposure } from "./clawscan-exposure";
 import { createClawScanProgressCollector } from "./clawscan-progress";
 import { validateClawScanArtifactForClawHubProfile } from "./run-codex-scan-worker";
@@ -26,7 +32,32 @@ const LABEL = "NONPRODUCTION_DIAGNOSTIC";
 const tinyContent =
   "---\nname: harmless-diagnostic\ndescription: A harmless diagnostic fixture.\n---\n# Harmless diagnostic\nReply hello. No tools, installation, networking, or code execution are needed.\n";
 
-export async function diagnosticArtifactMetadata(path: string) {
+function diagnosticStages(artifact?: unknown) {
+  const record = (value: unknown): Record<string, unknown> | undefined =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  const candidate = record(artifact);
+  const run =
+    candidate?.schemaVersion === "clawscan-run-v1" && candidate.profile === "clawhub"
+      ? candidate
+      : undefined;
+  const status = (value: unknown) =>
+    value === "completed" || value === "failed" || value === "skipped" ? value : "unknown";
+  const scanners = record(run?.scanners);
+  return {
+    scanners: {
+      "clawscan-static": status(record(scanners?.["clawscan-static"])?.status),
+      aig: status(record(scanners?.aig)?.status),
+      skillspector: status(record(scanners?.skillspector)?.status),
+      endor: status(record(scanners?.endor)?.status),
+    },
+    judge: status(record(run?.judge)?.status),
+  };
+}
+
+export async function diagnosticArtifactMetadata(path: string, includeVerdict = false) {
+  let securityVerdict: "benign" | "suspicious" | "malicious" | null = null;
   let artifact: unknown;
   let state: "missing" | "malformed" | "present" = "missing";
   try {
@@ -37,16 +68,30 @@ export async function diagnosticArtifactMetadata(path: string) {
     artifact = JSON.parse(await readFile(path, "utf8"));
     state = "present";
   } catch {
-    return { artifact: state, consumerValidation: "unknown", exposure: clawScanExposure() };
+    return {
+      artifact: state,
+      consumerValidation: "unknown",
+      exposure: clawScanExposure(),
+      ...(includeVerdict ? { securityVerdict, stages: diagnosticStages() } : {}),
+    };
   }
   let consumerValidation = "rejected";
   try {
     if (!artifact || typeof artifact !== "object" || Array.isArray(artifact))
       throw new Error("Invalid artifact");
     validateClawScanArtifactForClawHubProfile(artifact as Record<string, unknown>);
+    const verdict = (artifact as { judge?: { result?: { verdict?: unknown } } }).judge?.result
+      ?.verdict;
+    if (verdict === "benign" || verdict === "suspicious" || verdict === "malicious")
+      securityVerdict = verdict;
     consumerValidation = "validated_ephemerally_not_published";
   } catch {}
-  return { artifact: state, consumerValidation, exposure: clawScanExposure(artifact) };
+  return {
+    artifact: state,
+    consumerValidation,
+    exposure: clawScanExposure(artifact),
+    ...(includeVerdict ? { securityVerdict, stages: diagnosticStages(artifact) } : {}),
+  };
 }
 
 export async function runDiagnosticProcess(
@@ -58,14 +103,20 @@ export async function runDiagnosticProcess(
     eventsPath: string;
     artifactPath: string;
     timeoutMs?: number;
+    eventContext?: DiagnosticEventContext;
   },
 ) {
   const timeoutMs = options.timeoutMs ?? DIAGNOSTIC_PROCESS_BUDGET_MS;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > DIAGNOSTIC_PROCESS_BUDGET_MS)
     throw new Error("Invalid diagnostic budget");
-  await writeFile(options.eventsPath, "", { flag: "wx", mode: 0o600 });
+  if (options.eventContext && !validDiagnosticEventContext(options.eventContext))
+    throw new Error("Invalid paired event context");
+  if (!options.eventContext) await writeFile(options.eventsPath, "", { flag: "wx", mode: 0o600 });
   const progress = createClawScanProgressCollector((event) =>
-    appendFileSync(options.eventsPath, `${JSON.stringify(event)}\n`),
+    appendFileSync(
+      options.eventsPath,
+      `${JSON.stringify(options.eventContext ? { schemaVersion: "clawscan-paired-event-v1", leg: options.eventContext.leg, processIndex: options.eventContext.processIndex, progress: event } : event)}\n`,
+    ),
   );
   let termination: WorkerCommandTermination | null = null;
   let processStatus = "completed";
@@ -104,13 +155,13 @@ export async function runDiagnosticProcess(
     processStatus,
     termination: termination as WorkerCommandTermination | null,
     diagnosticRecords: progress.counts,
-    ...(await diagnosticArtifactMetadata(options.artifactPath)),
+    ...(await diagnosticArtifactMetadata(options.artifactPath, options.eventContext !== undefined)),
   };
 }
 
 async function attestRuntime(
   source: "reviewed" | "incident",
-  fixture: "tiny" | "incident" | "receipt-incident",
+  fixture: "tiny" | "incident" | "receipt-incident" | "small-timeout-paired",
   root: string,
   env: NodeJS.ProcessEnv,
 ) {
@@ -191,7 +242,9 @@ async function attestRuntime(
         baseUrl: "https://api.openai.com/v1",
       },
       differencesFromIncident: [
-        "manual singleton, no shared-shard concurrency or queue/claim/backend context",
+        fixture === "small-timeout-paired"
+          ? "manual same-runner singleton/four pair; no queue/claim/backend context"
+          : "manual singleton, no shared-shard concurrency or queue/claim/backend context",
         "fresh HOME/CODEX_HOME, environment-only CI key; no Codex login/auth-cache",
         ...(fixture !== "tiny"
           ? [
@@ -232,12 +285,13 @@ export async function main(args = process.argv.slice(2)) {
   if (
     args.length !== 4 ||
     args[0] !== "--fixture" ||
-    !["tiny", "incident", "receipt-incident"].includes(args[1]) ||
+    !["tiny", "incident", "receipt-incident", "small-timeout-paired"].includes(args[1]) ||
     args[2] !== "--source" ||
-    !["reviewed", "incident"].includes(args[3])
+    !["reviewed", "incident"].includes(args[3]) ||
+    (args[1] === "small-timeout-paired" && args[3] !== "reviewed")
   )
     throw new Error("Only bounded fixture/source choices are supported");
-  const fixture = args[1] as "tiny" | "incident" | "receipt-incident";
+  const fixture = args[1] as "tiny" | "incident" | "receipt-incident" | "small-timeout-paired";
   const source = args[3] as "reviewed" | "incident";
   const runtime = await mkdtemp(join(process.env.RUNNER_TEMP, "clawscan-diagnostic-private-"));
   const output = await mkdtemp(join(process.env.RUNNER_TEMP, "clawscan-diagnostic-safe-"));
@@ -274,13 +328,14 @@ export async function main(args = process.argv.slice(2)) {
     await writeFile(join(output, "attestation.json"), JSON.stringify(installed.metadata, null, 2));
     const target = join(runtime, "input");
     let identity: { files: number; bytes: number; manifestSha256?: string };
-    const manifest = fixture === "receipt-incident" ? receiptIncidentManifest : incidentManifest;
-    if (fixture !== "tiny")
-      identity = await extractDiagnosticArchive(
-        await downloadIncidentArchive(fixture),
-        target,
-        manifest,
-      );
+    const manifest =
+      fixture === "small-timeout-paired"
+        ? smallTimeoutManifest
+        : fixture === "receipt-incident"
+          ? receiptIncidentManifest
+          : incidentManifest;
+    const archive = fixture !== "tiny" ? await downloadIncidentArchive(fixture) : undefined;
+    if (fixture !== "tiny") identity = await extractDiagnosticArchive(archive!, target, manifest);
     else {
       await mkdir(target, { mode: 0o700 });
       await writeFile(join(target, "SKILL.md"), tinyContent, { mode: 0o400 });
@@ -305,6 +360,38 @@ export async function main(args = process.argv.slice(2)) {
       }),
       { CLAWSCAN_PROGRESS: "1", CLAWSCAN_CHILD_PROGRESS: "1" },
     );
+    if (fixture === "small-timeout-paired") {
+      const summary = await runPairedDiagnostic({
+        root: runtime,
+        binary: installed.binary,
+        env,
+        eventsPath: join(output, "events.jsonl"),
+        materializeInput: (path) => extractDiagnosticArchive(archive!, path, smallTimeoutManifest),
+        runProcess: runDiagnosticProcess,
+        checkpoint: async (paired) =>
+          writeFile(
+            summaryPath,
+            JSON.stringify(
+              { ...paired, fixture, identity, source: installed.metadata.source },
+              null,
+              2,
+            ),
+          ),
+      });
+      if (
+        summary.status !== "completed" ||
+        summary.legs
+          .flatMap((leg) => leg.processes)
+          .some(
+            (entry) =>
+              entry.result.processStatus !== "completed" ||
+              entry.result.consumerValidation !== "validated_ephemerally_not_published" ||
+              entry.result.exposure.judgeOperationalFailures !== 0,
+          )
+      )
+        process.exitCode = 1;
+      return;
+    }
     const artifactPath = join(runtime, "artifact.json");
     const summary = await runDiagnosticProcess(
       installed.binary,

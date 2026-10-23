@@ -138,6 +138,11 @@ Choose `fixture=tiny` for a harmless control or `fixture=incident` for the exact
 91 original files (317855 bytes) from `chinese-official-writing` version `2.0.43`.
 `fixture=receipt-incident` selects only the two original files (10009 bytes) from
 `onlinewebdirectory` version `1.0.1`, the selected-path receipt incident.
+`fixture=small-timeout-paired` selects the one original `SKILL.md` (7877 bytes)
+from `fitatu-diary` version `1.1.1`, the recovered small production-timeout input.
+This scenario requires `source=reviewed`; it adds no URL, command, concurrency,
+model, provider or transport inputs. All existing single-control choices retain
+their original output shape and behavior.
 The fixed public ZIP hash is checked **before decompression**, then every original
 path, type, size and hash is verified. Only the known generated `_meta.json` and
 `skill-card.md` entries are excluded. A changed archive fails closed; the public
@@ -161,6 +166,64 @@ commands, errors or final artifacts. Raw artifacts and runtime state are ephemer
 Missing or malformed final metadata leaves judge counts unknown, never zero.
 Event loss/limits and unconfirmed group cleanup are explicit; progress cannot
 establish a verdict, invocation count, provider cause or recovery.
+
+### Fixed same-runner paired scenario
+
+The paired scenario uses one runner job, with the same fresh probe-owned
+`HOME`/`CODEX_HOME` and ENV-only credential route across every leg. Production
+has persisted login state; this diagnostic deliberately does not create secret
+files or reproduce that login/cache. Each process has a distinct input, working
+directory, temporary directory and output. The unchanged Go runner creates its
+own fresh judge workspace and random inspection challenge there.
+
+The fixed order is `initial-singleton` (one full ClawScan process to terminal),
+then `initial-four` (four separate full processes launched together to terminal).
+All scan process groups must report absent before another leg starts. Unknown
+cleanup stops the experiment, preserving results and marking later legs
+`unevaluated`. A failed input preparation also stops without starting that leg.
+
+If the initial singleton completes, passes the real consumer, and has zero
+native operational failures, while any concurrent process fails/times out,
+fails consumer validation, or exposes a native failure (even a recovered receipt
+retry), run `confirmation-four` then `confirmation-singleton`. There are at most
+10 scans, with no additional retries beyond the existing receipt behavior.
+Each process still has a 900000-ms cap and 60000-ms cleanup allowance; only the
+manual workflow job ceiling increases to 80 minutes for four legs and setup.
+
+The paired `summary.json` has `schemaVersion=clawscan-paired-diagnostic-v1`, the
+existing nonproduction/recovery/publication flags, fixed budgets, `maximumScans`,
+`scansStarted`, `confirmationTriggered`, `fixture`, `identity`, `source`, and
+`status` (`running`, `completed`, `cleanup_unconfirmed`, `orchestration_failed`).
+Its four ordered `legs` contain `id`, `concurrency`, `status` (`unevaluated`,
+`evaluated`, `not_required`) and `processes`. Each process contains a one-based
+`processIndex`, runner-relative `startedAfterMs`/`finishedAfterMs`, and `result`:
+the existing per-process safe diagnostic summary, plus `securityVerdict`
+(`benign`, `suspicious`, `malicious`, or null) and `stages`. Stages independently
+project `judge` and fixed `scanners` keys `clawscan-static`, `aig`, `skillspector`,
+`endor` as `completed`, `failed`, `skipped`, or `unknown`. Missing/unrecognized
+statuses remain unknown, including absent Endor. Stage projection does not imply
+consumer acceptance or native invocation counts. Consumer rejection and every
+raw process/native failure remain visible; no failures are subtracted after a
+retry. Native counts come only from actual artifact provenance, never progress.
+Malicious is a valid operational disposition, not a clean security verdict.
+
+Each paired `events.jsonl` line is exactly the fixed envelope
+`{schemaVersion:"clawscan-paired-event-v1",leg,processIndex,progress}`; `progress`
+is the unchanged allowlisted `clawscan-progress-v1` projection. Indices are 1–4
+(only 1 in singleton legs). Limits/drop counts remain per process; raw commands,
+paths, headers, model text, errors and credentials are never added. Full raw
+artifacts stay unmodified in the private ephemeral runtime for actual consumer
+validation, never in uploaded output. The upload allowlist is unchanged.
+
+`completed` describes orchestration, not operational health or recovery. If both
+initial legs finish healthily, there is no reproduction, not proof of a fix.
+A singleton stall shows concurrency four is not necessary. A repeated paired
+difference is only an association with shared resources/order/account pressure,
+not proof of a HOME, CPU, provider, transport or production concurrency cause.
+Native turn-completed/error frames do not establish CLI exit, pipe EOF/drain or
+wait ownership. These controls count zero recovery samples and change none of
+the accepted timeout/judge, raw/conditional denominator, confidence, artifact,
+lane, 24-hour, latency, queue or security requirements.
 
 All output is `NONPRODUCTION_DIAGNOSTIC`, excluded from SLOs. A successful workflow
 or control is not proof that the incident is fixed. Any relevant production

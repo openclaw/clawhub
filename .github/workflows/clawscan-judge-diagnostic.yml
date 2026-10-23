@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       fixture:
-        description: "Diagnostic only, excluded from SLOs; exact incident or harmless control"
+        description: "Diagnostic only, excluded from SLOs; fixed incident, paired small timeout, or tiny control"
         required: true
         type: choice
-        options: [tiny, incident, receipt-incident]
+        options: [tiny, incident, receipt-incident, small-timeout-paired]
         default: tiny
       source:
         description: "Reviewed repository pin or exact installed incident baseline (never latest)"
@@ -28,7 +28,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: blacksmith-16vcpu-ubuntu-2404
     environment: Production
-    timeout-minutes: 45
+    timeout-minutes: 80
     env:
       CLAWSCAN_DIAGNOSTIC_RUNNER: blacksmith-16vcpu-ubuntu-2404
       GOTOOLCHAIN: go1.27.3
@@ -48,8 +48,10 @@ jobs:
       - name: Select bounded installer source
         env:
           SOURCE_CHOICE: ${{ inputs.source }}
+          FIXTURE_CHOICE: ${{ inputs.fixture }}
         run: |
           set -euo pipefail
+          if [ "$FIXTURE_CHOICE" = small-timeout-paired ] && [ "$SOURCE_CHOICE" != reviewed ]; then exit 1; fi
           installer=$(mktemp -d "$RUNNER_TEMP/clawscan-diagnostic-installer.XXXXXX")
           cp scripts/security/install-clawscan.sh scripts/security/install-clawscan-scanners.sh scripts/security/aig-worker-requirements.txt scripts/security/clawscan-source-commit.txt "$installer/"
           case "$SOURCE_CHOICE" in
