@@ -65,6 +65,9 @@ export async function runSkillSpectorDiagnosticProcess(
         timeoutMs,
         cleanupProcessGroup: true,
         captureOutput: false,
+        // The structured terminal file is the evidence. Production's Go adapter
+        // absorbs scanner stderr internally; this direct probe must drain it.
+        discardStderr: true,
         commandLabel: "Original scanner diagnostic",
         onTermination: (value) => {
           termination = value;
@@ -83,6 +86,7 @@ export async function runSkillSpectorDiagnosticProcess(
   }
   return {
     processStatus,
+    stderrPolicy: "discarded" as const,
     startedMonotonicMs: started,
     finishedMonotonicMs: performance.now(),
     durationMs: performance.now() - started,

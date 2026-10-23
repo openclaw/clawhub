@@ -174,6 +174,11 @@ order: `baseline175`, `candidate175`, `baseline290`, `candidate290`. Each runs
 once, serially, without harness retries. Native judge execution is disabled:
 the trusted installed SkillSpector CLI writes its own terminal JSON independently
 of the final judge window. Scanner-only results are **not** full-profile acceptance.
+Raw scanner stderr is drained without retention in this direct scanner mode;
+the structured terminal file remains the evidence. This avoids imposing the
+outer worker's stderr byte limit on output that production's Go adapter absorbs
+internally. Other worker commands retain their stderr guard, and stdout,
+process/cleanup budgets and terminal-file bounds remain unchanged.
 Unknown process-group cleanup or setup failure stops later controls, retaining
 their explicit `not_started_after_failure` statuses rather than overlapping them.
 

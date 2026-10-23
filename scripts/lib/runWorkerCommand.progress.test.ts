@@ -73,3 +73,33 @@ it("terminates instead of throwing raw observer errors out of the stream handler
     ),
   ).rejects.toMatchObject({ message: "Worker diagnostic observer failed", stdout: "", stderr: "" });
 });
+
+it("can drain discarded diagnostic stderr while retaining the default stderr guard", async () => {
+  const script = "require('node:fs').writeSync(2, Buffer.alloc(2 * 1024 * 1024, 120));process.stdout.write('done')";
+  await expect(
+    runWorkerCommand(process.execPath, ["-e", script], {
+      cwd: tmpdir(), env: {}, timeoutMs: 5000, captureOutput: false,
+    }),
+  ).rejects.toMatchObject({ outputLimitExceeded: "stderr" });
+  await expect(
+    runWorkerCommand(process.execPath, ["-e", script], {
+      cwd: tmpdir(), env: {}, timeoutMs: 5000, discardStderr: true,
+    }),
+  ).resolves.toEqual({ stdout: "done", stderr: "" });
+});
+
+it("keeps stdout bounded when diagnostic stderr is discarded", async () => {
+  await expect(
+    runWorkerCommand(process.execPath, ["-e", "process.stdout.write('x'.repeat(256))"], {
+      cwd: tmpdir(), env: {}, timeoutMs: 5000, discardStderr: true, maxStdoutBytes: 128,
+    }),
+  ).rejects.toMatchObject({ outputLimitExceeded: "stdout" });
+});
+
+it("rejects discarding stderr that an observer requires", async () => {
+  await expect(
+    runWorkerCommand(process.execPath, ["-e", ""], {
+      cwd: tmpdir(), env: {}, timeoutMs: 5000, discardStderr: true, onStderrChunk: () => {},
+    }),
+  ).rejects.toThrow("Cannot discard observed stderr");
+});

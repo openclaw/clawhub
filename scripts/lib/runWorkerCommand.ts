@@ -48,12 +48,17 @@ export async function runWorkerCommand(
     maxStdoutBytes?: number;
     maxStderrBytes?: number;
     captureOutput?: boolean;
+    /** Drain raw diagnostics without retaining them or applying a stderr byte cap. */
+    discardStderr?: boolean;
     cleanupProcessGroup?: boolean;
     onStderrChunk?: (chunk: Buffer) => void;
     onTermination?: (termination: WorkerCommandTermination) => void;
     timeoutMs: number;
   },
 ) {
+  if (options.discardStderr && options.onStderrChunk) {
+    throw new RangeError("Cannot discard observed stderr");
+  }
   const maxStdoutBytes = options.maxStdoutBytes ?? DEFAULT_MAX_STDOUT_BYTES;
   const maxStderrBytes = options.maxStderrBytes ?? DEFAULT_MAX_STDERR_BYTES;
   for (const [stream, limit] of [
@@ -138,6 +143,7 @@ export async function runWorkerCommand(
       }, 60_000);
     };
     const appendOutput = (stream: "stdout" | "stderr", chunk: Buffer) => {
+      if (stream === "stderr" && options.discardStderr) return;
       if (outputLimitExceeded) return;
       const maxBytes = stream === "stdout" ? maxStdoutBytes : maxStderrBytes;
       const remaining = Math.max(0, maxBytes - outputBytes[stream]);
