@@ -88,6 +88,26 @@ const receiptErrors = [
 ];
 
 describe("versioned ClawScan receipt consumer", () => {
+  it("retains raw reference caveats without normalizing partial analysis as clean", () => {
+    const artifact = artifactFixture("suspicious");
+    const raw = {
+      execution_successful: true,
+      analysis_completeness: {
+        is_complete: false,
+        status: "partial",
+        ledger_exceptions: [{ reason_code: "reference_missing", fatal: false }],
+      },
+      risk_assessment: { score: 0, recommendation: "CAUTION" },
+      issues: [],
+    };
+    Object.assign(artifact.scanners.skillspector, { raw });
+    const mapped = validateClawScanArtifactForClawHubProfile(artifact);
+    expect(mapped.skillSpectorAnalysis.status).toBe("suspicious");
+    expect(mapped.skillSpectorAnalysis.recommendation).toBe("CAUTION");
+    expect(JSON.parse(mapped.scannerReportsJson).skillspector).toEqual(raw);
+    expect(mapped.llmAnalysis.verdict).toBe("suspicious");
+  });
+
   it.each(["benign", "suspicious", "malicious"])(
     "preserves %s and complete v2 evidence",
     (verdict) => {
