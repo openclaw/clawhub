@@ -230,13 +230,16 @@ export async function completeMockPrePublicationChecks(args: {
   claim?: MockPrePublicationClaim;
   trufflehog?: "clean" | "blocked";
   clawscan?: "clean" | "suspicious" | "malicious" | "failed";
+  includeCleanClawscanAnalysis?: boolean;
 }) {
   const claim = args.claim ?? (await claimMockPrePublicationChecks(args));
   const clawscan = args.clawscan ?? "clean";
   const clawscanBlocked = clawscan === "malicious";
   const clawscanFailed = clawscan === "failed";
   const clawscanAnalysis =
-    clawscan === "suspicious" || clawscan === "malicious"
+    clawscan === "suspicious" ||
+    clawscan === "malicious" ||
+    (clawscan === "clean" && args.includeCleanClawscanAnalysis)
       ? {
           status: "completed",
           verdict: clawscan,
