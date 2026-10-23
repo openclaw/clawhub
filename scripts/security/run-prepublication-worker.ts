@@ -22,12 +22,12 @@ import {
   type AigAnalysis,
   assertAigFilePathsHaveNoCompiledPython,
   type ClaimedJob,
-  normalizeAigAnalysis,
   resolveClawScanTarget,
   type StoredLlmAnalysis,
+  validateClawScanArtifactForClawHubProfile,
   writeArtifactWorkspace,
 } from "./run-codex-scan-worker";
-import { configuredClawScanJudgeModel, securityScannerEnvironment } from "./securityModelPolicy";
+import { securityScannerEnvironment } from "./securityModelPolicy";
 
 type ClaimedPrePublicationAttempt = {
   attemptId: Id<"publishAttempts">;
@@ -440,14 +440,6 @@ function readString(record: Record<string, unknown> | undefined, names: string[]
   return undefined;
 }
 
-function verdictToStoredStatus(verdict: string | undefined): StoredLlmAnalysis["status"] {
-  const normalized = verdict?.trim().toLowerCase();
-  if (normalized === "benign" || normalized === "clean") return "clean";
-  if (normalized === "suspicious") return "suspicious";
-  if (normalized === "malicious") return "malicious";
-  return "pending";
-}
-
 function collectClawScanScannerFailures(
   scanners: Record<string, unknown> | undefined,
   scannerSet: readonly string[],
@@ -477,7 +469,6 @@ function storedAnalysisFromClawScanArtifact(
 } {
   const record = asRecord(artifact);
   const judge = asRecord(record?.judge);
-  const result = asRecord(judge?.result);
   const judgeStatus = readString(judge, ["status"]);
   const judgeError = readString(judge, ["error"]);
   const requireAig = targetKind !== "packageRelease";
@@ -503,44 +494,13 @@ function storedAnalysisFromClawScanArtifact(
         .join(", ")}`,
     };
   }
-  const verdict = readString(result, ["verdict", "status"]);
-  if (!verdict) return { error: "ClawScan judge did not return a verdict" };
-
-  const dimensions = Array.isArray(result?.dimensions)
-    ? (result.dimensions as StoredLlmAnalysis["dimensions"])
-    : undefined;
-  const confidence = readString(result, ["confidence"]);
-  const findings = readString(result, ["findings"]);
-  const guidance = readString(result, ["guidance"]);
-  const model = configuredClawScanJudgeModel(judge);
-  const summary = readString(result, ["summary"]);
-  const checkedAt = Date.now();
-  let aigAnalysis: AigAnalysis | undefined;
-  if (requireAig) {
-    const aig = asRecord(asRecord(record?.scanners)?.aig);
-    if (!aig || aig.raw === undefined) {
-      return { error: "ClawScan aig scanner output was missing" };
-    }
-    const rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
-    aigAnalysis = normalizeAigAnalysis(rawAig, checkedAt);
-    if (aigAnalysis.status === "error") {
-      return { error: aigAnalysis.error ?? "A.I.G returned unusable scanner output" };
-    }
+  try {
+    if (!record) throw new Error("ClawScan artifact was missing");
+    const mapped = validateClawScanArtifactForClawHubProfile(record, requiredScanners);
+    return { aigAnalysis: mapped.aigAnalysis, analysis: mapped.llmAnalysis };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "ClawScan artifact was invalid" };
   }
-  return {
-    aigAnalysis,
-    analysis: {
-      checkedAt,
-      status: verdictToStoredStatus(verdict),
-      verdict,
-      ...(confidence ? { confidence } : {}),
-      ...(dimensions ? { dimensions } : {}),
-      ...(findings ? { findings } : {}),
-      ...(guidance ? { guidance } : {}),
-      ...(model ? { model } : {}),
-      ...(summary ? { summary } : {}),
-    },
-  };
 }
 
 function clawScanCheckResult(analysis: StoredLlmAnalysis): WorkerCheckResult {

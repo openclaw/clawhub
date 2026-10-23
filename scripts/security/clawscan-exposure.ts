@@ -36,6 +36,14 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 function receiptFailure(error: string) {
   return (
+    [
+      "Judge artifact inspection required_file did not match the required artifact file.",
+      "Judge artifact inspection receipt version was unsupported.",
+      "Judge artifact inspection v2 fields require receipt version 2.",
+      "Judge artifact inspection v2 receipt fields were invalid.",
+      "Judge artifact inspection v2 additional_files_inspected was not an array.",
+      "Judge artifact inspection v2 additional_files_inspected contained an invalid artifact path.",
+    ].includes(error) ||
     error === "Judge did not provide the required artifact inspection receipt." ||
     /^Judge artifact inspection (status was .*; expected completed\.|challenge did not match the workspace challenge\.|file hash did not match the required artifact file\.|did not report any inspected artifact files\.|did not include required file .+\.)$/.test(
       error,

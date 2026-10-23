@@ -1728,6 +1728,14 @@ const REQUIRED_CLAWHUB_ARTIFACT_INSPECTION_KEYS = [
   "required_file_sha256",
   "files_inspected",
 ];
+const REQUIRED_CLAWHUB_V2_ARTIFACT_INSPECTION_KEYS = [
+  "version",
+  "status",
+  "challenge",
+  "required_file",
+  "required_file_sha256",
+  "additional_files_inspected",
+];
 const ALLOWED_CLAWHUB_DIMENSION_STATUSES = CLAWHUB_OUTPUT_SCHEMA_CONTRACT.allowedDimensionStatus;
 
 function assertExactObjectKeys(
@@ -1743,6 +1751,14 @@ function assertExactObjectKeys(
   if (missing.length > 0) {
     throw new Error(`${context} missing required field(s): ${missing.join(", ")}`);
   }
+}
+
+function validInspectedArtifactPath(file: unknown): file is string {
+  return (
+    typeof file === "string" &&
+    file.startsWith("artifact/") &&
+    !file.split("/").some((part) => !part || part === "." || part === "..")
+  );
 }
 
 function validateClawScanJudgeResultShape(result: Record<string, unknown>) {
@@ -1769,9 +1785,14 @@ function validateClawScanJudgeResultShape(result: Record<string, unknown>) {
   }
   assertExactObjectKeys(
     artifactInspection,
-    REQUIRED_CLAWHUB_ARTIFACT_INSPECTION_KEYS,
+    Object.hasOwn(artifactInspection, "version")
+      ? REQUIRED_CLAWHUB_V2_ARTIFACT_INSPECTION_KEYS
+      : REQUIRED_CLAWHUB_ARTIFACT_INSPECTION_KEYS,
     "ClawScan artifact inspection",
   );
+  if (Object.hasOwn(artifactInspection, "version") && artifactInspection.version !== 2) {
+    throw new Error("ClawScan artifact inspection receipt version was unsupported");
+  }
   const inspectionStatus = readString(artifactInspection, ["status"]);
   if (inspectionStatus !== "completed") {
     throw new Error(`ClawScan artifact inspection status was ${inspectionStatus ?? "missing"}`);
@@ -1784,13 +1805,26 @@ function validateClawScanJudgeResultShape(result: Record<string, unknown>) {
   if (!requiredFileSha256 || !/^[a-f0-9]{64}$/.test(requiredFileSha256)) {
     throw new Error("ClawScan artifact inspection required_file_sha256 was invalid");
   }
-  const inspectedFiles = artifactInspection.files_inspected;
-  if (
-    !Array.isArray(inspectedFiles) ||
-    inspectedFiles.length === 0 ||
-    inspectedFiles.some((file) => typeof file !== "string" || !file.startsWith("artifact/"))
-  ) {
-    throw new Error("ClawScan artifact inspection files_inspected was invalid");
+  if (artifactInspection.version === 2) {
+    if (!validInspectedArtifactPath(artifactInspection.required_file)) {
+      throw new Error("ClawScan artifact inspection required_file was invalid");
+    }
+    const additional = artifactInspection.additional_files_inspected;
+    if (
+      !Array.isArray(additional) ||
+      additional.some((file) => !validInspectedArtifactPath(file))
+    ) {
+      throw new Error("ClawScan artifact inspection additional_files_inspected was invalid");
+    }
+  } else {
+    const inspectedFiles = artifactInspection.files_inspected;
+    if (
+      !Array.isArray(inspectedFiles) ||
+      inspectedFiles.length === 0 ||
+      inspectedFiles.some((file) => typeof file !== "string" || !file.startsWith("artifact/"))
+    ) {
+      throw new Error("ClawScan artifact inspection files_inspected was invalid");
+    }
   }
 
   const dimensions = asRecord(result.dimensions);
@@ -1927,6 +1961,22 @@ export function validateClawScanArtifactForClawHubProfile(
     throw new Error("ClawScan judge did not include a JSON object result");
   }
   validateClawScanJudgeResultShape(result);
+  const inspection = asRecord(result.artifact_inspection)!;
+  if (inspection.version === 2) {
+    const exposure = clawScanExposure(artifact);
+    const attempts = Array.isArray(judge.attempts) ? judge.attempts : [];
+    const last = asRecord(attempts.at(-1));
+    if (
+      exposure.judgeInvocations === null ||
+      !last ||
+      inspection.status !== "completed" ||
+      inspection.required_file !== last.requiredFile ||
+      inspection.challenge !== last.challenge ||
+      inspection.required_file_sha256 !== last.requiredFileSha256
+    ) {
+      throw new Error("ClawScan artifact inspection did not match final native attempt provenance");
+    }
+  }
   const parsed = parseLlmEvalResponse(JSON.stringify(result));
   if (!parsed) {
     throw new Error("ClawScan judge result did not match the ClawHub output schema");
@@ -2137,7 +2187,10 @@ export function scanHealthClassification(input: {
   const judgeStatus = input.clawscan.mapping?.judge?.status;
   let judgeStageFailed = Boolean(judgeStatus && judgeStatus !== "completed");
   scannerStageFailed ||= /ClawScan scanner/i.test(input.errorMessage ?? "");
-  judgeStageFailed ||= /ClawScan (artifact )?judge|output schema/i.test(input.errorMessage ?? "");
+  judgeStageFailed ||=
+    /ClawScan (artifact )?judge|ClawScan artifact inspection|output schema/i.test(
+      input.errorMessage ?? "",
+    );
 
   const failureStage =
     input.status === "failed"

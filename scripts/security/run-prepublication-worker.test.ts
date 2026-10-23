@@ -28,6 +28,51 @@ const noNewExposure = {
   recoveredReceiptRetries: 0,
 };
 
+function legacyJudgeResult(verdict = "benign", summary = "Native ClawScan passed.") {
+  return {
+    verdict,
+    confidence: "high",
+    summary,
+    dimensions: Object.fromEntries(
+      [
+        "purpose_capability",
+        "instruction_scope",
+        "install_mechanism",
+        "environment_proportionality",
+        "persistence_privilege",
+      ].map((name) => [name, { status: "ok", detail: "Controlled test evidence." }]),
+    ),
+    scan_findings_in_context: [],
+    user_guidance: "Controlled test.",
+    artifact_inspection: {
+      status: "completed",
+      challenge: "legacy",
+      required_file_sha256: "c".repeat(64),
+      files_inspected: ["artifact/SKILL.md"],
+    },
+  };
+}
+
+function legacyArtifact(
+  aigRaw: unknown = {
+    version: "2.1.0",
+    runs: [{ tool: { driver: { name: "aig-skill-scan", version: "0.2.1" } }, results: [] }],
+  },
+  aigStatus = "completed",
+) {
+  return {
+    schemaVersion: "clawscan-run-v1",
+    profile: "clawhub",
+    completedAt: "2026-10-23T08:00:00Z",
+    scanners: {
+      aig: { status: aigStatus, raw: aigRaw },
+      "clawscan-static": { status: "completed" },
+      skillspector: { status: "completed", raw: { issues: [] } },
+    },
+    judge: { configuredModel: "gpt-6.1-sol", status: "completed", result: legacyJudgeResult() },
+  };
+}
+
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
@@ -236,11 +281,7 @@ describe("pre-publication worker", () => {
     async (scenario) => {
       const root = await tempDir();
       const command = join(root, "fake-clawscan");
-      const result = {
-        verdict: "malicious",
-        confidence: "high",
-        summary: "Security block, not clean.",
-      };
+      const result = legacyJudgeResult("malicious", "Security block, not clean.");
       const first = {
         status: "failed",
         error: "Judge did not provide the required artifact inspection receipt.",
@@ -258,7 +299,7 @@ describe("pre-publication worker", () => {
         completedAt: "2026-10-22T00:00:00Z",
         scanners: {
           "clawscan-static": { status: "completed" },
-          skillspector: { status: "completed" },
+          skillspector: { status: "completed", raw: { issues: [] } },
         },
         judge: {
           status: failed ? "failed" : "completed",
@@ -931,7 +972,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"configuredModel":"gpt-6.1-sol","status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+${JSON.stringify(legacyArtifact())}
 JSON
 `,
       );
@@ -1053,7 +1094,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"skipped"},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+${JSON.stringify(legacyArtifact(undefined, "skipped"))}
 JSON
 `,
       );
@@ -1225,7 +1266,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[]}},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+${JSON.stringify(legacyArtifact({ version: "2.1.0", runs: [] }))}
 JSON
 `,
     );
