@@ -81,10 +81,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Codex CLI
-        run: |
-          set -euo pipefail
-          npm install -g @openai/codex@0.160.0
-          codex --version
+        uses: ./.github/actions/setup-codex
 
       - name: Install ClawScan CLI
         run: |

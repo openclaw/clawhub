@@ -52,7 +52,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install pinned Codex without login
-        run: npm install -g @openai/codex@0.160.0
+        uses: ./.github/actions/setup-codex
       - name: Select bounded installer source
         if: ${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' }}
         env:
