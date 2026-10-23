@@ -1203,13 +1203,19 @@ export function normalizeSkillSpectorAnalysis(
   const issueCount =
     readNumber(record, ["issue_count", "issueCount", "finding_count", "findingCount"]) ??
     rawIssueList.length;
+  const completeness = asRecord(record.analysis_completeness ?? record.analysisCompleteness);
+  const incomplete =
+    completeness?.is_complete === false ||
+    completeness?.isComplete === false ||
+    ["partial", "incomplete", "failed"].includes(readString(completeness ?? {}, ["status"]) ?? "");
+  const normalizedStatus = normalizeSkillSpectorStatus({
+    rawStatus: readString(record, ["status"]),
+    recommendation,
+    score,
+    issueCount,
+  });
   return {
-    status: normalizeSkillSpectorStatus({
-      rawStatus: readString(record, ["status"]),
-      recommendation,
-      score,
-      issueCount,
-    }),
+    status: normalizedStatus === "clean" && incomplete ? "suspicious" : normalizedStatus,
     score,
     severity,
     recommendation,

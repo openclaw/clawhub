@@ -22,7 +22,7 @@ import {
   validDiagnosticEventContext,
 } from "./clawscan-diagnostic-pair";
 import { clawScanExposure } from "./clawscan-exposure";
-import { createClawScanProgressCollector } from "./clawscan-progress";
+import { createClawScanProgressCollector, type SafeClawScanProgress } from "./clawscan-progress";
 import { validateClawScanArtifactForClawHubProfile } from "./run-codex-scan-worker";
 import { securityScannerEnvironment } from "./securityModelPolicy";
 
@@ -112,12 +112,14 @@ export async function runDiagnosticProcess(
   if (options.eventContext && !validDiagnosticEventContext(options.eventContext))
     throw new Error("Invalid paired event context");
   if (!options.eventContext) await writeFile(options.eventsPath, "", { flag: "wx", mode: 0o600 });
-  const progress = createClawScanProgressCollector((event) =>
+  let lastProgress: SafeClawScanProgress | null = null;
+  const progress = createClawScanProgressCollector((event) => {
     appendFileSync(
       options.eventsPath,
       `${JSON.stringify(options.eventContext ? { schemaVersion: "clawscan-paired-event-v1", leg: options.eventContext.leg, processIndex: options.eventContext.processIndex, progress: event } : event)}\n`,
-    ),
-  );
+    );
+    lastProgress = event;
+  });
   let termination: WorkerCommandTermination | null = null;
   let processStatus = "completed";
   try {
@@ -155,15 +157,17 @@ export async function runDiagnosticProcess(
     processStatus,
     termination: termination as WorkerCommandTermination | null,
     diagnosticRecords: progress.counts,
+    lastProgress: lastProgress as SafeClawScanProgress | null,
     ...(await diagnosticArtifactMetadata(options.artifactPath, options.eventContext !== undefined)),
   };
 }
 
-async function attestRuntime(
+export async function attestRuntime(
   source: "reviewed" | "incident",
   fixture: "tiny" | "incident" | "receipt-incident" | "small-timeout-paired",
   root: string,
   env: NodeJS.ProcessEnv,
+  installed?: { sourceDir: string; pin: string; binary: string },
 ) {
   if (
     process.env.DEFAULT_MODEL !== "gpt-6.1-sol" ||
@@ -172,12 +176,12 @@ async function attestRuntime(
     process.env.SKILLSPECTOR_REASONING_EFFORT !== "medium"
   )
     throw new Error("Production scanner settings differ from approved diagnostic settings");
-  const sourceDir = process.env.CLAWSCAN_SOURCE_DIR;
+  const sourceDir = installed?.sourceDir ?? process.env.CLAWSCAN_SOURCE_DIR;
   if (!sourceDir) throw new Error("Missing installed source");
   const reviewed = (
     await readFile(new URL("./clawscan-source-commit.txt", import.meta.url), "utf8")
   ).trim();
-  const pin = source === "incident" ? INCIDENT_SOURCE_PIN : reviewed;
+  const pin = installed?.pin ?? (source === "incident" ? INCIDENT_SOURCE_PIN : reviewed);
   if (!/^[a-f0-9]{40}$/.test(pin)) throw new Error("Invalid reviewed source pin");
   const run = async (command: string, args: string[]) =>
     (await runWorkerCommand(command, args, { cwd: root, env, timeoutMs: 30_000 })).stdout.trim();
@@ -189,7 +193,7 @@ async function attestRuntime(
     "--porcelain",
     "--untracked-files=no",
   ]);
-  const binary = join(process.env.RUNNER_TEMP!, "clawscan-bin/clawscan");
+  const binary = installed?.binary ?? join(process.env.RUNNER_TEMP!, "clawscan-bin/clawscan");
   const build = await run("go", ["version", "-m", binary]);
   const revision = /\bvcs.revision=([a-f0-9]{40})\b/.exec(build)?.[1];
   const goVersion = /\b(go\d+\.\d+\.\d+)\b/.exec(build)?.[1];
@@ -260,7 +264,7 @@ async function attestRuntime(
   };
 }
 
-async function removeRuntime(root: string) {
+export async function removeRuntime(root: string) {
   const unlock = async (directory: string) => {
     await chmod(directory, 0o700);
     for (const name of await readdir(directory)) {
@@ -272,7 +276,7 @@ async function removeRuntime(root: string) {
   await rm(root, { recursive: true, force: true });
 }
 
-export async function main(args = process.argv.slice(2)) {
+export function assertDisposableDiagnosticEnvironment() {
   if (
     process.platform !== "linux" ||
     process.env.GITHUB_ACTIONS !== "true" ||
@@ -282,6 +286,23 @@ export async function main(args = process.argv.slice(2)) {
     !process.env.RUNNER_TEMP
   )
     throw new Error("Disposable Blacksmith workflow required");
+  return process.env.RUNNER_TEMP;
+}
+
+export async function main(args = process.argv.slice(2)) {
+  const runnerTemp = assertDisposableDiagnosticEnvironment();
+  if (
+    args.length === 4 &&
+    args[0] === "--fixture" &&
+    ["original-scanner-only", "original-candidate-full", "original-candidate-290-full"].includes(
+      args[1],
+    ) &&
+    args[2] === "--source" &&
+    args[3] === "reviewed"
+  ) {
+    const { mainOriginalDiagnostic } = await import("./run-clawscan-original-diagnostic");
+    return mainOriginalDiagnostic(args[1] as import("./clawscan-diagnostic-original").OriginalMode);
+  }
   if (
     args.length !== 4 ||
     args[0] !== "--fixture" ||
@@ -293,8 +314,8 @@ export async function main(args = process.argv.slice(2)) {
     throw new Error("Only bounded fixture/source choices are supported");
   const fixture = args[1] as "tiny" | "incident" | "receipt-incident" | "small-timeout-paired";
   const source = args[3] as "reviewed" | "incident";
-  const runtime = await mkdtemp(join(process.env.RUNNER_TEMP, "clawscan-diagnostic-private-"));
-  const output = await mkdtemp(join(process.env.RUNNER_TEMP, "clawscan-diagnostic-safe-"));
+  const runtime = await mkdtemp(join(runnerTemp, "clawscan-diagnostic-private-"));
+  const output = await mkdtemp(join(runnerTemp, "clawscan-diagnostic-safe-"));
   const summaryPath = join(output, "summary.json");
   await writeFile(
     summaryPath,

@@ -4,10 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       fixture:
-        description: "Diagnostic only, excluded from SLOs; fixed incident, paired small timeout, or tiny control"
+        description: "Nonpublishing fixed controls; original scanner-only never auto-runs full profile"
         required: true
         type: choice
-        options: [tiny, incident, receipt-incident, small-timeout-paired]
+        options:
+          [
+            tiny,
+            incident,
+            receipt-incident,
+            small-timeout-paired,
+            original-scanner-only,
+            original-candidate-full,
+            original-candidate-290-full,
+          ]
         default: tiny
       source:
         description: "Reviewed repository pin or exact installed incident baseline (never latest)"
@@ -28,7 +37,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: blacksmith-16vcpu-ubuntu-2404
     environment: Production
-    timeout-minutes: 80
+    timeout-minutes: ${{ inputs.fixture == 'original-scanner-only' && 120 || 80 }}
     env:
       CLAWSCAN_DIAGNOSTIC_RUNNER: blacksmith-16vcpu-ubuntu-2404
       GOTOOLCHAIN: go1.27.3
@@ -46,6 +55,7 @@ jobs:
       - name: Install pinned Codex without login
         run: npm install -g @openai/codex@0.160.0
       - name: Select bounded installer source
+        if: ${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' }}
         env:
           SOURCE_CHOICE: ${{ inputs.source }}
           FIXTURE_CHOICE: ${{ inputs.fixture }}
@@ -62,6 +72,7 @@ jobs:
           printf 'DIAGNOSTIC_INSTALLER=%s\n' "$installer" >> "$GITHUB_ENV"
           sh "$installer/install-clawscan.sh"
       - name: Install matched reviewed scanner sources and Responses adapters
+        if: ${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' }}
         run: |
           set -euo pipefail
           sh "$DIAGNOSTIC_INSTALLER/install-clawscan-scanners.sh" aig

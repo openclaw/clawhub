@@ -137,6 +137,7 @@ export async function runPairedDiagnostic(options: {
               processStatus: "start_or_observer_failed",
               termination: null,
               diagnosticRecords: { retained: 0, rejected: 0, limited: 0 },
+              lastProgress: null,
               artifact: "missing",
               consumerValidation: "unknown",
               securityVerdict: null,

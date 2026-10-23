@@ -12,6 +12,7 @@ const MAX_ARCHIVE_BYTES = 10 * 1024 * 1024;
 export type DiagnosticManifest = {
   archiveSha256: string;
   manifestSha256: string;
+  manifestCanonicalization?: "path,size,sha256";
   files: { path: string; sha256: string; size: number }[];
 };
 export const incidentManifest: DiagnosticManifest = incident;
@@ -25,11 +26,27 @@ const safePath = (path: string) =>
   !Array.from(path).some((character) => character.charCodeAt(0) < 32) &&
   path.split("/").every((part) => part && part !== "." && part !== "..");
 
-function validateManifest(manifest: DiagnosticManifest) {
+type ExtractionOptions = {
+  maximumBytes?: number;
+  excludedEntries?: string[];
+  restoredMetadata?: Buffer;
+};
+
+function validateManifest(manifest: DiagnosticManifest, maximumBytes = MAX_ARCHIVE_BYTES) {
   const files = manifest.files
-    .map(({ path, sha256, size }) => ({ path, sha256, size }))
+    .map(({ path, sha256, size }) =>
+      manifest.manifestCanonicalization === "path,size,sha256"
+        ? { path, size, sha256 }
+        : { path, sha256, size },
+    )
     .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   if (
+    !Number.isSafeInteger(maximumBytes) ||
+    maximumBytes < 1 ||
+    maximumBytes > 16 * 1024 * 1024 ||
+    (manifest.manifestCanonicalization !== undefined &&
+      manifest.manifestCanonicalization !== "path,size,sha256") ||
+    !/^[a-f0-9]{64}$/.test(manifest.archiveSha256) ||
     hash(JSON.stringify(files)) !== manifest.manifestSha256 ||
     new Set(files.map((file) => file.path)).size !== files.length ||
     files.some(
@@ -39,13 +56,17 @@ function validateManifest(manifest: DiagnosticManifest) {
         !Number.isSafeInteger(file.size) ||
         file.size < 0,
     ) ||
-    files.reduce((sum, file) => sum + file.size, 0) > MAX_ARCHIVE_BYTES
+    files.reduce((sum, file) => sum + file.size, 0) > maximumBytes
   )
     throw new Error("Invalid diagnostic manifest");
 }
 
-export async function verifyDiagnosticTree(root: string, manifest: DiagnosticManifest) {
-  validateManifest(manifest);
+export async function verifyDiagnosticTree(
+  root: string,
+  manifest: DiagnosticManifest,
+  maximumBytes = MAX_ARCHIVE_BYTES,
+) {
+  validateManifest(manifest, maximumBytes);
   const rootInfo = await lstat(root);
   if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink())
     throw new Error("Invalid diagnostic root");
@@ -101,8 +122,10 @@ export async function extractDiagnosticArchive(
   bytes: Buffer,
   root: string,
   manifest = incidentManifest,
+  options: ExtractionOptions = {},
 ) {
-  validateManifest(manifest);
+  const maximumBytes = options.maximumBytes ?? MAX_ARCHIVE_BYTES;
+  validateManifest(manifest, maximumBytes);
   if (bytes.length > MAX_ARCHIVE_BYTES || hash(bytes) !== manifest.archiveSha256)
     throw new Error("Diagnostic archive identity mismatch");
   const zip = await fromBufferPromise(bytes, {
@@ -111,9 +134,20 @@ export async function extractDiagnosticArchive(
     strictFileNames: true,
   });
   const expected = new Map(manifest.files.map((file) => [file.path, file]));
-  const extras = new Set(["_meta.json", "skill-card.md"]);
+  const extras = new Set(options.excludedEntries ?? ["_meta.json", "skill-card.md"]);
+  if ([...extras].some((path) => !safePath(path) || expected.has(path)))
+    throw new Error("Invalid diagnostic exclusions");
+  const metadata = expected.get("_meta.json");
+  if (
+    options.restoredMetadata !== undefined &&
+    (!metadata ||
+      options.restoredMetadata.length !== metadata.size ||
+      hash(options.restoredMetadata) !== metadata.sha256)
+  )
+    throw new Error("Diagnostic original metadata identity mismatch");
   const seen = new Set<string>();
   const originals: { path: string; bytes: Buffer }[] = [];
+  let archiveUncompressedBytes = 0;
   try {
     if (zip.entryCount !== expected.size + extras.size)
       throw new Error("Diagnostic archive inventory mismatch");
@@ -129,10 +163,19 @@ export async function extractDiagnosticArchive(
       )
         throw new Error("Invalid diagnostic archive entry");
       seen.add(entry.fileName);
+      archiveUncompressedBytes += entry.uncompressedSize;
+      if (archiveUncompressedBytes > maximumBytes + 64 * 1024)
+        throw new Error("Diagnostic archive size mismatch");
       const file = expected.get(entry.fileName);
       if (!file && !extras.has(entry.fileName))
         throw new Error("Unexpected diagnostic archive entry");
       if (!file) continue;
+      if (entry.fileName === "_meta.json" && options.restoredMetadata !== undefined) {
+        if (entry.uncompressedSize > 64 * 1024)
+          throw new Error("Diagnostic archive metadata size mismatch");
+        originals.push({ path: file.path, bytes: options.restoredMetadata });
+        continue;
+      }
       if (entry.uncompressedSize !== file.size) throw new Error("Diagnostic archive size mismatch");
       const stream = await zip.openReadStreamPromise(entry);
       const chunks: Buffer[] = [];
@@ -160,7 +203,7 @@ export async function extractDiagnosticArchive(
     await mkdir(dirname(join(root, file.path)), { recursive: true, mode: 0o700 });
     await writeFile(join(root, file.path), file.bytes, { flag: "wx", mode: 0o400 });
   }
-  const identity = await verifyDiagnosticTree(root, manifest);
+  const identity = await verifyDiagnosticTree(root, manifest, maximumBytes);
   const lockDirectories = async (directory: string) => {
     for (const name of await readdir(directory))
       if ((await lstat(join(directory, name))).isDirectory())

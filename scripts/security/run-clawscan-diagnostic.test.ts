@@ -53,6 +53,12 @@ it("retains only safe live diagnostics through actual process-group kill; progre
         recoveredReceiptRetries: null,
       },
       termination: { timedOut: true },
+      lastProgress: {
+        event: "child_event",
+        phase: "judge",
+        childItem: "command_execution",
+        childState: "in_progress",
+      },
     });
     expect(JSON.stringify(result) + (await readFile(eventsPath, "utf8"))).not.toContain("PRIVATE");
     expect(result.termination!.cleanupMs).toBeLessThan(60_000);
@@ -89,9 +95,66 @@ it("does not turn missing, malformed, partial or progress-only final metadata in
   }
 });
 
+it("keeps last progress null without events and discloses the existing retention limit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "diagnostic-last-progress-test-"));
+  try {
+    const silent = await runDiagnosticProcess(process.execPath, ["-e", ""], {
+      cwd: root,
+      env: {},
+      timeoutMs: 1200,
+      eventsPath: join(root, "silent.jsonl"),
+      artifactPath: join(root, "missing.json"),
+    });
+    expect(silent.lastProgress).toBeNull();
+    const result = await runDiagnosticProcess(
+      process.execPath,
+      [
+        "-e",
+        `
+        const fs = require('node:fs');
+        for (let index = 0; index < 2049; index++) {
+          fs.writeSync(2, '[clawscan-progress] ' + JSON.stringify({
+            schemaVersion: 'clawscan-progress-v1', event: 'phase_start',
+            phase: 'scanner:skillspector', elapsedMs: index,
+            path: 'PRIVATE', message: 'PRIVATE', provider: 'PRIVATE'
+          }) + '\\n');
+        }
+        `,
+      ],
+      {
+        cwd: root,
+        env: {},
+        timeoutMs: 1200,
+        eventsPath: join(root, "limited.jsonl"),
+        artifactPath: join(root, "missing.json"),
+      },
+    );
+    expect(result.lastProgress).toEqual({
+      schemaVersion: "clawscan-progress-v1",
+      event: "phase_start",
+      phase: "scanner:skillspector",
+      elapsedMs: 2047,
+    });
+    expect(result.diagnosticRecords).toEqual({ retained: 2048, rejected: 0, limited: 1 });
+    expect(result.exposure.judgeInvocations).toBeNull();
+    expect(result.artifact).toBe("missing");
+    expect(JSON.stringify(result)).not.toContain("PRIVATE");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("rejects the real CLI before touching any runtime or credentials on the Mac", async () => {
   if (process.platform === "darwin") {
-    for (const fixture of ["tiny", "incident", "receipt-incident", "small-timeout-paired"]) {
+    for (const fixture of [
+      "tiny",
+      "incident",
+      "receipt-incident",
+      "small-timeout-paired",
+      "original-scanner-only",
+      "original-candidate-full",
+      "original-candidate-290-full",
+    ]) {
       await expect(main(["--fixture", fixture, "--source", "reviewed"])).rejects.toThrow(
         "Disposable Blacksmith",
       );
@@ -125,13 +188,26 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "incident",
     "receipt-incident",
     "small-timeout-paired",
+    "original-scanner-only",
+    "original-candidate-full",
+    "original-candidate-290-full",
   ]);
   expect(workflow.on.workflow_dispatch.inputs.source.options).toEqual(["reviewed", "incident"]);
   const job = workflow.jobs.diagnostic;
-  expect(job["timeout-minutes"]).toBe(80);
+  expect(job["timeout-minutes"]).toBe(
+    "${{ inputs.fixture == 'original-scanner-only' && 120 || 80 }}",
+  );
   expect(job["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");
   expect(job.environment).toBe("Production");
   expect(workflow.permissions).toEqual({ contents: "read" });
+  for (const name of [
+    "Select bounded installer source",
+    "Install matched reviewed scanner sources and Responses adapters",
+  ]) {
+    expect(job.steps.find((step: { name?: string }) => step.name === name).if).toBe(
+      "${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' }}",
+    );
+  }
   const probe = job.steps.find((step: { id?: string }) => step.id === "probe");
   expect(probe.env.OPENAI_API_KEY).toBe("${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}");
   expect(probe.env.CODEX_API_KEY).toBe("${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}");

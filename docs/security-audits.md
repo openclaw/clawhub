@@ -167,6 +167,77 @@ Missing or malformed final metadata leaves judge counts unknown, never zero.
 Event loss/limits and unconfirmed group cleanup are explicit; progress cannot
 establish a verdict, invocation count, provider cause or recovery.
 
+### Fixed original-input scanner controls
+
+`fixture=original-scanner-only, source=reviewed` selects exactly four controls in
+order: `baseline175`, `candidate175`, `baseline290`, `candidate290`. Each runs
+once, serially, without harness retries. Native judge execution is disabled:
+the trusted installed SkillSpector CLI writes its own terminal JSON independently
+of the final judge window. Scanner-only results are **not** full-profile acceptance.
+Raw scanner stderr is drained without retention in this direct scanner mode;
+the structured terminal file remains the evidence. This avoids imposing the
+outer worker's stderr byte limit on output that production's Go adapter absorbs
+internally. Other worker commands retain their stderr guard, and stdout,
+process/cleanup budgets and terminal-file bounds remain unchanged.
+Unknown process-group cleanup or setup failure stops later controls, retaining
+their explicit `not_started_after_failure` statuses rather than overlapping them.
+
+The baseline is production source `9662307780b2834791e2b0be8b166b44f4144ef4`.
+The candidate must be a separately reviewed, exact source in
+`scripts/security/clawscan-diagnostic-original.ts`; a null candidate fails closed
+before source installation, input download or provider calls. This is a new
+fixed selection, not an override of historical `reviewed`/`incident` semantics.
+There is no arbitrary source SHA, URL, command, model or limit dispatch input.
+
+The logical inputs are 175 original files / 2,530,728 bytes and 290 original
+files / 14,953,416 bytes. Fixed metadata manifests hash compact JSON ordered by
+path with property order `path,size,sha256`; historical fixtures retain their
+different `path,sha256,size` canonicalization. The 175-file public ZIP is checked
+against its own pinned hash, then **only** regenerated `_meta.json` is replaced
+with the separately fetched, version-bound original 83-byte, hash-verified file.
+The 290-file download is owner-qualified (`dong845`); only its extra generated
+`_meta.json` is excluded. Every original path/type/size/hash is verified before
+execution and again afterward; trees are read-only. No original compressed ZIP
+identity is claimed, and no original program bytes are committed or uploaded.
+
+Each side installs its own source-matched host runtime with the existing
+`uv sync --locked --no-dev` path. Attestation records source/binary/adapter/tree/
+lock/entrypoint hashes and actual runtime/SDK versions, including OpenAI 2.44.0
+and LangChain OpenAI 1.3.3. No compatibility upgrade or Docker image is used
+(`runtimeImage=N/A`). Python 3.12, Go 1.27.3, Node 24.22.1, Codex 0.160.0,
+SkillSpector `95a52d8…`, Tencent `a5c5a72…`, Standard service and production
+models/reasoning remain unchanged. The per-attempt 900s process + at most 60s
+cleanup cap, upstream aggregate 600s and MCP artifact-count limit 128 remain.
+Only this four-control mode has a 120-minute setup/job ceiling; other modes
+retain the existing 80-minute ceiling.
+
+For a **later, separate operator decision**, `fixture=original-candidate-full,
+source=reviewed` selects at most one candidate ClawHub-profile process per input,
+using the real ephemeral consumer validator and native read-only judge. It never
+automatically follows scanner-only execution. Neither mode claims jobs, publishes
+results or calls a backend API.
+
+Collect only the workflow's `summary.json`, `events.jsonl`, `attestation.json`.
+The original-mode summary identifies each attempt, monotonic timing, exit/cleanup,
+input identity and terminal report hash/presence. Terminal projection includes
+strict root execution success, completeness, bounded analyzer states/counts,
+allowlisted reason-code counts and findings counts. Invalid/absent fields remain
+unknown/failure, not zero/success; partial MCP `artifact_count_limit` results stay
+partial. Limit attribution retains numeric bounds and hashed path, phase and
+analyzer labels for at most 128 selected exception records, with at most 16
+associated analyzer hashes per record. Total selected-reason counts remain
+separate; truncation is explicit. Auxiliary-analyzer presence and finding-ID
+cardinalities help investigate unknown enums and discrepant counts without
+retaining source text or rewriting findings. These details do not change the
+process or inspection completion checks.
+Full-profile output additionally retains actual consumer acceptance,
+fixed scanner/judge states and security verdict. Raw 0600 reports remain only in
+restricted ephemeral runtime storage and are removed, never uploaded. Every
+synthetic/nonpublishing control contributes **zero** production recovery samples.
+Complete evidence does not mean benign: a complete finding-bearing report may
+retain exit 1 and `processStatus=failed`; its actual exit, findings and verdict
+are not rewritten as clean or as a zero operational-failure count.
+
 ### Fixed same-runner paired scenario
 
 The paired scenario uses one runner job, with the same fresh probe-owned

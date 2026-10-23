@@ -1,0 +1,1457 @@
+{
+  "archiveSha256": "21ac58f03aa07566ca6194f5e563806eb152cb92e88056f376ebcb64487282f8",
+  "manifestSha256": "1b070ff79edb1ae7faf33aeb00fb4deeaa18fd385a64951fa3e0868d22c424c5",
+  "manifestCanonicalization": "path,size,sha256",
+  "files": [
+    {
+      "path": ".skill-lossless-allow.json",
+      "size": 83582,
+      "sha256": "8f0f8137fdfddf27797bb5c5305580c35061349aa70b79df8e0d6329616eaa26"
+    },
+    {
+      "path": "SKILL.md",
+      "size": 317721,
+      "sha256": "e1cafcd44b41947d24c46d4813d92d739ba74f5e241a1b30f6e17ad9973cabd0"
+    },
+    {
+      "path": "agents/arbiter.md",
+      "size": 11979,
+      "sha256": "8ea63be854d4e7891946e74e1c1bbc9c615690273baad5fa7fb1e42fb78ca908"
+    },
+    {
+      "path": "agents/asset-prep.md",
+      "size": 7957,
+      "sha256": "a77df89862895205e0474e89afd00ac82fb5d1c8a3b93ceb18c6ca465f01a3ff"
+    },
+    {
+      "path": "agents/blind-reader.md",
+      "size": 5737,
+      "sha256": "0d1a42b44d8536eed06eb7c949460626f8b463337a6dd502cf77774b69425425"
+    },
+    {
+      "path": "agents/content-planner.md",
+      "size": 73721,
+      "sha256": "61bd47ff975d8aaef5dace7a423efb414f9c6e09347e75eeca12c39c885c186e"
+    },
+    {
+      "path": "agents/critic.md",
+      "size": 97998,
+      "sha256": "32b230df2588635e47a993b9ccd8cb617fa8a3aeb4bcd86f3bd4e34e0dfca4f6"
+    },
+    {
+      "path": "agents/openai.yaml",
+      "size": 301,
+      "sha256": "13d0cb228d33ff582c05bedbb0370f3d4489d3ec465a57353d2f42c3ff43f457"
+    },
+    {
+      "path": "agents/slide-design.md",
+      "size": 103080,
+      "sha256": "4f398c60a629a6fb87d5c85aa56677bc85033ce29140609025bd4df1af797781"
+    },
+    {
+      "path": "assets/vl/README.md",
+      "size": 1630,
+      "sha256": "ed26a9e3cd8ac09b144510fcbca9c23a3a253face3fa889cfd8a1817a8f01ec0"
+    },
+    {
+      "path": "assets/vl/figure/illustrative-curves.jpg",
+      "size": 44424,
+      "sha256": "3777cf82a7c273fc545a381f9e37c7f398922ec0ecbe5b56476a5312b4be8489"
+    },
+    {
+      "path": "assets/vl/photo/bench-toaster.jpg",
+      "size": 160982,
+      "sha256": "5613002152ce7bf3f8ee1c45661d574c88ae6d4e7966b24f66f9c873234f108b"
+    },
+    {
+      "path": "assets/vl/photo/hall-repair.jpg",
+      "size": 151695,
+      "sha256": "913ee558aa6343d6c4babfad323ef470e35858f934347bd375a8ec32988502fb"
+    },
+    {
+      "path": "assets/vl/photo/jacket-mend.jpg",
+      "size": 207461,
+      "sha256": "f20b8c98fe4d51abb0e4cfecd08abb029011a223bd6288f74172552c6b1e7976"
+    },
+    {
+      "path": "assets/vl/photo/kettle-cutout.png",
+      "size": 194623,
+      "sha256": "ff418e1921db2377ad7dc7bd5ff4237c20306b29f3b53d4dbb451699a0c53c78"
+    },
+    {
+      "path": "assets/vl/photo/table-mended.jpg",
+      "size": 115000,
+      "sha256": "27455ce71d1b1eff7934be77bfaa9de4b89861d3bdb78eb54d6685db78b4f507"
+    },
+    {
+      "path": "assets/vl/photo/tools-tray.jpg",
+      "size": 140996,
+      "sha256": "f876ceeea9639ea9e27cc309927c8ec77518652455889eef7580e45c23e61a03"
+    },
+    {
+      "path": "assets/vl/samples/airmail-night.jpg",
+      "size": 121772,
+      "sha256": "0764b0285e6385421249de4ac378242edb30ac2adf79885d9c0cb58f5ca5afb4"
+    },
+    {
+      "path": "assets/vl/samples/airmail.jpg",
+      "size": 119986,
+      "sha256": "d17c280f77940616d3536cdc9676505859d45b532c9b25742745a5e0116e3bb0"
+    },
+    {
+      "path": "assets/vl/samples/boardgame-felt.jpg",
+      "size": 99397,
+      "sha256": "e945a361b3bf0bacdb64c119063c77dfff1b521628e45a2ab93ba59c410d4f9a"
+    },
+    {
+      "path": "assets/vl/samples/boardgame.jpg",
+      "size": 94660,
+      "sha256": "5bc5ee0e35b76ff5cd5560f063f47dfffd47d2474fe44cd651d7f68d5de81fd5"
+    },
+    {
+      "path": "assets/vl/samples/bricks-blue.jpg",
+      "size": 118147,
+      "sha256": "0ea3080490eba0c6c238ddec77c193c69873074fa85585a691b3e237f2eb9d08"
+    },
+    {
+      "path": "assets/vl/samples/bricks.jpg",
+      "size": 109243,
+      "sha256": "1e48f9f56fa7802c139c1acf108d3772d7ec94169abd5f5ba1da7ae764fd6bc7"
+    },
+    {
+      "path": "assets/vl/samples/broadsheet-salmon.jpg",
+      "size": 113700,
+      "sha256": "ef6824d2bf823c6236ef5dc7e30b5d66ab004bf306b6f9e1459df4657ff68e0c"
+    },
+    {
+      "path": "assets/vl/samples/broadsheet.jpg",
+      "size": 109701,
+      "sha256": "34f5f3fd21b34aaccce098128c226527f9bfde2c0b93afbdcc7855590f6ce60d"
+    },
+    {
+      "path": "assets/vl/samples/calendar-night.jpg",
+      "size": 79333,
+      "sha256": "7986901bc64d802a6104e4477e95176cb28dd2fda20ca0df10db7ec315af9b77"
+    },
+    {
+      "path": "assets/vl/samples/calendar.jpg",
+      "size": 92494,
+      "sha256": "762e99d9127500fd598979857f6c61589ae67b10fa6abd2b976e3023c1657470"
+    },
+    {
+      "path": "assets/vl/samples/chalkboard-slate.jpg",
+      "size": 101981,
+      "sha256": "e218d756b495d636dfa4f3c9b98594e57ac64c557e0e08b6aa925c6d0c1aee4d"
+    },
+    {
+      "path": "assets/vl/samples/chalkboard.jpg",
+      "size": 103777,
+      "sha256": "1a4b3c08e86fa1d1b10da459168481a1fdb66d6a52a46043a13989daf4e7fbfb"
+    },
+    {
+      "path": "assets/vl/samples/circuit-matte.jpg",
+      "size": 132294,
+      "sha256": "eb09a4b92f8bba6e28ee9f282bbd1532d7d5fd4cf39ca74c75948a3e6e46e745"
+    },
+    {
+      "path": "assets/vl/samples/circuit.jpg",
+      "size": 110532,
+      "sha256": "2166868c6f91c436beee866d3c743fa2c678942a3e90edd7a993691791a0f18b"
+    },
+    {
+      "path": "assets/vl/samples/collage-slate.jpg",
+      "size": 144733,
+      "sha256": "0fddee805accd8d9cd25027e3262bef509be42fa91f740922396e5437f3c8188"
+    },
+    {
+      "path": "assets/vl/samples/collage.jpg",
+      "size": 135904,
+      "sha256": "15a53e1af31f78d5eeafe86faafdba97fb936be51cd4aef833fad4c23d664304"
+    },
+    {
+      "path": "assets/vl/samples/comic-noir.jpg",
+      "size": 212467,
+      "sha256": "274c2a534f3aa783e6973700ebb860d9f6c447d37019ddfe32214ebc7067e67b"
+    },
+    {
+      "path": "assets/vl/samples/comic.jpg",
+      "size": 235665,
+      "sha256": "a6268ee3fe5fb9e86c94b29f200b2f46c2a93b3e23358544900940042b253676"
+    },
+    {
+      "path": "assets/vl/samples/cutpaper-night.jpg",
+      "size": 86224,
+      "sha256": "d68ccda6683c95a21ac69fddc8af541998597b6880106a995ff7d5a211ddcb6f"
+    },
+    {
+      "path": "assets/vl/samples/cutpaper.jpg",
+      "size": 74095,
+      "sha256": "99622059e5d62a878d638d20cdfb4145baa2d167554ad354c1a62e38fdb1331a"
+    },
+    {
+      "path": "assets/vl/samples/drafting-cyanotype.jpg",
+      "size": 122226,
+      "sha256": "389a2a74477a3bd8d82784dd8a0f73940ee9d52674950c5296e8026da70659c0"
+    },
+    {
+      "path": "assets/vl/samples/drafting.jpg",
+      "size": 113474,
+      "sha256": "e76df43449104aebaadc8b8e4341a4abd3f309c0b2eb236820d991518258a2e1"
+    },
+    {
+      "path": "assets/vl/samples/editorial-ink.jpg",
+      "size": 135205,
+      "sha256": "3368afbb08bbbbbd8bfb3dd949439bb9c69ab8348b16038e82674eb30a571cae"
+    },
+    {
+      "path": "assets/vl/samples/editorial.jpg",
+      "size": 131109,
+      "sha256": "b8fb2f2ce695c33008562a05c94ef1c5e20f88d1c031a70b0bd9050adce93cb5"
+    },
+    {
+      "path": "assets/vl/samples/herbarium-cabinet.jpg",
+      "size": 92580,
+      "sha256": "ddb7ee0b585fdf26414dd814ed8cedd01b6fe4ae2547417f8f67c493c296aaab"
+    },
+    {
+      "path": "assets/vl/samples/herbarium.jpg",
+      "size": 88146,
+      "sha256": "43517a775bc2602603dd0c22d1a20deb7ba5f812e51007ceb0b1b371caaa8f52"
+    },
+    {
+      "path": "assets/vl/samples/hues.json",
+      "size": 2425,
+      "sha256": "5d4f7888cdf3d0e1b309c617b9389d0760b4d37b6fcc995418a86a7f7a2ba3d6"
+    },
+    {
+      "path": "assets/vl/samples/ink-night.jpg",
+      "size": 70901,
+      "sha256": "868419d23f43f18e393d438878e6b65e8b4ac09bcd8826eb5a4c21f2a4fcd7bf"
+    },
+    {
+      "path": "assets/vl/samples/ink.jpg",
+      "size": 68759,
+      "sha256": "12078e9ee2e0defc0527651683cc2881fcc9e66b80641cb83ea55667ff590886"
+    },
+    {
+      "path": "assets/vl/samples/interface-dark.jpg",
+      "size": 81364,
+      "sha256": "8308260b045a0ca3922200479f65673afa8b3a8e9a9283e3a7d44f09e2d8cebd"
+    },
+    {
+      "path": "assets/vl/samples/interface.jpg",
+      "size": 75772,
+      "sha256": "b2a5409ed57d30aeb1900dcdb84d03d26d623c65abea4997282282c297346a39"
+    },
+    {
+      "path": "assets/vl/samples/journal-green.jpg",
+      "size": 81699,
+      "sha256": "eaf4296996484b975d51897f15b4fcf47ced12bea738103a6b21e806c0fc527c"
+    },
+    {
+      "path": "assets/vl/samples/journal.jpg",
+      "size": 70763,
+      "sha256": "3c48149bdda5062965aef44d8c3276245400332a52c9dce5f0165b5346625a71"
+    },
+    {
+      "path": "assets/vl/samples/manifest.json",
+      "size": 5002,
+      "sha256": "72369e90c7e9a619d2cee3c58352aac4d5ebf3ebe4cc53ee693aaf17102aca5e"
+    },
+    {
+      "path": "assets/vl/samples/periodic-dark.jpg",
+      "size": 81571,
+      "sha256": "0df691607beb98453264cf05b6b040c90f954651251306f73bea60e198d9f39a"
+    },
+    {
+      "path": "assets/vl/samples/periodic.jpg",
+      "size": 68926,
+      "sha256": "216fb6e4c939ab6f48ae0935615fcec806092e6710f226fe23ccd3f279539b43"
+    },
+    {
+      "path": "assets/vl/samples/pixel-arcade.jpg",
+      "size": 114878,
+      "sha256": "3a0703f32e592ba41787dc28520eff0676903f60cdf35fe318278ff27f80e960"
+    },
+    {
+      "path": "assets/vl/samples/pixel.jpg",
+      "size": 105538,
+      "sha256": "50e5bb45fbaee6c39c16ef7a8fd5cd2b42170ad0800f4638e6debf00cee693a1"
+    },
+    {
+      "path": "assets/vl/samples/poster-paper.jpg",
+      "size": 85743,
+      "sha256": "113a2245f972ad5ac258a893360a24c71b340418f256f22391d5b879b7f24d60"
+    },
+    {
+      "path": "assets/vl/samples/poster.jpg",
+      "size": 89835,
+      "sha256": "ec27154e9c1837e400b0975e2209b262753abb52220b8df181436d6c60807473"
+    },
+    {
+      "path": "assets/vl/samples/receipt-carbon.jpg",
+      "size": 73076,
+      "sha256": "7b8ad6e495338dccf4eaad701d2c6e985357d1238e674ce26ff900c3ebd8de4c"
+    },
+    {
+      "path": "assets/vl/samples/receipt.jpg",
+      "size": 69099,
+      "sha256": "a2817eaf0b522caa1ddb235e204d6ad7499dfe1635cd5207b84358f1aba0a573"
+    },
+    {
+      "path": "assets/vl/samples/recipe-kraft.jpg",
+      "size": 113758,
+      "sha256": "4b491b5a6081b05e6a3c46a631e6300fec72dc366b61d75aa3c1b76016931665"
+    },
+    {
+      "path": "assets/vl/samples/recipe.jpg",
+      "size": 158326,
+      "sha256": "30e0a9ed93faf9107a1ca85b3f5e701184c30a3b3e267add6120487eb9cf6809"
+    },
+    {
+      "path": "assets/vl/samples/scoreboard-turf.jpg",
+      "size": 114252,
+      "sha256": "76b98a036d23ee4b24530f57d79c1f9c7c4ceb00cdb27edf36f9e0dca7fe0227"
+    },
+    {
+      "path": "assets/vl/samples/scoreboard.jpg",
+      "size": 111498,
+      "sha256": "bcd4fbe1bc84147d9cbc54de0d1d3c2bcfe4083a82f178e658dc17601f746b3d"
+    },
+    {
+      "path": "assets/vl/samples/soft-dusk.jpg",
+      "size": 102940,
+      "sha256": "8bb5c1bee2505bd74e53955f3b68b6d23e7b24e9286dd0500c13cf9138059f8e"
+    },
+    {
+      "path": "assets/vl/samples/soft.jpg",
+      "size": 98184,
+      "sha256": "53589176009829dd82902952d9e08b5dfb6ab855bb295d8107fd24eee5751eea"
+    },
+    {
+      "path": "assets/vl/samples/stainedglass-nave.jpg",
+      "size": 140361,
+      "sha256": "aabf227a88d5ea300f8bca663e5edc03d59ca1d0ee98a5456f1317c7d75aade1"
+    },
+    {
+      "path": "assets/vl/samples/stainedglass.jpg",
+      "size": 129852,
+      "sha256": "c0f100efd485bba8ea4a8ec850165f691db75221e448aff9980b8dfe2bf9da4e"
+    },
+    {
+      "path": "assets/vl/samples/starlit-dawn.jpg",
+      "size": 71840,
+      "sha256": "7698ecb8aeec5109ef7897fd9ee261582a067803c8cb52eb3dcf6cacff641f6c"
+    },
+    {
+      "path": "assets/vl/samples/starlit.jpg",
+      "size": 74158,
+      "sha256": "4ab87e0a4c485e108d306b857ef548e5b3f8bbcccc5f87e819727e1457c7bfb5"
+    },
+    {
+      "path": "assets/vl/samples/storybook-meadow.jpg",
+      "size": 91878,
+      "sha256": "2602428e3aa65dadf06ebad8dc777ea711e6a406a08e56e63f1bb9d49b2745c9"
+    },
+    {
+      "path": "assets/vl/samples/storybook.jpg",
+      "size": 93578,
+      "sha256": "ec16f5733655effb68eeddacd6611b51bf896f1f1a873c015d540ac6185668f6"
+    },
+    {
+      "path": "assets/vl/samples/tally-night.jpg",
+      "size": 95156,
+      "sha256": "ae5b980fcc79e944adba2db9d90829ade87f2694476397f4f719ea75bca48ddb"
+    },
+    {
+      "path": "assets/vl/samples/tally.jpg",
+      "size": 100770,
+      "sha256": "9ab6c18b65e4f663dd2c34ae7cb471530f01daac614b9e2c352820061f52ccc6"
+    },
+    {
+      "path": "assets/vl/samples/topo-night.jpg",
+      "size": 134247,
+      "sha256": "ab9fb283ba54f37b6db6216191c7e56cfd5615f58b05e494126a7db050389933"
+    },
+    {
+      "path": "assets/vl/samples/topo.jpg",
+      "size": 131017,
+      "sha256": "0aba33e809e4b43dc71b6a859ab82f122d95bb732528f54b51e0ab53f584a915"
+    },
+    {
+      "path": "assets/vl/samples/vinyl-cream.jpg",
+      "size": 90389,
+      "sha256": "0a5405586647fb5a67c68eaa5ad98943d423cd09aaa7bab6f2b872e9490cdb80"
+    },
+    {
+      "path": "assets/vl/samples/vinyl.jpg",
+      "size": 87765,
+      "sha256": "9aad30827a5495657bde661dde4618816b4491f27f9629141b6e2ac58375d9bb"
+    },
+    {
+      "path": "assets/vl/samples/wayfinding-night.jpg",
+      "size": 86089,
+      "sha256": "6acb105ebfbe18e8cd029a5b8b1c750bd8b807ccf7bb993dfeefc0c2e92f429b"
+    },
+    {
+      "path": "assets/vl/samples/wayfinding.jpg",
+      "size": 80554,
+      "sha256": "b4fba5af7ebc5bec142d24f393e99924568b6cd8a0c861c9b0c155c5a261ffaf"
+    },
+    {
+      "path": "assets/vl/watercolour/balcony-watering.jpg",
+      "size": 213441,
+      "sha256": "05bfb5ea6f7e25d3f4e47328e98cc896aa15c0dc7a04c3cfb65841a7ff6058ee"
+    },
+    {
+      "path": "assets/vl/watercolour/garden-tools.jpg",
+      "size": 151999,
+      "sha256": "67299a15a4e69c17d33aabf107e81ce3d4cda64b6039e768f1749c5136abdc5f"
+    },
+    {
+      "path": "assets/vl/watercolour/harvest-basket.jpg",
+      "size": 145397,
+      "sha256": "230131b16fde51fc5ce0794db9e84ea79f4bc8540a80b5ab892ab69c887453a9"
+    },
+    {
+      "path": "assets/vl/watercolour/rooftop-garden.jpg",
+      "size": 209413,
+      "sha256": "cf9c266eb85755a10c7874e52177c9bbe23ab4275480c61e319462cd83925c14"
+    },
+    {
+      "path": "assets/vl/watercolour/seedling-cutout.png",
+      "size": 179532,
+      "sha256": "138521fb9a23678bea4f10c75ebf61ad12d612f7b6cb5cf29dfb76ecce6bdc91"
+    },
+    {
+      "path": "evals/evals.json",
+      "size": 10366,
+      "sha256": "ebe8c324e021e5ff86f691216caacdc9f0f37ed41f46bbc05e8d2d17af1523d0"
+    },
+    {
+      "path": "references/animation.md",
+      "size": 23213,
+      "sha256": "1ad964ce6d72ef8c07421d6a41e625ed7429ce277146d3a366c268cbd5253918"
+    },
+    {
+      "path": "references/asset-production.md",
+      "size": 27802,
+      "sha256": "b5eda470e91e4ae92ecdabe1c8a4a20ea2518d16ddcbf762c87e7e91ab92fc76"
+    },
+    {
+      "path": "references/auto-delegation-quality-gates.md",
+      "size": 11478,
+      "sha256": "f027957d574f38659a7103f67c72455e4e85bd27b96c528b98f429bda23bcc24"
+    },
+    {
+      "path": "references/bespoke-registers.md",
+      "size": 9618,
+      "sha256": "2f97a18148157715d637e266ec5df65d08da605b36c135b97456000f3af67341"
+    },
+    {
+      "path": "references/canvas-formats.md",
+      "size": 12830,
+      "sha256": "b352ffe0d1128f438665b4e52125eafe30ec36e90b9022b2581e86f773dbb1e4"
+    },
+    {
+      "path": "references/checkpoint-convention.md",
+      "size": 20320,
+      "sha256": "930f17ce948fe8c4f62f7c521fd47fa9d28a1700a424a08630ed891996aeb9c0"
+    },
+    {
+      "path": "references/citations-and-bibliography.md",
+      "size": 7497,
+      "sha256": "b06ccea192e763055dc0738454f07be21c02f670c68021748feca5f8b93b3f2f"
+    },
+    {
+      "path": "references/clinical-evidence-figures.md",
+      "size": 6216,
+      "sha256": "061eeb946f360ab7eb53e0e37ae473a41f9db269895c95d539b97c3a25fba598"
+    },
+    {
+      "path": "references/codex-runtime.md",
+      "size": 68564,
+      "sha256": "5738c238dd3d01ddb7ee6d56203143af683d5bf3dda9b68a384044e75034371d"
+    },
+    {
+      "path": "references/collaborative-mode.md",
+      "size": 19023,
+      "sha256": "75dfcd1ad1396f4583e02688e39c0e95b9378a6372e4f0dc062202ac8d214195"
+    },
+    {
+      "path": "references/content-plan-spec.md",
+      "size": 11215,
+      "sha256": "06c649b36f78e05daa9fa876c0411999f4adedd97ba9ae2a7b13c7481442896a"
+    },
+    {
+      "path": "references/critic-panel.md",
+      "size": 21918,
+      "sha256": "911bb2556685d1245945e2b880e8563cccf7d702b00087254a12449d7aa3f19f"
+    },
+    {
+      "path": "references/data-viz.md",
+      "size": 26017,
+      "sha256": "fbf09a4213f449610cbdb1a239cc179f94d4594a43fe9a4cbe68b3b8a6e12197"
+    },
+    {
+      "path": "references/deck-setup.md",
+      "size": 11748,
+      "sha256": "e6e809a1a4cf89f39fae2ded2f03d47103d1f7f18e8b52381a1abd03e71e307c"
+    },
+    {
+      "path": "references/design-by-purpose.md",
+      "size": 34132,
+      "sha256": "f35226d1f1c9516a4c6bae19dc82b45155105ccd41ebe0f77885ae68fe1fe179"
+    },
+    {
+      "path": "references/design-by-topic.md",
+      "size": 14161,
+      "sha256": "8ce0869c48c73c52f3e2c0225f9ee27373e68e0794ca53f6a4039fedc3d38ccc"
+    },
+    {
+      "path": "references/design-gallery.md",
+      "size": 21966,
+      "sha256": "2018fb4fc64a5e4218be6c8e3291d0456e673290696503ab78586582a9ed101f"
+    },
+    {
+      "path": "references/design-intelligence-addendum.md",
+      "size": 37650,
+      "sha256": "826646339496c5263fb0e3c02c8f8b4ea42f6c548df5c76bc711d0ae320eee66"
+    },
+    {
+      "path": "references/design-principles.md",
+      "size": 77756,
+      "sha256": "df7a4918fc233306f2091267a5f0abdaf8e3c1b0011321907efd087ebe977a15"
+    },
+    {
+      "path": "references/east-asian-aesthetic.md",
+      "size": 5788,
+      "sha256": "6cc6517a1badeec5769690f6d909a69d36514b407dee86dc85967729740a464a"
+    },
+    {
+      "path": "references/examples/build_example_generic.py",
+      "size": 17638,
+      "sha256": "021d9323472a0bcd3b5a3b85f8c15f26d4a7e82accd54ce1361bed141ea6c3e1"
+    },
+    {
+      "path": "references/examples/section_example.py",
+      "size": 4506,
+      "sha256": "d9cb208c855829bf487b884ebdbb6a7a3b5d705ac6301ba1307a4e89772ca487"
+    },
+    {
+      "path": "references/examples/style_example.py",
+      "size": 5227,
+      "sha256": "6fd082e50023a79739e547407e9547d05ef8424d3c87b7ad3a683e3c5aaf68ff"
+    },
+    {
+      "path": "references/file-inventory.md",
+      "size": 84116,
+      "sha256": "981829ed2eb6db7f29302907529a9fb5c30b9f7551a538237785c2efa917d435"
+    },
+    {
+      "path": "references/font-guidance.md",
+      "size": 11833,
+      "sha256": "a200280a751b41bad1f78c1a7f2e5245877143664caebefd2b5c296297c28b2f"
+    },
+    {
+      "path": "references/form-selection.md",
+      "size": 26288,
+      "sha256": "11de243175fd59574d4c21b2a92296db36ec0704f9239513f300dcc3fb763f54"
+    },
+    {
+      "path": "references/generated-template.md",
+      "size": 55604,
+      "sha256": "a848c35f4b6f19118f84b86ad6c7c940a4a126687026e1c98c303d46e04a3cda"
+    },
+    {
+      "path": "references/handoff-and-iteration.md",
+      "size": 15878,
+      "sha256": "746c27e51ee7576e412eb10b31e7cf8bd116d81ea599c6265e7defc64973752d"
+    },
+    {
+      "path": "references/handoff-checklist.md",
+      "size": 10393,
+      "sha256": "aa84f3783d7c3392062bd49cd3c2d5a89981df8ef609471c8ece6f7fe4e3586d"
+    },
+    {
+      "path": "references/icons.md",
+      "size": 24768,
+      "sha256": "1aca74312289fa22c0e1a8ab0032d0302ce9771fe8c6046ddcdb1a9f6e10648a"
+    },
+    {
+      "path": "references/image-generation.md",
+      "size": 58641,
+      "sha256": "e34427bccddfd046b3e7e30cb33d91ec2912d23d2f6d8ce5362fd785e84a1ff6"
+    },
+    {
+      "path": "references/interview-protocol.md",
+      "size": 57503,
+      "sha256": "a2a1215534f75ef95d9c57b08e9e7e739bdb64751e733783f36eb235c2a57572"
+    },
+    {
+      "path": "references/large-deck-orchestration.md",
+      "size": 12213,
+      "sha256": "47f4b23d203c41cafd64560199323eb16f48dd06caa89a2e7f86a17f8ce3c43d"
+    },
+    {
+      "path": "references/maintenance-boundaries.md",
+      "size": 11916,
+      "sha256": "05d6ec5d4fbff24e0d561351eb421ef01ff7143e34478d6b0e025a1b82c4dcb9"
+    },
+    {
+      "path": "references/multilingual.md",
+      "size": 24324,
+      "sha256": "9abd1c0a129bad85033ade6a48b209fe94df39105a74095fdcec305c5c0a5c28"
+    },
+    {
+      "path": "references/navigation-and-qa.md",
+      "size": 6797,
+      "sha256": "1dd4b34ade124652f101dc8a1feb87cce3304cbc942e070df1ec818878071ead"
+    },
+    {
+      "path": "references/redesign-existing-deck.md",
+      "size": 11306,
+      "sha256": "10dc29263dbb8cacb10d5b1d843097b0e95c1aa47962717a35362fd113bbc605"
+    },
+    {
+      "path": "references/review-rubrics.md",
+      "size": 71369,
+      "sha256": "88ca505349f2ebfdc8f8ab064852c946cb36fa7e1b2834e4d888a74639f79fb3"
+    },
+    {
+      "path": "references/schematic-diagrams.md",
+      "size": 21754,
+      "sha256": "df94f90c3389c967a4547a664857a11d5d6895c8d191bb330923d134377b969f"
+    },
+    {
+      "path": "references/security-and-capabilities.md",
+      "size": 9405,
+      "sha256": "58762300bb1a8270e970bcf5d296955d85a3038311800b0f1ea4472c6c78d4f4"
+    },
+    {
+      "path": "references/style-analysis.md",
+      "size": 6120,
+      "sha256": "5babb158f0cb71a9e6d84decaba0a34d72c33f8f0162dcbdaa1c8d71c8c72877"
+    },
+    {
+      "path": "references/troubleshooting-faq.md",
+      "size": 57884,
+      "sha256": "ad7293ac1ac37677defccb017871c5060ea87ebe600906091cbaedce45b61830"
+    },
+    {
+      "path": "references/user-taste.md",
+      "size": 11616,
+      "sha256": "2abd73f8eb35ec2bf334ba6380c2dcb666f9375b2bdf1265ceecaf3c18599621"
+    },
+    {
+      "path": "references/visual-language-authoring.md",
+      "size": 11684,
+      "sha256": "43bc5d507ad4430a8f62ec567bfebd1eaa9fb09bb1fee8a345e7efb7cefd5a99"
+    },
+    {
+      "path": "references/visual-languages.md",
+      "size": 83839,
+      "sha256": "8ab978ce5604e1cdfd7c743cbba5f3364e4c59af87b6efb86a37a6c9a9ed75e4"
+    },
+    {
+      "path": "requirements.txt",
+      "size": 882,
+      "sha256": "7c414ee0ea1210cfd0e45d0fd534c80411f9357cf781888103d7f31e7c5bcaf9"
+    },
+    {
+      "path": "scripts/_console.py",
+      "size": 2382,
+      "sha256": "1e79bb2ab69c936c5cf7a6147d789d72ee0380cf0ea861bf00cd732fcdd19ac4"
+    },
+    {
+      "path": "scripts/anchor_proof.py",
+      "size": 9685,
+      "sha256": "be016b699d463744fd78a017d5d3a0e4413bed6e2a46faf097396d6cf0fc176a"
+    },
+    {
+      "path": "scripts/anim.py",
+      "size": 10353,
+      "sha256": "883a5dbc364232aaaa712273da4d1e68fcd4e5b22cc108ac89c854d24c4ba13f"
+    },
+    {
+      "path": "scripts/arc_divergence.py",
+      "size": 26234,
+      "sha256": "23faa24ba08f10cbb703b777d5cefb2a2a6061b159301dddbf6e57b933697250"
+    },
+    {
+      "path": "scripts/archetypes.py",
+      "size": 7238,
+      "sha256": "328481abe91b63b310f5d873c2ca35bc25fd4b14640ac1cc9b887ec664549808"
+    },
+    {
+      "path": "scripts/archetypes_html.py",
+      "size": 58489,
+      "sha256": "8207077f1c99e3d0275dace26cd58c6e3bc3ad20deeb42923bccd38d5dfe28a4"
+    },
+    {
+      "path": "scripts/assemble.py",
+      "size": 6951,
+      "sha256": "d8b709341012dbf5def4b73ae9d04f3e1ee125c1dbb3b4cb7599d74c2970cac6"
+    },
+    {
+      "path": "scripts/audience_brief.py",
+      "size": 8059,
+      "sha256": "8b5867b7496192332cd0c79c095cff565576dcd8c3ea3ef8bd86a13926805554"
+    },
+    {
+      "path": "scripts/bespoke_kits.py",
+      "size": 16547,
+      "sha256": "7af70a6aed3b39de41ad03d9424a2b9d560c60a2e843e70b872f88eca87ab5cd"
+    },
+    {
+      "path": "scripts/blind_read.py",
+      "size": 63881,
+      "sha256": "c6597c4e8be1bcaab004f7ad37ba47785348709bc4e3e9081714a2a2961dbfd3"
+    },
+    {
+      "path": "scripts/canon_probe.py",
+      "size": 14480,
+      "sha256": "d62a733d6fcbedf819499af29170fd983c3c7b0e391f8c4e375c523de16529ff"
+    },
+    {
+      "path": "scripts/check_citations.py",
+      "size": 17729,
+      "sha256": "3a6721b976ccbae1fa9459e4b291fc88c02582e0a7c9e2ea262506aeccc2bb8f"
+    },
+    {
+      "path": "scripts/check_component_theme.py",
+      "size": 5749,
+      "sha256": "bc9477d2ef0fa6c559b96aaf9c4e8d042fff51b56a1a0cb557bc05a728fdd69d"
+    },
+    {
+      "path": "scripts/check_design_contracts.py",
+      "size": 17554,
+      "sha256": "23b17955deb3473e4b29e07740996380b9132da7b9b15d482a366feb5ab70e74"
+    },
+    {
+      "path": "scripts/check_direction_applied.py",
+      "size": 20211,
+      "sha256": "0e0c84bae6f5bb76a46377b1867abd667e122022e96e5a6e612338aff1d9a21b"
+    },
+    {
+      "path": "scripts/check_env.py",
+      "size": 14217,
+      "sha256": "834d917e488dbd70b4553bc82fd5fc08da30802dc0fb839264b81e189c99464b"
+    },
+    {
+      "path": "scripts/check_env.sh",
+      "size": 450,
+      "sha256": "1700947d8334503c7f2081dca3a5f77153965f807ea063bbde57659ff909a6b3"
+    },
+    {
+      "path": "scripts/check_fonts_resolve.py",
+      "size": 25715,
+      "sha256": "f9860f20ee137b17bcbd1a41010dfd4615a5a9d48db5682640359424b98c7f77"
+    },
+    {
+      "path": "scripts/check_gate_parity.py",
+      "size": 7795,
+      "sha256": "aee4aa050c4243d8656be2b3021e7db503f58abf9c128bd7f517cce9b2f5bf9b"
+    },
+    {
+      "path": "scripts/check_image_provenance.py",
+      "size": 23807,
+      "sha256": "140215baf31a7df9c0473e4f10c4adc9a660a12f5eb9334d7732dd3154ffb134"
+    },
+    {
+      "path": "scripts/check_image_series.py",
+      "size": 13519,
+      "sha256": "0f450cf76b43b0e882c31f2ce4639c0c03ebac96441aae8e387fdf978bd7aa5a"
+    },
+    {
+      "path": "scripts/check_inventory.py",
+      "size": 4832,
+      "sha256": "f18ec2d0d8c8ac8b95e49347c5755f638b0b00ffc4b5a79d5834530110b38e6c"
+    },
+    {
+      "path": "scripts/check_param_reach.py",
+      "size": 7644,
+      "sha256": "ce74fb9ff78e0447861f0c81417fc3db711c69048b2ba833625ea0293b0bab56"
+    },
+    {
+      "path": "scripts/check_purpose.py",
+      "size": 17645,
+      "sha256": "2d97e83a8ce4a32e1f2ba1c9c70ffecfffcc88cc51acd84aee49c7ed8c541fcf"
+    },
+    {
+      "path": "scripts/check_qa_backup.py",
+      "size": 9135,
+      "sha256": "acaa92045a692a780d217e0eca79e7e26cbf0a6beef346e0a4b88c44897e3eb3"
+    },
+    {
+      "path": "scripts/check_reason_width.py",
+      "size": 4719,
+      "sha256": "5cb28168b5a71f0873d528c9db61c808cfbd970b9771e82ac7a21472bd243d06"
+    },
+    {
+      "path": "scripts/check_reference_code.py",
+      "size": 9442,
+      "sha256": "e20f530d692ed0d9edd27b776152277edbb44adaafebf9cfdeeba731117e9423"
+    },
+    {
+      "path": "scripts/check_register_guard.py",
+      "size": 25770,
+      "sha256": "82531d08cc5150e1035f3973fe07f8a1b9beee3a99fe15aa32090c4117b562f9"
+    },
+    {
+      "path": "scripts/check_register_pixels.py",
+      "size": 39149,
+      "sha256": "c297691209eb956ab8bc419afee2b18b89a0952fa27a74e295878efc2e17ea8d"
+    },
+    {
+      "path": "scripts/check_skill_lossless.py",
+      "size": 11865,
+      "sha256": "8f56ed28d3e30a17d012c456f9a1f1437921eb05b770570d7c8e39124d7e5897"
+    },
+    {
+      "path": "scripts/check_style_applied.py",
+      "size": 14743,
+      "sha256": "6a3d380800af6e271be4d7dc0296e563dd00b9ccc0ee8e7028afb2a76a31fd81"
+    },
+    {
+      "path": "scripts/check_surface.py",
+      "size": 38231,
+      "sha256": "e590865d32083d87fbf4f53eb1c22bd5eb35c9b1a0dbd9011bc9eeba0f169496"
+    },
+    {
+      "path": "scripts/check_talk_time.py",
+      "size": 18622,
+      "sha256": "904a180e6f5a7a34f12a963fd0e66565e0a0bb12c73624d65ebcba70fda56f24"
+    },
+    {
+      "path": "scripts/check_template_profile.py",
+      "size": 26862,
+      "sha256": "493338e617388b5e96f2f343d786c068ffdba752bff14369b00a03b98eb51c6c"
+    },
+    {
+      "path": "scripts/check_tests_wired.py",
+      "size": 3971,
+      "sha256": "baf9941962e3afc0a64d89e27520340d5f11d45bf77440a843928b00f8712fa5"
+    },
+    {
+      "path": "scripts/check_version.py",
+      "size": 15538,
+      "sha256": "b9f57d76aaa28ac4c403811883b06338b3aa243ad9209c85887cfb39a7054928"
+    },
+    {
+      "path": "scripts/check_visual_language.py",
+      "size": 5799,
+      "sha256": "25daa941741bfe138ad849e7f5eeba0166ae44a04c4e605223171680f5f2f2dd"
+    },
+    {
+      "path": "scripts/check_vl_contract.py",
+      "size": 3220,
+      "sha256": "32a2cde6cdf8fb5c941c9acac6c8a22888765d2459da13b352fd2fce1a0cead8"
+    },
+    {
+      "path": "scripts/citations.py",
+      "size": 26456,
+      "sha256": "348a7d578648c02a752948e4a772be56010a820cc1f46d9d242785ea54228329"
+    },
+    {
+      "path": "scripts/codex_delivery_gate.py",
+      "size": 159805,
+      "sha256": "7e719da77dd99f2733100c1da33357b49b0e40e7fd3081d27761e5c6191f4922"
+    },
+    {
+      "path": "scripts/codex_handoff_guard.py",
+      "size": 2159,
+      "sha256": "64db6f926d41371280fd1768a2086f9e34cc5c90f03f37891914013381dfb83c"
+    },
+    {
+      "path": "scripts/codex_visual_contract.py",
+      "size": 12645,
+      "sha256": "fec309956d1996af342192ae7fff411fc0134e570f0b3ff828daafefae9158a6"
+    },
+    {
+      "path": "scripts/component_audit.py",
+      "size": 22681,
+      "sha256": "c5370e11783fe9db74dac3e458add4c028e1ab7e074d28e61346fa9c55719921"
+    },
+    {
+      "path": "scripts/composition_cues.py",
+      "size": 12899,
+      "sha256": "7d03668c6176acd513f18af76ec15bd3b0f5cd2ace65d6d0a0e979e19e3e777e"
+    },
+    {
+      "path": "scripts/composition_probe.py",
+      "size": 35946,
+      "sha256": "200b1c2f5d675f760000d0e9732567877b86f480282e3e38b7223cbef32a1bc3"
+    },
+    {
+      "path": "scripts/contact_sheet.py",
+      "size": 4543,
+      "sha256": "cf3091ea172625f6614e8f0a56971e0ed53900fd47a2eb2350a376a2fec9f286"
+    },
+    {
+      "path": "scripts/crop_helper.py",
+      "size": 12727,
+      "sha256": "ba2d4b01618b83ccf9a0dcbf3f48dc4d703c96262d78f0834dd42f31b2cde61d"
+    },
+    {
+      "path": "scripts/deck_cycle.py",
+      "size": 21520,
+      "sha256": "b5535b4725fa596d2794727954527404b21b4829ae28a80268a7d920f9164fbc"
+    },
+    {
+      "path": "scripts/deck_gates.py",
+      "size": 46153,
+      "sha256": "eb539d3b8b0f239dad3b63156ad8288cfd818c35769022d7a995056b3cfe85d3"
+    },
+    {
+      "path": "scripts/deckkit.py",
+      "size": 742625,
+      "sha256": "b7e93f0abce01067786b96cbbe4d5297c58d8c2adfc600b76c0b0e4253e22460"
+    },
+    {
+      "path": "scripts/delegated_picks.py",
+      "size": 16223,
+      "sha256": "1cf1db8d715fd0dde47fb363a3556e9f100e9c5cca48a0a45f5df35bb0c470d3"
+    },
+    {
+      "path": "scripts/derive_template_contract.py",
+      "size": 19147,
+      "sha256": "e8ea588789bad579442245c419591207c5686434489768c73f164056d71c2b1d"
+    },
+    {
+      "path": "scripts/designed_charts.py",
+      "size": 70062,
+      "sha256": "d66d1fbab81e454070fd8e8d76c32b162b930dae027ee5baa24ba870ff14fb12"
+    },
+    {
+      "path": "scripts/directions_diversity.py",
+      "size": 21951,
+      "sha256": "4cabdc52baec68aff90c62e3a52a67ff09158d6388fe7f7313e5176bf316b357"
+    },
+    {
+      "path": "scripts/dispatch_brief.py",
+      "size": 14536,
+      "sha256": "13ecade65c22e6bfcf4953d770a44df3d6ceda3655002f9f66ba816ca7455afa"
+    },
+    {
+      "path": "scripts/display_type.py",
+      "size": 7593,
+      "sha256": "f2fd61cc9ad5c25343d100a972ccac77ca3b17468142e4028f0b4a7b1a0a2263"
+    },
+    {
+      "path": "scripts/export_notes.py",
+      "size": 3583,
+      "sha256": "d598405a860d11fe7bbd64033c95ccaa5546bb45447378f598999d5266b4d6e6"
+    },
+    {
+      "path": "scripts/extract_deck.py",
+      "size": 9100,
+      "sha256": "31e208df2ae75c1dcb78501b287022ec21e17a0ec091466c66738a72ea545671"
+    },
+    {
+      "path": "scripts/extract_pdf.py",
+      "size": 61338,
+      "sha256": "6b390b2920730bffdd7497467efef12b91be81a962f2c289b3d9c3f8f70075c7"
+    },
+    {
+      "path": "scripts/fanout_record.py",
+      "size": 8561,
+      "sha256": "4f43e0d0de91a1cfd9d548ab0de737fcd9f8845165e42bfbfe7cb7d672735acd"
+    },
+    {
+      "path": "scripts/fetch_images.py",
+      "size": 39935,
+      "sha256": "66781bb7b7e42ce0c151076b906d36c4a1d654ff761e6d3609276172811464e9"
+    },
+    {
+      "path": "scripts/formats.py",
+      "size": 18542,
+      "sha256": "47c1dd64680ac5af077d23d56924c0b3b46a919706472812b1d5bebfc5557254"
+    },
+    {
+      "path": "scripts/generate_images_codex.py",
+      "size": 42550,
+      "sha256": "d90528ab2c80949dfdf90e1fb0a1015d951afa3e042a11b6ac10e79e3e01318f"
+    },
+    {
+      "path": "scripts/generate_images_openai.py",
+      "size": 15563,
+      "sha256": "7c4e1b05c9dc01d584da0cc528a93c1be6608e1ae3328922650dc0d7c1c2b4e9"
+    },
+    {
+      "path": "scripts/icons.py",
+      "size": 24515,
+      "sha256": "6a7bc9814420a9c4464047a4f4e2eddae74f158dad89c46b38ff1ced94b51df1"
+    },
+    {
+      "path": "scripts/image_fx.py",
+      "size": 16748,
+      "sha256": "a7b9a15885673610e2d3e774cf3467dd99fc482d088e4a945b4e5e503039ea71"
+    },
+    {
+      "path": "scripts/image_prompts.py",
+      "size": 8869,
+      "sha256": "1ab73184cdc936692f4ede4d4b40172463ce79768c10784e0ae896e474273a9f"
+    },
+    {
+      "path": "scripts/image_qc.py",
+      "size": 28742,
+      "sha256": "e18fc1c99acecb48f7651ec2839829b4c077725516add8c381798846309d2aa0"
+    },
+    {
+      "path": "scripts/image_series.py",
+      "size": 30909,
+      "sha256": "0d00a27dc7d7d12384565fa306338ed603d50afef8ec1b0493df93ff92fac827"
+    },
+    {
+      "path": "scripts/ingest.py",
+      "size": 17789,
+      "sha256": "2635323b51a1a74f1c595f9fe7ca76a184f60fcd68ff0f7827cb6085cb0c5070"
+    },
+    {
+      "path": "scripts/inspect_template.py",
+      "size": 2472,
+      "sha256": "d4510b9ee31ac43c866eec95880cbdcbb7cb3ba3548a51947ccc07e8794c5a32"
+    },
+    {
+      "path": "scripts/install_skill.py",
+      "size": 10999,
+      "sha256": "9b95b4211a969fc6b27650b2f617ebc67acfeee8898da53852ba6e7a2d85d138"
+    },
+    {
+      "path": "scripts/lint_deck.py",
+      "size": 275560,
+      "sha256": "f5024383b851114fdb2cc2e1ce0ca31da1365132f1171c896be5d23059d87cee"
+    },
+    {
+      "path": "scripts/maps.py",
+      "size": 15688,
+      "sha256": "720de485c8211647f3e4c822dd2ae9154602061e21a730f0860305476b4d406c"
+    },
+    {
+      "path": "scripts/material_probe.py",
+      "size": 4644,
+      "sha256": "d5f48fa120fc22f79163a36e979ec01ee87757fc8b2c18f8cccd39c46f22c779"
+    },
+    {
+      "path": "scripts/native_art.py",
+      "size": 51807,
+      "sha256": "4de9a30e25f65f6572910fadd0eb5c99574325fb4ca0159db495bfd4b6327488"
+    },
+    {
+      "path": "scripts/new_visual_language.py",
+      "size": 7942,
+      "sha256": "a452f46af3f9d0ee649bccbe32771cb372f6e462b23954e38e978f1d75063ede"
+    },
+    {
+      "path": "scripts/ooxml_safety.py",
+      "size": 6956,
+      "sha256": "d462f431433d871b158e9f45ecb06f7779ae83433fab5e38973b66a19851e8cb"
+    },
+    {
+      "path": "scripts/ornaments.py",
+      "size": 10466,
+      "sha256": "c1ad4cbceae266d929481f615917dbc6db028f1f656935260cd5c7e743d37793"
+    },
+    {
+      "path": "scripts/palette_audit.py",
+      "size": 15501,
+      "sha256": "4afa5a58e5c38484eefda3c7a22a06bc0b0df5a9196df49f1572338b6437be6c"
+    },
+    {
+      "path": "scripts/pil_compat.py",
+      "size": 729,
+      "sha256": "98b80b0de50eb159355b09928ded9fb3c5b7e51a44b1d59bcb94101777225f06"
+    },
+    {
+      "path": "scripts/plan_rhythm.py",
+      "size": 20724,
+      "sha256": "9b2f08d8796a7dfae5b149d82bcce35b06bad9efd050cc21de1fc2323fdc4c6c"
+    },
+    {
+      "path": "scripts/plan_wordcount.py",
+      "size": 3774,
+      "sha256": "9461695b9a685b0da3a9bbf01a916b16eebe6cbf98842571297e5dff286ff93c"
+    },
+    {
+      "path": "scripts/preflight_check.py",
+      "size": 40321,
+      "sha256": "211614e668bf5b9a2f4efa50c91839b3bbc20ca99f17b00b2af06813c9c23360"
+    },
+    {
+      "path": "scripts/presets.py",
+      "size": 35928,
+      "sha256": "8c980320781206d4501703309abb62424ebe3a285dd9a33e873cefed9a08a51b"
+    },
+    {
+      "path": "scripts/purposes.py",
+      "size": 23156,
+      "sha256": "41cf0639d3fed9ed17b5b3d6403288aa8f8346e54bd26871dba2eada7589e25b"
+    },
+    {
+      "path": "scripts/register_surface.py",
+      "size": 68748,
+      "sha256": "8ca3e808b9d5ff8d8786034e4256493310f97cfd6813082a94f5da159b57bff8"
+    },
+    {
+      "path": "scripts/registry.py",
+      "size": 9330,
+      "sha256": "d6c890b496182f2175d25c2f602367f27329cd58cd56d796776b668892cf36a0"
+    },
+    {
+      "path": "scripts/render_deck.py",
+      "size": 306159,
+      "sha256": "a52b5d2cd7346eaeed65b98aae62f21af2d1ba8c305ad44e009567bac349985f"
+    },
+    {
+      "path": "scripts/render_deck.sh",
+      "size": 592,
+      "sha256": "36182398582d75bdc9b72772421a48e486af23ce8e9f97e57502c732105bce29"
+    },
+    {
+      "path": "scripts/rotgeom.py",
+      "size": 6540,
+      "sha256": "b37913ddd81e91c246fa82fc48e8c5f9431f8daa14409338f48a7301aa6164a8"
+    },
+    {
+      "path": "scripts/roundtrip_budget.py",
+      "size": 11758,
+      "sha256": "eb9ccf15b6327bf6018ee0a230ca02157693a53b8f9313b1c698e26be9c45a85"
+    },
+    {
+      "path": "scripts/roundtrip_report.py",
+      "size": 7219,
+      "sha256": "60861462fe72708a0ca18a3ae19a345e92dac9fc0d2be71d8650217ced9a92ed"
+    },
+    {
+      "path": "scripts/run_eval.py",
+      "size": 16370,
+      "sha256": "dc2acab86ebf91c7ed0dcfb5669068c8dedbdb4f571a0a1c0e5eda2bd4ec47da"
+    },
+    {
+      "path": "scripts/save_register.py",
+      "size": 26818,
+      "sha256": "7d7515ed4ee5c73da3f5b127c99f6b4b803a19b529c45424f72d7a5de29f0ab8"
+    },
+    {
+      "path": "scripts/sigs.py",
+      "size": 82896,
+      "sha256": "a650bfadf9b90e90ac6c5b0de540a760e2204ed25c73877a2ff26cbb3f4afa85"
+    },
+    {
+      "path": "scripts/skill_fingerprint.py",
+      "size": 6010,
+      "sha256": "0e312f66c375156b21516ade41a42175d346d5400add40b55ab304e09460ae2a"
+    },
+    {
+      "path": "scripts/slide_index.py",
+      "size": 5179,
+      "sha256": "dd5c1b8bb52004e789e48f86ba3459a6eb86b7b0b4b16ee00f9130a56d6e6524"
+    },
+    {
+      "path": "scripts/smoke_deckkit.py",
+      "size": 87308,
+      "sha256": "bf28c5f66be01baa918edd08f825a84e4de12b635d55c810caae5a362eae2a8c"
+    },
+    {
+      "path": "scripts/smoke_directions.py",
+      "size": 21193,
+      "sha256": "11d61a21e567283af058a1feb61bcdc82acdc154ca98fb99b128060fcb89b676"
+    },
+    {
+      "path": "scripts/taste_ledger.py",
+      "size": 17460,
+      "sha256": "9aaaded7aeb067cb588708f7014e9c47c75e67caf9eb9859db3e3d93714c6de7"
+    },
+    {
+      "path": "scripts/trace_composed.py",
+      "size": 7076,
+      "sha256": "b7ee7e630b86f7fa748459e37ccda37ddeae7493c71de6e3e03a04c9d1e61e3a"
+    },
+    {
+      "path": "scripts/validate_review.py",
+      "size": 47375,
+      "sha256": "c02d024eadc7537cf829e3494a9f406170519689c08f8fb6b0486cc031021800"
+    },
+    {
+      "path": "scripts/visual_languages.py",
+      "size": 148512,
+      "sha256": "2b4849593bb7e6f9c2ce70a0d5137d8f604fa76e930cd8e47ac4c1d90a06e5be"
+    },
+    {
+      "path": "scripts/vl_conformance.py",
+      "size": 17611,
+      "sha256": "2755f7575fab8ffa3e81b3919b7051e75cf492fe0f7a1f1cd1f6c8bc2518fa33"
+    },
+    {
+      "path": "scripts/vl_contract.py",
+      "size": 20360,
+      "sha256": "a769b53da707d07e374c18a9412082e68759147166d6a037e83bb97d288c1954"
+    },
+    {
+      "path": "scripts/vl_docs.py",
+      "size": 10957,
+      "sha256": "57a1e0cb30b1839bb8d38a2350f47a2470dba7670f97583da453182d07fe070c"
+    },
+    {
+      "path": "scripts/vl_langs/__init__.py",
+      "size": 1839,
+      "sha256": "c03fe53f2c25679fca2d0efb0106d5c99255a2124b1d464243261a1ad6696e52"
+    },
+    {
+      "path": "scripts/vl_langs/airmail.py",
+      "size": 25007,
+      "sha256": "b93138f15123e6e49bdd256873477674d3a4bed34f5d7df445fd3f00c9cbbf2d"
+    },
+    {
+      "path": "scripts/vl_langs/boardgame.py",
+      "size": 53600,
+      "sha256": "12b16e94803c31fd6fea1b9c666c655ef0f72176396369848f0c43f04679cb83"
+    },
+    {
+      "path": "scripts/vl_langs/bricks.py",
+      "size": 43281,
+      "sha256": "d72626fc2e0f59b51a79f3efedf2b98dc5d821251d56c9f7c3f0eb48ec714122"
+    },
+    {
+      "path": "scripts/vl_langs/calendar.py",
+      "size": 34836,
+      "sha256": "0fb35e323fd4f3e2c8e79662616584e6948e1e00f4aeb2976aae97573ba36ac5"
+    },
+    {
+      "path": "scripts/vl_langs/circuit.py",
+      "size": 58522,
+      "sha256": "9f010ff0d7e94aa3cbc8dfefcd787e2bb4690a9a9ecc4f9faf3be470f3dcd006"
+    },
+    {
+      "path": "scripts/vl_langs/comic.py",
+      "size": 60977,
+      "sha256": "1627a8a0adf1a1de50af854756f4acf8d225cabaf0979ad7a1b2fac0d69a1e7e"
+    },
+    {
+      "path": "scripts/vl_langs/herbarium.py",
+      "size": 31359,
+      "sha256": "b4920f13569cc284a95be4540101da20a6a2c6df4baffd220b7e50cec98a2bb9"
+    },
+    {
+      "path": "scripts/vl_langs/periodic.py",
+      "size": 39614,
+      "sha256": "44d863548dd208e150fe97ef4c63020c7829db4cef0e4cd7df7dbf6b9cfc863f"
+    },
+    {
+      "path": "scripts/vl_langs/pixel.py",
+      "size": 53664,
+      "sha256": "4f9d81b685d9df7a7cb06f1d28b3bc3a44926e886fbc1b6bb0bfafaf5519d4a6"
+    },
+    {
+      "path": "scripts/vl_langs/receipt.py",
+      "size": 15158,
+      "sha256": "d8cde8ceb426f8bd6fca5b291e927c0158065ddecd056b15d8a6dc37b76676d0"
+    },
+    {
+      "path": "scripts/vl_langs/recipe.py",
+      "size": 54558,
+      "sha256": "8c2d30c3546d65fcd07b6d79cb73fd0a7a4297e10c0d1440e6e802bea661d772"
+    },
+    {
+      "path": "scripts/vl_langs/scoreboard.py",
+      "size": 56655,
+      "sha256": "3e6f75cf8182faf9328d3e2432991121359254e43f145b985614c8c1a4d55885"
+    },
+    {
+      "path": "scripts/vl_langs/stainedglass.py",
+      "size": 54004,
+      "sha256": "55f99eadfe0fa47558cd6bf04a9ff41ade38f57207f748efa19f4a9458441975"
+    },
+    {
+      "path": "scripts/vl_langs/topo.py",
+      "size": 64713,
+      "sha256": "7a79e40cdeeaf4ece6df31c00a1a8dcbd2ef24025b42ce45665aad2982ccd5d7"
+    },
+    {
+      "path": "scripts/vl_langs/vinyl.py",
+      "size": 19743,
+      "sha256": "c883a0054c794e9f319ddb25d91573bf7dee27086c21670ab5f7dd4b968c7f99"
+    },
+    {
+      "path": "scripts/vl_library_export.py",
+      "size": 22967,
+      "sha256": "230260572bb94b2d755ade71f48ea2020d250e23b98060ba7fd99e13a0d6fdb1"
+    },
+    {
+      "path": "scripts/vl_native.py",
+      "size": 89474,
+      "sha256": "f43ff6491865d02a31618f1c55b1bacff326a6540f98365c6614620b6507e7b9"
+    },
+    {
+      "path": "scripts/vl_native2.py",
+      "size": 99321,
+      "sha256": "f23cbd1845b0db52fba97547870e13aaf343e1dc5b995c7fe1a12df3fa371617"
+    },
+    {
+      "path": "scripts/vl_native3.py",
+      "size": 55953,
+      "sha256": "43335d690094fd7dcc1210a42a25a5d9a2ba228291605632028ffe7a102870b0"
+    },
+    {
+      "path": "scripts/vl_specs/__init__.py",
+      "size": 3091,
+      "sha256": "d1ae1b79bb8b8c39a7edbbc057c1b1f75056e9ddc8d27a8d04e9f638f6c3f635"
+    },
+    {
+      "path": "scripts/vl_specs/airmail.py",
+      "size": 6689,
+      "sha256": "7a30f6165dc50c5f9540d927102bca173ebf83b71a135bac5b0f1d467f180d4b"
+    },
+    {
+      "path": "scripts/vl_specs/boardgame.py",
+      "size": 8834,
+      "sha256": "c984406080ebab4256b50a163204c2184971fbccd7bcffcc8cdae572a6207d36"
+    },
+    {
+      "path": "scripts/vl_specs/bricks.py",
+      "size": 7017,
+      "sha256": "6f9d8f1fb97db5e6992e49c3b5eba5b928667346164279757be7f0cd16599da0"
+    },
+    {
+      "path": "scripts/vl_specs/broadsheet.py",
+      "size": 7446,
+      "sha256": "ef2e9806ebbc048ba93504fc99c7d85932458524d91b94323a107099308a3719"
+    },
+    {
+      "path": "scripts/vl_specs/calendar.py",
+      "size": 7915,
+      "sha256": "e149eaf9977531650ac511d0aaff92f3180ca16c70c0e44ad782f23a2a6ec201"
+    },
+    {
+      "path": "scripts/vl_specs/chalkboard.py",
+      "size": 6226,
+      "sha256": "de54acd98dd852c487b79e4f854530cc6839b3da9001e3567d38f38b9a63f380"
+    },
+    {
+      "path": "scripts/vl_specs/circuit.py",
+      "size": 8164,
+      "sha256": "46e5375b57462a9f0c885106f9dc19d724af5fdde600e08a8cdc8d801c477454"
+    },
+    {
+      "path": "scripts/vl_specs/collage.py",
+      "size": 4723,
+      "sha256": "8aa230a388c34c2de1fef5ef685933b980aacc362f881d1ce7b5cf749c65e0cf"
+    },
+    {
+      "path": "scripts/vl_specs/comic.py",
+      "size": 7834,
+      "sha256": "c9f1fb71076325988cd4e0d5c191b4f16d6b1d9201bf24dd8eefeabbe8558a31"
+    },
+    {
+      "path": "scripts/vl_specs/cutpaper.py",
+      "size": 6254,
+      "sha256": "5e96b3ef677c88b2bc3dba21fe5e2d0808a349af4fd4922dde709093a08ee274"
+    },
+    {
+      "path": "scripts/vl_specs/drafting.py",
+      "size": 6166,
+      "sha256": "7ebde57c57c89d9e303c7bf41ba78b56a7e1f2bc7548b48161840d080041f536"
+    },
+    {
+      "path": "scripts/vl_specs/editorial.py",
+      "size": 4596,
+      "sha256": "5d586019b22c35f328c1a6dcefda9cbba1932a4386ccc9cc9400e1ec6edf1ed7"
+    },
+    {
+      "path": "scripts/vl_specs/herbarium.py",
+      "size": 7039,
+      "sha256": "e157d4fad0185a05efe26b862003a00fcced983274b41dfe990f62d606b0ad42"
+    },
+    {
+      "path": "scripts/vl_specs/ink.py",
+      "size": 5522,
+      "sha256": "22c060bf1dd66c6049bd1d2f18ad19e604edde6a5bf6f2763425d30387090747"
+    },
+    {
+      "path": "scripts/vl_specs/interface.py",
+      "size": 9316,
+      "sha256": "8004c7d5a9bec4deb0ef7b09e4ea40054a2824fc6beda31b27b228e72a1757e0"
+    },
+    {
+      "path": "scripts/vl_specs/journal.py",
+      "size": 8236,
+      "sha256": "399f9cd6def466457268bcc193c3dfbb6d1863d37d5c7adc29c94260df713718"
+    },
+    {
+      "path": "scripts/vl_specs/periodic.py",
+      "size": 7766,
+      "sha256": "052eb94181448642da2bf84fcd87a266b29ad0f62afcb00769ed16524ce79845"
+    },
+    {
+      "path": "scripts/vl_specs/pixel.py",
+      "size": 11737,
+      "sha256": "af63bc07d172786a3c17c4432950b9e886b0446cb2a38ffe53b4d0dc3721fb46"
+    },
+    {
+      "path": "scripts/vl_specs/poster.py",
+      "size": 5678,
+      "sha256": "4ae5f2511a04e3e00ce6faaffc96bea32a0e8c9bcc56512712b0fd81441eb474"
+    },
+    {
+      "path": "scripts/vl_specs/receipt.py",
+      "size": 6129,
+      "sha256": "6918489c0134ecdfa3f2ef64a89b013935aff9af250f53ffb6b5bbf5a688f7ca"
+    },
+    {
+      "path": "scripts/vl_specs/recipe.py",
+      "size": 8730,
+      "sha256": "31ffb755af257e84de4826e915f0817c18e5003d075ed13b4b80e0ed4a952c77"
+    },
+    {
+      "path": "scripts/vl_specs/scoreboard.py",
+      "size": 7816,
+      "sha256": "751755960d99754ebd1b4a6238d11e51d5feda469b560fd4bc64a86754da7cb2"
+    },
+    {
+      "path": "scripts/vl_specs/soft.py",
+      "size": 4726,
+      "sha256": "0daf21c56bbf9ffde9a8df1219ea1d1889a86b51b43681b3b0cd0f2f3278361a"
+    },
+    {
+      "path": "scripts/vl_specs/stainedglass.py",
+      "size": 8127,
+      "sha256": "216e1db74c40ad8d10dc1bade8cec03590ef927b0bb8597b7a598e46c2458ae4"
+    },
+    {
+      "path": "scripts/vl_specs/starlit.py",
+      "size": 5569,
+      "sha256": "b53903c716946994681b2bc799041f2fc283098c7fe02235023427574306789c"
+    },
+    {
+      "path": "scripts/vl_specs/storybook.py",
+      "size": 4714,
+      "sha256": "587b3695a7ed7cf5402e22236d5273aaf69f4f77b9df43f07d004564093f060a"
+    },
+    {
+      "path": "scripts/vl_specs/tally.py",
+      "size": 6672,
+      "sha256": "97131af377718fa23a25c8a3c1cf01aaac79e1af3b9b9b34be0e6bebd9f7d155"
+    },
+    {
+      "path": "scripts/vl_specs/topo.py",
+      "size": 7082,
+      "sha256": "bd6dcf63dbd6e2deae6e7e2c1ef23dc6cbdca2f445af74e84e2ae801108666a8"
+    },
+    {
+      "path": "scripts/vl_specs/vinyl.py",
+      "size": 6957,
+      "sha256": "975ebb70a473b07969e93152bf4a108cd4e7e71f329b1964d7597fe7de17d0af"
+    },
+    {
+      "path": "scripts/vl_specs/wayfinding.py",
+      "size": 9424,
+      "sha256": "eb58321f2f503b5aaa44a06ee9cfec97af4fa2de9ae119b35b25d1ba60abe934"
+    },
+    {
+      "path": "scripts/written_reason.py",
+      "size": 2932,
+      "sha256": "c34acab434ec99fa4396e4254ad7a78b7183c360d717942e63d7f0802e679398"
+    }
+  ]
+}
