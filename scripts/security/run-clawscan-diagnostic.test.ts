@@ -91,7 +91,14 @@ it("does not turn missing, malformed, partial or progress-only final metadata in
 
 it("rejects the real CLI before touching any runtime or credentials on the Mac", async () => {
   if (process.platform === "darwin") {
-    for (const fixture of ["tiny", "incident", "receipt-incident", "small-timeout-paired"]) {
+    for (const fixture of [
+      "tiny",
+      "incident",
+      "receipt-incident",
+      "small-timeout-paired",
+      "original-scanner-only",
+      "original-candidate-full",
+    ]) {
       await expect(main(["--fixture", fixture, "--source", "reviewed"])).rejects.toThrow(
         "Disposable Blacksmith",
       );
@@ -125,10 +132,14 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "incident",
     "receipt-incident",
     "small-timeout-paired",
+    "original-scanner-only",
+    "original-candidate-full",
   ]);
   expect(workflow.on.workflow_dispatch.inputs.source.options).toEqual(["reviewed", "incident"]);
   const job = workflow.jobs.diagnostic;
-  expect(job["timeout-minutes"]).toBe(80);
+  expect(job["timeout-minutes"]).toBe(
+    "${{ inputs.fixture == 'original-scanner-only' && 120 || 80 }}",
+  );
   expect(job["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");
   expect(job.environment).toBe("Production");
   expect(workflow.permissions).toEqual({ contents: "read" });
