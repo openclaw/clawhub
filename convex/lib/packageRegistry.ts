@@ -568,6 +568,22 @@ function extractCompatibility(
   return normalizeOpenClawExternalPluginCompatibility(packageJson);
 }
 
+function isValidNativePluginId(id: string) {
+  if (
+    id.includes("\\") ||
+    Array.from(id).some((character) => {
+      const characterCode = character.charCodeAt(0);
+      return characterCode < 0x20 || characterCode === 0x7f;
+    })
+  ) {
+    return false;
+  }
+  const segments = id.split("/");
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) return false;
+  if (segments.length === 1) return !id.startsWith("@");
+  return segments.length === 2 && segments[0].startsWith("@") && segments[0].length > 1;
+}
+
 export function extractCodePluginArtifacts(params: {
   packageName: string;
   packageJson: JsonRecord;
@@ -587,6 +603,9 @@ export function extractCodePluginArtifacts(params: {
   const runtimeId =
     typeof params.pluginManifest.id === "string" ? params.pluginManifest.id.trim() : "";
   if (!runtimeId) throw new ConvexError("openclaw.plugin.json must declare an id");
+  if (!isValidNativePluginId(runtimeId)) {
+    throw new ConvexError("openclaw.plugin.json has an invalid native plugin id");
+  }
 
   const compatibility = extractCompatibility(params.packageJson);
   const missingOpenClawFields = listMissingOpenClawExternalCodePluginFieldPaths(params.packageJson);

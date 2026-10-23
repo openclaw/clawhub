@@ -533,6 +533,12 @@ A publishable native plugin package must pass OpenClaw-specific validation.
   - source repository URL when available
   - artifact/content integrity hash
 
+Native code-plugin IDs must match the scan worker's install-path grammar before
+staging a release: a bare name or `@scope/name`, without backslashes, empty or
+reserved path segments, or control characters. Preserve trimming and reject an
+invalid ID before creating a pending release or publication attempt. This
+validation does not reinterpret bundle identities or change their fallback rules.
+
 ### Recommended package policy
 
 - one published package release maps to one public plugin id
