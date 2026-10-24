@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
@@ -19,7 +20,9 @@ const mocked = <T>(value: T) =>
   value as T & { mockImplementation: (...args: unknown[]) => unknown };
 
 const defaultFindSkillFolders = async (root: string) => {
-  if (!root.endsWith("/scan")) return [];
+  // Normalize separators so the /scan sentinel works on Windows, where
+  // resolve() renders the POSIX test root with backslashes.
+  if (!root.replace(/\\/g, "/").endsWith("/scan")) return [];
   return [
     { folder: `${root}/new-skill`, slug: "new-skill", displayName: "New Skill" },
     { folder: `${root}/synced-skill`, slug: "synced-skill", displayName: "Synced Skill" },
@@ -270,7 +273,12 @@ describe("cmdSync", () => {
       throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
     });
 
+    let expectedScanRoot: string;
     try {
+      // The implementation resolves the relative root against --workdir while
+      // the cwd spy is active, so compute the expectation in the same context
+      // (on Windows, path.resolve borrows the drive from process.cwd()).
+      expectedScanRoot = resolve("/workspace", "scan");
       await cmdSync(
         makeGlobalOpts("/workspace"),
         {
@@ -286,7 +294,7 @@ describe("cmdSync", () => {
       cwdSpy.mockRestore();
     }
 
-    expect(findSkillFolders).toHaveBeenCalledWith("/workspace/scan");
+    expect(findSkillFolders).toHaveBeenCalledWith(expectedScanRoot);
     expect(
       mockCmdPublish.mock.calls.map((call) => (call[2] as { sourcePath?: string }).sourcePath),
     ).toEqual(["scan/new-skill", "scan/update-skill"]);
@@ -531,9 +539,12 @@ describe("cmdSync", () => {
   it("refuses real --all publishes from fallback roots", async () => {
     interactive = false;
     const { findSkillFolders, getFallbackSkillRoots } = await import("../scanSkills.js");
+    // Normalize separators and match by suffix so the sentinel roots work on
+    // Windows, where resolve() prefixes the POSIX test roots with a drive.
+    const norm = (root: string) => root.replace(/\\/g, "/");
     mocked(findSkillFolders).mockImplementation(async (root: string) => {
-      if (root === "/work" || root === "/work/skills") return [];
-      if (root === "/fallback/skills") {
+      if (norm(root).endsWith("/work") || norm(root).endsWith("/work/skills")) return [];
+      if (norm(root).endsWith("/fallback/skills")) {
         return [
           {
             folder: "/fallback/skills/private-skill",
