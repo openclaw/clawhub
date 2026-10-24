@@ -101,6 +101,7 @@ export async function recordPackageInspectorScan(
     inspectorVersion: string;
     targetOpenClawVersion: string;
     notificationComplete?: boolean;
+    inspectionFailed?: boolean;
     report?: SdkUsageReport;
     artifactSha256?: string;
   },
@@ -116,7 +117,7 @@ export async function recordPackageInspectorScan(
     )
     .unique();
   const completedAt = Date.now();
-  const values = {
+  const identity = {
     packageId: pkg._id,
     releaseId: release._id,
     inspectorVersion,
@@ -124,8 +125,32 @@ export async function recordPackageInspectorScan(
     completedAt,
     ...(args.notificationComplete ? { notificationCompletedAt: completedAt } : {}),
   };
-  const scanId = existing?._id ?? (await ctx.db.insert("packageInspectorScanStates", values));
-  if (existing) await ctx.db.patch(scanId, values);
+  // A crash updates the latest attempt only. findingsCompletedAt stays so the
+  // moderator report can still select this tuple's stored findings. A row
+  // written before that field existed has only completedAt; keep that time
+  // before this crash replaces it.
+  let scanId = existing?._id;
+  if (args.inspectionFailed) {
+    const preservedFindingsAt =
+      existing && existing.findingsCompletedAt === undefined && existing.inspectionFailed !== true
+        ? existing.completedAt
+        : undefined;
+    const failedAttempt = {
+      ...identity,
+      inspectionFailed: true as const,
+      ...(preservedFindingsAt !== undefined ? { findingsCompletedAt: preservedFindingsAt } : {}),
+    };
+    if (scanId) await ctx.db.patch(scanId, failedAttempt);
+    else scanId = await ctx.db.insert("packageInspectorScanStates", failedAttempt);
+  } else {
+    const findingsScan = {
+      ...identity,
+      findingsCompletedAt: completedAt,
+      ...(existing ? { inspectionFailed: undefined } : {}),
+    };
+    if (scanId) await ctx.db.patch(scanId, findingsScan);
+    else scanId = await ctx.db.insert("packageInspectorScanStates", findingsScan);
+  }
   if (args.report && args.artifactSha256) {
     return await replacePackageSdkUsage(ctx, {
       pkg,
