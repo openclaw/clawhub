@@ -10,7 +10,7 @@ import {
   ApiV1SkillUploadUrlResponseSchema,
   ApiV1WhoamiResponseSchema,
 } from "../../schema/index.js";
-import { hashSkillFiles, listSkillFiles } from "../../skills.js";
+import { hashSkillFiles, listSkillFiles, sortSkillFilesByPath } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
@@ -345,7 +345,7 @@ function writePublishJsonIfRequested(json: boolean | undefined, result: SkillPub
 }
 
 export async function prepareSkillFilesForPublish(folder: string) {
-  return stripGeneratedSkillCards(
+  const files = stripGeneratedSkillCards(
     await ensureRootManifestFile(
       folder,
       await listSkillFiles(folder, {
@@ -354,6 +354,10 @@ export async function prepareSkillFilesForPublish(folder: string) {
       }),
     ),
   );
+  // ensureRootManifestFile can append a restored root manifest after the
+  // collection-time sort, so keep the final publish list in path order.
+  sortSkillFilesByPath(files);
+  return files;
 }
 
 function stripGeneratedSkillCards(files: Awaited<ReturnType<typeof listSkillFiles>>) {
