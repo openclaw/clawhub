@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
+import { intermediaryAnalysisValidator } from "./lib/intermediaryAnalysis";
 import { manualPackageRecovery } from "./lib/packagePublishRecovery";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
@@ -51,6 +52,7 @@ const workerCheckResultValidator = v.object({
 });
 
 const workerLlmAnalysisValidator = v.object({
+  intermediaryAnalysis: v.optional(intermediaryAnalysisValidator),
   status: v.string(),
   verdict: v.optional(v.string()),
   confidence: v.optional(v.string()),

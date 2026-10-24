@@ -694,6 +694,8 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
 export type ApiV1PackageSearchResponse = (typeof ApiV1PackageSearchResponseSchema)[inferred];
 export declare const ApiV1PackageResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     package: {
+        requiresIntermediary?: boolean | null | undefined;
+        intermediaryDetails?: string | null | undefined;
         name: string;
         displayName: string;
         family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
@@ -822,6 +824,8 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
         family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     } | null;
     version: {
+        requiresIntermediary?: boolean | null | undefined;
+        intermediaryDetails?: string | null | undefined;
         version: string;
         createdAt: number;
         changelog: string;
@@ -1104,6 +1108,8 @@ export declare const ApiV1PackageSecurityResponseSchema: import("arktype/interna
 export type ApiV1PackageSecurityResponse = (typeof ApiV1PackageSecurityResponseSchema)[inferred];
 export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     package: {
+        requiresIntermediary?: boolean | null | undefined;
+        intermediaryDetails?: string | null | undefined;
         name: string;
         displayName: string;
         family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
@@ -1223,6 +1229,8 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
         nextCursor: string | null;
     };
     version: {
+        requiresIntermediary?: boolean | null | undefined;
+        intermediaryDetails?: string | null | undefined;
         version: string;
         createdAt: number;
         changelog: string;

@@ -1,3 +1,4 @@
+import { toIntermediaryDisclosure } from "clawhub-schema";
 import {
   ApiRoutes,
   ApiV1SkillUploadUrlRequestSchema,
@@ -1627,6 +1628,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
             license: parsed?.license ?? null,
           }
         : null,
+      ...toIntermediaryDisclosure(latestVersion?.llmAnalysis?.intermediaryAnalysis),
       metadata: parsed?.clawdis
         ? {
             setup: buildSkillSetup(parsed),
@@ -2047,6 +2049,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
               license: result.latestVersion.parsed?.license ?? null,
             }
           : null,
+        ...toIntermediaryDisclosure(result.latestVersion?.llmAnalysis?.intermediaryAnalysis),
         metadata: result.latestVersion?.parsed?.clawdis
           ? {
               setup,
@@ -2240,6 +2243,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       {
         skill: { slug: skillResult.skill.slug, displayName: skillResult.skill.displayName },
         version: {
+          ...toIntermediaryDisclosure(version.llmAnalysis?.intermediaryAnalysis),
           version: version.version,
           createdAt: version.createdAt,
           changelog: version.changelog,
@@ -2323,6 +2327,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           displayName: result.skill.displayName,
         },
         version: {
+          ...toIntermediaryDisclosure(version.llmAnalysis?.intermediaryAnalysis),
           version: version.version,
           createdAt: version.createdAt,
           changelogSource: version.changelogSource ?? null,
