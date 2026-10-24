@@ -5,6 +5,7 @@ Default policy as of 2026-10-19 (embeddings unchanged):
 | Consumer                                               | Model         | Reasoning | Service  |
 | ------------------------------------------------------ | ------------- | --------- | -------- |
 | Skill summaries; skill/package changelogs              | `gpt-6-luna`  | low       | Standard |
+| Artifact intermediary disclosure                       | `gpt-6-luna`  | low       | Standard |
 | Plugin and Claw category classification; search intent | `gpt-6-luna`  | none      | Standard |
 | Skill Card generator and credential canary             | `gpt-6-luna`  | medium    | Standard |
 | Design audit                                           | `gpt-6.1-sol` | high      | Standard |

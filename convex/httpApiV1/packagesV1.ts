@@ -1,3 +1,4 @@
+import { toIntermediaryDisclosure } from "clawhub-schema";
 import {
   ApiRoutes,
   ApiV1PackageScanBatchRequestSchema,
@@ -529,6 +530,7 @@ type SkillPackageDocLike = {
 };
 
 type SkillVersionLike = {
+  llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
   _id: Id<"skillVersions">;
   skillId: Id<"skills">;
   version: string;
@@ -704,6 +706,7 @@ function toPackageVersionResponse(release: ReleaseLike, packageName: string) {
   const scanStatus = resolvePackageReleaseScanStatus(release);
   const verification = release.verification ? { ...release.verification, scanStatus } : null;
   return {
+    ...toIntermediaryDisclosure(release.llmAnalysis?.intermediaryAnalysis),
     version: release.version,
     createdAt: release.createdAt,
     changelog: release.changelog,
@@ -1299,6 +1302,7 @@ function toSkillPackageDetail(
 ) {
   return {
     package: {
+      ...toIntermediaryDisclosure(latestVersion?.llmAnalysis?.intermediaryAnalysis),
       name: skill.slug,
       displayName: skill.displayName,
       family: "skill" as const,
@@ -1329,9 +1333,14 @@ function toPackageMetadataResponse(
   pkg: PublicPackageDocLike,
   owner: PublicPublisher | null,
   tags: Record<string, string>,
+  release?: ReleaseLike | null,
 ) {
   return {
-    package: { ...toPackageDetailResponsePackage(pkg), tags },
+    package: {
+      ...toPackageDetailResponsePackage(pkg),
+      tags,
+      ...toIntermediaryDisclosure(release?.llmAnalysis?.intermediaryAnalysis),
+    },
     owner: owner
       ? {
           handle: owner.handle ?? null,
@@ -4609,7 +4618,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const tags = await resolvePackageTags(ctx, publicPackage!, viewerUserId ?? undefined);
 
-    return json(toPackageMetadataResponse(publicPackage!, packageOwner, tags), 200, rate.headers);
+    return json(
+      toPackageMetadataResponse(publicPackage!, packageOwner, tags, packageDetail?.latestRelease),
+      200,
+      rate.headers,
+    );
   }
 
   if (packageSegments[0] === "trusted-publisher" && packageSegments.length === 1) {
@@ -4766,6 +4779,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
             family: "skill",
           },
           version: {
+            ...toIntermediaryDisclosure(version.llmAnalysis?.intermediaryAnalysis),
             version: version.version,
             createdAt: version.createdAt,
             changelog: version.changelog,

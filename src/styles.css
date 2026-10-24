@@ -34568,3 +34568,16 @@ a[class*="rounded-full"] {
   gap: 10px;
   min-width: 0;
 }
+
+.intermediary-disclosure p {
+  color: var(--oc-text-secondary);
+  font-weight: 400;
+  margin: var(--oc-space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.intermediary-disclosure-attribution {
+  color: var(--oc-text-muted);
+  font-weight: 400;
+  font-size: var(--oc-font-size-xs);
+}

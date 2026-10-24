@@ -64,6 +64,7 @@ import {
   isPublicSkillDoc,
   readGlobalPublicSkillsCount,
 } from "./lib/globalStats";
+import { intermediaryAnalysisValidator } from "./lib/intermediaryAnalysis";
 import {
   TRENDING_LEADERBOARD_KIND,
   TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
@@ -9296,6 +9297,7 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     scannerReportsStorageId: v.optional(v.id("_storage")),
     moderationMode: v.optional(v.union(v.literal("normal"), v.literal("preserve"))),
     llmAnalysis: v.object({
+      intermediaryAnalysis: v.optional(intermediaryAnalysisValidator),
       status: v.string(),
       verdict: v.optional(v.string()),
       confidence: v.optional(v.string()),

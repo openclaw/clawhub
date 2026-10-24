@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { toIntermediaryDisclosure } from "clawhub-schema";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
 import { Bookmark, Flag, Settings, ShieldCheck, Upload } from "lucide-react";
@@ -26,6 +27,7 @@ import { DetailHero, DetailPageShell, DETAIL_HERO_TOPIC_LIMIT } from "./DetailPa
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
 import { InlineMarkdownSummary } from "./InlineMarkdownSummary";
+import { IntermediaryDisclosure } from "./IntermediaryDisclosure";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
@@ -766,6 +768,14 @@ function SkillSidebarDeferredStats({
               large: true,
             },
         { label: "Repository", value: githubRepositoryLink },
+        {
+          label: "Required intermediary",
+          value: (
+            <IntermediaryDisclosure
+              {...toIntermediaryDisclosure(latestVersion?.llmAnalysis?.intermediaryAnalysis)}
+            />
+          ),
+        },
         ...(hideCreator
           ? []
           : [

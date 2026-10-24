@@ -47,6 +47,7 @@ import { useDownloadsSidebarMetricBlock } from "../../components/DownloadsMetric
 import { EmptyState } from "../../components/EmptyState";
 import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
+import { IntermediaryDisclosure } from "../../components/IntermediaryDisclosure";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
 import { PluginApiRetirementNotice } from "../../components/PluginApiRetirementNotice";
@@ -1583,6 +1584,15 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     ? [
         pluginDownloadsMetricBlock,
         { label: "Repository", value: sourceRepoLink },
+        {
+          label: "Required intermediary",
+          value: (
+            <IntermediaryDisclosure
+              requiresIntermediary={latestRelease?.requiresIntermediary}
+              intermediaryDetails={latestRelease?.intermediaryDetails}
+            />
+          ),
+        },
         securitySummary
           ? {
               key: "security-audit",

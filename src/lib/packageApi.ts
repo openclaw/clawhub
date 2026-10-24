@@ -47,6 +47,8 @@ export type PackageVersionDetail = {
     family: "skill" | "code-plugin" | "bundle-plugin";
   } | null;
   version: {
+    requiresIntermediary?: boolean | null;
+    intermediaryDetails?: string | null;
     endorAnalysis?: PackageEndorAnalysis | null;
     version: string;
     createdAt: number;
