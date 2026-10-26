@@ -437,6 +437,12 @@ Test crons remain disabled, so this does not scan the catalog on a nightly or
 periodic schedule. The five-minute scheduled pre-publication worker remains a
 Production-only recovery path.
 
+The manual security worker's `queue-test-discord` option queues only the latest
+`@openclaw/discord` release in permanent Test. It requires the exact deployed
+revision and existing Test target guards, preserves active jobs atomically, and
+refuses workflow retries or supplied assignments before admitting a new scan.
+Automatic security-worker event dispatch must be disabled on this Test path.
+
 Preview browser traffic is public and read-only. Nitro rejects non-GET/HEAD
 requests before proxying and adds `X-ClawHub-Preview-Backend` to proxied preview
 responses so smoke proof can record the paired non-secret deployment name.

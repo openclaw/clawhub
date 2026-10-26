@@ -14,6 +14,10 @@ on:
         description: "Exact deployed revision required for a Test scan"
         required: false
         default: ""
+      queue-test-discord:
+        description: "Queue only latest @openclaw/discord on Test; first workflow attempt only"
+        type: boolean
+        default: false
       limit:
         description: "Deprecated alias for batch-limit"
         required: false
@@ -113,6 +117,16 @@ jobs:
       CODEX_SECURITY_SCAN_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
       SKILLSPECTOR_PROVIDER: openai
     steps:
+      - name: Check Discord queue mode
+        if: inputs['queue-test-discord']
+        env:
+          SELECTED_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          [[ "$SELECTED_ENVIRONMENT" == Test ]] || { echo 'Discord queue mode requires Test' >&2; exit 1; }
+          [[ "$GITHUB_RUN_ATTEMPT" == 1 ]] || { echo 'Discord queue mode cannot enqueue on a workflow rerun' >&2; exit 1; }
+          [[ -z "$CODEX_SECURITY_SCAN_ASSIGNED_JOBS" ]] || { echo 'Discord queue mode cannot be combined with assigned-jobs' >&2; exit 1; }
+
       - uses: actions/checkout@v7.0.1
 
       - name: Check Test scan target
@@ -140,8 +154,36 @@ jobs:
         if: inputs.environment == 'Test'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          QUEUE_TEST_DISCORD: ${{ inputs['queue-test-discord'] }}
         run: |
           set -euo pipefail
+          [[ "$(bunx convex env get APP_BUILD_SHA --prod)" == "$GITHUB_SHA" ]]
+          if [[ "$QUEUE_TEST_DISCORD" == true ]]; then
+            event_dispatch="$(bunx convex env get SECURITY_SCAN_EVENT_DISPATCH_ENABLED --prod)"
+            [[ "$event_dispatch" != 1 ]] || { echo 'Manual Test canary requires automatic security worker dispatch disabled' >&2; exit 1; }
+            release="$(bunx convex run --inline-query '
+              const pkg = await ctx.db.query("packages").withIndex("by_name", q => q.eq("normalizedName", "@openclaw/discord")).unique();
+              if (!pkg || pkg.softDeletedAt !== undefined || !["code-plugin", "bundle-plugin"].includes(pkg.family) || !pkg.latestReleaseId) {
+                throw new Error("Test requires an active @openclaw/discord plugin with a latest release");
+              }
+              const release = await ctx.db.get(pkg.latestReleaseId);
+              if (!release || release.packageId !== pkg._id || release.softDeletedAt !== undefined || release.ownerDeletedAt !== undefined ||
+                  (release.publicationStatus !== undefined && release.publicationStatus !== "published")) {
+                throw new Error("Latest Discord release is unavailable");
+              }
+              return release._id;
+            ' --prod)"
+            release_id="$(jq -er 'select(type == "string" and length > 0)' <<< "$release")"
+            queued="$(bunx convex run securityScan:enqueuePackageReleaseScanInternal \
+              "$(jq -cn --arg releaseId "$release_id" '{releaseId:$releaseId,source:"bulk-rescan",waitForVtMs:0,preserveActiveJob:true}')" --prod)"
+            job_id="$(jq -er 'select(.ok == true and .alreadyQueued == false) | .jobId | select(type == "string" and length > 0)' <<< "$queued")" || {
+              echo 'Discord enqueue did not create a new job; existing active work is left unchanged' >&2; exit 1;
+            }
+            CODEX_SECURITY_SCAN_ASSIGNED_JOBS="$(jq -cn --arg jobId "$job_id" '[[$jobId],[],[],[],[],[],[],[],[]]')"
+            export CODEX_SECURITY_SCAN_ASSIGNED_JOBS
+            printf 'CODEX_SECURITY_SCAN_ASSIGNED_JOBS=%s\n' "$CODEX_SECURITY_SCAN_ASSIGNED_JOBS" >> "$GITHUB_ENV"
+            printf 'Queued Test @openclaw/discord job %s\n' "$job_id"
+          fi
           bun - <<'JS'
           import { spawnSync } from "node:child_process";
           import { readWorkerAssignment } from "./packages/clawhub-admin/src/scanAssignments.ts";
@@ -162,7 +204,6 @@ jobs:
           }
           JS
           printf 'ENDOR_TEST_STARTED_AT=%s\n' "$(date +%s000)" >> "$GITHUB_ENV"
-          [[ "$(bunx convex env get APP_BUILD_SHA --prod)" == "$GITHUB_SHA" ]]
           worker_token="$(bunx convex env get SECURITY_SCAN_WORKER_TOKEN --prod)"
           [[ -n "$worker_token" ]] || { echo 'Test SECURITY_SCAN_WORKER_TOKEN is missing' >&2; exit 1; }
           printf '::add-mask::%s\n' "$worker_token"

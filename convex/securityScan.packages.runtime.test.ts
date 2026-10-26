@@ -70,6 +70,14 @@ describe("package bulk rescan runtime", () => {
       waitForVtMs: 60_000,
     });
     const before = await t.run((ctx) => ctx.db.get(activeId.jobId!));
+    const canary = await t.mutation(internal.securityScan.enqueuePackageReleaseScanInternal, {
+      releaseId: rows[0].releaseId,
+      source: "bulk-rescan",
+      waitForVtMs: 0,
+      preserveActiveJob: true,
+    });
+    expect(canary).toMatchObject({ jobId: activeId.jobId, alreadyQueued: true });
+    expect(await t.run((ctx) => ctx.db.get(activeId.jobId!))).toEqual(before);
     const dry = await t.mutation(enqueue, { actorUserId, dryRun: true });
     expect(dry).toMatchObject({ queued: 1, alreadyQueued: 1, skipped: 0, jobIds: [] });
     expect(await t.run((ctx) => ctx.db.query("auditLogs").collect())).toEqual([]);

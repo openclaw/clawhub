@@ -2826,6 +2826,7 @@ export const enqueuePackageReleaseScanInternal = internalMutation({
     source: jobSourceValidator,
     priority: v.optional(v.number()),
     waitForVtMs: v.optional(v.number()),
+    preserveActiveJob: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     return enqueuePackageReleaseScan(ctx, args);
