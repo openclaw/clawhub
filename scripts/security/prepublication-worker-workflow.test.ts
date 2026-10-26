@@ -222,7 +222,7 @@ describe("pre-publication publish worker workflow", () => {
     expect(steps).toContainEqual(
       expect.objectContaining({
         uses: "actions/setup-python@v7",
-        with: { "python-version": "3.12" },
+        with: { "python-version": "3.12.16" },
       }),
     );
     const aigInstall = steps.find((step) => step.name === "Install A.I.G scanner")?.run;
