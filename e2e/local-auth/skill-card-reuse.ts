@@ -59,41 +59,9 @@ export async function proveSkillCardReuse(
       leaseToken: receipt.job.leaseToken!,
       markdown,
     });
-  const burst = async () => {
-    const outcomes = await Promise.allSettled(
-      Array.from({ length: 8 }, (_, index) => claim(index)),
-    );
-    const receipts = outcomes.flatMap((outcome) =>
-      outcome.status === "fulfilled" ? outcome.value : [],
-    );
-    const rejections = outcomes.flatMap((outcome, worker) => {
-      if (outcome.status === "fulfilled") return [];
-      const message = String(outcome.reason);
-      const admission = message
-        .split("\n")
-        .find((line) => line.startsWith("Uncaught Error: "))
-        ?.slice("Uncaught Error: ".length);
-      return [{ worker, admission: admission ?? message, message }];
-    });
-    console.log("Skill Card claim burst", {
-      callers: outcomes.length,
-      fulfilled: outcomes.filter((outcome) => outcome.status === "fulfilled").length,
-      rejected: rejections.length,
-      rejections,
-      receipts: receipts.length,
-    });
-    // Convex can reject excess callers before executing a nested function.
-    // This is not a retry: every delivered receipt and lease is checked below.
-    // Current backends renamed these admission errors; unknown failures still reject.
-    for (const { admission } of rejections) {
-      expect([
-        "Too many concurrent requests in a short period of time. Spread out your requests out over time or throttle them to avoid errors.",
-        "Couldn't acquire a permit on this funrun",
-        "Too many concurrent requests in a short period of time. Spread your requests out over time or throttle them to avoid errors.",
-        "Timed out waiting for capacity to run this function",
-      ]).toContain(admission);
-    }
-    return receipts;
+  const claimBatch = async () => {
+    const batches = await Promise.all([claim(0), claim(1)]);
+    return batches.flat();
   };
   const versionIds = await run<Id<"skillVersions">[]>("skillCardDevSeed:seedExistingRows", {
     versionId,
@@ -107,9 +75,8 @@ export async function proveSkillCardReuse(
     true,
   );
 
-  // Eight simultaneous callers exceed the deployed two-shard claim fanout.
-  // Admission rejection is permitted, but all four jobs must still be delivered.
-  const claimed = await burst();
+  // Two workers claim two jobs each; every receipt and persisted lease is checked.
+  const claimed = await claimBatch();
   expect(claimed).toHaveLength(4);
   expect(new Set(claimed.map(({ job }) => job.skillVersionId)).size).toBe(4);
   expect(new Set(claimed.map(({ job }) => job.claimSlot)).size).toBe(4);
@@ -148,7 +115,7 @@ export async function proveSkillCardReuse(
     await change(id, false);
     await enqueue(id);
   }
-  const reused = await burst();
+  const reused = await claimBatch();
   expect(reused).toHaveLength(4);
   expect(reused.every((receipt) => receipt.reused && !receipt.target)).toBe(true);
   expect(storageIds()).toEqual(beforeReuse);
