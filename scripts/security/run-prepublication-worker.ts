@@ -18,11 +18,13 @@ import {
   noClawScanExposure,
   summarizeClawScanExposure,
 } from "./clawscan-exposure";
+import { inferIntermediaries } from "./infer-intermediaries";
 import {
   type AigAnalysis,
   assertAigFilePathsHaveNoCompiledPython,
   type ClaimedJob,
   resolveClawScanTarget,
+  resolveScanArtifactRoot,
   type StoredLlmAnalysis,
   validateClawScanArtifactForClawHubProfile,
   writeArtifactWorkspace,
@@ -592,6 +594,9 @@ export async function runNativeClawScan(
       },
     };
   }
+  parsed.analysis.intermediaryAnalysis = await inferIntermediaries(
+    resolve(workspace, await resolveScanArtifactRoot(workspace, job)),
+  );
   return {
     analysis: parsed.analysis,
     aigAnalysis: parsed.aigAnalysis,

@@ -914,6 +914,193 @@ export const seedLocalFixtures: ReturnType<typeof internalAction> = internalActi
   handler: seedLocalFixturesHandler,
 });
 
+// Synthetic inspection results for real local pages; no provider or security claim.
+export const seedIntermediaryFixtures: ReturnType<typeof internalAction> = internalAction({
+  args: {},
+  handler: async (ctx): Promise<string[]> => {
+    if (!isLocalDevAuthEnabled()) throw new Error("Intermediary fixtures require local dev auth");
+    const fixtures = [];
+    for (const required of [true, false, null]) {
+      const suffix = required === true ? "required" : required === false ? "direct" : "unknown";
+      const details =
+        required === true
+          ? "Requires an Example Bridge account to access Gmail. Authentication and application requests pass through Example Bridge."
+          : required === false
+            ? "Connects directly to Gmail using OAuth. No additional intermediary account is required."
+            : null;
+      const text = `---\nname: intermediary-${suffix}\ndescription: Local intermediary disclosure fixture\n---\n\n# Intermediary ${suffix}\n\n${details ?? "Setup requirements are not documented."}\n`;
+      const storageId = await ctx.storage.store(new Blob([text], { type: "text/markdown" }));
+      const pluginStorageId = await ctx.storage.store(new Blob([text], { type: "text/markdown" }));
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+      const sha256 = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("");
+      fixtures.push({
+        suffix,
+        required,
+        details,
+        storageId,
+        pluginStorageId,
+        sha256,
+        size: new TextEncoder().encode(text).length,
+      });
+    }
+    return ctx.runMutation(internal.devSeed.seedIntermediaryFixturesMutation, { fixtures });
+  },
+});
+
+export const seedIntermediaryFixturesMutation = internalMutation({
+  args: {
+    fixtures: v.array(
+      v.object({
+        suffix: v.string(),
+        required: v.union(v.boolean(), v.null()),
+        details: v.union(v.string(), v.null()),
+        storageId: v.id("_storage"),
+        pluginStorageId: v.id("_storage"),
+        sha256: v.string(),
+        size: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, { fixtures }) => {
+    if (!isLocalDevAuthEnabled()) throw new Error("Intermediary fixtures require local dev auth");
+    const { userId, publisherId } = await ensureLocalSeedOwner(ctx);
+    const now = Date.now();
+    const paths: string[] = [];
+    for (const fixture of fixtures) {
+      const slug = `intermediary-${fixture.suffix}`;
+      const summary = "Local intermediary disclosure fixture (simulated inspection).";
+      const analysis =
+        fixture.required === null
+          ? undefined
+          : {
+              requiresIntermediary: fixture.required,
+              intermediaryDetails: fixture.details,
+              checkedAt: now,
+              recipe: "local-fixture-not-an-llm-inspection",
+              model: "fixture",
+              evidence: [{ path: "SKILL.md", snippet: fixture.details! }],
+            };
+      const llmAnalysis = {
+        status: "clean",
+        checkedAt: now,
+        ...(analysis ? { intermediaryAnalysis: analysis } : {}),
+      };
+      const existingSkill = await ctx.db
+        .query("skills")
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .first();
+      const skillId =
+        existingSkill?._id ??
+        (await ctx.db.insert("skills", {
+          slug,
+          displayName: `Intermediary ${fixture.suffix}`,
+          summary,
+          ownerUserId: userId,
+          ownerPublisherId: publisherId,
+          tags: {},
+          stats: {
+            downloads: 0,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            versions: 1,
+            comments: 0,
+          },
+          createdAt: now,
+          updatedAt: now,
+        }));
+      const files = [
+        {
+          path: "SKILL.md",
+          size: fixture.size,
+          sha256: fixture.sha256,
+          storageId: fixture.storageId,
+          contentType: "text/markdown",
+        },
+      ];
+      const oldVersion = existingSkill?.latestVersionId
+        ? await ctx.db.get(existingSkill.latestVersionId)
+        : null;
+      const versionData = {
+        skillId,
+        version: "1.0.0",
+        changelog: "Synthetic local disclosure fixture.",
+        files,
+        parsed: { frontmatter: { name: slug, description: summary } },
+        createdBy: userId,
+        createdAt: now,
+        llmAnalysis,
+      };
+      const versionId = oldVersion?._id ?? (await ctx.db.insert("skillVersions", versionData));
+      if (oldVersion) await ctx.db.patch(oldVersion._id, versionData);
+      await ctx.db.patch(skillId, { latestVersionId: versionId, tags: { latest: versionId } });
+
+      const name = `local-intermediary-${fixture.suffix}`;
+      const verification = {
+        tier: "structural" as const,
+        scope: "artifact-only" as const,
+        scanStatus: "clean" as const,
+      };
+      const existingPackage = await ctx.db
+        .query("packages")
+        .withIndex("by_name", (q) => q.eq("normalizedName", name))
+        .unique();
+      const packageId =
+        existingPackage?._id ??
+        (await ctx.db.insert("packages", {
+          name,
+          normalizedName: name,
+          displayName: `Intermediary ${fixture.suffix} plugin`,
+          summary,
+          ownerUserId: userId,
+          ownerPublisherId: publisherId,
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          tags: {},
+          compatibility: {},
+          verification,
+          scanStatus: "clean",
+          stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+          createdAt: now,
+          updatedAt: now,
+        }));
+      const oldRelease = existingPackage?.latestReleaseId
+        ? await ctx.db.get(existingPackage.latestReleaseId)
+        : null;
+      const releaseData = {
+        packageId,
+        version: "1.0.0",
+        changelog: "Synthetic local disclosure fixture.",
+        distTags: ["latest"],
+        files: files.map((file) => ({
+          ...file,
+          path: "README.md",
+          storageId: fixture.pluginStorageId,
+        })),
+        integritySha256: fixture.sha256,
+        compatibility: {},
+        verification,
+        createdBy: userId,
+        publishActor: { kind: "user" as const, userId },
+        createdAt: now,
+        llmAnalysis,
+      };
+      const releaseId = oldRelease?._id ?? (await ctx.db.insert("packageReleases", releaseData));
+      if (oldRelease) await ctx.db.patch(oldRelease._id, releaseData);
+      await ctx.db.patch(packageId, { latestReleaseId: releaseId, tags: { latest: releaseId } });
+      const obsoleteStorageIds = new Set(
+        [...(oldVersion?.files ?? []), ...(oldRelease?.files ?? [])].map((file) => file.storageId),
+      );
+      for (const storageId of obsoleteStorageIds) await ctx.storage.delete(storageId);
+      paths.push(`/local/${slug}`, `/plugins/${name}`);
+    }
+    return paths;
+  },
+});
+
 export const seedPluginApiRetirementFixtures = internalMutation({
   args: {},
   handler: async (ctx) => {

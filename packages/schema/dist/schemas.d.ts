@@ -325,6 +325,8 @@ export declare const ApiV1SearchResponseSchema: import("arktype/internal/variant
 }, {}>;
 export declare const ApiV1SkillListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
+        requiresIntermediary?: boolean | null | undefined;
+        intermediaryDetails?: string | null | undefined;
         ownerHandle: string;
         slug: string;
         displayName: string;
@@ -353,6 +355,8 @@ export declare const ApiV1SkillListResponseSchema: import("arktype/internal/vari
     nextCursor: string | null;
 }, {}>;
 export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    requiresIntermediary?: boolean | null | undefined;
+    intermediaryDetails?: string | null | undefined;
     skill: {
         slug: string;
         displayName: string;
@@ -844,6 +848,8 @@ export declare const SecurityStatusSchema: import("arktype/internal/variants/obj
 }, {}>;
 export declare const ApiV1SkillVersionResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     version: {
+        requiresIntermediary?: boolean | null | undefined;
+        intermediaryDetails?: string | null | undefined;
         version: string;
         createdAt: number;
         changelog: string;

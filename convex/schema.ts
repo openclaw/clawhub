@@ -9,6 +9,7 @@ import {
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
+import { intermediaryAnalysisValidator } from "./lib/intermediaryAnalysis";
 import { sdkUsageEntry, sdkUsageScan } from "./lib/packageSdkUsageContract";
 import {
   pluginCategoryClassificationValidator,
@@ -154,6 +155,7 @@ const llmRiskSummaryBucketValidator = v.object({
 });
 
 export const llmAnalysisValidator = v.object({
+  intermediaryAnalysis: v.optional(intermediaryAnalysisValidator),
   status: v.string(),
   verdict: v.optional(v.string()),
   confidence: v.optional(v.string()),
@@ -1251,6 +1253,7 @@ const skillVersions = defineTable({
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
+      intermediaryAnalysis: v.optional(intermediaryAnalysisValidator),
       status: v.string(),
       verdict: v.optional(v.string()),
       confidence: v.optional(v.string()),

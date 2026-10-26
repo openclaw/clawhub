@@ -582,6 +582,8 @@ export type ApiV1PackageSearchResponse = (typeof ApiV1PackageSearchResponseSchem
 
 export const ApiV1PackageResponseSchema = type({
   package: type({
+    requiresIntermediary: "boolean|null?",
+    intermediaryDetails: "string|null?",
     name: "string",
     displayName: "string",
     family: PackageFamilySchema,
@@ -634,6 +636,8 @@ export const ApiV1PackageVersionResponseSchema = type({
     family: PackageFamilySchema,
   }).or("null"),
   version: type({
+    requiresIntermediary: "boolean|null?",
+    intermediaryDetails: "string|null?",
     version: "string",
     createdAt: "number",
     changelog: "string",

@@ -83,6 +83,15 @@ metadata:
 
 Use `requires.env` for environment variables that must be present before the skill can run. Use `envVars` when you need per-variable metadata, including optional variables with `required: false`.
 
+ClawHub also infers intermediary requirements from the published instructions and
+supporting code during inspection. Listings show **Required intermediary** as
+Yes, No, or Unknown, with an AI-inferred explanation when available. This is
+informational, not a security verdict, and requires no additional frontmatter.
+The target application itself is not an intermediary. Uninspected or inconclusive
+versions remain Unknown. Skill detail/list APIs and exact skill/plugin version
+APIs expose `requiresIntermediary` (`true`, `false`, or `null`) and
+`intermediaryDetails` (`string` or `null`).
+
 ### Full field reference
 
 | Field              | Type       | Description                                                                                                                                  |
