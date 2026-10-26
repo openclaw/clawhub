@@ -46,7 +46,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "arktype": "2.2.8",
+    "arktype": "2.2.9",
     "croner": "10.0.1",
     "unicode-case-folding": "1.1.2",
     "yaml": "2.9.1"
