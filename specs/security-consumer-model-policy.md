@@ -37,7 +37,7 @@ paths. Environment-only changes cannot implement this policy: official GPT-6.1
 Sol function/tool calls require Responses rather than Chat Completions.
 
 `clawscan-source-commit.txt` pins merged ClawScan commit
-`f35fb2679e1362ba99fa2768176513c7bd696ab6`. The
+`022143b39b3285d1ac24cce7fbb61c36f5207935`. The
 workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
 with Go 1.27.3, and retains the matching source tree for host scanner installation.
 No mutable `main`, `latest`, or unapproved public ClawScan release is consumed.
@@ -75,8 +75,11 @@ real-adapter tests as that ClawScan revision's runtime image:
   dependencies are not claimed to be fully hash-reproducible. The AIG hash lock
   additionally admits the published macOS arm64 CPython 3.12 wheels for `jiter`
   and `pydantic-core`, without replacing the existing Ubuntu runner hashes. Its
-  certifi dependency is 2026.10.23 with the normal published wheel hash. This
-  independent update does not rewrite SkillSpector's upstream frozen CA lock.
+  certifi dependency is 2026.10.23 with the normal published wheel hash. The
+  ClawScan-owned SkillSpector patch also refreshes its frozen upstream lock to
+  certifi 2026.10.23, retaining the published distribution hashes. Updating the
+  CA bundle does not replace the patched Python runtime required to reject
+  compromised keys when an operator supplies historical explicit roots.
 
 The adapter implementation stays upstream in ClawScan; ClawHub must not grow a
 second independent OpenAI adapter. Offline transport contracts prove serialization,
