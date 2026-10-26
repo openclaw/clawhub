@@ -20,6 +20,9 @@ const { searchSkills } = vi.hoisted(() => ({ searchSkills: vi.fn(async () => [])
 vi.mock("@convex-dev/auth/react", () => ({
   useAuthActions: () => ({ signIn: vi.fn(), signOut: vi.fn() }),
 }));
+vi.mock("nitro/app", () => ({
+  serverFetch: (url: string, init: RequestInit) => fetch(url, init),
+}));
 
 vi.mock("convex/react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("convex/react")>()),

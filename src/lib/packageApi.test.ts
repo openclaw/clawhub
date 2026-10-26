@@ -1,11 +1,17 @@
 /* @vitest-environment node */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const { serverFetchMock } = vi.hoisted(() => ({
+  serverFetchMock: vi.fn((url: string, init: RequestInit) => fetch(url, init)),
+}));
 const getRequestHeadersMock = vi.fn();
 const getRequestUrlMock = vi.fn();
 vi.mock("@tanstack/react-start/server", () => ({
   getRequestHeaders: () => getRequestHeadersMock(),
   getRequestUrl: () => getRequestUrlMock(),
+}));
+vi.mock("nitro/app", () => ({
+  serverFetch: serverFetchMock,
 }));
 
 import {
@@ -26,6 +32,7 @@ describe("fetchPackages", () => {
   });
 
   afterEach(() => {
+    serverFetchMock.mockReset();
     getRequestHeadersMock.mockReset();
     getRequestUrlMock.mockReset();
     vi.restoreAllMocks();
@@ -204,33 +211,36 @@ describe("fetchPackages", () => {
     });
   });
 
-  it("forwards request cookies and includes credentials for package detail fetches", async () => {
+  it("uses the internal proxy with viewer credentials for server package detail fetches", async () => {
     vi.stubEnv("VITE_CONVEX_SITE_URL", "https://app.example");
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     getRequestHeadersMock.mockReturnValue(
       new Headers({
         cookie: "session=abc",
+        authorization: "Bearer viewer-token",
+        "x-vercel-forwarded-for": "203.0.113.9",
         "cf-connecting-ip": "203.0.113.9",
         "x-forwarded-for": "203.0.113.9, 198.51.100.2",
         "x-real-ip": "203.0.113.9",
         "fly-client-ip": "203.0.113.9",
       }),
     );
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(JSON.stringify({ package: null, owner: null }), { status: 200 }),
-      );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("External fetch"));
+    serverFetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ package: null, owner: null }), { status: 200 }),
+    );
 
     await fetchPackageDetail("private-plugin");
 
-    const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+    const [, requestInit] = serverFetchMock.mock.calls[0] ?? [];
     expect(requestInit).toEqual(
       expect.objectContaining({
         credentials: expect.stringMatching(/^(include|omit)$/),
         headers: expect.objectContaining({
           Accept: "application/json",
           cookie: "session=abc",
+          authorization: "Bearer viewer-token",
+          "x-vercel-forwarded-for": "203.0.113.9",
           "cf-connecting-ip": "203.0.113.9",
           "x-forwarded-for": "203.0.113.9, 198.51.100.2",
           "x-real-ip": "203.0.113.9",
@@ -238,7 +248,10 @@ describe("fetchPackages", () => {
         }),
       }),
     );
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://app.example/api/v1/packages/private-plugin");
+    expect(serverFetchMock.mock.calls[0]?.[0]).toBe(
+      "https://app.example/api/v1/packages/private-plugin",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("uses the app origin for browser package detail fetches", async () => {
@@ -314,6 +327,7 @@ describe("fetchPackages", () => {
       new Headers({
         authorization: "Bearer private-token",
         cookie: "session=private",
+        "x-vercel-forwarded-for": "203.0.113.9",
         "x-forwarded-for": "203.0.113.9",
       }),
     );
@@ -331,6 +345,7 @@ describe("fetchPackages", () => {
         credentials: "omit",
         headers: expect.objectContaining({
           Accept: "application/json",
+          "x-vercel-forwarded-for": "203.0.113.9",
           "x-forwarded-for": "203.0.113.9",
         }),
       }),

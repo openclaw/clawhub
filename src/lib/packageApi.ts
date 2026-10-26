@@ -1,3 +1,4 @@
+import { createIsomorphicFn } from "@tanstack/react-start";
 import type {
   ApiV1PackageResponse,
   ApiV1PackageVersionListResponse,
@@ -268,6 +269,7 @@ async function getForwardedHeaders(viewerMode: PackageApiViewerMode) {
     const cookie = requestHeaders.get("cookie");
     const authorization = requestHeaders.get("authorization");
     const clientIpHeaders = [
+      "x-vercel-forwarded-for",
       "cf-connecting-ip",
       "x-forwarded-for",
       "x-real-ip",
@@ -287,6 +289,15 @@ async function getForwardedHeaders(viewerMode: PackageApiViewerMode) {
   }
 }
 
+const fetchPackageResponse = createIsomorphicFn()
+  .server(async (url: string, init: RequestInit) => {
+    const { serverFetch } = await import("nitro/app");
+    // Nitro routes locally by path, even for absolute URLs. Our API proxy adds
+    // edge identity instead of following Convex redirects through Vercel protection.
+    return serverFetch(url, init);
+  })
+  .client((url: string, init: RequestInit) => fetch(url, init));
+
 async function packageFetch(
   url: URL,
   accept: string,
@@ -295,7 +306,7 @@ async function packageFetch(
 ) {
   const forwarded = await getForwardedHeaders(viewerMode);
   const isSameOrigin = typeof window !== "undefined" && url.origin === window.location.origin;
-  return await fetch(url.toString(), {
+  return await fetchPackageResponse(url.toString(), {
     method: "GET",
     // Only send credentials for same-origin requests (production Vercel
     // rewrite). Cross-origin requests to the Convex site URL don't need
