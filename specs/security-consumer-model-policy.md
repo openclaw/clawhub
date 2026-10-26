@@ -106,6 +106,13 @@ Preparation and download failures before a new scan also leave eligibility unkno
 even when the control flow proves that no judge was invoked. They must not be
 silently excluded as publisher-caused rejections.
 
+Bundled SkillSpector command failures count as scanner-stage failures even before
+ClawScan starts. Retain their timeout, exit and process-termination metadata without
+command output, artifact contents or paths. A shared-budget deadline has no stale
+termination receipt from a previous bundled root. Exit 1 with accepted findings
+remains a successful scanner result. This accounting does not change retry policy,
+judge exposure or Endor cleanup.
+
 The bounded native `judge.attempts` records supply invocation and operational-failure
 counts, including the first failed receipt even when the second attempt succeeds.
 Only a failed receipt followed by a completed fresh-challenge attempt is counted
