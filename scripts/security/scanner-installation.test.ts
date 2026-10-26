@@ -95,7 +95,7 @@ describe("reviewed ClawScan installation", () => {
           'echo "$(basename "$0") $*" >> "$COMMAND_LOG"',
           'case "$(basename "$0")" in',
           ' git) if [ "${3:-}" = rev-parse ]; then case "$2" in */clawscan) echo "$CLAWSCAN_PIN";; *) echo "$SCANNER_PIN";; esac; fi;;',
-          ' python) if [ "${1:-}" = -m ] && [ "${2:-}" = venv ]; then mkdir -p "$3/bin"; cp "$0" "$3/bin/python"; cp "$0" "$3/bin/aig-skill-scan"; fi;;',
+          ' python) if [ "${1:-}" = -c ]; then printf "%s\\n" "$SELECTED_PYTHON"; elif [ "${1:-}" = -m ] && [ "${2:-}" = venv ]; then mkdir -p "$3/bin"; cp "$0" "$3/bin/python"; cp "$0" "$3/bin/aig-skill-scan"; fi;;',
           ' uv) if [ "${1:-}" = sync ]; then for last; do :; done; mkdir -p "$last/.venv/bin"; cp "$0" "$last/.venv/bin/python"; cp "$0" "$last/.venv/bin/skillspector"; fi;;',
           "esac",
         ].join("\n");
@@ -109,6 +109,7 @@ describe("reviewed ClawScan installation", () => {
             env: {
               PATH: path,
               COMMAND_LOG: log,
+              SELECTED_PYTHON: join(bin, "python"),
               CLAWSCAN_PIN: pin,
               SCANNER_PIN: scannerPin,
               CLAWSCAN_SOURCE_DIR: source,
@@ -136,7 +137,9 @@ describe("reviewed ClawScan installation", () => {
           "--require-hashes -r " + scriptDir + "/aig-worker-requirements.txt",
         );
         expect(commands).toContain("--no-deps " + root + "/aig-source.");
-        expect(commands).toContain("uv sync --locked --no-dev --project");
+        expect(commands).toContain(
+          "uv sync --locked --no-dev --python " + join(bin, "python") + " --project",
+        );
         const paths = await readFile(join(root, "github-path"), "utf8");
         expect(paths).toBe((join(root, "clawscan-scanner-bin") + "\n").repeat(2));
       } finally {

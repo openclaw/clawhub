@@ -37,7 +37,7 @@ paths. Environment-only changes cannot implement this policy: official GPT-6.1
 Sol function/tool calls require Responses rather than Chat Completions.
 
 `clawscan-source-commit.txt` pins merged ClawScan commit
-`d4dc23c1525f2dd7d82e0b4ef087116daef6bbf0`. The
+`f35fb2679e1362ba99fa2768176513c7bd696ab6`. The
 workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
 with Go 1.27.3, and retains the matching source tree for host scanner installation.
 No mutable `main`, `latest`, or unapproved public ClawScan release is consumed.
@@ -59,7 +59,9 @@ real-adapter tests as that ClawScan revision's runtime image:
 
 - SkillSpector: NVIDIA source commit
   `95a52d89fa16f608f0b18ccee76b0918ea4b7eef`, with the maintained LangChain
-  Responses path and its upstream `uv.lock` (`uv sync --locked --no-dev`).
+  Responses path and its upstream `uv.lock` (`uv sync --locked --no-dev --python <selected interpreter>`). The installer
+  binds uv to the workflow-selected Python; another installed interpreter must
+  not silently replace the patched runtime selected by setup-python.
 - AIG: Tencent AI-Infra-Guard source commit
   `a5c5a72c2e5b88fc6e5b27e0c86110943c4d350b` (`skill-scan` package), with the
   ClawScan-owned Responses streaming adapter. The existing hash-locked AIG 0.2.2
