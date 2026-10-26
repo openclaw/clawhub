@@ -2018,3 +2018,36 @@ clawhub-admin featured publish skill approved-skills.json --apply
 `publish` defaults to a dry run regardless of the file's `dryRun` value. Use
 `--apply` only after the exact selection has been approved. Counts describe recorded
 install events, not unique users or proven successful runtime installations.
+
+## Data-only themes
+
+Themes are available only through the explicit Themes API, for discovery and
+management from OpenClaw Appearance settings. They are not skills or plugins
+and never appear in general lists, search, feeds, or exports.
+
+- GET /api/v1/themes?limit=24&cursor=&q= returns
+  { items: ThemeSummary[], nextCursor: string | null }. The limit is 1–100;
+  q is optional text (maximum 200 characters). Continue with nextCursor,
+  including after a short page. A summary has id (owner/name), name,
+  description, version, category: "themes", author: { handle }, and
+  updatedAt (Unix milliseconds).
+- GET /api/v1/themes/{owner}/{name}?version=1.0.0 returns { item }, adding
+  definition and sha256 to the summary. Omit version for latest; pin it for
+  installation. Encode owner and name separately. Unknown/unavailable themes
+  or versions return 404.
+- POST /api/v1/themes requires the usual Authorization: Bearer <API token>
+  and JSON { owner, name, version, definition }. Here name is the record
+  slug (lowercase letters/digits, underscores, hyphens, at most 64 characters);
+  the display name lives in definition.name. The owner must be a publisher
+  the token's account can publish under. The version is canonical semver.
+  Returns { id, version, sha256 }. Identical retries succeed; changed content
+  at the same version returns 409. Invalid definitions return 400; oversized
+  bodies return 413.
+
+The portable OpenClaw definition requires a display name (80 characters),
+description (320 characters), and at least one complete light/dark semantic
+palette. Normalized JSON is limited to 4096 UTF-8 bytes; the whole HTTP body is
+limited to 16384 bytes. Local font families and built-in branding options are
+supported. Raw CSS, JavaScript, external assets/URLs, HTML/SVG, npm packages and
+tarballs are not. The sha256 hashes UTF-8 JSON after OpenClaw normalization
+(stable normalizer field order), not the submitted byte stream.
