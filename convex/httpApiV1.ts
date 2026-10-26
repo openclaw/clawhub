@@ -56,6 +56,7 @@ import {
   skillsPostRouterV1Handler,
 } from "./httpApiV1/skillsV1";
 import { starsDeleteRouterV1Handler, starsPostRouterV1Handler } from "./httpApiV1/starsV1";
+import { themesV1Handler } from "./httpApiV1/themesV1";
 import { transfersGetRouterV1Handler } from "./httpApiV1/transfersV1";
 import { trendingV1Handler } from "./httpApiV1/trendingV1";
 import {
@@ -65,6 +66,8 @@ import {
   usersPostRouterV1Handler,
 } from "./httpApiV1/usersV1";
 import { whoamiV1Handler } from "./httpApiV1/whoamiV1";
+
+export const themesV1Http = httpAction(themesV1Handler);
 
 export const searchReportsV1Http = httpAction(searchReportsV1Handler);
 export const searchInsightsV1Http = httpAction(searchInsightsV1Handler);

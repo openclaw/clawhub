@@ -4685,7 +4685,33 @@ const searchReportChunks = defineTable({
   .index("by_reportId_index", ["reportId", "index"])
   .index("by_expirationTime", ["expirationTime"]);
 
+// Themes are data-only and deliberately absent from package/skill search digests.
+const themes = defineTable({
+  ownerPublisherId: v.id("publishers"),
+  slug: v.string(),
+  name: v.string(),
+  description: v.string(),
+  version: v.string(),
+  listed: v.boolean(),
+  searchText: v.string(),
+  updatedAt: v.number(),
+})
+  .index("by_ownerPublisherId_and_slug", ["ownerPublisherId", "slug"])
+  .index("by_ownerPublisherId_and_listed", ["ownerPublisherId", "listed"])
+  .index("by_listed_and_updatedAt", ["listed", "updatedAt"])
+  .searchIndex("search_text", { searchField: "searchText", filterFields: ["listed"] });
+const themeVersions = defineTable({
+  themeId: v.id("themes"),
+  version: v.string(),
+  definitionJson: v.string(),
+  sha256: v.string(),
+  createdAt: v.number(),
+  withdrawn: v.boolean(),
+}).index("by_themeId_and_version", ["themeId", "version"]);
+
 export default defineSchema({
+  themes,
+  themeVersions,
   searchReportRuns,
   searchReportChunks,
   searchAggregateStates,
