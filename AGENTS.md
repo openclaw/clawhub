@@ -9,6 +9,24 @@
 - `specs/` — product specs, plans, regression notes, design history (see `specs/spec.md`).
 - `public/` — static assets.
 
+## Design & Brand Sources
+
+- Use [DESIGN.md](DESIGN.md) for ClawHub UI guidance and the installed
+  [OpenClaw brand skill](.agents/skills/openclaw-brand/SKILL.md) for identity work.
+- At the start of each OpenClaw or OpenClaw Foundation branding task, resolve
+  upstream `main` afresh and inspect the live [Carapace brand kit](https://github.com/openclaw/carapace/tree/main/brand-kit):
+  read its current README, relevant usage/rights guidance, and asset inventory.
+  Record the resolved revision, selected paths, and downloaded hashes in task
+  evidence, then use those pinned current assets within the requested scope.
+  Cached/site/ZIP assets and installed skills do not establish current identity;
+  report an inaccessible live check or conflicting guidance rather than guess.
+- Recheck after a long pause or before delivery if the source may have changed.
+  Preserve ClawHub's distinct identity, `public/clawd-logo.png`, runtime character
+  art, UI tokens, and pinned Carapace CSS unless explicitly in scope. The generic
+  kit is not a ClawHub logo replacement or an automatic rebrand/publication grant.
+  Follow current rights guidance and use reviewed repository-local runtime assets,
+  not mutable-main hotlinks.
+
 ## Durable Intent & Specs
 
 - Use `specs/` to persist system/subsystem intent, invariants, and design rationale that future agents should preserve.
