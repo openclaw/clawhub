@@ -105,7 +105,7 @@ describe("pre-publication publish worker workflow", () => {
     expect(workflow.on?.workflow_dispatch?.inputs?.runner).toEqual({
       description: "Runner label for manual recovery dispatches",
       required: true,
-      default: "blacksmith-8vcpu-ubuntu-2404",
+      default: "ubuntu-22.04",
       type: "choice",
       options: ["blacksmith-8vcpu-ubuntu-2404", "ubuntu-22.04"],
     });
@@ -135,7 +135,7 @@ describe("pre-publication publish worker workflow", () => {
     expect(job.environment).toBe(
       "${{ github.ref == 'refs/heads/staging' && 'Staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'Test' || 'Production') }}",
     );
-    expect(job["runs-on"]).toBe("${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}");
+    expect(job["runs-on"]).toBe("${{ inputs.runner || 'ubuntu-22.04' }}");
     expect(job["timeout-minutes"]).toBe(25);
     expect(job.strategy?.matrix?.shard).toBe(
       "${{ fromJSON((github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && '[0]' || '[0,1]') }}",

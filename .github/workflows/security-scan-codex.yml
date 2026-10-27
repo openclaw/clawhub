@@ -72,7 +72,8 @@ jobs:
         github.ref == 'refs/heads/main' &&
         (inputs.environment == 'Test' || inputs.environment == 'Production')))
     name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    # Match the qualified recovery image; Ubuntu24.04 AppArmor blocks judge bwrap setup.
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     environment: ${{ (inputs.environment == 'Test' || github.event.client_payload.environment == 'test') && 'Test' || 'Production' }}
     concurrency:

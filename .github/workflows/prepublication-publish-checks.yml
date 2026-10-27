@@ -37,7 +37,7 @@ on:
       runner:
         description: "Runner label for manual recovery dispatches"
         required: true
-        default: "blacksmith-8vcpu-ubuntu-2404"
+        default: "ubuntu-22.04"
         type: choice
         options:
           - "blacksmith-8vcpu-ubuntu-2404"
@@ -152,7 +152,7 @@ jobs:
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
         inputs['target-environment'] == 'test'))
     name: Pre-publication publish checks shard ${{ matrix.shard }}
-    runs-on: ${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
     timeout-minutes: 25
     environment: ${{ github.ref == 'refs/heads/staging' && 'Staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'Test' || 'Production') }}
     strategy:
