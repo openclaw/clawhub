@@ -257,37 +257,37 @@ export function getPackageArtifactDownloadPath(name: string, version: string) {
   );
 }
 
-async function getForwardedHeaders(viewerMode: PackageApiViewerMode) {
-  if (typeof window !== "undefined" || !import.meta.env.SSR) return {};
-  try {
-    const serverRuntimeModule = "@tanstack/react-start/server";
-    const { getRequestHeaders } = (await import(/* @vite-ignore */ serverRuntimeModule)) as {
-      getRequestHeaders: () => Headers;
-    };
-    const requestHeaders = getRequestHeaders();
-    const headers: Record<string, string> = {};
-    const cookie = requestHeaders.get("cookie");
-    const authorization = requestHeaders.get("authorization");
-    const clientIpHeaders = [
-      "x-vercel-forwarded-for",
-      "cf-connecting-ip",
-      "x-forwarded-for",
-      "x-real-ip",
-      "fly-client-ip",
-    ] as const;
-    if (viewerMode === "request") {
-      if (cookie) headers.cookie = cookie;
-      if (authorization) headers.authorization = authorization;
+const getForwardedHeaders = createIsomorphicFn()
+  .server(async (viewerMode: PackageApiViewerMode): Promise<Record<string, string>> => {
+    try {
+      // Keep the import visible to the server bundler: deployed artifacts do not
+      // include application dependencies for a Vite-ignored runtime import.
+      const { getRequestHeaders } = await import("@tanstack/react-start/server");
+      const requestHeaders = getRequestHeaders();
+      const headers: Record<string, string> = {};
+      const cookie = requestHeaders.get("cookie");
+      const authorization = requestHeaders.get("authorization");
+      const clientIpHeaders = [
+        "x-vercel-forwarded-for",
+        "cf-connecting-ip",
+        "x-forwarded-for",
+        "x-real-ip",
+        "fly-client-ip",
+      ] as const;
+      if (viewerMode === "request") {
+        if (cookie) headers.cookie = cookie;
+        if (authorization) headers.authorization = authorization;
+      }
+      for (const headerName of clientIpHeaders) {
+        const value = requestHeaders.get(headerName);
+        if (value) headers[headerName] = value;
+      }
+      return headers;
+    } catch {
+      return {};
     }
-    for (const headerName of clientIpHeaders) {
-      const value = requestHeaders.get(headerName);
-      if (value) headers[headerName] = value;
-    }
-    return headers;
-  } catch {
-    return {};
-  }
-}
+  })
+  .client(async (_viewerMode: PackageApiViewerMode): Promise<Record<string, string>> => ({}));
 
 const fetchPackageResponse = createIsomorphicFn()
   .server(async (url: string, init: RequestInit) => {

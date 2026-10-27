@@ -273,7 +273,7 @@ describe("fetchPackages", () => {
   it("falls back to the site URL when SSR request context is unavailable", async () => {
     vi.stubEnv("VITE_CONVEX_SITE_URL", "https://app.example");
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
-    getRequestUrlMock.mockImplementation(() => {
+    getRequestHeadersMock.mockImplementation(() => {
       throw new Error("no request context");
     });
     const fetchMock = vi
@@ -288,6 +288,7 @@ describe("fetchPackages", () => {
     });
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://app.example/api/v1/bundle-plugins?limit=12");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({ Accept: "application/json" });
   });
 
   it("uses the dedicated plugins endpoint for mixed plugin browse", async () => {
