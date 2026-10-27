@@ -34,7 +34,7 @@ jobs:
 
   claws-openclaw-contract:
     name: claws-openclaw-contract
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       OPENCLAW_CONTRACT_REPOSITORY: openclaw/openclaw
@@ -70,7 +70,7 @@ jobs:
 
   unit:
     name: unit
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:
@@ -143,7 +143,7 @@ jobs:
 
   playwright-smoke:
     name: playwright-smoke
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     steps:
@@ -175,7 +175,7 @@ jobs:
 
   playwright-local-auth-shard:
     name: playwright-local-auth / ${{ matrix.name }}
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
