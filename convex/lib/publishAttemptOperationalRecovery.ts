@@ -7,6 +7,27 @@ import { assertCanManageOwnedResource, isPublisherActive } from "./publishers";
 import { normalizeSecurityScanStatus } from "./securityScanPolicy";
 import { matchesStorageSha256 } from "./storageDigests";
 
+// Old personal attempts predate publisher IDs. Accept only the current owner's
+// canonical bidirectional personal link; this never authorizes an org transfer.
+function matchesAttemptPublisher(
+  attempt: Doc<"publishAttempts">,
+  ownerUserId: Id<"users">,
+  ownerPublisherId: Id<"publishers"> | undefined,
+  owner: Doc<"users"> | null,
+  publisher: Doc<"publishers"> | null,
+) {
+  if (attempt.ownerPublisherId === ownerPublisherId) return true;
+  return (
+    attempt.ownerPublisherId === undefined &&
+    attempt.userId === ownerUserId &&
+    owner?._id === ownerUserId &&
+    owner.personalPublisherId === ownerPublisherId &&
+    publisher?._id === ownerPublisherId &&
+    publisher?.kind === "user" &&
+    publisher.linkedUserId === ownerUserId
+  );
+}
+
 // Operator maintenance, not an owner authorization or moderation override. Every
 // retry goes through the existing scanner, claim and finalization boundaries.
 export async function retryFailedPublishAttemptChecks(
@@ -152,11 +173,13 @@ export async function retryFailedPublishAttemptChecks(
   }
   // Skill attempts historically bind the publisher scope, not ownerUserId.
   // An organization member may submit on behalf of a different resource owner.
+  const owner = await ctx.db.get(ownerUserId);
+  const publisher = ownerPublisherId ? await ctx.db.get(ownerPublisherId) : null;
   const originalOwnerUserId =
     attempt.ownerUserId ?? (attempt.ownerPublisherId ? undefined : attempt.userId);
   if (
     (originalOwnerUserId !== undefined && ownerUserId !== originalOwnerUserId) ||
-    ownerPublisherId !== attempt.ownerPublisherId
+    !matchesAttemptPublisher(attempt, ownerUserId, ownerPublisherId, owner, publisher)
   )
     return rejected("owner-changed");
   if (
@@ -167,8 +190,6 @@ export async function retryFailedPublishAttemptChecks(
       priorRetry.ownerPublisherId !== ownerPublisherId)
   )
     return rejected("retry-binding-changed");
-  const owner = await ctx.db.get(ownerUserId);
-  const publisher = ownerPublisherId ? await ctx.db.get(ownerPublisherId) : null;
   if (
     !owner ||
     owner.deletedAt ||
@@ -282,7 +303,6 @@ async function assertRetryFinalization(
     authorization.finalizationClaimId !== attempt.finalizationClaimId ||
     target.publishAttemptId !== attempt._id ||
     attempt.userId !== retry.actorUserId ||
-    attempt.ownerPublisherId !== retry.ownerPublisherId ||
     (attempt.ownerUserId !== undefined && attempt.ownerUserId !== retry.ownerUserId) ||
     parent.ownerUserId !== retry.ownerUserId ||
     parent.ownerPublisherId !== retry.ownerPublisherId ||
@@ -319,7 +339,8 @@ async function assertRetryFinalization(
     !owner ||
     owner.deletedAt ||
     owner.deactivatedAt ||
-    (retry.ownerPublisherId && !isPublisherActive(publisher))
+    (retry.ownerPublisherId && !isPublisherActive(publisher)) ||
+    !matchesAttemptPublisher(attempt, retry.ownerUserId, retry.ownerPublisherId, owner, publisher)
   ) {
     throw new ConvexError("Operational retry publisher is unavailable");
   }

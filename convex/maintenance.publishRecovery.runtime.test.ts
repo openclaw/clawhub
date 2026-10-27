@@ -119,6 +119,85 @@ async function fixture(kind: "skill" | "package" = "skill") {
 }
 
 describe("operator retry of retained publication checks", () => {
+  it.each(["skill", "package"] as const)(
+    "recovers a legacy %s after canonical personal-publisher migration",
+    async (kind) => {
+      const { t, ids, args } = await fixture(kind);
+      const publisherId = await t.run(async (ctx) => {
+        const personalId = await ctx.db.insert("publishers", {
+          kind: "user",
+          handle: "retained-fixture",
+          displayName: "Retained fixture",
+          linkedUserId: ids.userId,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        await ctx.db.patch(ids.userId, { personalPublisherId: personalId });
+        await ctx.db.patch((ids.skillId ?? ids.packageId)!, { ownerPublisherId: personalId });
+        await ctx.db.patch(ids.attemptId, { ownerUserId: undefined });
+        if (ids.packageReleaseId)
+          await ctx.db.patch(ids.packageReleaseId, { pendingPublication: {} });
+        return personalId;
+      });
+      await expect(
+        t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+          ...args,
+          dryRun: false,
+        }),
+      ).resolves.toMatchObject({ eligible: true, requeued: true });
+      await t.run((ctx) =>
+        ctx.db.patch(ids.attemptId, {
+          status: "finalizing",
+          checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+          finalizationClaimId: "migration",
+          finalizationClaimExpiresAt: Date.now() + 60_000,
+        }),
+      );
+      if (ids.packageReleaseId) {
+        await t.mutation(internal.packages.publishPendingReleaseInternal, {
+          releaseId: ids.packageReleaseId,
+          publishAttemptId: ids.attemptId,
+          finalizationClaimId: "migration",
+        });
+      } else {
+        const version = await t.run((ctx) => ctx.db.get(ids.skillVersionId!));
+        await t.mutation(internal.skills.publishPendingVersionInternal, {
+          versionId: ids.skillVersionId!,
+          publishAttemptId: ids.attemptId,
+          finalizationClaimId: "migration",
+          publishArgs: {
+            userId: ids.userId,
+            ownerPublisherId: publisherId,
+            displayName: "Retained fixture",
+            version: "1.0.0",
+            changelog: "",
+            files: version!.files,
+            parsed: version!.parsed,
+            embedding: Array(1536).fill(0),
+            llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 2 },
+            staticScan: {
+              status: "clean",
+              reasonCodes: [],
+              findings: [],
+              summary: "Fixture",
+              engineVersion: "fixture",
+              checkedAt: 1,
+            },
+          },
+        });
+      }
+      const target = await t.run((ctx) =>
+        ctx.db.get((ids.skillVersionId ?? ids.packageReleaseId)!),
+      );
+      expect(target).toMatchObject({ publicationStatus: "published" });
+      expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({
+        userId: ids.userId,
+        checkFailureCount: 3,
+        artifactFingerprint: args.expectedArtifactFingerprint,
+      });
+      expect((await t.run((ctx) => ctx.db.get(ids.attemptId)))!.ownerPublisherId).toBeUndefined();
+    },
+  );
   it.each([
     ["skill", "allowed"],
     ["package", "allowed"],
@@ -275,6 +354,82 @@ describe("operator retry of retained publication checks", () => {
         });
     }
   });
+  it.each(["admission", "finalization"] as const)(
+    "rejects a changed personal link at %s",
+    async (stage) => {
+      const { t, ids, args } = await fixture();
+      const link = await t.run(async (ctx) => {
+        const otherUserId = await ctx.db.insert("users", { handle: "other" });
+        const publisherId = await ctx.db.insert("publishers", {
+          kind: "user",
+          handle: "retained-fixture",
+          displayName: "Fixture",
+          linkedUserId: ids.userId,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        await ctx.db.patch(ids.userId, { personalPublisherId: publisherId });
+        await ctx.db.patch(ids.skillId!, { ownerPublisherId: publisherId });
+        await ctx.db.patch(ids.attemptId, { ownerUserId: undefined });
+        return { otherUserId, publisherId };
+      });
+      if (stage === "finalization") {
+        await t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+          ...args,
+          dryRun: false,
+        });
+        await t.run((ctx) =>
+          ctx.db.patch(ids.attemptId, {
+            status: "finalizing",
+            checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+            finalizationClaimId: "migration",
+            finalizationClaimExpiresAt: Date.now() + 60_000,
+          }),
+        );
+      }
+      await t.run((ctx) => ctx.db.patch(link.publisherId, { linkedUserId: link.otherUserId }));
+      if (stage === "admission") {
+        await expect(
+          t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+            ...args,
+            dryRun: false,
+          }),
+        ).resolves.toMatchObject({ eligible: false, requeued: false });
+      } else {
+        const version = await t.run((ctx) => ctx.db.get(ids.skillVersionId!));
+        await expect(
+          t.mutation(internal.skills.publishPendingVersionInternal, {
+            versionId: ids.skillVersionId!,
+            publishAttemptId: ids.attemptId,
+            finalizationClaimId: "migration",
+            publishArgs: {
+              userId: ids.userId,
+              ownerPublisherId: link.publisherId,
+              displayName: "Fixture",
+              version: "1.0.0",
+              changelog: "",
+              files: version!.files,
+              parsed: version!.parsed,
+              embedding: Array(1536).fill(0),
+              llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 2 },
+              staticScan: {
+                status: "clean",
+                reasonCodes: [],
+                findings: [],
+                summary: "Fixture",
+                engineVersion: "fixture",
+                checkedAt: 1,
+              },
+            },
+          }),
+        ).rejects.toThrow();
+      }
+      expect(await t.run((ctx) => ctx.db.get(ids.skillVersionId!))).toMatchObject({
+        publicationStatus: "pending",
+      });
+    },
+  );
+
   it("refuses a completed analysis with a malicious verdict at admission", async () => {
     const { t, ids, args } = await fixture();
     await t.run((ctx) =>
