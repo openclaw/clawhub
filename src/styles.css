@@ -29564,7 +29564,8 @@ a[class*="rounded-full"] {
 
 .navbar-calm .navbar-top {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 360px) minmax(0, 1fr);
+  /* Primary navigation can grow without painting underneath the search field. */
+  grid-template-columns: max-content minmax(180px, 1fr) max-content;
   align-items: center;
   gap: 12px 24px;
   position: relative;
@@ -30163,7 +30164,7 @@ a[class*="rounded-full"] {
   mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 100%);
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1439px) {
   .navbar-calm-rail-link-secondary {
     display: none;
   }

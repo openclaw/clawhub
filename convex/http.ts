@@ -17,6 +17,7 @@ import {
   searchSkillsHttp,
 } from "./httpApi";
 import {
+  themesV1Http,
   featuredV1Http,
   searchInsightsV1Http,
   searchReportsV1Http,
@@ -92,6 +93,9 @@ import { skillPresentationAssetHttp } from "./skillPresentationAssetsHttp";
 const http = installRateLimitedRoutes(httpRouter());
 
 auth.addHttpRoutes(http);
+http.route({ path: "/api/v1/themes", method: "GET", handler: themesV1Http });
+http.route({ pathPrefix: "/api/v1/themes/", method: "GET", handler: themesV1Http });
+http.route({ path: "/api/v1/themes", method: "POST", handler: themesV1Http });
 http.route({
   path: "/api/v1/search-insights/reports",
   method: "POST",

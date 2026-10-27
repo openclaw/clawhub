@@ -8,6 +8,8 @@ export const PublicRegistryPaths = {
   home: "/",
   skills: "/skills",
   plugins: "/plugins",
+  // A tilde cannot be a publisher handle: keep /appearance profile URLs intact.
+  appearance: "/~appearance",
   official: "/official",
   search: "/search",
   audits: "/audits",
@@ -25,6 +27,11 @@ export const PUBLIC_REGISTRY_SURFACES = [
     label: "Plugins and packages",
     path: PublicRegistryPaths.plugins,
     summary: "Browse and search OpenClaw plugin package records.",
+  },
+  {
+    label: "Appearance",
+    path: PublicRegistryPaths.appearance,
+    summary: "Browse data-only themes and Lobster Packs for OpenClaw.",
   },
   {
     label: "Official",

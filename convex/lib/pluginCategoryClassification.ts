@@ -39,6 +39,7 @@ function staticMetadata(value: unknown) {
       "skills",
       "bundledSkills",
       "mcpServers",
+      "lobsterPacks",
     ]
       .filter((key) => Object.hasOwn(record, key))
       .map((key) => [key, record[key]]),

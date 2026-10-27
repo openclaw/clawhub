@@ -413,7 +413,7 @@ function PluginsIndex() {
       : "skip",
   );
 
-  const activeSort: PluginSort =
+  const activeSort: VisiblePluginSort =
     search.sort === "installs"
       ? "downloads"
       : search.sort === "relevance" || search.sort === "newest" || search.sort === "name"

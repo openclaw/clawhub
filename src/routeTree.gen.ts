@@ -44,6 +44,7 @@ import { Route as SkillsPublishRouteImport } from './routes/skills/publish'
 import { Route as UHandleRouteImport } from './routes/u/$handle'
 import { Route as UserHandleRouteImport } from './routes/user/$handle'
 import { Route as UsersIndexRouteImport } from './routes/users/index'
+import { Route as Char126appearanceIndexRouteImport } from './routes/~appearance/index'
 import { Route as OwnerSlugSecurityAuditRouteImport } from './routes/$owner/$slug/security-audit'
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
 import { Route as OwnerClawsSlugRouteImport } from './routes/$owner/claws/$slug'
@@ -59,6 +60,7 @@ import { Route as OwnerSkillsSlugSettingsRouteImport } from './routes/$owner/ski
 import { Route as PluginsNameSecurityScannerRouteImport } from './routes/plugins/$name/security/$scanner'
 import { Route as PluginsScopeNameSecurityAuditRouteImport } from './routes/plugins/$scope/$name/security-audit'
 import { Route as SkillsShOwnerRepoSlugRouteImport } from './routes/skills-sh/$owner/$repo/$slug'
+import { Route as Char126appearanceThemesOwnerSlugRouteImport } from './routes/~appearance/themes/$owner/$slug'
 import { Route as OwnerPluginsSlugSecurityScannerRouteImport } from './routes/$owner/plugins/$slug/security/$scanner'
 import { Route as OwnerSkillsSlugSecurityScannerRouteImport } from './routes/$owner/skills/$slug/security/$scanner'
 import { Route as PluginsScopeNameSecurityScannerRouteImport } from './routes/plugins/$scope/$name/security/$scanner'
@@ -239,6 +241,11 @@ const UsersIndexRoute = UsersIndexRouteImport.update({
   path: '/users/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Char126appearanceIndexRoute = Char126appearanceIndexRouteImport.update({
+  id: '/~appearance/',
+  path: '/~appearance/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OwnerSlugSecurityAuditRoute = OwnerSlugSecurityAuditRouteImport.update({
   id: '/security-audit',
   path: '/security-audit',
@@ -320,6 +327,12 @@ const SkillsShOwnerRepoSlugRoute = SkillsShOwnerRepoSlugRouteImport.update({
   path: '/skills-sh/$owner/$repo/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Char126appearanceThemesOwnerSlugRoute =
+  Char126appearanceThemesOwnerSlugRouteImport.update({
+    id: '/~appearance/themes/$owner/$slug',
+    path: '/~appearance/themes/$owner/$slug',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const OwnerPluginsSlugSecurityScannerRoute =
   OwnerPluginsSlugSecurityScannerRouteImport.update({
     id: '/security/$scanner',
@@ -381,6 +394,7 @@ export interface FileRoutesByFullPath {
   '/publishers/': typeof PublishersIndexRoute
   '/skills/': typeof SkillsIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/~appearance/': typeof Char126appearanceIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/$owner/claws/$slug': typeof OwnerClawsSlugRoute
@@ -396,6 +410,7 @@ export interface FileRoutesByFullPath {
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
   '/skills-sh/$owner/$repo/$slug': typeof SkillsShOwnerRepoSlugRoute
+  '/~appearance/themes/$owner/$slug': typeof Char126appearanceThemesOwnerSlugRoute
   '/$owner/plugins/$slug/security/$scanner': typeof OwnerPluginsSlugSecurityScannerRoute
   '/$owner/skills/$slug/security/$scanner': typeof OwnerSkillsSlugSecurityScannerRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
@@ -437,6 +452,7 @@ export interface FileRoutesByTo {
   '/publishers': typeof PublishersIndexRoute
   '/skills': typeof SkillsIndexRoute
   '/users': typeof UsersIndexRoute
+  '/~appearance': typeof Char126appearanceIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/$owner/claws/$slug': typeof OwnerClawsSlugRoute
@@ -452,6 +468,7 @@ export interface FileRoutesByTo {
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
   '/skills-sh/$owner/$repo/$slug': typeof SkillsShOwnerRepoSlugRoute
+  '/~appearance/themes/$owner/$slug': typeof Char126appearanceThemesOwnerSlugRoute
   '/$owner/plugins/$slug/security/$scanner': typeof OwnerPluginsSlugSecurityScannerRoute
   '/$owner/skills/$slug/security/$scanner': typeof OwnerSkillsSlugSecurityScannerRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
@@ -494,6 +511,7 @@ export interface FileRoutesById {
   '/publishers/': typeof PublishersIndexRoute
   '/skills/': typeof SkillsIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/~appearance/': typeof Char126appearanceIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/$owner/claws/$slug': typeof OwnerClawsSlugRoute
@@ -509,6 +527,7 @@ export interface FileRoutesById {
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
   '/skills-sh/$owner/$repo/$slug': typeof SkillsShOwnerRepoSlugRoute
+  '/~appearance/themes/$owner/$slug': typeof Char126appearanceThemesOwnerSlugRoute
   '/$owner/plugins/$slug/security/$scanner': typeof OwnerPluginsSlugSecurityScannerRoute
   '/$owner/skills/$slug/security/$scanner': typeof OwnerSkillsSlugSecurityScannerRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
@@ -552,6 +571,7 @@ export interface FileRouteTypes {
     | '/publishers/'
     | '/skills/'
     | '/users/'
+    | '/~appearance/'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
     | '/$owner/claws/$slug'
@@ -567,6 +587,7 @@ export interface FileRouteTypes {
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
     | '/skills-sh/$owner/$repo/$slug'
+    | '/~appearance/themes/$owner/$slug'
     | '/$owner/plugins/$slug/security/$scanner'
     | '/$owner/skills/$slug/security/$scanner'
     | '/plugins/$scope/$name/security/$scanner'
@@ -608,6 +629,7 @@ export interface FileRouteTypes {
     | '/publishers'
     | '/skills'
     | '/users'
+    | '/~appearance'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
     | '/$owner/claws/$slug'
@@ -623,6 +645,7 @@ export interface FileRouteTypes {
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
     | '/skills-sh/$owner/$repo/$slug'
+    | '/~appearance/themes/$owner/$slug'
     | '/$owner/plugins/$slug/security/$scanner'
     | '/$owner/skills/$slug/security/$scanner'
     | '/plugins/$scope/$name/security/$scanner'
@@ -664,6 +687,7 @@ export interface FileRouteTypes {
     | '/publishers/'
     | '/skills/'
     | '/users/'
+    | '/~appearance/'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
     | '/$owner/claws/$slug'
@@ -679,6 +703,7 @@ export interface FileRouteTypes {
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
     | '/skills-sh/$owner/$repo/$slug'
+    | '/~appearance/themes/$owner/$slug'
     | '/$owner/plugins/$slug/security/$scanner'
     | '/$owner/skills/$slug/security/$scanner'
     | '/plugins/$scope/$name/security/$scanner'
@@ -721,12 +746,14 @@ export interface RootRouteChildren {
   PublishersIndexRoute: typeof PublishersIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
+  Char126appearanceIndexRoute: typeof Char126appearanceIndexRoute
   OwnerClawsSlugRoute: typeof OwnerClawsSlugRoute
   OwnerPluginsSlugRoute: typeof OwnerPluginsSlugRouteWithChildren
   OwnerSkillsSlugRoute: typeof OwnerSkillsSlugRouteWithChildren
   PackagesScopeNameRoute: typeof PackagesScopeNameRoute
   PluginsScopeNameRoute: typeof PluginsScopeNameRouteWithChildren
   SkillsShOwnerRepoSlugRoute: typeof SkillsShOwnerRepoSlugRoute
+  Char126appearanceThemesOwnerSlugRoute: typeof Char126appearanceThemesOwnerSlugRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -976,6 +1003,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UsersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/~appearance/': {
+      id: '/~appearance/'
+      path: '/~appearance'
+      fullPath: '/~appearance/'
+      preLoaderRoute: typeof Char126appearanceIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/$owner/$slug/security-audit': {
       id: '/$owner/$slug/security-audit'
       path: '/security-audit'
@@ -1079,6 +1113,13 @@ declare module '@tanstack/react-router' {
       path: '/skills-sh/$owner/$repo/$slug'
       fullPath: '/skills-sh/$owner/$repo/$slug'
       preLoaderRoute: typeof SkillsShOwnerRepoSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/~appearance/themes/$owner/$slug': {
+      id: '/~appearance/themes/$owner/$slug'
+      path: '/~appearance/themes/$owner/$slug'
+      fullPath: '/~appearance/themes/$owner/$slug'
+      preLoaderRoute: typeof Char126appearanceThemesOwnerSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$owner/plugins/$slug/security/$scanner': {
@@ -1223,12 +1264,14 @@ const rootRouteChildren: RootRouteChildren = {
   PublishersIndexRoute: PublishersIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
+  Char126appearanceIndexRoute: Char126appearanceIndexRoute,
   OwnerClawsSlugRoute: OwnerClawsSlugRoute,
   OwnerPluginsSlugRoute: OwnerPluginsSlugRouteWithChildren,
   OwnerSkillsSlugRoute: OwnerSkillsSlugRouteWithChildren,
   PackagesScopeNameRoute: PackagesScopeNameRoute,
   PluginsScopeNameRoute: PluginsScopeNameRouteWithChildren,
   SkillsShOwnerRepoSlugRoute: SkillsShOwnerRepoSlugRoute,
+  Char126appearanceThemesOwnerSlugRoute: Char126appearanceThemesOwnerSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

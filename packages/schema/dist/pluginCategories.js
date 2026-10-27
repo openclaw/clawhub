@@ -56,6 +56,8 @@ export function inferPluginCategoriesFromManifest(manifest) {
     };
     const kinds = Array.isArray(manifest.kind) ? manifest.kind : [manifest.kind];
     const contracts = isRecord(manifest.contracts) ? manifest.contracts : {};
+    if (hasValues(manifest.lobsterPacks))
+        add("lobster-packs");
     if (hasValues(manifest.channels))
         add("channels");
     if (hasValues(manifest.providers) || hasValues(manifest.cliBackends))

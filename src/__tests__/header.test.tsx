@@ -750,7 +750,14 @@ describe("Header", () => {
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels.slice(0, 5)).toEqual(["Home", "Skills", "Plugins", "Official", "Docs"]);
+    expect(labels.slice(0, 6)).toEqual([
+      "Home",
+      "Skills",
+      "Plugins",
+      "Appearance",
+      "Official",
+      "Docs",
+    ]);
     expect(
       document.querySelector(".mobile-nav-appearance-section .navbar-theme-switcher"),
     ).toBeTruthy();
@@ -777,7 +784,15 @@ describe("Header", () => {
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels).toEqual(["Home", "Skills", "Plugins", "Official", "Docs", "Support"]);
+    expect(labels).toEqual([
+      "Home",
+      "Skills",
+      "Plugins",
+      "Appearance",
+      "Official",
+      "Docs",
+      "Support",
+    ]);
   });
 
   it("links profile and bookmarks from the signed-in avatar menu", () => {
