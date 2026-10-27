@@ -8,6 +8,11 @@
  * @module
  */
 
+import type {
+  ApiFromModules,
+  FilterApi,
+  FunctionReference,
+} from "convex/server";
 import type * as agentSkillsHttp from "../agentSkillsHttp.js";
 import type * as appMeta from "../appMeta.js";
 import type * as auth from "../auth.js";
@@ -57,6 +62,7 @@ import type * as httpApiV1_shared from "../httpApiV1/shared.js";
 import type * as httpApiV1_skillsShCatalogV1 from "../httpApiV1/skillsShCatalogV1.js";
 import type * as httpApiV1_skillsV1 from "../httpApiV1/skillsV1.js";
 import type * as httpApiV1_starsV1 from "../httpApiV1/starsV1.js";
+import type * as httpApiV1_themesV1 from "../httpApiV1/themesV1.js";
 import type * as httpApiV1_transfersV1 from "../httpApiV1/transfersV1.js";
 import type * as httpApiV1_trendingV1 from "../httpApiV1/trendingV1.js";
 import type * as httpApiV1_usersV1 from "../httpApiV1/usersV1.js";
@@ -275,18 +281,21 @@ import type * as stars from "../stars.js";
 import type * as staticPublishScanNode from "../staticPublishScanNode.js";
 import type * as statsMaintenance from "../statsMaintenance.js";
 import type * as telemetry from "../telemetry.js";
+import type * as themes from "../themes.js";
 import type * as tokens from "../tokens.js";
 import type * as uploads from "../uploads.js";
 import type * as users from "../users.js";
 import type * as vt from "../vt.js";
 import type * as webhooks from "../webhooks.js";
 
-import type {
-  ApiFromModules,
-  FilterApi,
-  FunctionReference,
-} from "convex/server";
-
+/**
+ * A utility for referencing Convex functions in your app's API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
 declare const fullApi: ApiFromModules<{
   agentSkillsHttp: typeof agentSkillsHttp;
   appMeta: typeof appMeta;
@@ -337,6 +346,7 @@ declare const fullApi: ApiFromModules<{
   "httpApiV1/skillsShCatalogV1": typeof httpApiV1_skillsShCatalogV1;
   "httpApiV1/skillsV1": typeof httpApiV1_skillsV1;
   "httpApiV1/starsV1": typeof httpApiV1_starsV1;
+  "httpApiV1/themesV1": typeof httpApiV1_themesV1;
   "httpApiV1/transfersV1": typeof httpApiV1_transfersV1;
   "httpApiV1/trendingV1": typeof httpApiV1_trendingV1;
   "httpApiV1/usersV1": typeof httpApiV1_usersV1;
@@ -555,34 +565,17 @@ declare const fullApi: ApiFromModules<{
   staticPublishScanNode: typeof staticPublishScanNode;
   statsMaintenance: typeof statsMaintenance;
   telemetry: typeof telemetry;
+  themes: typeof themes;
   tokens: typeof tokens;
   uploads: typeof uploads;
   users: typeof users;
   vt: typeof vt;
   webhooks: typeof webhooks;
 }>;
-
-/**
- * A utility for referencing Convex functions in your app's public API.
- *
- * Usage:
- * ```js
- * const myFunctionReference = api.myModule.myFunction;
- * ```
- */
 export declare const api: FilterApi<
   typeof fullApi,
   FunctionReference<any, "public">
 >;
-
-/**
- * A utility for referencing Convex functions in your app's internal API.
- *
- * Usage:
- * ```js
- * const myFunctionReference = internal.myModule.myFunction;
- * ```
- */
 export declare const internal: FilterApi<
   typeof fullApi,
   FunctionReference<any, "internal">

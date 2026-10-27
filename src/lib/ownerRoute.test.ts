@@ -7,6 +7,11 @@ import {
 } from "./ownerRoute";
 
 describe("owner route segments", () => {
+  it("keeps Appearance publisher profiles reachable outside the app-only catalog namespace", () => {
+    expect(buildPublisherProfileHref("appearance")).toBe("/appearance");
+    expect(isOwnerRouteHandleSegment("appearance")).toBe(true);
+    expect(isOwnerRouteHandleSegment("~appearance")).toBe(false);
+  });
   it("uses the legacy profile route for official alias collisions", () => {
     expect(buildPublisherProfileHref("tencent")).toBe("/user/tencent");
     expect(buildPublisherProfileHref("steipete")).toBe("/steipete");

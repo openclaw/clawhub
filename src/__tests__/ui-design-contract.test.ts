@@ -352,9 +352,7 @@ describe("restored UI design contract", () => {
     expect(headerShell).toContain("padding: 0 var(--space-5)");
 
     const topRow = cssRule(css, ".navbar-calm .navbar-top");
-    expect(topRow).toContain(
-      "grid-template-columns: minmax(0, 1fr) minmax(240px, 360px) minmax(0, 1fr)",
-    );
+    expect(topRow).toContain("grid-template-columns: max-content minmax(180px, 1fr) max-content");
     const rail = cssRule(css, ".navbar-calm .navbar-calm-rail");
     expect(rail).toContain("display: flex");
     const moreTrigger = cssRule(css, ".navbar-calm-more-trigger");
@@ -379,7 +377,7 @@ describe("restored UI design contract", () => {
     expect(themeButton).toContain("justify-content: center");
     expect(css).toContain("--r-btn: var(--r-sm)");
 
-    cssMediaContaining(css, "(max-width: 1100px)", [
+    cssMediaContaining(css, "(max-width: 1439px)", [
       ".navbar-calm-rail-link-secondary {\n    display: none;",
       ".navbar-calm-more-trigger {\n    display: inline-flex;",
     ]);

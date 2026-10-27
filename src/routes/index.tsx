@@ -67,7 +67,10 @@ function SkillsHomeContent({ initialListing }: { initialListing: HomeListingInit
   const handleListingViewChange = useCallback(
     (view: HomeListingView) => {
       void navigate({
-        search: (prev) => ({ ...prev, ...homeListingSearchFromView(view) }),
+        search: (prev: ReturnType<typeof parseHomeListingSearch>) => ({
+          ...prev,
+          ...homeListingSearchFromView(view),
+        }),
         replace: true,
         resetScroll: false,
       });

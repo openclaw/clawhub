@@ -64,6 +64,8 @@ const ephemeral = (
 });
 
 export const RETENTION_POLICIES = {
+  themes: permanent("Canonical data-only theme identity and latest release metadata."),
+  themeVersions: permanent("Immutable, version-pinned data-only theme definitions."),
   searchReportRuns: ephemeral(
     "Private derived report generation outcomes, never search observations.",
     {

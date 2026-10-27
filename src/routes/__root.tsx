@@ -24,6 +24,7 @@ import {
 } from "../lib/authErrorMessage";
 import { getClawHubSiteUrl, SITE_DESCRIPTION, SITE_NAME } from "../lib/site";
 import { getThemeModeFromCookieHeader, normalizeThemeMode } from "../lib/themeCookie";
+import appearanceCss from "../appearance.css?url";
 import designSystemCss from "../design-system.css?url";
 import appCss from "../styles.css?url";
 
@@ -120,6 +121,10 @@ export const Route = createRootRoute({
         {
           rel: "stylesheet",
           href: appCss,
+        },
+        {
+          rel: "stylesheet",
+          href: appearanceCss,
         },
         {
           rel: "stylesheet",
