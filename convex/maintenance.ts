@@ -13,6 +13,7 @@ import { assertRole, requireUserFromAction } from "./lib/access";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { resolvePackageIcon } from "./lib/packageIcons";
 import { extractPackageDigestFields } from "./lib/packageSearchDigest";
+import { retryFailedPublishAttemptChecks } from "./lib/publishAttemptOperationalRecovery";
 import {
   derivePersonalPublisherHandle,
   ensurePersonalPublisherForUser,
@@ -46,6 +47,17 @@ const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 20;
 const MAX_MAX_BATCHES = 200;
+
+export const retryFailedPublishAttemptChecksInternal = internalMutation({
+  args: {
+    attemptId: v.id("publishAttempts"),
+    expectedArtifactFingerprint: v.string(),
+    expectedUpdatedAt: v.number(),
+    reason: v.string(),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: retryFailedPublishAttemptChecks,
+});
 
 export const prioritizeQueuedSkillEvaluationsInternal = internalMutation({
   args: {
