@@ -51,7 +51,7 @@ jobs:
       - uses: ./.github/actions/setup-bun
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
       - name: Install pinned Codex without login
         uses: ./.github/actions/setup-codex
       - name: Select bounded installer source

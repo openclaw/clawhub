@@ -165,6 +165,12 @@ type BundledSkillSpectorScanInput = {
 };
 
 export type ClawScanCommandDiagnostic = {
+  bundledSkillSpector?: {
+    failed: true;
+    timedOut: boolean;
+    exitCode: number | null;
+    termination?: WorkerCommandTermination;
+  };
   progress?: SafeClawScanProgress[];
   progressCounts?: { retained: number; rejected: number; limited: number };
   termination?: WorkerCommandTermination;
@@ -838,6 +844,7 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
     status: input.status,
     target: sanitizedTargetForDiagnostic(input.job.target),
     clawscanResult: {
+      bundledSkillSpector: input.clawscan?.bundledSkillSpector,
       progressPath: clawscanProgressPath,
       progressCounts: input.clawscan?.progressCounts,
       termination: input.clawscan?.termination,
@@ -1669,20 +1676,26 @@ export function aggregateSkillSpectorAnalyses(
 async function runBundledSkillSpector(
   workspace: string,
   scanInputs: BundledSkillSpectorScanInput[],
+  onDiagnostic: (diagnostic: Partial<ClawScanCommandDiagnostic>) => void,
 ) {
   const analyses: SkillSpectorAnalysis[] = [];
   const deadlineMs = Date.now() + clawScanTimeoutMs();
   for (const [index, scanInput] of scanInputs.entries()) {
     const remainingMs = deadlineMs - Date.now();
     if (remainingMs <= 0) {
+      onDiagnostic({ bundledSkillSpector: { failed: true, timedOut: true, exitCode: null } });
       throw new Error("SkillSpector bundled-skill scan deadline exceeded");
     }
     const resultPath = join(workspace, `skillspector-report-${index}.json`);
     const args = ["scan", scanInput.scanPath, "--format", "json", "--output", resultPath];
+    let termination: WorkerCommandTermination | undefined;
     try {
       await runCommand("skillspector", args, {
         cwd: workspace,
         timeoutMs: remainingMs,
+        onTermination: (next) => {
+          termination = next;
+        },
       });
       analyses.push(
         prefixSkillSpectorFindingPaths(
@@ -1691,22 +1704,38 @@ async function runBundledSkillSpector(
         ),
       );
     } catch (error) {
-      if (error instanceof CommandFailure) {
-        const rawResult = await readFile(resultPath, "utf8").catch(() => undefined);
-        if (rawResult) {
-          const analysis = prefixSkillSpectorFindingPaths(
-            normalizeSkillSpectorAnalysis(rawResult, 0),
-            scanInput.rootPath,
-          );
-          const validFindingsExit =
-            error.exitCode === 1 &&
-            (analysis.status === "suspicious" || analysis.status === "malicious") &&
-            analysis.issueCount > 0 &&
-            analysis.issues.length > 0;
-          if (validFindingsExit) {
-            analyses.push(analysis);
-            continue;
+      let acceptedFindings = false;
+      try {
+        if (error instanceof CommandFailure) {
+          const rawResult = await readFile(resultPath, "utf8").catch(() => undefined);
+          if (rawResult) {
+            const analysis = prefixSkillSpectorFindingPaths(
+              normalizeSkillSpectorAnalysis(rawResult, 0),
+              scanInput.rootPath,
+            );
+            const validFindingsExit =
+              error.exitCode === 1 &&
+              (analysis.status === "suspicious" || analysis.status === "malicious") &&
+              analysis.issueCount > 0 &&
+              analysis.issues.length > 0;
+            if (validFindingsExit) {
+              analyses.push(analysis);
+              acceptedFindings = true;
+              continue;
+            }
           }
+        }
+      } finally {
+        if (!acceptedFindings) {
+          onDiagnostic({
+            bundledSkillSpector: {
+              failed: true,
+              timedOut: error instanceof CommandFailure && error.timedOut,
+              exitCode:
+                error instanceof CommandFailure ? error.exitCode : (termination?.exitCode ?? null),
+              termination,
+            },
+          });
         }
       }
       throw error;
@@ -1715,10 +1744,14 @@ async function runBundledSkillSpector(
   return aggregateSkillSpectorAnalyses(analyses);
 }
 
-async function prepareBundledSkillSpector(job: ClaimedJob, workspace: string) {
+async function prepareBundledSkillSpector(
+  job: ClaimedJob,
+  workspace: string,
+  onDiagnostic: (diagnostic: Partial<ClawScanCommandDiagnostic>) => void,
+) {
   const scanInputs = await resolveBundledSkillSpectorScanInputs(workspace, job);
   const resultPath = join(workspace, "skillspector-aggregate.json");
-  const result = await runBundledSkillSpector(workspace, scanInputs);
+  const result = await runBundledSkillSpector(workspace, scanInputs, onDiagnostic);
   await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
   return resultPath;
 }
@@ -2069,7 +2102,7 @@ export async function runClawScan(
     // SkillSpector only understands skills. ClawHub owns the plugin manifest
     // boundary, so never let ClawScan fall back to scanning the whole package.
     const skillSpectorResultPath =
-      preparedSkillSpectorPath ?? (await prepareBundledSkillSpector(job, workspace));
+      preparedSkillSpectorPath ?? (await prepareBundledSkillSpector(job, workspace, onDiagnostic));
     args.push("--scanner-result", `skillspector=${skillSpectorResultPath}`);
   }
   args.push("--output", artifactPath);
@@ -2181,7 +2214,11 @@ export function scanHealthClassification(input: {
   errorMessage?: string;
   status: "completed" | "failed";
 }) {
-  const timedOut = Boolean(input.clawscan.timedOut || input.endor?.timedOut);
+  const timedOut = Boolean(
+    input.clawscan.timedOut ||
+    input.clawscan.bundledSkillSpector?.timedOut ||
+    input.endor?.timedOut,
+  );
   const scannerStatuses = Object.values(input.clawscan.mapping?.scanners ?? {}).filter(
     (status): status is string => Boolean(status),
   );
@@ -2190,6 +2227,7 @@ export function scanHealthClassification(input: {
   );
   // processJob records an Endor error for every failed run, including exits and timeouts.
   scannerStageFailed ||= Boolean(input.endor?.error);
+  scannerStageFailed ||= Boolean(input.clawscan.bundledSkillSpector?.failed);
   const judgeStatus = input.clawscan.mapping?.judge?.status;
   let judgeStageFailed = Boolean(judgeStatus && judgeStatus !== "completed");
   scannerStageFailed ||= /ClawScan scanner/i.test(input.errorMessage ?? "");
@@ -2250,7 +2288,9 @@ export async function processJob(
           })
         : Promise.resolve(undefined),
       job.job.targetKind === "packageRelease"
-        ? prepareBundledSkillSpector(job, workspace)
+        ? prepareBundledSkillSpector(job, workspace, (next) => {
+            Object.assign(clawscan, next);
+          })
         : Promise.resolve(undefined),
     ]);
     if (endorResult.status === "fulfilled") {

@@ -69,8 +69,15 @@ test("public navigation routes render without runtime errors", async ({ browser 
     await stubExternalMediaInVitePreview(page);
     const errors = trackRuntimeErrors(page);
 
-    await page.goto(route.path, { waitUntil: "domcontentloaded" });
+    const response = await page.goto(route.path, { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1", { hasText: route.heading })).toBeVisible();
+    if (route.path === "/plugins") {
+      expect(response?.status()).toBe(200);
+      const html = await response!.text();
+      expect(html).not.toContain("Unable to load plugins");
+      expect(html).toContain('class="plugin-detail-link"');
+      await expect(page.locator(".plugin-detail-link").first()).toBeVisible();
+    }
     await expectHealthyPage(page, errors);
     await page.close();
   }
