@@ -147,6 +147,7 @@ import type * as lib_pluginDiscovery from "../lib/pluginDiscovery.js";
 import type * as lib_public from "../lib/public.js";
 import type * as lib_publicBrowse from "../lib/publicBrowse.js";
 import type * as lib_publicRouteReservations from "../lib/publicRouteReservations.js";
+import type * as lib_publishAttemptOperationalRecovery from "../lib/publishAttemptOperationalRecovery.js";
 import type * as lib_publishLimits from "../lib/publishLimits.js";
 import type * as lib_publisherAbuseOwnerSynchrony from "../lib/publisherAbuseOwnerSynchrony.js";
 import type * as lib_publisherAbuseScoring from "../lib/publisherAbuseScoring.js";
@@ -427,6 +428,7 @@ declare const fullApi: ApiFromModules<{
   "lib/public": typeof lib_public;
   "lib/publicBrowse": typeof lib_publicBrowse;
   "lib/publicRouteReservations": typeof lib_publicRouteReservations;
+  "lib/publishAttemptOperationalRecovery": typeof lib_publishAttemptOperationalRecovery;
   "lib/publishLimits": typeof lib_publishLimits;
   "lib/publisherAbuseOwnerSynchrony": typeof lib_publisherAbuseOwnerSynchrony;
   "lib/publisherAbuseScoring": typeof lib_publisherAbuseScoring;
