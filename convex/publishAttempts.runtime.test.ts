@@ -248,3 +248,48 @@ describe("publish attempt runtime recovery", () => {
     });
   });
 });
+
+describe("targeted prepublication worker redelivery", () => {
+  it.each(["finalized", "finalizing", "blocked", "expired"] as const)(
+    "drains an attempt already %s without changing its checks or claims",
+    async (status) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "redelivery-worker-fixture");
+      const t = convexTest(schema, modules);
+      const attemptId = await t.run(async (ctx) => {
+        const userId = await ctx.db.insert("users", { handle: "redelivery-publisher" });
+        return ctx.db.insert("publishAttempts", {
+          kind: "skill",
+          status,
+          userId,
+          slug: "redelivery-skill",
+          displayName: "Redelivery skill",
+          version: "1.0.0",
+          idempotencyKey: "redelivery-fixture",
+          artifactFingerprint: "immutable-redelivery-artifact",
+          files: [],
+          checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+          finalizationClaimId: "existing-finalizer",
+          finalizationClaimExpiresAt: Date.now() + 60_000,
+          createdAt: 1,
+          updatedAt: 1,
+          expiresAt: Date.now() + 60_000,
+        });
+      });
+      const before = await t.run((ctx) => ctx.db.get(attemptId));
+      try {
+        await expect(
+          t.action(api.publishAttempts.claimPrePublicationChecks, {
+            token: "redelivery-worker-fixture",
+            attemptId,
+            kind: "skill",
+            slug: "redelivery-skill",
+            version: "1.0.0",
+          }),
+        ).resolves.toBeNull();
+        expect(await t.run((ctx) => ctx.db.get(attemptId))).toEqual(before);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+});
