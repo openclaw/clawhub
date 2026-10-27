@@ -251,7 +251,10 @@ jobs:
       - name: Deploy Convex Test
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bun run convex:deploy
+        run: |
+          set -euo pipefail
+          bun run convex:deploy
+          bunx convex env set SECURITY_SCAN_EVENT_DISPATCH_ENABLED 1 --prod
 
       - name: Stamp Convex build SHA
         env:

@@ -21,6 +21,7 @@ import {
   runPairedDiagnostic,
   validDiagnosticEventContext,
 } from "./clawscan-diagnostic-pair";
+import { runTinySanityDiagnostic } from "./clawscan-diagnostic-sanity";
 import { clawScanExposure } from "./clawscan-exposure";
 import { createClawScanProgressCollector, type SafeClawScanProgress } from "./clawscan-progress";
 import { validateClawScanArtifactForClawHubProfile } from "./run-codex-scan-worker";
@@ -29,8 +30,6 @@ import { securityScannerEnvironment } from "./securityModelPolicy";
 export const INCIDENT_SOURCE_PIN = "e9d0e9e05506d9e9aa9725fe2f4da20e2870db9b";
 export const DIAGNOSTIC_PROCESS_BUDGET_MS = 900_000;
 const LABEL = "NONPRODUCTION_DIAGNOSTIC";
-const tinyContent =
-  "---\nname: harmless-diagnostic\ndescription: A harmless diagnostic fixture.\n---\n# Harmless diagnostic\nReply hello. No tools, installation, networking, or code execution are needed.\n";
 
 function diagnosticStages(artifact?: unknown) {
   const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -104,6 +103,7 @@ export async function runDiagnosticProcess(
     artifactPath: string;
     timeoutMs?: number;
     eventContext?: DiagnosticEventContext;
+    includeVerdict?: boolean;
   },
 ) {
   const timeoutMs = options.timeoutMs ?? DIAGNOSTIC_PROCESS_BUDGET_MS;
@@ -158,7 +158,10 @@ export async function runDiagnosticProcess(
     termination: termination as WorkerCommandTermination | null,
     diagnosticRecords: progress.counts,
     lastProgress: lastProgress as SafeClawScanProgress | null,
-    ...(await diagnosticArtifactMetadata(options.artifactPath, options.eventContext !== undefined)),
+    ...(await diagnosticArtifactMetadata(
+      options.artifactPath,
+      options.includeVerdict === true || options.eventContext !== undefined,
+    )),
   };
 }
 
@@ -254,7 +257,7 @@ export async function attestRuntime(
           ? [
               "public archive container differs from original VT ZIP; original bytes verified before execution",
             ]
-          : ["harmless tiny fixture, not the incident artifact"]),
+          : ["fixed benign and malicious tiny fixtures, not incident artifacts"]),
         "no worker preparation/publication; timings cover the ClawScan process separately",
         ...(source === "incident"
           ? []
@@ -348,7 +351,10 @@ export async function main(args = process.argv.slice(2)) {
     const installed = await attestRuntime(source, fixture, runtime, env);
     await writeFile(join(output, "attestation.json"), JSON.stringify(installed.metadata, null, 2));
     const target = join(runtime, "input");
-    let identity: { files: number; bytes: number; manifestSha256?: string };
+    let identity: { files: number; bytes: number; manifestSha256?: string } = {
+      files: 0,
+      bytes: 0,
+    };
     const manifest =
       fixture === "small-timeout-paired"
         ? smallTimeoutManifest
@@ -357,12 +363,6 @@ export async function main(args = process.argv.slice(2)) {
           : incidentManifest;
     const archive = fixture !== "tiny" ? await downloadIncidentArchive(fixture) : undefined;
     if (fixture !== "tiny") identity = await extractDiagnosticArchive(archive!, target, manifest);
-    else {
-      await mkdir(target, { mode: 0o700 });
-      await writeFile(join(target, "SKILL.md"), tinyContent, { mode: 0o400 });
-      await chmod(target, 0o500);
-      identity = { files: 1, bytes: Buffer.byteLength(tinyContent) };
-    }
     if (fixture !== "tiny") await verifyDiagnosticTree(target, manifest);
     const apiKey = process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY;
     if (!apiKey) throw new Error("Existing CI key reference required");
@@ -381,6 +381,21 @@ export async function main(args = process.argv.slice(2)) {
       }),
       { CLAWSCAN_PROGRESS: "1", CLAWSCAN_CHILD_PROGRESS: "1" },
     );
+    if (fixture === "tiny") {
+      const summary = await runTinySanityDiagnostic({
+        root: runtime,
+        binary: installed.binary,
+        env,
+        eventsPath: join(output, "events.jsonl"),
+        runProcess: runDiagnosticProcess,
+      });
+      await writeFile(
+        summaryPath,
+        JSON.stringify({ ...summary, fixture, source: installed.metadata.source }, null, 2),
+      );
+      if (summary.status !== "completed") process.exitCode = 1;
+      return;
+    }
     if (fixture === "small-timeout-paired") {
       const summary = await runPairedDiagnostic({
         root: runtime,
