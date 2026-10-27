@@ -104,6 +104,19 @@ export function SkillEvaluationReport({ result }: { result: SkillEvaluationResul
             <dd>{evaluator.attempts} per case</dd>
           </div>
           <div>
+            <dt>Completed</dt>
+            <dd>
+              <time dateTime={new Date(result.completedAt).toISOString()}>
+                {new Date(result.completedAt).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                  timeZone: "UTC",
+                })}
+              </time>
+            </dd>
+          </div>
+          <div>
             <dt>Source</dt>
             <dd>
               <a href={sourceCommitHref} target="_blank" rel="noreferrer">

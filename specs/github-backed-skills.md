@@ -510,7 +510,10 @@ The worker discovers only SkillEvaluator's supported upstream `evals/` layout.
 Missing, conflicting, or unsupported eval inputs produce a durable skipped
 reason instead of a guessed mapping. A completed result is published only while
 its content hash still matches the current visible skill; pending, skipped,
-failed, stale, hidden, and deleted results do not add an Evals tab.
+failed, stale, hidden, and deleted results do not add an Evals tab. The public
+lookup selects the latest successful completion for that content across model
+recipes, preserving the selected run's original evaluator and model labels.
+Changing the current recipe does not hide an existing completed result.
 
 The production credential boundary is capability-based. The trusted worker
 parent removes GitHub, Convex, and worker control-plane credentials before any

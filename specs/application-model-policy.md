@@ -40,9 +40,10 @@ The new evaluation config key ends with
 `model-policy-v2:medium:high:default`; model names, evaluator commit, environment,
 and attempts remain part of the key. The old key and original model recipe
 remain recognized without new effort/tier injection. Never rewrite historical
-rows or interpret old scores as results of the new recipe. Public current-result
-lookup still requires the current config key. New current scores require a new
-evaluation, not a migration of previous scores. Runtime schema is unchanged.
+rows or interpret old scores as results of the new recipe. Public result lookup
+shows the latest successful completed evaluation for the current skill content,
+with that run's original evaluator and model provenance, across recipe versions.
+New-recipe scores require a new evaluation, not a migration of previous scores.
 
 Plugin classifier identity advances to `plugin-single-category-v8` and search
 intent to `search-intent-v3`. Previously reviewed/applied category decisions

@@ -2254,6 +2254,12 @@ const skillEvaluationRuns = defineTable({
   updatedAt: v.number(),
 })
   .index("by_skill_content_hash_config_key", ["skillId", "contentHash", "configKey"])
+  .index("by_skill_content_status_completed_at", [
+    "skillId",
+    "contentHash",
+    "status",
+    "completedAt",
+  ])
   .index("by_status_next_run_at", ["status", "nextRunAt"])
   .index("by_status_source_next_run_at", ["status", "source", "nextRunAt"])
   .index("by_status_lease_expires_at", ["status", "leaseExpiresAt"]);

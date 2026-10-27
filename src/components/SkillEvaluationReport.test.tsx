@@ -55,7 +55,9 @@ describe("SkillEvaluationReport", () => {
     expect(screen.getByText("Codex (gpt-5.4-mini)")).toBeTruthy();
     expect(screen.getByText("OpenAI (gpt-5.4)")).toBeTruthy();
     expect(screen.queryByText("SkillEvaluator v0.1.0")).toBeNull();
-    expect(screen.queryByText("Aug 18, 2026")).toBeNull();
+    expect(screen.getByText("Aug 18, 2026").getAttribute("dateTime")).toBe(
+      "2026-08-18T19:05:00.000Z",
+    );
     expect(screen.getByText("Security")).toBeTruthy();
     expect(screen.getByText("Correctness")).toBeTruthy();
     expect(screen.getByText("Discoverability")).toBeTruthy();
