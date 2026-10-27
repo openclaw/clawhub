@@ -102,3 +102,17 @@ Do not reintroduce a static global Vercel CSP with
 script `'unsafe-inline'`. First-paint theme state is represented with a
 server-readable preference cookie plus CSS media queries, not a pre-hydration
 theme bootstrap script.
+
+## Server-rendered package reads
+
+Server-side package reads use Nitro's internal API proxy so the proxy supplies
+its deployment identity without a separate request through deployment protection.
+Read the original request headers through a bundler-visible server-only import;
+portable production artifacts must not rely on an unbundled framework dependency.
+Preserve the canonical client-IP headers so the proxy can attest the visitor's IP.
+
+Deployment identity is not viewer authorization. Public catalog SSR must continue
+to omit viewer cookies and authorization headers, while request-scoped package
+reads preserve them for the backend's existing access checks. Browser reads keep
+their same-origin fetch behavior. Do not weaken edge verification or private
+package visibility to recover a failed server-rendered catalog.
