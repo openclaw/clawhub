@@ -58,14 +58,9 @@ it("does not let a nested package.json relocate a legacy bundle root", async () 
 });
 
 it.each([
-  {
-    family: "code-plugin",
-    paths: ["openclaw.plugin.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json"],
-  },
-  { family: "bundle-plugin", paths: ["openclaw.plugin.json"] },
   { family: "code-plugin", paths: [".claude-plugin/plugin.json"] },
   { family: "unknown", paths: ["openclaw.plugin.json"] },
-  { family: "bundle-plugin", paths: [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"] },
+  { family: "bundle-plugin", paths: ["SKILL.md"] },
 ])("fails closed for mismatched or ambiguous family $family", async ({ family, paths }) => {
   const workspace = await tempDir();
   for (const path of paths) {
@@ -77,6 +72,36 @@ it.each([
     target: { package: { family } },
   } as unknown as ClaimedJob;
   await expect(resolveClawScanTarget(workspace, job)).rejects.toThrow();
+});
+
+it.each([
+  {
+    family: "code-plugin",
+    paths: ["openclaw.plugin.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json"],
+    selected: "openclaw.plugin.json",
+  },
+  { family: "bundle-plugin", paths: ["openclaw.plugin.json"], selected: "openclaw.plugin.json" },
+  {
+    family: "bundle-plugin",
+    paths: [
+      "openclaw.plugin.json",
+      ".claude-plugin/plugin.json",
+      ".codex-plugin/plugin.json",
+      ".cursor-plugin/plugin.json",
+    ],
+    selected: ".codex-plugin/plugin.json",
+  },
+])("preserves already-admitted legacy $family selection", async ({ family, paths, selected }) => {
+  const workspace = await tempDir();
+  for (const path of paths) {
+    await mkdir(dirname(join(workspace, "artifact", path)), { recursive: true });
+    await writeFile(join(workspace, "artifact", path), '{"name":"legacy","id":"legacy"}');
+  }
+  const job = {
+    job: { targetKind: "packageRelease" },
+    target: { package: { family } },
+  } as unknown as ClaimedJob;
+  await expect(resolveClawScanTarget(workspace, job)).resolves.toBe(`./artifact/${selected}`);
 });
 
 afterEach(async () => {

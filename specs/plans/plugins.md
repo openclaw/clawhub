@@ -282,7 +282,7 @@ Suggested storage model:
 
 ### Family-aware plugin input contract
 
-Publication and worker selection discriminate the existing `code-plugin` and
+New publication admission discriminates the existing `code-plugin` and
 `bundle-plugin` families before interpreting identity. Native manifests retain
 their required `id`, install-path grammar, config schema, entrypoint and source
 gates. Supported bundles have exactly one `.codex-plugin/plugin.json`,
@@ -305,7 +305,16 @@ New pending attempts carry the admitted package family into worker metadata.
 Claims for older attempts recover that metadata from their existing registry
 record, never by guessing from filenames; contradictory stored claims fail.
 
-This is the discriminated-family parsing pattern, not a compatibility fallback:
+Already-admitted scan jobs are distinct from new publication admission. Retained
+legacy bundles may contain several supported harness manifests or only a native
+envelope. Workers preserve deterministic Codex/Claude/Cursor precedence for those
+bundle scans, falling back to a retained native envelope when none is present.
+Native-family scans continue selecting the native envelope. ClawScan validates
+the selected manifest's identity and inspects every file in the original root;
+the worker never synthesizes an identity or edits the artifact to fit new rules.
+Directory ambiguity remains an error unless an exact manifest is selected.
+
+For new admission, this is the discriminated-family parsing pattern:
 select one known parser, validate its own identity, and reject ambiguity or
 contradictory claims before staging. OpenClaw source revision
 `36bd762422b348173b951819eef29e7fb2d307c3`, `src/plugins/bundle-manifest.ts`

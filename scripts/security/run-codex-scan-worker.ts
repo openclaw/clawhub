@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { PLUGIN_BUNDLE_MANIFESTS, selectPluginManifest } from "clawhub-schema";
+import { PLUGIN_BUNDLE_MANIFESTS } from "clawhub-schema";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -2216,11 +2216,21 @@ export async function resolveClawScanTarget(workspace: string, job: ClaimedJob) 
   if (job.job.targetKind === "packageRelease") {
     const pkg = job.target.package as Record<string, unknown> | undefined;
     if (pkg?.family === "claw") return root;
-    const selected = selectPluginManifest({
-      family: pkg?.family,
-      paths: manifests.filter((_, index) => present[index]),
-    });
-    return `${root}/${selected.path}`;
+    // Scan jobs contain already-admitted immutable artifacts. Older bundles may
+    // carry multiple harness manifests or only the native envelope. Preserve
+    // their prior selection order; strict new-publish admission lives separately
+    // in selectPluginManifest. Selecting a manifest still scans the full root.
+    if (pkg?.family === "bundle-plugin") {
+      const marker = PLUGIN_BUNDLE_MANIFESTS.find((_, index) => present[index + 2]);
+      if (marker) return `${root}/${marker.path}`;
+      if (present[1]) return `${root}/openclaw.plugin.json`;
+      throw new Error("Bundle scan requires a supported manifest or legacy native envelope");
+    }
+    if (pkg?.family === "code-plugin") {
+      if (present[1]) return `${root}/openclaw.plugin.json`;
+      throw new Error("openclaw.plugin.json is required for code-plugin scans");
+    }
+    throw new Error("Unsupported plugin input family");
   }
   return present[0] && present.slice(1).some(Boolean) ? `${root}/SKILL.md` : root;
 }
