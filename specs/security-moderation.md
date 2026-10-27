@@ -515,6 +515,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   Existing pending rows need no backfill: the binding is added atomically only
   when an eligible retry is applied. Preserve original storage IDs, digests,
   staged identity and all existing scanner and trusted-publisher boundaries.
+  A later authenticated package-recovery successor validates and atomically
+  retires its failed predecessor's operational binding, retaining that binding
+  in the recovery audit. Its existing fresh manual authority and final-publication
+  checks then govern the successor; it must not inherit a failed predecessor's
+  finalization claim or bypass revocation checks.
 - Authenticated package publishers can read only their own exact publish
   attempt, or the exact package and version authorized by a GitHub Actions
   publish token. The response exposes one normalized pending, published,

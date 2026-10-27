@@ -1234,3 +1234,97 @@ it.each(["private", "deleted", "staged-first-release", "missing", "skill"] as co
     }
   },
 );
+
+it.each(["none", "membership", "token"] as const)(
+  "preserves authenticated successor recovery after an operational retry fails: %s",
+  async (revocation) => {
+    const { t, ids, recover } = await fixture();
+    const original = await t.run(async (ctx) => {
+      await ctx.db.insert("publisherMembers", {
+        publisherId: ids.publisher,
+        userId: ids.owner,
+        role: "publisher",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.patch(ids.attemptId, {
+        checks: { trufflehog: { status: "clean" }, clawscan: { status: "failed" } },
+        checkFailureCount: 3,
+        checkClaimLastError: "Operational scanner timeout",
+      });
+      return {
+        attempt: (await ctx.db.get(ids.attemptId))!,
+        release: (await ctx.db.get(ids.releaseId))!,
+      };
+    });
+    await expect(
+      t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+        attemptId: ids.attemptId,
+        expectedArtifactFingerprint: original.attempt.artifactFingerprint,
+        expectedUpdatedAt: original.attempt.updatedAt,
+        reason: "Retry after scanner repair",
+        dryRun: false,
+      }),
+    ).resolves.toMatchObject({ requeued: true });
+    const binding = (await t.run((ctx) => ctx.db.get(ids.releaseId)))!.operationalRetry;
+    await t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+      attemptId: ids.attemptId,
+      claimId: "operational-scan",
+    });
+    await t.mutation(internal.publishAttempts.completePendingPublishAttemptChecksInternal, {
+      attemptId: ids.attemptId,
+      claimId: "operational-scan",
+      artifactFingerprint: original.attempt.artifactFingerprint,
+      trufflehog: { status: "clean" },
+      clawscan: { status: "failed", summary: "Operational failure recurred" },
+    });
+    expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({
+      status: "failed",
+      checkFailureCount: 4,
+    });
+    const response = await recover();
+    expect(response.status).toBe(202);
+    const successorId = (await response.json()).attemptId as Id<"publishAttempts">;
+    await t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+      attemptId: successorId,
+      claimId: "successor-scan",
+    });
+    await t.mutation(internal.publishAttempts.completePendingPublishAttemptChecksInternal, {
+      attemptId: successorId,
+      claimId: "successor-scan",
+      artifactFingerprint: original.attempt.artifactFingerprint,
+      trufflehog: { status: "clean" },
+      clawscan: { status: "clean" },
+    });
+    await t.mutation(internal.publishAttempts.claimPackagePublishAttemptForFinalizationInternal, {
+      attemptId: successorId,
+      claimId: "successor-final",
+    });
+    if (revocation === "membership") await t.run((ctx) => ctx.db.delete(ids.membership));
+    if (revocation === "token")
+      await t.run((ctx) => ctx.db.patch(ids.apiToken, { revokedAt: Date.now() }));
+    const promote = t.mutation(internal.packages.publishPendingReleaseInternal, {
+      releaseId: ids.releaseId,
+      manualRecoveryAttemptId: successorId,
+      manualRecoveryClaimId: "successor-final",
+    });
+    if (revocation === "none") await expect(promote).resolves.toMatchObject({ ok: true });
+    else await expect(promote).rejects.toThrow(/Recovered package publication authorization/);
+    const release = (await t.run((ctx) => ctx.db.get(ids.releaseId)))!;
+    expect(release.publicationStatus).toBe(revocation === "none" ? "published" : "pending");
+    expect(release.operationalRetry).toBeUndefined();
+    expect(release.files).toEqual(original.release.files);
+    expect(release.clawpackStorageId).toBe(original.release.clawpackStorageId);
+    const audit = await t.run((ctx) =>
+      ctx.db
+        .query("auditLogs")
+        .filter((q) => q.eq(q.field("action"), "package.publish.recover"))
+        .unique(),
+    );
+    expect(audit?.metadata).toMatchObject({ retiredOperationalRetry: binding });
+    expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({
+      status: "failed",
+      checkFailureCount: 4,
+    });
+  },
+);
