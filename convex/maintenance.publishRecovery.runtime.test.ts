@@ -119,9 +119,16 @@ async function fixture(kind: "skill" | "package" = "skill") {
 }
 
 describe("operator retry of retained publication checks", () => {
-  it.each(["skill", "package"] as const)(
-    "recovers a legacy %s after canonical personal-publisher migration",
-    async (kind) => {
+  it.each([
+    ["skill", "legacy"],
+    ["skill", "canonical"],
+    ["skill", "foreign-publisher"],
+    ["skill", "broken-link"],
+    ["skill", "moderation-hold"],
+    ["package", "legacy"],
+  ] as const)(
+    "finalizes a migrated legacy %s only with valid retained authority: %s",
+    async (kind, payload) => {
       const { t, ids, args } = await fixture(kind);
       const publisherId = await t.run(async (ctx) => {
         const personalId = await ctx.db.insert("publishers", {
@@ -161,35 +168,81 @@ describe("operator retry of retained publication checks", () => {
         });
       } else {
         const version = await t.run((ctx) => ctx.db.get(ids.skillVersionId!));
-        await t.mutation(internal.skills.publishPendingVersionInternal, {
+        // Persist the old payload before hydrating it through the real query.
+        await t.run((ctx) =>
+          ctx.db.patch(ids.skillVersionId!, {
+            pendingPublication: { skillInsertArgs: { userId: ids.userId } },
+          }),
+        );
+        const pendingArgs = (await t.query(internal.skills.getPendingVersionPublishArgsInternal, {
           versionId: ids.skillVersionId!,
-          publishAttemptId: ids.attemptId,
-          finalizationClaimId: "migration",
-          publishArgs: {
-            userId: ids.userId,
-            ownerPublisherId: publisherId,
-            displayName: "Retained fixture",
-            version: "1.0.0",
-            changelog: "",
-            files: version!.files,
-            parsed: version!.parsed,
-            embedding: Array(1536).fill(0),
-            llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 2 },
-            staticScan: {
-              status: "clean",
-              reasonCodes: [],
-              findings: [],
-              summary: "Fixture",
-              engineVersion: "fixture",
-              checkedAt: 1,
+        })) as { userId: typeof ids.userId; ownerPublisherId?: typeof publisherId };
+        expect(pendingArgs.ownerPublisherId).toBeUndefined();
+        const suppliedPublisherId =
+          payload === "foreign-publisher"
+            ? await t.run((ctx) =>
+                ctx.db.insert("publishers", {
+                  kind: "org",
+                  handle: "foreign",
+                  displayName: "Foreign",
+                  createdAt: 1,
+                  updatedAt: 1,
+                }),
+              )
+            : payload === "canonical"
+              ? publisherId
+              : undefined;
+        if (payload === "broken-link")
+          await t.run((ctx) => ctx.db.patch(ids.userId, { personalPublisherId: undefined }));
+        if (payload === "moderation-hold")
+          await t.run((ctx) =>
+            ctx.db.patch(ids.skillId!, {
+              moderationStatus: "hidden",
+              moderationReason: "security.redaction",
+            }),
+          );
+        const promote = () =>
+          t.mutation(internal.skills.publishPendingVersionInternal, {
+            versionId: ids.skillVersionId!,
+            publishAttemptId: ids.attemptId,
+            finalizationClaimId: "migration",
+            publishArgs: {
+              ...pendingArgs,
+              ownerPublisherId: suppliedPublisherId,
+              displayName: "Retained fixture",
+              version: "1.0.0",
+              changelog: "",
+              files: version!.files,
+              parsed: version!.parsed,
+              embedding: Array(1536).fill(0),
+              llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 2 },
+              staticScan: {
+                status: "clean",
+                reasonCodes: [],
+                findings: [],
+                summary: "Fixture",
+                engineVersion: "fixture",
+                checkedAt: 1,
+              },
             },
-          },
-        });
+          });
+        if (["foreign-publisher", "broken-link", "moderation-hold"].includes(payload)) {
+          const before = await t.run((ctx) => ctx.db.get(ids.skillVersionId!));
+          await expect(promote()).rejects.toThrow();
+          expect(await t.run((ctx) => ctx.db.get(ids.skillVersionId!))).toEqual(before);
+        } else {
+          await promote();
+        }
       }
+      const blocked = ["foreign-publisher", "broken-link", "moderation-hold"].includes(payload);
       const target = await t.run((ctx) =>
         ctx.db.get((ids.skillVersionId ?? ids.packageReleaseId)!),
       );
-      expect(target).toMatchObject({ publicationStatus: "published" });
+      expect(target).toMatchObject({ publicationStatus: blocked ? "pending" : "published" });
+      expect(await t.run((ctx) => ctx.db.get((ids.skillId ?? ids.packageId)!))).toMatchObject({
+        ownerUserId: ids.userId,
+        ownerPublisherId: publisherId,
+      });
       expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({
         userId: ids.userId,
         checkFailureCount: 3,

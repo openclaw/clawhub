@@ -382,7 +382,9 @@ export async function assertOperationalSkillRetryFinalization(
     attempt.slug !== skill.slug ||
     attempt.artifactFingerprint !== version.fingerprint ||
     publishArgs.userId !== attempt.userId ||
-    publishArgs.ownerPublisherId !== skill.ownerPublisherId ||
+    // Legacy retained payloads keep the original publisher scope after migration.
+    (publishArgs.ownerPublisherId !== skill.ownerPublisherId &&
+      publishArgs.ownerPublisherId !== attempt.ownerPublisherId) ||
     publishArgs.version !== version.version ||
     JSON.stringify(publishArgs.files) !== JSON.stringify(version.files) ||
     skill.softDeletedAt ||
