@@ -986,10 +986,8 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
 
     for (const attempt of candidates) {
       if (attempt.status !== "pending_checks") {
-        if (args.attemptId && attempt.status === "failed") return null;
-        if (args.attemptId) {
-          throw new ConvexError(`Publish attempt is ${attempt.status}, not pending checks.`);
-        }
+        // Dispatches can arrive after another worker has finalized or terminalized
+        // this attempt. Draining the duplicate must not fail or reclaim its work.
         continue;
       }
       if (args.kind && attempt.kind !== args.kind) {
