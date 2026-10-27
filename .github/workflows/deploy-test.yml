@@ -252,6 +252,7 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
+          set -euo pipefail
           bun run convex:deploy
           bunx convex env set SECURITY_SCAN_EVENT_DISPATCH_ENABLED 1 --prod
 
