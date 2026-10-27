@@ -1169,6 +1169,13 @@ const skillSlugAliases = defineTable({
   .index("by_owner_slug", ["ownerUserId", "slug"])
   .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"]);
 
+const operationalPublishRetryValidator = v.object({
+  attemptId: v.id("publishAttempts"),
+  actorUserId: v.id("users"),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+});
+
 const skillVersions = defineTable({
   skillId: v.id("skills"),
   version: v.string(),
@@ -1176,6 +1183,7 @@ const skillVersions = defineTable({
     v.union(v.literal("pending"), v.literal("published"), v.literal("blocked")),
   ),
   publishAttemptId: v.optional(v.id("publishAttempts")),
+  operationalRetry: v.optional(operationalPublishRetryValidator),
   pendingPublication: v.optional(v.any()),
   fingerprint: v.optional(v.string()),
   sourceProvenance: v.optional(
@@ -1911,6 +1919,7 @@ const packageReleases = defineTable({
     v.union(v.literal("pending"), v.literal("published"), v.literal("blocked")),
   ),
   publishAttemptId: v.optional(v.id("publishAttempts")),
+  operationalRetry: v.optional(operationalPublishRetryValidator),
   pendingPublication: v.optional(v.any()),
   changelog: v.string(),
   summary: v.optional(v.string()),

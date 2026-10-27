@@ -90,6 +90,7 @@ import {
   resolvePublicBrowseVersionForSkill,
   shouldExcludeSkillFromPublicBrowse,
 } from "./lib/publicBrowse";
+import { assertOperationalSkillRetryFinalization } from "./lib/publishAttemptOperationalRecovery";
 import {
   assertCanManageOwnedResource,
   canAccessPublisherOwnerScope,
@@ -13313,6 +13314,8 @@ export const publishPendingVersionInternal = internalMutation({
   args: {
     versionId: v.id("skillVersions"),
     publishArgs: v.any(),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
+    finalizationClaimId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
@@ -13342,6 +13345,7 @@ export const publishPendingVersionInternal = internalMutation({
     }
 
     const publishArgs = asSkillPendingPublishArgs(args.publishArgs);
+    await assertOperationalSkillRetryFinalization(ctx, skill, version, publishArgs, args);
     const user = await ctx.db.get(publishArgs.userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
 

@@ -496,6 +496,25 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   against a live foreign lease returns no work. It preserves the existing claim
   ID and expiry without falling through to another claim path; the same claim
   may resume its own lease.
+- Internal operator recovery of terminal operational failures defaults to a dry
+  run and requires the observed attempt timestamp and artifact fingerprint.
+  Admission rechecks the original actor's current publisher permission without
+  a platform-admin bypass, the original owner/scope and staged target, every
+  retained immutable storage object, live leases and moderation holds. A retry
+  audits the prior checks/error/count and requeues the same attempt; it cannot
+  replace bytes, lift a hold, declare a clean verdict or reset failure history.
+- An applied operational retry writes a typed binding on the retained version
+  or release: original attempt, actor, current validated owner and publisher
+  scope. The final publication transaction must validate that binding, original
+  target/inventory/fingerprint/archive, passing primary checks, live finalization
+  lease, current actor membership, active owner/publisher and current moderation.
+  Membership revocation, ownership changes, deletion, security redaction, manual
+  revocation/quarantine or a malicious verdict during scanning must prevent
+  promotion. Legacy attempts lacking an owner-user snapshot may bind the
+  validated organization owner once; later retries cannot change that binding.
+  Existing pending rows need no backfill: the binding is added atomically only
+  when an eligible retry is applied. Preserve original storage IDs, digests,
+  staged identity and all existing scanner and trusted-publisher boundaries.
 - Authenticated package publishers can read only their own exact publish
   attempt, or the exact package and version authorized by a GitHub Actions
   publish token. The response exposes one normalized pending, published,

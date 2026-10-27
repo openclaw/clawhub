@@ -139,6 +139,7 @@ import {
 } from "./lib/pluginCategoryClassificationContract";
 import { getPluginDiscoveryPins, isEnglishPluginListing } from "./lib/pluginDiscovery";
 import { toPublicPublisher } from "./lib/public";
+import { assertOperationalPackageRetryFinalization } from "./lib/publishAttemptOperationalRecovery";
 import {
   assertCanManageOwnedResource,
   canAccessPublisherOwnerScope,
@@ -10126,6 +10127,8 @@ export const finalizePackagePublishAttemptInternal = internalAction({
         claim.releaseId !== undefined
           ? await runMutationRef(ctx, internalRefs.packages.publishPendingReleaseInternal, {
               releaseId: claim.releaseId,
+              publishAttemptId: claim.attemptId,
+              finalizationClaimId: claimId,
               ...trustedPublishAuthorization,
             })
           : await runMutationRef(
@@ -12024,6 +12027,8 @@ export const publishPendingReleaseInternal = internalMutation({
     trustedPublishAuthorizationVersion: v.optional(v.literal(2)),
     manualRecoveryAttemptId: v.optional(v.id("publishAttempts")),
     manualRecoveryClaimId: v.optional(v.string()),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
+    finalizationClaimId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
@@ -12045,6 +12050,8 @@ export const publishPendingReleaseInternal = internalMutation({
     if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
       throw new ConvexError("Package not found");
     }
+
+    await assertOperationalPackageRetryFinalization(ctx, pkg, release, args);
 
     const metadata = pendingPackagePublicationMetadata(release);
     const manualRecovery =

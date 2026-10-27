@@ -92,6 +92,8 @@ async function fixture(kind: "skill" | "package" = "skill") {
       displayName: "Retained fixture",
       version: "1.0.0",
       idempotencyKey: "retained-fixture",
+      followup: kind === "skill" ? {} : undefined,
+      packageFollowup: kind === "package" ? {} : undefined,
       artifactFingerprint: sha256,
       files,
       checks: {
@@ -117,6 +119,179 @@ async function fixture(kind: "skill" | "package" = "skill") {
 }
 
 describe("operator retry of retained publication checks", () => {
+  it.each([
+    ["skill", "allowed"],
+    ["package", "allowed"],
+    ["package", "allowed-archive"],
+    ["package", "removed-archive"],
+    ["skill", "revoked-membership"],
+    ["package", "revoked-membership"],
+    ["skill", "security-redaction"],
+    ["skill", "stale-claim"],
+    ["package", "stale-claim"],
+    ["skill", "expired-claim"],
+    ["package", "expired-claim"],
+    ["skill", "changed-owner"],
+    ["package", "changed-owner"],
+    ["skill", "changed-inventory"],
+    ["package", "changed-inventory"],
+    ["skill", "revoked-version"],
+    ["skill", "malicious-verdict"],
+    ["package", "revoked-version"],
+  ] as const)("rechecks %s authority/holds after requeue: %s", async (kind, change) => {
+    const { t, ids, args } = await fixture(kind);
+    const org = await t.run(async (ctx) => {
+      const ownerUserId = await ctx.db.insert("users", { handle: "org-owner" });
+      const publisherId = await ctx.db.insert("publishers", {
+        kind: "org",
+        handle: "org",
+        displayName: "Org",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const membershipId = await ctx.db.insert("publisherMembers", {
+        publisherId,
+        userId: ids.userId,
+        role: "publisher",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const targetId = ids.skillId ?? ids.packageId;
+      await ctx.db.patch(targetId!, { ownerUserId, ownerPublisherId: publisherId });
+      await ctx.db.patch(ids.attemptId, { ownerUserId, ownerPublisherId: publisherId });
+      if (ids.packageReleaseId)
+        await ctx.db.patch(ids.packageReleaseId, { pendingPublication: {} });
+      return { publisherId, membershipId };
+    });
+    if (change === "allowed-archive" || change === "removed-archive")
+      await t.run(async (ctx) => {
+        const release = await ctx.db.get(ids.packageReleaseId!);
+        await ctx.db.patch(ids.packageReleaseId!, {
+          clawpackStorageId: ids.storageId,
+          clawpackSha256: args.expectedArtifactFingerprint,
+          clawpackSize: release!.files[0].size,
+        });
+        await ctx.db.patch(ids.attemptId, { clawpackStorageId: ids.storageId });
+      });
+    await expect(
+      t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+        ...args,
+        dryRun: false,
+      }),
+    ).resolves.toMatchObject({ eligible: true, requeued: true });
+    // Scanner verdicts are injected here to isolate the real final publication
+    // mutations. This is authorization regression proof, not scanner proof.
+    await t.run((ctx) =>
+      ctx.db.patch(ids.attemptId, {
+        status: "finalizing",
+        checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+        finalizationClaimId: "current",
+        finalizationClaimExpiresAt: Date.now() + 60_000,
+      }),
+    );
+    if (change === "revoked-membership") await t.run((ctx) => ctx.db.delete(org.membershipId));
+    if (change === "security-redaction")
+      await t.mutation(internal.skills.hideSkillForSecurityRedactionInternal, {
+        actorUserId: ids.userId,
+        slug: "retained-fixture",
+        reason: "Security hold after retry admission",
+      });
+    const targetId = ids.skillVersionId ?? ids.packageReleaseId;
+    await t.run(async (ctx) => {
+      if (change === "malicious-verdict")
+        await ctx.db.patch(ids.skillVersionId!, {
+          llmAnalysis: { status: "completed", verdict: "malicious", checkedAt: 1 },
+        });
+      if (change === "removed-archive")
+        await ctx.db.patch(ids.packageReleaseId!, { clawpackStorageId: undefined });
+      if (change === "expired-claim")
+        await ctx.db.patch(ids.attemptId, { finalizationClaimExpiresAt: 1 });
+      if (change === "changed-owner")
+        await ctx.db.patch((ids.skillId ?? ids.packageId)!, { ownerUserId: ids.userId });
+      if (change === "changed-inventory") await ctx.db.patch(targetId!, { files: [] });
+      if (change === "revoked-version") {
+        if (ids.skillVersionId)
+          await ctx.db.patch(ids.skillVersionId, {
+            manualRevocation: { reason: "Hold", reviewerUserId: ids.userId, revokedAt: 1 },
+          });
+        else
+          await ctx.db.patch(ids.packageReleaseId!, {
+            manualModeration: {
+              state: "revoked",
+              reason: "Hold",
+              reviewerUserId: ids.userId,
+              updatedAt: 1,
+            },
+          });
+      }
+    });
+    const original = await t.run((ctx) => ctx.db.get(targetId!));
+    const promote = async () => {
+      if (ids.packageReleaseId)
+        return t.mutation(internal.packages.publishPendingReleaseInternal, {
+          releaseId: ids.packageReleaseId,
+          publishAttemptId: ids.attemptId,
+          finalizationClaimId: change === "stale-claim" ? "stale" : "current",
+        });
+      const version = await t.run((ctx) => ctx.db.get(ids.skillVersionId!));
+      return t.mutation(internal.skills.publishPendingVersionInternal, {
+        versionId: ids.skillVersionId!,
+        publishAttemptId: ids.attemptId,
+        finalizationClaimId: change === "stale-claim" ? "stale" : "current",
+        publishArgs: {
+          userId: ids.userId,
+          ownerPublisherId: org.publisherId,
+          displayName: "Retained fixture",
+          version: "1.0.0",
+          changelog: "",
+          files: version!.files,
+          parsed: version!.parsed,
+          embedding: Array(1536).fill(0),
+          llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 2 },
+          staticScan: {
+            status: "clean",
+            reasonCodes: [],
+            findings: [],
+            summary: "Fixture",
+            engineVersion: "fixture",
+            checkedAt: 1,
+          },
+        },
+      });
+    };
+    if (change === "allowed" || change === "allowed-archive") {
+      await promote();
+      expect(await t.run((ctx) => ctx.db.get(targetId!))).toMatchObject({
+        publicationStatus: "published",
+        files: original!.files,
+      });
+    } else {
+      await expect(promote()).rejects.toThrow();
+      expect(await t.run((ctx) => ctx.db.get(targetId!))).toEqual(original);
+      if (change === "security-redaction")
+        expect(await t.run((ctx) => ctx.db.get(ids.skillId!))).toMatchObject({
+          moderationReason: "security.redaction",
+          moderationStatus: "hidden",
+        });
+    }
+  });
+  it("refuses a completed analysis with a malicious verdict at admission", async () => {
+    const { t, ids, args } = await fixture();
+    await t.run((ctx) =>
+      ctx.db.patch(ids.skillVersionId!, {
+        llmAnalysis: { status: "completed", verdict: "malicious", checkedAt: 1 },
+      }),
+    );
+    await expect(
+      t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+        ...args,
+        dryRun: false,
+      }),
+    ).resolves.toMatchObject({ eligible: false, requeued: false });
+    expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({ status: "failed" });
+    expect(await t.run((ctx) => ctx.db.query("auditLogs").take(1))).toEqual([]);
+  });
+
   it.each([false, true])(
     "rechecks an organization publishing member (revoked=%s)",
     async (revoked) => {

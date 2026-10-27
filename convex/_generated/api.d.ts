@@ -67,6 +67,7 @@ import type * as lib_access from "../lib/access.js";
 import type * as lib_agentSkillsDiscovery from "../lib/agentSkillsDiscovery.js";
 import type * as lib_aigAnalysis from "../lib/aigAnalysis.js";
 import type * as lib_apiTokenAuth from "../lib/apiTokenAuth.js";
+import type * as lib_applicationModelPolicy from "../lib/applicationModelPolicy.js";
 import type * as lib_archiveManifest from "../lib/archiveManifest.js";
 import type * as lib_artifactModeration from "../lib/artifactModeration.js";
 import type * as lib_artifactText from "../lib/artifactText.js";
@@ -348,6 +349,7 @@ declare const fullApi: ApiFromModules<{
   "lib/agentSkillsDiscovery": typeof lib_agentSkillsDiscovery;
   "lib/aigAnalysis": typeof lib_aigAnalysis;
   "lib/apiTokenAuth": typeof lib_apiTokenAuth;
+  "lib/applicationModelPolicy": typeof lib_applicationModelPolicy;
   "lib/archiveManifest": typeof lib_archiveManifest;
   "lib/artifactModeration": typeof lib_artifactModeration;
   "lib/artifactText": typeof lib_artifactText;

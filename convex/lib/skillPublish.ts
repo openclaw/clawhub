@@ -605,6 +605,8 @@ export async function finalizeSkillPublishAttempt(
       publishResult = (await ctx.runMutation(internal.skills.publishPendingVersionInternal, {
         versionId: claim.versionId,
         publishArgs: skillInsertArgs,
+        publishAttemptId: claim.attemptId,
+        finalizationClaimId: claimId,
       })) as PublishResult;
     } else {
       const skillInsertArgs = await prepareSkillInsertArgsForFinalization(

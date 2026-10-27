@@ -1,9 +1,10 @@
 import { ConvexError } from "convex/values";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { requestPublishAttemptDispatch } from "../publishAttemptDispatch";
 import { resolvePackageReleaseScanStatus } from "./packageSecurity";
 import { assertCanManageOwnedResource, isPublisherActive } from "./publishers";
+import { normalizeSecurityScanStatus } from "./securityScanPolicy";
 import { matchesStorageSha256 } from "./storageDigests";
 
 // Operator maintenance, not an owner authorization or moderation override. Every
@@ -57,6 +58,7 @@ export async function retryFailedPublishAttemptChecks(
   let ownerUserId: Id<"users">;
   let ownerPublisherId: Id<"publishers"> | undefined;
   let targetFiles: typeof attempt.files;
+  let priorRetry: Doc<"skillVersions">["operationalRetry"];
   let archive: { storageId: Id<"_storage">; size?: number; sha256?: string } | undefined;
   if (attempt.kind === "skill") {
     const version = attempt.skillVersionId ? await ctx.db.get(attempt.skillVersionId) : null;
@@ -74,7 +76,8 @@ export async function retryFailedPublishAttemptChecks(
       skill.softDeletedAt ||
       (skill.moderationStatus === "hidden" && skill.moderationReason !== "pending.publication") ||
       skill.moderationStatus === "removed" ||
-      version.llmAnalysis?.status === "malicious" ||
+      normalizeSecurityScanStatus(version.llmAnalysis?.verdict ?? version.llmAnalysis?.status) ===
+        "malicious" ||
       version.fingerprint !== attempt.artifactFingerprint ||
       (version.publishAttemptId && version.publishAttemptId !== attempt._id)
     )
@@ -82,6 +85,7 @@ export async function retryFailedPublishAttemptChecks(
     ownerUserId = skill.ownerUserId;
     ownerPublisherId = skill.ownerPublisherId;
     targetFiles = version.files;
+    priorRetry = version.operationalRetry;
   } else {
     const release = attempt.packageReleaseId ? await ctx.db.get(attempt.packageReleaseId) : null;
     const pkg = attempt.packageId ? await ctx.db.get(attempt.packageId) : null;
@@ -106,12 +110,13 @@ export async function retryFailedPublishAttemptChecks(
     ownerUserId = pkg.ownerUserId;
     ownerPublisherId = pkg.ownerPublisherId;
     targetFiles = release.files;
+    priorRetry = release.operationalRetry;
+    const insertArgs = attempt.packageInsertArgs as { clawpackStorageId?: unknown } | undefined;
+    const originalArchive = attempt.clawpackStorageId ?? insertArgs?.clawpackStorageId;
+    if (originalArchive !== release.clawpackStorageId) {
+      return rejected("artifact-inventory-changed");
+    }
     if (release.clawpackStorageId) {
-      const insertArgs = attempt.packageInsertArgs as { clawpackStorageId?: unknown } | undefined;
-      const originalArchive = attempt.clawpackStorageId ?? insertArgs?.clawpackStorageId;
-      if (originalArchive !== release.clawpackStorageId) {
-        return rejected("artifact-inventory-changed");
-      }
       archive = {
         storageId: release.clawpackStorageId,
         size: release.clawpackSize,
@@ -154,6 +159,14 @@ export async function retryFailedPublishAttemptChecks(
     ownerPublisherId !== attempt.ownerPublisherId
   )
     return rejected("owner-changed");
+  if (
+    priorRetry &&
+    (priorRetry.attemptId !== attempt._id ||
+      priorRetry.actorUserId !== attempt.userId ||
+      priorRetry.ownerUserId !== ownerUserId ||
+      priorRetry.ownerPublisherId !== ownerPublisherId)
+  )
+    return rejected("retry-binding-changed");
   const owner = await ctx.db.get(ownerUserId);
   const publisher = ownerPublisherId ? await ctx.db.get(ownerPublisherId) : null;
   if (
@@ -224,6 +237,18 @@ export async function retryFailedPublishAttemptChecks(
     },
     createdAt: now,
   });
+  // Persist a typed binding on the staged target: checking authority only here
+  // cannot protect against membership or moderation changes during scanning.
+  const targetId = attempt.kind === "skill" ? attempt.skillVersionId! : attempt.packageReleaseId!;
+  await ctx.db.patch(targetId, {
+    publishAttemptId: attempt._id,
+    operationalRetry: {
+      attemptId: attempt._id,
+      actorUserId: attempt.userId,
+      ownerUserId,
+      ...(ownerPublisherId ? { ownerPublisherId } : {}),
+    },
+  });
   // Keep the failed check, error and cumulative count. This grants one operator
   // retry, not a fresh automatic retry budget or a passing scanner verdict.
   await ctx.db.patch(attempt._id, {
@@ -238,4 +263,157 @@ export async function retryFailedPublishAttemptChecks(
   });
   const dispatch = await requestPublishAttemptDispatch(ctx, attempt._id);
   return { ...result, requeued: true, dispatchScheduled: dispatch.scheduled };
+}
+
+// Called by the owners of final publication, in the transaction that makes the
+// target public. An operational retry never freezes publisher authority or holds.
+async function assertRetryFinalization(
+  ctx: MutationCtx,
+  parent: Pick<Doc<"skills">, "ownerUserId" | "ownerPublisherId">,
+  target: Doc<"skillVersions"> | Doc<"packageReleases">,
+  authorization: { publishAttemptId?: Id<"publishAttempts">; finalizationClaimId?: string },
+) {
+  const retry = target.operationalRetry;
+  if (!retry) return null;
+  const attempt = await ctx.db.get(retry.attemptId);
+  if (
+    !attempt ||
+    authorization.publishAttemptId !== attempt._id ||
+    authorization.finalizationClaimId !== attempt.finalizationClaimId ||
+    target.publishAttemptId !== attempt._id ||
+    attempt.userId !== retry.actorUserId ||
+    attempt.ownerPublisherId !== retry.ownerPublisherId ||
+    (attempt.ownerUserId !== undefined && attempt.ownerUserId !== retry.ownerUserId) ||
+    parent.ownerUserId !== retry.ownerUserId ||
+    parent.ownerPublisherId !== retry.ownerPublisherId ||
+    attempt.status !== "finalizing" ||
+    !attempt.finalizationClaimId ||
+    (attempt.finalizationClaimExpiresAt ?? 0) <= Date.now() ||
+    attempt.checks.trufflehog.status !== "clean" ||
+    attempt.checks.clawscan.status !== "clean" ||
+    target.publicationStatus !== "pending" ||
+    target.softDeletedAt ||
+    target.ownerDeletedAt ||
+    target.version !== attempt.version ||
+    target.files.length !== attempt.files.length ||
+    target.files.some((file, index) => {
+      const original = attempt.files[index];
+      return (
+        file.path !== original.path ||
+        file.size !== original.size ||
+        file.storageId !== original.storageId ||
+        file.sha256 !== original.sha256
+      );
+    })
+  )
+    throw new ConvexError("Operational retry publication binding, claim or artifact changed");
+  const [actor, owner, publisher] = await Promise.all([
+    ctx.db.get(retry.actorUserId),
+    ctx.db.get(retry.ownerUserId),
+    retry.ownerPublisherId ? ctx.db.get(retry.ownerPublisherId) : null,
+  ]);
+  if (
+    !actor ||
+    actor.deletedAt ||
+    actor.deactivatedAt ||
+    !owner ||
+    owner.deletedAt ||
+    owner.deactivatedAt ||
+    (retry.ownerPublisherId && !isPublisherActive(publisher))
+  ) {
+    throw new ConvexError("Operational retry publisher is unavailable");
+  }
+  await assertCanManageOwnedResource(ctx, {
+    actor,
+    ownerUserId: retry.ownerUserId,
+    ownerPublisherId: retry.ownerPublisherId,
+    allowedPublisherRoles: ["publisher"],
+    allowPlatformAdmin: false,
+  });
+  for (const file of target.files) {
+    const stored = await ctx.db.system.get(file.storageId);
+    if (!stored || stored.size !== file.size || !matchesStorageSha256(stored.sha256, file.sha256)) {
+      throw new ConvexError("Operational retry publication storage is unavailable");
+    }
+  }
+  return attempt;
+}
+
+export async function assertOperationalSkillRetryFinalization(
+  ctx: MutationCtx,
+  skill: Doc<"skills">,
+  version: Doc<"skillVersions">,
+  publishArgs: {
+    userId: Id<"users">;
+    ownerPublisherId?: Id<"publishers">;
+    version: string;
+    files: Doc<"skillVersions">["files"];
+  },
+  authorization: { publishAttemptId?: Id<"publishAttempts">; finalizationClaimId?: string },
+) {
+  const attempt = await assertRetryFinalization(ctx, skill, version, authorization);
+  if (!attempt) return;
+  if (
+    attempt.kind !== "skill" ||
+    attempt.skillId !== skill._id ||
+    attempt.skillVersionId !== version._id ||
+    version.skillId !== skill._id ||
+    attempt.slug !== skill.slug ||
+    attempt.artifactFingerprint !== version.fingerprint ||
+    publishArgs.userId !== attempt.userId ||
+    publishArgs.ownerPublisherId !== skill.ownerPublisherId ||
+    publishArgs.version !== version.version ||
+    JSON.stringify(publishArgs.files) !== JSON.stringify(version.files) ||
+    skill.softDeletedAt ||
+    skill.moderationStatus === "removed" ||
+    (skill.moderationStatus === "hidden" && skill.moderationReason !== "pending.publication") ||
+    version.manualRevocation ||
+    normalizeSecurityScanStatus(version.llmAnalysis?.verdict ?? version.llmAnalysis?.status) ===
+      "malicious"
+  ) {
+    throw new ConvexError("Operational retry skill is held or its publication binding changed");
+  }
+}
+
+export async function assertOperationalPackageRetryFinalization(
+  ctx: MutationCtx,
+  pkg: Doc<"packages">,
+  release: Doc<"packageReleases">,
+  authorization: { publishAttemptId?: Id<"publishAttempts">; finalizationClaimId?: string },
+) {
+  const attempt = await assertRetryFinalization(ctx, pkg, release, authorization);
+  if (!attempt) return;
+  if (
+    attempt.kind !== "package" ||
+    attempt.packageId !== pkg._id ||
+    attempt.packageReleaseId !== release._id ||
+    release.packageId !== pkg._id ||
+    attempt.slug !== pkg.name ||
+    pkg.softDeletedAt ||
+    (release.clawManifestSummary ? release.clawpackSha256 : release.integritySha256) !==
+      attempt.artifactFingerprint ||
+    release.manualModeration?.state === "quarantined" ||
+    release.manualModeration?.state === "revoked" ||
+    resolvePackageReleaseScanStatus(release) === "malicious"
+  ) {
+    throw new ConvexError("Operational retry package is held or its publication binding changed");
+  }
+  const originalArchive =
+    attempt.clawpackStorageId ??
+    (attempt.packageInsertArgs as { clawpackStorageId?: unknown } | undefined)?.clawpackStorageId;
+  if (originalArchive !== release.clawpackStorageId) {
+    throw new ConvexError("Operational retry package archive binding changed");
+  }
+  if (release.clawpackStorageId) {
+    const stored = await ctx.db.system.get(release.clawpackStorageId);
+    if (
+      originalArchive !== release.clawpackStorageId ||
+      !stored ||
+      stored.size !== release.clawpackSize ||
+      !release.clawpackSha256 ||
+      !matchesStorageSha256(stored.sha256, release.clawpackSha256)
+    ) {
+      throw new ConvexError("Operational retry package archive binding changed");
+    }
+  }
 }
