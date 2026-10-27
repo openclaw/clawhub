@@ -20,21 +20,22 @@ times overlap and each required check reports its own failure:
   window fits the five-second CI budget. Longer rate limits and deterministic
   client errors such as a missing repository fail immediately.
 
-The CPU-heavy `unit` job uses one 32-vCPU Blacksmith registration and records
-the runner's actual CPU, memory, and cgroup allocation before coverage. The
-short `static`, `packages`, `types-build`, and `e2e-http` jobs run on GitHub-hosted
-Ubuntu runners, so this parallel layout keeps the same one-Blacksmith-registration
-budget as the former serial `pr-gates` job. Every non-browser gate has a
-five-minute timeout to enforce the pull-request feedback target.
+The `unit`, `claws-openclaw-contract`, and `playwright-smoke` jobs use
+GitHub-hosted Ubuntu 24.04 runners to avoid unavailable Blacksmith registrations.
+The CPU-heavy `unit` job records the runner's actual CPU, memory, and cgroup
+allocation before coverage and has a ten-minute timeout to accommodate hosted
+runner capacity. The short `static`, `packages`, `types-build`, and `e2e-http`
+jobs also run on GitHub-hosted Ubuntu runners. Other non-browser gates retain
+their five-minute timeout.
 
 - `playwright-smoke` builds the app and runs a chromium browser smoke against the
   public read backend.
 - `playwright-local-auth` uses `test:pw:local-auth` to start a local anonymous
   Convex backend with dev auth, then runs the chromium specs under
   `e2e/local-auth/`. Related low-risk specs are grouped so the matrix spends
-  fewer Blacksmith runner registrations while keeping publish lifecycle checks
-  isolated for easier failure triage. Every shard requests the
-  `blacksmith-16vcpu-ubuntu-2404` runner label and records actual CPU count,
+  fewer runner starts while keeping publish lifecycle checks
+  isolated for easier failure triage. Every shard uses the
+  `ubuntu-24.04` runner image and records actual CPU count,
   load, cgroup CPU statistics, memory pressure, and free memory before and after
   the test. The matrix runs at most eight shards concurrently.
   The runner seeds the existing local skills.sh mirror fixture for the
