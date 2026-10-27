@@ -1,14 +1,16 @@
 # ClawHub Design System
 
-This document covers ClawHub's product UI rules, not the canonical OpenClaw or OpenClaw Foundation artwork catalog. For tasks using those marks, first follow the live brand-kit preflight in [AGENTS.md](AGENTS.md#design--brand-sources) and the installed [OpenClaw brand skill](.agents/skills/openclaw-brand/SKILL.md). Keep ClawHub's distinct logo and runtime character art separate unless their replacement is explicitly requested.
+This document outlines the design rules, patterns, and guidelines for the ClawHub platform to ensure consistency, accessibility, and maintainability across all components.
+
+For OpenClaw and OpenClaw Foundation logos, see the [brand kit](https://github.com/openclaw/carapace/tree/main/brand-kit).
 
 ---
 
 ## Color System
 
-### ClawHub UI Palette
+### Brand Palette (OpenClaw)
 
-ClawHub uses the following **3-5 color palette** for its product UI. These semantic tokens and the pinned Carapace CSS remain a separate design contract, not authority to recolor official marks or automatically migrate UI colors when the brand kit changes:
+ClawHub uses a strict **3-5 color palette** based on the OpenClaw brand:
 
 | Token           | Light Mode | Dark Mode | Usage                                           |
 | --------------- | ---------- | --------- | ----------------------------------------------- |
