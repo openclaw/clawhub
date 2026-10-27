@@ -17,13 +17,14 @@ test("compiled package SSR preserves viewer isolation and rejects revoked tokens
     expect(["127.0.0.1", "localhost", "[::1]"]).toContain(new URL(value!).hostname);
   }
   const env = { ...process.env, CONVEX_DEPLOYMENT: `local:${config.deploymentName}` };
-  const run = async <T>(args: string[]): Promise<T> => {
+  const run = async <T = void>(args: string[]): Promise<T> => {
     const result = await exec(
       "bunx",
       ["convex", "run", "--typecheck", "disable", "--codegen", "disable", ...args],
       { env },
     );
-    return JSON.parse(result.stdout.trim()) as T;
+    const output = result.stdout.trim();
+    return (output ? JSON.parse(output) : undefined) as T;
   };
   const suffix = `${Date.now().toString(36)}-${testInfo.workerIndex}`;
   const privateName = `ssr-private-${suffix}`;
@@ -133,6 +134,12 @@ test("compiled package SSR preserves viewer isolation and rejects revoked tokens
     });
     console.log("Compiled SSR authorization boundary", JSON.stringify(report));
   } finally {
+    await run([
+      "tokens:revoke",
+      JSON.stringify({ tokenId: owner.tokenId }),
+      "--identity",
+      identity(identities[0]!.id),
+    ]);
     await run([
       "tokens:revoke",
       JSON.stringify({ tokenId: unrelated.tokenId }),
