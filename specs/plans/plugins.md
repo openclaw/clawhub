@@ -293,8 +293,9 @@ part of this declared bundle support. Do not silently accept unknown formats.
 
 Family and optional format/id claims must agree with artifact metadata. Native
 entrypoints belong to the native family. Explicit family selection can choose
-native versus bundle manifests in a mixed artifact; multiple foreign bundle
-markers remain ambiguous and fail admission. The worker passes the exact
+native versus bundle manifests in a mixed artifact. Native selection may retain
+multiple companion host manifests without interpreting their names as native
+identity. Bundle selection still requires exactly one supported bundle marker. The worker passes the exact
 selected manifest to ClawScan, which resolves it back to the full artifact root.
 Legacy extracted artifacts are never relocated by a nested `package.json`.
 Bounded UTF-8 metadata reads must not escape the artifact. Never generate an id,

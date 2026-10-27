@@ -10,9 +10,6 @@ export function selectPluginManifest(input: {
   bundleFormat?: string;
 }) {
   const markers = PLUGIN_BUNDLE_MANIFESTS.filter((marker) => input.paths.includes(marker.path));
-  if (markers.length > 1) {
-    throw new Error("Plugin packages require exactly one supported bundle manifest format");
-  }
   if (input.family === "code-plugin") {
     if (input.bundleFormat !== undefined)
       throw new Error("Bundle format requires the bundle-plugin family");

@@ -38,12 +38,18 @@ describe.each([
     expect(() => select({ family: "code-plugin", paths: [".claude-plugin/plugin.json"] })).toThrow(
       "required",
     );
-    expect(() =>
+    expect(
       select({
         family: "code-plugin",
         paths: ["openclaw.plugin.json", ...PLUGIN_BUNDLE_MANIFESTS.map((marker) => marker.path)],
       }),
-    ).toThrow("exactly one supported");
+    ).toEqual({ path: "openclaw.plugin.json", format: undefined });
+    expect(() =>
+      select({
+        family: "code-plugin",
+        paths: PLUGIN_BUNDLE_MANIFESTS.map((marker) => marker.path),
+      }),
+    ).toThrow("openclaw.plugin.json is required");
     expect(
       select({
         family: "code-plugin",
