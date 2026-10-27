@@ -1,3 +1,4 @@
+import { createIsomorphicFn } from "@tanstack/react-start";
 import type {
   ApiV1PackageResponse,
   ApiV1PackageVersionListResponse,
@@ -256,36 +257,46 @@ export function getPackageArtifactDownloadPath(name: string, version: string) {
   );
 }
 
-async function getForwardedHeaders(viewerMode: PackageApiViewerMode) {
-  if (typeof window !== "undefined" || !import.meta.env.SSR) return {};
-  try {
-    const serverRuntimeModule = "@tanstack/react-start/server";
-    const { getRequestHeaders } = (await import(/* @vite-ignore */ serverRuntimeModule)) as {
-      getRequestHeaders: () => Headers;
-    };
-    const requestHeaders = getRequestHeaders();
-    const headers: Record<string, string> = {};
-    const cookie = requestHeaders.get("cookie");
-    const authorization = requestHeaders.get("authorization");
-    const clientIpHeaders = [
-      "cf-connecting-ip",
-      "x-forwarded-for",
-      "x-real-ip",
-      "fly-client-ip",
-    ] as const;
-    if (viewerMode === "request") {
-      if (cookie) headers.cookie = cookie;
-      if (authorization) headers.authorization = authorization;
+const getForwardedHeaders = createIsomorphicFn()
+  .server(async (viewerMode: PackageApiViewerMode): Promise<Record<string, string>> => {
+    try {
+      // Keep the import visible to the server bundler: deployed artifacts do not
+      // include application dependencies for a Vite-ignored runtime import.
+      const { getRequestHeaders } = await import("@tanstack/react-start/server");
+      const requestHeaders = getRequestHeaders();
+      const headers: Record<string, string> = {};
+      const cookie = requestHeaders.get("cookie");
+      const authorization = requestHeaders.get("authorization");
+      const clientIpHeaders = [
+        "x-vercel-forwarded-for",
+        "cf-connecting-ip",
+        "x-forwarded-for",
+        "x-real-ip",
+        "fly-client-ip",
+      ] as const;
+      if (viewerMode === "request") {
+        if (cookie) headers.cookie = cookie;
+        if (authorization) headers.authorization = authorization;
+      }
+      for (const headerName of clientIpHeaders) {
+        const value = requestHeaders.get(headerName);
+        if (value) headers[headerName] = value;
+      }
+      return headers;
+    } catch {
+      return {};
     }
-    for (const headerName of clientIpHeaders) {
-      const value = requestHeaders.get(headerName);
-      if (value) headers[headerName] = value;
-    }
-    return headers;
-  } catch {
-    return {};
-  }
-}
+  })
+  .client(async (_viewerMode: PackageApiViewerMode): Promise<Record<string, string>> => ({}));
+
+const fetchPackageResponse = createIsomorphicFn()
+  .server(async (url: string, init: RequestInit) => {
+    const { serverFetch } = await import("nitro/app");
+    // Nitro routes locally by path, even for absolute URLs. Our API proxy adds
+    // edge identity instead of following Convex redirects through Vercel protection.
+    return serverFetch(url, init);
+  })
+  .client((url: string, init: RequestInit) => fetch(url, init));
 
 async function packageFetch(
   url: URL,
@@ -295,7 +306,7 @@ async function packageFetch(
 ) {
   const forwarded = await getForwardedHeaders(viewerMode);
   const isSameOrigin = typeof window !== "undefined" && url.origin === window.location.origin;
-  return await fetch(url.toString(), {
+  return await fetchPackageResponse(url.toString(), {
     method: "GET",
     // Only send credentials for same-origin requests (production Vercel
     // rewrite). Cross-origin requests to the Convex site URL don't need

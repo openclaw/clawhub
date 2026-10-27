@@ -210,7 +210,7 @@ export async function attestRuntime(
     sourceChanges ||
     !/\bvcs.modified=false\b/.test(build) ||
     goVersion !== "go1.27.3" ||
-    codex !== "codex-cli 0.160.0" ||
+    codex !== "codex-cli 0.164.0" ||
     !/^Python 3\.12\.\d+$/.test(python) ||
     node !== "v24.22.1" ||
     ubuntu !== "24.04" ||

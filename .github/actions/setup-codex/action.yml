@@ -1,0 +1,26 @@
+name: Setup Codex
+description: Install and select the reviewed native Codex CLI with its patched Node bootstrap.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      with:
+        node-version: 24.22.1
+
+    - name: Install and verify Codex CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
+        : "${GITHUB_PATH:?GITHUB_PATH is required}"
+        clawhub_codex_version=0.164.0
+        clawhub_codex_prefix="$RUNNER_TEMP/clawhub-codex"
+        npm install --global --prefix "$clawhub_codex_prefix" "@openai/codex@$clawhub_codex_version"
+        clawhub_codex_actual=$("$clawhub_codex_prefix/bin/codex" --version)
+        if [[ "$clawhub_codex_actual" != "codex-cli $clawhub_codex_version" ]]; then
+          printf '::error::Expected codex-cli %s after installation; got %s\n' "$clawhub_codex_version" "$clawhub_codex_actual" >&2
+          exit 1
+        fi
+        printf '%s\n' "$clawhub_codex_prefix/bin" >> "$GITHUB_PATH"
+        printf '%s\n' "$clawhub_codex_actual"
