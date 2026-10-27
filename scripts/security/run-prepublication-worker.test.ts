@@ -19,6 +19,9 @@ import {
   runNativeTruffleHog,
 } from "./run-prepublication-worker";
 
+const diagnosticLogs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+vi.mock("../lib/workerLogger", () => ({ createWorkerLogger: () => diagnosticLogs }));
+
 const tempDirs: string[] = [];
 const noNewExposure = {
   scanExecution: "not_started",
@@ -1142,6 +1145,92 @@ JSON
       }
     },
   );
+
+  it("logs allowlisted completeness evidence for a failed scanner without artifact text", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const report = {
+      schemaVersion: "clawscan-run-v1",
+      profile: "clawhub",
+      scanners: {
+        skillspector: {
+          status: "failed",
+          error: "PRIVATE-SOURCE-SECRET",
+          raw: {
+            execution_successful: true,
+            skill: { source: "/PRIVATE-SOURCE-SECRET" },
+            analysis_completeness: {
+              is_complete: false,
+              status: "partial",
+              execution_successful: true,
+              total_components: 2,
+              fully_inspected_files: 1,
+              partially_inspected_files: 1,
+              ledger_exceptions: [
+                {
+                  reason_code: "static_parse_limit",
+                  path: "PRIVATE-SOURCE-SECRET",
+                  message: "PRIVATE-SOURCE-SECRET",
+                  phase: "static",
+                  analyzers: ["static_patterns_tool_misuse"],
+                },
+              ],
+              analyzer_statuses: [],
+              limitations: ["PRIVATE-SOURCE-SECRET"],
+            },
+          },
+        },
+      },
+    };
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env node
+const fs = require('node:fs');
+fs.writeFileSync(process.argv[process.argv.indexOf('--output') + 1], ${JSON.stringify(JSON.stringify(report))});
+process.exit(1);
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+    diagnosticLogs.info.mockClear();
+    try {
+      const result = await runNativeClawScan(
+        {
+          job: {
+            _id: String(attempt.attemptId),
+            attempts: 1,
+            hasMaliciousSignal: false,
+            leaseToken: attempt.claimId,
+            source: "pre-publication",
+            targetKind: "skillVersion",
+            waitForVtUntil: 0,
+          },
+          target: {},
+        },
+        workspace,
+      );
+      expect(result.check.status).toBe("failed");
+      const entry = diagnosticLogs.info.mock.calls.find(
+        ([row]) => row.event === "prepublication_clawscan_failure_diagnostic",
+      )?.[0];
+      expect(entry).toMatchObject({
+        attemptId: String(attempt.attemptId),
+        skillSpector: {
+          reasonCounts: { static_parse_limit: 1 },
+          completeness: {
+            counts: { total_components: 2, fully_inspected_files: 1, partially_inspected_files: 1 },
+          },
+        },
+      });
+      expect(JSON.stringify(entry)).not.toContain("PRIVATE-SOURCE-SECRET");
+    } finally {
+      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
 
   it("fails closed when a completed skill scan omits a required scanner", async () => {
     const workspace = await tempDir();

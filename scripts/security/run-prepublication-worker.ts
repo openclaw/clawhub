@@ -12,6 +12,7 @@ import {
   redactWorkerPublicErrorMessage,
   redactWorkerPublicText,
 } from "../lib/workerRedaction";
+import { projectSkillSpectorReport } from "./clawscan-diagnostic-skillspector";
 import {
   clawScanExposure,
   type ClawScanExposure,
@@ -572,7 +573,21 @@ export async function runNativeClawScan(
     artifact = undefined;
   }
   onExposure?.(clawScanExposure(artifact));
+  const logFailureDiagnostic = () => {
+    const root = asRecord(artifact);
+    if (root?.schemaVersion !== "clawscan-run-v1" || root.profile !== "clawhub") return;
+    const scanner = asRecord(asRecord(root.scanners)?.skillspector);
+    logger.info(
+      {
+        attemptId: String(job.job._id),
+        event: "prepublication_clawscan_failure_diagnostic",
+        skillSpector: projectSkillSpectorReport(scanner?.raw),
+      },
+      "pre-publication scanner completeness diagnostic",
+    );
+  };
   if (output.code !== 0) {
+    logFailureDiagnostic();
     return {
       check: {
         status: "failed",
@@ -585,6 +600,7 @@ export async function runNativeClawScan(
 
   const parsed = storedAnalysisFromClawScanArtifact(artifact, job.job.targetKind);
   if (parsed.error || !parsed.analysis) {
+    logFailureDiagnostic();
     return {
       check: {
         status: "failed",
