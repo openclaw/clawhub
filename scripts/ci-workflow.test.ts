@@ -32,7 +32,7 @@ describe("CI workflow", () => {
     }
   });
 
-  it("runs required gates in parallel with one CPU-sized Blacksmith lane", async () => {
+  it("runs required gates in parallel on available hosted runners", async () => {
     const workflow = parseYaml(await readFile(".github/workflows/ci.yml", "utf8")) as {
       jobs: Record<string, WorkflowJob>;
     };
@@ -49,11 +49,11 @@ describe("CI workflow", () => {
     for (const [name, command] of Object.entries(requiredGates)) {
       const job = workflow.jobs[name];
       expect(job.needs).toBeUndefined();
-      expect(job["timeout-minutes"]).toBe(5);
+      expect(job["timeout-minutes"]).toBe(name === "unit" ? 10 : 5);
       expect(job.steps).toContainEqual(expect.objectContaining({ run: command }));
     }
 
-    expect(workflow.jobs.unit["runs-on"]).toBe("blacksmith-32vcpu-ubuntu-2404");
+    expect(workflow.jobs.unit["runs-on"]).toBe("ubuntu-24.04");
     expect(workflow.jobs.unit.steps).toContainEqual(
       expect.objectContaining({
         uses: "actions/checkout@v7.0.1",
