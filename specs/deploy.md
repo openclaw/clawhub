@@ -437,11 +437,30 @@ Test crons remain disabled, so this does not scan the catalog on a nightly or
 periodic schedule. The five-minute scheduled pre-publication worker remains a
 Production-only recovery path.
 
-The manual security worker's `queue-test-discord` option queues only the latest
-`@openclaw/discord` release in permanent Test. It requires the exact deployed
-revision and existing Test target guards, preserves active jobs atomically, and
-refuses workflow retries or supplied assignments before admitting a new scan.
-Automatic security-worker event dispatch must be disabled on this Test path.
+### Permanent Test security rescans
+
+The signed-in Rescan action queues a normal `manual` security job on Test.
+`SECURITY_SCAN_EVENT_DISPATCH_ENABLED=1` and the GitHub App dispatch credentials
+enable the existing coalesced worker dispatch without enabling general crons.
+Test deployments provision the dispatch flag after deploying the backend in
+`deploy-test.yml`. Test retains the existing five-minute scan-dispatch watchdog
+and expired-lease recovery even when general crons are disabled. Dispatch still
+respects its enable flag. Unrelated catalog schedules stay disabled, and
+previews run neither recovery job.
+The event carries `environment=test`, selecting the `Test` GitHub environment
+and a separate worker concurrency group. Manual workflow dispatches can also
+select `Test` from `main`; neither path requires assigned job IDs or a special
+package. Test retains one shared worker shard, which claims manual jobs first.
+
+The worker checks the permanent Test URL, deploy key and backend environment
+before loading Test's own worker token. It uses the same worker, scanner profile
+and digest-pinned Endor image preparation as Production. Configure
+`CODEX_SECURITY_SCAN_ENDOR_ENABLED=1`, `CODEX_SECURITY_SCAN_ENDOR_IMAGE` with a
+published `@sha256:` image digest, `ENDOR_NAMESPACE`, `ENDOR_API` and the Endor
+credentials in the `Test` GitHub environment. Optional package selection and
+Endor judging use the existing `CODEX_SECURITY_SCAN_ENDOR_PACKAGES` and
+`CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED` variables. Results are saved on the
+native package release and served through its usual security views.
 
 Preview browser traffic is public and read-only. Nitro rejects non-GET/HEAD
 requests before proxying and adds `X-ClawHub-Preview-Backend` to proxied preview
