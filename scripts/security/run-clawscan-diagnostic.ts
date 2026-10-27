@@ -171,6 +171,7 @@ export async function attestRuntime(
   root: string,
   env: NodeJS.ProcessEnv,
   installed?: { sourceDir: string; pin: string; binary: string },
+  allowHostedTiny = false,
 ) {
   if (
     process.env.DEFAULT_MODEL !== "gpt-6.1-sol" ||
@@ -207,6 +208,13 @@ export async function attestRuntime(
   const skillspector = /^ARG SKILLSPECTOR_REF=([a-f0-9]{40})$/m.exec(dockerfile)?.[1];
   const aig = /^ARG AIG_SKILL_SCAN_REF=([a-f0-9]{40})$/m.exec(dockerfile)?.[1];
   const ubuntu = /^VERSION_ID="(\d+\.\d+)"$/m.exec(await readFile("/etc/os-release", "utf8"))?.[1];
+  const expectedUbuntu =
+    allowHostedTiny &&
+    source === "reviewed" &&
+    fixture === "tiny" &&
+    process.env.CLAWSCAN_DIAGNOSTIC_RUNNER === "ubuntu-22.04"
+      ? "22.04"
+      : "24.04";
   if (
     actualSource !== pin ||
     revision !== pin ||
@@ -216,7 +224,7 @@ export async function attestRuntime(
     codex !== "codex-cli 0.164.0" ||
     !/^Python 3\.12\.\d+$/.test(python) ||
     node !== "v24.22.1" ||
-    ubuntu !== "24.04" ||
+    ubuntu !== expectedUbuntu ||
     !skillspector ||
     !aig
   )
@@ -279,21 +287,30 @@ export async function removeRuntime(root: string) {
   await rm(root, { recursive: true, force: true });
 }
 
-export function assertDisposableDiagnosticEnvironment() {
+export function assertDisposableDiagnosticEnvironment(allowHostedTiny = false) {
+  const runner = process.env.CLAWSCAN_DIAGNOSTIC_RUNNER;
+  const permittedRunner =
+    runner === "blacksmith-16vcpu-ubuntu-2404" || (allowHostedTiny && runner === "ubuntu-22.04");
   if (
     process.platform !== "linux" ||
     process.env.GITHUB_ACTIONS !== "true" ||
     process.env.RUNNER_OS !== "Linux" ||
     process.env.RUNNER_ARCH !== "X64" ||
-    process.env.CLAWSCAN_DIAGNOSTIC_RUNNER !== "blacksmith-16vcpu-ubuntu-2404" ||
+    !permittedRunner ||
     !process.env.RUNNER_TEMP
   )
-    throw new Error("Disposable Blacksmith workflow required");
+    throw new Error("Disposable diagnostic workflow required");
   return process.env.RUNNER_TEMP;
 }
 
 export async function main(args = process.argv.slice(2)) {
-  const runnerTemp = assertDisposableDiagnosticEnvironment();
+  const hostedTiny =
+    args.length === 4 &&
+    args[0] === "--fixture" &&
+    args[1] === "tiny" &&
+    args[2] === "--source" &&
+    args[3] === "reviewed";
+  const runnerTemp = assertDisposableDiagnosticEnvironment(hostedTiny);
   if (
     args.length === 4 &&
     args[0] === "--fixture" &&
@@ -348,7 +365,7 @@ export async function main(args = process.argv.slice(2)) {
       LANG: "C.UTF-8",
       NO_COLOR: "1",
     };
-    const installed = await attestRuntime(source, fixture, runtime, env);
+    const installed = await attestRuntime(source, fixture, runtime, env, undefined, hostedTiny);
     await writeFile(join(output, "attestation.json"), JSON.stringify(installed.metadata, null, 2));
     const target = join(runtime, "input");
     let identity: { files: number; bytes: number; manifestSha256?: string } = {

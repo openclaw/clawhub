@@ -4,9 +4,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { parse as parseYaml } from "yaml";
 import {
+  assertDisposableDiagnosticEnvironment,
   diagnosticArtifactMetadata,
   DIAGNOSTIC_PROCESS_BUDGET_MS,
   main,
@@ -156,7 +157,7 @@ it("rejects the real CLI before touching any runtime or credentials on the Mac",
       "original-candidate-290-full",
     ]) {
       await expect(main(["--fixture", fixture, "--source", "reviewed"])).rejects.toThrow(
-        "Disposable Blacksmith",
+        "Disposable diagnostic",
       );
     }
     const result = await promisify(execFile)(
@@ -182,7 +183,11 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
   const raw = await readFile(".github/workflows/clawscan-judge-diagnostic.yml", "utf8");
   const workflow = parseYaml(raw);
   expect(Object.keys(workflow.on)).toEqual(["workflow_dispatch"]);
-  expect(Object.keys(workflow.on.workflow_dispatch.inputs)).toEqual(["fixture", "source"]);
+  expect(Object.keys(workflow.on.workflow_dispatch.inputs)).toEqual([
+    "fixture",
+    "source",
+    "runner",
+  ]);
   expect(workflow.on.workflow_dispatch.inputs.fixture.options).toEqual([
     "tiny",
     "incident",
@@ -197,7 +202,16 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
   expect(job["timeout-minutes"]).toBe(
     "${{ inputs.fixture == 'original-scanner-only' && 120 || 80 }}",
   );
-  expect(job["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");
+  expect(workflow.on.workflow_dispatch.inputs.runner.options).toEqual([
+    "blacksmith-16vcpu-ubuntu-2404",
+    "ubuntu-22.04",
+  ]);
+  expect(workflow.on.workflow_dispatch.inputs.runner.default).toBe("blacksmith-16vcpu-ubuntu-2404");
+  expect(job["runs-on"]).toBe(
+    "${{ inputs.runner == 'ubuntu-22.04' && 'ubuntu-22.04' || 'blacksmith-16vcpu-ubuntu-2404' }}",
+  );
+  expect(job.env.CLAWSCAN_DIAGNOSTIC_RUNNER).toBe(job["runs-on"]);
+  expect(job.if).toContain("inputs.fixture == 'tiny' && inputs.source == 'reviewed'");
   expect(job.environment).toBe("Production");
   expect(workflow.permissions).toEqual({ contents: "read" });
   for (const name of [
@@ -281,4 +295,33 @@ it("refuses arbitrary concurrent event labels and unbounded indices before spawn
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+it("admits the hosted recovery image only through an explicit tiny-control opt-in", async () => {
+  vi.stubGlobal("process", {
+    ...process,
+    platform: "linux",
+    env: {
+      GITHUB_ACTIONS: "true",
+      RUNNER_OS: "Linux",
+      RUNNER_ARCH: "X64",
+      CLAWSCAN_DIAGNOSTIC_RUNNER: "ubuntu-22.04",
+      RUNNER_TEMP: "/inert-never-created",
+    },
+  });
+  expect(() => assertDisposableDiagnosticEnvironment()).toThrow();
+  expect(assertDisposableDiagnosticEnvironment(true)).toBe("/inert-never-created");
+  for (const args of [
+    ["--fixture", "incident", "--source", "reviewed"],
+    ["--fixture", "tiny", "--source", "incident"],
+    ["--fixture", "original-scanner-only", "--source", "reviewed"],
+  ]) {
+    await expect(main(args)).rejects.toThrow("Disposable diagnostic workflow required");
+  }
+  process.env.CLAWSCAN_DIAGNOSTIC_RUNNER = "untrusted-runner";
+  expect(() => assertDisposableDiagnosticEnvironment(true)).toThrow();
 });

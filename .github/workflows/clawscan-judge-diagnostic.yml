@@ -24,6 +24,12 @@ on:
         type: choice
         options: [reviewed, incident]
         default: reviewed
+      runner:
+        description: "Disposable runner; Ubuntu recovery is limited to tiny reviewed-source controls"
+        type: choice
+        required: true
+        default: blacksmith-16vcpu-ubuntu-2404
+        options: [blacksmith-16vcpu-ubuntu-2404, ubuntu-22.04]
 
 permissions:
   contents: read
@@ -34,12 +40,15 @@ concurrency:
 
 jobs:
   diagnostic:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
+      (inputs.runner == '' || inputs.runner == 'blacksmith-16vcpu-ubuntu-2404' ||
+      (inputs.runner == 'ubuntu-22.04' && inputs.fixture == 'tiny' && inputs.source == 'reviewed'))
+    runs-on: ${{ inputs.runner == 'ubuntu-22.04' && 'ubuntu-22.04' || 'blacksmith-16vcpu-ubuntu-2404' }}
     environment: Production
     timeout-minutes: ${{ inputs.fixture == 'original-scanner-only' && 120 || 80 }}
     env:
-      CLAWSCAN_DIAGNOSTIC_RUNNER: blacksmith-16vcpu-ubuntu-2404
+      CLAWSCAN_DIAGNOSTIC_RUNNER: ${{ inputs.runner == 'ubuntu-22.04' && 'ubuntu-22.04' || 'blacksmith-16vcpu-ubuntu-2404' }}
       GOTOOLCHAIN: go1.27.3
     steps:
       - uses: actions/checkout@v7.0.1
