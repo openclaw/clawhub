@@ -37,7 +37,7 @@ paths. Environment-only changes cannot implement this policy: official GPT-6.1
 Sol function/tool calls require Responses rather than Chat Completions.
 
 `clawscan-source-commit.txt` pins merged ClawScan commit
-`954a6095f3264707bfa5ff3f2510d78e2ecaa929`. The
+`0929ecae6b4738386e9d936dd8da8274e2306c6d`. The
 workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
 with Go 1.27.3, and retains the matching source tree for host scanner installation.
 No mutable `main`, `latest`, or unapproved public ClawScan release is consumed.
