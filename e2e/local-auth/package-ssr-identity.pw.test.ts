@@ -116,10 +116,13 @@ test("compiled package SSR preserves viewer isolation and rejects revoked tokens
       identity(identities[0]!.id),
     ]);
     const revokedApi = await request.get(apiPath, { headers: headers(owner.token) });
-    expect(revokedApi.status()).toBe(401);
+    // Optional read auth treats revoked tokens as signed out, concealing private
+    // package existence rather than returning the required-auth 401 response.
+    expect(revokedApi.status()).toBe(404);
+    expect(await revokedApi.text()).toBe("Package not found");
     const revokedSsr = await request.get(detailPath, { headers: headers(owner.token) });
     const revokedHtml = await revokedSsr.text();
-    expect(revokedSsr.status()).toBe(500);
+    expect(revokedSsr.status()).toBe(200);
     expect(revokedHtml).not.toContain(privateMarker);
     expect(revokedHtml).not.toContain(owner.token);
     report.push({
