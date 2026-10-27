@@ -35,7 +35,9 @@ type PluginSort = VisiblePluginSort | "relevance";
 type LegacyPluginSort = PluginSort | "newest" | "name" | "installs";
 
 const PLUGINS_PAGE_SIZE = 25;
-const PLUGIN_CATALOG_REQUEST_TIMEOUT_MS = 5_000;
+// Healthy production catalog reads can exceed five seconds. Keep a bounded
+// request budget without discarding their response as a catalog outage.
+const PLUGIN_CATALOG_REQUEST_TIMEOUT_MS = 10_000;
 
 // One navigation's input intent, never URL/history state. Reloads and preloads
 // cannot recreate it; the loader consumes it before dispatch so retries are unmarked.
