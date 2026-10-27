@@ -42,8 +42,12 @@ five-minute timeout to enforce the pull-request feedback target.
   depend on the availability of a live public skill.
 
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
-matches the non-browser PR gates. `bun run ci:playwright-smoke` assumes the
-chromium Playwright browser has already been installed.
+covers the non-browser PR gates. Linux CI uses pinned tsrs for the root typecheck;
+local `ci:types-build` keeps native TypeScript for cross-platform support. Both
+use `ci:types:packages` for native package checks. To reproduce the Linux root
+check, run `bunx --no-install tsrs --noEmit` on a supported Linux host.
+`bun run ci:playwright-smoke` assumes the chromium Playwright browser has already
+been installed.
 
 Vercel preview builds retry the full Convex deploy-and-seed pipeline up to three
 times, waiting 20 seconds and then 40 seconds. Retries use fresh suffixed preview

@@ -121,7 +121,7 @@ jobs:
       - uses: ./.github/actions/setup-bun
 
       - name: Typecheck and build
-        run: bun run ci:types-build
+        run: bunx --no-install tsrs --noEmit && bun run ci:types:packages && VITE_CONVEX_URL=https://example.invalid bun run build
 
   e2e-http:
     name: e2e-http
