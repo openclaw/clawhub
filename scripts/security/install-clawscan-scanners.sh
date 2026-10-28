@@ -8,6 +8,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 expected_commit=$(cat "$script_dir/clawscan-source-commit.txt")
 [ "$(git -C "$CLAWSCAN_SOURCE_DIR" rev-parse HEAD)" = "$expected_commit" ] || { echo "ClawScan source revision mismatch" >&2; exit 1; }
 runtime_dir="$CLAWSCAN_SOURCE_DIR/docker/clawscan-runtime"
+bin_dir="$RUNNER_TEMP/clawscan-scanner-bin"
 case "${1:-}" in
   skillspector)
     pin_name=SKILLSPECTOR_REF
@@ -35,7 +36,31 @@ git -C "$source_dir" apply --check "$runtime_dir/patches/$scanner-responses.patc
 git -C "$source_dir" apply "$runtime_dir/patches/$scanner-responses.patch"
 # Pin the existing maintained resolver; SkillSpector ships an upstream uv.lock.
 python -m pip install "uv==0.13.5"
+needs_bash_parser=0
 if [ "$scanner" = skillspector ]; then
+  if [ -e "$source_dir/src/skillspector/shell_source.py" ]; then
+    test -f "$source_dir/src/skillspector/shell_source.py"
+    test ! -L "$source_dir/src/skillspector/shell_source.py"
+    needs_bash_parser=1
+    test -f "$runtime_dir/tests/test_skillspector_shell_source.py"
+    shfmt_version=$(sed -n 's/^ARG SHFMT_VERSION=//p' "$runtime_dir/Dockerfile")
+    case "$shfmt_version" in
+      *[!v0-9.]*|'') echo 'Bash parser requires one reviewed version' >&2; exit 1 ;;
+    esac
+    printf '%s\n' "$shfmt_version" | LC_ALL=C grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || {
+      echo 'Invalid reviewed Bash parser version' >&2; exit 1;
+    }
+    mkdir -p "$bin_dir"
+    GOTOOLCHAIN=go1.27.3 CGO_ENABLED=0 GOBIN="$bin_dir" go install "mvdan.cc/sh/v3/cmd/shfmt@$shfmt_version"
+    [ "$("$bin_dir/shfmt" --version)" = "$shfmt_version" ] || {
+      echo 'Installed Bash parser version mismatch' >&2; exit 1;
+    }
+    # Adapter checks and the scanner must resolve the same source-pinned helper.
+    PATH="$bin_dir:$PATH"
+    export PATH
+  elif grep -Eq '^ARG SHFMT_VERSION(=|$)' "$runtime_dir/Dockerfile"; then
+    echo 'Bash parser pin has no matching scanner module' >&2; exit 1
+  fi
   python_executable=$(python -c 'import sys; print(sys.executable)')
   uv sync --locked --no-dev --python "$python_executable" --project "$source_dir"
   venv="$source_dir/.venv"
@@ -48,13 +73,15 @@ else
 fi
 uv pip install --python "$venv/bin/python" "pytest==9.0.2"
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_${scanner}_responses.py"
+if [ "$needs_bash_parser" = 1 ]; then
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_skillspector_shell_source.py"
+fi
 uv pip check --python "$venv/bin/python"
 if [ "$scanner" = aig ]; then command_name=aig-skill-scan; else command_name=skillspector; fi
 "$venv/bin/$command_name" --help >/dev/null
 printf "%s source: %s (adapters from %s)\n" "$scanner" "$source_commit" "$expected_commit"
 # Expose only scanner entrypoints: a venv bin directory shadows setup-python
 # in the next workflow step, and unseeded uv environments have no pip.
-bin_dir="$RUNNER_TEMP/clawscan-scanner-bin"
 mkdir -p "$bin_dir"
 ln -s "$venv/bin/$command_name" "$bin_dir/$command_name"
 printf "%s\n" "$bin_dir" >> "$GITHUB_PATH"

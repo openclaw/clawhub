@@ -66,11 +66,13 @@ describe("reviewed ClawScan installation", () => {
   });
 
   it.each([
-    ["aig", "skillspector"],
-    ["skillspector", "aig"],
-  ])(
-    "runs pinned %s then %s source patch and adapter tests without shadowing Python",
-    async (first, second) => {
+    ["aig", "skillspector", true],
+    ["skillspector", "aig", true],
+    ["aig", "skillspector", false],
+    ["skillspector", "aig", false],
+  ] as const)(
+    "runs pinned %s then %s without shadowing Python (Bash parser: %s)",
+    async (first, second, modern) => {
       const root = await mkdtemp(join(tmpdir(), "clawscan-install-contract-"));
       try {
         const pin = "a".repeat(40);
@@ -88,18 +90,29 @@ describe("reviewed ClawScan installation", () => {
         await writeFile(join(scriptDir, "clawscan-source-commit.txt"), pin);
         await writeFile(
           join(runtime, "Dockerfile"),
-          "ARG SKILLSPECTOR_REF=" + scannerPin + "\nARG AIG_SKILL_SCAN_REF=" + scannerPin + "\n",
+          (modern ? "ARG SHFMT_VERSION=v3.14.1\n" : "") +
+            "ARG SKILLSPECTOR_REF=" +
+            scannerPin +
+            "\nARG AIG_SKILL_SCAN_REF=" +
+            scannerPin +
+            "\n",
         );
+        if (modern) {
+          await mkdir(join(runtime, "tests"), { recursive: true });
+          await writeFile(join(runtime, "tests/test_skillspector_shell_source.py"), "");
+        }
         const fake = [
           "#!/bin/sh",
           'echo "$(basename "$0") $*" >> "$COMMAND_LOG"',
           'case "$(basename "$0")" in',
-          ' git) if [ "${3:-}" = rev-parse ]; then case "$2" in */clawscan) echo "$CLAWSCAN_PIN";; *) echo "$SCANNER_PIN";; esac; fi;;',
+          ' git) if [ "${3:-}" = rev-parse ]; then case "$2" in */clawscan) echo "$CLAWSCAN_PIN";; *) echo "$SCANNER_PIN";; esac; elif [ "${3:-}" = apply ] && [ "${4:-}" != --check ] && [ "$HAS_SHELL_PARSER" = 1 ]; then case "$2" in */skillspector-source.*) mkdir -p "$2/src/skillspector"; : > "$2/src/skillspector/shell_source.py";; esac; fi;;',
           ' python) if [ "${1:-}" = -c ]; then printf "%s\\n" "$SELECTED_PYTHON"; elif [ "${1:-}" = -m ] && [ "${2:-}" = venv ]; then mkdir -p "$3/bin"; cp "$0" "$3/bin/python"; cp "$0" "$3/bin/aig-skill-scan"; fi;;',
           ' uv) if [ "${1:-}" = sync ]; then for last; do :; done; mkdir -p "$last/.venv/bin"; cp "$0" "$last/.venv/bin/python"; cp "$0" "$last/.venv/bin/skillspector"; fi;;',
+          ' go) mkdir -p "$GOBIN"; cp "$0" "$GOBIN/shfmt";;',
+          ' shfmt) printf "%s\\n" "${SHFMT_REPORTED_VERSION:-v3.14.1}";;',
           "esac",
         ].join("\n");
-        for (const command of ["git", "python", "uv"]) {
+        for (const command of ["git", "python", "uv", "go"]) {
           await writeFile(join(bin, command), fake);
           await chmod(join(bin, command), 0o755);
         }
@@ -115,6 +128,7 @@ describe("reviewed ClawScan installation", () => {
               CLAWSCAN_SOURCE_DIR: source,
               RUNNER_TEMP: root,
               GITHUB_PATH: join(root, "github-path"),
+              HAS_SHELL_PARSER: modern ? "1" : "0",
             },
           });
           const addedPaths = (await readFile(join(root, "github-path"), "utf8")).trim().split("\n");
@@ -125,6 +139,16 @@ describe("reviewed ClawScan installation", () => {
         }
         const commands = await readFile(log, "utf8");
         expect(commands).toContain("fetch --quiet --depth 1 origin " + scannerPin);
+        if (modern) {
+          expect(commands).toContain("go install mvdan.cc/sh/v3/cmd/shfmt@v3.14.1");
+          expect(commands).toContain("shfmt --version");
+          expect(commands).toContain(
+            "-m pytest -q " + runtime + "/tests/test_skillspector_shell_source.py",
+          );
+        } else {
+          expect(commands).not.toContain("go install");
+          expect(commands).not.toContain("test_skillspector_shell_source.py");
+        }
         for (const scanner of [first, second]) {
           expect(commands).toContain(
             "apply --check " + runtime + "/patches/" + scanner + "-responses.patch",
@@ -142,6 +166,46 @@ describe("reviewed ClawScan installation", () => {
         );
         const paths = await readFile(join(root, "github-path"), "utf8");
         expect(paths).toBe((join(root, "clawscan-scanner-bin") + "\n").repeat(2));
+        const retryEnv = {
+          PATH: path,
+          COMMAND_LOG: log,
+          SELECTED_PYTHON: join(bin, "python"),
+          CLAWSCAN_PIN: pin,
+          SCANNER_PIN: scannerPin,
+          CLAWSCAN_SOURCE_DIR: source,
+          RUNNER_TEMP: root,
+          GITHUB_PATH: join(root, "github-path"),
+          HAS_SHELL_PARSER: modern ? "1" : "0",
+        };
+        if (!modern) {
+          await writeFile(
+            join(runtime, "Dockerfile"),
+            "ARG SHFMT_VERSION=v3.14.1\nARG SKILLSPECTOR_REF=" + scannerPin + "\n",
+          );
+          await expect(
+            run("sh", [join(scriptDir, "install.sh"), "skillspector"], { env: retryEnv }),
+          ).rejects.toThrow(/no matching scanner module/);
+          return;
+        }
+        for (const invalidPin of ["", "latest", "v3.14.1\nARG SHFMT_VERSION=v3.14.1"]) {
+          await writeFile(
+            join(runtime, "Dockerfile"),
+            "ARG SHFMT_VERSION=" + invalidPin + "\nARG SKILLSPECTOR_REF=" + scannerPin + "\n",
+          );
+          await expect(
+            run("sh", [join(scriptDir, "install.sh"), "skillspector"], { env: retryEnv }),
+          ).rejects.toThrow();
+        }
+        expect((await readFile(log, "utf8")).match(/go install /g)).toHaveLength(1);
+        await writeFile(
+          join(runtime, "Dockerfile"),
+          "ARG SHFMT_VERSION=v3.14.1\nARG SKILLSPECTOR_REF=" + scannerPin + "\n",
+        );
+        await expect(
+          run("sh", [join(scriptDir, "install.sh"), "skillspector"], {
+            env: { ...retryEnv, SHFMT_REPORTED_VERSION: "v3.13.0" },
+          }),
+        ).rejects.toThrow(/Bash parser version mismatch/);
       } finally {
         await rm(root, { recursive: true, force: true });
       }

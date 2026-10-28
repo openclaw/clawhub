@@ -167,6 +167,28 @@ export async function installOriginalRuntime(
   ]);
   if (!/^\d+\.\d+\.\d+(?:[a-z0-9.+-]*)$/.test(skillspectorVersion))
     throw new Error("Invalid scanner version");
+  const runtimeDockerfile = await readFile(
+    join(sourceDir, "docker/clawscan-runtime/Dockerfile"),
+    "utf8",
+  );
+  const bashPins = [...runtimeDockerfile.matchAll(/^ARG SHFMT_VERSION=(v\d+\.\d+\.\d+)$/gm)];
+  const bashModule = await lstat(join(scannerDir, "src/skillspector/shell_source.py")).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    },
+  );
+  let bashParserVersion: string | null = null;
+  let bashParserSha256: string | null = null;
+  if (bashModule) {
+    if (!bashModule.isFile() || bashPins.length !== 1) throw new Error("Invalid Bash parser pin");
+    const bashParser = join(root, "clawscan-scanner-bin/shfmt");
+    bashParserVersion = await run(bashParser, ["--version"]);
+    if (bashParserVersion !== bashPins[0]![1]) throw new Error("Bash parser version mismatch");
+    bashParserSha256 = hash(await readFile(bashParser));
+  } else if (/^ARG SHFMT_VERSION(?:=|$)/m.test(runtimeDockerfile)) {
+    throw new Error("Bash parser pin has no matching scanner module");
+  }
   const consumerRevision = await run("git", ["-C", process.cwd(), "rev-parse", "HEAD"]);
   if (!/^[a-f0-9]{40}$/.test(consumerRevision)) throw new Error("Invalid consumer source");
   const metadata = {
@@ -181,6 +203,9 @@ export async function installOriginalRuntime(
     runtimeMode: "reviewed-host-scanners-sandbox-off",
     venvPython,
     skillspectorVersion,
+    bashParserRequired: bashModule !== null,
+    bashParserVersion,
+    bashParserSha256,
     consumerRevision,
     profileSha256: hash(profile),
     sdkInventory,
