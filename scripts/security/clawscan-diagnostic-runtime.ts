@@ -23,6 +23,10 @@ const LOCK_SHA256_BY_SOURCE = new Map([
     "aff544dc623c9b2d420bbd13a2c8aab46a90738c",
     "f4bfc4c3d226c4be309e01b7c5043ca34c53a40975a1ba39cae4c0463c98fb7f",
   ],
+  [
+    "cafdd8a5766fa82874a805a4af369cfd0a038018",
+    "f4bfc4c3d226c4be309e01b7c5043ca34c53a40975a1ba39cae4c0463c98fb7f",
+  ],
 ]);
 const hash = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex");
 

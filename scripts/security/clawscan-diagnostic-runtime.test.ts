@@ -53,6 +53,7 @@ it("binds dependency locks to exact sources while retaining both incident diagno
   const modernLock = "b8d19c16020091af248ec1566d6666de4cf408e4dca193f0c9ead67072da785e";
   const javascriptSource = "c0731bff55f735957dda18d3fc29e54d7b9f3b13";
   const validatorSource = "aff544dc623c9b2d420bbd13a2c8aab46a90738c";
+  const pcmSource = "cafdd8a5766fa82874a805a4af369cfd0a038018";
   const javascriptLock = "f4bfc4c3d226c4be309e01b7c5043ca34c53a40975a1ba39cae4c0463c98fb7f";
   const originalCandidate = "fd5f18ad3365f623d4165740b124cd7f142d0556";
   for (const [source, expectedLock] of [
@@ -61,6 +62,7 @@ it("binds dependency locks to exact sources while retaining both incident diagno
     [modernSource, modernLock],
     [javascriptSource, javascriptLock],
     [validatorSource, javascriptLock],
+    [pcmSource, javascriptLock],
   ]) {
     expect(() => validateOriginalScannerBounds(state, mcp, expectedLock!, source!)).not.toThrow();
     for (const otherLock of [lock, modernLock, javascriptLock]) {

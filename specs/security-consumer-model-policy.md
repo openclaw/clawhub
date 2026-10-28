@@ -37,7 +37,7 @@ paths. Environment-only changes cannot implement this policy: official GPT-6.1
 Sol function/tool calls require Responses rather than Chat Completions.
 
 `clawscan-source-commit.txt` pins merged ClawScan commit
-`aff544dc623c9b2d420bbd13a2c8aab46a90738c`. The
+`cafdd8a5766fa82874a805a4af369cfd0a038018`. The
 workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
 with Go 1.27.3, and retains the matching source tree for host scanner installation.
 No mutable `main`, `latest`, or unapproved public ClawScan release is consumed.
@@ -47,6 +47,10 @@ parsing, CSV ownership and immutable preparation-cache/packing repairs. These
 preserve explicit incompleteness for unsupported value flows; they do not infer
 that an original upload is safe or complete. Diagnostic dependency locks are
 bound to each reviewed source, retaining the original incident baselines.
+Canonical Markdown prose ownership preserves continued shell operands. A narrow
+original-byte PCM WAVE proof admits explicit binary exclusions while preserving
+raw findings, binary line counts, integrity/YARA and reference accounting. It
+does not assert text or semantic inspection of the asset.
 The selected runtime separates OSV's 256-record cache-entry bound from its
 existing aggregate inspection budgets (1024 results, 1 MiB retained evidence,
 4 MiB responses, with unchanged request and deadline limits). Complete larger
