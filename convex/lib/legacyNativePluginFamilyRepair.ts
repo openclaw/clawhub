@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
-import type { Id } from "../_generated/dataModel";
+import semver from "semver";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { assertAdmin } from "./access";
 import { sha256Hex } from "./clawpack";
@@ -21,6 +22,9 @@ const TARGETS: Record<string, { publisher: string; runtimeId: string }> = {
 // changes. An oversized inventory fails without writes; operators resume by
 // package ID, and completed packages return an idempotent read-only receipt.
 const MAX_RELEASES = 150;
+const MAX_FAILED_PENDING = 2;
+const RETAINED_FINALIZATION_FAILURE =
+  "OpenClaw release parent terminal state completed/failure is not authorized by automated-detached";
 const MAX_INVENTORY_BYTES = 8 * 1024 * 1024;
 const CONFIRM = "repair-verified-legacy-native-plugin-family";
 
@@ -35,6 +39,99 @@ export type LegacyNativePluginFamilyRepairArgs = {
   confirm?: string;
   reason: string;
 };
+
+function fileInventory(files: Doc<"packageReleases">["files"]) {
+  return JSON.stringify(
+    files.map((f) => [f.path, f.storageId, f.sha256, f.size, f.contentType ?? null]),
+  );
+}
+
+// A failed parent's authorization is never repaired here. These older originals
+// remain pending, with their attempts, findings and publication metadata intact.
+async function retainedFailedPendingAttempt(
+  ctx: MutationCtx,
+  pkg: Doc<"packages">,
+  latest: Doc<"packageReleases">,
+  release: Doc<"packageReleases">,
+) {
+  const metadata: unknown = release.pendingPublication;
+  const attempt = release.publishAttemptId ? await ctx.db.get(release.publishAttemptId) : null;
+  const manifest: unknown = release.extractedPluginManifest;
+  const followup: unknown = attempt?.packageFollowup;
+  if (
+    release.publicationStatus !== "pending" ||
+    release.softDeletedAt !== undefined ||
+    release.ownerDeletedAt !== undefined ||
+    release.operationalRetry !== undefined ||
+    !metadata ||
+    typeof metadata !== "object" ||
+    Array.isArray(metadata) ||
+    !("family" in metadata) ||
+    metadata.family !== "bundle-plugin" ||
+    !("ownerPublisherId" in metadata) ||
+    metadata.ownerPublisherId !== pkg.ownerPublisherId ||
+    !("ownerUserId" in metadata) ||
+    metadata.ownerUserId !== pkg.ownerUserId ||
+    !("trustedPublishAuthorizationVersion" in metadata) ||
+    metadata.trustedPublishAuthorizationVersion !== 2 ||
+    !("trustedPublishTokenId" in metadata) ||
+    typeof metadata.trustedPublishTokenId !== "string" ||
+    !("trustedPublishInventoryDigest" in metadata) ||
+    typeof metadata.trustedPublishInventoryDigest !== "string" ||
+    !/^[a-f0-9]{64}$/.test(metadata.trustedPublishInventoryDigest) ||
+    !followup ||
+    typeof followup !== "object" ||
+    Array.isArray(followup) ||
+    !("trustedPublishAuthorizationVersion" in followup) ||
+    followup.trustedPublishAuthorizationVersion !== 2 ||
+    !("trustedPublishTokenId" in followup) ||
+    followup.trustedPublishTokenId !== metadata.trustedPublishTokenId ||
+    !("trustedPublishInventoryDigest" in followup) ||
+    followup.trustedPublishInventoryDigest !== metadata.trustedPublishInventoryDigest ||
+    !("runtimeId" in metadata) ||
+    metadata.runtimeId !== pkg.runtimeId ||
+    release.runtimeId !== pkg.runtimeId ||
+    !manifest ||
+    typeof manifest !== "object" ||
+    Array.isArray(manifest) ||
+    !("id" in manifest) ||
+    manifest.id !== pkg.runtimeId ||
+    !semver.valid(release.version) ||
+    !semver.valid(latest.version) ||
+    !semver.lt(release.version, latest.version) ||
+    pkg.tags.latest !== latest._id ||
+    pkg.latestVersionSummary?.version !== latest.version ||
+    !attempt ||
+    attempt.kind !== "package" ||
+    attempt.status !== "failed" ||
+    !Number.isFinite(attempt.failedAt) ||
+    attempt.finalizedAt !== undefined ||
+    attempt.blockedAt !== undefined ||
+    attempt.checkClaimId !== undefined ||
+    attempt.checkClaimedAt !== undefined ||
+    attempt.checkClaimExpiresAt !== undefined ||
+    attempt.finalizationClaimId !== undefined ||
+    attempt.finalizationClaimedAt !== undefined ||
+    attempt.finalizationClaimExpiresAt !== undefined ||
+    attempt.finalizationLastError !== RETAINED_FINALIZATION_FAILURE ||
+    attempt.checks.trufflehog.status !== "clean" ||
+    attempt.checks.clawscan.status !== "clean" ||
+    !Number.isFinite(attempt.checks.trufflehog.checkedAt) ||
+    !Number.isFinite(attempt.checks.clawscan.checkedAt) ||
+    attempt.packageId !== pkg._id ||
+    attempt.packageReleaseId !== release._id ||
+    attempt.slug !== pkg.name ||
+    attempt.version !== release.version ||
+    attempt.ownerPublisherId !== pkg.ownerPublisherId ||
+    attempt.ownerUserId !== pkg.ownerUserId ||
+    attempt.userId !== release.createdBy ||
+    attempt.clawpackStorageId !== release.clawpackStorageId ||
+    attempt.artifactFingerprint !== release.integritySha256 ||
+    fileInventory(attempt.files) !== fileInventory(release.files)
+  )
+    throw new ConvexError("Release history has unqualified failed pending publication state");
+  return attempt;
+}
 
 export async function repairLegacyNativePluginFamily(
   ctx: MutationCtx,
@@ -136,16 +233,23 @@ export async function repairLegacyNativePluginFamily(
     .take(MAX_RELEASES + 1);
   if (releases.length > MAX_RELEASES)
     throw new ConvexError("Release inventory exceeds repair bound");
-  if (
-    releases.some(
-      (release) =>
-        (release.publicationStatus !== undefined && release.publicationStatus !== "published") ||
-        release.pendingPublication !== undefined ||
-        release.operationalRetry !== undefined ||
-        (pkg.family === "bundle-plugin" && release.pluginFamily === "code-plugin"),
-    )
-  ) {
-    throw new ConvexError("Release history has pending or contradictory publication state");
+  const failedPendingAttempts: Doc<"publishAttempts">[] = [];
+  for (const release of releases) {
+    if (
+      release.operationalRetry !== undefined ||
+      (pkg.family === "bundle-plugin" && release.pluginFamily === "code-plugin")
+    ) {
+      throw new ConvexError("Release history has pending or contradictory publication state");
+    }
+    if (
+      (release.publicationStatus !== undefined && release.publicationStatus !== "published") ||
+      release.pendingPublication !== undefined
+    ) {
+      if (failedPendingAttempts.length >= MAX_FAILED_PENDING) {
+        throw new ConvexError("Failed pending history exceeds repair bound");
+      }
+      failedPendingAttempts.push(await retainedFailedPendingAttempt(ctx, pkg, latest, release));
+    }
   }
   if (pkg.family === "code-plugin") {
     if (releases.some((release) => release.pluginFamily === undefined)) {
@@ -179,6 +283,7 @@ export async function repairLegacyNativePluginFamily(
       ...release,
       pluginFamily: release.pluginFamily ?? "bundle-plugin",
     })),
+    failedPendingAttempts,
     nativeManifestStorage: { id: nativeFile.storageId, size: stored.size, sha256: stored.sha256 },
   });
   const bytes = new TextEncoder().encode(inventory);
@@ -195,6 +300,7 @@ export async function repairLegacyNativePluginFamily(
       releases: releases.length,
       snapshotted: 0,
       wouldSnapshot: missing.length,
+      preservedFailedPending: failedPendingAttempts.length,
       changedParent: false,
       wouldChangeParent: true,
       revision,
@@ -221,6 +327,7 @@ export async function repairLegacyNativePluginFamily(
       nextFamily: "code-plugin",
       releaseIds: releases.map((release) => release._id),
       snapshotted: missing.length,
+      preservedFailedPendingAttemptIds: failedPendingAttempts.map((attempt) => attempt._id),
       evidenceReleaseId: latest._id,
       evidenceFingerprint: latest.integritySha256,
       nativeManifestSha256: nativeFile.sha256,
@@ -233,6 +340,7 @@ export async function repairLegacyNativePluginFamily(
     packageId: pkg._id,
     releases: releases.length,
     snapshotted: missing.length,
+    preservedFailedPending: failedPendingAttempts.length,
     changedParent: true,
     revision,
   };

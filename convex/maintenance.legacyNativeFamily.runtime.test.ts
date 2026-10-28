@@ -113,6 +113,75 @@ async function fixture() {
   return { t, ...ids, args };
 }
 
+// Mirrors the retained 2026.9.4/2026.9.8 attempts: scans completed, but
+// finalization rejected the original failed parent run. They must stay failed.
+async function failedHistory(f: Awaited<ReturnType<typeof fixture>>, version = "2026.9.8") {
+  return f.t.run(async (ctx) => {
+    const latest = (await ctx.db.get(f.latest))!;
+    const pendingPublication = {
+      family: "bundle-plugin",
+      runtimeId: "acpx",
+      ownerUserId: f.actor,
+      ownerPublisherId: f.publisher,
+      tags: ["latest"],
+      trustedPublishAuthorizationVersion: 2,
+      trustedPublishTokenId: "retained-original-token",
+      trustedPublishInventoryDigest: "a".repeat(64),
+    };
+    const release = await ctx.db.insert("packageReleases", {
+      packageId: f.pkg,
+      version,
+      publicationStatus: "pending",
+      pendingPublication,
+      runtimeId: "acpx",
+      extractedPluginManifest: latest.extractedPluginManifest,
+      files: latest.files,
+      integritySha256: latest.integritySha256,
+      createdAt: 1,
+      createdBy: f.actor,
+      distTags: ["latest"],
+      changelog: "Retained original",
+    });
+    const attempt = await ctx.db.insert("publishAttempts", {
+      kind: "package",
+      status: "failed",
+      userId: f.actor,
+      ownerUserId: f.actor,
+      ownerPublisherId: f.publisher,
+      packageId: f.pkg,
+      packageReleaseId: release,
+      slug: "@openclaw/acpx",
+      version,
+      displayName: "ACPX Runtime",
+      artifactFingerprint: latest.integritySha256,
+      files: latest.files,
+      checks: {
+        trufflehog: { status: "clean", checkedAt: 2 },
+        clawscan: {
+          status: "clean",
+          checkedAt: 2,
+          redactedFindings: ["Retained suspicious finding"],
+        },
+      },
+      finalizationLastError:
+        "OpenClaw release parent terminal state completed/failure is not authorized by automated-detached",
+      failedAt: 3,
+      createdAt: 1,
+      updatedAt: 3,
+      expiresAt: 4,
+      idempotencyKey: `retained-${version}`,
+      packageFollowup: {
+        trustedPublishAuthorizationVersion: 2,
+        trustedPublishTokenId: pendingPublication.trustedPublishTokenId,
+        trustedPublishInventoryDigest: pendingPublication.trustedPublishInventoryDigest,
+      },
+      packageInsertArgs: { llmAnalysis: { status: "suspicious" } },
+    });
+    await ctx.db.patch(release, { publishAttemptId: attempt });
+    return { release, attempt };
+  });
+}
+
 describe("guarded legacy native plugin family repair", () => {
   it("repairs a persisted admission dead end while preserving bundle history and original bytes", async () => {
     const { t, actor, publisher, pkg, old, latest, args } = await fixture();
@@ -187,6 +256,142 @@ describe("guarded legacy native plugin family repair", () => {
       pluginFamily: "code-plugin",
       files: publish.files,
     });
+  });
+
+  it("preserves two failed pending originals without activating or reauthorizing them", async () => {
+    const f = await fixture();
+    const histories = [await failedHistory(f, "2026.9.4"), await failedHistory(f)];
+    const snapshot = () =>
+      f.t.run(async (ctx) => ({
+        parent: await ctx.db.get(f.pkg),
+        attempts: await Promise.all(histories.map((h) => ctx.db.get(h.attempt))),
+        releases: await Promise.all(histories.map((h) => ctx.db.get(h.release))),
+        scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
+      }));
+    const before = await snapshot();
+    const dry = await f.t.mutation(
+      internal.maintenance.repairLegacyNativePluginFamilyInternal,
+      f.args,
+    );
+    expect(dry).toMatchObject({ wouldSnapshot: 4, preservedFailedPending: 2 });
+    expect(await snapshot()).toEqual(before);
+    await f.t.mutation(internal.maintenance.repairLegacyNativePluginFamilyInternal, {
+      ...f.args,
+      dryRun: false,
+      confirm,
+      expectedRevision: dry.revision,
+    });
+    const after = await snapshot();
+    expect(after.attempts).toEqual(before.attempts);
+    expect(after.releases).toEqual(
+      before.releases.map((r) => ({ ...r, pluginFamily: "bundle-plugin" })),
+    );
+    expect(after.parent).toEqual({
+      ...before.parent,
+      family: "code-plugin",
+      updatedAt: expect.any(Number),
+    });
+    expect(after.scheduled).toEqual(before.scheduled);
+    await expect(
+      f.t.mutation(internal.packages.publishPendingReleaseInternal, {
+        releaseId: histories[0].release,
+      }),
+    ).rejects.toThrow();
+    expect(await snapshot()).toEqual(after);
+    expect(
+      await f.t.mutation(internal.maintenance.repairLegacyNativePluginFamilyInternal, f.args),
+    ).toMatchObject({ alreadyRepaired: true });
+  });
+
+  it("binds the complete failed attempt to the dry-run revision", async () => {
+    const f = await fixture();
+    const h = await failedHistory(f);
+    const dry = await f.t.mutation(
+      internal.maintenance.repairLegacyNativePluginFamilyInternal,
+      f.args,
+    );
+    await f.t.run((ctx) => ctx.db.patch(h.attempt, { updatedAt: 99 }));
+    await expect(
+      f.t.mutation(internal.maintenance.repairLegacyNativePluginFamilyInternal, {
+        ...f.args,
+        dryRun: false,
+        confirm,
+        expectedRevision: dry.revision,
+      }),
+    ).rejects.toThrow("current dry-run revision");
+    expect((await f.t.run((ctx) => ctx.db.get(h.release)))?.pluginFamily).toBeUndefined();
+    expect((await f.t.run((ctx) => ctx.db.get(f.pkg)))?.family).toBe("bundle-plugin");
+  });
+
+  it.each([
+    "unbound",
+    "active",
+    "check-claim",
+    "finalization-claim",
+    "unchecked",
+    "missing-check-time",
+    "failure",
+    "missing-failed-time",
+    "files",
+    "fingerprint",
+    "publisher",
+    "owner",
+    "release-binding",
+    "runtime",
+    "family",
+    "newer",
+    "latest-tag",
+    "too-many",
+    "retry",
+  ])("rejects contradictory failed history: %s", async (kind) => {
+    const f = await fixture();
+    const h = await failedHistory(f);
+    await f.t.run(async (ctx) => {
+      const a = (await ctx.db.get(h.attempt))!;
+      if (kind === "unbound") await ctx.db.patch(h.release, { publishAttemptId: undefined });
+      if (kind === "active") await ctx.db.patch(h.attempt, { status: "finalizing" });
+      if (kind === "check-claim") await ctx.db.patch(h.attempt, { checkClaimExpiresAt: 0 });
+      if (kind === "finalization-claim")
+        await ctx.db.patch(h.attempt, { finalizationClaimId: "old-claim" });
+      if (kind === "unchecked")
+        await ctx.db.patch(h.attempt, { checks: { ...a.checks, clawscan: { status: "failed" } } });
+      if (kind === "missing-check-time")
+        await ctx.db.patch(h.attempt, { checks: { ...a.checks, clawscan: { status: "clean" } } });
+      if (kind === "failure") await ctx.db.patch(h.attempt, { finalizationLastError: "unrelated" });
+      if (kind === "missing-failed-time") await ctx.db.patch(h.attempt, { failedAt: undefined });
+      if (kind === "files") await ctx.db.patch(h.attempt, { files: [] });
+      if (kind === "fingerprint")
+        await ctx.db.patch(h.attempt, { artifactFingerprint: "different" });
+      if (kind === "publisher") await ctx.db.patch(h.attempt, { ownerPublisherId: undefined });
+      if (kind === "owner") await ctx.db.patch(h.attempt, { ownerUserId: undefined });
+      if (kind === "release-binding") await ctx.db.patch(h.attempt, { packageReleaseId: f.latest });
+      if (kind === "runtime") await ctx.db.patch(h.release, { runtimeId: "other" });
+      if (kind === "family")
+        await ctx.db.patch(h.release, { pendingPublication: { family: "code-plugin" } });
+      if (kind === "newer") {
+        await ctx.db.patch(h.release, { version: "2026.10.8" });
+        await ctx.db.patch(h.attempt, { version: "2026.10.8" });
+      }
+      if (kind === "latest-tag") await ctx.db.patch(f.pkg, { tags: { latest: h.release } });
+      if (kind === "retry")
+        await ctx.db.patch(h.release, {
+          operationalRetry: {
+            attemptId: h.attempt,
+            actorUserId: f.actor,
+            ownerUserId: f.actor,
+            ownerPublisherId: f.publisher,
+          },
+        });
+    });
+    if (kind === "too-many") {
+      await failedHistory(f, "2026.9.4");
+      await failedHistory(f, "2026.9.1");
+    }
+    await expect(
+      f.t.mutation(internal.maintenance.repairLegacyNativePluginFamilyInternal, f.args),
+    ).rejects.toThrow();
+    expect((await f.t.run((ctx) => ctx.db.get(f.pkg)))?.family).toBe("bundle-plugin");
+    expect((await f.t.run((ctx) => ctx.db.get(h.release)))?.pluginFamily).toBeUndefined();
   });
 
   it("rejects a stale revision without snapshotting any release", async () => {
