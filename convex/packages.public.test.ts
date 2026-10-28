@@ -299,7 +299,7 @@ const listVersionsForManagerHandler = (
     }
   >
 )._handler;
-const insertReleaseInternalHandler = (
+const rawInsertReleaseInternalHandler = (
   insertReleaseInternal as unknown as WrappedHandler<
     {
       actorUserId: string;
@@ -317,7 +317,7 @@ const insertReleaseInternalHandler = (
           };
       name: string;
       displayName: string;
-      family: "skill" | "code-plugin" | "bundle-plugin" | "template";
+      family: "skill" | "code-plugin" | "bundle-plugin" | "template" | "claw";
       version: string;
       publicationStatus?: "pending" | "published";
       changelog: string;
@@ -364,6 +364,10 @@ const insertReleaseInternalHandler = (
     unknown
   >
 )._handler;
+const insertReleaseInternalHandler = (
+  ctx: unknown,
+  args: Parameters<typeof rawInsertReleaseInternalHandler>[1],
+) => rawInsertReleaseInternalHandler(ctx, storedFixture(args));
 const findPackagePublishResultInternalHandler = (
   findPackagePublishResultInternal as unknown as WrappedHandler<
     {
@@ -1195,6 +1199,29 @@ afterEach(() => {
   vi.mocked(getAuthUserId).mockResolvedValue(null);
 });
 
+// These builders represent persisted documents, not public wire DTOs. Logical
+// Template test inputs deliberately materialize the already-deployed physical keys.
+function storedFixture<T extends Record<string, unknown>>(input: T): T {
+  const result: Record<string, unknown> = { ...input };
+  if (result.family === "template") result.family = "claw";
+  for (const [wire, physical] of [
+    ["templateManifestSummary", "clawManifestSummary"],
+    ["templateProfilePolicyVersion", "clawProfilePolicyVersion"],
+  ]) {
+    if (Object.hasOwn(result, wire)) {
+      result[physical] = result[wire];
+      delete result[wire];
+    }
+  }
+  if (
+    result.pendingPublication &&
+    typeof result.pendingPublication === "object" &&
+    !Array.isArray(result.pendingPublication)
+  )
+    result.pendingPublication = storedFixture(result.pendingPublication as Record<string, unknown>);
+  return result as T;
+}
+
 function makeDigest(
   name: string,
   overrides: Partial<Record<string, unknown>> = {},
@@ -1221,7 +1248,7 @@ function makeDigest(
     executesCode: false,
     verificationTier: null,
     softDeletedAt: undefined,
-    ...overrides,
+    ...storedFixture(overrides),
   };
 }
 
@@ -1247,7 +1274,7 @@ function makePackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
     createdAt: 1,
     updatedAt: 1,
     softDeletedAt: undefined,
-    ...overrides,
+    ...storedFixture(overrides),
   };
 }
 
@@ -1397,7 +1424,7 @@ function makeReleaseDoc(overrides: Partial<Record<string, unknown>> = {}) {
     softDeletedAt: undefined,
     createdBy: "users:owner",
     publishActor: { kind: "user", userId: "users:owner" },
-    ...overrides,
+    ...storedFixture(overrides),
   };
 }
 
@@ -10114,7 +10141,7 @@ describe("packages public queries", () => {
       ownerPublisherId: openClawPublisher._id,
       name: "@openclaw/demo-claw",
       displayName: "Demo Template",
-      family: "template",
+      family: "claw",
       version: "1.0.0",
       changelog: "init",
       tags: ["latest"],
@@ -10126,8 +10153,8 @@ describe("packages public queries", () => {
     expect(ctx.insert).toHaveBeenCalledWith(
       "packages",
       expect.objectContaining({
-        family: "template",
-        templateProfilePolicyVersion: 1,
+        family: "claw",
+        clawProfilePolicyVersion: 1,
       }),
     );
   });
@@ -10161,7 +10188,7 @@ describe("packages public queries", () => {
     ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
     expect(ctx.insert).toHaveBeenCalledWith(
       "packages",
-      expect.objectContaining({ family: "template", channel: "community", isOfficial: false }),
+      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
     );
   });
 
@@ -10245,7 +10272,7 @@ describe("packages public queries", () => {
     ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
     expect(ctx.insert).toHaveBeenCalledWith(
       "packages",
-      expect.objectContaining({ family: "template", channel: "community", isOfficial: false }),
+      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
     );
   });
 
@@ -10269,7 +10296,7 @@ describe("packages public queries", () => {
     ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
     expect(ctx.insert).toHaveBeenCalledWith(
       "packages",
-      expect.objectContaining({ family: "template", channel: "community", isOfficial: false }),
+      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
     );
   });
 
@@ -10300,8 +10327,8 @@ describe("packages public queries", () => {
     expect(ctx.patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
-        family: "template",
-        templateProfilePolicyVersion: 1,
+        family: "claw",
+        clawProfilePolicyVersion: 1,
       }),
     );
   });
@@ -10335,8 +10362,8 @@ describe("packages public queries", () => {
     expect(ctx.patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
-        family: "template",
-        templateProfilePolicyVersion: 1,
+        family: "claw",
+        clawProfilePolicyVersion: 1,
       }),
     );
   });
@@ -11268,7 +11295,7 @@ describe("packages public queries", () => {
         ownerPublisherId: openClawPublisher._id,
         name: "@openclaw/demo-claw",
         displayName: "Demo Template",
-        family: "template",
+        family: "claw",
         version: "1.0.0",
         changelog: "retry",
         tags: ["latest"],
@@ -11299,7 +11326,7 @@ describe("packages public queries", () => {
         ownerPublisherId: openClawPublisher._id,
         name: "@openclaw/demo-claw",
         displayName: "Demo Template",
-        family: "template",
+        family: "claw",
         version: "1.0.0",
         changelog: "retry",
         tags: ["latest"],
@@ -11336,7 +11363,7 @@ describe("packages public queries", () => {
           ownerPublisherId: openClawPublisher._id,
           name: "@openclaw/demo-claw",
           displayName: "Demo Template",
-          family: "template",
+          family: "claw",
           version: "1.0.0",
           changelog: "retry",
           tags: ["latest"],
@@ -11627,7 +11654,7 @@ describe("packages public queries", () => {
       if (args.minimumRole === "publisher") {
         return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
       }
-      if (args.family === "template") {
+      if (args.family === "claw") {
         return { ok: true, packageId: "packages:claw", releaseId: "releases:claw-1" };
       }
       return null;
@@ -11728,13 +11755,13 @@ describe("packages public queries", () => {
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        family: "template",
+        family: "claw",
         summary: expect.any(String),
         artifactKind: "npm-pack",
         clawpackStorageId: "storage:archive",
         clawpackSha256: artifactSha256,
         clawpackSize: 3,
-        templateManifestSummary: expect.objectContaining({
+        clawManifestSummary: expect.objectContaining({
           agent: expect.objectContaining({
             id: "demo-claw",
             description: "x".repeat(1_024),
@@ -11747,7 +11774,7 @@ describe("packages public queries", () => {
       }),
     );
     const publishMutationArgs = runMutation.mock.calls.find(
-      ([, args]) => args.family === "template",
+      ([, args]) => args.family === "claw",
     )?.[1];
     expect(publishMutationArgs?.summary).toBe("x".repeat(1_024));
     expect(publishMutationArgs).not.toHaveProperty("extractedTemplateManifest");
@@ -11777,7 +11804,7 @@ describe("packages public queries", () => {
     });
     const currentPolicyPackage = {
       ...existingPackage,
-      templateProfilePolicyVersion: 1,
+      clawProfilePolicyVersion: 1,
     };
     const existingRelease = makeReleaseDoc({
       _id: "packageReleases:pending",

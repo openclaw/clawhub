@@ -207,6 +207,8 @@ import type * as lib_skillsShPublicVisibility from "../lib/skillsShPublicVisibil
 import type * as lib_staticPublishScan from "../lib/staticPublishScan.js";
 import type * as lib_storageDigests from "../lib/storageDigests.js";
 import type * as lib_templateCategoryClassification from "../lib/templateCategoryClassification.js";
+import type * as lib_templateFeedStorage from "../lib/templateFeedStorage.js";
+import type * as lib_templateStorage from "../lib/templateStorage.js";
 import type * as lib_testSeed from "../lib/testSeed.js";
 import type * as lib_tokens from "../lib/tokens.js";
 import type * as lib_trendingLanguage from "../lib/trendingLanguage.js";
@@ -278,6 +280,7 @@ import type * as stars from "../stars.js";
 import type * as staticPublishScanNode from "../staticPublishScanNode.js";
 import type * as statsMaintenance from "../statsMaintenance.js";
 import type * as telemetry from "../telemetry.js";
+import type * as templateStorageDevSeed from "../templateStorageDevSeed.js";
 import type * as tokens from "../tokens.js";
 import type * as uploads from "../uploads.js";
 import type * as users from "../users.js";
@@ -490,6 +493,8 @@ declare const fullApi: ApiFromModules<{
   "lib/staticPublishScan": typeof lib_staticPublishScan;
   "lib/storageDigests": typeof lib_storageDigests;
   "lib/templateCategoryClassification": typeof lib_templateCategoryClassification;
+  "lib/templateFeedStorage": typeof lib_templateFeedStorage;
+  "lib/templateStorage": typeof lib_templateStorage;
   "lib/testSeed": typeof lib_testSeed;
   "lib/tokens": typeof lib_tokens;
   "lib/trendingLanguage": typeof lib_trendingLanguage;
@@ -561,6 +566,7 @@ declare const fullApi: ApiFromModules<{
   staticPublishScanNode: typeof staticPublishScanNode;
   statsMaintenance: typeof statsMaintenance;
   telemetry: typeof telemetry;
+  templateStorageDevSeed: typeof templateStorageDevSeed;
   tokens: typeof tokens;
   uploads: typeof uploads;
   users: typeof users;

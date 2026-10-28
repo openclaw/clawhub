@@ -1056,7 +1056,7 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
       ) {
         // Recovery runs current checks anew; prior attempt results remain audit evidence.
         const release = await ctx.db.get(attempt.packageReleaseId);
-        const releaseFingerprint = release?.templateManifestSummary
+        const releaseFingerprint = release?.clawManifestSummary
           ? release.clawpackSha256
           : release?.integritySha256;
         if (release && releaseFingerprint === attempt.artifactFingerprint) {

@@ -20,7 +20,7 @@ import {
   type PackageArtifactSummary,
   type ApiV1PackageVersionPublicationResponse,
   type PackageChannel,
-  type PackageFamily,
+  type PackageFamily as PublicPackageFamily,
   type PluginCategorySlug,
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
@@ -175,9 +175,16 @@ import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./l
 import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { classifyTemplateCategories } from "./lib/templateCategoryClassification";
+import {
+  toStoredPackageFamily,
+  toPublicPackageFamily,
+  withStoredPackageFamily,
+  type StoredPackageFamily,
+} from "./lib/templateStorage";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
 import { ACTIVE_PUBLISH_ATTEMPT_STATUSES, failedPublishAttemptPatch } from "./publishAttempts";
 import schema, { llmAnalysisValidator } from "./schema";
+type PackageFamily = StoredPackageFamily;
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
 const MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS = 500;
@@ -712,7 +719,7 @@ type PackageDoc = Doc<"packages">;
 type PublicPackageListItem = {
   name: string;
   displayName: string;
-  family: PackageFamily;
+  family: PublicPackageFamily;
   runtimeId: string | null;
   channel: PackageChannel;
   isOfficial: boolean;
@@ -743,7 +750,7 @@ type PackageModerationQueueItem = {
   releaseId: Id<"packageReleases">;
   name: string;
   displayName: string;
-  family: PackageFamily;
+  family: PublicPackageFamily;
   channel: PackageChannel;
   isOfficial: boolean;
   version: string;
@@ -764,7 +771,7 @@ type PackageReportListItem = {
   releaseId?: Id<"packageReleases"> | null;
   name: string;
   displayName: string;
-  family: PackageFamily;
+  family: PublicPackageFamily;
   version?: string | null;
   reason?: string | null;
   status: PackageReportStatus;
@@ -786,7 +793,7 @@ type PackageAppealListItem = {
   releaseId: Id<"packageReleases">;
   name: string;
   displayName: string;
-  family: PackageFamily;
+  family: PublicPackageFamily;
   version: string;
   message: string;
   status: PackageAppealStatus;
@@ -825,7 +832,7 @@ type PackageModerationStatus = {
     packageId: Id<"packages">;
     name: string;
     displayName: string;
-    family: PackageFamily;
+    family: PublicPackageFamily;
     channel: PackageChannel;
     isOfficial: boolean;
     reportCount: number;
@@ -940,7 +947,7 @@ function toPackageModerationQueueItem(
     releaseId: release._id,
     name: pkg.name,
     displayName: pkg.displayName,
-    family: pkg.family,
+    family: toPublicPackageFamily(pkg.family),
     channel: pkg.channel,
     isOfficial: pkg.isOfficial,
     version: release.version,
@@ -1089,7 +1096,7 @@ type PublicPackageDoc = {
   _id: Id<"packages">;
   name: string;
   displayName: string;
-  family: PackageFamily;
+  family: PublicPackageFamily;
   templateProfilePolicyVersion?: 1;
   channel: PackageChannel;
   isOfficial: boolean;
@@ -1104,7 +1111,7 @@ type PublicPackageDoc = {
   compatibility?: Doc<"packages">["compatibility"];
   verification?: Doc<"packages">["verification"];
   artifact?: PackageArtifactSummary;
-  templateManifestSummary?: Doc<"packageReleases">["templateManifestSummary"];
+  templateManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
   scanStatus?: Doc<"packages">["scanStatus"];
   stats: Doc<"packages">["stats"];
   createdAt: number;
@@ -1115,7 +1122,7 @@ type DashboardPackageListItem = {
   _id: Id<"packages">;
   name: string;
   displayName: string;
-  family: PackageFamily;
+  family: PublicPackageFamily;
   channel: PackageChannel;
   isOfficial: boolean;
   runtimeId: string | null;
@@ -1283,8 +1290,8 @@ function toPublicPackage(
     _id: pkg._id,
     name: pkg.name,
     displayName: pkg.displayName,
-    family: pkg.family,
-    templateProfilePolicyVersion: pkg.templateProfilePolicyVersion,
+    family: toPublicPackageFamily(pkg.family),
+    templateProfilePolicyVersion: pkg.clawProfilePolicyVersion,
     channel: pkg.channel,
     isOfficial: pkg.isOfficial,
     runtimeId: pkg.runtimeId,
@@ -1304,8 +1311,8 @@ function toPublicPackage(
           ? packageArtifactSummary(latestRelease)
           : undefined,
     templateManifestSummary:
-      pkg.family === "template" && isPublishedPackageRelease(latestRelease)
-        ? latestRelease.templateManifestSummary
+      pkg.family === "claw" && isPublishedPackageRelease(latestRelease)
+        ? latestRelease.clawManifestSummary
         : undefined,
     scanStatus,
     stats: pkg.stats,
@@ -1318,7 +1325,7 @@ function toPublicPackageRelease(release: Doc<"packageReleases">, family: Package
   // Plugin snapshots may distinguish historical bundles from current native
   // releases. They can never loosen the Template/skill projection boundary.
   family = resolvePackageReleaseFamily(family, release);
-  if (family === "template") {
+  if (family === "claw") {
     const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
     return {
       _id: release._id,
@@ -1344,7 +1351,7 @@ function toPublicPackageRelease(release: Doc<"packageReleases">, family: Package
       npmTarballName: release.npmTarballName,
       npmUnpackedSize: release.npmUnpackedSize,
       npmFileCount: release.npmFileCount,
-      templateManifestSummary: release.templateManifestSummary,
+      templateManifestSummary: release.clawManifestSummary,
       compatibility: release.compatibility,
       runtimeId: release.runtimeId,
       sourceRepo: release.sourceRepo,
@@ -1368,7 +1375,7 @@ function toPublicPackageRelease(release: Doc<"packageReleases">, family: Package
 function toPublicPluginRelease(release: Doc<"packageReleases">) {
   const {
     capabilities: _capabilities,
-    templateManifestSummary: _templateManifestSummary,
+    clawManifestSummary: _clawManifestSummary,
     extractedTemplateManifest: _extractedTemplateManifest,
     ...publicRelease
   } = release as Doc<"packageReleases"> & {
@@ -1467,7 +1474,7 @@ async function isTemplateCatalogPublisherAvailable(
   pkg: Pick<PackageDigestLike, "family" | "normalizedName" | "ownerPublisherId">,
   cache?: Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>,
 ) {
-  if (pkg.family !== "template") return true;
+  if (pkg.family !== "claw") return true;
   if (!pkg.ownerPublisherId) return false;
   const publisherId = pkg.ownerPublisherId;
   let ownerPromise = cache?.get(publisherId);
@@ -1502,7 +1509,7 @@ function digestMatchesFilters(
   if (isPackageBlockedFromPublic(digest.scanStatus)) return false;
   if (digest.scanStatus && args.excludedScanStatuses?.includes(digest.scanStatus)) return false;
   if (args.category) {
-    if (digest.family === "template") {
+    if (digest.family === "claw") {
       if (!(digest.categories ?? []).includes(args.category)) return false;
     } else if (digest.pluginCategory) {
       if (digest.pluginCategory !== args.category) return false;
@@ -1637,7 +1644,7 @@ async function toPublicPackageListItem(
   return {
     name: digest.name,
     displayName: digest.displayName,
-    family: digest.family,
+    family: toPublicPackageFamily(digest.family),
     runtimeId: digest.runtimeId ?? null,
     channel: digest.channel,
     isOfficial: digest.isOfficial,
@@ -1675,7 +1682,7 @@ async function toPublicPackageListItemFromPackage(
   return {
     name: pkg.name,
     displayName: pkg.displayName,
-    family: pkg.family,
+    family: toPublicPackageFamily(pkg.family),
     runtimeId: pkg.runtimeId ?? null,
     channel: pkg.channel,
     isOfficial: pkg.isOfficial,
@@ -1706,7 +1713,7 @@ async function toDashboardPackageListItem(
     _id: pkg._id,
     name: pkg.name,
     displayName: pkg.displayName,
-    family: pkg.family,
+    family: toPublicPackageFamily(pkg.family),
     channel: pkg.channel,
     isOfficial: pkg.isOfficial,
     runtimeId: pkg.runtimeId ?? null,
@@ -3497,7 +3504,14 @@ export const getByNameForStaff = query({
     );
 
     return {
-      package: pkg,
+      package: (() => {
+        const { clawProfilePolicyVersion, ...record } = pkg;
+        return {
+          ...record,
+          family: toPublicPackageFamily(pkg.family),
+          templateProfilePolicyVersion: clawProfilePolicyVersion,
+        };
+      })(),
       latestRelease: isPublishedPackageRelease(latestRelease)
         ? toPublicPackageRelease(latestRelease, pkg.family)
         : null,
@@ -3580,7 +3594,7 @@ export const getPluginDetailForViewerInternal = internalQuery({
     return {
       package: {
         ...publicPackage,
-        family: resolvePackageReleaseFamily(pkg.family, selectedRelease),
+        family: toPublicPackageFamily(resolvePackageReleaseFamily(pkg.family, selectedRelease)),
         publicDownloadBlocked,
       },
       owner,
@@ -3690,7 +3704,10 @@ export const getVersionByName = query({
     if (!snapshot) return null;
     return {
       package: snapshot.package,
-      version: toPublicPackageRelease(snapshot.release, snapshot.package.family),
+      version: toPublicPackageRelease(
+        snapshot.release,
+        toStoredPackageFamily(snapshot.package.family),
+      ),
     };
   },
 });
@@ -3779,7 +3796,10 @@ async function readPackageReleaseSnapshotForViewer(
   const publicPackage = toPublicPackage(pkg, latestRelease);
   return publicPackage
     ? {
-        package: { ...publicPackage, family: resolvePackageReleaseFamily(pkg.family, release) },
+        package: {
+          ...publicPackage,
+          family: toPublicPackageFamily(resolvePackageReleaseFamily(pkg.family, release)),
+        },
         release,
       }
     : null;
@@ -3806,7 +3826,7 @@ export async function readPackageVersionForViewer(
   return {
     package: pkg,
     version: {
-      ...toPublicPackageRelease(release, pkg.family),
+      ...toPublicPackageRelease(release, toStoredPackageFamily(pkg.family)),
       // Internal HTTP handlers need the opaque storage id to stream exact ClawPack bytes.
       ...(release.clawpackStorageId ? { clawpackStorageId: release.clawpackStorageId } : {}),
     },
@@ -3925,7 +3945,7 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
     return {
       package: {
         ...publicPackage,
-        family: resolvePackageReleaseFamily(pkg.family, release),
+        family: toPublicPackageFamily(resolvePackageReleaseFamily(pkg.family, release)),
         publicDownloadBlocked,
       },
       version: toPublicPackageRelease(release, pkg.family),
@@ -3989,7 +4009,7 @@ export const listPublicPage = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    return await listPackagePageImpl(ctx, args);
+    return await listPackagePageImpl(ctx, withStoredPackageFamily(args));
   },
 });
 
@@ -4044,7 +4064,7 @@ export const listAuditPage = query({
         package: {
           name: pkg.name,
           displayName: pkg.displayName,
-          family: pkg.family,
+          family: toPublicPackageFamily(pkg.family),
           channel: pkg.channel,
           isOfficial: pkg.isOfficial,
           summary: pkg.summary ?? null,
@@ -4689,7 +4709,7 @@ export const listPageForViewerInternal = internalQuery({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    return await listPackagePageImpl(ctx, args);
+    return await listPackagePageImpl(ctx, withStoredPackageFamily(args));
   },
 });
 
@@ -4936,7 +4956,7 @@ async function listPackagePageImpl(
     throw new Error("families is only supported for highlighted or trending package pages");
   }
   const category =
-    args.family === "template"
+    args.family === "claw"
       ? args.category && (isTemplateCategorySlug(args.category) || args.category === "other")
         ? args.category
         : undefined
@@ -5024,7 +5044,7 @@ async function listPackagePageImpl(
   if (
     args.officialFirst &&
     category &&
-    args.family !== "template" &&
+    args.family !== "claw" &&
     isPluginCategorySlug(category) &&
     typeof args.isOfficial !== "boolean"
   ) {
@@ -5225,7 +5245,7 @@ async function listPackagePageImpl(
           isOfficial,
           sort: effectiveDigestSort,
         })
-      : category && family !== "template" && isPluginCategorySlug(category)
+      : category && family !== "claw" && isPluginCategorySlug(category)
         ? buildPackagePluginCategoryDigestQuery(ctx, {
             category,
             family,
@@ -5249,7 +5269,7 @@ async function listPackagePageImpl(
       MAX_PUBLIC_LIST_PAGE_SIZE,
       pageOffset > 0 && pageSize
         ? Math.max(pageSize, pageOffset + targetCount)
-        : family === "template"
+        : family === "claw"
           ? MAX_PUBLIC_LIST_PAGE_SIZE
           : Math.max(effectivePageSize, targetCount),
     );
@@ -5474,7 +5494,9 @@ export const searchPublic = query({
     excludedScanStatuses: v.optional(v.array(packageListScanStatusValidator)),
   },
   handler: async (ctx, args) => {
-    return (await searchPackagesImpl(ctx, args)).map(toPublicPackageSearchEntry);
+    return (await searchPackagesImpl(ctx, withStoredPackageFamily(args))).map(
+      toPublicPackageSearchEntry,
+    );
   },
 });
 
@@ -5502,7 +5524,7 @@ export const searchForViewerInternal = internalQuery({
     viewerUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    return await searchPackagesImpl(ctx, args);
+    return await searchPackagesImpl(ctx, withStoredPackageFamily(args));
   },
 });
 
@@ -5567,7 +5589,7 @@ async function searchPackagesImpl(
   const queryText = args.query.trim().toLowerCase();
   if (!queryText) return [];
   const category =
-    args.family === "template"
+    args.family === "claw"
       ? args.category && (isTemplateCategorySlug(args.category) || args.category === "other")
         ? args.category
         : undefined
@@ -5646,7 +5668,7 @@ async function searchPackagesImpl(
           channel: args.channel,
           isOfficial,
         })
-      : category && family !== "template" && isPluginCategorySlug(category)
+      : category && family !== "claw" && isPluginCategorySlug(category)
         ? buildPackagePluginCategoryDigestQuery(ctx, {
             category,
             family,
@@ -5680,7 +5702,7 @@ async function searchPackagesImpl(
   const [highlightedEntries, officialDigestGroups, directDigests] = await Promise.all([
     highlighted,
     official,
-    category && !topic && args.family !== "template"
+    category && !topic && args.family !== "claw"
       ? Promise.resolve([])
       : Promise.all(
           searchFamilies.map(
@@ -5723,7 +5745,7 @@ async function searchPackagesImpl(
 
   if (authoritativeMatchCount() < targetCount) {
     const requiresWideScan =
-      args.family === "template" ||
+      args.family === "claw" ||
       (topic !== undefined && category !== undefined) ||
       args.createdAfter !== undefined;
     const scanLimit = requiresWideScan
@@ -5764,19 +5786,18 @@ async function searchPackagesImpl(
     await collectDigestMatches(fallbackDigests);
     if (
       !args.family &&
-      (fallbackDigests.some((digest) => digest.family === "template") ||
-        skippedUnavailableTemplate) &&
+      (fallbackDigests.some((digest) => digest.family === "claw") || skippedUnavailableTemplate) &&
       authoritativeMatchCount() < targetCount
     ) {
       // Templates may exhaust the shared candidate window without matching the
       // query. Give each family its own bounded recovery window.
       const recoveryGroups = await Promise.all(
-        [...STABLE_PACKAGE_FAMILIES, "template" as const].map(
+        [...STABLE_PACKAGE_FAMILIES, "claw" as const].map(
           async (family) =>
             (await buildSearchDigestQuery(family)
               .order("desc")
               .take(
-                family === "template" ? MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS : scanLimit,
+                family === "claw" ? MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS : scanLimit,
               )) as PackageDigestLike[],
         ),
       );
@@ -5814,7 +5835,7 @@ export const findPackagePublishResultInternal = internalQuery({
       )
       .unique();
     const matchesExactTemplateArtifact =
-      pkg.family !== "template" ||
+      pkg.family !== "claw" ||
       (typeof args.clawpackSha256 === "string" && release?.clawpackSha256 === args.clawpackSha256);
     if (
       !isPublishedPackageRelease(release) ||
@@ -7927,7 +7948,7 @@ function toPackageReportListItem(
     releaseId: report.releaseId ?? null,
     name: pkg.name,
     displayName: pkg.displayName,
-    family: pkg.family,
+    family: toPublicPackageFamily(pkg.family),
     version: report.version ?? null,
     reason: report.reason ?? null,
     status: readArtifactReportStatus(report.status),
@@ -8135,7 +8156,7 @@ export const getPackageModerationStatusForUserInternal = internalQuery({
         packageId: pkg._id,
         name: pkg.name,
         displayName: pkg.displayName,
-        family: pkg.family,
+        family: toPublicPackageFamily(pkg.family),
         channel: pkg.channel,
         isOfficial: pkg.isOfficial,
         reportCount: pkg.reportCount ?? 0,
@@ -8260,7 +8281,7 @@ function toPackageAppealListItem(
     releaseId: appeal.releaseId,
     name: pkg.name,
     displayName: pkg.displayName,
-    family: pkg.family,
+    family: toPublicPackageFamily(pkg.family),
     version: appeal.version,
     message: appeal.message,
     status: appeal.status,
@@ -9174,13 +9195,13 @@ async function publishPackageImpl(
   if (payload.family === "skill") {
     throw new ConvexError("Skill packages must use the skills publish flow");
   }
-  const family = payload.family;
+  const family = toStoredPackageFamily(payload.family);
   const name = normalizePackageName(payload.name);
   if (payload.family === "template" && payload.name !== name) {
     throw new ConvexError(`Template package name must use canonical form ${name}`);
   }
   const version = assertPackageVersion(family, payload.version);
-  if (family === "template") {
+  if (family === "claw") {
     if (payload.artifact?.kind !== "npm-pack") {
       throw new ConvexError(
         "Template publication requires an already-built package tarball (.tgz)",
@@ -9317,7 +9338,7 @@ async function publishPackageImpl(
     publishActor = { kind: "user", userId: actorUserId };
   }
 
-  if (family === "template" && ownerPublisherId) {
+  if (family === "claw" && ownerPublisherId) {
     const ownerPublisher = await runQueryRef<Doc<"publishers"> | null>(
       ctx,
       internalRefs.publishers.getByIdInternal,
@@ -9356,7 +9377,7 @@ async function publishPackageImpl(
   const integritySha256 = await hashSkillFiles(
     files.map((file) => ({ path: file.path, sha256: file.sha256 })),
   );
-  const publishedArtifactSha256 = family === "template" ? payload.artifact?.sha256 : undefined;
+  const publishedArtifactSha256 = family === "claw" ? payload.artifact?.sha256 : undefined;
   const attemptArtifactFingerprint = publishedArtifactSha256 ?? integritySha256;
   // Settle retries before the scans, Plugin Inspector, and classification run again.
   const settled = await settleExistingStagedPackagePublication(ctx, {
@@ -9383,7 +9404,7 @@ async function publishPackageImpl(
     ctx,
     files,
     (path) => path === "package.json",
-    family === "template"
+    family === "claw"
       ? {
           exactPath: true,
           maxBytes: 256 * 1024,
@@ -9399,7 +9420,7 @@ async function publishPackageImpl(
     { exactPath: true, maxBytes: 256 * 1024, label: "Native plugin manifest", strictUtf8: true },
   );
   const selectedManifest = (() => {
-    if (family === "template") return undefined;
+    if (family === "claw") return undefined;
     try {
       return selectPluginManifest({
         family,
@@ -9428,7 +9449,7 @@ async function publishPackageImpl(
 
   const packageJson = maybeParseJson(packageJsonEntry?.text);
   const declaredTemplateManifestPath =
-    family === "template" &&
+    family === "claw" &&
     packageJson &&
     typeof packageJson.openclaw === "object" &&
     packageJson.openclaw !== null &&
@@ -9455,7 +9476,7 @@ async function publishPackageImpl(
   const storedBundleManifest = toConvexSafeJsonValue(bundleManifest, {
     maxDepth: MAX_STORED_PACKAGE_METADATA_DEPTH,
   });
-  if (family !== "template" && packageJson) ensurePluginNameMatchesPackage(name, packageJson);
+  if (family !== "claw" && packageJson) ensurePluginNameMatchesPackage(name, packageJson);
   if (family === "code-plugin" && !pluginManifest) {
     throw new ConvexError("openclaw.plugin.json is required for plugin packages");
   }
@@ -9463,7 +9484,7 @@ async function publishPackageImpl(
   if (templateManifestEntry) {
     templateTextByPath.set(templateManifestEntry.file.path, templateManifestEntry.text);
   }
-  if (family === "template") {
+  if (family === "claw") {
     const bootstrapEntry = await readOptionalTextFile(
       ctx,
       files,
@@ -9493,7 +9514,7 @@ async function publishPackageImpl(
     ...(templateTextByPath.has(file.path) ? { text: templateTextByPath.get(file.path) } : {}),
   }));
   const templatePackage =
-    family === "template"
+    family === "claw"
       ? validateTemplatePackageContents({
           packageName: name,
           version,
@@ -9501,7 +9522,7 @@ async function publishPackageImpl(
           openClawProfilePolicy:
             existingPackage &&
             !hasNoPublishedPackageVersions(existingPackage) &&
-            existingPackage.templateProfilePolicyVersion !== CURRENT_TEMPLATE_PROFILE_POLICY_VERSION
+            existingPackage.clawProfilePolicyVersion !== CURRENT_TEMPLATE_PROFILE_POLICY_VERSION
               ? "publication-compatible"
               : "current",
           files: templateValidationFiles,
@@ -9594,7 +9615,7 @@ async function publishPackageImpl(
       });
       categories = assignment.categories;
       categoryClassification = assignment.classification;
-    } else if (family === "template") {
+    } else if (family === "claw") {
       if (!validatedTemplate)
         throw new Error("Template package must be validated before classification");
       categories = await classifyTemplateCategories({
@@ -9660,7 +9681,7 @@ async function publishPackageImpl(
     ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
   });
   const pluginManifestSummary =
-    family === "template"
+    family === "claw"
       ? undefined
       : {
           ...derivePluginManifestSummary({
@@ -9715,7 +9736,7 @@ async function publishPackageImpl(
     normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
     pluginManifestSummary,
     categoryClassification,
-    templateManifestSummary: validatedTemplate?.summary,
+    clawManifestSummary: validatedTemplate?.summary,
     source: effectiveSource,
     trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
     trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
@@ -11808,7 +11829,7 @@ function resolvePackageReleaseTagsForPublish(params: {
     ? semver.valid(params.currentLatestVersion)
     : null;
   const candidateSemver = semver.valid(params.candidateVersion);
-  const latestUsesSemver = params.family === "code-plugin" || params.family === "template";
+  const latestUsesSemver = params.family === "code-plugin" || params.family === "claw";
   // `latest` is reserved for the highest semver on versioned package families.
   // Callers default to this tag, so accepting it blindly would let backports roll the catalog back.
   const shouldPromoteLatest =
@@ -11841,7 +11862,7 @@ async function resolvePackageCurrentLatestForPublish(
 ) {
   const latestReleaseId = getPackageTagReleaseId(pkg, "latest");
   if (!latestReleaseId) return { exists: false, version: undefined };
-  if (pkg.family !== "code-plugin" && pkg.family !== "template") {
+  if (pkg.family !== "code-plugin" && pkg.family !== "claw") {
     return { exists: true, version: pkg.latestVersionSummary?.version };
   }
 
@@ -12165,7 +12186,7 @@ export const publishPendingReleaseInternal = internalMutation({
     const pendingFamily = stringPendingField(metadata, "family", pkg.family) as PackageFamily;
     const packageFamily = firstPublishedRelease ? pendingFamily : pkg.family;
     // Legacy user-owned Templates may not have a publisher row; keep their existing path.
-    if (packageFamily === "template" && pkg.ownerPublisherId) {
+    if (packageFamily === "claw" && pkg.ownerPublisherId) {
       const ownerPublisher = await ctx.db.get(pkg.ownerPublisherId);
       if (!ownerPublisher || ownerPublisher.deletedAt || ownerPublisher.deactivatedAt) {
         throw new ConvexError("Template package owner publisher is unavailable");
@@ -12222,10 +12243,10 @@ export const publishPendingReleaseInternal = internalMutation({
       ownerUserId: pkg.ownerUserId,
       ownerPublisherId: pkg.ownerPublisherId,
       family: packageFamily,
-      templateProfilePolicyVersion:
-        firstPublishedRelease && packageFamily === "template"
+      clawProfilePolicyVersion:
+        firstPublishedRelease && packageFamily === "claw"
           ? CURRENT_TEMPLATE_PROFILE_POLICY_VERSION
-          : pkg.templateProfilePolicyVersion,
+          : pkg.clawProfilePolicyVersion,
       summary: shouldPromoteLatest ? release.summary : pkg.summary,
       icon: shouldPromoteLatest ? release.icon : pkg.icon,
       categories: shouldPromoteLatest
@@ -12298,7 +12319,7 @@ export const insertReleaseInternal = internalMutation({
       v.literal("skill"),
       v.literal("code-plugin"),
       v.literal("bundle-plugin"),
-      v.literal("template"),
+      v.literal("claw"),
     ),
     version: v.string(),
     publicationStatus: v.optional(v.union(v.literal("pending"), v.literal("published"))),
@@ -12344,7 +12365,7 @@ export const insertReleaseInternal = internalMutation({
     normalizedBundleManifest: v.optional(v.any()),
     pluginManifestSummary: v.optional(v.any()),
     categoryClassification: v.optional(pluginCategoryClassificationValidator),
-    templateManifestSummary: v.optional(v.any()),
+    clawManifestSummary: v.optional(v.any()),
     source: v.optional(v.any()),
     trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
     trustedPublishInventoryDigest: v.optional(v.string()),
@@ -12421,7 +12442,7 @@ export const insertReleaseInternal = internalMutation({
     ) {
       throw new ConvexError("Package owner publisher is unavailable");
     }
-    if (args.family === "template" && ownerPublisher) {
+    if (args.family === "claw" && ownerPublisher) {
       const ownerMismatch = getPackageScopeOwnerMismatch(normalizedName, ownerPublisher.handle);
       if (ownerMismatch) throw new ConvexError(ownerMismatch.message);
     }
@@ -12492,7 +12513,7 @@ export const insertReleaseInternal = internalMutation({
     }
     if (existing && existing.family !== args.family && !existingIsReservation) {
       throw new ConvexError(
-        `Package "${nextNameLabel}" already exists as a ${existing.family}; family changes are not allowed`,
+        `Package "${nextNameLabel}" already exists as a ${toPublicPackageFamily(existing.family)}; family changes are not allowed`,
       );
     }
     if (
@@ -12527,8 +12548,8 @@ export const insertReleaseInternal = internalMutation({
         ownerUserId: args.ownerUserId,
         ownerPublisherId: args.ownerPublisherId,
         family: args.family,
-        templateProfilePolicyVersion:
-          args.family === "template" ? CURRENT_TEMPLATE_PROFILE_POLICY_VERSION : undefined,
+        clawProfilePolicyVersion:
+          args.family === "claw" ? CURRENT_TEMPLATE_PROFILE_POLICY_VERSION : undefined,
         channel: nextChannel,
         isOfficial: nextIsOfficial,
         runtimeId: args.runtimeId,
@@ -12566,7 +12587,7 @@ export const insertReleaseInternal = internalMutation({
         .unique();
       if (releaseExists) {
         const matchesExactTemplateArtifact =
-          args.family !== "template" ||
+          args.family !== "claw" ||
           (typeof args.clawpackSha256 === "string" &&
             releaseExists.clawpackSha256 === args.clawpackSha256);
         const matchesExistingOwner =
@@ -12574,7 +12595,7 @@ export const insertReleaseInternal = internalMutation({
             ? existing.ownerPublisherId === args.ownerPublisherId
             : existing.ownerPublisherId === undefined && existing.ownerUserId === args.ownerUserId;
         const allowExactTemplateRetry =
-          args.family === "template" && matchesExistingOwner && matchesExactTemplateArtifact;
+          args.family === "claw" && matchesExistingOwner && matchesExactTemplateArtifact;
         // Staged retries are resolved before insertion. A concurrent insert must
         // reject here so a new attempt never references an unadopted candidate ZIP.
         const canReuseExistingRelease =
@@ -12667,7 +12688,7 @@ export const insertReleaseInternal = internalMutation({
       normalizedBundleManifest: args.normalizedBundleManifest,
       pluginManifestSummary: args.pluginManifestSummary,
       categoryClassification: args.categoryClassification,
-      templateManifestSummary: args.templateManifestSummary,
+      clawManifestSummary: args.clawManifestSummary,
       compatibility: args.compatibility,
       runtimeId: args.runtimeId,
       sourceRepo: args.sourceRepo,
@@ -12703,10 +12724,10 @@ export const insertReleaseInternal = internalMutation({
       ownerUserId: args.ownerUserId,
       ownerPublisherId: args.ownerPublisherId ?? pkg.ownerPublisherId,
       family: existingIsReservation ? args.family : pkg.family,
-      templateProfilePolicyVersion:
-        existingIsReservation && args.family === "template"
+      clawProfilePolicyVersion:
+        existingIsReservation && args.family === "claw"
           ? CURRENT_TEMPLATE_PROFILE_POLICY_VERSION
-          : pkg.templateProfilePolicyVersion,
+          : pkg.clawProfilePolicyVersion,
       summary: shouldPromoteLatest ? args.summary : pkg.summary,
       icon: shouldPromoteLatest ? args.icon : pkg.icon,
       categories: shouldPromoteLatest ? args.categories : pkg.categories,

@@ -19,7 +19,7 @@ describe("admitted plugin release family", () => {
     );
   });
 
-  it.each(["template", "skill"] as const)(
+  it.each(["claw", "skill"] as const)(
     "never loosens the %s boundary using optional plugin metadata",
     (family) => {
       expect(resolvePackageReleaseFamily(family, { pluginFamily: "bundle-plugin" })).toBe(family);

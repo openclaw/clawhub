@@ -425,7 +425,7 @@ describe("normal plugin catalog visibility", () => {
         normalizedName: "trending-claw",
         displayName: "Trending Template",
         ownerUserId,
-        family: "template",
+        family: "claw",
         channel: "official",
         isOfficial: true,
         scanStatus: "clean",

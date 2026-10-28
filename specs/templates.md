@@ -195,3 +195,30 @@ Experimental Template publication is exact-artifact-only:
 - Retry compatibility is scoped to Templates. Existing non-Template package behavior
   and historical attempt recovery remain unchanged unless they already carry
   the exact artifact metadata required by their own contract.
+
+## Live storage and immutable historical archives
+
+The public cutover is not a database rename. Production already has 150 published
+Official packages and a policy-stamped `clawhub-official-claws` snapshot (observed
+sequence 59 on 2026-10-27). Physical `family: "claw"`, `clawProfilePolicyVersion`,
+`clawManifestSummary` and feed `clawPolicyVersion`/`clawEntryCount`/`clawPublisherId`
+remain the durable database contract, including package digest indexes. New
+public filters translate `template` to that one physical family; public DTOs
+translate back and expose only canonical Template field names. New publication
+also uses those stable physical keys. Plugin and skill rows are unchanged.
+
+The dedicated feed keeps its physical row ID and sequence. A read-only projection
+can serve a trusted historical payload as the new Template wire contract only
+after the existing policy stamp and current publisher-authority guards pass,
+with strict candidate/summary validation, matching entry count and stored-payload
+integrity. ETag/SHA headers describe the exact projected response bytes. Invalid,
+pre-policy or revoked snapshots remain unavailable. The ordinary existing feed
+publisher updates that same row; there is no required manual backfill, migration,
+archive rewrite, deletion or republishing operation for this naming change.
+
+Historical `.tgz` bytes/digests and package/version coordinates must not change.
+Their `package.json.openclaw.claw` selector is an admitted historical artifact
+contract for consumers to read, not a new-authoring alias. New authors still use
+`openclaw.template`; public CLI/API family values and routes remain strictly
+`template`/`templates`. Consumer historical-reader support must be verified on its
+exact coordinated source revision, separately from strict new-authoring checks.

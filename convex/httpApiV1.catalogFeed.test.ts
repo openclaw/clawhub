@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import historical from "../fixtures/templates/historical-published-v1.json";
 import { internal } from "./_generated/api";
 import { getLatestPublication } from "./catalogFeed";
 import { catalogTemplatesFeedV1Handler, catalogFeedV1Handler } from "./httpApiV1/catalogFeedV1";
+import { sha256Hex } from "./lib/clawpack";
 
 type QueryCtx = {
   runQuery: ReturnType<typeof vi.fn>;
@@ -170,12 +172,22 @@ describe("catalogFeedV1Handler", () => {
   });
 
   it("serves only a policy-stamped Template feed from a currently active publisher", async () => {
+    const payload = JSON.stringify({
+      schemaVersion: 1,
+      id: "clawhub-official-claws",
+      sequence: publication.sequence,
+      generatedAt: publication.generatedAt,
+      expiresAt: publication.expiresAt,
+      entries: [historical.entry],
+    });
     const stored = {
       ...publication,
-      feedId: "clawhub-official-templates",
-      templatePolicyVersion: 1,
-      templateEntryCount: 1,
-      templatePublisherId: "publishers:openclaw",
+      feedId: "clawhub-official-claws",
+      payload,
+      payloadSha256: await sha256Hex(new TextEncoder().encode(payload)),
+      clawPolicyVersion: 1,
+      clawEntryCount: 1,
+      clawPublisherId: "publishers:openclaw",
     };
     const active = makeStoredTemplateFeedCtx(stored);
     const activeResponse = await catalogTemplatesFeedV1Handler(

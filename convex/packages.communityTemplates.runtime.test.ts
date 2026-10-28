@@ -66,7 +66,7 @@ async function fixture() {
         normalizedName: options.name,
         displayName: options.name,
         summary: "Research assistant",
-        family: "template",
+        family: "claw",
         ownerUserId,
         ownerPublisherId,
         channel: options.channel ?? (options.official ? "official" : "community"),
@@ -90,7 +90,7 @@ async function fixture() {
         integritySha256: "a".repeat(64),
         clawpackSha256: "a".repeat(64),
         artifactKind: "npm-pack",
-        templateManifestSummary: {
+        clawManifestSummary: {
           schemaVersion: 1,
           agent: { id: "research", name: "Research assistant" },
           workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },

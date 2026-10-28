@@ -105,7 +105,7 @@ describe("experimental Template feed runtime", () => {
     registerRateLimiter(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("catalogFeedPublications", {
-        feedId: "clawhub-official-templates",
+        feedId: "clawhub-official-claws",
         sequence: 1,
         generatedAt: "2026-09-30T00:00:00.000Z",
         expiresAt: "2026-10-01T00:00:00.000Z",

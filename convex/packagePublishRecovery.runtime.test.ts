@@ -1122,7 +1122,7 @@ it.each([
       await ctx.db.patch(ids.releaseId, { pendingPublication: {} });
     if (change === "release-binding")
       await ctx.db.patch(ids.attemptId, { packageReleaseId: undefined });
-    if (change === "family") await ctx.db.patch(ids.packageId, { family: "template" });
+    if (change === "family") await ctx.db.patch(ids.packageId, { family: "claw" });
     if (change === "moderation")
       await ctx.db.patch(ids.releaseId, {
         manualModeration: {

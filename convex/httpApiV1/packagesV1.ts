@@ -93,6 +93,7 @@ import {
   validateFilePath,
   type MergedExportManifestEntry,
 } from "../lib/skillZip";
+import { toPublicPackageFamily } from "../lib/templateStorage";
 import { generateToken, hashToken } from "../lib/tokens";
 import { managedMcpV1Handler } from "./managedMcpV1";
 import {
@@ -563,7 +564,8 @@ type ReleaseLike = {
   }>;
   compatibility?: Doc<"packageReleases">["compatibility"];
   pluginManifestSummary?: Doc<"packageReleases">["pluginManifestSummary"];
-  templateManifestSummary?: Doc<"packageReleases">["templateManifestSummary"];
+  templateManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
+  clawManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
   verification?: Doc<"packageReleases">["verification"];
   extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
   sha256hash?: string;
@@ -718,7 +720,7 @@ function toPackageVersionResponse(release: ReleaseLike, packageName: string) {
     })),
     compatibility: release.compatibility ?? null,
     pluginManifestSummary: release.pluginManifestSummary ?? null,
-    templateManifestSummary: release.templateManifestSummary ?? null,
+    templateManifestSummary: release.templateManifestSummary ?? release.clawManifestSummary ?? null,
     verification,
     artifact: toReleaseArtifact(release, packageName),
     sha256hash: release.sha256hash ?? null,
@@ -751,7 +753,7 @@ function toPackageReleaseSecurityResponse(params: {
     package: {
       name: params.pkg.name,
       displayName: params.pkg.displayName,
-      family: params.pkg.family,
+      family: toPublicPackageFamily(params.pkg.family),
     },
     release: {
       releaseId: params.release._id,
@@ -2555,7 +2557,7 @@ export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
       const pluginMeta = {
         name: digest.name,
         displayName: digest.displayName,
-        family: digest.family,
+        family: toPublicPackageFamily(digest.family),
         version: release.version ?? digest.latestVersion ?? null,
         latestReleaseId: digest.latestReleaseId ?? null,
         artifactKind: release.artifactKind ?? null,
@@ -4729,7 +4731,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         package: {
           name: publicPackage!.name,
           displayName: publicPackage!.displayName,
-          family: result!.package.family,
+          family: toPublicPackageFamily(result!.package.family),
         },
         version: release.version,
         artifact: {
@@ -4801,7 +4803,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         package: {
           name: result.package.name,
           displayName: result.package.displayName,
-          family: result.package.family,
+          family: toPublicPackageFamily(result.package.family),
         },
         version: toPackageVersionResponse(result.version, result.package.name),
       },
@@ -5122,7 +5124,7 @@ type PublicPackageDocLike = {
     npmUnpackedSize?: number;
     npmFileCount?: number;
   };
-  templateManifestSummary?: Doc<"packageReleases">["templateManifestSummary"];
+  templateManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
   stats?: { downloads: number; installs: number; stars: number; versions: number };
   createdAt: number;
   updatedAt: number;
@@ -5205,7 +5207,7 @@ function buildPackageReadiness(pkg: PublicPackageDocLike) {
     package: {
       name: pkg.name,
       displayName: pkg.displayName,
-      family: pkg.family,
+      family: toPublicPackageFamily(pkg.family),
       isOfficial: pkg.isOfficial,
       latestVersion: pkg.latestVersion ?? null,
     },

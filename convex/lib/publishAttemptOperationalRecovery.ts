@@ -123,7 +123,7 @@ export async function retryFailedPublishAttemptChecks(
       release.manualModeration?.state === "quarantined" ||
       release.manualModeration?.state === "revoked" ||
       resolvePackageReleaseScanStatus(release) === "malicious" ||
-      (release.templateManifestSummary ? release.clawpackSha256 : release.integritySha256) !==
+      (release.clawManifestSummary ? release.clawpackSha256 : release.integritySha256) !==
         attempt.artifactFingerprint ||
       (release.publishAttemptId && release.publishAttemptId !== attempt._id)
     )
@@ -413,7 +413,7 @@ export async function assertOperationalPackageRetryFinalization(
     release.packageId !== pkg._id ||
     attempt.slug !== pkg.name ||
     pkg.softDeletedAt ||
-    (release.templateManifestSummary ? release.clawpackSha256 : release.integritySha256) !==
+    (release.clawManifestSummary ? release.clawpackSha256 : release.integritySha256) !==
       attempt.artifactFingerprint ||
     release.manualModeration?.state === "quarantined" ||
     release.manualModeration?.state === "revoked" ||

@@ -110,7 +110,7 @@ describe("Featured publication", () => {
         ...fields,
         name: "companion-claw",
         normalizedName: "companion-claw",
-        family: "template",
+        family: "claw",
       });
     });
     await staff.mutation(api.packages.setBatch, { packageId: templateId, batch: "highlighted" });

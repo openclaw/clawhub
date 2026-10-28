@@ -65,12 +65,12 @@ function makePackage(overrides: Record<string, unknown> = {}) {
     normalizedName: "@openclaw/demo",
     displayName: "Demo",
     ownerUserId: "users:1",
-    family: "code-plugin",
     channel: "official",
     isOfficial: true,
     latestReleaseId: "packageReleases:1",
     softDeletedAt: undefined,
     ...overrides,
+    family: overrides.family === "template" ? "claw" : (overrides.family ?? "code-plugin"),
   };
 }
 
@@ -85,6 +85,7 @@ function makeRelease(overrides: Record<string, unknown> = {}) {
     manualModeration: undefined,
     softDeletedAt: undefined,
     ...overrides,
+    clawManifestSummary: overrides.clawManifestSummary ?? overrides.templateManifestSummary,
   };
 }
 
@@ -784,9 +785,9 @@ describe("catalog feed projection", () => {
     expect(insert).toHaveBeenCalledWith(
       "catalogFeedPublications",
       expect.objectContaining({
-        templatePolicyVersion: 1,
-        templateEntryCount: 1,
-        templatePublisherId: publisher._id,
+        clawPolicyVersion: 1,
+        clawEntryCount: 1,
+        clawPublisherId: publisher._id,
       }),
     );
 

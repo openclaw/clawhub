@@ -36,12 +36,14 @@ import {
   isPublicSkillVersionAvailableForSkill,
 } from "./lib/skillFileAccess";
 import { isHostedSkillPresentationIconPath, stripPresentationEmoji } from "./lib/skillPresentation";
+import { projectStoredTemplateFeed } from "./lib/templateFeedStorage";
+import { TEMPLATE_FEED_STORAGE_ID } from "./lib/templateStorage";
 
 const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub.";
 const CATALOG_FEED_PAGE_SIZE = 100;
 const MAX_CATALOG_FEED_ENTRIES = 1000;
 const CATALOG_FEED_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
-const CATALOG_TEMPLATE_FAMILY = "template" as const;
+const CATALOG_TEMPLATE_FAMILY = "claw" as const;
 
 type CatalogQueryCtx = Pick<QueryCtx, "db">;
 type CatalogFeedPublicationResult = {
@@ -176,7 +178,7 @@ async function buildEntry(
   });
   if (!(await isOfficialPublisher(ctx, owner))) return null;
   if (
-    pkg.family === "template" &&
+    pkg.family === "claw" &&
     (!isOpenClawTemplateName(pkg.normalizedName) || !isOpenClawTemplatePublisher(owner))
   ) {
     return null;
@@ -196,8 +198,8 @@ async function buildEntry(
     .withIndex("by_package_kind", (q) => q.eq("packageId", pkg._id).eq("kind", "highlighted"))
     .unique();
 
-  if (pkg.family === "template") {
-    if (!release.templateManifestSummary) return null;
+  if (pkg.family === "claw") {
+    if (!release.clawManifestSummary) return null;
     return {
       type: "template",
       id,
@@ -211,7 +213,7 @@ async function buildEntry(
         id: publisherId,
         trust: "official",
       },
-      templateManifestSummary: release.templateManifestSummary,
+      templateManifestSummary: release.clawManifestSummary,
       install: {
         candidates: [
           {
@@ -591,7 +593,7 @@ export const storeTemplatePublication = internalMutation({
     }
     const latest = await ctx.db
       .query("catalogFeedPublications")
-      .withIndex("by_feed", (q) => q.eq("feedId", EXPERIMENTAL_TEMPLATE_FEED_ID))
+      .withIndex("by_feed", (q) => q.eq("feedId", TEMPLATE_FEED_STORAGE_ID))
       .unique();
     const sequence = (latest?.sequence ?? 0) + 1;
     const payload = serializeExperimentalTemplateFeed({
@@ -606,16 +608,16 @@ export const storeTemplatePublication = internalMutation({
     const payloadSha256 = await sha256Hex(new TextEncoder().encode(payload));
     const publishedAt = Date.now();
     const publication = {
-      feedId: EXPERIMENTAL_TEMPLATE_FEED_ID,
+      feedId: TEMPLATE_FEED_STORAGE_ID,
       sequence,
       generatedAt: args.generatedAt,
       expiresAt: args.expiresAt,
       payload,
       payloadSha256,
       publishedAt,
-      templatePolicyVersion: 1 as const,
-      templateEntryCount: args.entries.length,
-      templatePublisherId: owner?._id,
+      clawPolicyVersion: 1 as const,
+      clawEntryCount: args.entries.length,
+      clawPublisherId: owner?._id,
     };
     const publicationId = latest
       ? (await ctx.db.patch(latest._id, publication), latest._id)
@@ -731,22 +733,41 @@ export const getLatestPublication = internalQuery({
   handler: async (ctx, args) => {
     const publication = await ctx.db
       .query("catalogFeedPublications")
-      .withIndex("by_feed", (q) => q.eq("feedId", args.feedId))
+      .withIndex("by_feed", (q) =>
+        q.eq(
+          "feedId",
+          args.feedId === EXPERIMENTAL_TEMPLATE_FEED_ID ? TEMPLATE_FEED_STORAGE_ID : args.feedId,
+        ),
+      )
       .unique();
     if (args.feedId !== EXPERIMENTAL_TEMPLATE_FEED_ID || !publication) return publication;
     if (
-      publication.templatePolicyVersion !== 1 ||
-      publication.templateEntryCount === undefined ||
-      !Number.isSafeInteger(publication.templateEntryCount) ||
-      publication.templateEntryCount < 0
+      publication.clawPolicyVersion !== 1 ||
+      publication.clawEntryCount === undefined ||
+      !Number.isSafeInteger(publication.clawEntryCount) ||
+      publication.clawEntryCount < 0
     ) {
       return null;
     }
-    if (publication.templateEntryCount === 0) return publication;
-    if (!publication.templatePublisherId) return null;
-    const owner = await ctx.db.get(publication.templatePublisherId);
-    if (!isOpenClawTemplatePublisher(owner) || !(await isOfficialPublisher(ctx, owner)))
+    if (publication.clawEntryCount > 0) {
+      if (!publication.clawPublisherId) return null;
+      const owner = await ctx.db.get(publication.clawPublisherId);
+      if (!isOpenClawTemplatePublisher(owner) || !(await isOfficialPublisher(ctx, owner)))
+        return null;
+    }
+    // Historical snapshots and archives stay untouched. Only the canonical wire
+    // representation changes, with a digest of those exact response bytes.
+    if (
+      (await sha256Hex(new TextEncoder().encode(publication.payload))) !== publication.payloadSha256
+    )
       return null;
-    return publication;
+    const projected = projectStoredTemplateFeed(publication.payload);
+    if (!projected || projected.entryCount !== publication.clawEntryCount) return null;
+    return {
+      ...publication,
+      feedId: EXPERIMENTAL_TEMPLATE_FEED_ID,
+      payload: projected.payload,
+      payloadSha256: await sha256Hex(new TextEncoder().encode(projected.payload)),
+    };
   },
 });

@@ -468,7 +468,7 @@ async function classifySuspiciousPublishAttemptPublicState(
     if (!release) return "replay_missing";
     const matchesArtifact =
       release.integritySha256 === attempt.artifactFingerprint ||
-      (pkg.family === "template" && release.clawpackSha256 === attempt.artifactFingerprint);
+      (pkg.family === "claw" && release.clawpackSha256 === attempt.artifactFingerprint);
     if (release.softDeletedAt || !matchesArtifact) {
       return "public_conflict";
     }
