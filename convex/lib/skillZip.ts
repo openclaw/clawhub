@@ -1,4 +1,7 @@
-import { findClawPackagePathHierarchyCollision, isSafeClawPackagePath } from "clawhub-schema";
+import {
+  findTemplatePackagePathHierarchyCollision,
+  isSafeTemplatePackagePath,
+} from "clawhub-schema";
 import { Zip, ZipDeflate, zipSync } from "fflate";
 
 type ZipEntry = {
@@ -272,11 +275,11 @@ function orderZipEntries(entries: AsyncZipEntry[], meta?: SkillZipMeta) {
 }
 
 export function buildDeterministicPackageZip(entries: ZipEntry[]) {
-  const unsafeEntry = entries.find((entry) => !isSafeClawPackagePath(entry.path));
+  const unsafeEntry = entries.find((entry) => !isSafeTemplatePackagePath(entry.path));
   if (unsafeEntry) {
     throw new Error(`Package contains unsafe package path: ${unsafeEntry.path}`);
   }
-  const hierarchyCollision = findClawPackagePathHierarchyCollision(
+  const hierarchyCollision = findTemplatePackagePathHierarchyCollision(
     entries.map((entry) => entry.path),
   );
   if (hierarchyCollision) {
@@ -297,7 +300,7 @@ export function buildLegacyPackageScanZip(entries: ZipEntry[]) {
   if (unsafeEntry) {
     throw new Error(`Package contains unsafe legacy scan path: ${unsafeEntry.path}`);
   }
-  const hierarchyCollision = findClawPackagePathHierarchyCollision(
+  const hierarchyCollision = findTemplatePackagePathHierarchyCollision(
     entries.map((entry) => entry.path),
   );
   if (hierarchyCollision) {

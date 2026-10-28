@@ -146,15 +146,15 @@ describe("catalog feed schema", () => {
     expect(parseCatalogFeed(feed).entries[0]?.type).toBe("skill");
   });
 
-  it("rejects Claw entries from the stable v1 catalog contract", () => {
+  it("rejects Template entries from the stable v1 catalog contract", () => {
     expect(() =>
       parseCatalogFeed({
         ...makeFeed(),
         entries: [
           {
             ...makeFeed().entries[0],
-            type: "claw",
-            clawManifestSummary: {
+            type: "template",
+            templateManifestSummary: {
               schemaVersion: 1,
               agent: { id: "demo" },
               workspace: { bootstrapFiles: [], fileCount: 0 },

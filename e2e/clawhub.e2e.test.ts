@@ -1124,7 +1124,7 @@ describe("clawhub e2e", () => {
             displayName: "Fulcra Context",
             pageUrl: "https://clawhub.ai/arc-claw-bot/fulcra-context",
             publisherHandle: "arc-claw-bot",
-            publisherDisplayName: "Arc Claw Bot",
+            publisherDisplayName: "Arc Template Bot",
             publisherProfileUrl: "https://clawhub.ai/user/arc-claw-bot",
             version: "1.4.10",
             resolvedFrom: "version",

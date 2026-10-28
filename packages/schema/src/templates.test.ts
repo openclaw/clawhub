@@ -1,0 +1,737 @@
+/* @vitest-environment node */
+
+import { ArkErrors } from "arktype";
+import { describe, expect, it, vi } from "vitest";
+import { PackageFamilySchema, PackagePublishMetadataSchema } from "./packages";
+import {
+  TEMPLATE_MANIFEST_VALIDATION_CODES,
+  TemplateManifestSummarySchema,
+  OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1,
+  summarizeTemplateManifest,
+  validateTemplateManifest,
+} from "./templates";
+
+const fixture = {
+  schemaVersion: 1,
+  agent: { id: "financial-analyst", name: "Financial Analyst" },
+  workspace: {
+    bootstrapFiles: { "SOUL.md": { source: "workspace/SOUL.md" } },
+    files: [{ source: "workspace/reference/policy.md", path: "reference/policy.md" }],
+  },
+  packages: [
+    {
+      kind: "skill",
+      source: "clawhub",
+      ref: "@openclaw/research",
+      version: "1.2.3",
+    },
+    {
+      kind: "plugin",
+      source: "clawhub",
+      ref: "@openclaw/markets",
+      version: "2.0.0",
+    },
+  ],
+  mcpServers: {
+    filings: {
+      url: "https://example.test/mcp",
+      transport: "streamable-http",
+      auth: "oauth",
+    },
+  },
+  cronJobs: [
+    {
+      id: "morning-brief",
+      schedule: { cron: "0 8 * * 1-5", timezone: "America/New_York" },
+      session: "isolated",
+      message: "Prepare the morning brief.",
+    },
+  ],
+} as const;
+
+describe("Template manifest contract", () => {
+  it("allows Templates in storage and publication metadata contracts", () => {
+    expect(PackageFamilySchema("template")).toBe("template");
+    expect(
+      PackagePublishMetadataSchema({
+        name: "@openclaw/financial-analyst",
+        family: "template",
+        version: "1.0.0",
+        changelog: "Initial release",
+      }),
+    ).not.toBeInstanceOf(ArkErrors);
+  });
+
+  it("accepts the grouped OpenClaw v1 fixture and derives a safe summary", () => {
+    const result = validateTemplateManifest(fixture);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(summarizeTemplateManifest(result.manifest)).toEqual({
+      schemaVersion: 1,
+      agent: { id: "financial-analyst", name: "Financial Analyst" },
+      workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
+      packages: { skillCount: 1, pluginCount: 1 },
+      mcpServerCount: 1,
+      cronJobCount: 1,
+    });
+  });
+
+  it("accepts optional portable category slugs without embedding the catalog taxonomy", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      categories: ["travel", "custom-category"],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.manifest.categories).toEqual(["travel", "custom-category"]);
+  });
+
+  it.each([
+    { categories: [] },
+    { categories: ["Travel"] },
+    { categories: ["travel", "travel"] },
+    { categories: ["a", "b", "c", "d"] },
+  ])("rejects invalid portable category declarations $categories", ({ categories }) => {
+    const result = validateTemplateManifest({ ...fixture, categories });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.issues.some(
+        (issue) => issue.code === TEMPLATE_MANIFEST_VALIDATION_CODES.invalidCategory,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not schedule timers while validating cron syntax", () => {
+    vi.useFakeTimers();
+    try {
+      expect(validateTemplateManifest(fixture).ok).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("accepts unrelated opaque namespaced metadata", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      metadata: { "example.hint": "opaque-value" },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.manifest.metadata).toEqual({ "example.hint": "opaque-value" });
+  });
+
+  it("fails closed on the retired OpenClaw profile pointer", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      metadata: { "openclaw.config": "profiles/openclaw.yml" },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues).toContainEqual({
+      code: TEMPLATE_MANIFEST_VALIDATION_CODES.legacyProfilePointer,
+      phase: "schema",
+      path: "$.metadata.openclaw.config",
+      message:
+        "metadata.openclaw.config is no longer supported; move the profile to profiles/openclaw.yml and remove the metadata entry.",
+    });
+  });
+
+  it.each(["", " openclaw.config "])("rejects non-canonical metadata key %j", (metadataKey) => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      metadata: { [metadataKey]: "opaque-value" },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toContain(`$.metadata.${metadataKey}`);
+  });
+
+  it("rejects non-string metadata values and harness policy embedded in the portable agent", () => {
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        metadata: { "example.hint": { path: "profiles/example.yml" } },
+      }).ok,
+    ).toBe(false);
+
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        agent: {
+          ...fixture.agent,
+          tools: { profile: "coding" },
+        },
+      }).ok,
+    ).toBe(false);
+
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        agent: {
+          ...fixture.agent,
+          memory: { search: { enabled: true } },
+        },
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("reserves root BOOTSTRAP.md for package-root seed-once setup", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      workspace: {
+        ...fixture.workspace,
+        files: [
+          ...fixture.workspace.files,
+          { source: "workspace/first-run.md", path: "BOOTSTRAP.md" },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues).toContainEqual({
+      code: TEMPLATE_MANIFEST_VALIDATION_CODES.reservedWorkspaceTarget,
+      phase: "schema",
+      path: "$.workspace.files.1.path",
+      message: "Root BOOTSTRAP.md is reserved for the package-root seed-once bootstrap file.",
+    });
+  });
+
+  it("fails closed on unknown fields", () => {
+    expect(validateTemplateManifest({ ...fixture, model: "gpt-5" }).ok).toBe(false);
+  });
+
+  it("returns stable v1 codes and schema phases for every rejection", () => {
+    const structural = validateTemplateManifest({ ...fixture, model: "gpt-5" });
+    expect(structural.ok).toBe(false);
+    if (structural.ok) return;
+    expect(structural.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "template_v1_invalid_manifest_shape",
+          phase: "schema",
+          path: "$.model",
+        }),
+      ]),
+    );
+
+    const semantic = validateTemplateManifest({
+      ...fixture,
+      packages: [{ kind: "skill", source: "clawhub", ref: "demo", version: "latest" }],
+    });
+    expect(semantic.ok).toBe(false);
+    if (semantic.ok) return;
+    expect(semantic.issues).toContainEqual({
+      code: "template_v1_invalid_package_version",
+      phase: "schema",
+      path: "$.packages.0.version",
+      message: "Must be an exact semantic version.",
+    });
+  });
+
+  it("rejects traversal, floating versions, and inline MCP values", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      workspace: { files: [{ source: "../outside", path: "outside" }] },
+      packages: [{ kind: "skill", source: "clawhub", ref: "demo", version: "latest" }],
+      mcpServers: {
+        unsafe: { command: "server", env: { SETTING: "inline-value" } },
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining([
+        "$.workspace.files.0.source",
+        "$.packages.0.version",
+        "$.mcpServers.unsafe.env.SETTING",
+      ]),
+    );
+  });
+
+  it.each(["01.2.3", "1.2.3-.."])("rejects invalid semantic version %s", (version) => {
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        packages: [{ kind: "skill", source: "clawhub", ref: "demo", version }],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("rejects malformed ClawHub package references", () => {
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        packages: [
+          {
+            kind: "skill",
+            source: "clawhub",
+            ref: "not a package",
+            version: "1.0.0",
+          },
+        ],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("rejects non-portable and platform-equivalent workspace destinations", () => {
+    const invalidPath = validateTemplateManifest({
+      ...fixture,
+      workspace: {
+        files: [{ source: "workspace/a\u0000b", path: "reference/a.md" }],
+      },
+    });
+    expect(invalidPath.ok).toBe(false);
+
+    const collision = validateTemplateManifest({
+      ...fixture,
+      workspace: {
+        files: [
+          { source: "workspace/a.md", path: "reference/policy.md" },
+          { source: "workspace/b.md", path: "REFERENCE\\policy.md" },
+        ],
+      },
+    });
+    expect(collision.ok).toBe(false);
+
+    const hierarchy = validateTemplateManifest({
+      ...fixture,
+      workspace: {
+        files: [
+          { source: "workspace/a.md", path: "reference" },
+          { source: "workspace/b.md", path: "reference/policy.md" },
+        ],
+      },
+    });
+    expect(hierarchy.ok).toBe(false);
+  });
+
+  it.each(["\u007f", "\u0085"])(
+    "rejects Unicode control character U+%s in package paths",
+    (controlCharacter) => {
+      expect(
+        validateTemplateManifest({
+          ...fixture,
+          workspace: {
+            files: [{ source: `workspace/a${controlCharacter}.md`, path: "reference/a.md" }],
+          },
+        }).ok,
+      ).toBe(false);
+    },
+  );
+
+  it("rejects workspace destinations that collide after Unicode case folding", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      workspace: {
+        files: [
+          { source: "workspace/a.md", path: "Straße.md" },
+          { source: "workspace/b.md", path: "STRASSE.md" },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toContain("$.workspace.files.1.path");
+  });
+
+  it("rejects credentials embedded in remote MCP URLs", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      mcpServers: {
+        filings: {
+          url: ["https://alice", "embedded@example.test/mcp"].join(":"),
+          transport: "streamable-http",
+        },
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues).toContainEqual({
+      code: TEMPLATE_MANIFEST_VALIDATION_CODES.mcpUrlCredentials,
+      phase: "schema",
+      path: "$.mcpServers.filings.url",
+      message: "Must not contain embedded credentials or fragments.",
+    });
+  });
+
+  it("rejects ambiguous MCP transport declarations structurally", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      mcpServers: {
+        unsafe: { command: "server", url: "https://example.test" },
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toContain("$.mcpServers.unsafe");
+  });
+
+  it("rejects infinite MCP timeouts", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      mcpServers: {
+        local: { command: "server", timeout: Number.POSITIVE_INFINITY },
+        remote: {
+          url: "https://example.test/mcp",
+          transport: "streamable-http",
+          connectTimeout: Number.POSITIVE_INFINITY,
+        },
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining(["$.mcpServers.local.timeout", "$.mcpServers.remote.connectTimeout"]),
+    );
+  });
+
+  it("rejects empty portable names and MCP selector lists", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      agent: {
+        ...fixture.agent,
+        identity: { name: " " },
+      },
+      mcpServers: {
+        local: {
+          command: "server",
+          args: [""],
+          toolFilter: { include: [] },
+        },
+      },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects invalid cron schedules and empty stdio commands", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      mcpServers: { empty: { command: "   " } },
+      cronJobs: [
+        {
+          id: "broken",
+          schedule: { cron: "not-a-cron", timezone: "Not/AZone" },
+          session: "isolated",
+          message: "Run.",
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining(["$.mcpServers.empty.command", "$.cronJobs.0.schedule"]),
+    );
+  });
+
+  it("allows one ClawHub coordinate under distinct package kinds", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      packages: [
+        { kind: "skill", source: "clawhub", ref: "demo", version: "1.0.0" },
+        { kind: "plugin", source: "clawhub", ref: "demo", version: "1.0.0" },
+      ],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("requires local avatars to be portable managed workspace files", () => {
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        agent: { ...fixture.agent, identity: { avatar: "avatars/analyst.png" } },
+      }).ok,
+    ).toBe(false);
+
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        agent: { ...fixture.agent, identity: { avatar: "avatars/analyst.png" } },
+        workspace: {
+          ...fixture.workspace,
+          files: [
+            ...fixture.workspace.files,
+            { source: "workspace/avatars/analyst.png", path: "avatars/analyst.png" },
+          ],
+        },
+      }).ok,
+    ).toBe(true);
+
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        agent: { ...fixture.agent, identity: { avatar: "https://example.test/avatar.png" } },
+      }).ok,
+    ).toBe(false);
+
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        agent: { ...fixture.agent, identity: { avatar: "data:image/bmp;base64,AA==" } },
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("enforces portable MCP and cron declarations", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      mcpServers: {
+        floating: {
+          command: "npx",
+          args: ["mcp-server@latest"],
+          env: { "BAD-KEY": "${BAD_KEY}" },
+          toolFilter: { include: ["search", "search"] },
+        },
+        remote: {
+          url: "http://example.test/mcp#token",
+          transport: "streamable-http",
+        },
+      },
+      cronJobs: [
+        {
+          id: "brief",
+          schedule: { cron: "0 8 * * * *", timezone: "UTC" },
+          session: "isolated",
+          message: "Prepare brief.",
+          delivery: { mode: "none", channel: "last" },
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining([
+        "$.mcpServers.floating.args",
+        "$.mcpServers.floating.env.BAD-KEY",
+        "$.mcpServers.floating.toolFilter.include.1",
+        "$.mcpServers.remote.url",
+        "$.cronJobs.0.schedule",
+        "$.cronJobs.0.delivery",
+      ]),
+    );
+  });
+
+  it("enforces the versioned OpenClaw spawned-process environment policy", () => {
+    expect(OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.blockedKeys).toContain("CPP");
+    const blockedKeys = [
+      ...OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.blockedKeys,
+      ...OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.blockedPrefixes.map(
+        (prefix) => `${prefix}TEMPLATE_CONFORMANCE_TEST`,
+      ),
+    ];
+    const result = validateTemplateManifest({
+      ...fixture,
+      mcpServers: {
+        local: {
+          command: "server",
+          env: Object.fromEntries(blockedKeys.map((key) => [key, `\${${key}}`] as const)),
+        },
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const rejectedKeys = result.issues
+      .filter((issue) => issue.code === TEMPLATE_MANIFEST_VALIDATION_CODES.blockedEnvironmentKey)
+      .map((issue) => issue.path.replace("$.mcpServers.local.env.", ""));
+    expect(new Set(rejectedKeys)).toEqual(new Set(blockedKeys));
+  });
+
+  it("rejects any floating package selected by an MCP runner", () => {
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        mcpServers: {
+          unsafe: {
+            command: "npx",
+            args: ["--package", "safe@1.0.0", "--package", "unsafe@latest", "server"],
+          },
+        },
+      }).ok,
+    ).toBe(false);
+
+    for (const [command, args] of [
+      ["npm", ["exec", "--yes", "unsafe@latest"]],
+      ["npm", ["x", "unsafe@latest"]],
+      ["bun", ["x", "unsafe@latest"]],
+    ] as const) {
+      expect(
+        validateTemplateManifest({
+          ...fixture,
+          mcpServers: { unsafe: { command, args: [...args] } },
+        }).ok,
+      ).toBe(false);
+    }
+
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        mcpServers: { safe: { command: "npm", args: ["exec", "safe@1.0.0"] } },
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("checks npm exec package selectors that follow the inferred command", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      mcpServers: {
+        unsafe: {
+          command: "npm",
+          args: ["exec", "safe@1.0.0", "--package=unsafe@latest"],
+        },
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toContain("$.mcpServers.unsafe.args");
+
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        mcpServers: {
+          safe: {
+            command: "npm",
+            args: ["exec", "safe@1.0.0", "--", "--package=child-argument"],
+          },
+        },
+      }).ok,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["npx", ["--cache", "safe@1.0.0", "unsafe@latest"]],
+    ["npm", ["exec", "--cache", "safe@1.0.0", "unsafe@latest"]],
+  ] as const)("fails closed on unrecognized %s options before the package", (command, args) => {
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        mcpServers: { unsafe: { command, args: [...args] } },
+      }).ok,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["npm", ["run", "serve"]],
+    ["bun", ["run", "serve"]],
+    ["pnpm", ["run", "serve"]],
+    ["yarn", ["run", "serve"]],
+  ] as const)(
+    "does not classify non-download %s commands as package selectors",
+    (command, args) => {
+      expect(
+        validateTemplateManifest({
+          ...fixture,
+          mcpServers: { local: { command, args: [...args] } },
+        }).ok,
+      ).toBe(true);
+    },
+  );
+
+  it("keeps public manifest summaries bounded", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      agent: {
+        ...fixture.agent,
+        name: "n".repeat(500),
+        description: "d".repeat(5_000),
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const summary = summarizeTemplateManifest(result.manifest);
+
+    expect(summary.agent.name).toHaveLength(128);
+    expect(summary.agent.description).toHaveLength(1_024);
+    expect(TemplateManifestSummarySchema.allows(summary)).toBe(true);
+    expect(
+      TemplateManifestSummarySchema.allows({
+        ...summary,
+        agent: { ...summary.agent, description: "d".repeat(1_025) },
+      }),
+    ).toBe(false);
+  });
+
+  it("does not treat child-process arguments as package-manager selectors", () => {
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        mcpServers: {
+          safe: {
+            command: "npx",
+            args: ["--package", "safe@1.0.0", "server", "--package", "child-argument"],
+          },
+        },
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        mcpServers: { unsafe: { command: "npx", args: ["--", "unsafe@latest"] } },
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("rejects padded strict strings, unsupported tool globs, and dangerous env keys", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      agent: { ...fixture.agent, name: " Financial Analyst" },
+      mcpServers: {
+        local: {
+          command: "node",
+          env: {
+            NODE_OPTIONS: "${NODE_OPTIONS}",
+            LD_PRELOAD: "${LD_PRELOAD}",
+          },
+          toolFilter: { include: ["issue?", "issue[0-9]"] },
+        },
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining([
+        "$.agent.name",
+        "$.mcpServers.local.env.NODE_OPTIONS",
+        "$.mcpServers.local.env.LD_PRELOAD",
+        "$.mcpServers.local.toolFilter.include.0",
+        "$.mcpServers.local.toolFilter.include.1",
+      ]),
+    );
+  });
+
+  it("requires an explicit timezone and rejects host-relative cron sessions", () => {
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        cronJobs: [
+          {
+            id: "brief",
+            schedule: { cron: "0 8 * * *" },
+            session: "isolated",
+            message: "Prepare brief.",
+          },
+        ],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateTemplateManifest({
+        ...fixture,
+        cronJobs: [
+          {
+            id: "brief",
+            schedule: { cron: "0 8 * * *", timezone: "UTC" },
+            session: "current",
+            message: "Prepare brief.",
+          },
+        ],
+      }).ok,
+    ).toBe(false);
+  });
+});

@@ -28,7 +28,7 @@ import {
   formatSecurityAuditOverview,
   aggregateAuditVerdict,
   normalizeContentType,
-  isClawCategorySlug,
+  isTemplateCategorySlug,
   isPluginCategorySlug,
   parseArk,
   type ApiV1PackageCategoriesBatchRequest,
@@ -344,7 +344,7 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
   }
 }
 
-const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin", "claw"] as const;
+const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin", "template"] as const;
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
 const PACKAGE_LIST_SORT_VALUES = [
@@ -385,7 +385,8 @@ function resolvePluginCategoryFilter(value: string | undefined): PluginCategoryS
 
 function resolvePackageCategoryFilter(value: string | undefined, family: string | undefined) {
   if (!value) return undefined;
-  if (family === "claw") return value === "other" || isClawCategorySlug(value) ? value : undefined;
+  if (family === "template")
+    return value === "other" || isTemplateCategorySlug(value) ? value : undefined;
   return resolvePluginCategoryFilter(value);
 }
 
@@ -501,7 +502,7 @@ function parsePackageOfficialMigrationPhase(
 }
 
 type PackageListQueryArgs = {
-  family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+  family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
   channel?: "official" | "community" | "private";
   isOfficial?: boolean;
   highlightedOnly?: boolean;
@@ -562,7 +563,7 @@ type ReleaseLike = {
   }>;
   compatibility?: Doc<"packageReleases">["compatibility"];
   pluginManifestSummary?: Doc<"packageReleases">["pluginManifestSummary"];
-  clawManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
+  templateManifestSummary?: Doc<"packageReleases">["templateManifestSummary"];
   verification?: Doc<"packageReleases">["verification"];
   extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
   sha256hash?: string;
@@ -717,7 +718,7 @@ function toPackageVersionResponse(release: ReleaseLike, packageName: string) {
     })),
     compatibility: release.compatibility ?? null,
     pluginManifestSummary: release.pluginManifestSummary ?? null,
-    clawManifestSummary: release.clawManifestSummary ?? null,
+    templateManifestSummary: release.templateManifestSummary ?? null,
     verification,
     artifact: toReleaseArtifact(release, packageName),
     sha256hash: release.sha256hash ?? null,
@@ -1248,7 +1249,7 @@ async function searchPackageCatalog(
   args: {
     query: string;
     limit: number;
-    family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+    family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
     channel?: "official" | "community" | "private";
     isOfficial?: boolean;
     highlightedOnly?: boolean;
@@ -1581,24 +1582,24 @@ function assertClawPackPublicationIdentity(
   metadata: PackagePublishMetadata,
   parsed: ParsedPackageClawPack,
 ) {
-  if (metadata.family !== "claw") return;
+  if (metadata.family !== "template") return;
   const expectedName = tryNormalizePackageName(metadata.name);
   if (!expectedName || parsed.packageName !== expectedName) {
     throw new Error(
-      `Claw package name mismatch: expected ${expectedName ?? metadata.name}, got ${parsed.packageName}`,
+      `Template package name mismatch: expected ${expectedName ?? metadata.name}, got ${parsed.packageName}`,
     );
   }
   const expectedVersion = metadata.version.trim();
   if (parsed.packageVersion !== expectedVersion) {
     throw new Error(
-      `Claw package version mismatch: expected ${expectedVersion}, got ${parsed.packageVersion}`,
+      `Template package version mismatch: expected ${expectedVersion}, got ${parsed.packageVersion}`,
     );
   }
   const expectedDigest = metadata.expectedArtifactSha256?.trim().toLowerCase();
-  if (!expectedDigest) throw new Error("Claw publication requires expectedArtifactSha256");
+  if (!expectedDigest) throw new Error("Template publication requires expectedArtifactSha256");
   if (expectedDigest !== parsed.artifactSha256) {
     throw new Error(
-      `Claw artifact SHA-256 mismatch: expected ${expectedDigest}, got ${parsed.artifactSha256}`,
+      `Template artifact SHA-256 mismatch: expected ${expectedDigest}, got ${parsed.artifactSha256}`,
     );
   }
 }
@@ -1650,8 +1651,8 @@ async function parseMultipartPackagePublish(
     PACKAGE_PUBLISH_FILE_FIELDS,
     "Package publish file uploads must be files",
   );
-  if (metadata.family === "claw" && !tarballPart) {
-    throw new Error("Claw publication requires an already-built package tarball (.tgz)");
+  if (metadata.family === "template" && !tarballPart) {
+    throw new Error("Template publication requires an already-built package tarball (.tgz)");
   }
 
   if (tarballPart) {
@@ -1765,7 +1766,7 @@ async function listPackages(
   }
   if (rawCategory && !category) {
     return text(
-      effectiveFamily === "claw" ? "Invalid Claw category" : "Invalid plugin category",
+      effectiveFamily === "template" ? "Invalid Template category" : "Invalid plugin category",
       400,
       rate.headers,
     );
@@ -1788,7 +1789,7 @@ async function listPackages(
       rate.headers,
     );
   }
-  if (effectiveSort === "trending" && (includeSkills || effectiveFamily === "claw")) {
+  if (effectiveSort === "trending" && (includeSkills || effectiveFamily === "template")) {
     return text(
       "Trending sort is only supported for plugin package endpoints; use /api/v1/skills?sort=trending for skills.",
       400,
@@ -4143,7 +4144,7 @@ async function searchPackages(
   }
   if (rawCategory && !category) {
     return text(
-      family === "claw" ? "Invalid Claw category" : "Invalid plugin category",
+      family === "template" ? "Invalid Template category" : "Invalid plugin category",
       400,
       rate.headers,
     );
@@ -4158,7 +4159,7 @@ async function searchPackages(
   }
   if (
     createdAfter !== undefined &&
-    (family === "skill" || family === "claw" || (!family && includeSkills))
+    (family === "skill" || family === "template" || (!family && includeSkills))
   ) {
     return text("createdAfter is only supported for plugin package endpoints", 400, rate.headers);
   }
@@ -5098,7 +5099,7 @@ type PublicPackageDocLike = {
   _id: Id<"packages">;
   name: string;
   displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+  family: "skill" | "code-plugin" | "bundle-plugin" | "template";
   tags: Record<string, Id<"packageReleases">>;
   latestReleaseId?: Id<"packageReleases">;
   channel: "official" | "community" | "private";
@@ -5121,7 +5122,7 @@ type PublicPackageDocLike = {
     npmUnpackedSize?: number;
     npmFileCount?: number;
   };
-  clawManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
+  templateManifestSummary?: Doc<"packageReleases">["templateManifestSummary"];
   stats?: { downloads: number; installs: number; stars: number; versions: number };
   createdAt: number;
   updatedAt: number;

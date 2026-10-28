@@ -106,7 +106,8 @@
                 "enum": [
                   "skill",
                   "code-plugin",
-                  "bundle-plugin"
+                  "bundle-plugin",
+                  "template"
                 ]
               }
             }
@@ -286,7 +287,8 @@
             "enum": [
               "skill",
               "code-plugin",
-              "bundle-plugin"
+              "bundle-plugin",
+              "template"
             ]
           },
           "runtimeId": {
@@ -416,7 +418,8 @@
                 "enum": [
                   "skill",
                   "code-plugin",
-                  "bundle-plugin"
+                  "bundle-plugin",
+                  "template"
                 ]
               },
               "isOfficial": {
@@ -486,7 +489,8 @@
                 "enum": [
                   "skill",
                   "code-plugin",
-                  "bundle-plugin"
+                  "bundle-plugin",
+                  "template"
                 ]
               },
               "runtimeId": {
@@ -566,6 +570,20 @@
               },
               "stats": {
                 "$ref": "#/components/schemas/PackageStats"
+              },
+              "templateProfilePolicyVersion": {
+                "type": "integer",
+                "const": 1
+              },
+              "templateManifestSummary": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TemplateManifestSummary"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           },
@@ -616,7 +634,8 @@
                 "enum": [
                   "skill",
                   "code-plugin",
-                  "bundle-plugin"
+                  "bundle-plugin",
+                  "template"
                 ]
               }
             }
@@ -819,7 +838,8 @@
                 "enum": [
                   "skill",
                   "code-plugin",
-                  "bundle-plugin"
+                  "bundle-plugin",
+                  "template"
                 ]
               }
             }
@@ -907,6 +927,16 @@
                   "null"
                 ],
                 "additionalProperties": true
+              },
+              "templateManifestSummary": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TemplateManifestSummary"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           }
@@ -1913,6 +1943,261 @@
             ]
           }
         }
+      },
+      "TemplateManifestSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "agent",
+          "workspace",
+          "packages",
+          "mcpServerCount",
+          "cronJobCount"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "agent": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 1024
+              }
+            }
+          },
+          "workspace": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "bootstrapFiles",
+              "fileCount"
+            ],
+            "properties": {
+              "bootstrapFiles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "fileCount": {
+                "type": "number"
+              }
+            }
+          },
+          "packages": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "skillCount",
+              "pluginCount"
+            ],
+            "properties": {
+              "skillCount": {
+                "type": "number"
+              },
+              "pluginCount": {
+                "type": "number"
+              }
+            }
+          },
+          "profiles": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "count",
+              "hasOpenClaw"
+            ],
+            "properties": {
+              "count": {
+                "type": "number"
+              },
+              "hasOpenClaw": {
+                "type": "boolean"
+              }
+            }
+          },
+          "extensions": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "count"
+            ],
+            "properties": {
+              "count": {
+                "type": "number"
+              }
+            }
+          },
+          "mcpServerCount": {
+            "type": "number"
+          },
+          "cronJobCount": {
+            "type": "number"
+          }
+        }
+      },
+      "ExperimentalTemplateFeedEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "id",
+          "title",
+          "version",
+          "state",
+          "publisher",
+          "templateManifestSummary",
+          "install"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "template"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "recommended",
+              "disabled",
+              "blocked",
+              "deprecated"
+            ]
+          },
+          "publisher": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "trust"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "trust": {
+                "type": "string",
+                "const": "official"
+              }
+            }
+          },
+          "templateManifestSummary": {
+            "$ref": "#/components/schemas/TemplateManifestSummary"
+          },
+          "install": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "candidates"
+            ],
+            "properties": {
+              "candidates": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sourceRef",
+                    "package",
+                    "version",
+                    "integrity"
+                  ],
+                  "properties": {
+                    "sourceRef": {
+                      "type": "string",
+                      "const": "public-clawhub"
+                    },
+                    "package": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "integrity": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ExperimentalTemplateFeed": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "id",
+          "generatedAt",
+          "sequence",
+          "expiresAt",
+          "entries"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "id": {
+            "type": "string",
+            "const": "clawhub-official-templates"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExperimentalTemplateFeedEntry"
+            }
+          }
+        }
       }
     }
   },
@@ -2145,7 +2430,7 @@
     "/api/v1/packages": {
       "get": {
         "summary": "List unified catalog packages",
-        "description": "Lists skills, code plugins, and bundle plugins. Anonymous callers see public package channels; authenticated callers can also see readable private packages.",
+        "description": "Lists skills, code plugins, bundle plugins, and Templates. Anonymous callers see public package channels; authenticated callers can also see readable private packages.",
         "security": [
           {},
           {
@@ -2194,7 +2479,8 @@
               "enum": [
                 "skill",
                 "code-plugin",
-                "bundle-plugin"
+                "bundle-plugin",
+                "template"
               ]
             }
           },
@@ -2217,6 +2503,30 @@
             "required": false,
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "Template category filter; requires family=template. Use other for unclassified Templates.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "personal",
+                "health",
+                "travel",
+                "productivity",
+                "research",
+                "engineering",
+                "governance",
+                "operations",
+                "finance",
+                "sales",
+                "product",
+                "people",
+                "other"
+              ]
             }
           }
         ],
@@ -2877,7 +3187,7 @@
     "/api/v1/packages/search": {
       "get": {
         "summary": "Search unified package catalog",
-        "description": "Searches skills and plugin packages.",
+        "description": "Searches skills, plugin packages, and Templates.",
         "security": [
           {},
           {
@@ -2912,7 +3222,8 @@
               "enum": [
                 "skill",
                 "code-plugin",
-                "bundle-plugin"
+                "bundle-plugin",
+                "template"
               ]
             }
           },
@@ -2935,6 +3246,30 @@
             "required": false,
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "Template category filter; requires family=template. Use other for unclassified Templates.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "personal",
+                "health",
+                "travel",
+                "productivity",
+                "research",
+                "engineering",
+                "governance",
+                "operations",
+                "finance",
+                "sales",
+                "product",
+                "people",
+                "other"
+              ]
             }
           }
         ],
@@ -3976,7 +4311,7 @@
     },
     "/api/v1/sdk-usage/plugin": {
       "get": {
-        "summary": "Read one plugin’s current SDK inventory",
+        "summary": "Read one plugin\u2019s current SDK inventory",
         "description": "Static SDK references in latest eligible public plugin releases. Counts are page-scoped; traverse coverage as well as usage before interpreting an empty result. Live pagination is not a frozen snapshot. No authentication required.",
         "parameters": [
           {
@@ -4044,6 +4379,136 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feeds/templates": {
+      "get": {
+        "summary": "Read the experimental Official Templates feed",
+        "description": "Separate experimental contract, not an extension of the stable plugin/skill feed. Only eligible Official @openclaw Templates are exported. Uses Cache-Control: no-store; unpublished or policy-invalid snapshots fail closed with 503.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Modified-Since",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current policy-stamped Official Templates snapshot",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentalTemplateFeed"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Snapshot validators match; no response body"
+          },
+          "503": {
+            "description": "No currently authorized published snapshot",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/feeds/templates": {
+      "get": {
+        "summary": "Read the experimental Official Templates feed",
+        "description": "Separate experimental contract, not an extension of the stable plugin/skill feed. Only eligible Official @openclaw Templates are exported. Uses Cache-Control: no-store; unpublished or policy-invalid snapshots fail closed with 503.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Modified-Since",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current policy-stamped Official Templates snapshot",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentalTemplateFeed"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Snapshot validators match; no response body"
+          },
+          "503": {
+            "description": "No currently authorized published snapshot",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
                 }
               }
             }

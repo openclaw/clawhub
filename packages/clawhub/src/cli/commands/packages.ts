@@ -159,7 +159,7 @@ type PackageExploreOptions = {
   json?: boolean;
 };
 
-type PublishablePackageFamily = "code-plugin" | "bundle-plugin" | "claw";
+type PublishablePackageFamily = "code-plugin" | "bundle-plugin" | "template";
 
 type PackagePublishOptions = {
   family?: PublishablePackageFamily;
@@ -325,11 +325,11 @@ type PackagePublishPlan = {
   };
 };
 
-function assertClawPublishArtifactDigest(
+function assertTemplatePublishArtifactDigest(
   plan: PackagePublishPlan,
   result: { artifactSha256?: string },
 ) {
-  if (plan.payload.family !== "claw") return;
+  if (plan.payload.family !== "template") return;
   if (result.artifactSha256 !== plan.payload.expectedArtifactSha256) {
     fail(
       `ClawHub artifact SHA-256 mismatch: expected ${plan.payload.expectedArtifactSha256}, got ${result.artifactSha256 ?? "missing"}`,
@@ -337,13 +337,13 @@ function assertClawPublishArtifactDigest(
   }
 }
 
-async function validateClawPublishProfilePolicy(
+async function validateTemplatePublishProfilePolicy(
   plan: PackagePublishPlan,
   registry: string,
   token: string,
 ) {
-  if (plan.payload.family !== "claw") return;
-  const { validateClawPackageContents } = await import("../../schema/clawPackage.js");
+  if (plan.payload.family !== "template") return;
+  const { validateTemplatePackageContents } = await import("../../schema/templatePackage.js");
   const validationInput = {
     packageName: plan.payload.name,
     version: plan.payload.version,
@@ -353,7 +353,7 @@ async function validateClawPublishProfilePolicy(
       text: decodeUtf8Text(file.bytes) ?? undefined,
     })),
   };
-  const currentValidation = validateClawPackageContents({
+  const currentValidation = validateTemplatePackageContents({
     ...validationInput,
     openClawProfilePolicy: "current",
   });
@@ -361,8 +361,8 @@ async function validateClawPublishProfilePolicy(
 
   const packageDetail = await apiRequestPackageDetail(registry, plan.payload.name, token);
   if (
-    packageDetail?.package?.family === "claw" &&
-    packageDetail.package.clawProfilePolicyVersion === undefined
+    packageDetail?.package?.family === "template" &&
+    packageDetail.package.templateProfilePolicyVersion === undefined
   ) {
     return;
   }
@@ -438,7 +438,7 @@ export async function cmdExplorePackages(
           : ApiRoutes.packages;
     const url = registryUrl(route, registry);
     url.searchParams.set("limit", String(limit));
-    if (options.family === "skill" || options.family === "claw") {
+    if (options.family === "skill" || options.family === "template") {
       url.searchParams.set("family", options.family);
     }
     if (options.official) url.searchParams.set("isOfficial", "true");
@@ -979,7 +979,7 @@ export async function cmdPublishPackage(
   try {
     plan = await preparePackagePublishPlan(opts, sourceArg, options);
 
-    if (options.categories !== undefined && plan.payload.family !== "claw") {
+    if (options.categories !== undefined && plan.payload.family !== "template") {
       console.warn(
         "Warning: --categories is deprecated and ignored for plugin publishes, including an empty value. " +
           "Declare exactly one category in openclaw.plugin.json. " +
@@ -1038,7 +1038,7 @@ export async function cmdPublishPackage(
         spinner,
       });
       let publishToken = resolvedPublishToken.token;
-      await validateClawPublishProfilePolicy(plan, registry, publishToken);
+      await validateTemplatePublishProfilePolicy(plan, registry, publishToken);
       const form = new FormData();
       const payloadJson = JSON.stringify(plan.payload);
       form.set("payload", payloadJson);
@@ -1102,7 +1102,7 @@ export async function cmdPublishPackage(
         },
         ApiV1PackagePublishResponseSchema,
       );
-      assertClawPublishArtifactDigest(plan, result);
+      assertTemplatePublishArtifactDigest(plan, result);
 
       let finalResult: ApiV1PackagePublishResponse | ApiV1PackagePublishAttemptResponse = result;
       if (options.wait && result.publicationStatus !== "published") {
@@ -1138,7 +1138,7 @@ export async function cmdPublishPackage(
             return publishToken;
           },
         });
-        assertClawPublishArtifactDigest(plan, finalResult);
+        assertTemplatePublishArtifactDigest(plan, finalResult);
       }
 
       const publicationStatus = finalResult.publicationStatus;
@@ -2378,8 +2378,8 @@ function familyLabel(family: PackageFamily) {
       return "Code Plugin";
     case "bundle-plugin":
       return "Bundle Plugin";
-    case "claw":
-      return "Claw";
+    case "template":
+      return "Template";
     default:
       return "Skill";
   }
@@ -2539,8 +2539,8 @@ function detectPackageFamily(
     !Array.isArray(packageRecord.openclaw)
       ? (packageRecord.openclaw as Record<string, unknown>)
       : undefined;
-  if (typeof openclaw?.claw === "string") {
-    return "claw";
+  if (typeof openclaw?.template === "string") {
+    return "template";
   }
   if (
     fileSet.has("openclaw.plugin.json") &&
@@ -2682,7 +2682,7 @@ async function preparePackagePublishPlan(
     (parsedClawpack ? null : await readJsonFile(join(folder, "openclaw.plugin.json")));
   const family = detectPackageFamily(fileSet, packageJson, options.family);
   const selectedManifest =
-    family === "claw"
+    family === "template"
       ? undefined
       : selectPluginManifest({
           family,
@@ -2726,8 +2726,10 @@ async function preparePackagePublishPlan(
   if (family === "code-plugin" && !fileSet.has("openclaw.plugin.json")) {
     fail("openclaw.plugin.json required");
   }
-  if ((family === "code-plugin" || family === "claw") && !semver.valid(version)) {
-    fail(`--version must be valid semver for ${family === "claw" ? "Claws" : "code plugins"}`);
+  if ((family === "code-plugin" || family === "template") && !semver.valid(version)) {
+    fail(
+      `--version must be valid semver for ${family === "template" ? "Templates" : "code plugins"}`,
+    );
   }
   if (family === "code-plugin") {
     if (!fileSet.has("package.json")) fail("package.json required");
@@ -2738,9 +2740,9 @@ async function preparePackagePublishPlan(
     }
   }
 
-  if (family === "claw") {
-    const { validateClawPackageContents } = await import("../../schema/clawPackage.js");
-    const validation = validateClawPackageContents({
+  if (family === "template") {
+    const { validateTemplatePackageContents } = await import("../../schema/templatePackage.js");
+    const validation = validateTemplatePackageContents({
       packageName: name,
       version,
       packageJson,
@@ -2754,7 +2756,7 @@ async function preparePackagePublishPlan(
       fail(validation.issues.map((issue) => `${issue.path}: ${issue.message}`).join(" "));
     }
     if (!clawpackOnDisk) {
-      fail("Claw publication requires an already-built package tarball (.tgz)");
+      fail("Template publication requires an already-built package tarball (.tgz)");
     }
   }
 
@@ -2801,7 +2803,7 @@ async function preparePackagePublishPlan(
     family,
     version,
     changelog,
-    ...(family === "claw" && clawpackOnDisk
+    ...(family === "template" && clawpackOnDisk
       ? { expectedArtifactSha256: digestHex(clawpackOnDisk.bytes, "sha256") }
       : {}),
     ...(options.manualOverrideReason?.trim()
@@ -2855,7 +2857,7 @@ async function preparePackagePublishPlan(
       ...(source?.commit ? { commit: source.commit } : {}),
       files: filesOnDisk.length,
       totalBytes,
-      ...(family === "claw" && clawpackOnDisk
+      ...(family === "template" && clawpackOnDisk
         ? { artifactSha256: digestHex(clawpackOnDisk.bytes, "sha256") }
         : {}),
     },

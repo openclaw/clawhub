@@ -20,7 +20,7 @@ times overlap and each required check reports its own failure:
   window fits the five-second CI budget. Longer rate limits and deterministic
   client errors such as a missing repository fail immediately.
 
-The `unit`, `claws-openclaw-contract`, and `playwright-smoke` jobs use
+The `unit`, `templates-openclaw-contract`, and `playwright-smoke` jobs use
 GitHub-hosted Ubuntu 24.04 runners to avoid unavailable Blacksmith registrations.
 The CPU-heavy `unit` job records the runner's actual CPU, memory, and cgroup
 allocation before coverage and has a ten-minute timeout to accommodate hosted

@@ -13828,8 +13828,8 @@ describe("httpApiV1 handlers", () => {
       200,
     ],
     [
-      "marked claw family",
-      "https://example.com/api/v1/plugins/search?q=weather&family=claw&searchSource=clawhub-web",
+      "marked template family",
+      "https://example.com/api/v1/plugins/search?q=weather&family=template&searchSource=clawhub-web",
       200,
     ],
     ["unmarked plugin request", "https://example.com/api/v1/plugins/search?q=weather", 200],
@@ -18002,7 +18002,7 @@ describe("httpApiV1 handlers", () => {
     expect(runAction).not.toHaveBeenCalled();
   });
 
-  it("rejects loose Claw files before multipart storage", async () => {
+  it("rejects loose Template files before multipart storage", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requirePackagePublishAuth).mockResolvedValue({
       kind: "user",
@@ -18010,7 +18010,7 @@ describe("httpApiV1 handlers", () => {
       user: { _id: "users:1", handle: "p" },
     } as never);
     const form = packagePublishForm(
-      packagePublishMetadata({ family: "claw", name: "@openclaw/demo-claw" }),
+      packagePublishMetadata({ family: "template", name: "@openclaw/demo-claw" }),
     );
     form.append("files", new File(["manifest"], "CLAW.md", { type: "text/markdown" }));
     const storageStore = vi.fn();
@@ -18031,7 +18031,7 @@ describe("httpApiV1 handlers", () => {
 
     expect(response.status).toBe(400);
     expect(await response.text()).toBe(
-      "Claw publication requires an already-built package tarball (.tgz)",
+      "Template publication requires an already-built package tarball (.tgz)",
     );
     expect(storageStore).not.toHaveBeenCalled();
     expect(runAction).not.toHaveBeenCalled();
@@ -18406,7 +18406,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it.each(["openclaw", "other"])(
-    "multipart Claw publish accepts a valid @%s npm pack without a plugin manifest",
+    "multipart Template publish accepts a valid @%s npm pack without a plugin manifest",
     async (handle) => {
       const name = `@${handle}/demo-claw`;
       vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
@@ -18423,7 +18423,7 @@ describe("httpApiV1 handlers", () => {
         "package/package.json": JSON.stringify({
           name,
           version: "1.0.0",
-          openclaw: { claw: "CLAW.md" },
+          openclaw: { template: "CLAW.md" },
         }),
         "package/CLAW.md":
           "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\nYou are a focused demo agent.\n",
@@ -18440,7 +18440,7 @@ describe("httpApiV1 handlers", () => {
         "payload",
         JSON.stringify({
           name,
-          family: "claw",
+          family: "template",
           version: "1.0.0",
           changelog: "init",
           expectedArtifactSha256: artifactSha256,
@@ -18472,7 +18472,7 @@ describe("httpApiV1 handlers", () => {
         expect.anything(),
         expect.objectContaining({
           payload: expect.objectContaining({
-            family: "claw",
+            family: "template",
             expectedArtifactSha256: artifactSha256,
             artifact: expect.objectContaining({ kind: "npm-pack", npmFileCount: 2 }),
             files: [
@@ -18490,21 +18490,21 @@ describe("httpApiV1 handlers", () => {
       label: "package name",
       metadata: { name: "@openclaw/other-claw", version: "1.0.0" },
       digest: "actual",
-      message: "Claw package name mismatch",
+      message: "Template package name mismatch",
     },
     {
       label: "package version",
       metadata: { name: "@openclaw/demo-claw", version: "2.0.0" },
       digest: "actual",
-      message: "Claw package version mismatch",
+      message: "Template package version mismatch",
     },
     {
       label: "artifact digest",
       metadata: { name: "@openclaw/demo-claw", version: "1.0.0" },
       digest: "0".repeat(64),
-      message: "Claw artifact SHA-256 mismatch",
+      message: "Template artifact SHA-256 mismatch",
     },
-  ])("rejects a Claw tarball with mismatched $label before storing it", async (testCase) => {
+  ])("rejects a Template tarball with mismatched $label before storing it", async (testCase) => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requirePackagePublishAuth).mockResolvedValue({
       kind: "user",
@@ -18515,7 +18515,7 @@ describe("httpApiV1 handlers", () => {
       "package/package.json": JSON.stringify({
         name: "@openclaw/demo-claw",
         version: "1.0.0",
-        openclaw: { claw: "CLAW.md" },
+        openclaw: { template: "CLAW.md" },
       }),
       "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\nDemo.\n",
     });
@@ -18523,7 +18523,7 @@ describe("httpApiV1 handlers", () => {
       testCase.digest === "actual" ? await sha256Hex(pack) : testCase.digest;
     const form = packagePublishForm({
       ...packagePublishMetadata({
-        family: "claw",
+        family: "template",
         name: testCase.metadata.name,
         version: testCase.metadata.version,
       }),
@@ -20411,8 +20411,8 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toBe(moderationMessage);
   });
 
-  it("lists and returns safe Claw details by default", async () => {
-    const latestClawManifestSummary = {
+  it("lists and returns safe Template details by default", async () => {
+    const latestTemplateManifestSummary = {
       schemaVersion: 1,
       agent: { id: "triage-latest", name: "Triage Latest", description: "Latest release" },
       workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
@@ -20420,7 +20420,7 @@ describe("httpApiV1 handlers", () => {
       mcpServerCount: 1,
       cronJobCount: 1,
     };
-    const exactClawManifestSummary = {
+    const exactTemplateManifestSummary = {
       schemaVersion: 1,
       agent: { id: "triage-v1", name: "Triage v1", description: "Exact release" },
       workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 2 },
@@ -20431,8 +20431,8 @@ describe("httpApiV1 handlers", () => {
     const packageItem = {
       _id: "packages:triage",
       name: "triage-claw",
-      displayName: "Triage Claw",
-      family: "claw",
+      displayName: "Triage Template",
+      family: "template",
       runtimeId: null,
       channel: "community",
       isOfficial: false,
@@ -20450,7 +20450,7 @@ describe("httpApiV1 handlers", () => {
       compatibility: null,
       verification: null,
       artifact: null,
-      clawManifestSummary: latestClawManifestSummary,
+      templateManifestSummary: latestTemplateManifestSummary,
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("paginationOpts" in args) {
@@ -20467,8 +20467,8 @@ describe("httpApiV1 handlers", () => {
               createdAt: 1,
               changelog: "Initial release",
               files: [],
-              clawManifestSummary: exactClawManifestSummary,
-              extractedClawManifest: { secret: "must-not-project" },
+              templateManifestSummary: exactTemplateManifestSummary,
+              extractedTemplateManifest: { secret: "must-not-project" },
               extractedPackageJson: { privatePolicy: "must-not-project" },
             },
           };
@@ -20486,11 +20486,11 @@ describe("httpApiV1 handlers", () => {
     const ctx = makeCtx({ runQuery });
     const listResponse = await __handlers.listPackagesV1Handler(
       ctx,
-      new Request("https://example.com/api/v1/packages?family=claw"),
+      new Request("https://example.com/api/v1/packages?family=template"),
     );
     if (listResponse.status !== 200) throw new Error(await listResponse.text());
     await expect(listResponse.json()).resolves.toMatchObject({
-      items: [{ name: "triage-claw", family: "claw" }],
+      items: [{ name: "triage-claw", family: "template" }],
     });
 
     const detailResponse = await __handlers.packagesGetRouterV1Handler(
@@ -20501,8 +20501,8 @@ describe("httpApiV1 handlers", () => {
     await expect(detailResponse.json()).resolves.toMatchObject({
       package: {
         name: "triage-claw",
-        family: "claw",
-        clawManifestSummary: latestClawManifestSummary,
+        family: "template",
+        templateManifestSummary: latestTemplateManifestSummary,
       },
     });
 
@@ -20513,13 +20513,13 @@ describe("httpApiV1 handlers", () => {
     if (versionResponse.status !== 200) throw new Error(await versionResponse.text());
     const versionBody = await versionResponse.json();
     expect(versionBody).toMatchObject({
-      package: { name: "triage-claw", family: "claw" },
-      version: { version: "1.0.0", clawManifestSummary: exactClawManifestSummary },
+      package: { name: "triage-claw", family: "template" },
+      version: { version: "1.0.0", templateManifestSummary: exactTemplateManifestSummary },
     });
     expect(JSON.stringify(versionBody)).not.toContain("must-not-project");
   });
 
-  it("filters Claw browse and search by the fixed Claw taxonomy", async () => {
+  it("filters Template browse and search by the fixed Template taxonomy", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) =>
@@ -20529,32 +20529,32 @@ describe("httpApiV1 handlers", () => {
       const ctx = makeCtx({ runQuery });
       const list = await __handlers.listPackagesV1Handler(
         ctx,
-        new Request("https://example.com/api/v1/packages?family=claw&category=travel"),
+        new Request("https://example.com/api/v1/packages?family=template&category=travel"),
       );
       expect(list.status).toBe(200);
       expect(runQuery).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ family: "claw", category: "travel" }),
+        expect.objectContaining({ family: "template", category: "travel" }),
       );
 
       const search = await __handlers.packagesGetRouterV1Handler(
         ctx,
         new Request(
-          "https://example.com/api/v1/packages/search?q=trip&family=claw&category=travel",
+          "https://example.com/api/v1/packages/search?q=trip&family=template&category=travel",
         ),
       );
       expect(search.status).toBe(200);
       expect(runQuery).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ family: "claw", category: "travel", query: "trip" }),
+        expect.objectContaining({ family: "template", category: "travel", query: "trip" }),
       );
 
       const invalid = await __handlers.listPackagesV1Handler(
         ctx,
-        new Request("https://example.com/api/v1/packages?family=claw&category=made-up"),
+        new Request("https://example.com/api/v1/packages?family=template&category=made-up"),
       );
       expect(invalid.status).toBe(400);
-      expect(await invalid.text()).toBe("Invalid Claw category");
+      expect(await invalid.text()).toBe("Invalid Template category");
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;

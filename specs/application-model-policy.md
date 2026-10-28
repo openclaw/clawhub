@@ -2,14 +2,14 @@
 
 Default policy as of 2026-10-19 (embeddings unchanged):
 
-| Consumer                                               | Model         | Reasoning | Service  |
-| ------------------------------------------------------ | ------------- | --------- | -------- |
-| Skill summaries; skill/package changelogs              | `gpt-6-luna`  | low       | Standard |
-| Plugin and Claw category classification; search intent | `gpt-6-luna`  | none      | Standard |
-| Skill Card generator and credential canary             | `gpt-6-luna`  | medium    | Standard |
-| Design audit                                           | `gpt-6.1-sol` | high      | Standard |
-| SkillEvaluator Codex agent                             | `gpt-6.1-sol` | medium    | Standard |
-| SkillEvaluator judge                                   | `gpt-6.1-sol` | high      | Standard |
+| Consumer                                                   | Model         | Reasoning | Service  |
+| ---------------------------------------------------------- | ------------- | --------- | -------- |
+| Skill summaries; skill/package changelogs                  | `gpt-6-luna`  | low       | Standard |
+| Plugin and Template category classification; search intent | `gpt-6-luna`  | none      | Standard |
+| Skill Card generator and credential canary                 | `gpt-6-luna`  | medium    | Standard |
+| Design audit                                               | `gpt-6.1-sol` | high      | Standard |
+| SkillEvaluator Codex agent                                 | `gpt-6.1-sol` | medium    | Standard |
+| SkillEvaluator judge                                       | `gpt-6.1-sol` | high      | Standard |
 
 Existing model, effort, and service-tier environment overrides remain explicit
 operator choices. Other explicit model families keep their provider reasoning

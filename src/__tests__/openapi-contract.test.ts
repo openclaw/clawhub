@@ -25,6 +25,59 @@ function responseContentForPath(paths: unknown, path: string, status: string) {
 }
 
 describe("OpenAPI contract", () => {
+  it("documents Template families, bounded summaries, and the separate Official feed", async () => {
+    const specPath = new URL("../../public/api/v1/openapi.json", import.meta.url);
+    const spec: unknown = JSON.parse(await readFile(specPath, "utf8"));
+    const paths = property(spec, "paths");
+    const schemas = property(property(spec, "components"), "schemas");
+    for (const path of ["/api/v1/packages", "/api/v1/packages/search"]) {
+      const parameters = property(property(property(paths, path), "get"), "parameters");
+      const family = Array.isArray(parameters)
+        ? parameters.find((parameter) => property(parameter, "name") === "family")
+        : undefined;
+      expect(property(property(family, "schema"), "enum")).toEqual([
+        "skill",
+        "code-plugin",
+        "bundle-plugin",
+        "template",
+      ]);
+    }
+    const packageProperties = property(
+      property(property(property(schemas, "PackageResponse"), "properties"), "package"),
+      "properties",
+    );
+    expect(property(packageProperties, "templateProfilePolicyVersion")).toEqual({
+      type: "integer",
+      const: 1,
+    });
+    expect(property(packageProperties, "templateManifestSummary")).toBeTruthy();
+    expect(property(packageProperties, "clawManifestSummary")).toBeUndefined();
+    const summary = property(schemas, "TemplateManifestSummary");
+    expect(property(summary, "additionalProperties")).toBe(false);
+    expect(property(property(property(summary, "properties"), "agent"), "properties")).toEqual({
+      id: { type: "string" },
+      name: { type: "string", maxLength: 128 },
+      description: { type: "string", maxLength: 1024 },
+    });
+    for (const path of ["/api/v1/feeds/templates", "/v1/feeds/templates"]) {
+      expect(
+        property(
+          property(responseContentForPath(paths, path, "200"), "application/json"),
+          "schema",
+        ),
+      ).toEqual({
+        $ref: "#/components/schemas/ExperimentalTemplateFeed",
+      });
+    }
+    const feedProperties = property(property(schemas, "ExperimentalTemplateFeed"), "properties");
+    expect(property(feedProperties, "id")).toEqual({
+      type: "string",
+      const: "clawhub-official-templates",
+    });
+    expect(property(paths, "/api/v1/feeds/claws")).toBeUndefined();
+    expect(property(paths, "/v1/feeds/claws")).toBeUndefined();
+  });
+
   it("documents accepted skills sort aliases", async () => {
     const specPath = new URL("../../public/api/v1/openapi.json", import.meta.url);
     const spec: unknown = JSON.parse(await readFile(specPath, "utf8"));

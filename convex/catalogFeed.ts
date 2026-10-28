@@ -6,14 +6,14 @@ import {
   CATALOG_SKILLS_FEED_DESCRIPTION,
   CATALOG_SKILLS_FEED_ID,
   PROMOTIONS_FEED_ID,
-  EXPERIMENTAL_CLAW_FEED_DESCRIPTION,
-  EXPERIMENTAL_CLAW_FEED_ID,
-  EXPERIMENTAL_CLAW_FEED_SCHEMA_VERSION,
+  EXPERIMENTAL_TEMPLATE_FEED_DESCRIPTION,
+  EXPERIMENTAL_TEMPLATE_FEED_ID,
+  EXPERIMENTAL_TEMPLATE_FEED_SCHEMA_VERSION,
   serializeCatalogFeed,
-  serializeExperimentalClawFeed,
+  serializeExperimentalTemplateFeed,
   type CatalogFeedPluginEntry,
   type CatalogFeedSkillEntry,
-  type ExperimentalClawFeedEntry,
+  type ExperimentalTemplateFeedEntry,
 } from "clawhub-schema";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -22,7 +22,7 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import type { QueryCtx } from "./_generated/server";
 import { isSkillHighlighted } from "./lib/badges";
 import { sha256Hex } from "./lib/clawpack";
-import { isOpenClawClawName, isOpenClawClawPublisher } from "./lib/experimentalClaws";
+import { isOpenClawTemplateName, isOpenClawTemplatePublisher } from "./lib/experimentalTemplates";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
@@ -41,7 +41,7 @@ const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub
 const CATALOG_FEED_PAGE_SIZE = 100;
 const MAX_CATALOG_FEED_ENTRIES = 1000;
 const CATALOG_FEED_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
-const CATALOG_CLAW_FAMILY = "claw" as const;
+const CATALOG_TEMPLATE_FAMILY = "template" as const;
 
 type CatalogQueryCtx = Pick<QueryCtx, "db">;
 type CatalogFeedPublicationResult = {
@@ -123,8 +123,8 @@ const catalogFeedEntryValidator = v.union(
   v.object({ type: v.literal("plugin"), ...catalogFeedEntryFields }),
   v.object({ type: v.literal("skill"), ...catalogFeedEntryFields }),
 );
-const clawFeedEntryValidator = v.object({
-  type: v.literal("claw"),
+const templateFeedEntryValidator = v.object({
+  type: v.literal("template"),
   ...catalogFeedEntryFields,
   install: v.object({
     candidates: v.array(
@@ -136,7 +136,7 @@ const clawFeedEntryValidator = v.object({
       }),
     ),
   }),
-  clawManifestSummary: v.object({
+  templateManifestSummary: v.object({
     schemaVersion: v.literal(1),
     agent: v.object({
       id: v.string(),
@@ -158,7 +158,7 @@ const clawFeedEntryValidator = v.object({
 async function buildEntry(
   ctx: CatalogQueryCtx,
   pkg: Doc<"packages">,
-): Promise<CatalogFeedPluginEntry | ExperimentalClawFeedEntry | null> {
+): Promise<CatalogFeedPluginEntry | ExperimentalTemplateFeedEntry | null> {
   if (pkg.softDeletedAt || pkg.channel !== "official" || !pkg.latestReleaseId) return null;
   const release = await ctx.db.get(pkg.latestReleaseId);
   if (!isPublishedPackageRelease(release, pkg._id)) return null;
@@ -176,8 +176,8 @@ async function buildEntry(
   });
   if (!(await isOfficialPublisher(ctx, owner))) return null;
   if (
-    pkg.family === "claw" &&
-    (!isOpenClawClawName(pkg.normalizedName) || !isOpenClawClawPublisher(owner))
+    pkg.family === "template" &&
+    (!isOpenClawTemplateName(pkg.normalizedName) || !isOpenClawTemplatePublisher(owner))
   ) {
     return null;
   }
@@ -196,10 +196,10 @@ async function buildEntry(
     .withIndex("by_package_kind", (q) => q.eq("packageId", pkg._id).eq("kind", "highlighted"))
     .unique();
 
-  if (pkg.family === "claw") {
-    if (!release.clawManifestSummary) return null;
+  if (pkg.family === "template") {
+    if (!release.templateManifestSummary) return null;
     return {
-      type: "claw",
+      type: "template",
       id,
       title,
       ...(icon && isHostedSkillPresentationIconPath(icon)
@@ -211,7 +211,7 @@ async function buildEntry(
         id: publisherId,
         trust: "official",
       },
-      clawManifestSummary: release.clawManifestSummary,
+      templateManifestSummary: release.templateManifestSummary,
       install: {
         candidates: [
           {
@@ -222,7 +222,7 @@ async function buildEntry(
           },
         ],
       },
-    } satisfies ExperimentalClawFeedEntry;
+    } satisfies ExperimentalTemplateFeedEntry;
   }
 
   return {
@@ -254,10 +254,10 @@ async function buildEntry(
 
 async function listFamilyEntryPage(
   ctx: CatalogQueryCtx,
-  family: (typeof CATALOG_FEED_FAMILIES)[number] | typeof CATALOG_CLAW_FAMILY,
+  family: (typeof CATALOG_FEED_FAMILIES)[number] | typeof CATALOG_TEMPLATE_FAMILY,
   cursor: string | null,
 ) {
-  const entries: Array<CatalogFeedPluginEntry | ExperimentalClawFeedEntry> = [];
+  const entries: Array<CatalogFeedPluginEntry | ExperimentalTemplateFeedEntry> = [];
   const page = await ctx.db
     .query("packages")
     .withIndex("by_active_family_official_downloads", (q) =>
@@ -449,16 +449,16 @@ export const listOfficialEntries = internalQuery({
   },
 });
 
-export const listOfficialClawEntries = internalQuery({
+export const listOfficialTemplateEntries = internalQuery({
   args: {
     cursor: v.union(v.string(), v.null()),
   },
   handler: async (ctx, args) => {
-    const page = await listFamilyEntryPage(ctx, CATALOG_CLAW_FAMILY, args.cursor);
-    if (page.entries.some((entry) => entry.type !== "claw")) {
-      throw new Error("Claw feed projection returned a mismatched entry type");
+    const page = await listFamilyEntryPage(ctx, CATALOG_TEMPLATE_FAMILY, args.cursor);
+    if (page.entries.some((entry) => entry.type !== "template")) {
+      throw new Error("Template feed projection returned a mismatched entry type");
     }
-    return { ...page, entries: page.entries as ExperimentalClawFeedEntry[] };
+    return { ...page, entries: page.entries as ExperimentalTemplateFeedEntry[] };
   },
 });
 
@@ -550,17 +550,17 @@ export const storePublication = internalMutation({
   },
 });
 
-export const storeClawPublication = internalMutation({
+export const storeTemplatePublication = internalMutation({
   args: {
     generatedAt: v.string(),
     expiresAt: v.string(),
-    entries: v.array(clawFeedEntryValidator),
+    entries: v.array(templateFeedEntryValidator),
   },
   handler: async (ctx, args) => {
     if (
       args.entries.some(
         (entry) =>
-          !isOpenClawClawName(entry.id) ||
+          !isOpenClawTemplateName(entry.id) ||
           entry.publisher.id !== "openclaw" ||
           entry.publisher.trust !== "official" ||
           entry.install.candidates.length === 0 ||
@@ -569,7 +569,7 @@ export const storeClawPublication = internalMutation({
           ),
       )
     ) {
-      throw new Error("Experimental Claw feed entries must be published by @openclaw");
+      throw new Error("Experimental Template feed entries must be published by @openclaw");
     }
     const owner = args.entries.length
       ? await ctx.db
@@ -585,44 +585,44 @@ export const storeClawPublication = internalMutation({
       : null;
     if (
       args.entries.length &&
-      (!isOpenClawClawPublisher(owner) || !(await isOfficialPublisher(ctx, owner)))
+      (!isOpenClawTemplatePublisher(owner) || !(await isOfficialPublisher(ctx, owner)))
     ) {
-      throw new Error("Experimental Claw feed publisher is unavailable");
+      throw new Error("Experimental Template feed publisher is unavailable");
     }
     const latest = await ctx.db
       .query("catalogFeedPublications")
-      .withIndex("by_feed", (q) => q.eq("feedId", EXPERIMENTAL_CLAW_FEED_ID))
+      .withIndex("by_feed", (q) => q.eq("feedId", EXPERIMENTAL_TEMPLATE_FEED_ID))
       .unique();
     const sequence = (latest?.sequence ?? 0) + 1;
-    const payload = serializeExperimentalClawFeed({
-      schemaVersion: EXPERIMENTAL_CLAW_FEED_SCHEMA_VERSION,
-      id: EXPERIMENTAL_CLAW_FEED_ID,
+    const payload = serializeExperimentalTemplateFeed({
+      schemaVersion: EXPERIMENTAL_TEMPLATE_FEED_SCHEMA_VERSION,
+      id: EXPERIMENTAL_TEMPLATE_FEED_ID,
       generatedAt: args.generatedAt,
       sequence,
       expiresAt: args.expiresAt,
-      description: EXPERIMENTAL_CLAW_FEED_DESCRIPTION,
+      description: EXPERIMENTAL_TEMPLATE_FEED_DESCRIPTION,
       entries: args.entries,
     });
     const payloadSha256 = await sha256Hex(new TextEncoder().encode(payload));
     const publishedAt = Date.now();
     const publication = {
-      feedId: EXPERIMENTAL_CLAW_FEED_ID,
+      feedId: EXPERIMENTAL_TEMPLATE_FEED_ID,
       sequence,
       generatedAt: args.generatedAt,
       expiresAt: args.expiresAt,
       payload,
       payloadSha256,
       publishedAt,
-      clawPolicyVersion: 1 as const,
-      clawEntryCount: args.entries.length,
-      clawPublisherId: owner?._id,
+      templatePolicyVersion: 1 as const,
+      templateEntryCount: args.entries.length,
+      templatePublisherId: owner?._id,
     };
     const publicationId = latest
       ? (await ctx.db.patch(latest._id, publication), latest._id)
       : await ctx.db.insert("catalogFeedPublications", publication);
     return {
       publicationId,
-      feedId: EXPERIMENTAL_CLAW_FEED_ID,
+      feedId: EXPERIMENTAL_TEMPLATE_FEED_ID,
       sequence,
       payloadSha256,
       publishedAt,
@@ -703,19 +703,19 @@ export const publish = internalAction({
         entries: skillEntries.sort((left, right) => left.id.localeCompare(right.id)),
       },
     );
-    const clawEntries: ExperimentalClawFeedEntry[] =
-      await collectFeedPages<ExperimentalClawFeedEntry>((cursor) =>
-        ctx.runQuery(internal.catalogFeed.listOfficialClawEntries, { cursor }),
+    const templateEntries: ExperimentalTemplateFeedEntry[] =
+      await collectFeedPages<ExperimentalTemplateFeedEntry>((cursor) =>
+        ctx.runQuery(internal.catalogFeed.listOfficialTemplateEntries, { cursor }),
       );
-    const clawsResult: CatalogFeedPublicationResult = await ctx.runMutation(
-      internal.catalogFeed.storeClawPublication,
+    const templatesResult: CatalogFeedPublicationResult = await ctx.runMutation(
+      internal.catalogFeed.storeTemplatePublication,
       {
         generatedAt,
         expiresAt: args.expiresAt,
-        entries: clawEntries.sort((left, right) => left.id.localeCompare(right.id)),
+        entries: templateEntries.sort((left, right) => left.id.localeCompare(right.id)),
       },
     );
-    return [pluginResult, skillsResult, clawsResult];
+    return [pluginResult, skillsResult, templatesResult];
   },
 });
 
@@ -724,7 +724,7 @@ export const getLatestPublication = internalQuery({
     feedId: v.union(
       v.literal(CATALOG_FEED_ID),
       v.literal(CATALOG_SKILLS_FEED_ID),
-      v.literal(EXPERIMENTAL_CLAW_FEED_ID),
+      v.literal(EXPERIMENTAL_TEMPLATE_FEED_ID),
       v.literal(PROMOTIONS_FEED_ID),
     ),
   },
@@ -733,19 +733,20 @@ export const getLatestPublication = internalQuery({
       .query("catalogFeedPublications")
       .withIndex("by_feed", (q) => q.eq("feedId", args.feedId))
       .unique();
-    if (args.feedId !== EXPERIMENTAL_CLAW_FEED_ID || !publication) return publication;
+    if (args.feedId !== EXPERIMENTAL_TEMPLATE_FEED_ID || !publication) return publication;
     if (
-      publication.clawPolicyVersion !== 1 ||
-      publication.clawEntryCount === undefined ||
-      !Number.isSafeInteger(publication.clawEntryCount) ||
-      publication.clawEntryCount < 0
+      publication.templatePolicyVersion !== 1 ||
+      publication.templateEntryCount === undefined ||
+      !Number.isSafeInteger(publication.templateEntryCount) ||
+      publication.templateEntryCount < 0
     ) {
       return null;
     }
-    if (publication.clawEntryCount === 0) return publication;
-    if (!publication.clawPublisherId) return null;
-    const owner = await ctx.db.get(publication.clawPublisherId);
-    if (!isOpenClawClawPublisher(owner) || !(await isOfficialPublisher(ctx, owner))) return null;
+    if (publication.templateEntryCount === 0) return publication;
+    if (!publication.templatePublisherId) return null;
+    const owner = await ctx.db.get(publication.templatePublisherId);
+    if (!isOpenClawTemplatePublisher(owner) || !(await isOfficialPublisher(ctx, owner)))
+      return null;
     return publication;
   },
 });

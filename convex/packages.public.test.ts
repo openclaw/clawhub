@@ -170,7 +170,7 @@ const getVersionSecurityByNameForViewerInternalHandler = (
 const listPublicPageHandler = (
   listPublicPage as unknown as WrappedHandler<
     {
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -207,7 +207,7 @@ const listPublicNewPluginsPageHandler = (
 const listPageForViewerInternalHandler = (
   listPageForViewerInternal as unknown as WrappedHandler<
     {
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
       families?: Array<"skill" | "code-plugin" | "bundle-plugin">;
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
@@ -317,7 +317,7 @@ const insertReleaseInternalHandler = (
           };
       name: string;
       displayName: string;
-      family: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family: "skill" | "code-plugin" | "bundle-plugin" | "template";
       version: string;
       publicationStatus?: "pending" | "published";
       changelog: string;
@@ -415,7 +415,7 @@ const reservePackageNameInternalHandler = (
       name: string;
       displayName?: string;
       summary?: string;
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
       reason?: string;
     },
     { ok: true; action: string; packageId: string; name: string }
@@ -426,7 +426,7 @@ const searchPublicHandler = (
     {
       query: string;
       limit?: number;
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -445,7 +445,7 @@ const searchForViewerInternalHandler = (
     {
       query: string;
       limit?: number;
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -1258,11 +1258,11 @@ const openClawPublisher = {
 };
 const activeOpenClawPublisherDocs = { [openClawPublisher._id]: openClawPublisher };
 
-function makeOpenClawClawPackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
+function makeOpenClawTemplatePackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
   return makePackageDoc({
     name: "@openclaw/demo-claw",
     normalizedName: "@openclaw/demo-claw",
-    family: "claw",
+    family: "template",
     ownerPublisherId: openClawPublisher._id,
     ...overrides,
   });
@@ -5618,9 +5618,9 @@ describe("packages public queries", () => {
     ]);
   });
 
-  it("filters Claws by their stored category tags without using plugin indexes", async () => {
-    const officialClaw = {
-      family: "claw",
+  it("filters Templates by their stored category tags without using plugin indexes", async () => {
+    const officialTemplate = {
+      family: "template",
       channel: "official",
       isOfficial: true,
       ownerPublisherId: openClawPublisher._id,
@@ -5632,10 +5632,10 @@ describe("packages public queries", () => {
         {
           page: [
             makeDigest("@openclaw/travel-planner", {
-              ...officialClaw,
+              ...officialTemplate,
               categories: ["travel", "personal"],
             }),
-            makeDigest("@openclaw/budget-coach", { ...officialClaw, categories: ["finance"] }),
+            makeDigest("@openclaw/budget-coach", { ...officialTemplate, categories: ["finance"] }),
           ],
           isDone: true,
           continueCursor: "",
@@ -5645,7 +5645,7 @@ describe("packages public queries", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       category: "travel",
       paginationOpts: { cursor: null, numItems: 10 },
     });
@@ -5654,9 +5654,9 @@ describe("packages public queries", () => {
     expect(tableNames).toEqual(["packageSearchDigest"]);
   });
 
-  it("searches Claws within their stored category tags", async () => {
-    const officialClaw = {
-      family: "claw",
+  it("searches Templates within their stored category tags", async () => {
+    const officialTemplate = {
+      family: "template",
       channel: "official",
       isOfficial: true,
       ownerPublisherId: openClawPublisher._id,
@@ -5667,8 +5667,8 @@ describe("packages public queries", () => {
       pages: [
         {
           page: [
-            makeDigest("@openclaw/travel-planner", { ...officialClaw, categories: ["travel"] }),
-            makeDigest("@openclaw/travel-budget", { ...officialClaw, categories: ["finance"] }),
+            makeDigest("@openclaw/travel-planner", { ...officialTemplate, categories: ["travel"] }),
+            makeDigest("@openclaw/travel-budget", { ...officialTemplate, categories: ["finance"] }),
           ],
           isDone: true,
           continueCursor: "",
@@ -5679,7 +5679,7 @@ describe("packages public queries", () => {
 
     const result = await searchPublicHandler(ctx, {
       query: "travel",
-      family: "claw",
+      family: "template",
       category: "travel",
       limit: 10,
     });
@@ -7526,7 +7526,7 @@ describe("packages public queries", () => {
       clawpackSha256: "a".repeat(64),
     });
     const { ctx } = makePackageCtx({
-      pkg: makeOpenClawClawPackageDoc(),
+      pkg: makeOpenClawTemplatePackageDoc(),
       latestRelease: release,
       versionRelease: release,
       versionsPage: {
@@ -9562,7 +9562,7 @@ describe("packages public queries", () => {
     });
   });
 
-  it("does not recover a Claw publish result for different exact artifact bytes", async () => {
+  it("does not recover a Template publish result for different exact artifact bytes", async () => {
     const ctx = {
       db: {
         query: vi.fn((table: string) => ({
@@ -9570,7 +9570,7 @@ describe("packages public queries", () => {
             unique: vi.fn().mockResolvedValue(
               table === "packages"
                 ? makePackageDoc({
-                    family: "claw",
+                    family: "template",
                     ownerUserId: "users:owner",
                     ownerPublisherId: "publishers:owner",
                   })
@@ -10105,7 +10105,7 @@ describe("packages public queries", () => {
     expect(ctx.insert).toHaveBeenCalledWith("packageReleases", expect.anything());
   });
 
-  it("pins newly created Claw packages to the current profile policy", async () => {
+  it("pins newly created Template packages to the current profile policy", async () => {
     const ctx = makeInsertReleaseCtx(null);
 
     await insertReleaseInternalHandler(ctx, {
@@ -10113,8 +10113,8 @@ describe("packages public queries", () => {
       ownerUserId: "users:owner",
       ownerPublisherId: openClawPublisher._id,
       name: "@openclaw/demo-claw",
-      displayName: "Demo Claw",
-      family: "claw",
+      displayName: "Demo Template",
+      family: "template",
       version: "1.0.0",
       changelog: "init",
       tags: ["latest"],
@@ -10126,13 +10126,13 @@ describe("packages public queries", () => {
     expect(ctx.insert).toHaveBeenCalledWith(
       "packages",
       expect.objectContaining({
-        family: "claw",
-        clawProfilePolicyVersion: 1,
+        family: "template",
+        templateProfilePolicyVersion: 1,
       }),
     );
   });
 
-  it("publishes a Claw in the community channel when its owner is not Official", async () => {
+  it("publishes a Template in the community channel when its owner is not Official", async () => {
     const ctx = makeInsertReleaseCtx(
       null,
       [],
@@ -10149,8 +10149,8 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: openClawPublisher._id,
         name: "@openclaw/demo-claw",
-        displayName: "Demo Claw",
-        family: "claw",
+        displayName: "Demo Template",
+        family: "template",
         version: "1.0.0",
         changelog: "init",
         tags: ["latest"],
@@ -10161,7 +10161,7 @@ describe("packages public queries", () => {
     ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
     expect(ctx.insert).toHaveBeenCalledWith(
       "packages",
-      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
+      expect.objectContaining({ family: "template", channel: "community", isOfficial: false }),
     );
   });
 
@@ -10198,7 +10198,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("rejects a Claw release whose @openclaw name is owned by another publisher", async () => {
+  it("rejects a Template release whose @openclaw name is owned by another publisher", async () => {
     const ctx = makeInsertReleaseCtx(null, [], {
       "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
     });
@@ -10209,8 +10209,8 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: "publishers:other",
         name: "@openclaw/demo-claw",
-        displayName: "Demo Claw",
-        family: "claw",
+        displayName: "Demo Template",
+        family: "template",
         version: "1.0.0",
         changelog: "init",
         tags: ["latest"],
@@ -10222,7 +10222,7 @@ describe("packages public queries", () => {
     expect(ctx.insert).not.toHaveBeenCalledWith("packages", expect.anything());
   });
 
-  it("publishes a Claw under its matching third-party organization", async () => {
+  it("publishes a Template under its matching third-party organization", async () => {
     const ctx = makeInsertReleaseCtx(null, [], {
       "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
     });
@@ -10233,8 +10233,8 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: "publishers:other",
         name: "@other/demo-claw",
-        displayName: "Demo Claw",
-        family: "claw",
+        displayName: "Demo Template",
+        family: "template",
         version: "1.0.0",
         changelog: "init",
         tags: ["latest"],
@@ -10245,11 +10245,11 @@ describe("packages public queries", () => {
     ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
     expect(ctx.insert).toHaveBeenCalledWith(
       "packages",
-      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
+      expect.objectContaining({ family: "template", channel: "community", isOfficial: false }),
     );
   });
 
-  it("keeps the existing user-owned Claw publication path without a publisher row", async () => {
+  it("keeps the existing user-owned Template publication path without a publisher row", async () => {
     const ctx = makeInsertReleaseCtx(null);
 
     await expect(
@@ -10257,8 +10257,8 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         ownerUserId: "users:owner",
         name: "legacy-claw",
-        displayName: "Legacy Claw",
-        family: "claw",
+        displayName: "Legacy Template",
+        family: "template",
         version: "1.0.0",
         changelog: "init",
         tags: ["latest"],
@@ -10269,12 +10269,12 @@ describe("packages public queries", () => {
     ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
     expect(ctx.insert).toHaveBeenCalledWith(
       "packages",
-      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
+      expect.objectContaining({ family: "template", channel: "community", isOfficial: false }),
     );
   });
 
-  it("pins a reserved package when its first published release is a Claw", async () => {
-    const reservation = makeOpenClawClawPackageDoc({
+  it("pins a reserved package when its first published release is a Template", async () => {
+    const reservation = makeOpenClawTemplatePackageDoc({
       family: "code-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
@@ -10287,8 +10287,8 @@ describe("packages public queries", () => {
       ownerUserId: "users:owner",
       ownerPublisherId: openClawPublisher._id,
       name: "@openclaw/demo-claw",
-      displayName: "Demo Claw",
-      family: "claw",
+      displayName: "Demo Template",
+      family: "template",
       version: "1.0.0",
       changelog: "init",
       tags: ["latest"],
@@ -10300,14 +10300,14 @@ describe("packages public queries", () => {
     expect(ctx.patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
-        family: "claw",
-        clawProfilePolicyVersion: 1,
+        family: "template",
+        templateProfilePolicyVersion: 1,
       }),
     );
   });
 
-  it("pins a reserved package when its pending first Claw release is published", async () => {
-    const reservation = makeOpenClawClawPackageDoc({
+  it("pins a reserved package when its pending first Template release is published", async () => {
+    const reservation = makeOpenClawTemplatePackageDoc({
       family: "code-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
@@ -10318,8 +10318,8 @@ describe("packages public queries", () => {
       packageId: "packages:demo",
       publicationStatus: "pending",
       pendingPublication: {
-        family: "claw",
-        displayName: "Demo Claw",
+        family: "template",
+        displayName: "Demo Template",
         tags: ["latest"],
       },
     });
@@ -10335,13 +10335,13 @@ describe("packages public queries", () => {
     expect(ctx.patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
-        family: "claw",
-        clawProfilePolicyVersion: 1,
+        family: "template",
+        templateProfilePolicyVersion: 1,
       }),
     );
   });
 
-  it("finalizes a pending user-owned Claw without a publisher row", async () => {
+  it("finalizes a pending user-owned Template without a publisher row", async () => {
     const reservation = makePackageDoc({
       name: "legacy-claw",
       normalizedName: "legacy-claw",
@@ -10355,8 +10355,8 @@ describe("packages public queries", () => {
       packageId: "packages:demo",
       publicationStatus: "pending",
       pendingPublication: {
-        family: "claw",
-        displayName: "Legacy Claw",
+        family: "template",
+        displayName: "Legacy Template",
         tags: ["latest"],
       },
     });
@@ -10374,7 +10374,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("does not finalize a pending Claw after its reserved package has a different owner", async () => {
+  it("does not finalize a pending Template after its reserved package has a different owner", async () => {
     const reservation = makePackageDoc({
       name: "@openclaw/demo-claw",
       normalizedName: "@openclaw/demo-claw",
@@ -10389,8 +10389,8 @@ describe("packages public queries", () => {
       packageId: "packages:demo",
       publicationStatus: "pending",
       pendingPublication: {
-        family: "claw",
-        displayName: "Demo Claw",
+        family: "template",
+        displayName: "Demo Template",
         tags: ["latest"],
       },
     });
@@ -10407,9 +10407,9 @@ describe("packages public queries", () => {
   });
 
   it.each(["deletedAt", "deactivatedAt"] as const)(
-    "does not finalize a pending Claw when its publisher has %s",
+    "does not finalize a pending Template when its publisher has %s",
     async (inactiveField) => {
-      const reservation = makeOpenClawClawPackageDoc({
+      const reservation = makeOpenClawTemplatePackageDoc({
         family: "code-plugin",
         latestReleaseId: undefined,
         latestVersionSummary: undefined,
@@ -10418,7 +10418,7 @@ describe("packages public queries", () => {
       const pendingRelease = makeReleaseDoc({
         _id: "packageReleases:pending",
         publicationStatus: "pending",
-        pendingPublication: { family: "claw", displayName: "Demo Claw", tags: ["latest"] },
+        pendingPublication: { family: "template", displayName: "Demo Template", tags: ["latest"] },
       });
       const ctx = makeInsertReleaseCtx(reservation, [pendingRelease], {
         "packages:demo": reservation,
@@ -10428,13 +10428,13 @@ describe("packages public queries", () => {
 
       await expect(
         publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:pending" }),
-      ).rejects.toThrow("Claw package owner publisher is unavailable");
+      ).rejects.toThrow("Template package owner publisher is unavailable");
       expect(ctx.patch).not.toHaveBeenCalled();
     },
   );
 
-  it("finalizes a staged Claw after @openclaw loses Official status", async () => {
-    const reservation = makeOpenClawClawPackageDoc({
+  it("finalizes a staged Template after @openclaw loses Official status", async () => {
+    const reservation = makeOpenClawTemplatePackageDoc({
       family: "code-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
@@ -10461,8 +10461,8 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: openClawPublisher._id,
         name: "@openclaw/demo-claw",
-        displayName: "Demo Claw",
-        family: "claw",
+        displayName: "Demo Template",
+        family: "template",
         version: "1.0.0",
         changelog: "init",
         tags: ["latest"],
@@ -10473,7 +10473,7 @@ describe("packages public queries", () => {
       }),
     ).resolves.toMatchObject({ publicationStatus: "pending" });
     const pendingInsert = ctx.insert.mock.calls.find(([table]) => table === "packageReleases");
-    if (!pendingInsert) throw new Error("Expected a staged Claw release");
+    if (!pendingInsert) throw new Error("Expected a staged Template release");
     recordsById["packageReleases:new"] = makeReleaseDoc({
       ...pendingInsert[1],
       _id: "packageReleases:new",
@@ -10641,7 +10641,7 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         ownerUserId: "users:owner",
         name: "dronzerclaw",
-        displayName: "Dronzer Claw",
+        displayName: "Dronzer Template",
         family: "code-plugin",
         version: "1.0.0",
         changelog: "init",
@@ -10670,7 +10670,7 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         ownerUserId: "users:owner",
         name: "dronzerclaw",
-        displayName: "Dronzer Claw",
+        displayName: "Dronzer Template",
         family: "code-plugin",
         version: "1.0.0",
         changelog: "init",
@@ -11251,8 +11251,8 @@ describe("packages public queries", () => {
     },
   );
 
-  it("rejects a Claw version retry when the exact artifact digest differs", async () => {
-    const ctx = makeInsertReleaseCtx(makeOpenClawClawPackageDoc(), [
+  it("rejects a Template version retry when the exact artifact digest differs", async () => {
+    const ctx = makeInsertReleaseCtx(makeOpenClawTemplatePackageDoc(), [
       makeReleaseDoc({
         _id: "packageReleases:existing",
         version: "1.0.0",
@@ -11267,8 +11267,8 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: openClawPublisher._id,
         name: "@openclaw/demo-claw",
-        displayName: "Demo Claw",
-        family: "claw",
+        displayName: "Demo Template",
+        family: "template",
         version: "1.0.0",
         changelog: "retry",
         tags: ["latest"],
@@ -11281,9 +11281,9 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
   });
 
-  it("treats an ordinary-user exact Claw artifact retry as idempotent", async () => {
+  it("treats an ordinary-user exact Template artifact retry as idempotent", async () => {
     const artifactSha256 = "a".repeat(64);
-    const ctx = makeInsertReleaseCtx(makeOpenClawClawPackageDoc(), [
+    const ctx = makeInsertReleaseCtx(makeOpenClawTemplatePackageDoc(), [
       makeReleaseDoc({
         _id: "packageReleases:existing",
         version: "1.0.0",
@@ -11298,8 +11298,8 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: openClawPublisher._id,
         name: "@openclaw/demo-claw",
-        displayName: "Demo Claw",
-        family: "claw",
+        displayName: "Demo Template",
+        family: "template",
         version: "1.0.0",
         changelog: "retry",
         tags: ["latest"],
@@ -11316,10 +11316,10 @@ describe("packages public queries", () => {
   });
 
   it.each(["pending", "blocked"] as const)(
-    "does not report a %s exact Claw release as published",
+    "does not report a %s exact Template release as published",
     async (publicationStatus) => {
       const artifactSha256 = "a".repeat(64);
-      const ctx = makeInsertReleaseCtx(makeOpenClawClawPackageDoc(), [
+      const ctx = makeInsertReleaseCtx(makeOpenClawTemplatePackageDoc(), [
         makeReleaseDoc({
           _id: "packageReleases:pending",
           version: "1.0.0",
@@ -11335,8 +11335,8 @@ describe("packages public queries", () => {
           ownerUserId: "users:owner",
           ownerPublisherId: openClawPublisher._id,
           name: "@openclaw/demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
+          displayName: "Demo Template",
+          family: "template",
           version: "1.0.0",
           changelog: "retry",
           tags: ["latest"],
@@ -11466,35 +11466,35 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Skill packages must use the skills publish flow");
   });
 
-  it("requires the exact-artifact HTTP flow for public Claw publishes", async () => {
+  it("requires the exact-artifact HTTP flow for public Template publishes", async () => {
     await expect(
       publishReleaseHandler({} as never, {
         payload: {
           name: "demo-claw",
-          family: "claw",
+          family: "template",
           version: "1.0.0",
         },
       }),
-    ).rejects.toThrow("Claw packages must use the exact-artifact HTTP publish flow");
+    ).rejects.toThrow("Template packages must use the exact-artifact HTTP publish flow");
     expect(getAuthUserId).not.toHaveBeenCalled();
   });
 
-  it("requires a built tarball before a Claw publish reaches mutations", async () => {
+  it("requires a built tarball before a Template publish reaches mutations", async () => {
     await expect(
       publishPackageForUserInternalHandler({} as never, {
         actorUserId: "users:owner",
         payload: {
           name: "demo-claw",
-          family: "claw",
+          family: "template",
           version: "1.0.0",
           changelog: "init",
           files: [],
         },
       }),
-    ).rejects.toThrow("Claw publication requires an already-built package tarball (.tgz)");
+    ).rejects.toThrow("Template publication requires an already-built package tarball (.tgz)");
   });
 
-  it("rejects a Claw publish when the resolved @openclaw owner is another publisher", async () => {
+  it("rejects a Template publish when the resolved @openclaw owner is another publisher", async () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null)
@@ -11519,7 +11519,7 @@ describe("packages public queries", () => {
           actorUserId: "users:owner",
           payload: {
             name: "@openclaw/demo-claw",
-            family: "claw",
+            family: "template",
             version: "1.0.0",
             changelog: "init",
             files: [],
@@ -11544,12 +11544,12 @@ describe("packages public queries", () => {
     expect(runMutation).toHaveBeenCalledTimes(1);
   });
 
-  it("still requires a first manual publish for a third-party trusted Claw", async () => {
+  it("still requires a first manual publish for a third-party trusted Template", async () => {
     const token = {
       _id: "packagePublishTokens:other",
       packageId: "packages:other",
       provider: "github-actions",
-      repository: "other/awesome-claws",
+      repository: "other/awesome-templates",
       repositoryId: "1",
       repositoryOwner: "other",
       repositoryOwnerId: "2",
@@ -11579,7 +11579,7 @@ describe("packages public queries", () => {
         publishTokenId: token._id,
         payload: {
           name: "@other/demo-claw",
-          family: "claw",
+          family: "template",
           version: "1.0.0",
           changelog: "init",
           files: [],
@@ -11602,8 +11602,8 @@ describe("packages public queries", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
-  it("publishes a profile-bearing Claw through the staged release pipeline", async () => {
-    const longClawDescription = "x".repeat(1_100);
+  it("publishes a profile-bearing Template through the staged release pipeline", async () => {
+    const longTemplateDescription = "x".repeat(1_100);
     const artifactSha256 = "a".repeat(64);
     const storedFiles = new Map<string, string>([
       [
@@ -11611,12 +11611,12 @@ describe("packages public queries", () => {
         JSON.stringify({
           name: "demo-claw",
           version: "1.0.0",
-          openclaw: { claw: "manifests/CLAW.md" },
+          openclaw: { template: "manifests/CLAW.md" },
         }),
       ],
       [
         "storage:claw",
-        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\n---\nRun the demo workflow precisely.\n`,
+        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Template\n  description: ${longTemplateDescription}\n---\nRun the demo workflow precisely.\n`,
       ],
       ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
       ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
@@ -11627,7 +11627,7 @@ describe("packages public queries", () => {
       if (args.minimumRole === "publisher") {
         return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
       }
-      if (args.family === "claw") {
+      if (args.family === "template") {
         return { ok: true, packageId: "packages:claw", releaseId: "releases:claw-1" };
       }
       return null;
@@ -11667,8 +11667,8 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         payload: {
           name: "demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
+          displayName: "Demo Template",
+          family: "template",
           version: "1.0.0",
           changelog: "init",
           expectedArtifactSha256: artifactSha256,
@@ -11678,7 +11678,7 @@ describe("packages public queries", () => {
               path: "manifests/CLAW.md",
               size: 1,
               storageId: "storage:claw",
-              sha256: "claw",
+              sha256: "template",
             },
             {
               path: "profiles/openclaw.yml",
@@ -11728,13 +11728,13 @@ describe("packages public queries", () => {
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        family: "claw",
+        family: "template",
         summary: expect.any(String),
         artifactKind: "npm-pack",
         clawpackStorageId: "storage:archive",
         clawpackSha256: artifactSha256,
         clawpackSize: 3,
-        clawManifestSummary: expect.objectContaining({
+        templateManifestSummary: expect.objectContaining({
           agent: expect.objectContaining({
             id: "demo-claw",
             description: "x".repeat(1_024),
@@ -11747,13 +11747,13 @@ describe("packages public queries", () => {
       }),
     );
     const publishMutationArgs = runMutation.mock.calls.find(
-      ([, args]) => args.family === "claw",
+      ([, args]) => args.family === "template",
     )?.[1];
     expect(publishMutationArgs?.summary).toBe("x".repeat(1_024));
-    expect(publishMutationArgs).not.toHaveProperty("extractedClawManifest");
+    expect(publishMutationArgs).not.toHaveProperty("extractedTemplateManifest");
   });
 
-  it("reuses an in-flight staged Claw publish for the same user and artifact", async () => {
+  it("reuses an in-flight staged Template publish for the same user and artifact", async () => {
     const artifactSha256 = "a".repeat(64);
     const storedFiles = new Map<string, string>([
       [
@@ -11761,23 +11761,23 @@ describe("packages public queries", () => {
         JSON.stringify({
           name: "demo-claw",
           version: "1.0.0",
-          openclaw: { claw: "manifests/CLAW.md" },
+          openclaw: { template: "manifests/CLAW.md" },
         }),
       ],
       [
         "storage:claw",
-        "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n---\nRun the demo workflow precisely.\n",
+        "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Template\n---\nRun the demo workflow precisely.\n",
       ],
       ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n"],
     ]);
     const existingPackage = makePackageDoc({
-      family: "claw",
+      family: "template",
       ownerUserId: "users:owner",
       ownerPublisherId: "publishers:owner",
     });
     const currentPolicyPackage = {
       ...existingPackage,
-      clawProfilePolicyVersion: 1,
+      templateProfilePolicyVersion: 1,
     };
     const existingRelease = makeReleaseDoc({
       _id: "packageReleases:pending",
@@ -11838,8 +11838,8 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         payload: {
           name: "demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
+          displayName: "Demo Template",
+          family: "template",
           version: "1.0.0",
           changelog: "retry",
           ownerHandle: "owner",
@@ -11850,7 +11850,7 @@ describe("packages public queries", () => {
               path: "manifests/CLAW.md",
               size: 1,
               storageId: "storage:claw",
-              sha256: "claw",
+              sha256: "template",
             },
             {
               path: "profiles/openclaw.yml",
@@ -11926,8 +11926,8 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         payload: {
           name: "demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
+          displayName: "Demo Template",
+          family: "template",
           version: "1.0.0",
           changelog: "retry",
           ownerHandle: "owner",
@@ -11938,7 +11938,7 @@ describe("packages public queries", () => {
               path: "manifests/CLAW.md",
               size: 1,
               storageId: "storage:claw",
-              sha256: "claw",
+              sha256: "template",
             },
             {
               path: "profiles/openclaw.yml",
@@ -11996,8 +11996,8 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         payload: {
           name: "demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
+          displayName: "Demo Template",
+          family: "template",
           version: "1.0.0",
           changelog: "different artifact",
           ownerHandle: "owner",
@@ -12008,7 +12008,7 @@ describe("packages public queries", () => {
               path: "manifests/CLAW.md",
               size: 1,
               storageId: "storage:claw",
-              sha256: "claw",
+              sha256: "template",
             },
             {
               path: "profiles/openclaw.yml",
@@ -21504,13 +21504,13 @@ describe("restorePackageInternal", () => {
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
 
-  it("keeps a third-party Claw readable by exact name outside the official catalog", async () => {
+  it("keeps a third-party Template readable by exact name outside the official catalog", async () => {
     const name = "@other/demo-claw";
     const { ctx } = makePackageCtx({
       pkg: makePackageDoc({
         name,
         normalizedName: name,
-        family: "claw",
+        family: "template",
         ownerPublisherId: "publishers:other",
       }),
       latestRelease: makeReleaseDoc({ files: [], distTags: [] }),
@@ -21518,29 +21518,29 @@ describe("restorePackageInternal", () => {
     });
 
     await expect(getByNameHandler(ctx, { name })).resolves.toMatchObject({
-      package: { name, family: "claw" },
+      package: { name, family: "template" },
     });
     await expect(getVersionByNameHandler(ctx, { name, version: "1.0.0" })).resolves.toMatchObject({
-      package: { name, family: "claw" },
+      package: { name, family: "template" },
     });
     await expect(
       getVersionSecurityByNameForViewerInternalHandler(ctx, { name, version: "1.0.0" }),
     ).resolves.not.toBeNull();
   });
 
-  it("exposes only the safe manifest summary on named Claw reads", async () => {
+  it("exposes only the safe manifest summary on named Template reads", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
-    const latestClawManifestSummary = {
+    const latestTemplateManifestSummary = {
       schemaVersion: 1,
-      agent: { id: "demo-claw-latest", name: "Demo Claw Latest", description: "Latest" },
+      agent: { id: "demo-claw-latest", name: "Demo Template Latest", description: "Latest" },
       workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
       packages: { skillCount: 1, pluginCount: 1 },
       mcpServerCount: 1,
       cronJobCount: 1,
     };
-    const exactClawManifestSummary = {
+    const exactTemplateManifestSummary = {
       schemaVersion: 1,
-      agent: { id: "demo-claw-v1", name: "Demo Claw v1", description: "Exact" },
+      agent: { id: "demo-claw-v1", name: "Demo Template v1", description: "Exact" },
       workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 2 },
       packages: { skillCount: 2, pluginCount: 1 },
       mcpServerCount: 2,
@@ -21553,7 +21553,7 @@ describe("restorePackageInternal", () => {
       distTags: ["latest"],
       files: [],
       integritySha256: "latest-integrity",
-      clawManifestSummary: latestClawManifestSummary,
+      templateManifestSummary: latestTemplateManifestSummary,
       createdBy: "users:must-not-project-latest",
       publishActor: { kind: "user", userId: "users:must-not-project-latest" },
       extractedPackageJson: {
@@ -21567,14 +21567,14 @@ describe("restorePackageInternal", () => {
           },
         },
       },
-      extractedClawManifest: {
+      extractedTemplateManifest: {
         schemaVersion: 1,
         agent: { id: "demo-claw-latest" },
       },
     });
     const { ctx } = makePackageCtx({
-      pkg: makeOpenClawClawPackageDoc({
-        clawProfilePolicyVersion: 1,
+      pkg: makeOpenClawTemplatePackageDoc({
+        templateProfilePolicyVersion: 1,
         latestReleaseId: "packageReleases:demo-latest",
         latestVersionSummary: { version: "2.0.0" },
       }),
@@ -21585,7 +21585,7 @@ describe("restorePackageInternal", () => {
         distTags: [],
         files: [],
         integritySha256: "exact-integrity",
-        clawManifestSummary: exactClawManifestSummary,
+        templateManifestSummary: exactTemplateManifestSummary,
         createdBy: "users:must-not-project-exact",
         publishActor: { kind: "user", userId: "users:must-not-project-exact" },
         extractedPackageJson: {
@@ -21599,7 +21599,7 @@ describe("restorePackageInternal", () => {
             },
           },
         },
-        extractedClawManifest: {
+        extractedTemplateManifest: {
           schemaVersion: 1,
           agent: { id: "demo-claw-v1" },
           workspace: { bootstrapFiles: { "SOUL.md": { source: "workspace/SOUL.md" } } },
@@ -21611,13 +21611,13 @@ describe("restorePackageInternal", () => {
       const detail = await getByNameHandler(ctx, { name: "@openclaw/demo-claw" });
       expect(detail).toMatchObject({
         package: {
-          family: "claw",
-          clawProfilePolicyVersion: 1,
-          clawManifestSummary: latestClawManifestSummary,
+          family: "template",
+          templateProfilePolicyVersion: 1,
+          templateManifestSummary: latestTemplateManifestSummary,
         },
-        latestRelease: { clawManifestSummary: latestClawManifestSummary },
+        latestRelease: { templateManifestSummary: latestTemplateManifestSummary },
       });
-      expect(detail?.latestRelease).not.toHaveProperty("extractedClawManifest");
+      expect(detail?.latestRelease).not.toHaveProperty("extractedTemplateManifest");
       expect(JSON.stringify(detail)).not.toContain("must-not-project");
 
       const version = await getVersionByNameHandler(ctx, {
@@ -21625,10 +21625,10 @@ describe("restorePackageInternal", () => {
         version: "1.0.0",
       });
       expect(version).toMatchObject({
-        package: { family: "claw", clawManifestSummary: latestClawManifestSummary },
-        version: { clawManifestSummary: exactClawManifestSummary },
+        package: { family: "template", templateManifestSummary: latestTemplateManifestSummary },
+        version: { templateManifestSummary: exactTemplateManifestSummary },
       });
-      expect(version?.version).not.toHaveProperty("extractedClawManifest");
+      expect(version?.version).not.toHaveProperty("extractedTemplateManifest");
       expect(JSON.stringify(version)).not.toContain("must-not-project");
     }
   });
@@ -21645,29 +21645,29 @@ describe("restorePackageInternal", () => {
     };
 
     {
-      const clawRelease = makeReleaseDoc({
+      const templateRelease = makeReleaseDoc({
         files: [],
-        clawManifestSummary: undefined,
+        templateManifestSummary: undefined,
         createdBy: "users:must-not-project",
         publishActor: { kind: "user", userId: "users:must-not-project" },
         extractedPackageJson: { privateWorkspace: "must-not-project" },
       });
-      const { ctx: clawCtx } = makePackageCtx({
-        pkg: makeOpenClawClawPackageDoc(),
-        latestRelease: clawRelease,
+      const { ctx: templateCtx } = makePackageCtx({
+        pkg: makeOpenClawTemplatePackageDoc(),
+        latestRelease: templateRelease,
       });
-      const claw = await getByNameHandler(clawCtx, { name: "@openclaw/demo-claw" });
-      expect(claw?.latestRelease).not.toHaveProperty("extractedPackageJson");
-      expect(JSON.stringify(claw)).not.toContain("must-not-project");
+      const template = await getByNameHandler(templateCtx, { name: "@openclaw/demo-claw" });
+      expect(template?.latestRelease).not.toHaveProperty("extractedPackageJson");
+      expect(JSON.stringify(template)).not.toContain("must-not-project");
 
       const ownerDeletedRelease = makeReleaseDoc({
         files: [],
         ownerDeletedAt: 123,
-        clawManifestSummary: staleSummary,
+        templateManifestSummary: staleSummary,
         extractedPackageJson: { privateWorkspace: "must-not-project-owner-deleted" },
       });
       const { ctx: ownerDeletedCtx } = makePackageCtx({
-        pkg: makeOpenClawClawPackageDoc(),
+        pkg: makeOpenClawTemplatePackageDoc(),
         latestRelease: ownerDeletedRelease,
       });
       const ownerDeleted = await getByNameHandler(ownerDeletedCtx, {
@@ -21679,19 +21679,19 @@ describe("restorePackageInternal", () => {
 
       const pluginPackageJson = { name: "demo-plugin", openclaw: { extensions: ["index.js"] } };
       const pluginRelease = makeReleaseDoc({
-        clawManifestSummary: staleSummary,
+        templateManifestSummary: staleSummary,
         extractedPackageJson: pluginPackageJson,
       });
       const { ctx: pluginCtx } = makePackageCtx({ latestRelease: pluginRelease });
       const plugin = await getByNameHandler(pluginCtx, { name: "demo-plugin" });
       expect(plugin?.latestRelease).toMatchObject({ extractedPackageJson: pluginPackageJson });
-      expect(plugin?.latestRelease).not.toHaveProperty("clawManifestSummary");
+      expect(plugin?.latestRelease).not.toHaveProperty("templateManifestSummary");
     }
   });
 
-  it("hides Claws with missing publishers from package list and search", async () => {
+  it("hides Templates with missing publishers from package list and search", async () => {
     const otherOfficial = makeDigest("@other/matching-claw", {
-      family: "claw",
+      family: "template",
       channel: "official",
       isOfficial: true,
       ownerPublisherId: "publishers:other",
@@ -21699,13 +21699,13 @@ describe("restorePackageInternal", () => {
       ownerKind: "org",
     });
     const spoofedName = makeDigest("@openclaw/spoofed-claw", {
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
       ownerHandle: "other",
       ownerKind: "org",
     });
     const openclaw = makeDigest("@openclaw/matching-claw", {
-      family: "claw",
+      family: "template",
       channel: "official",
       isOfficial: true,
       ownerPublisherId: "publishers:openclaw",
@@ -21724,20 +21724,24 @@ describe("restorePackageInternal", () => {
     });
 
     const listed = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       paginationOpts: { cursor: null, numItems: 10 },
     });
     expect(listed.page.map((entry) => entry.name)).toEqual(["@openclaw/matching-claw"]);
 
-    const searched = await searchPublicHandler(ctx, { query: "claw", family: "claw", limit: 10 });
+    const searched = await searchPublicHandler(ctx, {
+      query: "matching",
+      family: "template",
+      limit: 10,
+    });
     expect(searched.map((entry) => entry.package.name)).toEqual(["@openclaw/matching-claw"]);
   });
 
   it.each(["deletedAt", "deactivatedAt"] as const)(
-    "hides an @openclaw Claw from the catalog when its publisher has %s",
+    "hides an @openclaw Template from the catalog when its publisher has %s",
     async (inactiveField) => {
       const inactivePublisher = { ...openClawPublisher, [inactiveField]: 123 };
-      const pkg = makeOpenClawClawPackageDoc();
+      const pkg = makeOpenClawTemplatePackageDoc();
       const { ctx: namedCtx } = makePackageCtx({
         pkg,
         latestRelease: makeReleaseDoc({ files: [] }),
@@ -21752,7 +21756,7 @@ describe("restorePackageInternal", () => {
       ).resolves.not.toBeNull();
 
       const digest = makeDigest(pkg.name as string, {
-        family: "claw",
+        family: "template",
         ownerPublisherId: openClawPublisher._id,
         ownerHandle: "openclaw",
         ownerKind: "org",
@@ -21762,13 +21766,13 @@ describe("restorePackageInternal", () => {
         publisherDocs: { [openClawPublisher._id]: inactivePublisher },
       });
       const listed = await listPublicPageHandler(discoveryCtx, {
-        family: "claw",
+        family: "template",
         paginationOpts: { cursor: null, numItems: 10 },
       });
       expect(listed.page).toEqual([]);
       const searched = await searchPublicHandler(discoveryCtx, {
         query: "demo-claw",
-        family: "claw",
+        family: "template",
         limit: 10,
       });
       expect(searched).toEqual([]);
@@ -21778,7 +21782,7 @@ describe("restorePackageInternal", () => {
         publisherDocs: { [openClawPublisher._id]: inactivePublisher },
       });
       const sorted = await listPublicPageHandler(sortedCtx, {
-        family: "claw",
+        family: "template",
         sort: "downloads",
         paginationOpts: { cursor: null, numItems: 10 },
       });
@@ -21798,8 +21802,8 @@ describe("restorePackageInternal", () => {
     },
   );
 
-  it("keeps active Claws discoverable without a publisher Official badge", async () => {
-    const pkg = makeOpenClawClawPackageDoc();
+  it("keeps active Templates discoverable without a publisher Official badge", async () => {
+    const pkg = makeOpenClawTemplatePackageDoc();
     const { ctx: namedCtx } = makePackageCtx({
       pkg,
       latestRelease: makeReleaseDoc({ files: [] }),
@@ -21811,7 +21815,7 @@ describe("restorePackageInternal", () => {
     ).resolves.not.toBeNull();
 
     const digest = makeDigest(pkg.name as string, {
-      family: "claw",
+      family: "template",
       channel: "official",
       isOfficial: true,
       ownerPublisherId: openClawPublisher._id,
@@ -21824,29 +21828,29 @@ describe("restorePackageInternal", () => {
       officialPublisherIds: [],
     });
     const listed = await listPublicPageHandler(discoveryCtx, {
-      family: "claw",
+      family: "template",
       paginationOpts: { cursor: null, numItems: 10 },
     });
     expect(listed.page).toMatchObject([{ name: pkg.name, ownerOfficial: false }]);
     const searched = await searchPublicHandler(discoveryCtx, {
       query: "demo-claw",
-      family: "claw",
+      family: "template",
       limit: 10,
     });
     expect(searched).toMatchObject([{ package: { name: pkg.name, ownerOfficial: false } }]);
   });
 
-  it("lists an @openclaw Claw beyond a first page of hidden legacy Claws", async () => {
+  it("lists an @openclaw Template beyond a first page of hidden legacy Templates", async () => {
     const hidden = Array.from({ length: 50 }, (_, index) =>
       makeDigest(`@other/legacy-${index}`, {
-        family: "claw",
+        family: "template",
         ownerPublisherId: "publishers:other",
         ownerHandle: "other",
         ownerKind: "org",
       }),
     );
     const official = makeDigest("@openclaw/assistant", {
-      family: "claw",
+      family: "template",
       ownerPublisherId: openClawPublisher._id,
       ownerHandle: "openclaw",
       ownerKind: "org",
@@ -21860,7 +21864,7 @@ describe("restorePackageInternal", () => {
     });
 
     const first = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       paginationOpts: { cursor: null, numItems: 10 },
     });
     expect(first.page).toEqual([]);
@@ -21868,7 +21872,7 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenCalledTimes(1);
 
     const second = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       paginationOpts: { cursor: first.continueCursor, numItems: 10 },
     });
     expect(second.page.map((entry) => entry.name)).toEqual(["@openclaw/assistant"]);
@@ -21876,15 +21880,15 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenCalledTimes(2);
   });
 
-  it("does not let hidden Claws starve an unfiltered catalog page", async () => {
+  it("does not let hidden Templates starve an unfiltered catalog page", async () => {
     const hidden = makeDigest("@other/legacy", {
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
       ownerHandle: "other",
       ownerKind: "org",
     });
     const official = makeDigest("@openclaw/assistant", {
-      family: "claw",
+      family: "template",
       ownerPublisherId: openClawPublisher._id,
       ownerHandle: "openclaw",
       ownerKind: "org",
@@ -21913,10 +21917,10 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenNthCalledWith(2, { cursor: "after-legacy", numItems: 10 });
   });
 
-  it("searches past hidden legacy Claws to find an @openclaw Claw", async () => {
+  it("searches past hidden legacy Templates to find an @openclaw Template", async () => {
     const hidden = Array.from({ length: 50 }, (_, index) =>
       makeDigest(`@other/legacy-${index}`, {
-        family: "claw",
+        family: "template",
         displayName: `Legacy ${index}`,
         summary: "assistant",
         ownerPublisherId: "publishers:other",
@@ -21925,7 +21929,7 @@ describe("restorePackageInternal", () => {
       }),
     );
     const official = makeDigest("@openclaw/qualified", {
-      family: "claw",
+      family: "template",
       displayName: "Qualified",
       summary: "assistant",
       ownerPublisherId: openClawPublisher._id,
@@ -21943,16 +21947,16 @@ describe("restorePackageInternal", () => {
 
     const result = await searchPublicHandler(ctx, {
       query: "assistant",
-      family: "claw",
+      family: "template",
       limit: 10,
     });
     expect(result.map((entry) => entry.package.name)).toEqual(["@openclaw/qualified"]);
   });
 
-  it("does not let hidden Claws starve unfiltered catalog search", async () => {
+  it("does not let hidden Templates starve unfiltered catalog search", async () => {
     const hidden = Array.from({ length: 50 }, (_, index) =>
       makeDigest(`@other/legacy-${index}`, {
-        family: "claw",
+        family: "template",
         displayName: `Legacy ${index}`,
         summary: "assistant",
         ownerPublisherId: "publishers:other",
@@ -21961,7 +21965,7 @@ describe("restorePackageInternal", () => {
       }),
     );
     const official = makeDigest("@openclaw/qualified", {
-      family: "claw",
+      family: "template",
       displayName: "Qualified",
       summary: "assistant",
       ownerPublisherId: openClawPublisher._id,
@@ -21984,11 +21988,11 @@ describe("restorePackageInternal", () => {
   });
 
   it.each([false, true])(
-    "recalls stable package families when Claws exhaust the unfiltered search window (active publisher=%s)",
+    "recalls stable package families when Templates exhaust the unfiltered search window (active publisher=%s)",
     async (activePublisher) => {
       const hidden = Array.from({ length: 50 }, (_, index) =>
         makeDigest(`@other/legacy-${index}`, {
-          family: "claw",
+          family: "template",
           displayName: `Legacy ${index}`,
           summary: activePublisher ? "unrelated" : "assistant",
           ownerPublisherId: "publishers:other",
@@ -22018,26 +22022,26 @@ describe("restorePackageInternal", () => {
     },
   );
 
-  it("lists community Claws while hiding scope-owner mismatches in package-backed sorted lists", async () => {
+  it("lists community Templates while hiding scope-owner mismatches in package-backed sorted lists", async () => {
     const other = makePackageDoc({
       _id: "packages:other",
       name: "@other/other-claw",
       normalizedName: "@other/other-claw",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
     });
     const spoofed = makePackageDoc({
       _id: "packages:spoofed",
       name: "@openclaw/spoofed-claw",
       normalizedName: "@openclaw/spoofed-claw",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
     });
     const official = makePackageDoc({
       _id: "packages:official",
       name: "@openclaw/official-claw",
       normalizedName: "@openclaw/official-claw",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:openclaw",
     });
     const { ctx } = makeDigestCtx({
@@ -22053,7 +22057,7 @@ describe("restorePackageInternal", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       sort: "downloads",
       paginationOpts: { cursor: null, numItems: 10 },
     });
@@ -22063,15 +22067,15 @@ describe("restorePackageInternal", () => {
     ]);
   });
 
-  it("scans sorted Claw pages past deactivated publishers", async () => {
+  it("scans sorted Template pages past deactivated publishers", async () => {
     const hidden = makePackageDoc({
       _id: "packages:legacy",
       name: "@other/legacy",
       normalizedName: "@other/legacy",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
     });
-    const official = makeOpenClawClawPackageDoc({ _id: "packages:official" });
+    const official = makeOpenClawTemplatePackageDoc({ _id: "packages:official" });
     const { ctx, paginate } = makeDigestCtx({
       packagePages: [
         { page: [hidden], isDone: false, continueCursor: "after-legacy" },
@@ -22089,7 +22093,7 @@ describe("restorePackageInternal", () => {
     });
 
     const first = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       sort: "downloads",
       paginationOpts: { cursor: null, numItems: 10 },
     });
@@ -22098,7 +22102,7 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenCalledTimes(1);
 
     const second = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       sort: "downloads",
       paginationOpts: { cursor: first.continueCursor, numItems: 10 },
     });
@@ -22107,15 +22111,15 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenCalledTimes(2);
   });
 
-  it("does not let hidden Claws starve a sorted unfiltered catalog page", async () => {
+  it("does not let hidden Templates starve a sorted unfiltered catalog page", async () => {
     const hidden = makePackageDoc({
       _id: "packages:legacy",
       name: "@other/legacy",
       normalizedName: "@other/legacy",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
     });
-    const official = makeOpenClawClawPackageDoc({ _id: "packages:official" });
+    const official = makeOpenClawTemplatePackageDoc({ _id: "packages:official" });
     const { ctx, paginate } = makeDigestCtx({
       packagePages: [
         { page: [hidden], isDone: false, continueCursor: "after-legacy" },
@@ -22141,19 +22145,19 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenCalledTimes(2);
   });
 
-  it("exports a third-party Claw release by exact package and release IDs", async () => {
+  it("exports a third-party Template release by exact package and release IDs", async () => {
     const other = makePackageDoc({
       _id: "packages:other",
       name: "@other/other-claw",
       normalizedName: "@other/other-claw",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
     });
     const official = makePackageDoc({
       _id: "packages:official",
       name: "@openclaw/official-claw",
       normalizedName: "@openclaw/official-claw",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:openclaw",
     });
     const otherRelease = makeReleaseDoc({

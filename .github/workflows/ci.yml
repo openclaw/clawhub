@@ -32,8 +32,8 @@ jobs:
       - name: Static checks
         run: bun run ci:static
 
-  claws-openclaw-contract:
-    name: claws-openclaw-contract
+  templates-openclaw-contract:
+    name: templates-openclaw-contract
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -65,8 +65,8 @@ jobs:
 
       - name: Run ClawHub to OpenClaw contract proof
         env:
-          OPENCLAW_CLAWS_CHECKOUT: ${{ github.workspace }}/.artifacts/openclaw-contract
-        run: bunx vitest run scripts/claws-feed-openclaw-e2e.test.ts --maxWorkers=1
+          OPENCLAW_TEMPLATES_CHECKOUT: ${{ github.workspace }}/.artifacts/openclaw-contract
+        run: bunx vitest run scripts/templates-feed-openclaw-e2e.test.ts --maxWorkers=1
 
   unit:
     name: unit

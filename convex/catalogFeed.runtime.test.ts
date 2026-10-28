@@ -15,7 +15,7 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 const digest = `sha256:${"a".repeat(64)}`;
 
-describe("experimental Claw feed runtime", () => {
+describe("experimental Template feed runtime", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -38,18 +38,18 @@ describe("experimental Claw feed runtime", () => {
       });
       return createdPublisherId;
     });
-    const stored = await t.mutation(internal.catalogFeed.storeClawPublication, {
+    const stored = await t.mutation(internal.catalogFeed.storeTemplatePublication, {
       generatedAt: "2026-07-24T00:00:00.000Z",
       expiresAt: "2026-07-25T00:00:00.000Z",
       entries: [
         {
-          type: "claw",
+          type: "template",
           id: "@openclaw/runtime-proof",
           title: "Runtime proof",
           version: "1.0.0",
           state: "available",
           publisher: { id: "openclaw", trust: "official" },
-          clawManifestSummary: {
+          templateManifestSummary: {
             schemaVersion: 1,
             agent: { id: "runtime-proof", name: "Runtime proof" },
             workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
@@ -71,17 +71,17 @@ describe("experimental Claw feed runtime", () => {
       ],
     });
     expect(stored).toMatchObject({
-      feedId: "clawhub-official-claws",
+      feedId: "clawhub-official-templates",
       sequence: 1,
       entryCount: 1,
     });
 
     const publication = await t.query(internal.catalogFeed.getLatestPublication, {
-      feedId: "clawhub-official-claws",
+      feedId: "clawhub-official-templates",
     });
     expect(publication?.payload).toContain('"id":"@openclaw/runtime-proof"');
 
-    const enabled = await t.fetch("/api/v1/feeds/claws");
+    const enabled = await t.fetch("/api/v1/feeds/templates");
     expect(enabled.status).toBe(200);
     expect(enabled.headers.get("cache-control")).toBe("no-store");
     expect(enabled.headers.get("surrogate-control")).toBeNull();
@@ -92,10 +92,10 @@ describe("experimental Claw feed runtime", () => {
     });
     expect(
       await t.query(internal.catalogFeed.getLatestPublication, {
-        feedId: "clawhub-official-claws",
+        feedId: "clawhub-official-templates",
       }),
     ).toBeNull();
-    const revoked = await t.fetch("/api/v1/feeds/claws");
+    const revoked = await t.fetch("/api/v1/feeds/templates");
     expect(revoked.status).toBe(503);
     expect(revoked.headers.get("cache-control")).toBe("no-store");
   });
@@ -105,7 +105,7 @@ describe("experimental Claw feed runtime", () => {
     registerRateLimiter(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("catalogFeedPublications", {
-        feedId: "clawhub-official-claws",
+        feedId: "clawhub-official-templates",
         sequence: 1,
         generatedAt: "2026-09-30T00:00:00.000Z",
         expiresAt: "2026-10-01T00:00:00.000Z",
@@ -115,19 +115,19 @@ describe("experimental Claw feed runtime", () => {
       });
     });
 
-    const stale = await t.fetch("/api/v1/feeds/claws", {
+    const stale = await t.fetch("/api/v1/feeds/templates", {
       headers: { "If-None-Match": `"sha256:${"a".repeat(64)}"` },
     });
     expect(stale.status).toBe(503);
     expect(await stale.text()).not.toContain("@other/legacy");
 
-    const replacement = await t.mutation(internal.catalogFeed.storeClawPublication, {
+    const replacement = await t.mutation(internal.catalogFeed.storeTemplatePublication, {
       generatedAt: "2026-10-01T00:00:00.000Z",
       expiresAt: "2026-10-02T00:00:00.000Z",
       entries: [],
     });
     expect(replacement).toMatchObject({ sequence: 2, entryCount: 0 });
-    const current = await t.fetch("/api/v1/feeds/claws");
+    const current = await t.fetch("/api/v1/feeds/templates");
     expect(current.status).toBe(200);
     expect(await current.text()).not.toContain("@other/legacy");
   });

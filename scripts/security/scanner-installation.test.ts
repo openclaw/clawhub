@@ -20,7 +20,7 @@ describe("reviewed ClawScan installation", () => {
   it.each([
     "security-scan-codex",
     "prepublication-publish-checks",
-    "test-claw-canary-prepublication",
+    "test-template-canary-prepublication",
   ])("installs the matched binary and both Responses adapters in %s", async (name) => {
     const workflow = parseYaml(await readFile(".github/workflows/" + name + ".yml", "utf8"));
     const jobs = Object.values(workflow.jobs) as Array<{

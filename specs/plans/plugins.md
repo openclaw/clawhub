@@ -310,7 +310,7 @@ Plugin releases persist an optional admitted `pluginFamily` snapshot. A legacy
 release without one retains its parent-family fallback. Version-specific public,
 security, detail and scanner metadata use the snapshot for plugin parents;
 package-wide listing and admission keep the current registry family. Plugin
-snapshots cannot change Claw or skill projection boundaries. A future guarded
+snapshots cannot change Template or skill projection boundaries. A future guarded
 parent-family repair must snapshot historical releases before changing the
 parent, preserving genuine bundle history and all original artifacts.
 

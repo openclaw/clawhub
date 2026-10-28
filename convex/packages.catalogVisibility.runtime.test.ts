@@ -420,12 +420,12 @@ describe("normal plugin catalog visibility", () => {
     const { t, ownerUserId } = await fixture("admin", ["web"]);
 
     await t.run(async (ctx) => {
-      const clawId = await ctx.db.insert("packages", {
+      const templateId = await ctx.db.insert("packages", {
         name: "trending-claw",
         normalizedName: "trending-claw",
-        displayName: "Trending Claw",
+        displayName: "Trending Template",
         ownerUserId,
-        family: "claw",
+        family: "template",
         channel: "official",
         isOfficial: true,
         scanStatus: "clean",
@@ -444,7 +444,7 @@ describe("normal plugin catalog visibility", () => {
       if (!leaderboard) throw new Error("Missing fixture leaderboard");
       await ctx.db.patch(leaderboard._id, {
         items: [
-          { packageId: clawId, score: 10, installs: 10, downloads: 10 },
+          { packageId: templateId, score: 10, installs: 10, downloads: 10 },
           ...leaderboard.items,
         ],
       });

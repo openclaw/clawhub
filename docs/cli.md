@@ -463,7 +463,7 @@ clawhub skill tag @owner/example 1.2.3 --yes
 - Browses or searches the unified package catalog via `GET /api/v1/packages` and `GET /api/v1/packages/search`.
 - Use this for plugins and other package-family entries; top-level `search` remains the skill search surface.
 - Flags:
-  - `--family skill|code-plugin|bundle-plugin`
+  - `--family skill|code-plugin|bundle-plugin|template`
   - `--official`
   - `--executes-code`
   - `--target <target>`, `--os <os>`, `--arch <arch>`, `--libc <libc>`
@@ -707,20 +707,22 @@ clawhub publisher create opik --display-name "Opik"
 
 ### `package publish <source>`
 
-- Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.
+- Publishes a code plugin, bundle plugin, or built Template artifact via `POST /api/v1/packages`.
 - `<source>` accepts:
   - Local folder path: `./my-plugin`
   - Local ClawPack npm-pack tarball: `./my-plugin-1.2.3.tgz`
   - GitHub repo: `owner/repo` or `owner/repo@ref`
   - GitHub URL: `https://github.com/owner/repo`
-- Metadata is auto-detected from `package.json`, `openclaw.plugin.json`, and
+- Template family detection uses `package.json.openclaw.template`; use
+  `--family template` to select it explicitly. The retired family name is not an alias.
+- Plugin metadata is auto-detected from `package.json`, `openclaw.plugin.json`, and
   real OpenClaw bundle markers such as `.codex-plugin/plugin.json`,
   `.claude-plugin/plugin.json`, and `.cursor-plugin/plugin.json`.
 - `.tgz` sources are treated as ClawPack. The CLI uploads the exact npm-pack
   bytes and uses the extracted `package/` contents only for validation and
   metadata prefill.
-- Experimental Claws must be published from an already-built `.tgz`. Claw
-  source folders and GitHub sources are rejected; use `openclaw claws build`
+- Experimental Templates must be published from an already-built `.tgz`. Template
+  source folders and GitHub sources are rejected; use `openclaw templates build`
   first. The publish request binds the local SHA-256, and ClawHub returns that
   digest after accepting the exact bytes.
 - Code-plugin folders are packed into a ClawPack npm tarball before upload so
@@ -755,12 +757,12 @@ clawhub publisher create opik --display-name "Opik"
   plugin publishes, including `--categories ""`. The CLI prints a deprecation
   warning to stderr, including with `--json` and `--dry-run`. Move declarations
   into the manifest; remove the field to request automatic classification.
-  Experimental [`--family claw`](./claws.md) publishes still store categories
+  Experimental [`--family template`](./templates.md) publishes still store categories
   passed through this flag as-is.
 - `--topics <topics>` is separate from categories and still accepts comma-separated
   values. Omit it to preserve existing topics; pass `--topics ""` to clear them.
   The [topic rules](./publishing.md#skill-catalog-metadata) apply to every family,
-  including `claw`.
+  including `template`.
 - Scoped package names must match the selected owner. See `docs/publishing.md`.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
 - Private GitHub repos require `GITHUB_TOKEN`.
@@ -783,7 +785,7 @@ clawhub package publish ./my-plugin-1.2.3.tgz --family code-plugin --wait
 #### Local folder flow
 
 For code plugins, folder publish builds and uploads a ClawPack artifact from
-the package folder. This convenience does not apply to Claws:
+the package folder. This convenience does not apply to Templates:
 
 ```bash
 clawhub package publish ./my-plugin --family code-plugin --dry-run
@@ -895,7 +897,7 @@ Notes:
   `--categories` for compatibility. Plugin publishes ignore both and print a
   deprecation warning; they cannot set, preserve, or clear a plugin's category.
   Remove these workflow inputs when migrating the declaration into the manifest.
-  Experimental Claw publishes retain their existing category behavior.
+  Experimental Template publishes retain their existing category behavior.
 - Pin the reusable workflow to a stable tag or full commit SHA. Do not run release publishing from `@main`.
 - `pull_request` should use `dry_run: true` so CI stays non-polluting.
 - Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.

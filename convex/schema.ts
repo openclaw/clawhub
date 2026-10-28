@@ -1,5 +1,5 @@
 import { authTables } from "@convex-dev/auth/server";
-import { createClawManifestSummarySchema } from "clawhub-schema";
+import { createTemplateManifestSummarySchema } from "clawhub-schema";
 import { defineSchema, defineTable } from "convex/server";
 import { type GenericValidator, v } from "convex/values";
 import {
@@ -635,7 +635,7 @@ const packageFamilyValidator = v.union(
   v.literal("skill"),
   v.literal("code-plugin"),
   v.literal("bundle-plugin"),
-  v.literal("claw"),
+  v.literal("template"),
 );
 
 const packageChannelValidator = v.union(
@@ -776,7 +776,7 @@ export const pluginManifestSummaryValidator = v.object({
   ),
 });
 
-const clawManifestSummaryValidator = createClawManifestSummarySchema<GenericValidator>({
+const templateManifestSummaryValidator = createTemplateManifestSummarySchema<GenericValidator>({
   literalOne: v.literal(1),
   string: v.string(),
   number: v.number(),
@@ -1779,7 +1779,7 @@ const packages = defineTable({
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
   family: packageFamilyValidator,
-  clawProfilePolicyVersion: v.optional(v.literal(1)),
+  templateProfilePolicyVersion: v.optional(v.literal(1)),
   channel: packageChannelValidator,
   isOfficial: v.boolean(),
   runtimeId: v.optional(v.string()),
@@ -1945,7 +1945,7 @@ const packageReleases = defineTable({
   manifestSearchTerms: v.optional(v.array(v.string())),
   pluginManifestSummary: v.optional(pluginManifestSummaryValidator),
   categoryClassification: v.optional(pluginCategoryClassificationValidator),
-  clawManifestSummary: v.optional(clawManifestSummaryValidator),
+  templateManifestSummary: v.optional(templateManifestSummaryValidator),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
@@ -3274,9 +3274,9 @@ const catalogFeedPublications = defineTable({
   payload: v.string(),
   payloadSha256: v.string(),
   publishedAt: v.number(),
-  clawPolicyVersion: v.optional(v.literal(1)),
-  clawEntryCount: v.optional(v.number()),
-  clawPublisherId: v.optional(v.id("publishers")),
+  templatePolicyVersion: v.optional(v.literal(1)),
+  templateEntryCount: v.optional(v.number()),
+  templatePublisherId: v.optional(v.id("publishers")),
 }).index("by_feed", ["feedId"]);
 
 const stars = defineTable({

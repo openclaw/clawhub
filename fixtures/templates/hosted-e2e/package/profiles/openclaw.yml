@@ -1,0 +1,8 @@
+schemaVersion: 1
+agent:
+  tools:
+    profile: minimal
+    allow: [session_status]
+    fs:
+      workspaceOnly: true
+  humanDelay: { mode: natural }

@@ -439,15 +439,15 @@ export function normalizePublishFiles(files: PublishFile[]) {
 }
 
 export function assertPackageVersion(
-  family: "code-plugin" | "bundle-plugin" | "skill" | "claw",
+  family: "code-plugin" | "bundle-plugin" | "skill" | "template",
   version: string,
 ) {
   const trimmed = version.trim();
   if (!trimmed) throw new ConvexError("Version required");
-  if ((family === "code-plugin" || family === "claw") && !semver.valid(trimmed)) {
+  if ((family === "code-plugin" || family === "template") && !semver.valid(trimmed)) {
     throw new ConvexError(
-      family === "claw"
-        ? "Claw versions must be valid semver"
+      family === "template"
+        ? "Template versions must be valid semver"
         : "Code plugin versions must be valid semver",
     );
   }

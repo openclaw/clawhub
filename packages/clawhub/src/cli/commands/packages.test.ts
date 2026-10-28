@@ -764,13 +764,13 @@ describe("package commands", () => {
     expect(url.searchParams.get("limit")).toBe("7");
   });
 
-  it("supports Claw family package browse requests", async () => {
+  it("supports Template family package browse requests", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       items: [
         {
           name: "@openclaw/hosted",
-          displayName: "Hosted Claw",
-          family: "claw",
+          displayName: "Hosted Template",
+          family: "template",
           channel: "official",
           isOfficial: true,
           latestVersion: "1.0.0",
@@ -779,14 +779,14 @@ describe("package commands", () => {
       nextCursor: null,
     });
 
-    await cmdExplorePackages(makeOpts(), "", { family: "claw", limit: 7 });
+    await cmdExplorePackages(makeOpts(), "", { family: "template", limit: 7 });
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
     const url = new URL(String(request?.url));
     expect(url.pathname).toBe("/api/v1/packages");
-    expect(url.searchParams.get("family")).toBe("claw");
+    expect(url.searchParams.get("family")).toBe("template");
     expect(url.searchParams.get("limit")).toBe("7");
-    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("[Claw, official]"));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("[Template, official]"));
   });
 
   it("uses tag param when fetching a package file", async () => {
@@ -2779,7 +2779,7 @@ describe("package commands", () => {
     }
   });
 
-  it("publishes a Claw tarball without a plugin manifest", async () => {
+  it("publishes a Template tarball without a plugin manifest", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.0.tgz";
@@ -2789,9 +2789,10 @@ describe("package commands", () => {
           "package/package.json": JSON.stringify({
             name: "demo-claw",
             version: "1.0.0",
-            openclaw: { claw: "CLAW.md" },
+            openclaw: { template: "CLAW.md" },
           }),
-          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Template\n",
         }),
       );
       const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
@@ -2807,7 +2808,7 @@ describe("package commands", () => {
 
       expect(getPublishPayload()).toMatchObject({
         name: "demo-claw",
-        family: "claw",
+        family: "template",
         version: "1.0.0",
         expectedArtifactSha256: artifactSha256,
         categories: ["automation"],
@@ -2822,7 +2823,7 @@ describe("package commands", () => {
     }
   });
 
-  it("rejects a legacy-only profile for a first Claw publish before upload", async () => {
+  it("rejects a legacy-only profile for a first Template publish before upload", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.0.tgz";
@@ -2832,9 +2833,10 @@ describe("package commands", () => {
           "package/package.json": JSON.stringify({
             name: "demo-claw",
             version: "1.0.0",
-            openclaw: { claw: "CLAW.md" },
+            openclaw: { template: "CLAW.md" },
           }),
-          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Template\n",
           "package/profiles/openclaw.yml":
             "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
         }),
@@ -2850,7 +2852,7 @@ describe("package commands", () => {
     }
   });
 
-  it("preserves a legacy-only profile for a grandfathered Claw package", async () => {
+  it("preserves a legacy-only profile for a grandfathered Template package", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.1.tgz";
@@ -2860,9 +2862,10 @@ describe("package commands", () => {
           "package/package.json": JSON.stringify({
             name: "demo-claw",
             version: "1.0.1",
-            openclaw: { claw: "CLAW.md" },
+            openclaw: { template: "CLAW.md" },
           }),
-          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Template\n",
           "package/profiles/openclaw.yml":
             "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
         }),
@@ -2872,8 +2875,8 @@ describe("package commands", () => {
       httpMocks.apiRequest.mockResolvedValueOnce({
         package: {
           name: "demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
+          displayName: "Demo Template",
+          family: "template",
         },
         owner: null,
       });
@@ -2900,7 +2903,7 @@ describe("package commands", () => {
     }
   });
 
-  it("fails closed when ClawHub does not confirm the submitted Claw digest", async () => {
+  it("fails closed when ClawHub does not confirm the submitted Template digest", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.0.tgz";
@@ -2910,9 +2913,10 @@ describe("package commands", () => {
           "package/package.json": JSON.stringify({
             name: "demo-claw",
             version: "1.0.0",
-            openclaw: { claw: "CLAW.md" },
+            openclaw: { template: "CLAW.md" },
           }),
-          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Template\n",
         }),
       );
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -2931,7 +2935,7 @@ describe("package commands", () => {
     }
   });
 
-  it("fails closed when a finalized Claw publish reports a different digest", async () => {
+  it("fails closed when a finalized Template publish reports a different digest", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.0.tgz";
@@ -2939,9 +2943,9 @@ describe("package commands", () => {
         "package/package.json": JSON.stringify({
           name: "demo-claw",
           version: "1.0.0",
-          openclaw: { claw: "CLAW.md" },
+          openclaw: { template: "CLAW.md" },
         }),
-        "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+        "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Template\n",
       });
       await writeFile(join(workdir, packName), pack);
       const artifactSha256 = artifactIdentity(pack).sha256;
@@ -3628,7 +3632,7 @@ describe("package commands", () => {
     }
   });
 
-  it("validates a Claw source folder but requires a built tarball for publication", async () => {
+  it("validates a Template source folder but requires a built tarball for publication", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "github-triage");
@@ -3639,7 +3643,7 @@ describe("package commands", () => {
           name: "@acme/github-triage",
           displayName: "GitHub Triage",
           version: "1.0.0",
-          openclaw: { claw: "CLAW.md" },
+          openclaw: { template: "CLAW.md" },
         }),
         "utf8",
       );
@@ -3682,7 +3686,7 @@ describe("package commands", () => {
         "utf8",
       );
       await expect(cmdPublishPackage(makeOpts(workdir), "github-triage")).rejects.toThrow(
-        "Claw publication requires an already-built package tarball (.tgz)",
+        "Template publication requires an already-built package tarball (.tgz)",
       );
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
@@ -3690,7 +3694,7 @@ describe("package commands", () => {
     }
   });
 
-  it("rejects Claw manifests with malformed UTF-8 before upload", async () => {
+  it("rejects Template manifests with malformed UTF-8 before upload", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "invalid-utf8-claw");
@@ -3699,9 +3703,9 @@ describe("package commands", () => {
         join(folder, "package.json"),
         JSON.stringify({
           name: "invalid-utf8-claw",
-          displayName: "Invalid UTF-8 Claw",
+          displayName: "Invalid UTF-8 Template",
           version: "1.0.0",
-          openclaw: { claw: "CLAW.md" },
+          openclaw: { template: "CLAW.md" },
         }),
         "utf8",
       );
@@ -3709,13 +3713,13 @@ describe("package commands", () => {
         join(folder, "CLAW.md"),
         Uint8Array.from([
           ...new TextEncoder().encode(
-            "---\nschemaVersion: 1\nagent:\n  id: invalid-utf8-claw\n---\n# Invalid UTF-8 Claw\n",
+            "---\nschemaVersion: 1\nagent:\n  id: invalid-utf8-claw\n---\n# Invalid UTF-8 Template\n",
           ),
           0xff,
         ]),
       );
       await expect(cmdPublishPackage(makeOpts(workdir), "invalid-utf8-claw")).rejects.toThrow(
-        "CLAW.md: The declared Claw manifest is missing or is not UTF-8 text.",
+        "CLAW.md: The declared Template manifest is missing or is not UTF-8 text.",
       );
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
@@ -3723,7 +3727,7 @@ describe("package commands", () => {
     }
   });
 
-  it("rejects Claws with missing workspace sources before upload", async () => {
+  it("rejects Templates with missing workspace sources before upload", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "broken-claw");
@@ -3733,13 +3737,13 @@ describe("package commands", () => {
         JSON.stringify({
           name: "broken-claw",
           version: "1.0.0",
-          openclaw: { claw: "CLAW.md" },
+          openclaw: { template: "CLAW.md" },
         }),
         "utf8",
       );
       await writeFile(
         join(folder, "CLAW.md"),
-        "---\nschemaVersion: 1\nagent:\n  id: broken-claw\nworkspace:\n  files:\n    - source: missing.md\n      path: missing.md\n---\n# Broken Claw\n",
+        "---\nschemaVersion: 1\nagent:\n  id: broken-claw\nworkspace:\n  files:\n    - source: missing.md\n      path: missing.md\n---\n# Broken Template\n",
         "utf8",
       );
 

@@ -102,7 +102,7 @@ describe("Featured publication", () => {
   it("limits each catalog to sixteen through both UI and admin entry points, and allows replacement", async () => {
     const { t, actorUserId, items } = await fixture();
     const staff = t.withIdentity({ subject: `${actorUserId}|test-session` });
-    const clawId = await t.run(async (ctx) => {
+    const templateId = await t.run(async (ctx) => {
       const original = await ctx.db.get(items[0].packageId);
       if (!original) throw new Error("Missing fixture");
       const { _id, _creationTime, ...fields } = original;
@@ -110,10 +110,10 @@ describe("Featured publication", () => {
         ...fields,
         name: "companion-claw",
         normalizedName: "companion-claw",
-        family: "claw",
+        family: "template",
       });
     });
-    await staff.mutation(api.packages.setBatch, { packageId: clawId, batch: "highlighted" });
+    await staff.mutation(api.packages.setBatch, { packageId: templateId, batch: "highlighted" });
     for (const item of items.slice(0, 16)) {
       await staff.mutation(api.packages.setBatch, {
         packageId: item.packageId,
@@ -179,7 +179,7 @@ describe("Featured publication", () => {
       plugins: (await ctx.db.query("packageBadges").collect()).length,
       skills: (await ctx.db.query("skillBadges").collect()).length,
     }));
-    // Claws use the same badge table but are a separate catalog.
+    // Templates use the same badge table but are a separate catalog.
     expect(counts).toEqual({ plugins: 17, skills: 16 });
   });
 

@@ -562,7 +562,14 @@ const packageCmd = registerCommandGroup(program, ["package"]).description(
 registerCommand(packageCmd, ["package", "explore"])
   .description("Browse published packages and plugins")
   .argument("[query...]", "Optional search query")
-  .option("--family <family>", "skill|code-plugin|bundle-plugin|claw")
+  .addOption(
+    new Option("--family <family>", "Package family").choices([
+      "skill",
+      "code-plugin",
+      "bundle-plugin",
+      "template",
+    ]),
+  )
   .option("--official", "Only official packages")
   .option("--executes-code", "Only packages that execute code")
   .option("--target <target>", "Filter by host target, e.g. darwin-arm64")
@@ -740,9 +747,15 @@ registerCommand(packageCmd, ["package", "pack"])
   });
 
 registerCommand(packageCmd, ["package", "publish"])
-  .description("Publish a code plugin or bundle plugin from a folder or GitHub source")
-  .argument("<source>", "Package folder path, GitHub repo (owner/repo[@ref]), or URL")
-  .option("--family <family>", "code-plugin|bundle-plugin|claw")
+  .description("Publish a code plugin, bundle plugin, or built Template artifact")
+  .argument("<source>", "Package folder, built .tgz, GitHub repo (owner/repo[@ref]), or URL")
+  .addOption(
+    new Option("--family <family>", "Package family").choices([
+      "code-plugin",
+      "bundle-plugin",
+      "template",
+    ]),
+  )
   .option("--name <name>", "Package name")
   .option("--display-name <name>", "Display name")
   .option("--owner <handle>", "Publish under this owner/publisher handle")
@@ -755,7 +768,7 @@ registerCommand(packageCmd, ["package", "publish"])
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .option(
     "--categories <slugs>",
-    "Deprecated for plugins and Claws (ignored); declare categories in openclaw.plugin.json or CLAW.md",
+    "Deprecated for plugins and Templates (ignored); declare categories in openclaw.plugin.json or CLAW.md",
   )
   .option("--topics <topics>", "Comma-separated topics")
   .option("--bundle-format <format>", "Bundle format")

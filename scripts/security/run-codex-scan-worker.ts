@@ -2215,7 +2215,7 @@ export async function resolveClawScanTarget(workspace: string, job: ClaimedJob) 
   );
   if (job.job.targetKind === "packageRelease") {
     const pkg = job.target.package as Record<string, unknown> | undefined;
-    if (pkg?.family === "claw") return root;
+    if (pkg?.family === "template") return root;
     // Scan jobs contain already-admitted immutable artifacts. Older bundles may
     // carry multiple harness manifests or only the native envelope. Preserve
     // their prior selection order; strict new-publish admission lives separately

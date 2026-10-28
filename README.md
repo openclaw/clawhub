@@ -15,7 +15,7 @@
 ClawHub is the **public skill registry for OpenClaw**: publish, version, and search text-based agent skills (a `SKILL.md` plus supporting files).
 It's designed for fast browsing + a CLI-friendly API, with moderation hooks and vector search.
 It also exposes a native **OpenClaw package catalog** for code plugins, bundle plugins, and
-experimental whole-agent Claw packages.
+experimental whole-agent Template packages.
 
 <p align="center">
   <a href="https://clawhub.ai">ClawHub</a> ·
@@ -39,7 +39,7 @@ For questions and help, visit [official OpenClaw support](https://community.open
 - Pin local skill installs so updates and force reinstalls cannot overwrite frozen copies.
 - Browse OpenClaw packages with family/trust/capability metadata.
 - Publish native code plugins and bundle plugins through `/packages` APIs and CLI flows.
-- Host, discover, and resolve exact artifacts for experimental whole-agent Claw packages.
+- Host, discover, and resolve exact artifacts for experimental whole-agent Template packages.
 
 ## How it works (high level)
 

@@ -18,16 +18,16 @@ them discover and install complete starting points for personal agents.
 
 Project overview and developer docs: [`README.md`](README.md)
 
-## Claws
+## Templates
 
-A Claw is an installable personal-agent template. It combines skills, plugins,
+A Template is an installable personal-agent template. It combines skills, plugins,
 and agent configuration into a useful starting point that OpenClaw can install
 and run.
 
-Claws should make the first experience simple without making the result opaque.
+Templates should make the first experience simple without making the result opaque.
 A user should be able to:
 
-- discover a Claw for a real use case
+- discover a Template for a real use case
 - inspect its publisher, components, permissions, and security evidence
 - install it with one clear action
 - customize it as their needs and confidence grow
@@ -36,7 +36,7 @@ The goal is not to hide OpenClaw forever. It is to let people begin with
 something useful before they need to understand every skill, plugin, agent file,
 or configuration convention.
 
-Claws are ClawHub's primary product object. Skills and plugins remain important
+Templates are ClawHub's primary product object. Skills and plugins remain important
 building blocks, and ClawHub should continue helping users and publishers find,
 release, inspect, and maintain them.
 
@@ -67,7 +67,7 @@ distribution.
 It represents people and organizations as publishers, owns their public
 namespaces, and determines who may publish, manage, or distribute content under
 those identities. Accounts authenticate individual actors; publishers are the
-public ownership boundary for Claws, skills, and plugins.
+public ownership boundary for Templates, skills, and plugins.
 
 ClawHub should provide the permissions and tokens needed for registry,
 publishing, management, and distribution workflows across OpenClaw ecosystem
@@ -100,7 +100,7 @@ the evidence cannot support.
 
 ClawHub owns:
 
-- Claws and their distribution records
+- Templates and their distribution records
 - ecosystem identity, publishers, permissions, and publishing authorization
 - discovery, provenance, version metadata, and install resolution
 - OpenClaw-specific telemetry and recommendation signals
@@ -118,7 +118,7 @@ inspect and consume the same registry records and evidence.
 
 The current focus is:
 
-- make Claws a reliable one-command starting point for useful personal agents
+- make Templates a reliable one-command starting point for useful personal agents
 - make strong ecosystem skills and plugins discoverable without requiring them
   to originate on ClawHub
 - preserve provenance while combining ecosystem and OpenClaw-specific signals

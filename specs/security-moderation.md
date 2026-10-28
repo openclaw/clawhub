@@ -459,13 +459,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - For tarball uploads, ClawHub stores the uploaded tarball, derives its
   artifact hashes and npm metadata, and derives package file metadata from the
   tarball contents.
-- Experimental `family: claw` publication requires one already-built npm-pack
+- Experimental `family: template` publication requires one already-built npm-pack
   `.tgz` plus the publisher-computed canonical lowercase SHA-256. It must not
   accept source directories, GitHub checkout sources, extracted-file
   publication, or the legacy public-action path. The HTTP boundary recomputes
   the digest from the accepted tarball bytes before creating or reusing any
   release state.
-- A Claw staged-attempt key binds actor, owner, normalized package name,
+- A Template staged-attempt key binds actor, owner, normalized package name,
   version, and verified tarball digest. Only that exact tuple may reuse an
   active pending attempt or active published release. Different artifacts or
   owners and terminal, soft-deleted, blocked, quarantined, revoked, or
@@ -474,7 +474,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   release rows but retains the publish attempt as audit history; an attempt
   whose referenced package or release no longer exists is audit-only and must
   neither reserve that package version nor be reused.
-- Claw pending and final publication responses expose the verified artifact
+- Template pending and final publication responses expose the verified artifact
   SHA-256. Polling must preserve the same digest, and the package artifact
   download must serve the exact stored tarball bytes whose SHA-256 matches that
   value. Trusted publish tokens accepted by an idempotent retry are revoked on

@@ -696,20 +696,23 @@ Unified catalog endpoint for:
 - skills
 - code plugins
 - bundle plugins
+- experimental whole-agent Templates
 
 Query params:
 
 - `limit` (optional): integer (1–100)
 - `cursor` (optional): pagination cursor
-- `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
+- `family` (optional): `skill`, `code-plugin`, `bundle-plugin`, or `template`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
 - `sort` (optional): `updated` (default), `recommended`, `trending`, `downloads`, legacy alias `installs`
-- `category` (optional): plugin category filter. Supported only when the
-  request is scoped to plugin packages (`/api/v1/plugins`,
+- `category` (optional): plugin or Template category filter. For plugins, scope
+  the request to plugin packages (`/api/v1/plugins`,
   `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
   `family=code-plugin`/`family=bundle-plugin`). Controlled categories and
-  legacy v1 filter aliases are documented under `GET /api/v1/plugins`.
+  legacy v1 filter aliases are documented under `GET /api/v1/plugins`. With
+  `family=template`, use a [Template category](./templates.md) or `other`;
+  unrecognized categories are rejected.
 
 Notes:
 
@@ -717,7 +720,8 @@ Notes:
   `highlightedOnly`, or `sort` return `400`. Unknown query parameters are ignored.
 - `GET /api/v1/code-plugins` and `GET /api/v1/bundle-plugins` remain fixed-family aliases.
 - Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
-- `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.
+- `POST /api/v1/packages` publishes code-plugin, bundle-plugin, and Template releases;
+  Templates require an already-built exact `.tgz` artifact and its expected SHA-256.
 - Anonymous callers only see public package channels.
 - List/search defaults to public, published plugin packages, including for authenticated callers.
 - Explicit `channel=private` returns published private packages the authenticated caller can read.
@@ -728,18 +732,20 @@ Notes:
 
 ### `GET /api/v1/packages/search`
 
-Unified catalog search across skills + plugin packages.
+Unified catalog search across skills, plugin packages, and Templates.
 
 Query params:
 
 - `q` (required): query string
 - `limit` (optional): integer (1–100)
-- `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
+- `family` (optional): `skill`, `code-plugin`, `bundle-plugin`, or `template`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
-- `category` (optional): plugin category filter. Supported only when the
-  request is scoped to plugin packages. Controlled categories and legacy v1
-  filter aliases are documented under `GET /api/v1/plugins`.
+- `category` (optional): plugin or Template category filter. For plugins, scope
+  the request to plugin packages. Controlled categories and legacy v1
+  filter aliases are documented under `GET /api/v1/plugins`. With
+  `family=template`, use a [Template category](./templates.md) or `other`;
+  unrecognized categories are rejected.
 
 Notes:
 
@@ -938,6 +944,22 @@ Notes:
 - Browser UI sort controls for plugin search reorder the loaded relevance results,
   matching the current `/skills` browse behavior.
 
+### `GET /api/v1/feeds/templates` and `GET /v1/feeds/templates`
+
+Returns the separate experimental Official Templates feed, not an extension of
+stable plugin/skill feed v1. Its id is `clawhub-official-templates`; entries have
+`type: "template"`, bounded `templateManifestSummary`, and exactly one
+`public-clawhub` candidate with an exact version and `sha256:` artifact integrity.
+
+Only eligible canonical `@openclaw/*` Templates owned by the active, currently
+Official OpenClaw publisher are exported. This feed restriction does not remove
+otherwise eligible community Templates from the package APIs.
+
+Responses use `Cache-Control: no-store`, with ETag and Last-Modified validators
+and conditional `304` support. Missing, uninitialized, or policy-invalid snapshots
+return `503`; a nonempty snapshot also fails closed after publisher authority is
+revoked. See [Template authoring and feed consumption](./templates.md).
+
 ### `GET /api/v1/packages/{name}`
 
 Returns package detail metadata. The `owner.official` flag is the current publisher
@@ -946,7 +968,13 @@ field to be absent when querying registries that predate it.
 
 Notes:
 
-- Skills can also resolve through this route in the unified catalog.
+- Skills and Templates can also resolve through this route in the unified catalog.
+- Template package metadata may include bounded `templateManifestSummary` and
+  `templateProfilePolicyVersion: 1`. The summary exposes identity and resource
+  counts, never the full manifest, prompt body, bootstrap, or profile contents.
+- Eligible community and official Templates are discoverable with `family=template`;
+  their current publisher must be active and match the package scope. The separate
+  Official feed has the narrower publisher policy described below.
 - Private packages return `404` unless the caller can read the owning publisher.
 
 ### `GET /api/v1/packages/{name}/detail`
@@ -993,6 +1021,8 @@ verification, artifact metadata, and scan data.
 
 Notes:
 
+- Template versions may include bounded `version.templateManifestSummary`; full
+  manifests remain only in the exact immutable artifact.
 - `version.pluginManifestSummary` exposes optional declared `contracts` (capability
   family to name arrays), `providers`, and `channels`. For example, `contracts.tools`
   names plugin tools; `contracts.videoGenerationProviders` names providers, not tools.
@@ -1627,7 +1657,7 @@ Publishes a new version.
 
 ### `POST /api/v1/packages`
 
-Publishes a code-plugin or bundle-plugin release.
+Publishes a code-plugin, bundle-plugin, or experimental Template release.
 
 - Requires Bearer token auth.
 - Requires `multipart/form-data`.
@@ -1646,7 +1676,14 @@ Publishes a code-plugin or bundle-plugin release.
 
 Validation highlights:
 
-- `family` must be `code-plugin` or `bundle-plugin`.
+- `family` must be `code-plugin`, `bundle-plugin`, or `template`.
+- Templates require a safe package-relative `package.json.openclaw.template`
+  manifest pointer (normally `CLAW.md`), an already-built npm-pack `.tgz` in
+  `clawpack`, and canonical lowercase `expectedArtifactSha256`. Missing or
+  mismatched digests, source-folder/extracted-file payloads, and invalid manifests
+  are rejected. Publication, retry, and download retain those exact artifact bytes.
+  Template validation does not bypass ownership, moderation, or scanning. See
+  [Template packages](./templates.md) for the full manifest contract.
 - Code plugins require `openclaw.plugin.json` with their native `id`. ClawPack
   `.tgz` uploads must contain it at `package/openclaw.plugin.json`.
 - Bundle plugins require exactly one of `.codex-plugin/plugin.json`,
