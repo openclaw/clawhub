@@ -96,8 +96,9 @@ it("publishes a Claw's packaged PNG through the validated content-addressed imag
       Convex: { jsSyscall: (op: string, args: unknown) => Promise<unknown> };
     };
     const jsSyscall = runtime.Convex.jsSyscall;
+    const accessors: { jsSyscall: unknown } = runtime.Convex;
     let pending = Promise.resolve();
-    vi.spyOn(runtime.Convex, "jsSyscall", "get").mockReturnValue((op, args) => {
+    vi.spyOn(accessors, "jsSyscall", "get").mockReturnValue((op: string, args: unknown) => {
       if (op !== "storage/storeBlob") return jsSyscall(op, args);
       const result = pending.then(() => jsSyscall(op, args));
       pending = result.then(
