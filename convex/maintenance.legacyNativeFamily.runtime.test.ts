@@ -273,6 +273,62 @@ describe("guarded legacy native plugin family repair", () => {
     ).rejects.toThrow("identity changed");
   });
 
+  it.each(["administrator", "publisher", "owner"])(
+    "rejects confirmed apply after %s authority changes without repair writes",
+    async (kind) => {
+      const { t, actor, publisher, pkg, args } = await fixture();
+      const dry = await t.mutation(
+        internal.maintenance.repairLegacyNativePluginFamilyInternal,
+        args,
+      );
+      await t.run(async (ctx) => {
+        if (kind === "administrator") await ctx.db.patch(actor, { role: "user" });
+        if (kind === "publisher") {
+          const official = await ctx.db
+            .query("officialPublishers")
+            .withIndex("by_publisher", (q) => q.eq("publisherId", publisher))
+            .unique();
+          await ctx.db.delete(official!._id);
+        }
+        if (kind === "owner") {
+          const replacement = await ctx.db.insert("publishers", {
+            kind: "org",
+            handle: "replacement-owner",
+            displayName: "Replacement owner",
+            createdAt: 1,
+            updatedAt: 1,
+          });
+          await ctx.db.patch(pkg, { ownerPublisherId: replacement });
+        }
+      });
+      const readRepairState = () =>
+        t.run(async (ctx) => ({
+          parent: await ctx.db.get(pkg),
+          releases: await ctx.db
+            .query("packageReleases")
+            .withIndex("by_package", (q) => q.eq("packageId", pkg))
+            .collect(),
+          audit: await ctx.db
+            .query("auditLogs")
+            .withIndex("by_target", (q) => q.eq("targetType", "package").eq("targetId", pkg))
+            .collect(),
+        }));
+      const revoked = await readRepairState();
+      await expect(
+        t.mutation(internal.maintenance.repairLegacyNativePluginFamilyInternal, {
+          ...args,
+          dryRun: false,
+          confirm,
+          expectedRevision: dry.revision,
+        }),
+      ).rejects.toThrow();
+      expect(await readRepairState()).toEqual(revoked);
+      expect(revoked.parent?.family).toBe("bundle-plugin");
+      expect(revoked.releases.every((release) => release.pluginFamily === undefined)).toBe(true);
+      expect(revoked.audit).toEqual([]);
+    },
+  );
+
   it.each([
     "native-bytes",
     "admin",
