@@ -48,7 +48,7 @@ exit 23`,
   vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "5000");
   const job: ClaimedJob = {
     job: {
-      _id: "securityScanJobs:bundled-stderr",
+      _id: "securityScanJobs:bundled-skillspector",
       leaseToken: "fixture",
       targetKind: "packageRelease",
       source: "publish",
@@ -104,17 +104,20 @@ it.each([1, 7])(
   },
 );
 
-it("still rejects a noisy scanner timeout even after writing a report", async () => {
-  const { run, workspace, handoff } = await fixture(`${writeReport(findings)}
+it.each([false, true])(
+  "still rejects a noisy scanner timeout with a report (exit 1 trap: %s)",
+  async (trapExit) => {
+    const { run, workspace, handoff } = await fixture(`${writeReport(findings)}
 printf '%2097152s' x >&2
-exec sleep 30`);
-  vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "1000");
-  await expect(run()).rejects.toThrow("skillspector timed out");
-  expect(JSON.parse(await readFile(join(workspace, "skillspector-report-0.json"), "utf8"))).toEqual(
-    findings,
-  );
-  await expect(readFile(handoff)).rejects.toMatchObject({ code: "ENOENT" });
-});
+${trapExit ? "trap 'exit 1' TERM; while true; do sleep 30; done" : "exec sleep 30"}`);
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "1000");
+    await expect(run()).rejects.toThrow("skillspector timed out");
+    expect(
+      JSON.parse(await readFile(join(workspace, "skillspector-report-0.json"), "utf8")),
+    ).toEqual(findings);
+    await expect(readFile(handoff)).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
 
 it("gives successive bundled roots their own timeout within the preparation budget", async () => {
   const roots = ["skills/first", "skills/second", "skills/third"];
@@ -150,11 +153,11 @@ ${writeReport(findings)}`,
       ["skills/first", "skills/second"],
     );
     const firstReport = join(workspace, "skillspector-report-0.json");
-    const now = Date.now.bind(Date);
+    const startedAt = Date.now();
     // Advance only the budget clock after the first real subprocess writes its
     // report. Timers and the second subprocess remain real; no 20-minute sleep.
     vi.spyOn(Date, "now").mockImplementation(
-      () => now() + (existsSync(firstReport) ? 20 * 60_000 - remainingMs : 0),
+      () => startedAt + (existsSync(firstReport) ? 20 * 60_000 - remainingMs : 0),
     );
     await expect(run()).rejects.toThrow(error);
     expect(JSON.parse(await readFile(firstReport, "utf8"))).toEqual(findings);

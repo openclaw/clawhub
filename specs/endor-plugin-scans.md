@@ -59,8 +59,8 @@ supports paced batches and preserves active jobs.
   This lets later roots use the preparation envelope already reserved for Endor
   without allowing root count to extend the job indefinitely. A root or total
   timeout still fails the scan; never hand partial results to the judge. Keep
-  exit/findings validation, stdout cap, and
-  structured termination diagnostics; other worker commands keep their limits.
+  exit/findings validation, stdout cap, and structured termination diagnostics;
+  other worker commands keep their limits.
 
 The immutable uploaded artifact remains the source of truth. Endor's disposable
 copy may normalize an npm shrinkwrap filename and remove unresolved workspace
