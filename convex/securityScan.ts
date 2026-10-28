@@ -9,6 +9,7 @@ import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { endorAnalysisValidator, type EndorAnalysis } from "./lib/endorAnalysis";
 import { Events, logEvent } from "./lib/observabilityEvents";
 import { normalizePackageName } from "./lib/packageRegistry";
+import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { normalizePackageScanStatus } from "./lib/packageSecurity";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 import {
@@ -3709,7 +3710,7 @@ export const getJobTargetInternal = internalQuery({
       const ownerPublisher = pkg?.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
       return {
         job,
-        package: pkg,
+        package: pkg ? { ...pkg, family: resolvePackageReleaseFamily(pkg.family, release) } : pkg,
         release,
         trustedOpenClawPlugin: isOpenClawPluginPackage(pkg, ownerPublisher),
       };

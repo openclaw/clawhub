@@ -980,6 +980,7 @@ async function runCommand(
     cwd: string;
     input?: string;
     omitEnv?: string[];
+    discardStderr?: boolean;
     timeoutMs: number;
     onStderrChunk?: (chunk: Buffer) => void;
     onTermination?: (termination: WorkerCommandTermination) => void;
@@ -992,6 +993,7 @@ async function runCommand(
     cwd: options.cwd,
     env,
     input: options.input,
+    discardStderr: options.discardStderr,
     timeoutMs: options.timeoutMs,
     onStderrChunk: options.onStderrChunk,
     onTermination: options.onTermination,
@@ -1693,6 +1695,9 @@ async function runBundledSkillSpector(
     try {
       await runCommand("skillspector", args, {
         cwd: workspace,
+        // The --output JSON report is the evidence; drain noisy raw diagnostics
+        // just as the ClawScan adapter and direct diagnostic probe do.
+        discardStderr: true,
         timeoutMs: remainingMs,
         onTermination: (next) => {
           termination = next;

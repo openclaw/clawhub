@@ -4,6 +4,7 @@ import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
 import { Bookmark, Flag, Settings, ShieldCheck, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import type { SkillPublicationProgress } from "../../convex/lib/skillPublicationProgress";
 import type { ActivityTrend } from "../lib/activityTrend";
 import { getSkillBadges, isSkillOfficial } from "../lib/badges";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
@@ -29,6 +30,7 @@ import { InlineMarkdownSummary } from "./InlineMarkdownSummary";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
+import { SkillPublicationNotice } from "./SkillPublicationNotice";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -140,6 +142,7 @@ export type SkillDetailPageViewProps = {
   latestVersion: SkillDetailLatestVersion;
   modInfo: SkillModerationInfo | null;
   isPendingPublication?: boolean;
+  publicationProgress?: SkillPublicationProgress | null;
   canManage: boolean;
   isAuthenticated: boolean;
   isStaff: boolean;
@@ -195,6 +198,7 @@ export function SkillDetailPageView({
   latestVersion,
   modInfo,
   isPendingPublication = false,
+  publicationProgress = null,
   canManage,
   isAuthenticated,
   isStaff,
@@ -376,7 +380,12 @@ export function SkillDetailPageView({
   return (
     <main className={cn("section detail-page-section skill-detail-page", pageClassName)}>
       <DetailPageShell>
-        {isPendingPublication ? (
+        {publicationProgress ? (
+          <SkillPublicationNotice
+            progress={publicationProgress}
+            publishedVersion={latestVersion?.version}
+          />
+        ) : isPendingPublication ? (
           <div className="pending-banner">
             <div className="pending-banner-content">
               <strong>Pending publication</strong>

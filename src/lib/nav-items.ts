@@ -69,7 +69,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
 // Secondary nav items (desktop secondary tabs + mobile dropdown section)
 // ---------------------------------------------------------------------------
 
-const OPENCLAW_SUPPORT_URL = "https://community.openclaw.ai/";
+export const OPENCLAW_SUPPORT_URL = "https://community.openclaw.ai/";
 
 export const SECONDARY_NAV_ITEMS: NavItem[] = [
   {

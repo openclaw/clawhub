@@ -79,6 +79,15 @@ function makeCtx() {
   const auditTake = vi.fn(async (limit: number) => auditLogs.slice(0, limit));
   const skillUnique = vi.fn(async () => skill);
   const query = vi.fn((table: string) => {
+    if (table === "skillVersions") {
+      return {
+        withIndex: vi.fn(() => ({
+          order: vi.fn(() => ({
+            first: vi.fn().mockResolvedValue(latestVersion),
+          })),
+        })),
+      };
+    }
     if (table === "skills") {
       return {
         withIndex: vi.fn(() => ({

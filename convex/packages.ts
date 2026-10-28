@@ -103,6 +103,7 @@ import {
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
+import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
 import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
 import {
@@ -1314,7 +1315,9 @@ function toPublicPackage(
 }
 
 function toPublicPackageRelease(release: Doc<"packageReleases">, family: PackageFamily) {
-  // Package family owns this boundary; optional release metadata must not select a looser projection.
+  // Plugin snapshots may distinguish historical bundles from current native
+  // releases. They can never loosen the Claw/skill projection boundary.
+  family = resolvePackageReleaseFamily(family, release);
   if (family === "claw") {
     const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
     return {
@@ -3575,7 +3578,11 @@ export const getPluginDetailForViewerInternal = internalQuery({
         : false,
     ]);
     return {
-      package: { ...publicPackage, publicDownloadBlocked },
+      package: {
+        ...publicPackage,
+        family: resolvePackageReleaseFamily(pkg.family, selectedRelease),
+        publicDownloadBlocked,
+      },
       owner,
       tags,
       release: selectedRelease ? toPublicPluginRelease(selectedRelease) : null,
@@ -3770,7 +3777,12 @@ async function readPackageReleaseSnapshotForViewer(
         ? await ctx.db.get(pkg.latestReleaseId)
         : null;
   const publicPackage = toPublicPackage(pkg, latestRelease);
-  return publicPackage ? { package: publicPackage, release } : null;
+  return publicPackage
+    ? {
+        package: { ...publicPackage, family: resolvePackageReleaseFamily(pkg.family, release) },
+        release,
+      }
+    : null;
 }
 
 export const getReleaseForViewerInternal = internalQuery({
@@ -3913,6 +3925,7 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
     return {
       package: {
         ...publicPackage,
+        family: resolvePackageReleaseFamily(pkg.family, release),
         publicDownloadBlocked,
       },
       version: toPublicPackageRelease(release, pkg.family),
@@ -12597,6 +12610,9 @@ export const insertReleaseInternal = internalMutation({
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId: pkgId,
       version: args.version,
+      ...(args.family === "code-plugin" || args.family === "bundle-plugin"
+        ? { pluginFamily: args.family }
+        : {}),
       publicationStatus,
       pendingPublication: pendingPublication
         ? {

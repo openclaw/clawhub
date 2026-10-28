@@ -12,6 +12,7 @@ import schema from "./schema";
 
 vi.mock("./lib/verifiedClientIp", () => ({ getVerifiedClientIp: async () => "203.0.113.1" }));
 const modules = import.meta.glob("./**/*.ts");
+const realSetTimeout = globalThis.setTimeout.bind(globalThis);
 const png = Uint8Array.from(
   atob(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -71,15 +72,41 @@ function npmPackFixture(files: Record<string, string | Uint8Array>) {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllEnvs();
 });
 
 it("publishes a Claw's packaged PNG through the validated content-addressed image route", async () => {
   vi.useFakeTimers();
+  // The mock supplies the original method's Blob receiver with call(this).
+  // oxlint-disable-next-line typescript/unbound-method
+  const arrayBuffer = Blob.prototype.arrayBuffer;
+  // A slow PNG read deterministically exposes the harness transaction race.
+  vi.spyOn(Blob.prototype, "arrayBuffer").mockImplementation(async function (this: Blob) {
+    if (this.size === png.length) await new Promise((resolve) => realSetTimeout(resolve, 25));
+    return arrayBuffer.call(this);
+  });
   const t = convexTest(schema, modules);
   registerRateLimiter(t);
   await t.run(async (ctx) => {
+    // convex-test 0.0.62 shares transaction depth between concurrent blob
+    // stores. Serialize only its storage syscall, retaining real hashes/bytes.
+    const runtime = globalThis as typeof globalThis & {
+      Convex: { jsSyscall: (op: string, args: unknown) => Promise<unknown> };
+    };
+    const jsSyscall = runtime.Convex.jsSyscall;
+    const accessors: { jsSyscall: unknown } = runtime.Convex;
+    let pending = Promise.resolve();
+    vi.spyOn(accessors, "jsSyscall", "get").mockReturnValue((op: string, args: unknown) => {
+      if (op !== "storage/storeBlob") return jsSyscall(op, args);
+      const result = pending.then(() => jsSyscall(op, args));
+      pending = result.then(
+        () => {},
+        () => {},
+      );
+      return result;
+    });
     const userId = await ctx.db.insert("users", { handle: "maker", role: "admin" });
     const publisherId = await ctx.db.insert("publishers", {
       kind: "org",

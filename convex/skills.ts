@@ -134,6 +134,7 @@ import {
   isPublicSkillVersionAvailableForSkill,
 } from "./lib/skillFileAccess";
 import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
+import { readSkillPublicationProgress } from "./lib/skillPublicationProgress";
 import {
   fetchText,
   publishVersionForUser,
@@ -2710,6 +2711,7 @@ export const getBySlug = query({
       latestVersion,
       owner,
       pendingReview: isOwner && isPendingScan,
+      publicationProgress: isOwner ? await readSkillPublicationProgress(ctx, skill) : null,
       moderationInfo,
       forkOf: forkOf
         ? {
@@ -3119,6 +3121,7 @@ export const getBySlugForStaff = query({
       skill: { ...skill, badges },
       latestVersion: latestVersion ? { ...latestVersion, generatedSkillCard } : null,
       owner,
+      publicationProgress: await readSkillPublicationProgress(ctx, skill),
       auditLogs,
       forkOf: forkOfSkill
         ? {

@@ -858,7 +858,7 @@ function mergeSourceIntoMetadata(
   return Object.keys(base).length ? base : undefined;
 }
 
-function buildSkillPublishAttemptIdempotencyKey(args: {
+export function buildSkillPublishAttemptIdempotencyKey(args: {
   userId: Id<"users">;
   ownerPublisherId?: Id<"publishers">;
   slug: string;

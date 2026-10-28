@@ -306,6 +306,14 @@ New pending attempts carry the admitted package family into worker metadata.
 Claims for older attempts recover that metadata from their existing registry
 record, never by guessing from filenames; contradictory stored claims fail.
 
+Plugin releases persist an optional admitted `pluginFamily` snapshot. A legacy
+release without one retains its parent-family fallback. Version-specific public,
+security, detail and scanner metadata use the snapshot for plugin parents;
+package-wide listing and admission keep the current registry family. Plugin
+snapshots cannot change Claw or skill projection boundaries. A future guarded
+parent-family repair must snapshot historical releases before changing the
+parent, preserving genuine bundle history and all original artifacts.
+
 Already-admitted scan jobs are distinct from new publication admission. Retained
 legacy bundles may contain several supported harness manifests or only a native
 envelope. Workers preserve deterministic Codex/Claude/Cursor precedence for those
