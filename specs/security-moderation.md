@@ -118,6 +118,20 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   projections. A pending replacement must preserve an older approved version where
   the existing latest-version policy selects it.
 
+## Owner withdrawal of unpublished package releases
+
+- Staging a package release stores requested `distTags` before publication; these
+  are publication intent, not authoritative public tag assignments. Multiple
+  unpublished candidates may carry `latest`, including after package restoration.
+- Owner withdrawal must not interpret an unpublished candidate's `latest` dist-tag
+  as the current latest release. Package `latestReleaseId`, `tags.latest`, and
+  `latestVersionSummary` remain protective, and a published (including legacy)
+  release's own `latest` tag remains a conservative fallback.
+- Ignoring an unpublished tag does not waive the existing available-survivor
+  check, ownership checks, moderation checks, or retained withdrawal provenance.
+  Withdrawing an abandoned candidate must preserve the replacement release and
+  the package's current latest metadata.
+
 ## Exact-version revocation
 
 - Staff can permanently revoke one hosted skill version without deleting the

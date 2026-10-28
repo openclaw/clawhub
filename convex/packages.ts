@@ -7431,11 +7431,12 @@ export async function deleteOwnedPackageReleaseForActor(
     throw new ConvexError("This package release is already unavailable and cannot be deleted.");
   }
 
+  // Unpublished dist-tags record publication intent, not current public tag ownership.
   let mustPublishReplacement =
     pkg.latestReleaseId === release._id ||
     pkg.tags.latest === release._id ||
     pkg.latestVersionSummary?.version === release.version ||
-    release.distTags?.includes("latest") === true;
+    (isPublishedPackageRelease(release) && release.distTags?.includes("latest") === true);
   if (!mustPublishReplacement && !(await hasAvailableLatestPackageReleasePointer(ctx, pkg))) {
     // Admin cleanup can clear latest pointers, so prove a survivor with a bounded indexed read.
     mustPublishReplacement = !(await hasBoundedAvailablePackageReleaseSurvivor(
