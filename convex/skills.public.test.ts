@@ -237,6 +237,15 @@ function makeCtx(args: {
   const unique = vi.fn().mockResolvedValue(args.skill);
   const withIndex = vi.fn(() => ({ unique }));
   const query = vi.fn((table: string) => {
+    if (table === "skillVersions") {
+      return {
+        withIndex: vi.fn(() => ({
+          order: vi.fn(() => ({
+            first: vi.fn().mockResolvedValue(args.latestVersion ?? null),
+          })),
+        })),
+      };
+    }
     if (table === "publisherMembers") {
       return {
         withIndex: vi.fn(() => ({

@@ -187,6 +187,7 @@ import type * as lib_skillHourlyStats from "../lib/skillHourlyStats.js";
 import type * as lib_skillInstallBackfill from "../lib/skillInstallBackfill.js";
 import type * as lib_skillPresentation from "../lib/skillPresentation.js";
 import type * as lib_skillPresentationBackfill from "../lib/skillPresentationBackfill.js";
+import type * as lib_skillPublicationProgress from "../lib/skillPublicationProgress.js";
 import type * as lib_skillPublish from "../lib/skillPublish.js";
 import type * as lib_skillQuality from "../lib/skillQuality.js";
 import type * as lib_skillSafety from "../lib/skillSafety.js";
@@ -470,6 +471,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillInstallBackfill": typeof lib_skillInstallBackfill;
   "lib/skillPresentation": typeof lib_skillPresentation;
   "lib/skillPresentationBackfill": typeof lib_skillPresentationBackfill;
+  "lib/skillPublicationProgress": typeof lib_skillPublicationProgress;
   "lib/skillPublish": typeof lib_skillPublish;
   "lib/skillQuality": typeof lib_skillQuality;
   "lib/skillSafety": typeof lib_skillSafety;
