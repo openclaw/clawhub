@@ -519,6 +519,7 @@ describe("Template manifest contract", () => {
 
   it("enforces the versioned OpenClaw spawned-process environment policy", () => {
     expect(OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.blockedKeys).toContain("CPP");
+    expect(OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.blockedKeys).toContain("CXXCPP");
     const blockedKeys = [
       ...OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.blockedKeys,
       ...OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.blockedPrefixes.map(

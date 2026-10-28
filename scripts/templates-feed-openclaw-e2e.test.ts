@@ -7,7 +7,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { crc32, createDeflateRaw } from "node:zlib";
-import { EXPERIMENTAL_TEMPLATE_FEED_ID, serializeExperimentalTemplateFeed } from "clawhub-schema";
+import {
+  EXPERIMENTAL_TEMPLATE_FEED_ID,
+  OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1,
+  OPENCLAW_TEMPLATE_PROFILE_POLICY_V1,
+  serializeExperimentalTemplateFeed,
+  validateTemplatePackageContents,
+} from "clawhub-schema";
 import { gzipSync, strToU8, zipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -236,8 +242,45 @@ async function runOpenClawProfileConformance(openclawCheckout: string) {
   return JSON.parse(stdout) as string[];
 }
 
+async function readConsumerGrantMatrix(openclawCheckout: string) {
+  const runner = `
+    import { CORE_TOOL_GROUPS, resolveCoreToolProfilePolicy } from "./src/agents/tool-catalog.ts";
+    import { parseTemplateOpenClawProfile } from "./src/templates/schema.ts";
+    const profiles = ["minimal", "coding", "messaging", "full"];
+    const grants = [...new Set([
+      ...Object.keys(CORE_TOOL_GROUPS), ...Object.values(CORE_TOOL_GROUPS).flat(),
+      ...profiles.flatMap(profile => resolveCoreToolProfilePolicy(profile)?.allow ?? []),
+      "image", "update_plan", "heartbeat_respond", "bash", "apply-patch", "cron", "tool_call",
+      "group:plugins", "server__tool", "unknown-tool", "group:unknown",
+    ])].sort();
+    process.stdout.write(JSON.stringify(profiles.flatMap(profile => grants.map(grant => ({
+      profile, grant,
+      accepted: parseTemplateOpenClawProfile({schemaVersion: 1, agent: {tools: {profile, allow: [grant]}}}).ok,
+    })))));
+  `;
+  const { stdout } = await execFileAsync("pnpm", ["exec", "tsx", "--eval", runner], {
+    cwd: openclawCheckout,
+  });
+  return JSON.parse(stdout) as Array<{ profile: string; grant: string; accepted: boolean }>;
+}
+
+async function assertExactConsumerCheckout() {
+  if (!openclawRepo) return;
+  const commit = OPENCLAW_TEMPLATE_PROFILE_POLICY_V1.source.commit;
+  expect(OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.source.commit).toBe(commit);
+  const { stdout: head } = await execFileAsync("git", ["rev-parse", "HEAD"], {
+    cwd: openclawRepo,
+  });
+  expect(head.trim()).toBe(commit);
+  const { stdout: status } = await execFileAsync("git", ["status", "--porcelain"], {
+    cwd: openclawRepo,
+  });
+  expect(status.trim()).toBe("");
+}
+
 describe("published Template to OpenClaw dry-run proof", () => {
   beforeAll(async () => {
+    await assertExactConsumerCheckout();
     tempRoot = await mkdtemp(join(tmpdir(), "clawhub-hosted-e2e-fixture-"));
     const archivePath = await npmPackFixture(tempRoot);
     archiveBytes = new Uint8Array(await readFile(archivePath));
@@ -279,6 +322,7 @@ describe("published Template to OpenClaw dry-run proof", () => {
   afterAll(async () => {
     if (server) await new Promise<void>((resolveClose) => server!.close(() => resolveClose()));
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true });
+    await assertExactConsumerCheckout();
   }, 30_000);
 
   it("selects only the exact public ClawHub candidate", () => {
@@ -349,6 +393,60 @@ describe("published Template to OpenClaw dry-run proof", () => {
     const response = new Response("", { headers: { "Content-Length": String(65 * 1024 * 1024) } });
     await expect(readResponseBytesBounded(response)).rejects.toThrow("64MB download limit");
   });
+
+  it.skipIf(!openclawRepo)(
+    "matches the pinned consumer across every built-in profile, static group and tool grant",
+    async () => {
+      const packageJson = {
+        name: "@openclaw/grant-conformance",
+        version: "1.0.0",
+        openclaw: { template: "CLAW.md" },
+      };
+      const matrix = await readConsumerGrantMatrix(openclawRepo!);
+      const mismatches = matrix.filter(({ profile, grant, accepted }) => {
+        const result = validateTemplatePackageContents({
+          packageName: packageJson.name,
+          version: packageJson.version,
+          packageJson,
+          files: [
+            { path: "package.json", text: JSON.stringify(packageJson) },
+            {
+              path: "CLAW.md",
+              text: "---\nschemaVersion: 1\nagent: { id: grant-conformance }\n---\n",
+            },
+            {
+              path: "profiles/openclaw.yml",
+              text: JSON.stringify({
+                schemaVersion: 1,
+                agent: { tools: { profile, allow: [grant] } },
+              }),
+            },
+          ],
+        });
+        return result.ok !== accepted;
+      });
+      expect(mismatches).toEqual([]);
+    },
+    30_000,
+  );
+
+  it.skipIf(!openclawRepo)(
+    "matches the exact pinned consumer's host environment policy bytes and rejection sets",
+    async () => {
+      const source = OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.source;
+      const bytes = await readFile(join(openclawRepo!, source.path));
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(source.sha256);
+      const policy = JSON.parse(bytes.toString("utf8")) as {
+        blockedEverywhereKeys: string[];
+        blockedPrefixes: string[];
+      };
+      expect(policy.blockedEverywhereKeys).toEqual(
+        OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.blockedKeys,
+      );
+      expect(policy.blockedPrefixes).toEqual(OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.blockedPrefixes);
+      expect(OPENCLAW_TEMPLATE_PROFILE_POLICY_V1.source.path).toBe("src/templates/schema.ts");
+    },
+  );
 
   it.skipIf(!openclawRepo)(
     "executes profile conformance vectors against the pinned OpenClaw parser",

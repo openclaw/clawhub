@@ -29,5 +29,9 @@ describe("Template CLI family admission", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('"template"');
     expect(result.stdout).not.toContain('"claw"');
+    if (command === "publish") {
+      expect(result.stdout).toContain("Template category overrides");
+      expect(result.stdout).not.toContain("plugins and Templates (ignored)");
+    }
   });
 });

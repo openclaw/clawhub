@@ -234,9 +234,9 @@ export const OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1 = {
   contractVersion: 1,
   source: {
     repository: "openclaw/openclaw",
-    commit: "f50a918af102b950721c1b380f7eb8af4e0389d1",
+    commit: "71f1c0942ecbdc3acb5cdee311bde4c0baec75e9",
     path: "src/infra/host-env-security-policy.json",
-    sha256: "4639dcfa157d4fa4c2fb84f8c5347ffe2252eb4ddb3d818afd7f87d68173b92b",
+    sha256: "6923ab681c0e701381ea5fccebe36b7c6d2bfeadd72cfa08b0d542640d5e9601",
   },
   blockedKeys: [
     "NODE_OPTIONS",
@@ -276,6 +276,7 @@ export const OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1 = {
     "CC",
     "CPP",
     "CXX",
+    "CXXCPP",
     "CARGO_BUILD_RUSTC",
     "CARGO_BUILD_RUSTC_WRAPPER",
     "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",

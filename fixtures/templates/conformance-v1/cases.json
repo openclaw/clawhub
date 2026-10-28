@@ -2,7 +2,7 @@
   "contract": "openclaw-template-v1",
   "consumer": {
     "repository": "openclaw/openclaw",
-    "commit": "f8c0e1b8325b1fc36e039cf357a2c4602f76d5aa"
+    "commit": "71f1c0942ecbdc3acb5cdee311bde4c0baec75e9"
   },
   "profileCases": [
     {
@@ -52,6 +52,30 @@
       "consumerAccepted": false,
       "registryAccepted": false,
       "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: full\n"
+    },
+    {
+      "name": "coding exact consumer grant image",
+      "consumerAccepted": false,
+      "registryAccepted": false,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: [image]\n"
+    },
+    {
+      "name": "coding exact consumer grant update_plan",
+      "consumerAccepted": false,
+      "registryAccepted": false,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: [update_plan]\n"
+    },
+    {
+      "name": "coding exact consumer grant view_image",
+      "consumerAccepted": true,
+      "registryAccepted": true,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: [view_image]\n"
+    },
+    {
+      "name": "coding exact consumer grant progress_card",
+      "consumerAccepted": true,
+      "registryAccepted": true,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: [progress_card]\n"
     }
   ],
   "heartbeatCases": [
