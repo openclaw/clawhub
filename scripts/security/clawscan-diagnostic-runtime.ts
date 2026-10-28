@@ -8,11 +8,26 @@ import { attestRuntime } from "./run-clawscan-diagnostic";
 const SKILLSPECTOR_REF = "95a52d89fa16f608f0b18ccee76b0918ea4b7eef";
 const AIG_REF = "a5c5a72c2e5b88fc6e5b27e0c86110943c4d350b";
 const LOCK_SHA256 = "86da392895db777270d9f1e2390c6956df2beaae31578235389d584fafe10adc";
+const LOCK_SHA256_BY_SOURCE = new Map([
+  ["9662307780b2834791e2b0be8b166b44f4144ef4", LOCK_SHA256],
+  ["fd5f18ad3365f623d4165740b124cd7f142d0556", LOCK_SHA256],
+  [
+    "ff67692a1b58882a398449a1a5cdba620c88ad57",
+    "b8d19c16020091af248ec1566d6666de4cf408e4dca193f0c9ead67072da785e",
+  ],
+]);
 const hash = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex");
 
-export function validateOriginalScannerBounds(state: string, mcp: string, lockSha256: string) {
+export function validateOriginalScannerBounds(
+  state: string,
+  mcp: string,
+  lockSha256: string,
+  sourcePin: string,
+) {
+  const expectedLock = LOCK_SHA256_BY_SOURCE.get(sourcePin);
   if (
-    lockSha256 !== LOCK_SHA256 ||
+    !expectedLock ||
+    lockSha256 !== expectedLock ||
     !/^DEFAULT_MAX_WORKFLOW_SECONDS = 600\.0$/m.test(state) ||
     !/^TP4_MAX_FILES = 128$/m.test(mcp)
   )
@@ -146,7 +161,7 @@ export async function installOriginalRuntime(
     join(scannerDir, "src/skillspector/nodes/analyzers/mcp_tool_poisoning.py"),
     "utf8",
   );
-  validateOriginalScannerBounds(state, mcp, uvLockSha256);
+  validateOriginalScannerBounds(state, mcp, uvLockSha256, pin);
   const profile = await readFile(join(sourceDir, "internal/profiles/clawhub/clawscan.yml"), "utf8");
   validateOriginalProfile(profile);
   const sdkInventory = validateOriginalSdkInventory(
