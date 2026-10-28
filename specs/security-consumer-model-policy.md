@@ -37,7 +37,7 @@ paths. Environment-only changes cannot implement this policy: official GPT-6.1
 Sol function/tool calls require Responses rather than Chat Completions.
 
 `clawscan-source-commit.txt` pins merged ClawScan commit
-`cafdd8a5766fa82874a805a4af369cfd0a038018`. The
+`e14f9960cc290d47f99fd3416b0589bbc0080f24`. The
 workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
 with Go 1.27.3, and retains the matching source tree for host scanner installation.
 No mutable `main`, `latest`, or unapproved public ClawScan release is consumed.
@@ -47,7 +47,10 @@ parsing, CSV ownership and immutable preparation-cache/packing repairs. These
 preserve explicit incompleteness for unsupported value flows; they do not infer
 that an original upload is safe or complete. Diagnostic dependency locks are
 bound to each reviewed source, retaining the original incident baselines.
-Canonical Markdown prose ownership preserves continued shell operands. A narrow
+Canonical Markdown prose ownership preserves continued shell operands. Complete
+raw JSON in canonically mapped inline code owns its structural quotes; payloads
+retain independent security inspection. Unsupported TypeScript and other
+constructed-value flows still report incomplete coverage. A narrow
 original-byte PCM WAVE proof admits explicit binary exclusions while preserving
 raw findings, binary line counts, integrity/YARA and reference accounting. It
 does not assert text or semantic inspection of the asset.
