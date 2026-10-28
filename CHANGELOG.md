@@ -22,6 +22,16 @@
 
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
+## 0.24.1 - 2026-10-28
+
+### Fixes
+
+- CLI/API: let authorized skill owners inspect the publication state of an exact held version, including failed checks and active retries, without exposing private uploads publicly. Avoid reporting a clean older release as the held version's result, and fail file reads until that version is available.
+
+### Compatibility
+
+- The CLI includes Plugin Inspector 0.4.0 and requires Node.js 22.13+ on the 22.x line or Node.js 24+.
+
 ## 0.24.0 - 2026-09-30
 
 ### Changes
