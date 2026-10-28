@@ -15,6 +15,7 @@ import {
 } from "../helpers/runtimeErrors";
 import {
   completeMockPrePublicationChecks,
+  claimMockPrePublicationChecks,
   expectOwnerHandleSelected,
   publishedSkillVersionExists,
   publishSkillVersion,
@@ -452,6 +453,153 @@ test("publishing a skill queues scan, queues skill-card generation, and shows th
   );
 
   await expectHealthyPublishPage(page, errors);
+});
+
+async function capturePublicationState(
+  page: Page,
+  testInfo: { outputPath: (file: string) => string },
+  state: string,
+  expectedTitle: string,
+) {
+  for (const [name, viewport] of [
+    ["desktop", { width: 1440, height: 900 }],
+    ["laptop", { width: 1366, height: 768 }],
+    ["tablet", { width: 768, height: 1024 }],
+    ["mobile", { width: 390, height: 844 }],
+  ] as const) {
+    await page.setViewportSize(viewport);
+    await expect(page.getByRole("link", { name: "New version", exact: true })).toBeVisible();
+    if (process.env.CLAWHUB_OWNER_PUBLICATION_BASELINE !== "1") {
+      await expect(page.getByText(expectedTitle, { exact: true })).toBeVisible();
+    }
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`${state}-${name}.png`), fullPage: true });
+  }
+}
+
+test("owner sees failed publication checks while the version stays private", async ({
+  page,
+  request,
+}, testInfo) => {
+  const slug = "pw-owner-publication-check-failure";
+  const version = "1.0.0";
+  const ownerHandle = await signInAsLocalPublisher(page, "user");
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName: "Local Owner Publication Failure",
+    version,
+    versionLabel: "operational scanner failure",
+    changelog: "Owner can distinguish a failed check from an active scan.",
+    completeChecks: false,
+  });
+  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.getByText("Pending publication", { exact: true })).toBeVisible();
+  await capturePublicationState(page, testInfo, "owner-checks-pending", "Pending publication");
+  const completed = await completeMockPrePublicationChecks({
+    kind: "skill",
+    slug,
+    version,
+    clawscan: "failed",
+  });
+  expect(completed).toMatchObject({ status: "pending_checks" });
+  expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
+  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.locator("h1.skill-page-title")).toHaveText("Local Owner Publication Failure");
+  await capturePublicationState(page, testInfo, "owner-checks-failed", "Publication checks failed");
+  await expect(page.getByText("Publication checks failed", { exact: true })).toBeVisible();
+  await expect(page.getByText(/not yet public or installable/i)).toBeVisible();
+  await expect(page.getByRole("article", { name: "Install" })).toHaveCount(0);
+});
+
+test.describe("owner publication progress after a clean public release", () => {
+  for (const outcome of ["failed", "incomplete"] as const) {
+    test(`owner sees ${outcome} checks on a newer version`, async ({ page, request }, testInfo) => {
+      const slug = `pw-owner-update-${outcome}`;
+      const displayName = "Local Owner Public Release";
+      const ownerHandle = await signInAsLocalPublisher(page, "user");
+      const client = convexClient();
+      const cleanAnalysis = {
+        status: "completed",
+        verdict: "clean",
+        confidence: "high",
+        summary: "Local fixture completed review.",
+        model: "mock-local-e2e",
+        checkedAt: Date.now(),
+      };
+      const aigAnalysis = {
+        status: "clean",
+        issueCount: 0,
+        findings: [],
+        scannerVersion: "mock-local-e2e",
+        checkedAt: Date.now(),
+      };
+      const check = { status: "clean" as const };
+      await publishSkillVersion(page, testInfo, {
+        ownerHandle,
+        slug,
+        displayName,
+        version: "1.0.0",
+        versionLabel: "public clean baseline",
+        changelog: "Public baseline.",
+        completeChecks: false,
+      });
+      const first = await claimMockPrePublicationChecks({ kind: "skill", slug, version: "1.0.0" });
+      const published = (await client.action(api.publishAttempts.completePrePublicationChecks, {
+        token: WORKER_TOKEN,
+        attemptId: first.attemptId as Id<"publishAttempts">,
+        claimId: first.claimId,
+        artifactFingerprint: first.artifactFingerprint,
+        trufflehog: check,
+        clawscan: check,
+        clawscanAnalysis: cleanAnalysis,
+        aigAnalysis,
+      })) as { status: string };
+      expect(published.status).toBe("finalized");
+      const version =
+        "2.0.0-beta.owner-publication-progress-with-required-security-evidence-and-a-retained-private-candidate";
+      await page.goto("/skills/publish", { waitUntil: "domcontentloaded" });
+      await publishSkillVersion(page, testInfo, {
+        ownerHandle,
+        slug,
+        displayName,
+        version,
+        versionLabel: `new ${outcome} checks`,
+        changelog: "New version stays private.",
+        completeChecks: false,
+      });
+      const next = await claimMockPrePublicationChecks({ kind: "skill", slug, version });
+      const completed = (await client.action(api.publishAttempts.completePrePublicationChecks, {
+        token: WORKER_TOKEN,
+        attemptId: next.attemptId as Id<"publishAttempts">,
+        claimId: next.claimId,
+        artifactFingerprint: next.artifactFingerprint,
+        trufflehog: check,
+        clawscan: { status: outcome === "failed" ? "failed" : "clean" },
+        ...(outcome === "failed" ? { aigAnalysis } : { clawscanAnalysis: cleanAnalysis }),
+      })) as { status: string };
+      expect(completed.status).toBe("pending_checks");
+      expect(await publicSkillVersionExists(request, { ownerHandle, slug, version: "1.0.0" })).toBe(
+        true,
+      );
+      expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
+      await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+      await waitForHydration(page);
+      await expect(page.locator("h1.skill-page-title")).toHaveText(displayName);
+      await capturePublicationState(
+        page,
+        testInfo,
+        `owner-update-${outcome}`,
+        `Publication checks ${outcome}`,
+      );
+      await expect(page.getByText(`Publication checks ${outcome}`, { exact: true })).toBeVisible();
+      await expect(page.getByRole("status")).toContainText("current public version, 1.0.0");
+    });
+  }
 });
 
 test("clean skill publish stays private until TruffleHog and ClawScan pass", async ({

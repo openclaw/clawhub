@@ -959,6 +959,7 @@ export function SkillDetailPage({
       latestVersion={latestVersion}
       modInfo={modInfo}
       isPendingPublication={isPendingPublication}
+      publicationProgress={result?.publicationProgress}
       canManage={canManage}
       isAuthenticated={isAuthenticated}
       isStaff={isStaff}

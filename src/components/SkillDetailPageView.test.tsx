@@ -30,6 +30,32 @@ describe("SkillDetailPageView", () => {
     }));
   });
 
+  it("tells the owner when publication checks failed and where to get help", () => {
+    render(
+      <TooltipProvider>
+        <SkillDetailPageView
+          {...makeMinimalProps()}
+          canManage
+          isAuthenticated
+          publicationProgress={{
+            version: "2.0.0",
+            stage: "checks_failed",
+            retrying: true,
+            updatedAt: 3,
+            checks: { trufflehog: "clean", clawscan: "failed" },
+          }}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.getByRole("status").textContent).toContain("Publication checks failed");
+    expect(screen.getByRole("status").textContent).toContain("2.0.0");
+    expect(screen.getByRole("status").textContent).toContain("not yet public or installable");
+    expect(screen.getByRole("status").textContent).toContain("Security check: could not complete");
+    expect(screen.getByRole("link", { name: "Contact support" }).getAttribute("href")).toBe(
+      "https://community.openclaw.ai/",
+    );
+  });
+
   it("owns the whole shared detail page while rendering source-specific slots", () => {
     const props: SkillDetailPageViewProps = {
       skill: {
