@@ -11,7 +11,6 @@ import {
 } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
-import { repairLegacyNativePluginFamily } from "./lib/legacyNativePluginFamilyRepair";
 import { resolvePackageIcon } from "./lib/packageIcons";
 import { extractPackageDigestFields } from "./lib/packageSearchDigest";
 import { retryFailedPublishAttemptChecks } from "./lib/publishAttemptOperationalRecovery";
@@ -48,21 +47,6 @@ const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 20;
 const MAX_MAX_BATCHES = 200;
-
-export const repairLegacyNativePluginFamilyInternal = internalMutation({
-  args: {
-    actorUserId: v.id("users"),
-    packageId: v.id("packages"),
-    expectedOwnerPublisherId: v.id("publishers"),
-    expectedLatestReleaseId: v.id("packageReleases"),
-    nativeManifestText: v.string(),
-    expectedRevision: v.optional(v.string()),
-    dryRun: v.optional(v.boolean()),
-    confirm: v.optional(v.string()),
-    reason: v.string(),
-  },
-  handler: repairLegacyNativePluginFamily,
-});
 
 export const retryFailedPublishAttemptChecksInternal = internalMutation({
   args: {
