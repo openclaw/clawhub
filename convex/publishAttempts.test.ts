@@ -522,6 +522,79 @@ describe("publishAttempts", () => {
     },
   );
 
+  it.each([
+    {
+      snapshot: "bundle-plugin",
+      stored: "bundle-plugin",
+      fingerprint: "exact",
+      expected: "bundle-plugin",
+    },
+    {
+      snapshot: "code-plugin",
+      stored: "code-plugin",
+      fingerprint: "exact",
+      expected: "code-plugin",
+    },
+    {
+      snapshot: "bundle-plugin",
+      stored: "code-plugin",
+      fingerprint: "exact",
+      error: "registry family",
+    },
+    {
+      snapshot: "bundle-plugin",
+      stored: "bundle-plugin",
+      fingerprint: "changed",
+      error: "original publish artifact",
+    },
+  ])(
+    "binds historical check claims to admitted release family $snapshot/$stored/$fingerprint",
+    async ({ snapshot, stored, fingerprint, expected, error }) => {
+      const attempt = {
+        _id: "publishAttempts:historical",
+        kind: "package",
+        status: "pending_checks",
+        userId: "users:publisher",
+        packageId: "packages:native",
+        packageReleaseId: "packageReleases:old",
+        slug: "native",
+        version: "1.0.0",
+        artifactFingerprint: "exact",
+        files: [],
+        scanContext: { package: { family: stored } },
+        createdAt: Date.now(),
+      };
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) =>
+            id === attempt.packageId
+              ? { family: "code-plugin" }
+              : id === attempt.packageReleaseId
+                ? {
+                    packageId: attempt.packageId,
+                    pluginFamily: snapshot,
+                    integritySha256: fingerprint,
+                  }
+                : null,
+          ),
+          normalizeId: vi.fn(),
+          patch: vi.fn(),
+          query: vi.fn(() => ({
+            withIndex: vi.fn(() => ({
+              order: vi.fn(() => ({ take: vi.fn(async () => [attempt]) })),
+            })),
+          })),
+        },
+      };
+      const claim = claimPendingChecksHandler(ctx, { claimId: "checks:historical" });
+      if (error) await expect(claim).rejects.toThrow(error);
+      else
+        await expect(claim).resolves.toMatchObject({
+          scanContext: { package: { family: expected } },
+        });
+    },
+  );
+
   it("claims fresh staged publishes before older scanner retries", async () => {
     const now = Date.now();
     const freshAttempt = {

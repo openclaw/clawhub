@@ -111,6 +111,44 @@ const withheld = [
 ] satisfies Array<Partial<Doc<"packageReleases">>>;
 
 describe("checked package release selections", () => {
+  it("preserves an old bundle release family under a native current package", async () => {
+    const { t, selected } = await fixture();
+    await t.run((ctx) => ctx.db.patch(selected, { pluginFamily: "bundle-plugin" }));
+    const version = await t.query(internal.packages.getVersionByNameForViewerInternal, {
+      name,
+      version: "2.0.0",
+    });
+    expect(version?.package.family).toBe("bundle-plugin");
+    const security = await t.query(internal.packages.getVersionSecurityByNameForViewerInternal, {
+      name,
+      version: "2.0.0",
+    });
+    expect(security?.package.family).toBe("bundle-plugin");
+    const detailSnapshot = await t.query(internal.packages.getPluginDetailForViewerInternal, {
+      name,
+      version: "2.0.0",
+    });
+    expect(detailSnapshot?.package.family).toBe("bundle-plugin");
+    const queued = await t.mutation(internal.securityScan.enqueuePackageReleaseScanInternal, {
+      releaseId: selected,
+      source: "manual",
+      priority: 0,
+      waitForVtMs: 0,
+    });
+    expect(queued.jobId).toBeDefined();
+    const target = await t.query(internal.securityScan.getJobTargetInternal, {
+      jobId: queued.jobId!,
+    });
+    expect(target && "package" in target ? target.package?.family : null).toBe("bundle-plugin");
+    for (const suffix of ["", "/security", "/artifact"]) {
+      const response = await t.fetch(`/api/v1/packages/${name}/versions/2.0.0${suffix}`);
+      expect(response.status).toBe(200);
+      expect((await response.json()).package.family).toBe("bundle-plugin");
+    }
+    const detail = await t.fetch(`/api/v1/packages/${name}`);
+    expect((await detail.json()).package.family).toBe("code-plugin");
+  });
+
   it.each(withheld)("withholds %j across version, tag, bytes and metadata", async (patch) => {
     const { t, selected, pkg } = await fixture();
     await t.run((ctx) => ctx.db.patch(selected, patch));

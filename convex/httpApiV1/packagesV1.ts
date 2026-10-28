@@ -4728,7 +4728,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         package: {
           name: publicPackage!.name,
           displayName: publicPackage!.displayName,
-          family: publicPackage!.family,
+          family: result!.package.family,
         },
         version: release.version,
         artifact: {

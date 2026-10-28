@@ -1914,6 +1914,8 @@ const packages = defineTable({
 
 const packageReleases = defineTable({
   packageId: v.id("packages"),
+  // Immutable admitted plugin family; absent legacy releases use their parent.
+  pluginFamily: v.optional(v.union(v.literal("code-plugin"), v.literal("bundle-plugin"))),
   version: v.string(),
   publicationStatus: v.optional(
     v.union(v.literal("pending"), v.literal("published"), v.literal("blocked")),

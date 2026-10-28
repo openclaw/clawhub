@@ -132,6 +132,7 @@ import type * as lib_packageArtifacts from "../lib/packageArtifacts.js";
 import type * as lib_packageIcons from "../lib/packageIcons.js";
 import type * as lib_packagePublishRecovery from "../lib/packagePublishRecovery.js";
 import type * as lib_packageRegistry from "../lib/packageRegistry.js";
+import type * as lib_packageReleaseFamily from "../lib/packageReleaseFamily.js";
 import type * as lib_packageReleaseVisibility from "../lib/packageReleaseVisibility.js";
 import type * as lib_packageRuntimeIdentity from "../lib/packageRuntimeIdentity.js";
 import type * as lib_packageSdkUsage from "../lib/packageSdkUsage.js";
@@ -414,6 +415,7 @@ declare const fullApi: ApiFromModules<{
   "lib/packageIcons": typeof lib_packageIcons;
   "lib/packagePublishRecovery": typeof lib_packagePublishRecovery;
   "lib/packageRegistry": typeof lib_packageRegistry;
+  "lib/packageReleaseFamily": typeof lib_packageReleaseFamily;
   "lib/packageReleaseVisibility": typeof lib_packageReleaseVisibility;
   "lib/packageRuntimeIdentity": typeof lib_packageRuntimeIdentity;
   "lib/packageSdkUsage": typeof lib_packageSdkUsage;

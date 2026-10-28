@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { manualPackageRecovery } from "./lib/packagePublishRecovery";
+import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
@@ -1064,10 +1065,23 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
         }
       }
 
-      const packageFamily =
-        attempt.kind === "package" && attempt.packageId
-          ? (await ctx.db.get(attempt.packageId))?.family
-          : undefined;
+      let packageFamily: Doc<"packages">["family"] | undefined;
+      if (attempt.kind === "package" && attempt.packageId) {
+        const pkg = await ctx.db.get(attempt.packageId);
+        const release = attempt.packageReleaseId
+          ? await ctx.db.get(attempt.packageReleaseId)
+          : null;
+        if (
+          release?.pluginFamily !== undefined &&
+          (release.packageId !== attempt.packageId ||
+            release.integritySha256 !== attempt.artifactFingerprint)
+        ) {
+          throw new ConvexError(
+            "Package release family does not match the original publish artifact",
+          );
+        }
+        packageFamily = pkg ? resolvePackageReleaseFamily(pkg.family, release) : undefined;
+      }
       return {
         attemptId: attempt._id,
         status: attempt.status,
