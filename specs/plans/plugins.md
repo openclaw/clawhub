@@ -76,9 +76,9 @@ other release-derived catalog metadata. An older release that finishes scanning
 after a newer latest must become published without rolling back those fields or
 clearing the current repository when its own source is absent. The release keeps
 its own source repository; the owner dashboard uses the package repository to
-prefill the next publication. First publication and later latest promotions still
-apply their staged metadata. This does not change channel or official-publisher
-classification, or the direct (non-pending) publication path.
+prefill the next publication. A first publication requesting `latest`, and later
+latest promotions, still apply their staged metadata. This does not change channel
+or official-publisher classification, or the direct (non-pending) publication path.
 
 ### Publication archive ownership
 

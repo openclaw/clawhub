@@ -37,13 +37,9 @@ async function fixture() {
   return { t, stage, readMetadata };
 }
 
-it.each([
-  { field: "displayName", sourceRepo: "https://github.com/publisher/original" },
-  { field: "sourceRepo", sourceRepo: "https://github.com/publisher/original" },
-  { field: "sourceRepo", sourceRepo: undefined },
-] as const)(
-  "preserves latest $field when an older release with sourceRepo=$sourceRepo finalizes late",
-  async ({ field, sourceRepo }) => {
+it.each(["https://github.com/publisher/original", undefined])(
+  "preserves latest metadata when an older release with sourceRepo=%s finalizes late",
+  async (sourceRepo) => {
     const { t, stage, readMetadata } = await fixture();
     const older = await stage("1.0.0", "Original name", sourceRepo);
     const newer = await stage("2.0.0", "Current name", "https://github.com/publisher/current");
@@ -65,7 +61,10 @@ it.each([
     const publishedOlder = await t.run(async (ctx) => ctx.db.get(older.releaseId));
     expect(publishedOlder).toMatchObject({ publicationStatus: "published", distTags: [] });
     expect(publishedOlder?.sourceRepo).toBe(sourceRepo);
-    expect((await readMetadata())?.[field]).toBe(before?.[field]);
+    expect(await readMetadata()).toMatchObject({
+      displayName: before?.displayName,
+      sourceRepo: before?.sourceRepo,
+    });
     expect(after?.package.displayName).toBe(before?.displayName);
   },
 );
