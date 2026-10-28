@@ -68,6 +68,18 @@ published release from the public version history, following filtered pages.
 Fetch its README by exact version. This display fallback does not promote a
 prerelease or change install defaults, package tags, or publication visibility.
 
+### Late pending-release finalization
+
+Finalizing a pending release only replaces the package display name and source
+repository when that release is promoted to `latest`, just like the summary and
+other release-derived catalog metadata. An older release that finishes scanning
+after a newer latest must become published without rolling back those fields or
+clearing the current repository when its own source is absent. The release keeps
+its own source repository; the owner dashboard uses the package repository to
+prefill the next publication. First publication and later latest promotions still
+apply their staged metadata. This does not change channel or official-publisher
+classification, or the direct (non-pending) publication path.
+
 ### Publication archive ownership
 
 Package publication allocates a generated legacy ZIP only when it reaches release

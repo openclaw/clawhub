@@ -12240,7 +12240,10 @@ export const publishPendingReleaseInternal = internalMutation({
     });
 
     await ctx.db.patch(pkg._id, {
-      displayName: stringPendingField(metadata, "displayName", pkg.displayName),
+      // Late scan completion must not roll back the latest catalog metadata.
+      displayName: shouldPromoteLatest
+        ? stringPendingField(metadata, "displayName", pkg.displayName)
+        : pkg.displayName,
       ownerUserId: pkg.ownerUserId,
       ownerPublisherId: pkg.ownerPublisherId,
       family: packageFamily,
@@ -12268,7 +12271,9 @@ export const publishPendingReleaseInternal = internalMutation({
             inferredAt: undefined,
           }
         : {}),
-      sourceRepo: stringPendingField(metadata, "sourceRepo", release.sourceRepo),
+      sourceRepo: shouldPromoteLatest
+        ? stringPendingField(metadata, "sourceRepo", release.sourceRepo)
+        : pkg.sourceRepo,
       runtimeId: shouldPromoteLatest ? release.runtimeId : pkg.runtimeId,
       channel: stringPendingField(metadata, "channel", pkg.channel) as Doc<"packages">["channel"],
       isOfficial: booleanPendingField(metadata, "isOfficial", pkg.isOfficial),
