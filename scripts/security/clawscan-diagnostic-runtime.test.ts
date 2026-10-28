@@ -33,7 +33,9 @@ it("fails closed on changed production budgets, count caps, locks, models, reaso
     [state, mcp.replace("128", "512"), lock],
     [state, mcp, "0".repeat(64)],
   ])
-    expect(() => validateOriginalScannerBounds(nextState!, nextMcp!, nextLock!, baseline)).toThrow();
+    expect(() =>
+      validateOriginalScannerBounds(nextState!, nextMcp!, nextLock!, baseline),
+    ).toThrow();
   expect(() => validateOriginalProfile(profile)).not.toThrow();
   for (const change of [
     profile.replaceAll("gpt-6.1-sol", "PRIVATE"),
