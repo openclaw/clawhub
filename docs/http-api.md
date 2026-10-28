@@ -451,6 +451,43 @@ Returns version metadata + files list.
 - `version.security` includes normalized scan verification status and scanner details
   (VirusTotal + LLM), when available.
 
+### `GET /api/v1/skills/{slug}/versions/{version}/publication`
+
+Returns the exact version's publication status to an authenticated skill owner,
+current organization owner/admin/publisher, or moderator. Use an API bearer token
+and `ownerHandle=<publisher>` to select the publisher explicitly. Anonymous or
+invalid/revoked credentials return `401`; unauthorized callers, missing versions
+and deleted versions return `404`. Responses use `Cache-Control: private, no-store`.
+
+```json
+{
+  "skill": { "slug": "example", "displayName": "Example" },
+  "publication": {
+    "version": "2.0.0",
+    "stage": "checks_failed",
+    "retrying": true,
+    "updatedAt": 1700000000000,
+    "checks": { "trufflehog": "clean", "clawscan": "failed" }
+  }
+}
+```
+
+Stages are `pending_checks`, `checks_failed`, `checks_incomplete`,
+`ready_to_finalize`, `finalizing`, `failed`, `blocked`, `expired`, `unavailable`
+and `published`. `checks_failed` means a required check could not complete;
+`checks_incomplete` means required supporting evidence is missing. `retrying`
+means the retained upload is awaiting another attempt, so another version is not
+needed. `unavailable` means no trustworthy matching attempt was found. Completed
+or legacy published versions return `published` without old attempt checks.
+
+Only safe stage/check values are returned. Worker errors, findings, attempt IDs,
+artifact fingerprints and storage IDs remain private. Publication status does not
+grant file, download or installation access; ordinary version reads keep their
+existing public visibility rules. Retrieve any stored report with
+`clawhub scan download @owner/slug --version <version>`, and contact
+[support](https://github.com/openclaw/clawhub/issues/new) with the exact version
+for recovery or an appeal. This read does not start a rescan or release a version.
+
 ### `GET /api/v1/skills/{slug}/scan`
 
 Returns security scan verification details for a skill version.

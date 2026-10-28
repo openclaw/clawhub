@@ -2167,6 +2167,21 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     );
   }
 
+  if (second === "versions" && third && segments[3] === "publication" && segments.length === 4) {
+    const headers = mergeHeaders(rate.headers, {
+      "Cache-Control": "private, no-store",
+      Vary: "Authorization",
+    });
+    const auth = await requireApiTokenUserOrResponse(ctx, request, headers);
+    if (!auth.ok) return auth.response;
+    const result = await ctx.runQuery(internal.skills.getPublicationStatusForUserInternal, {
+      ...skillLookupArgs,
+      version: third,
+      userId: auth.userId,
+    });
+    return result ? json(result, 200, headers) : text("Publication status not found", 404, headers);
+  }
+
   if (second === "versions" && segments.length === 2) {
     const skillResult = (await ctx.runQuery(
       api.skills.getBySlug,

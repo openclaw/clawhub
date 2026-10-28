@@ -9,6 +9,7 @@ import {
   normalizeContentType,
   resolveSkillCategories,
   resolveStoredSkillCategories,
+  type ApiV1SkillPublicationResponse,
   type SkillCategorySlug,
 } from "clawhub-schema";
 import { getPage, type IndexKey, paginator } from "convex-helpers/server/pagination";
@@ -134,7 +135,10 @@ import {
   isPublicSkillVersionAvailableForSkill,
 } from "./lib/skillFileAccess";
 import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
-import { readSkillPublicationProgress } from "./lib/skillPublicationProgress";
+import {
+  readSkillPublicationProgress,
+  readSkillVersionPublicationProgress,
+} from "./lib/skillPublicationProgress";
 import {
   fetchText,
   publishVersionForUser,
@@ -3181,6 +3185,53 @@ export const getSkillBySlugInternal = internalQuery({
   handler: async (ctx, args) => {
     const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
     return resolved.skill;
+  },
+});
+
+// HTTP callers supply only the identity resolved from a validated API token.
+export const getPublicationStatusForUserInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+    slug: v.string(),
+    version: v.string(),
+    ownerHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ApiV1SkillPublicationResponse | null> => {
+    const user = await ctx.db.get(args.userId);
+    if (!user || user.deletedAt || user.deactivatedAt) return null;
+    const { skill } = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
+    if (!skill || skill.softDeletedAt) return null;
+
+    const publisher = skill.ownerPublisherId ? await ctx.db.get(skill.ownerPublisherId) : null;
+    const isOwner =
+      isDirectSkillOwner(skill, user._id) ||
+      (publisher &&
+        (await canAccessPublisherOwnerScope(ctx, {
+          publisher,
+          userId: user._id,
+          legacyOwnerUserId: skill.ownerUserId,
+        })));
+    if (!isOwner && user.role !== "admin" && user.role !== "moderator") return null;
+
+    const version = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", args.version))
+      .unique();
+    if (!version || version.softDeletedAt !== undefined || version.ownerDeletedAt !== undefined)
+      return null;
+    const publication = isPublishedSkillVersion(version)
+      ? {
+          version: version.version,
+          stage: "published" as const,
+          retrying: false,
+          updatedAt: version.createdAt,
+        }
+      : await readSkillVersionPublicationProgress(ctx, skill, version);
+    if (!publication) return null;
+    return {
+      skill: { slug: skill.slug, displayName: skill.displayName },
+      publication,
+    };
   },
 });
 

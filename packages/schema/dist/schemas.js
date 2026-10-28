@@ -775,6 +775,19 @@ export const ApiV1SkillVersionResponseSchema = type({
         displayName: "string",
     }).or("null"),
 });
+export const ApiV1SkillPublicationResponseSchema = type({
+    skill: { slug: "string", displayName: "string" },
+    publication: {
+        version: "string",
+        stage: '"pending_checks"|"checks_failed"|"checks_incomplete"|"ready_to_finalize"|"finalizing"|"failed"|"blocked"|"expired"|"unavailable"|"published"',
+        retrying: "boolean",
+        updatedAt: "number",
+        "checks?": {
+            trufflehog: '"pending"|"clean"|"blocked"|"failed"',
+            clawscan: '"pending"|"clean"|"blocked"|"failed"',
+        },
+    },
+});
 export const ApiV1SkillResolveResponseSchema = type({
     match: type({ version: "string" }).or("null"),
     latestVersion: type({ version: "string" }).or("null"),

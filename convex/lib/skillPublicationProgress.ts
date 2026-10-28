@@ -29,9 +29,19 @@ export async function readSkillPublicationProgress(
     )
     .order("desc")
     .first();
+  return version ? readSkillVersionPublicationProgress(ctx, skill, version) : null;
+}
+
+// The caller must authorize access to this exact skill before passing a version.
+export async function readSkillVersionPublicationProgress(
+  ctx: QueryCtx,
+  skill: Doc<"skills">,
+  version: Doc<"skillVersions">,
+): Promise<SkillPublicationProgress | null> {
   if (
-    !version ||
-    version.ownerDeletedAt ||
+    version.skillId !== skill._id ||
+    version.softDeletedAt !== undefined ||
+    version.ownerDeletedAt !== undefined ||
     (version.publicationStatus !== "pending" && version.publicationStatus !== "blocked")
   )
     return null;
