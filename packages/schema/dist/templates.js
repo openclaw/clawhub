@@ -183,7 +183,7 @@ export const OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1 = {
     contractVersion: 1,
     source: {
         repository: "openclaw/openclaw",
-        commit: "e8d152874264228400ffc0f8f2f36080a32b4055",
+        commit: "73fa01a3f67fee5d3117916f866cea99632afe3c",
         path: "src/infra/host-env-security-policy.json",
         sha256: "6923ab681c0e701381ea5fccebe36b7c6d2bfeadd72cfa08b0d542640d5e9601",
     },

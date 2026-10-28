@@ -19,7 +19,7 @@ export declare const OPENCLAW_TEMPLATE_PROFILE_POLICY_V1: {
     readonly contractVersion: 1;
     readonly source: {
         readonly repository: "openclaw/openclaw";
-        readonly commit: "e8d152874264228400ffc0f8f2f36080a32b4055";
+        readonly commit: "73fa01a3f67fee5d3117916f866cea99632afe3c";
         readonly path: "src/templates/schema.ts";
     };
     readonly profiles: readonly ["minimal", "coding", "messaging", "full"];
