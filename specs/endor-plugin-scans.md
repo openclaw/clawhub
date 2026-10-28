@@ -48,6 +48,11 @@ supports paced batches and preserves active jobs.
   artifact. Wait for both, including Endor's Docker cleanup, before starting the
   single ClawScan judge or deleting the workspace if preparation fails. The
   ClawScan subprocess never receives Endor credentials.
+- Bundled SkillSpector uses its `--output` JSON file as evidence. Drain its raw
+  stderr without retaining it or applying a byte cap, matching the ClawScan
+  adapter and diagnostic probe: verbose scanner logs must not abort an otherwise
+  valid report. Keep the scan deadline, exit/findings validation, stdout cap, and
+  structured termination diagnostics; other worker commands keep their limits.
 
 The immutable uploaded artifact remains the source of truth. Endor's disposable
 copy may normalize an npm shrinkwrap filename and remove unresolved workspace
