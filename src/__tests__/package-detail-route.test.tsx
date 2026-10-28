@@ -21,6 +21,7 @@ const isRateLimitedPackageApiErrorMock = vi.fn(
     typeof error === "object" && error !== null && (error as { status?: number }).status === 429,
 );
 const useQueryMock = vi.fn();
+const useQueriesMock = vi.fn();
 const useMutationMock = vi.fn();
 const convexQueryMock = vi.fn();
 const convexClientMock = { query: convexQueryMock };
@@ -100,6 +101,8 @@ vi.mock("convex/react", () => ({
   },
   useConvex: () => convexClientMock,
   useQuery: (...args: unknown[]) => useQueryMock(...args),
+  useQueries: (queries: Record<string, { query: unknown; args: unknown }>) =>
+    useQueriesMock(queries),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
   usePaginatedQuery: () => ({
     results: [],
@@ -233,6 +236,21 @@ describe("plugin detail route", () => {
     isRateLimitedPackageApiErrorMock.mockClear();
     useQueryMock.mockReset();
     useQueryMock.mockReturnValue(undefined);
+    useQueriesMock.mockReset();
+    // Match Convex's query-keyed results, including Error values, while keeping
+    // the existing per-query fixture implementations and assertions intact.
+    useQueriesMock.mockImplementation(
+      (queries: Record<string, { query: unknown; args: unknown }>) =>
+        Object.fromEntries(
+          Object.entries(queries).map(([key, { query, args }]) => {
+            try {
+              return [key, useQueryMock(query, args)];
+            } catch (error) {
+              return [key, error instanceof Error ? error : new Error(String(error))];
+            }
+          }),
+        ),
+    );
     useMutationMock.mockReset();
     useMutationMock.mockReturnValue(vi.fn());
     convexQueryMock.mockReset();
@@ -1417,6 +1435,54 @@ describe("plugin detail route", () => {
       candidateNames: ["@openclaw/demo-plugin", "demo-plugin"],
     });
   });
+
+  it.each([true, false])(
+    "keeps inspector failure as an explicit Error value without changing management permission (%s)",
+    async (canManage) => {
+      const error = new Error("Function execution timed out (maximum duration: 1s)");
+      useAuthStatusMock.mockReturnValue({
+        isAuthenticated: true,
+        isLoading: false,
+        me: { _id: "users:viewer", role: "user" },
+      });
+      useQueryMock.mockImplementation((query: unknown) => {
+        const name = getFunctionName(query as never);
+        if (name === "packages:getPackageInspectorValidationSummaryPublic") throw error;
+        if (name === "packages:getManageContext") {
+          return canManage
+            ? {
+                package: {
+                  _id: "packages:1",
+                  name: "demo-plugin",
+                  displayName: "Demo Plugin",
+                },
+                latestRelease: { _id: "packageReleases:1", version: "1.0.0" },
+              }
+            : null;
+        }
+        return undefined;
+      });
+      const route = await loadRoute();
+      const Component = route.__config.component as ComponentType;
+      render(<Component />);
+
+      expect(screen.getByRole("heading", { name: /^Demo Plugin$/ })).toBeTruthy();
+      expect(screen.getByText(/Compatibility details are temporarily unavailable/)).toBeTruthy();
+      expect(screen.queryByText("Something went wrong")).toBeNull();
+      expect(Boolean(screen.queryByRole("link", { name: "New version" }))).toBe(canManage);
+      expect(useQueriesMock).toHaveBeenCalledWith({
+        validationSummary: {
+          query: expect.anything(),
+          args: { name: "demo-plugin" },
+        },
+      });
+      expect(
+        useQueriesMock.mock.results.some(
+          (result) => result.type === "return" && result.value.validationSummary === error,
+        ),
+      ).toBe(true);
+    },
+  );
 
   it("hides plugin settings when the viewer cannot manage the plugin", async () => {
     useAuthStatusMock.mockReturnValue({
