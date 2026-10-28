@@ -52,7 +52,7 @@ async function fixture() {
 }
 
 it.each(["pending", "blocked"] as const)(
-  "withdraws %s latest tags after restore and a different published latest",
+  "withdraws %s candidates without a malicious verdict after restore and replacement",
   async (publicationStatus) => {
     const f = await fixture();
     const staged = await f.read();
@@ -65,6 +65,10 @@ it.each(["pending", "blocked"] as const)(
 
     await f.t.mutation(internal.packages.softDeletePackageInternal, { userId: f.actor, name });
     await f.t.mutation(internal.packages.restorePackageInternal, { userId: f.actor, name });
+    const restored = await f.read();
+    expect(restored.pkg?.latestReleaseId).toBeUndefined();
+    expect(restored.pkg?.latestVersionSummary).toBeUndefined();
+    expect(restored.pkg?.tags).toEqual({});
     const latest = await f.insert("1.2.8", "published");
     if (publicationStatus === "blocked") {
       await f.t.run(async (ctx) => {
@@ -168,6 +172,23 @@ it.each(["published", undefined] as const)(
     expect(await f.read()).toEqual(before);
   },
 );
+
+it("still refuses a blocked candidate with a malicious scan verdict", async () => {
+  const f = await fixture();
+  await f.insert("1.2.8", "published");
+  await f.t.run((ctx) =>
+    ctx.db.patch(f.older.releaseId, {
+      publicationStatus: "blocked",
+      verification: { tier: "source-linked", scope: "artifact-only", scanStatus: "malicious" },
+      llmAnalysis: { status: "malicious", verdict: "malicious", checkedAt: 1 },
+    }),
+  );
+  const before = await f.read();
+  await expect(
+    f.owner.mutation(api.packages.deleteOwnedRelease, { name, version: "1.2.5" }),
+  ).rejects.toThrow("This package release is already unavailable and cannot be deleted.");
+  expect(await f.read()).toEqual(before);
+});
 
 it("does not let another user withdraw an unpublished release", async () => {
   const f = await fixture();
