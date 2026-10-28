@@ -39,7 +39,7 @@ export const OPENCLAW_TEMPLATE_PROFILE_POLICY_V1 = {
   contractVersion: 1,
   source: {
     repository: "openclaw/openclaw",
-    commit: "66d424e61a1da81d8b6e275a0e2e1b2aa78bc496",
+    commit: "4177539c87a028954a85686d751cabe994b53e5e",
     path: "src/templates/schema.ts",
   },
   profiles: ["minimal", "coding", "messaging", "full"],

@@ -8,28 +8,18 @@ import {
 
 describe("stable physical Template storage boundary", () => {
   it("keeps the deployed package/digest and feed schema keys instead of requiring a production backfill", () => {
-    const exported: {
-      tables: Array<{ tableName: string; documentType: { value: Record<string, unknown> } }>;
-    } = JSON.parse(schema.export());
-    const fields = (name: string) =>
-      exported.tables.find((table) => table.tableName === name)!.documentType.value;
-    const family = {
-      fieldType: {
-        type: "union",
-        value: ["skill", "code-plugin", "bundle-plugin", "claw"].map((value) => ({
-          type: "literal",
-          value,
-        })),
-      },
-      optional: false,
-    };
-    for (const table of [
+    const fields = (name: "packages" | "packageReleases" | "catalogFeedPublications") =>
+      schema.tables[name].validator.fields;
+    for (const name of [
       "packages",
       "packageSearchDigest",
       "packageTopicSearchDigest",
       "packagePluginCategorySearchDigest",
-    ])
-      expect(fields(table).family).toEqual(family);
+    ] as const) {
+      expect(
+        schema.tables[name].validator.fields.family.members.map((member) => member.value),
+      ).toEqual(["skill", "code-plugin", "bundle-plugin", "claw"]);
+    }
     expect(fields("packages")).toHaveProperty("clawProfilePolicyVersion");
     expect(fields("packages")).not.toHaveProperty("templateProfilePolicyVersion");
     expect(fields("packageReleases")).toHaveProperty("clawManifestSummary");
