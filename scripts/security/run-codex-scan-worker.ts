@@ -226,6 +226,8 @@ type ProcessJobResult = {
 const DEFAULT_BATCH_LIMIT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CLAWSCAN_TIMEOUT_MS = 20 * 60 * 1000;
+// Share Endor's preparation envelope, not one ClawScan budget across every root.
+const MAX_BUNDLED_SKILLSPECTOR_TIMEOUT_MS = 20 * 60 * 1000;
 const REQUIRED_CLAWHUB_SCANNERS = ["clawscan-static", "skillspector", "aig"];
 const REQUIRED_CLAWHUB_PACKAGE_SCANNERS = ["clawscan-static", "skillspector"];
 const CHILD_RUNTIME_ENV_KEYS = [
@@ -1682,7 +1684,10 @@ async function runBundledSkillSpector(
   onDiagnostic: (diagnostic: Partial<ClawScanCommandDiagnostic>) => void,
 ) {
   const analyses: SkillSpectorAnalysis[] = [];
-  const deadlineMs = Date.now() + clawScanTimeoutMs();
+  const rootTimeoutMs = clawScanTimeoutMs();
+  // Keep roots sequential to avoid multiplying SkillSpector's own API fan-out.
+  // The total ceiling preserves room for the judge within the hosted job/lease.
+  const deadlineMs = Date.now() + MAX_BUNDLED_SKILLSPECTOR_TIMEOUT_MS;
   for (const [index, scanInput] of scanInputs.entries()) {
     const remainingMs = deadlineMs - Date.now();
     if (remainingMs <= 0) {
@@ -1698,7 +1703,7 @@ async function runBundledSkillSpector(
         // The --output JSON report is the evidence; drain noisy raw diagnostics
         // just as the ClawScan adapter and direct diagnostic probe do.
         discardStderr: true,
-        timeoutMs: remainingMs,
+        timeoutMs: Math.min(rootTimeoutMs, remainingMs),
         onTermination: (next) => {
           termination = next;
         },

@@ -51,7 +51,15 @@ supports paced batches and preserves active jobs.
 - Bundled SkillSpector uses its `--output` JSON file as evidence. Drain its raw
   stderr without retaining it or applying a byte cap, matching the ClawScan
   adapter and diagnostic probe: verbose scanner logs must not abort an otherwise
-  valid report. Keep the scan deadline, exit/findings validation, stdout cap, and
+  valid report. Give each root its own `CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS`
+  budget (15 minutes in the hosted workflow), subject to a fixed 20-minute total
+  preparation ceiling. Start each subprocess with the smaller of its root budget
+  and the remaining total budget; do not start another root after the ceiling.
+  Keep roots sequential rather than multiplying the scanner's own API fan-out.
+  This lets later roots use the preparation envelope already reserved for Endor
+  without allowing root count to extend the job indefinitely. A root or total
+  timeout still fails the scan; never hand partial results to the judge. Keep
+  exit/findings validation, stdout cap, and
   structured termination diagnostics; other worker commands keep their limits.
 
 The immutable uploaded artifact remains the source of truth. Endor's disposable
@@ -83,10 +91,16 @@ the following worker configuration is available:
 The worker authenticates to GHCR with its read-only package token, pulls the
 pinned image, and removes that login before claiming work.
 The hosted job has a 60-minute timeout. Its 12-minute claim window plus the
-longer of Endor's 20-minute and SkillSpector's 15-minute preparation deadlines,
+longer of Endor's and bundled SkillSpector's 20-minute preparation ceilings,
 then ClawScan's 15-minute deadline, can reach 47 minutes before setup and
 cleanup. The 60-minute job lease still exceeds an individual scan's 35-minute
-scanner and judge budget.
+scanner and judge budget. The claim window stops new claims, not in-flight scans;
+leases start at claim time, are capped at 60 minutes by the backend, and are not
+renewed by the worker. Do not replace the total preparation ceiling with
+`rootCount * rootTimeout`: three 15-minute roots plus the judge would consume the
+entire lease and exceed the hosted timeout after the claim window and setup.
+These bounds describe the hosted defaults; timeout/claim-window overrides must
+retain setup, artifact materialization, submission and cleanup headroom.
 The worker writes a trusted ClawHub profile and prompt outside the submitted
 artifact. Endor credentials are available only to the worker step and dedicated
 Endor subprocess; the ClawScan judge and other scanners do not inherit them.

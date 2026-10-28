@@ -1,4 +1,5 @@
 /* @vitest-environment node */
+import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,7 @@ import { type ClaimedJob, runClawScan } from "./run-codex-scan-worker";
 const workspaces: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   await Promise.all(workspaces.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
@@ -17,12 +19,14 @@ async function command(path: string, body: string) {
   await chmod(path, 0o755);
 }
 
-async function fixture(scannerBody: string) {
-  const workspace = await mkdtemp(join(tmpdir(), "clawhub-bundled-stderr-"));
+async function fixture(scannerBody: string, roots = ["skills/example"]) {
+  const workspace = await mkdtemp(join(tmpdir(), "clawhub-bundled-skillspector-"));
   workspaces.push(workspace);
-  await mkdir(join(workspace, "artifact/skills/example"), { recursive: true });
+  for (const root of roots) {
+    await mkdir(join(workspace, "artifact", root), { recursive: true });
+    await writeFile(join(workspace, "artifact", root, "SKILL.md"), "# Example");
+  }
   await writeFile(join(workspace, "artifact/openclaw.plugin.json"), '{"id":"example"}');
-  await writeFile(join(workspace, "artifact/skills/example/SKILL.md"), "# Example");
   await command(join(workspace, "skillspector"), scannerBody);
   // Stop at the real judge handoff: this fixture copies the supplied aggregate,
   // then deliberately fails rather than simulating a successful security judge.
@@ -53,7 +57,9 @@ exit 23`,
     },
     target: {
       package: { family: "code-plugin" },
-      release: { pluginManifestSummary: { bundledSkills: [{ rootPath: "skills/example" }] } },
+      release: {
+        pluginManifestSummary: { bundledSkills: roots.map((rootPath) => ({ rootPath })) },
+      },
     },
   };
   return { workspace, handoff, run: () => runClawScan(job, workspace, vi.fn()) };
@@ -109,3 +115,52 @@ exec sleep 30`);
   );
   await expect(readFile(handoff)).rejects.toMatchObject({ code: "ENOENT" });
 });
+
+it("gives successive bundled roots their own timeout within the preparation budget", async () => {
+  const roots = ["skills/first", "skills/second", "skills/third"];
+  const { run, handoff } = await fixture(
+    `sleep 0.7
+${writeReport(findings)}`,
+    roots,
+  );
+  vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "1500");
+  // Three real sequential subprocesses need >= 2.1s together, but each fits
+  // its 1.5s budget. The old shared 1.5s deadline kills the third root.
+  await expect(run()).rejects.toThrow("exited 23");
+  expect(JSON.parse(await readFile(handoff, "utf8"))).toMatchObject({
+    applicable: true,
+    status: "suspicious",
+    issue_count: 3,
+    filtered_findings: roots.map((root) => ({
+      file: `${root}/SKILL.md`,
+      explanation: "Review this finding",
+    })),
+  });
+});
+
+it.each([
+  { remainingMs: -1, error: "bundled-skill scan deadline exceeded" },
+  { remainingMs: 300, error: "skillspector timed out" },
+])(
+  "enforces the total preparation ceiling with $remainingMs ms left",
+  async ({ remainingMs, error }) => {
+    const { run, workspace, handoff } = await fixture(
+      `if [[ "$2" == *second ]]; then sleep 1; fi
+${writeReport(findings)}`,
+      ["skills/first", "skills/second"],
+    );
+    const firstReport = join(workspace, "skillspector-report-0.json");
+    const now = Date.now.bind(Date);
+    // Advance only the budget clock after the first real subprocess writes its
+    // report. Timers and the second subprocess remain real; no 20-minute sleep.
+    vi.spyOn(Date, "now").mockImplementation(
+      () => now() + (existsSync(firstReport) ? 20 * 60_000 - remainingMs : 0),
+    );
+    await expect(run()).rejects.toThrow(error);
+    expect(JSON.parse(await readFile(firstReport, "utf8"))).toEqual(findings);
+    await expect(readFile(join(workspace, "skillspector-report-1.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(readFile(handoff)).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
