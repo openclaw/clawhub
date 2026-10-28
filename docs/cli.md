@@ -143,6 +143,14 @@ See [CLI login](./auth.md#cli-login) for the approval steps and expiry guidance.
 - `--file <path>`: fetch raw file bytes (10MB limit).
 - `--json`: machine-readable output; `--file` includes exact bytes as base64 and UTF-8 text when available.
 
+While logged in as the owner, `clawhub inspect @owner/slug --version 2.0.0`
+also reports a retained version's publication status when the public version is
+unavailable. It distinguishes failed checks from missing evidence and identifies
+an older public release separately. Output includes stored-report and support
+guidance; it does not retry checks or release the upload. JSON places the status
+in `publication` and recovery guidance in `nextSteps`. Held content is not returned
+by `--file` or `--files`; these requests exit unsuccessfully after showing status.
+
 ### `install @owner/slug`
 
 - Resolves latest version for the named owner and skill.

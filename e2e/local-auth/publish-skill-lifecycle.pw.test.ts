@@ -1,5 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, type APIRequestContext, type Page, test } from "@playwright/test";
 import convexBrowser from "convex/browser";
 import { api } from "../../convex/_generated/api";
@@ -599,6 +602,152 @@ test.describe("owner publication progress after a clean public release", () => {
       await expect(page.getByText(`Publication checks ${outcome}`, { exact: true })).toBeVisible();
       await expect(page.getByRole("status")).toContainText("current public version, 1.0.0");
     });
+  }
+});
+
+test("owner sees failed publication status over HTTP and the built CLI", async ({
+  request,
+}, testInfo) => {
+  const built = spawnSync("bun", ["run", "--cwd", "packages/clawhub", "build"], {
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  expect(built.status, built.stderr).toBe(0);
+  const fixture = runDevSeed<{ user: { handle: string; token: string } }>(
+    "devSeed:seedCliRoleHelpFixtures",
+    {},
+  );
+  const root = await mkdtemp(join(tmpdir(), "clawhub-owner-status-"));
+  const registry = convexSiteUrl();
+  const slug = "pw-owner-cli-status";
+  const version = "1.0.0";
+  const ownerHandle = fixture.user.handle;
+  const configPath = join(root, "config.json");
+  const parseJson = (value: string): unknown => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return { error: value.trim() };
+    }
+  };
+  const runCli = (args: string[]) =>
+    spawnSync(
+      process.execPath,
+      [
+        "packages/clawhub/bin/clawdhub.js",
+        "--site",
+        registry,
+        "--registry",
+        registry,
+        "--workdir",
+        root,
+        ...args,
+      ],
+      {
+        encoding: "utf8",
+        timeout: 120_000,
+        env: {
+          ...process.env,
+          CLAWHUB_CONFIG_PATH: configPath,
+          CLAWHUB_DISABLE_TELEMETRY: "1",
+        },
+      },
+    );
+  try {
+    await writeFile(configPath, JSON.stringify({ registry, token: fixture.user.token }), {
+      mode: 0o600,
+    });
+    const skillDir = join(root, slug);
+    await mkdir(skillDir);
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      skillMd({
+        slug,
+        displayName: "Owner CLI Status",
+        versionLabel: "retained operational failure",
+      }),
+    );
+    const publish = runCli([
+      "publish",
+      skillDir,
+      "--slug",
+      slug,
+      "--name",
+      "Owner CLI Status",
+      "--version",
+      version,
+      "--changelog",
+      "Verify exact owner diagnostics for a retained failed upload.",
+    ]);
+    expect(publish.status, publish.stderr).toBe(0);
+    await completeMockPrePublicationChecks({ kind: "skill", slug, version, clawscan: "failed" });
+
+    const path = `${registry}/api/v1/skills/${slug}/versions/${version}/publication?ownerHandle=${ownerHandle}`;
+    const ownerStatus = await request.get(path, {
+      headers: { Authorization: `Bearer ${fixture.user.token}` },
+    });
+    const statusBody = parseJson(await ownerStatus.text());
+    const anonymous = await request.get(path);
+    const publicVersion = await request.get(path.replace("/publication?", "?"));
+    const publicDownload = await request.get(
+      `${registry}/api/v1/download?slug=${slug}&version=${version}&ownerHandle=${ownerHandle}`,
+    );
+
+    const inspectArgs = ["inspect", `@${ownerHandle}/${slug}`, "--version", version];
+    const json = runCli([...inspectArgs, "--json"]);
+    const cliBody = parseJson(json.stdout);
+    const text = runCli(inspectArgs);
+    const file = runCli([...inspectArgs, "--file", "SKILL.md", "--json"]);
+    await writeFile(
+      testInfo.outputPath("owner-publication-cli-proof.json"),
+      JSON.stringify(
+        {
+          httpStatus: ownerStatus.status(),
+          response: statusBody,
+          anonymousStatus: anonymous.status(),
+          publicVersionStatus: publicVersion.status(),
+          publicDownloadStatus: publicDownload.status(),
+          cliExit: json.status,
+          cli: cliBody,
+          cliStderr: json.stderr,
+          fileExit: file.status,
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFile(
+      testInfo.outputPath("owner-publication-cli-proof.txt"),
+      text.stdout || text.stderr,
+    );
+
+    expect(ownerStatus.status()).toBe(200);
+    expect(statusBody).toMatchObject({
+      publication: { version, stage: "checks_failed", retrying: true },
+    });
+    expect(ownerStatus.headers()["cache-control"]).toBe("private, no-store");
+    expect(anonymous.status()).toBe(401);
+    expect(publicVersion.status()).toBe(404);
+    expect(publicDownload.status()).toBe(404);
+    expect(json.status, json.stderr).toBe(0);
+    expect(cliBody).toMatchObject({
+      publication: { version, stage: "checks_failed", retrying: true },
+      version: null,
+      file: null,
+    });
+    expect(text.status, text.stderr).toBe(0);
+    expect(text.stdout).toContain("Publication checks failed");
+    expect(text.stdout).toContain("not public or installable");
+    expect(text.stdout).toContain("you do not need a new version");
+    expect(text.stdout).toContain("clawhub scan download");
+
+    expect(file.status).toBe(1);
+    expect(JSON.parse(file.stdout)).toMatchObject({
+      publication: { stage: "checks_failed" },
+      file: null,
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

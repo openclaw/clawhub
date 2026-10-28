@@ -1,14 +1,16 @@
-import { apiRequest, fetchBinary, fetchText, registryUrl } from "../../http.js";
+import { apiRequest, fetchBinary, fetchText, getHttpErrorStatus, registryUrl } from "../../http.js";
 import {
   ApiRoutes,
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_SUMMARY,
   ApiV1SkillModerationResponseSchema,
+  ApiV1SkillPublicationResponseSchema,
   ApiV1SkillResponseSchema,
   ApiV1SkillVerifyResponseSchema,
   ApiV1SkillVersionListResponseSchema,
   ApiV1SkillVersionResponseSchema,
   decodeUtf8Text,
+  type ApiV1SkillPublicationResponse,
 } from "../../schema/index.js";
 import { getOptionalAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
@@ -80,6 +82,19 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
     try {
       skillResult = await fetchSkillDetail(registry, trimmed, requested.ownerHandle, token);
     } catch (error) {
+      const publication = await fetchPublicationAfterReadFailure(
+        registry,
+        trimmed,
+        requested.ownerHandle,
+        options.version,
+        token,
+        error,
+      );
+      if (publication) {
+        spinner.stop();
+        printOwnerPublication(publication, requested.ownerHandle, options);
+        return;
+      }
       moderationDiagnostics = await fetchModerationDiagnostics(
         registry,
         trimmed,
@@ -134,21 +149,36 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       const targetVersion = requestedVersion ?? latestVersion;
       if (!targetVersion) fail("Could not resolve latest version");
       spinner.text = `Fetching ${trimmed}@${targetVersion}`;
-      versionResult = await apiRequest(
-        registry,
-        {
-          method: "GET",
-          url: ownerScopedUrl(
-            registry,
-            `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(
-              targetVersion,
-            )}`,
-            requested.ownerHandle,
-          ),
+      try {
+        versionResult = await apiRequest(
+          registry,
+          {
+            method: "GET",
+            url: ownerScopedUrl(
+              registry,
+              `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(
+                targetVersion,
+              )}`,
+              requested.ownerHandle,
+            ),
+            token,
+          },
+          ApiV1SkillVersionResponseSchema,
+        );
+      } catch (error) {
+        const publication = await fetchPublicationAfterReadFailure(
+          registry,
+          trimmed,
+          requested.ownerHandle,
+          options.version,
           token,
-        },
-        ApiV1SkillVersionResponseSchema,
-      );
+          error,
+        );
+        if (!publication) throw error;
+        spinner.stop();
+        printOwnerPublication(publication, requested.ownerHandle, options, skillResult);
+        return;
+      }
     }
 
     let versionsList: { items?: unknown[]; nextCursor?: string | null } | null = null;
@@ -400,6 +430,113 @@ function ownerScopedUrl(registry: string, path: string, ownerHandle: string | un
   const url = registryUrl(path, registry);
   if (ownerHandle) url.searchParams.set("ownerHandle", ownerHandle);
   return url.toString();
+}
+
+async function fetchPublicationAfterReadFailure(
+  registry: string,
+  slug: string,
+  ownerHandle: string | undefined,
+  version: string | undefined,
+  token: string | undefined,
+  error: unknown,
+): Promise<ApiV1SkillPublicationResponse | null> {
+  if (!token || !version || ![403, 404, 423].includes(getHttpErrorStatus(error) ?? 0)) return null;
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "GET",
+        url: ownerScopedUrl(
+          registry,
+          `${ApiRoutes.skills}/${encodeURIComponent(slug)}/versions/${encodeURIComponent(version)}/publication`,
+          ownerHandle,
+        ),
+        token,
+      },
+      ApiV1SkillPublicationResponseSchema,
+    );
+    return result.publication.stage === "published" ? null : result;
+  } catch (statusError) {
+    if ([401, 403, 404].includes(getHttpErrorStatus(statusError) ?? 0)) return null;
+    throw statusError;
+  }
+}
+
+function printOwnerPublication(
+  result: ApiV1SkillPublicationResponse,
+  ownerHandle: string | undefined,
+  options: InspectOptions,
+  publicDetail?: Awaited<ReturnType<typeof fetchSkillDetail>>,
+) {
+  const publication = result.publication;
+  const skillRef = ownerHandle ? `@${ownerHandle}/${result.skill.slug}` : result.skill.slug;
+  const nextSteps = {
+    scanReport: `clawhub scan download ${skillRef} --version ${publication.version}`,
+    supportUrl: "https://github.com/openclaw/clawhub/issues/new",
+  };
+  if (options.file || options.files) process.exitCode = 1;
+  if (options.json) {
+    console.log(
+      JSON.stringify(
+        {
+          skill: publicDetail?.skill ?? result.skill,
+          latestVersion: publicDetail?.latestVersion ?? null,
+          owner: publicDetail?.owner ?? null,
+          moderation: publicDetail?.moderation ?? null,
+          version: null,
+          versions: null,
+          file: null,
+          publication,
+          nextSteps,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  const labels: Record<ApiV1SkillPublicationResponse["publication"]["stage"], string> = {
+    pending_checks: "Pending publication",
+    checks_failed: "Publication checks failed",
+    checks_incomplete: "Publication checks incomplete",
+    ready_to_finalize: "Publication queued",
+    finalizing: "Publishing version",
+    failed: "Publication failed",
+    blocked: "Publication blocked",
+    expired: "Publication expired",
+    unavailable: "Publication status unavailable",
+    published: "Published",
+  };
+  console.log(`${result.skill.displayName} (${skillRef}) — ${publication.version}`);
+  console.log(labels[publication.stage]);
+  console.log(
+    "This version is not public or installable. The submitted version is still recorded.",
+  );
+  if (publication.stage === "checks_failed") {
+    console.log("One or more required security checks could not complete.");
+  } else if (publication.stage === "checks_incomplete") {
+    console.log("Required supporting security evidence is still missing.");
+  } else if (publication.stage === "blocked") {
+    console.log(
+      "Security checks blocked this version. Review its stored findings before making changes.",
+    );
+  }
+  if (publicDetail?.latestVersion?.version) {
+    console.log(
+      `Current public version: ${publicDetail.latestVersion.version}. Its security result describes that release.`,
+    );
+  }
+  if (publication.checks) {
+    console.log(`Secret check: ${publication.checks.trufflehog}`);
+    console.log(`Security check: ${publication.checks.clawscan}`);
+  }
+  if (publication.retrying) {
+    console.log("This upload is waiting for another check attempt; you do not need a new version.");
+  }
+  console.log(`Retrieve any stored scan results: ${nextSteps.scanReport}`);
+  console.log(
+    `For recovery or an appeal, contact support with this version: ${nextSteps.supportUrl}`,
+  );
 }
 
 function fetchSkillDetail(
