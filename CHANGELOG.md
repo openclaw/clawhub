@@ -30,7 +30,7 @@
 
 ### Compatibility
 
-- The CLI includes Plugin Inspector 0.4.0 and requires Node.js 22.13+ on the 22.x line or Node.js 24+.
+- The CLI includes Plugin Inspector 0.4.3 and requires Node.js 22.13+ on the 22.x line or Node.js 24+.
 
 ## 0.24.0 - 2026-09-30
 
