@@ -314,6 +314,13 @@ snapshots cannot change Claw or skill projection boundaries. A future guarded
 parent-family repair must snapshot historical releases before changing the
 parent, preserving genuine bundle history and all original artifacts.
 
+The incident-specific legacy native repair selects only the five verified
+publisher/package/runtime identities. Each bounded package transaction validates
+the original native manifest bytes, active publisher and administrator, absence
+of live publication work, complete historical inventory and a current dry-run
+revision. It snapshots existing releases before changing the parent and records
+an audit entry; ordinary family-change and publication security guards remain.
+
 Already-admitted scan jobs are distinct from new publication admission. Retained
 legacy bundles may contain several supported harness manifests or only a native
 envelope. Workers preserve deterministic Codex/Claude/Cursor precedence for those

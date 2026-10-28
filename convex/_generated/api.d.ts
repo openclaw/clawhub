@@ -118,6 +118,7 @@ import type * as lib_httpRouteRateLimit from "../lib/httpRouteRateLimit.js";
 import type * as lib_httpUtils from "../lib/httpUtils.js";
 import type * as lib_installResolver from "../lib/installResolver.js";
 import type * as lib_leaderboards from "../lib/leaderboards.js";
+import type * as lib_legacyNativePluginFamilyRepair from "../lib/legacyNativePluginFamilyRepair.js";
 import type * as lib_managedMcpBundle from "../lib/managedMcpBundle.js";
 import type * as lib_mcpPublicInspection from "../lib/mcpPublicInspection.js";
 import type * as lib_moderation from "../lib/moderation.js";
@@ -401,6 +402,7 @@ declare const fullApi: ApiFromModules<{
   "lib/httpUtils": typeof lib_httpUtils;
   "lib/installResolver": typeof lib_installResolver;
   "lib/leaderboards": typeof lib_leaderboards;
+  "lib/legacyNativePluginFamilyRepair": typeof lib_legacyNativePluginFamilyRepair;
   "lib/managedMcpBundle": typeof lib_managedMcpBundle;
   "lib/mcpPublicInspection": typeof lib_mcpPublicInspection;
   "lib/moderation": typeof lib_moderation;
