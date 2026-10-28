@@ -2215,6 +2215,146 @@ code {
   line-height: 1.55;
 }
 
+.endor-audit-header {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.endor-audit-checked,
+.endor-audit-note {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: var(--font-size-fs-sm);
+  line-height: 1.5;
+}
+
+.endor-audit-body {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.endor-audit-result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.endor-audit-result svg {
+  flex-shrink: 0;
+  color: var(--ink-soft);
+}
+
+.endor-audit-result p {
+  margin: 0;
+}
+
+.endor-audit-result-clean {
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.endor-audit-result-clean svg {
+  margin-top: var(--space-1);
+  color: var(--status-success-fg);
+}
+
+.endor-audit-result-clean .endor-audit-note {
+  margin-top: var(--space-1);
+  font-weight: 400;
+}
+
+.endor-audit-findings {
+  display: grid;
+  gap: var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.endor-audit-finding {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.endor-audit-finding:not(:last-child) {
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--line);
+}
+
+.endor-audit-severity {
+  justify-self: start;
+}
+
+.endor-audit-finding-content {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.endor-audit-finding-content h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--font-size-fs-lg);
+  font-weight: 650;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.endor-audit-finding p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: var(--font-size-fs-sm);
+  line-height: 1.6;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.endor-audit-finding .endor-audit-finding-meta {
+  color: var(--ink);
+  font-size: var(--font-size-fs-base);
+}
+
+.endor-audit-finding-meta code {
+  font-family: inherit;
+  font-weight: 500;
+}
+
+.endor-audit-finding-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  color: var(--ink-soft);
+  font-size: var(--font-size-fs-sm);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.endor-audit-finding-context code {
+  font-family: inherit;
+}
+
+.endor-audit-finding-context > a {
+  white-space: nowrap;
+}
+
+.endor-audit-finding a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+  .endor-audit-finding {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+}
+
 .static-analysis-findings {
   display: grid;
   gap: 32px;
