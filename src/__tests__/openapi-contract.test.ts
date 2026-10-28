@@ -25,6 +25,31 @@ function responseContentForPath(paths: unknown, path: string, status: string) {
 }
 
 describe("OpenAPI contract", () => {
+  it("documents category rules for both plugin families and Templates without a misleading single-family enum", async () => {
+    const specPath = new URL("../../public/api/v1/openapi.json", import.meta.url);
+    const spec: unknown = JSON.parse(await readFile(specPath, "utf8"));
+    const paths = property(spec, "paths");
+    for (const path of ["/api/v1/packages", "/api/v1/packages/search"]) {
+      const parameters = property(property(property(paths, path), "get"), "parameters");
+      const category = Array.isArray(parameters)
+        ? parameters.find((parameter) => property(parameter, "name") === "category")
+        : undefined;
+      expect(property(category, "schema")).toEqual({ type: "string" });
+      const description = property(category, "description");
+      for (const rule of [
+        "family=template",
+        "family=code-plugin",
+        "family=bundle-plugin",
+        "family=skill",
+        "omitted family",
+        "media",
+        "research",
+      ])
+        expect(description).toContain(rule);
+      expect(description).not.toContain("requires family=template");
+    }
+  });
+
   it("documents Template families, bounded summaries, and the separate Official feed", async () => {
     const specPath = new URL("../../public/api/v1/openapi.json", import.meta.url);
     const spec: unknown = JSON.parse(await readFile(specPath, "utf8"));

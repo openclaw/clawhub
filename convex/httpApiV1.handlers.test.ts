@@ -12240,25 +12240,60 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("packages list supports category when scoped to a plugin family", async () => {
-    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+  it.each([
+    { family: "code-plugin", category: "tools" },
+    { family: "code-plugin", category: "media" },
+    { family: "bundle-plugin", category: "media" },
+    { family: "template", category: "research" },
+    { family: "template", category: "other" },
+  ])(
+    "packages list supports category $category with family $family",
+    async ({ family, category }) => {
+      const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+      const runMutation = vi.fn().mockResolvedValue(okRate());
 
-    const response = await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/packages?family=code-plugin&category=tools&limit=7"),
-    );
+      const response = await __handlers.listPackagesV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(
+          `https://example.com/api/v1/packages?family=${family}&category=${category}&limit=7`,
+        ),
+      );
 
-    expect(response.status).toBe(200);
-    expect(runQuery).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        family: "code-plugin",
-        category: "tools",
-        paginationOpts: { cursor: null, numItems: 7 },
-      }),
-    );
-  });
+      expect(response.status).toBe(200);
+      expect(runQuery).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          family,
+          category,
+          paginationOpts: { cursor: null, numItems: 7 },
+        }),
+      );
+    },
+  );
+
+  it.each([
+    { family: "template", category: "media" },
+    { family: "code-plugin", category: "personal" },
+    { family: "skill", category: "media" },
+    { family: "", category: "media" },
+  ])(
+    "keeps conditional category rejection for family=$family and category=$category",
+    async ({ family, category }) => {
+      for (const path of ["/api/v1/packages", "/api/v1/packages/search?q=api"]) {
+        const runQuery = vi.fn();
+        const runMutation = vi.fn().mockResolvedValue(okRate());
+        const url = new URL(`https://example.com${path}`);
+        if (family) url.searchParams.set("family", family);
+        url.searchParams.set("category", category);
+        const handler = path.includes("/search")
+          ? __handlers.packagesGetRouterV1Handler
+          : __handlers.listPackagesV1Handler;
+        const response = await handler(makeCtx({ runQuery, runMutation }), new Request(url));
+        expect(response.status).toBe(400);
+        expect(runQuery).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it("packages list downloads sort merges package and skill rows by downloads", async () => {
     const pluginPackage = makeCatalogItem("plugin-downloaded", {
@@ -13666,27 +13701,36 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("packages search supports category when scoped to a plugin family", async () => {
-    const runQuery = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+  it.each([
+    { family: "code-plugin", category: "tools" },
+    { family: "code-plugin", category: "media" },
+    { family: "bundle-plugin", category: "media" },
+    { family: "template", category: "research" },
+    { family: "template", category: "other" },
+  ])(
+    "packages search supports category $category with family $family",
+    async ({ family, category }) => {
+      const runQuery = vi.fn().mockResolvedValue([]);
+      const runMutation = vi.fn().mockResolvedValue(okRate());
 
-    const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request(
-        "https://example.com/api/v1/packages/search?q=api&family=code-plugin&category=tools",
-      ),
-    );
+      const response = await __handlers.packagesGetRouterV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(
+          `https://example.com/api/v1/packages/search?q=api&family=${family}&category=${category}`,
+        ),
+      );
 
-    expect(response.status).toBe(200);
-    expect(runQuery).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        query: "api",
-        family: "code-plugin",
-        category: "tools",
-      }),
-    );
-  });
+      expect(response.status).toBe(200);
+      expect(runQuery).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          query: "api",
+          family,
+          category,
+        }),
+      );
+    },
+  );
 
   it("plugins search defaults to plugin package families", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {

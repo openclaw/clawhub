@@ -5,7 +5,7 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import {
   AlertTriangle,
   Braces,
@@ -1093,10 +1093,25 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       ? { name: manageLookupName, candidateNames: manageCandidateNames }
       : "skip",
   );
-  const validationSummary = useQuery(
-    api.packages.getPackageInspectorValidationSummaryPublic,
-    detail.package ? { name: detail.package.name } : "skip",
-  ) as PluginInspectorValidationSummary | undefined;
+  // A peripheral inspection subscription must not erase the detail page or its
+  // independently authorized owner controls when that query times out.
+  const validationSummaryName = detail.package?.name;
+  const validationSummaryQueries = useMemo<RequestForQueries>(() => {
+    const queries: RequestForQueries = {};
+    if (validationSummaryName) {
+      queries.validationSummary = {
+        query: api.packages.getPackageInspectorValidationSummaryPublic,
+        args: { name: validationSummaryName },
+      };
+    }
+    return queries;
+  }, [validationSummaryName]);
+  const validationSummaryResult = useQueries(validationSummaryQueries).validationSummary as
+    | PluginInspectorValidationSummary
+    | Error
+    | undefined;
+  const validationSummaryUnavailable = validationSummaryResult instanceof Error;
+  const validationSummary = validationSummaryUnavailable ? undefined : validationSummaryResult;
   const activityTrendEndDay = getActivityTrendEndDay();
   const { trend: activityTrend, loading: activityTrendLoading } = useDeferredPackageActivityTrend(
     detail.package ? { name: detail.package.name, endDay: activityTrendEndDay } : null,
@@ -1349,18 +1364,24 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         skills={pluginManifestSummary.bundledSkills}
       />
     ) : null;
-  const incompatibilityAlert =
-    validationSummary &&
+  const incompatibilityAlert = validationSummaryUnavailable ? (
+    <Alert variant="warn" className="plugin-validation-alert">
+      <AlertTriangle size={16} aria-hidden="true" />
+      <AlertDescription>
+        Compatibility details are temporarily unavailable. Please try again later.
+      </AlertDescription>
+    </Alert>
+  ) : validationSummary &&
     validationSummary.errorCount > 0 &&
     validationSummary.incompatibleAfterOpenClawVersion ? (
-      <Alert variant="destructive" className="plugin-validation-alert">
-        <AlertTriangle size={16} aria-hidden="true" />
-        <AlertDescription>
-          This plugin is incompatible with OpenClaw versions greater than{" "}
-          {validationSummary.incompatibleAfterOpenClawVersion}.
-        </AlertDescription>
-      </Alert>
-    ) : null;
+    <Alert variant="destructive" className="plugin-validation-alert">
+      <AlertTriangle size={16} aria-hidden="true" />
+      <AlertDescription>
+        This plugin is incompatible with OpenClaw versions greater than{" "}
+        {validationSummary.incompatibleAfterOpenClawVersion}.
+      </AlertDescription>
+    </Alert>
+  ) : null;
   const validationErrors = (
     displayInspectorFindings?.filter((finding) => finding.findingKind === "error") ?? []
   ).sort(compareInspectorFindings);

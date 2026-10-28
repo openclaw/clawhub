@@ -2509,24 +2509,9 @@
             "name": "category",
             "in": "query",
             "required": false,
-            "description": "Template category filter; requires family=template. Use other for unclassified Templates.",
+            "description": "Category filter conditional on an explicit family. For family=template, accepted Template slugs are personal, health, travel, productivity, research, engineering, governance, operations, finance, sales, product, people, other. For family=code-plugin or family=bundle-plugin, accepted plugin slugs are channels, models, agent-runtimes, memory, context, voice, web, computer-use, media, security, integrations, developer-tools, infrastructure, documents-files, inbox-collaboration, productivity, scheduling, finance-payments, sales-marketing, data-analytics, agent-orchestration, research, other, tools, runtime, gateway. Existing plugin aliases are mcp-tooling, data, observability, automation, deployment, dev-tools. Not supported with family=skill or omitted family on these unified package endpoints. The selected family determines which category set is valid.",
             "schema": {
-              "type": "string",
-              "enum": [
-                "personal",
-                "health",
-                "travel",
-                "productivity",
-                "research",
-                "engineering",
-                "governance",
-                "operations",
-                "finance",
-                "sales",
-                "product",
-                "people",
-                "other"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -3252,24 +3237,9 @@
             "name": "category",
             "in": "query",
             "required": false,
-            "description": "Template category filter; requires family=template. Use other for unclassified Templates.",
+            "description": "Category filter conditional on an explicit family. For family=template, accepted Template slugs are personal, health, travel, productivity, research, engineering, governance, operations, finance, sales, product, people, other. For family=code-plugin or family=bundle-plugin, accepted plugin slugs are channels, models, agent-runtimes, memory, context, voice, web, computer-use, media, security, integrations, developer-tools, infrastructure, documents-files, inbox-collaboration, productivity, scheduling, finance-payments, sales-marketing, data-analytics, agent-orchestration, research, other, tools, runtime, gateway. Existing plugin aliases are mcp-tooling, data, observability, automation, deployment, dev-tools. Not supported with family=skill or omitted family on these unified package endpoints. The selected family determines which category set is valid.",
             "schema": {
-              "type": "string",
-              "enum": [
-                "personal",
-                "health",
-                "travel",
-                "productivity",
-                "research",
-                "engineering",
-                "governance",
-                "operations",
-                "finance",
-                "sales",
-                "product",
-                "people",
-                "other"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -4311,7 +4281,7 @@
     },
     "/api/v1/sdk-usage/plugin": {
       "get": {
-        "summary": "Read one plugin\u2019s current SDK inventory",
+        "summary": "Read one plugin’s current SDK inventory",
         "description": "Static SDK references in latest eligible public plugin releases. Counts are page-scoped; traverse coverage as well as usage before interpreting an empty result. Live pagination is not a frozen snapshot. No authentication required.",
         "parameters": [
           {

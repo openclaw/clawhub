@@ -1091,7 +1091,11 @@ describe("clawhub e2e", () => {
     expect(result.stdout).toMatch(/--dry-run/);
     expect(result.stdout).toMatch(/--json/);
     expect(result.stdout).toMatch(/--categories/);
-    expect(result.stdout).toMatch(/Deprecated for plugins/);
+    const help = result.stdout.replace(/\s+/g, " ");
+    expect(help).toContain(
+      "Template category overrides; deprecated and ignored for plugins (use openclaw.plugin.json)",
+    );
+    expect(help).not.toContain("plugins and Templates (ignored)");
   });
 
   it("skill verify help omits the redundant json flag", async () => {
