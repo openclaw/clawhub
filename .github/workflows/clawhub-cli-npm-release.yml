@@ -367,11 +367,12 @@ jobs:
           EOF
           )"
           NPM_DIST_JSON=""
-          for attempt in {1..12}; do
+          # npm may acknowledge a publish before its processing makes metadata public.
+          for attempt in {1..120}; do
             if NPM_DIST_JSON="$(npm view "clawhub@${PACKAGE_VERSION}" dist.tarball dist.integrity --json 2>/tmp/npm-view-error)" && [[ -n "$NPM_DIST_JSON" ]]; then
               break
             fi
-            if [[ "$attempt" == "12" ]]; then
+            if [[ "$attempt" == "120" ]]; then
               cat /tmp/npm-view-error >&2 || true
               exit 1
             fi
