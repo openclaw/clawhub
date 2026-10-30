@@ -10,7 +10,6 @@ import {
   toPublicPackageListItem,
   type PackageDigestLike,
   type PublicPackageListPage,
-  type PublicPackageListItem,
   type PackageListScanStatus,
 } from "./packageCatalogRead";
 import { getPluginDiscoveryPins, isEnglishPluginListing } from "./pluginDiscovery";
@@ -77,15 +76,17 @@ export async function listCuratedPluginCategoryPage(
   );
   const pins = getPluginDiscoveryPins(args.category);
   const pinNames = new Set(pins);
-  const page: PublicPackageListItem[] = [];
+  const page: PackageDigestLike[] = [];
   const membershipCache = new Map<string, Promise<boolean>>();
   const eligible = async (digest: PackageDigestLike) =>
     (digest.family === "code-plugin" || digest.family === "bundle-plugin") &&
     digestMatchesSearchFilters(digest, args) &&
     (!args.englishOnly || isEnglishPluginListing(digest)) &&
     (await canViewerReadPackage(ctx, digest, undefined, membershipCache));
-  const result = (isDone: boolean): PublicPackageListPage => ({
-    page,
+  // Finish ordered selection before loading independent publisher and stat data.
+  // Promise.all preserves that order while overlapping the bounded card reads.
+  const result = async (isDone: boolean): Promise<PublicPackageListPage> => ({
+    page: await Promise.all(page.map((digest) => toPublicPackageListItem(ctx, digest))),
     isDone,
     continueCursor: isDone ? "" : btoa(encodeURIComponent(JSON.stringify(state))),
   });
@@ -100,7 +101,7 @@ export async function listCuratedPluginCategoryPage(
       .query("packageSearchDigest")
       .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
       .unique();
-    if (digest && (await eligible(digest))) page.push(await toPublicPackageListItem(ctx, digest));
+    if (digest && (await eligible(digest))) page.push(digest);
   }
   if (page.length >= targetCount) return result(false);
 
@@ -142,8 +143,7 @@ export async function listCuratedPluginCategoryPage(
     for (const digest of rows) {
       remaining -= 1;
       state.name = digest.name;
-      if (!pinNames.has(digest.name) && (await eligible(digest)))
-        page.push(await toPublicPackageListItem(ctx, digest));
+      if (!pinNames.has(digest.name) && (await eligible(digest))) page.push(digest);
       if (page.length >= targetCount) return result(false);
     }
   }
