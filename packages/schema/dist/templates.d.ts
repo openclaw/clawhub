@@ -171,7 +171,7 @@ export declare const OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1: {
     readonly contractVersion: 1;
     readonly source: {
         readonly repository: "openclaw/openclaw";
-        readonly commit: "bad082feced849567953588d4b1bc7ffc3188839";
+        readonly commit: "522e31dbe8c5012914400d71664e9dc1343db0d2";
         readonly path: "src/infra/host-env-security-policy.json";
         readonly sha256: "6923ab681c0e701381ea5fccebe36b7c6d2bfeadd72cfa08b0d542640d5e9601";
     };
