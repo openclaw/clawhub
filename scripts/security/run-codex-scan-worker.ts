@@ -992,10 +992,15 @@ async function runCommand(
     onStderrChunk?: (chunk: Buffer) => void;
     onTermination?: (termination: WorkerCommandTermination) => void;
     cleanupProcessGroup?: boolean;
+    signal?: AbortSignal;
+    skillspectorMaxLlmConcurrency?: number;
   },
 ) {
   const env = codexEnv(options.cwd);
   for (const name of options.omitEnv ?? []) delete env[name];
+  if (options.skillspectorMaxLlmConcurrency !== undefined) {
+    env.SKILLSPECTOR_MAX_LLM_CONCURRENCY = String(options.skillspectorMaxLlmConcurrency);
+  }
   return await runWorkerCommand(command, args, {
     cwd: options.cwd,
     env,
@@ -1005,6 +1010,7 @@ async function runCommand(
     onStderrChunk: options.onStderrChunk,
     onTermination: options.onTermination,
     cleanupProcessGroup: options.cleanupProcessGroup,
+    signal: options.signal,
   });
 }
 
@@ -1688,22 +1694,33 @@ export async function runBundledSkillSpector(
   scanInputs: BundledSkillSpectorScanInput[],
   onDiagnostic: (diagnostic: Partial<ClawScanCommandDiagnostic>) => void,
 ) {
-  const analyses: SkillSpectorAnalysis[] = [];
+  const analyses: Array<SkillSpectorAnalysis | undefined> = new Array(scanInputs.length);
   const rootTimeoutMs = clawScanTimeoutMs();
-  // Keep roots sequential to avoid multiplying SkillSpector's own API fan-out.
-  // The total ceiling preserves room for the judge within the hosted job/lease.
+  // The pinned HTTP scanner allows ten model calls. Share that ceiling between
+  // two roots instead of multiplying it; retain serial execution for other providers.
+  const parallel =
+    scanInputs.length > 1 &&
+    securityScannerEnvironment(process.env).SKILLSPECTOR_PROVIDER === "openai";
+  const concurrency = parallel ? 2 : 1;
+  const controller = new AbortController();
+  const diagnostics = new Map<number, Partial<ClawScanCommandDiagnostic>>();
+  let completedRoots = 0;
+  let nextIndex = 0;
+  let firstFailure: { index: number; error: unknown } | undefined;
+  // Preserve the aggregate ceiling and leave room for the judge in the job/lease.
   const deadlineMs = Date.now() + MAX_BUNDLED_SKILLSPECTOR_TOTAL_MS;
-  for (const [index, scanInput] of scanInputs.entries()) {
+  const runRoot = async (index: number) => {
+    const scanInput = scanInputs[index]!;
     const remainingMs = deadlineMs - Date.now();
     const context: BundledSkillSpectorFailureContext = {
       rootIndex: index,
       rootCount: scanInputs.length,
-      completedRoots: analyses.length,
+      completedRoots,
       childBudgetMs: Math.max(0, Math.min(rootTimeoutMs, remainingMs)),
       remainingStageBudgetMs: Math.max(0, remainingMs),
     };
     if (remainingMs <= 0) {
-      onDiagnostic({
+      diagnostics.set(index, {
         bundledSkillSpector: { failed: true, timedOut: true, exitCode: null, context },
       });
       throw new Error("SkillSpector bundled-skill scan deadline exceeded");
@@ -1721,15 +1738,16 @@ export async function runBundledSkillSpector(
         // just as the ClawScan adapter and direct diagnostic probe do.
         discardStderr: true,
         timeoutMs: context.childBudgetMs,
+        cleanupProcessGroup: true,
+        signal: controller.signal,
+        skillspectorMaxLlmConcurrency: parallel ? 5 : undefined,
         onTermination: (next) => {
           termination = next;
         },
       });
-      analyses.push(
-        prefixSkillSpectorFindingPaths(
-          normalizeSkillSpectorAnalysis(await readFile(resultPath, "utf8"), 0),
-          scanInput.rootPath,
-        ),
+      return prefixSkillSpectorFindingPaths(
+        normalizeSkillSpectorAnalysis(await readFile(resultPath, "utf8"), 0),
+        scanInput.rootPath,
       );
     } catch (error) {
       let acceptedFindings = false;
@@ -1742,21 +1760,23 @@ export async function runBundledSkillSpector(
               scanInput.rootPath,
             );
             const validFindingsExit =
+              !controller.signal.aborted &&
+              error.failureKind === "exit" &&
+              termination?.processGroup === "absent" &&
               !error.timedOut &&
               error.exitCode === 1 &&
               (analysis.status === "suspicious" || analysis.status === "malicious") &&
               analysis.issueCount > 0 &&
               analysis.issues.length > 0;
             if (validFindingsExit) {
-              analyses.push(analysis);
               acceptedFindings = true;
-              continue;
+              return analysis;
             }
           }
         }
       } finally {
         if (!acceptedFindings) {
-          onDiagnostic({
+          diagnostics.set(index, {
             bundledSkillSpector: {
               failed: true,
               timedOut: error instanceof CommandFailure && error.timedOut,
@@ -1774,8 +1794,50 @@ export async function runBundledSkillSpector(
       }
       throw error;
     }
+  };
+  const worker = async () => {
+    while (!firstFailure) {
+      const index = nextIndex++;
+      if (index >= scanInputs.length) return;
+      try {
+        analyses[index] = await runRoot(index);
+        completedRoots += 1;
+      } catch (error) {
+        if (!firstFailure) {
+          firstFailure = { index, error };
+          controller.abort();
+        }
+        return;
+      }
+    }
+  };
+  // Join every worker after cancellation so no sibling can outlive the scan.
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  if (firstFailure) {
+    const diagnostic = diagnostics.get(firstFailure.index);
+    const context = diagnostic?.bundledSkillSpector?.context;
+    if (context) {
+      context.completedRoots = completedRoots;
+      context.remainingStageBudgetMs = Math.max(0, deadlineMs - Date.now());
+    }
+    onDiagnostic(
+      diagnostic ?? {
+        bundledSkillSpector: {
+          failed: true,
+          timedOut: firstFailure.error instanceof CommandFailure && firstFailure.error.timedOut,
+          exitCode:
+            firstFailure.error instanceof CommandFailure ? firstFailure.error.exitCode : null,
+        },
+      },
+    );
+    throw firstFailure.error;
   }
-  return aggregateSkillSpectorAnalyses(analyses);
+  if (completedRoots !== scanInputs.length) {
+    throw new Error("SkillSpector bundled-skill scans did not complete");
+  }
+  return aggregateSkillSpectorAnalyses(
+    analyses.filter((analysis): analysis is SkillSpectorAnalysis => analysis !== undefined),
+  );
 }
 
 async function prepareBundledSkillSpector(

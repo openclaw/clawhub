@@ -602,6 +602,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   summary. The plugin package root is never a fallback SkillSpector target;
   packages with no bundled roots provide ClawScan an explicit not-applicable
   result. This is not a prepublication-worker contract.
+- Bundled-skill execution may run at most two OpenAI roots concurrently, with
+  five process-wide model requests per root, preserving the pinned scanner's
+  existing total ceiling of ten. Other providers retain serial roots and their
+  existing defaults. Keep each child deadline and the 20-minute aggregate
+  deadline. Findings aggregate in canonical root order; every root must finish
+  before handing off to ClawScan. After a failure, stop admitting roots, cancel
+  in-flight siblings and join their confirmed process-group cleanup before
+  returning failure. Only normal exit-1 findings with confirmed process-group
+  absence can be accepted; cancellation, timeout, output-limit, observer and
+  cleanup failures cannot supply findings-exit results. Command cancellation
+  must reject already-cancelled work
+  without spawning and remove its listener after termination; arbitrary abort
+  reasons must not enter errors or diagnostics.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
 - VirusTotal is not displayed in the UI: audit pages, the audit directory, version

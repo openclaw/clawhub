@@ -1081,7 +1081,7 @@ JSON`,
           false,
         );
 
-        expect((await readFile(skillSpectorTargets, "utf8")).trim().split("\n")).toEqual([
+        expect((await readFile(skillSpectorTargets, "utf8")).trim().split("\n").sort()).toEqual([
           "artifact/package/skills/alpha",
           "artifact/package/skills/beta",
         ]);
@@ -1909,6 +1909,9 @@ exit 7`,
       const fakeClawScan = join(workspace, "fake-clawscan");
       const callLog = join(workspace, "clawscan-called");
       const firstRootCompleted = join(workspace, "first-root-completed");
+      // Keep these exact serial-provider budget and redaction contracts;
+      // parallel out-of-order accounting is covered separately.
+      vi.stubEnv("SKILLSPECTOR_PROVIDER", "anthropic");
       if (failure === "shared deadline") {
         const now = Date.now.bind(Date);
         vi.spyOn(Date, "now").mockImplementation(

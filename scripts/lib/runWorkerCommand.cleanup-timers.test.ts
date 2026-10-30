@@ -235,6 +235,30 @@ it.skipIf(process.platform === "win32").each([-1_000_000, 1_000_000])(
   },
 );
 
+it.skipIf(process.platform === "win32")(
+  "classifies unconfirmed cleanup separately from a findings exit",
+  async () => {
+    vi.useFakeTimers();
+    const child = simulatedChild();
+    vi.spyOn(process, "kill").mockImplementation(() => true);
+    const pending = runWorkerCommand("generated", [], {
+      cwd: tmpdir(),
+      env: {},
+      timeoutMs: 100,
+      cleanupProcessGroup: true,
+    }).catch((error: unknown) => error);
+    child.emit("close", 1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(await pending).toMatchObject({
+      exitCode: 1,
+      timedOut: false,
+      failureKind: "cleanup",
+      message: "Worker cleanup could not be confirmed",
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
 it("does not claim Windows process-group absence from direct child termination", async () => {
   vi.useFakeTimers();
   Object.defineProperty(process, "platform", { value: "win32" });
