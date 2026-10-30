@@ -26,6 +26,10 @@ import {
   redactWorkerPublicText,
   safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
+import {
+  bundledSkillSpectorTerminalContext,
+  type BundledSkillSpectorFailureContext,
+} from "./bundled-skillspector-diagnostic";
 import { writeClawHubEndorProfile } from "./clawHubEndorProfile";
 import {
   clawScanExposure,
@@ -171,6 +175,7 @@ export type ClawScanCommandDiagnostic = {
     timedOut: boolean;
     exitCode: number | null;
     termination?: WorkerCommandTermination;
+    context?: BundledSkillSpectorFailureContext;
   };
   progress?: SafeClawScanProgress[];
   progressCounts?: { retained: number; rejected: number; limited: number };
@@ -1690,20 +1695,32 @@ async function runBundledSkillSpector(
   const deadlineMs = Date.now() + MAX_BUNDLED_SKILLSPECTOR_TOTAL_MS;
   for (const [index, scanInput] of scanInputs.entries()) {
     const remainingMs = deadlineMs - Date.now();
+    const context: BundledSkillSpectorFailureContext = {
+      rootIndex: index,
+      rootCount: scanInputs.length,
+      completedRoots: analyses.length,
+      childBudgetMs: Math.max(0, Math.min(rootTimeoutMs, remainingMs)),
+      remainingStageBudgetMs: Math.max(0, remainingMs),
+    };
     if (remainingMs <= 0) {
-      onDiagnostic({ bundledSkillSpector: { failed: true, timedOut: true, exitCode: null } });
+      onDiagnostic({
+        bundledSkillSpector: { failed: true, timedOut: true, exitCode: null, context },
+      });
       throw new Error("SkillSpector bundled-skill scan deadline exceeded");
     }
     const resultPath = join(workspace, `skillspector-report-${index}.json`);
     const args = ["scan", scanInput.scanPath, "--format", "json", "--output", resultPath];
     let termination: WorkerCommandTermination | undefined;
     try {
+      // A private precreated output keeps structured failure evidence readable
+      // by the restricted projector without retaining scanner streams.
+      await writeFile(resultPath, "", { flag: "wx", mode: 0o600 });
       await runCommand("skillspector", args, {
         cwd: workspace,
         // The --output JSON report is the evidence; drain noisy raw diagnostics
         // just as the ClawScan adapter and direct diagnostic probe do.
         discardStderr: true,
-        timeoutMs: Math.min(rootTimeoutMs, remainingMs),
+        timeoutMs: context.childBudgetMs,
         onTermination: (next) => {
           termination = next;
         },
@@ -1746,6 +1763,11 @@ async function runBundledSkillSpector(
               exitCode:
                 error instanceof CommandFailure ? error.exitCode : (termination?.exitCode ?? null),
               termination,
+              context: {
+                ...context,
+                remainingStageBudgetMs: Math.max(0, deadlineMs - Date.now()),
+                terminal: await bundledSkillSpectorTerminalContext(resultPath),
+              },
             },
           });
         }

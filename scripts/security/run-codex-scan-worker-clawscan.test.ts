@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -1900,6 +1901,143 @@ exit 7`,
     });
   });
 
+  it.each(["child failure", "shared deadline"])(
+    "retains bounded context after an earlier bundled root succeeds: %s",
+    async (failure) => {
+      const workspace = await tempDir();
+      const diagnosticsRoot = await tempDir();
+      const fakeClawScan = join(workspace, "fake-clawscan");
+      const callLog = join(workspace, "clawscan-called");
+      const firstRootCompleted = join(workspace, "first-root-completed");
+      if (failure === "shared deadline") {
+        const now = Date.now.bind(Date);
+        vi.spyOn(Date, "now").mockImplementation(
+          () => now() + (existsSync(firstRootCompleted) ? 30 * 60 * 1000 : 0),
+        );
+      }
+      const contentCanary = "synthetic-private-terminal-content";
+      const credentialCanary = "synthetic-private-terminal-token";
+      const failedReport = {
+        execution_successful: false,
+        issues: [{ finding: contentCanary }],
+        metadata: { error: credentialCanary },
+        analysis_completeness: {
+          status: "failed",
+          ledger_exceptions: [
+            { reason_code: "llm_connection_retries_exhausted", path: contentCanary },
+            { reason_code: credentialCanary },
+          ],
+          analyzer_statuses: [
+            {
+              analyzer_id: "semantic_security_discovery",
+              status: "failed",
+              planned_work: 1,
+              completed: 0,
+              partial: 0,
+              skipped: 0,
+              failed: 1,
+              unaccounted: 0,
+            },
+            { analyzer_id: contentCanary, status: credentialCanary },
+          ],
+        },
+      };
+      await writeFakeClawScanCommand(fakeClawScan, `touch ${JSON.stringify(callLog)}\nexit 99`);
+      await writeFakeClawScanCommand(
+        join(workspace, "skillspector"),
+        `root="$2"
+while [[ "$1" != --output ]]; do shift; done
+if [[ "$root" == */example ]]; then
+  printf '%s' '{"risk_assessment":{"score":0},"issues":[]}' > "$2"
+  touch ${JSON.stringify(firstRootCompleted)}
+  exit 0
+fi
+cat > "$2" <<'JSON'
+${JSON.stringify(failedReport)}
+JSON
+echo '${credentialCanary}' >&2
+echo '${contentCanary}'
+exit 2`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH}`);
+      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
+      vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "0");
+      const job = pluginPackageJobWithBundledSkill("securityScanJobs:bounded-bundled-context");
+      const secondSkill = "# Second bundled skill\n";
+      job.target.files!.push({
+        path: "package/skills/second/SKILL.md",
+        sha256: sha256(secondSkill),
+        size: Buffer.byteLength(secondSkill),
+        url: `data:text/plain,${encodeURIComponent(secondSkill)}`,
+      });
+      job.target.release!.pluginManifestSummary = {
+        bundledSkills: [
+          { rootPath: "skills/second" },
+          { rootPath: "skills/example" },
+          { rootPath: "skills/example" },
+        ],
+      };
+      const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry: false })) };
+      await expect(processJob(client, "worker-auth", job, diagnosticsRoot)).resolves.toEqual({
+        completed: false,
+        hardFailed: true,
+        retryableFailed: false,
+      });
+      const diagnosticText = await readFile(
+        join(diagnosticsRoot, "securityScanJobs_bounded-bundled-context", "diagnostic.json"),
+        "utf8",
+      );
+      const diagnostic = JSON.parse(diagnosticText);
+      expect(diagnostic.clawscanResult.bundledSkillSpector).toMatchObject({
+        failed: true,
+        timedOut: failure === "shared deadline",
+        exitCode: failure === "shared deadline" ? null : 2,
+      });
+      expect(diagnostic.clawscanResult.bundledSkillSpector.context).toEqual(
+        failure === "shared deadline"
+          ? {
+              rootIndex: 1,
+              rootCount: 2,
+              completedRoots: 1,
+              childBudgetMs: 0,
+              remainingStageBudgetMs: 0,
+            }
+          : {
+              rootIndex: 1,
+              rootCount: 2,
+              completedRoots: 1,
+              childBudgetMs: expect.any(Number),
+              remainingStageBudgetMs: expect.any(Number),
+              terminal: {
+                presence: "present",
+                executionSuccessful: false,
+                completenessStatus: "failed",
+                reasonCounts: { llm_connection_retries_exhausted: 1 },
+                unknownReasons: 1,
+                unknownAnalyzers: 1,
+                incompleteAnalyzers: [
+                  {
+                    id: "semantic_security_discovery",
+                    status: "failed",
+                    planned_work: 1,
+                    completed: 0,
+                    partial: 0,
+                    skipped: 0,
+                    failed: 1,
+                    unaccounted: 0,
+                  },
+                ],
+              },
+            },
+      );
+      await expect(readFile(callLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      for (const canary of [contentCanary, credentialCanary, workspace]) {
+        expect(diagnosticText).not.toContain(canary);
+        expect(JSON.stringify(client.action.mock.calls)).not.toContain(canary);
+      }
+    },
+  );
+
   it.each([true, false])(
     "classifies bundled SkillSpector timeouts without changing retry=%s",
     async (retry) => {
@@ -1951,6 +2089,14 @@ exec sleep 10`,
         failed: true,
         timedOut: true,
         termination: { timedOut: true, elapsedMs: expect.any(Number) },
+        context: {
+          rootIndex: 0,
+          rootCount: 1,
+          completedRoots: 0,
+          childBudgetMs: 500,
+          remainingStageBudgetMs: expect.any(Number),
+          terminal: { presence: "invalid", executionSuccessful: null },
+        },
       });
       expect(client.action).toHaveBeenCalledTimes(1);
       for (const canary of [contentCanary, credentialCanary, workspace]) {
