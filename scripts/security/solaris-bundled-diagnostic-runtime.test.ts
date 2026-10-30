@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
-const probe = vi.hoisted(() => ({ calls: 0, leakedEnvironment: false }));
+const probe = vi.hoisted(() => ({ calls: 0, leakedEnvironment: false, scannerCommit: "" }));
 vi.mock("./fixtures/solaris-069-bundled.json", async () => {
   const { createHash } = await import("node:crypto");
   const hash = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -44,7 +44,7 @@ vi.mock("../lib/runWorkerCommand", async (original) => {
             ? "f197f4566f8a3c11755bc6688ec92a2c3347b4dd\nbcf058341b9cfa6290525a3980eab50e6b4b356f\n"
             : args.includes("status")
               ? ""
-              : "e14f9960cc290d47f99fd3416b0589bbc0080f24\n",
+              : `${probe.scannerCommit}\n`,
           stderr: "",
         };
       }
@@ -112,6 +112,9 @@ afterEach(async () => {
 async function setup(corrupt = false) {
   probe.calls = 0;
   probe.leakedEnvironment = false;
+  probe.scannerCommit = (
+    await readFile(new URL("./clawscan-source-commit.txt", import.meta.url), "utf8")
+  ).trim();
   const root = await mkdtemp(join(tmpdir(), "solaris-diagnostic-test-"));
   roots.push(root);
   const source = join(root, "solaris-source/harnesses/openclaw/skills/control");
@@ -186,6 +189,19 @@ it("uses the real bundled helper, retains only safe failed-child evidence and re
 
 it("rejects a changed original before invoking any model and still cleans up", async () => {
   const root = await setup(true);
+  await main([]);
+  expect(probe.calls).toBe(0);
+  const output = (await readFile(join(root, "output"), "utf8")).trim().split("=")[1];
+  expect(JSON.parse(await readFile(join(output, "summary.json"), "utf8"))).toMatchObject({
+    status: "validation_failed",
+    validationFailed: true,
+    cleanup: true,
+  });
+});
+
+it("rejects a scanner checkout that differs from the adopted production pin before any model", async () => {
+  const root = await setup();
+  probe.scannerCommit = "0".repeat(40);
   await main([]);
   expect(probe.calls).toBe(0);
   const output = (await readFile(join(root, "output"), "utf8")).trim().split("=")[1];
