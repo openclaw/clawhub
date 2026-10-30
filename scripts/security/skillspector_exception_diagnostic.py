@@ -66,6 +66,11 @@ def project_exception(exc):
         code = getattr(exc, "status_code", None)
         chain.append({
             "class": type(exc).__name__ if type(exc).__name__ in CLASSES else "other",
+            "mockSchemaSerializer": (
+                type(exc) is TypeError and len(exc.args) == 1
+                and type(exc.args[0]) is str
+                and exc.args[0] == "'MockValSer' object cannot be converted to 'SchemaSerializer'"
+            ),
             "statusCode": code if type(code) is int and 100 <= code <= 599 else None,
             "frames": frames[-8:],
             "unknownFrames": unknown,

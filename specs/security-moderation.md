@@ -657,7 +657,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   and interpreter. It calls the original failure classifier first and preserves
   its result, exceptions and retry behavior. Exported exception data is limited
   to fixed module IDs, qualified line numbers, allowlisted classes, bounded HTTP
-  status codes, root indices, counts and lifecycle flags. Frame provenance must
+  status codes, root indices, counts and lifecycle flags. One boolean may identify
+  the exact known Pydantic MockValSer/SchemaSerializer TypeError; matching must
+  inspect only its single string argument without stringifying arbitrary values
+  or exporting any message text. Frame provenance must
   match the loaded module's globals and source filename. Export limits are three
   chained exceptions, eight frames per exception and eight failure records per
   root; traversal is capped at 64 frames, line numbers at 1,000,000 and the private

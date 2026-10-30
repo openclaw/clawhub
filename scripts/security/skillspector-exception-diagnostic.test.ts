@@ -92,6 +92,47 @@ it("rejects unknown modules and labels and drops unrelated raw fields", () => {
   ).toThrow();
 });
 
+it("identifies only the exact known mock serializer error without exporting its message", async () => {
+  const code = `
+import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location("diagnostic",sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+known="'MockValSer' object cannot be converted to 'SchemaSerializer'"
+cases=[TypeError(known),TypeError(known+" PRIVATE"),ValueError(known),TypeError("PRIVATE"),TypeError(known,"PRIVATE")]
+print(json.dumps([m.project_exception(exc) for exc in cases]))
+`;
+  const result = await promisify(execFile)(
+    "python3",
+    ["-B", "-c", code, new URL("./skillspector_exception_diagnostic.py", import.meta.url).pathname],
+    { env: { PATH: process.env.PATH } },
+  );
+  expect(result.stdout).not.toContain("PRIVATE");
+  expect(result.stdout).not.toContain("MockValSer");
+  const chains = JSON.parse(result.stdout);
+  expect(
+    chains.map((chain: Array<{ mockSchemaSerializer: boolean }>) => chain[0].mockSchemaSerializer),
+  ).toEqual([true, false, false, false, false]);
+  const event = { rootIndex: 4, kind: "failure", chain: chains[0] };
+  expect(projectSkillSpectorExceptionEvents(JSON.stringify(event))[0]).toMatchObject({
+    chain: [{ class: "TypeError", mockSchemaSerializer: true }],
+  });
+  expect(() =>
+    projectSkillSpectorExceptionEvents(
+      JSON.stringify({
+        ...event,
+        chain: [{ ...chains[0][0], mockSchemaSerializer: "PRIVATE" }],
+      }),
+    ),
+  ).toThrow();
+  expect(() =>
+    projectSkillSpectorExceptionEvents(
+      JSON.stringify({
+        ...event,
+        chain: [{ ...chains[0][0], class: "ValueError", mockSchemaSerializer: true }],
+      }),
+    ),
+  ).toThrow();
+});
+
 it("installs only over the qualified venv entrypoint and reads private regular files only", async () => {
   const root = await mkdtemp(join(tmpdir(), "exception-observer-"));
   roots.push(root);

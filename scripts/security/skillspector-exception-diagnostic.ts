@@ -115,6 +115,9 @@ export function projectSkillSpectorExceptionEvents(text: string) {
         !value ||
         typeof value.class !== "string" ||
         !classes.has(value.class) ||
+        (value.mockSchemaSerializer !== undefined &&
+          typeof value.mockSchemaSerializer !== "boolean") ||
+        (value.mockSchemaSerializer === true && value.class !== "TypeError") ||
         !(
           value.statusCode === null ||
           (integer(value.statusCode, 599) && value.statusCode >= 100)
@@ -127,6 +130,7 @@ export function projectSkillSpectorExceptionEvents(text: string) {
         throw new Error("Invalid exception projection");
       return {
         class: value.class,
+        mockSchemaSerializer: value.mockSchemaSerializer === true,
         statusCode: value.statusCode as number | null,
         unknownFrames: value.unknownFrames,
         framesTruncated: value.framesTruncated,
