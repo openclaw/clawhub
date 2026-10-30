@@ -126,6 +126,8 @@ export async function installOriginalRuntime(
     "install-clawscan.sh",
     "install-clawscan-scanners.sh",
     "aig-worker-requirements.txt",
+    "skillspector-pydantic-requirements.txt",
+    "test_skillspector_serialization.py",
   ])
     await copyFile(new URL(file, import.meta.url), join(installer, file));
   await writeFile(join(installer, "clawscan-source-commit.txt"), `${pin}\n`, { mode: 0o600 });
@@ -229,6 +231,7 @@ export async function installOriginalRuntime(
       "manual serial controls; no backend, claim, publication or production recovery samples",
       "verified original logical files; original compressed archive identity not claimed",
       "fresh private HOME/CODEX_HOME; host scanners; no Docker image used",
+      "reviewed Pydantic compatibility set applied over the upstream dependency lock",
     ],
     runtimeImage: "N/A",
     runtimeMode: "reviewed-host-scanners-sandbox-off",
@@ -257,6 +260,12 @@ export async function installOriginalRuntime(
     },
     installerSha256: hash(await readFile(join(installer, "install-clawscan-scanners.sh"))),
     aigRequirementsSha256: hash(await readFile(join(installer, "aig-worker-requirements.txt"))),
+    skillspectorPydanticRequirementsSha256: hash(
+      await readFile(join(installer, "skillspector-pydantic-requirements.txt")),
+    ),
+    skillspectorSerializationProbeSha256: hash(
+      await readFile(join(installer, "test_skillspector_serialization.py")),
+    ),
     aggregateScannerBudgetSeconds: 600,
     mcpArtifactCountLimit: 128,
     aigInstalled: fullProfile,

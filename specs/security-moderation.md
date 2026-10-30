@@ -646,6 +646,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   per-scanner outputs without per-file or aggregate-size truncation. Bounded
   metadata/error fields may remain capped. Artifact upload still requires the
   existing verified-secret scan to pass.
+- SkillSpector starts from its upstream locked environment. Until that lock
+  includes the deferred-model serialization repair, replace only Pydantic and
+  pydantic-core and their required typing dependencies with the reviewed
+  hash-locked binary-wheel set. Do not resolve unrelated dependency upgrades.
+  Before scanning, the actual worker environment
+  must serialize a genuinely cold finding subtype with every finding field
+  preserved and still reject invalid findings and unresolved models. Run the
+  existing adapter checks and dependency-consistency check afterward. This
+  repairs serialization mechanics; it does not establish package recovery or
+  change scanner completeness, findings, retries, or publication gates.
+  Copied diagnostic installer bundles must include the compatibility requirements
+  and startup probe, record their hashes, and distinguish the compatibility set
+  from the unchanged upstream lock.
 - The fixed Solaris exception diagnostic is a separate, nonpublishing manual
   workflow on `main`, admitted only on the qualified GitHub-hosted Ubuntu 22.04
   runner with the fixed source, original-byte inventory, model policy and scan

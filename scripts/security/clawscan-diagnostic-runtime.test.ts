@@ -1,10 +1,39 @@
 /* @vitest-environment node */
-import { readFile } from "node:fs/promises";
-import { expect, it } from "vitest";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, it, vi } from "vitest";
+import { runWorkerCommand } from "../lib/runWorkerCommand";
 import {
+  installOriginalRuntime,
   validateOriginalProfile,
   validateOriginalScannerBounds,
 } from "./clawscan-diagnostic-runtime";
+
+vi.mock("../lib/runWorkerCommand", () => ({ runWorkerCommand: vi.fn() }));
+
+it("stages the complete compatibility installer bundle before executing it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clawscan-diagnostic-bundle-"));
+  try {
+    vi.mocked(runWorkerCommand).mockImplementationOnce(async () => {
+      for (const file of [
+        "skillspector-pydantic-requirements.txt",
+        "test_skillspector_serialization.py",
+      ]) {
+        expect(await readFile(join(root, "installer", file), "utf8")).toBe(
+          await readFile(new URL(file, import.meta.url), "utf8"),
+        );
+      }
+      throw new Error("Verified private installer bundle; stop before installation");
+    });
+    await expect(installOriginalRuntime(root, "e".repeat(40), false, {})).rejects.toThrow(
+      "Verified private installer bundle; stop before installation",
+    );
+  } finally {
+    vi.clearAllMocks();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 const state = "DEFAULT_MAX_WORKFLOW_SECONDS = 600.0\n";
 const mcp = "TP4_MAX_FILES = 128\n";

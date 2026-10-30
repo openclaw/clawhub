@@ -64,6 +64,9 @@ if [ "$scanner" = skillspector ]; then
   python_executable=$(python -c 'import sys; print(sys.executable)')
   uv sync --locked --no-dev --python "$python_executable" --project "$source_dir"
   venv="$source_dir/.venv"
+  # The upstream lock predates the deferred-serializer repair. Replace only the
+  # reviewed Pydantic/core pair and required typing dependencies; keep the rest.
+  uv pip install --python "$venv/bin/python" --no-deps --require-hashes -r "$script_dir/skillspector-pydantic-requirements.txt"
 else
   venv="$RUNNER_TEMP/aig-venv"
   python -m venv "$venv"
@@ -72,6 +75,9 @@ else
   uv pip install --python "$venv/bin/python" --no-deps "$source_dir/skill-scan"
 fi
 uv pip install --python "$venv/bin/python" "pytest==9.0.2"
+if [ "$scanner" = skillspector ]; then
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$script_dir/test_skillspector_serialization.py"
+fi
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_${scanner}_responses.py"
 if [ "$needs_bash_parser" = 1 ]; then
   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_skillspector_shell_source.py"

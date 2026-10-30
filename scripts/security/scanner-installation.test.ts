@@ -87,6 +87,12 @@ describe("reviewed ClawScan installation", () => {
           join(scripts, "install-clawscan-scanners.sh"),
           join(scriptDir, "install.sh"),
         );
+        for (const file of [
+          "skillspector-pydantic-requirements.txt",
+          "test_skillspector_serialization.py",
+        ]) {
+          await copyFile(join(scripts, file), join(scriptDir, file));
+        }
         await writeFile(join(scriptDir, "clawscan-source-commit.txt"), pin);
         await writeFile(
           join(runtime, "Dockerfile"),
@@ -164,6 +170,15 @@ describe("reviewed ClawScan installation", () => {
         expect(commands).toContain(
           "uv sync --locked --no-dev --python " + join(bin, "python") + " --project",
         );
+        const lockedInstall = commands.indexOf("uv sync --locked --no-dev");
+        const compatibilityInstall = commands.indexOf(
+          "--no-deps --require-hashes -r " + scriptDir + "/skillspector-pydantic-requirements.txt",
+        );
+        const serializationCheck = commands.indexOf(
+          "-m pytest -q " + scriptDir + "/test_skillspector_serialization.py",
+        );
+        expect(compatibilityInstall).toBeGreaterThan(lockedInstall);
+        expect(serializationCheck).toBeGreaterThan(compatibilityInstall);
         const paths = await readFile(join(root, "github-path"), "utf8");
         expect(paths).toBe((join(root, "clawscan-scanner-bin") + "\n").repeat(2));
         const retryEnv = {
