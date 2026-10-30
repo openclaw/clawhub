@@ -13470,6 +13470,9 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe(
+      "public, max-age=60, s-maxage=300, stale-while-revalidate=3600",
+    );
     const json = await response.json();
     expect(json.categories.map((category: { slug: string }) => category.slug)).toEqual([
       "channels",

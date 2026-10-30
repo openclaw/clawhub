@@ -2717,7 +2717,10 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
 }
 
 export async function listPluginCategoriesV1Handler(_ctx: ActionCtx, _request: Request) {
-  return json({ categories: getPluginDiscoveryCategories() });
+  // This taxonomy is static and identical for every viewer.
+  return json({ categories: getPluginDiscoveryCategories() }, 200, {
+    "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=3600",
+  });
 }
 
 export async function listCodePluginsV1Handler(ctx: ActionCtx, request: Request) {
