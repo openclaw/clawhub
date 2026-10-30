@@ -11,6 +11,7 @@ import {
   EXPERIMENTAL_TEMPLATE_FEED_SCHEMA_VERSION,
   serializeCatalogFeed,
   serializeExperimentalTemplateFeed,
+  parseExperimentalTemplateFeed,
   type CatalogFeedPluginEntry,
   type CatalogFeedSkillEntry,
   type ExperimentalTemplateFeedEntry,
@@ -36,7 +37,6 @@ import {
   isPublicSkillVersionAvailableForSkill,
 } from "./lib/skillFileAccess";
 import { isHostedSkillPresentationIconPath, stripPresentationEmoji } from "./lib/skillPresentation";
-import { projectStoredTemplateFeed } from "./lib/templateFeedStorage";
 import { TEMPLATE_FEED_STORAGE_ID } from "./lib/templateStorage";
 
 const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub.";
@@ -755,19 +755,24 @@ export const getLatestPublication = internalQuery({
       if (!isOpenClawTemplatePublisher(owner) || !(await isOfficialPublisher(ctx, owner)))
         return null;
     }
-    // Historical snapshots and archives stay untouched. Only the canonical wire
-    // representation changes, with a digest of those exact response bytes.
+    // The physical row ID is stable storage, not permission to admit a retired
+    // wire or package format. Serve only the canonical publication bytes.
     if (
       (await sha256Hex(new TextEncoder().encode(publication.payload))) !== publication.payloadSha256
     )
       return null;
-    const projected = projectStoredTemplateFeed(publication.payload);
-    if (!projected || projected.entryCount !== publication.clawEntryCount) return null;
-    return {
-      ...publication,
-      feedId: EXPERIMENTAL_TEMPLATE_FEED_ID,
-      payload: projected.payload,
-      payloadSha256: await sha256Hex(new TextEncoder().encode(projected.payload)),
-    };
+    try {
+      const feed = parseExperimentalTemplateFeed(JSON.parse(publication.payload));
+      if (
+        feed.entries.length !== publication.clawEntryCount ||
+        feed.entries.some(
+          (entry) => !isOpenClawTemplateName(entry.id) || entry.publisher.id !== "openclaw",
+        )
+      )
+        return null;
+      return { ...publication, feedId: EXPERIMENTAL_TEMPLATE_FEED_ID };
+    } catch {
+      return null;
+    }
   },
 });

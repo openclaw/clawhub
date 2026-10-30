@@ -609,73 +609,60 @@ function validateOpenClawProfile(value, profilePath, profilePolicy) {
     return { issues, extensionCount: parsed.extensions?.length ?? 0 };
 }
 function parseManifestDocument(raw, manifestPath) {
-    const filename = manifestPath.replaceAll("\\", "/").split("/").at(-1)?.toLowerCase();
-    if (filename === "claw.md") {
-        const markdown = raw.startsWith("\uFEFF") ? raw.slice(1) : raw;
-        const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-        if (!match) {
-            return {
-                issues: [
-                    issue("missing_template_frontmatter", manifestPath, `${manifestPath} must start with YAML frontmatter delimited by --- lines.`),
-                ],
-            };
-        }
-        const document = parseDocument(match[1], { prettyErrors: false, uniqueKeys: true });
-        if (document.errors.length > 0) {
-            return {
-                issues: document.errors.map((error) => issue("invalid_template_frontmatter", manifestPath, error.message)),
-            };
-        }
-        let unsupportedFeature;
-        visit(document, {
-            Alias() {
-                unsupportedFeature ??= "aliases";
-            },
-            Node(_key, node) {
-                if (node.anchor) {
-                    unsupportedFeature ??= "anchors";
-                }
-                else if (node.tag) {
-                    unsupportedFeature ??= "explicit tags";
-                }
-            },
-            Pair(_key, pair) {
-                if (!isScalar(pair.key) || typeof pair.key.value !== "string") {
-                    unsupportedFeature ??= "non-string mapping keys";
-                }
-                else if (pair.key.value === "<<") {
-                    unsupportedFeature ??= "merge keys";
-                }
-            },
-        });
-        if (unsupportedFeature) {
-            return {
-                issues: [
-                    issue("unsupported_template_yaml_feature", manifestPath, `${manifestPath} uses ${unsupportedFeature}; CLAW.md frontmatter must map directly to JSON data.`),
-                ],
-            };
-        }
-        try {
-            return {
-                value: document.toJSON(),
-                templateMarkdownBody: markdown.slice(match[0].length),
-            };
-        }
-        catch (error) {
-            return {
-                issues: [
-                    issue("invalid_template_frontmatter", manifestPath, error instanceof Error ? error.message : "Could not parse Template frontmatter."),
-                ],
-            };
-        }
+    const markdown = raw.startsWith("\uFEFF") ? raw.slice(1) : raw;
+    const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+    if (!match) {
+        return {
+            issues: [
+                issue("missing_template_frontmatter", manifestPath, `${manifestPath} must start with YAML frontmatter delimited by --- lines.`),
+            ],
+        };
+    }
+    const document = parseDocument(match[1], { prettyErrors: false, uniqueKeys: true });
+    if (document.errors.length > 0) {
+        return {
+            issues: document.errors.map((error) => issue("invalid_template_frontmatter", manifestPath, error.message)),
+        };
+    }
+    let unsupportedFeature;
+    visit(document, {
+        Alias() {
+            unsupportedFeature ??= "aliases";
+        },
+        Node(_key, node) {
+            if (node.anchor) {
+                unsupportedFeature ??= "anchors";
+            }
+            else if (node.tag) {
+                unsupportedFeature ??= "explicit tags";
+            }
+        },
+        Pair(_key, pair) {
+            if (!isScalar(pair.key) || typeof pair.key.value !== "string") {
+                unsupportedFeature ??= "non-string mapping keys";
+            }
+            else if (pair.key.value === "<<") {
+                unsupportedFeature ??= "merge keys";
+            }
+        },
+    });
+    if (unsupportedFeature) {
+        return {
+            issues: [
+                issue("unsupported_template_yaml_feature", manifestPath, `${manifestPath} uses ${unsupportedFeature}; CLAW.md frontmatter must map directly to JSON data.`),
+            ],
+        };
     }
     try {
-        return { value: JSON.parse(raw) };
+        return {
+            value: document.toJSON(),
+            templateMarkdownBody: markdown.slice(match[0].length),
+        };
     }
     catch (error) {
         return {
             issues: [
-                issue("invalid_template_json", manifestPath, error instanceof Error ? error.message : "Could not parse Template JSON."),
+                issue("invalid_template_frontmatter", manifestPath, error instanceof Error ? error.message : "Could not parse Template frontmatter."),
             ],
         };
     }
@@ -700,8 +687,11 @@ export function validateTemplatePackageContents(input) {
     if (!EXACT_VERSION_PATTERN.test(declaredVersion) || declaredVersion !== input.version) {
         issues.push(issue("package_version_mismatch", "package.json.version", `Must be exact semver ${input.version}.`));
     }
-    if (!manifestPath || !isSafeTemplatePackagePath(manifestPath)) {
-        issues.push(issue("invalid_template_manifest_path", "package.json.openclaw.template", "Must name a safe package-relative Template manifest path."));
+    if (Object.hasOwn(openclaw ?? {}, "claw") ||
+        !manifestPath ||
+        manifestPath.split("/").at(-1) !== "CLAW.md" ||
+        !isSafeTemplatePackagePath(manifestPath)) {
+        issues.push(issue("invalid_template_manifest_path", "package.json.openclaw.template", "Must use only openclaw.template naming a safe package-relative CLAW.md."));
     }
     if (issues.length > 0)
         return { ok: false, issues };

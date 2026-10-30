@@ -61,6 +61,29 @@ describe("Template naming contracts", () => {
     });
   });
 
+  it.each([{ claw: "CLAW.md" }, { template: "CLAW.md", claw: "CLAW.md" }])(
+    "rejects the retired selector even alongside canonical metadata: %o",
+    (openclaw) => {
+      const result = validateTemplatePackageContents({
+        packageName: "@acme/triage",
+        version: "1.0.0",
+        packageJson: { name: "@acme/triage", version: "1.0.0", openclaw },
+        files: [
+          {
+            path: "CLAW.md",
+            text: "---\nschemaVersion: 1\nagent: { id: triage }\n---\nBe precise.\n",
+          },
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        issues: [
+          { code: "invalid_template_manifest_path", path: "package.json.openclaw.template" },
+        ],
+      });
+    },
+  );
+
   it("keeps the CLI's standalone manifest validators identical to their owning schema source", () => {
     for (const file of ["templates.ts", "templatePackage.ts"]) {
       expect(readFileSync(`packages/clawhub/src/schema/${file}`, "utf8")).toBe(
