@@ -105,9 +105,15 @@ export const consumeHttpRateLimitKeyInternal = internalMutation({
     name: v.string(),
     key: v.string(),
     config: fixedWindowRateLimitConfigValidator,
+    metadata: v.optional(v.object({ now: v.number(), ttlMs: v.number() })),
   },
   returns: rateLimitStatusValidator,
   handler: async (ctx, args) => {
+    // Keep the bare counter path available for metadata-contention fallback.
+    // Touching first also prevents expiry cleanup from resetting newly used quota.
+    if (args.metadata) {
+      await touchHttpRateLimitKey(ctx, { name: args.name, key: args.key, ...args.metadata });
+    }
     return await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
       name: args.name,
       key: args.key,

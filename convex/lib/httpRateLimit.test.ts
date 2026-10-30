@@ -70,10 +70,13 @@ function componentRateLimitCalls(runMutation: ReturnType<typeof vi.fn>) {
   }) as [unknown, Record<string, unknown>][];
 }
 
-function metadataTouchCalls(runMutation: ReturnType<typeof vi.fn>) {
-  return runMutation.mock.calls.filter(([, args]) => {
-    return Boolean(args && typeof args === "object" && "ttlMs" in args && !("config" in args));
-  }) as [unknown, Record<string, unknown>][];
+function suppliedMetadata(runMutation: ReturnType<typeof vi.fn>) {
+  return componentRateLimitCalls(runMutation).flatMap(([, args]) => {
+    const metadata = args.metadata;
+    return metadata && typeof metadata === "object"
+      ? [{ name: args.name, key: args.key, ...metadata }]
+      : [];
+  });
 }
 
 describe("getClientIp", () => {
@@ -174,7 +177,10 @@ describe("RATE_LIMITS", () => {
 });
 
 describe("applyRateLimit headers", () => {
-  beforeEach(() => vi.mocked(getVerifiedClientIp).mockResolvedValue("203.0.113.1"));
+  beforeEach(() => {
+    vi.mocked(getVerifiedClientIp).mockResolvedValue("203.0.113.1");
+    vi.stubEnv("CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE", "on");
+  });
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
@@ -236,7 +242,6 @@ describe("applyRateLimit headers", () => {
     const ctx = {
       runMutation: vi
         .fn()
-        .mockResolvedValueOnce({ action: "updated", expiresAt: 88_900_000 })
         .mockRejectedValueOnce(
           new Error('Document in table "rateLimits" changed while this mutation was being run'),
         ),
@@ -276,13 +281,36 @@ describe("applyRateLimit headers", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(runMutation).toHaveBeenCalledTimes(2);
-    expect(
-      runMutation.mock.calls.map(([, args]) => ("config" in args ? "counter" : "metadata")),
-    ).toEqual(["metadata", "counter"]);
+    const attempts = componentRateLimitCalls(runMutation);
+    expect(attempts[0][1].metadata).toEqual({ now: 2_550_000, ttlMs: 86_400_000 });
+    expect(attempts[1][1].metadata).toBeUndefined();
     expect(warn).toHaveBeenCalledWith("rate_limit_metadata_write_contention", {
       name: "readIp",
     });
+  });
+
+  it("keeps counter conflicts fail-closed after metadata-contention fallback", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const runMutation = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error(
+          'Document in table "httpRateLimitKeys" changed while this mutation was being run',
+        ),
+      )
+      .mockRejectedValueOnce(
+        new Error('Document in table "rateLimits" changed while this mutation was being run'),
+      );
+    const result = await applyRateLimit(
+      { runMutation } as unknown as Parameters<typeof applyRateLimit>[0],
+      new Request("https://example.com/api/v1/plugins"),
+      "read",
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(503);
+    expect(result.response.headers.get("Retry-After")).toBe("1");
+    await expect(result.response.text()).resolves.toBe("Rate limit temporarily unavailable");
   });
 
   it("configures high-volume component-backed HTTP limits with 32 shards", async () => {
@@ -317,7 +345,7 @@ describe("applyRateLimit headers", () => {
     });
   });
 
-  it("records component key metadata before an allowed limiter check", async () => {
+  it("supplies retention metadata for an allowed limiter check", async () => {
     vi.spyOn(Date, "now").mockReturnValue(2_650_000);
     const ctx = makeRateLimitCtx({
       ip: {
@@ -336,10 +364,7 @@ describe("applyRateLimit headers", () => {
 
     expect(result.ok).toBe(true);
     const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
-    expect(
-      runMutation.mock.calls.map(([, args]) => ("config" in args ? "counter" : "metadata")),
-    ).toEqual(["metadata", "counter"]);
-    expect(metadataTouchCalls(runMutation).map(([, args]) => args)).toContainEqual(
+    expect(suppliedMetadata(runMutation)).toContainEqual(
       expect.objectContaining({
         name: "downloadIp",
         key: "ip:203.0.113.1:download",
@@ -349,7 +374,7 @@ describe("applyRateLimit headers", () => {
     );
   });
 
-  it("records component key metadata before a denied limiter check", async () => {
+  it("supplies retention metadata for a denied limiter check", async () => {
     vi.spyOn(Date, "now").mockReturnValue(2_660_000);
     const ctx = makeRateLimitCtx({
       ip: {
@@ -368,10 +393,7 @@ describe("applyRateLimit headers", () => {
 
     expect(result.ok).toBe(false);
     const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
-    expect(
-      runMutation.mock.calls.map(([, args]) => ("config" in args ? "counter" : "metadata")),
-    ).toEqual(["metadata", "counter"]);
-    expect(metadataTouchCalls(runMutation).map(([, args]) => args)).toContainEqual(
+    expect(suppliedMetadata(runMutation)).toContainEqual(
       expect.objectContaining({
         name: "downloadIp",
         key: "ip:203.0.113.1:download",
@@ -727,4 +749,113 @@ describe("anonymous request isolation", () => {
     });
     expect(getClientIp(request)).toBeNull();
   });
+});
+
+describe("RPC rollout guard", () => {
+  beforeEach(() => {
+    vi.mocked(getVerifiedClientIp).mockResolvedValue("203.0.113.1");
+    vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it.each([undefined, "on"])("keeps metadata capacity errors fatal in mode %s", async (mode) => {
+    vi.stubEnv("CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE", mode);
+    const capacityError = new Error("CommitterFullError: Too many writes");
+    const runMutation = vi.fn().mockRejectedValueOnce(capacityError);
+    await expect(
+      applyRateLimit(
+        { runMutation } as unknown as Parameters<typeof applyRateLimit>[0],
+        new Request("https://example.com/api/v1/plugins"),
+        "read",
+      ),
+    ).rejects.toBe(capacityError);
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the default metadata-conflict fallback separate from quota", async () => {
+    vi.stubEnv("CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE", undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const runMutation = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error(
+          'Document in table "httpRateLimitKeys" changed while this mutation was being run',
+        ),
+      )
+      .mockResolvedValueOnce({ ok: true });
+    const result = await applyRateLimit(
+      { runMutation } as unknown as Parameters<typeof applyRateLimit>[0],
+      new Request("https://example.com/api/v1/plugins"),
+      "read",
+    );
+    expect(result.ok).toBe(true);
+    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation.mock.calls[0][1]).not.toHaveProperty("config");
+    expect(componentRateLimitCalls(runMutation)).toHaveLength(1);
+    expect(componentRateLimitCalls(runMutation)[0][1]).not.toHaveProperty("metadata");
+  });
+
+  it.each([
+    ["unset", undefined, "admin", "combined", false],
+    ["empty", "", "admin", "combined", false],
+    ["off", "off", "admin", "combined", false],
+    ["unknown mode", "enabled", "admin", "combined", false],
+    ["anonymous probe", "admin-probe", "anonymous", "combined", false],
+    ["user probe", "admin-probe", "user", "combined", false],
+    ["moderator probe", "admin-probe", "moderator", "combined", false],
+    ["invalid token probe", "admin-probe", "invalid-admin", "combined", false],
+    ["inactive user probe", "admin-probe", "inactive-admin", "combined", false],
+    ["admin control", "admin-probe", "admin", undefined, false],
+    ["unknown probe value", "admin-probe", "admin", "COMBINED", false],
+    ["admin candidate", "admin-probe", "admin", "combined", true],
+    ["enabled anonymous", "on", "anonymous", undefined, true],
+    ["enabled user", "on", "user", undefined, true],
+    ["enabled admin", "on", "admin", undefined, true],
+    ["enabled ignores control header", "on", "admin", "separate", true],
+  ] as const)(
+    "%s preserves quota and selects only the allowed RPC path",
+    async (_name, mode, role, probe, combined) => {
+      vi.stubEnv("CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE", mode);
+      const userRole = role === "user" || role === "moderator" ? role : "admin";
+      const validUser = !["anonymous", "invalid-admin", "inactive-admin"].includes(role);
+      const ctx = makeRateLimitCtx({
+        userRole,
+        tokenValid: role !== "invalid-admin",
+        userActive: role !== "inactive-admin",
+        ip: { allowed: true, remaining: 10, limit: RATE_LIMITS.read.ip, resetAt: 1_060_000 },
+        user: { allowed: true, remaining: 10, limit: RATE_LIMITS.read.key, resetAt: 1_060_000 },
+      });
+      const headers: Record<string, string> = {};
+      if (role !== "anonymous") headers.authorization = "Bearer clh_rollout_fixture";
+      if (probe) headers["x-clawhub-rate-limit-rpc"] = probe;
+      const result = await applyRateLimit(
+        ctx,
+        new Request("https://example.com/api/v1/plugins", { headers }),
+        "read",
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
+      expect(runMutation).toHaveBeenCalledTimes(combined ? 1 : 2);
+      const calls = componentRateLimitCalls(runMutation);
+      expect(calls).toHaveLength(1);
+      expect(calls[0][1]).toMatchObject({
+        name: validUser ? (userRole === "admin" ? "readAdminKey" : "readKey") : "readIp",
+        key: validUser ? "user:users_123:read" : "ip:203.0.113.1:read",
+      });
+      expect(calls[0][1].metadata).toEqual(
+        combined ? { now: 1_000_000, ttlMs: 86_400_000 } : undefined,
+      );
+      expect(new Headers(result.headers).get("X-ClawHub-RateLimit-Rpc")).toBe(
+        mode === "admin-probe" && validUser && userRole === "admin"
+          ? combined
+            ? "combined"
+            : "separate"
+          : null,
+      );
+    },
+  );
 });

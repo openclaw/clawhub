@@ -7,14 +7,16 @@ kept for compatibility, must pass through `applyRateLimit` before doing
 expensive work, auth parsing, publish mutations, upload ticket creation,
 telemetry writes, delete/undelete mutations, or search queries.
 
-Client IP headers are not trustworthy on direct Convex HTTP endpoints. Treat
-`cf-connecting-ip`, `x-forwarded-for`, `x-real-ip`, and `fly-client-ip` as
-trusted only when the deployment explicitly enables trusted forwarded headers.
-Do not enable that opt-in while the Convex `*.convex.site` HTTP origin remains
-publicly reachable. Without the opt-in, anonymous traffic must use conservative
-missing-IP fallback buckets scoped only by rate-limit kind. Missing-IP buckets
-must not include user-controlled paths, dynamic path segments, query parameters,
-package names, skill slugs, or artifact versions.
+Client IP headers are not trustworthy on direct Convex HTTP endpoints. Raw
+`cf-connecting-ip`, `x-forwarded-for`, `x-real-ip`, and `fly-client-ip` values do
+not establish an identity, including when the legacy forwarded-IP flag is set.
+The public edge replaces caller-supplied ClawHub identity headers. The backend
+accepts the asserted IP only alongside a verified ClawHub Vercel project and
+environment token, plus the staging edge secret where required.
+Anonymous direct callers without a verified IP are redirected to a configured
+HTTPS public edge or rejected; invalid asserted edge identities are rejected.
+They must never consume a shared unknown-IP bucket. Local proof may use the
+server-owned loopback deployment exception; the request Host cannot enable it.
 Artifact-specific download scoping is only safe after the caller has an
 authenticated identity or a trusted client IP.
 
@@ -35,8 +37,8 @@ safe: limiter checks refresh sharded metadata for the observed `(name, key)`
 with an `expiresAt`, and retention resets the exact component key only after no
 metadata shard for that `(name, key)` remains active. Active allowed and denied
 traffic must both refresh this metadata so a client that is still hitting a
-limit is not reset by cleanup. Metadata sharding is required because shared
-buckets such as missing-IP anonymous reads can receive many concurrent requests;
+limit is not reset by cleanup. Metadata sharding is required because busy
+authenticated-user and verified-IP buckets can receive many concurrent requests;
 one metadata row per key would become a separate Convex write-contention point.
 
 Component sharding is an implementation detail, not a quota multiplier. Keep
@@ -48,3 +50,29 @@ Because the component does not expose an exact total remaining count for
 sharded buckets, successful HTTP responses must not synthesize a global
 `RateLimit-Remaining` value. Denied responses can still return an exact
 remaining value of `0`.
+
+## Guarded RPC comparison
+
+`CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE` defaults to the existing separate metadata
+refresh and quota-consume calls. Unset, `off`, and unknown values keep that path.
+`admin-probe` allows an authenticated, active admin API-token caller to select
+the combined path with `X-ClawHub-RateLimit-Rpc: combined`; omitting that header
+selects the separate control. Only these admin probes receive the selected
+strategy in the matching response header. Anonymous, ordinary-user, inactive,
+and invalid-token callers cannot opt in. `on` selects the combined path for all
+checks and ignores caller preferences. Set `off` to roll back the strategy.
+
+The combined mutation attempts metadata refresh before consuming the same
+component bucket. If metadata-table OCC exhausts retries, the entire combined
+transaction (including component quota changes) rolls back, then the HTTP
+caller retries the unchanged bare consumer once. Counter-table OCC still fails
+closed with retryable 503. Other errors, including write-capacity failures,
+propagate. Allowed and denied checks both refresh retention metadata, and
+cleanup must still preserve an active key's quota. The response strategy labels
+the attempted path; a metadata-conflict fallback can require a second call.
+
+The switch changes RPC topology only: identity, policy, shard count, quota,
+expiry, pruning, and public rate-limit headers are independent of this choice.
+Promote from the admin-only comparison only after hosted measurements establish
+a gain and the quota/retention checks pass. Native loopback timing alone does
+not establish that gain.

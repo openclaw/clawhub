@@ -92,6 +92,11 @@ export async function applyRateLimit(
   const ip = verifiedIp ?? "unknown";
   const ipSource = verifiedIp ? "verified-edge" : "none";
   const hasClientIp = ip !== "unknown";
+  const rpcMode = process.env.CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE;
+  const adminProbe = rpcMode === "admin-probe" && auth?.user.role === "admin";
+  const combineMetadata =
+    rpcMode === "on" ||
+    (adminProbe && request.headers.get("x-clawhub-rate-limit-rpc") === "combined");
 
   // Authenticated requests are enforced and consumed by user bucket only to
   // avoid draining shared IP quota.
@@ -102,8 +107,14 @@ export async function applyRateLimit(
       getAuthenticatedRateLimitKey(auth.userId, kind),
       userLimit.name,
       userLimit.limit,
+      combineMetadata,
     );
-    const headers = rateHeaders(userResult);
+    const headers = {
+      ...rateHeaders(userResult),
+      ...(adminProbe
+        ? { "X-ClawHub-RateLimit-Rpc": combineMetadata ? "combined" : "separate" }
+        : {}),
+    };
     if (userResult.unavailable) return rateLimitUnavailable(headers);
     if (!userResult.allowed) {
       console.info("rate_limit_denied", {
@@ -142,6 +153,7 @@ export async function applyRateLimit(
     getAnonymousRateLimitKey(kind, ip),
     getHttpRateLimitName(kind, "ip"),
     RATE_LIMITS[kind].ip,
+    combineMetadata,
   );
   const headers = rateHeaders(ipResult);
   if (ipResult.unavailable) return rateLimitUnavailable(headers);
@@ -259,15 +271,11 @@ async function checkRateLimit(
   key: string,
   name: HttpRateLimitName,
   limit: number,
+  combineMetadata: boolean,
 ): Promise<RateLimitResult> {
   const now = Date.now();
   try {
-    await touchRateLimitKeyMetadata(ctx, { name, key, now });
-    const status = await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, {
-      name,
-      key,
-      config: HTTP_RATE_LIMIT_CONFIGS[name],
-    });
+    const status = await consumeRateLimitWithMetadata(ctx, { name, key, now }, combineMetadata);
     if (!status.ok) {
       return {
         allowed: false,
@@ -291,6 +299,37 @@ async function checkRateLimit(
       resetAt: now + 1000,
       unavailable: true,
     };
+  }
+}
+
+async function consumeRateLimitWithMetadata(
+  ctx: ActionCtx,
+  args: { name: HttpRateLimitName; key: string; now: number },
+  combineMetadata: boolean,
+) {
+  const counterArgs = {
+    name: args.name,
+    key: args.key,
+    config: HTTP_RATE_LIMIT_CONFIGS[args.name],
+  };
+  if (!combineMetadata) {
+    await touchRateLimitKeyMetadata(ctx, args);
+    return await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, counterArgs);
+  }
+  try {
+    return await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, {
+      ...counterArgs,
+      metadata: { now: args.now, ttlMs: HTTP_RATE_LIMIT_KEY_TTL_MS },
+    });
+  } catch (error) {
+    if (!isRateLimitMetadataWriteConflict(error)) throw error;
+    // The failed transaction rolled back its component counter too. Preserve
+    // metadata-contention availability by retrying the bare counter, after the
+    // competing metadata refresh or cleanup committed, as the separate path did.
+    console.warn("rate_limit_metadata_write_contention", {
+      name: args.name,
+    });
+    return await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, counterArgs);
   }
 }
 
@@ -335,7 +374,7 @@ function rateLimitUnavailable(headers: HeadersInit): Extract<ApplyRateLimitResul
   };
 }
 
-function rateHeaders(result: RateLimitResult): HeadersInit {
+function rateHeaders(result: RateLimitResult): Record<string, string> {
   const nowMs = Date.now();
   const resetSeconds = Math.ceil(result.resetAt / 1000);
   const resetDelaySeconds = Math.max(1, Math.ceil((result.resetAt - nowMs) / 1000));
