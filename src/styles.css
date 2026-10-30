@@ -18983,6 +18983,11 @@ a.agentic-risk-finding-title:focus-visible {
   --browse-sticky-top: calc(128px + var(--space-4));
 }
 
+/* Keep the footer below the fold through loading, empty, and error states. */
+.skills-browse-page {
+  min-height: 100svh;
+}
+
 body:has(.browse-page-borderless-header) .navbar {
   border-bottom: 0;
 }
