@@ -12,6 +12,7 @@ import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapsh
 import { hasOwnProperty } from "./hasOwnProperty";
 import { publicApiUrl } from "./publicApiUrl";
 import { getRuntimeEnv } from "./runtimeEnv";
+import { getPublicClawHubSiteUrl } from "./site";
 
 export type PackageListItem = {
   name: string;
@@ -293,13 +294,18 @@ const getForwardedHeaders = createIsomorphicFn()
 
 const fetchPackageResponse = createIsomorphicFn()
   .server(async (url: string, init: RequestInit, viewerMode: PackageApiViewerMode) => {
+    const requestUrl = new URL(url);
     if (
       viewerMode === "anonymous" &&
       getRuntimeEnv("VITE_CLAWHUB_DEPLOY_ENV") === "production" &&
-      getPluginBrowseSnapshotKind(new URL(url))
+      getPluginBrowseSnapshotKind(requestUrl)
     ) {
       // A native fetch reaches the CDN; Nitro's internal dispatch bypasses it.
-      return fetch(url, init);
+      const edgeUrl = new URL(
+        `${requestUrl.pathname}${requestUrl.search}`,
+        getPublicClawHubSiteUrl(),
+      );
+      return fetch(edgeUrl.toString(), init);
     }
     const { serverFetch } = await import("nitro/app");
     // Nitro routes locally by path, even for absolute URLs. Our API proxy adds

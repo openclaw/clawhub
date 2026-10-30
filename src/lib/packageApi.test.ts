@@ -360,6 +360,7 @@ describe("fetchPackages", () => {
     { category: "channels", curated: true, sort: "downloads" as const },
   ])("lets anonymous production browse reach the CDN: %j", async (params) => {
     vi.stubEnv("VITE_CLAWHUB_DEPLOY_ENV", "production");
+    vi.stubEnv("VITE_SITE_URL", "https://clawhub.ai");
     vi.stubEnv("VITE_CONVEX_SITE_URL", "https://wry-manatee-359.convex.site");
     getRequestHeadersMock.mockReturnValue(new Headers({ cookie: "session=private" }));
     const fetchMock = vi
@@ -372,6 +373,9 @@ describe("fetchPackages", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(serverFetchMock).not.toHaveBeenCalled();
+    const target = fetchMock.mock.calls[0]?.[0];
+    if (typeof target !== "string") throw new Error("Expected a public edge URL");
+    expect(new URL(target).origin).toBe("https://clawhub.ai");
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: "omit" });
     expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("cookie");
   });
