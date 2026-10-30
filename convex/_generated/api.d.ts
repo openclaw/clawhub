@@ -268,6 +268,7 @@ import type * as skillCardDevSeed from "../skillCardDevSeed.js";
 import type * as skillCards from "../skillCards.js";
 import type * as skillEvaluationDispatch from "../skillEvaluationDispatch.js";
 import type * as skillEvaluations from "../skillEvaluations.js";
+import type * as skillFileReads from "../skillFileReads.js";
 import type * as skillHourlyStats from "../skillHourlyStats.js";
 import type * as skillPresentationAssets from "../skillPresentationAssets.js";
 import type * as skillPresentationAssetsHttp from "../skillPresentationAssetsHttp.js";
@@ -561,6 +562,7 @@ declare const fullApi: ApiFromModules<{
   skillCards: typeof skillCards;
   skillEvaluationDispatch: typeof skillEvaluationDispatch;
   skillEvaluations: typeof skillEvaluations;
+  skillFileReads: typeof skillFileReads;
   skillHourlyStats: typeof skillHourlyStats;
   skillPresentationAssets: typeof skillPresentationAssets;
   skillPresentationAssetsHttp: typeof skillPresentationAssetsHttp;

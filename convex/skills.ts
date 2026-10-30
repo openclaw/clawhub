@@ -10269,7 +10269,7 @@ export const generateChangelogPreview = action({
       slug,
     });
     const previous: Doc<"skillVersions"> | null = skill?.latestVersionId
-      ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+      ? await ctx.runQuery(internal.skillFileReads.getVersionByIdInternal, {
           versionId: skill.latestVersionId,
         })
       : null;
@@ -10293,7 +10293,7 @@ export const generateChangelogPreview = action({
 });
 
 async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersions">) {
-  const skill = (await ctx.runQuery(internal.skills.getSkillByIdInternal, {
+  const skill = (await ctx.runQuery(internal.skillFileReads.getSkillByIdInternal, {
     skillId: version.skillId,
   })) as Doc<"skills"> | null;
   if (!skill) return false;
@@ -10411,7 +10411,7 @@ function buildGitHubMarkdownSourceBaseUrl(repo: string, commit: string, githubPa
 export const getReadme: ReturnType<typeof action> = action({
   args: { versionId: v.id("skillVersions") },
   handler: async (ctx, args): Promise<ReadmeResult> => {
-    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+    const version = (await ctx.runQuery(internal.skillFileReads.getVersionByIdInternal, {
       versionId: args.versionId,
     })) as Doc<"skillVersions"> | null;
     if (!version) throw new ConvexError("Version not found");
@@ -10430,7 +10430,7 @@ export const getReadme: ReturnType<typeof action> = action({
 export const getSkillCard: ReturnType<typeof action> = action({
   args: { versionId: v.id("skillVersions") },
   handler: async (ctx, args): Promise<FileTextResult> => {
-    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+    const version = (await ctx.runQuery(internal.skillFileReads.getVersionByIdInternal, {
       versionId: args.versionId,
     })) as Doc<"skillVersions"> | null;
     if (!version) throw new ConvexError("Version not found");
@@ -10439,7 +10439,7 @@ export const getSkillCard: ReturnType<typeof action> = action({
     }
 
     const fingerprintEntries = (await ctx.runQuery(
-      internal.skills.listVersionFingerprintsInternal,
+      internal.skillFileReads.listVersionFingerprintsInternal,
       {
         skillVersionId: version._id,
       },
@@ -10463,7 +10463,7 @@ export const getSkillCard: ReturnType<typeof action> = action({
 export const getFileText: ReturnType<typeof action> = action({
   args: { versionId: v.id("skillVersions"), path: v.string() },
   handler: async (ctx, args): Promise<FileTextResult> => {
-    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+    const version = (await ctx.runQuery(internal.skillFileReads.getVersionByIdInternal, {
       versionId: args.versionId,
     })) as Doc<"skillVersions"> | null;
     if (!version) throw new ConvexError("Version not found");
@@ -10489,7 +10489,7 @@ export const getFileText: ReturnType<typeof action> = action({
 export const getFilePreview: ReturnType<typeof action> = action({
   args: { versionId: v.id("skillVersions"), path: v.string() },
   handler: async (ctx, args): Promise<FilePreviewResult> => {
-    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+    const version = (await ctx.runQuery(internal.skillFileReads.getVersionByIdInternal, {
       versionId: args.versionId,
     })) as Doc<"skillVersions"> | null;
     if (!version) throw new ConvexError("Version not found");
