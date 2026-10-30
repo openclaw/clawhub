@@ -10,6 +10,10 @@ import { skillSpectorRuntimeErrorMetadata } from "./clawscan-diagnostic-skillspe
 import original from "./fixtures/solaris-069-bundled.json";
 import { runBundledSkillSpector, type ClawScanCommandDiagnostic } from "./run-codex-scan-worker";
 import { securityScannerEnvironment } from "./securityModelPolicy";
+import {
+  installSkillSpectorExceptionObserver,
+  readSkillSpectorExceptionEvents,
+} from "./skillspector-exception-diagnostic";
 
 const sourceCommit = "f197f4566f8a3c11755bc6688ec92a2c3347b4dd";
 const sourceTree = "bcf058341b9cfa6290525a3980eab50e6b4b356f";
@@ -118,8 +122,23 @@ async function attestRuntime(workspace: string) {
   };
 }
 
-export async function main(args = process.argv.slice(2)) {
+export async function main(
+  args = process.argv.slice(2),
+  diagnosticCase: "all" | "fleet-error" | "all-error" = "all",
+) {
   assertSolarisDiagnosticAdmission({ ...process.env, platform: process.platform }, args);
+  if (!["all", "fleet-error", "all-error"].includes(diagnosticCase))
+    throw new Error("Invalid fixed diagnostic case");
+  if (
+    diagnosticCase !== "all" &&
+    (process.env.GITHUB_WORKFLOW_REF !==
+      "openclaw/clawhub/.github/workflows/solaris-exception-diagnostic.yml@refs/heads/main" ||
+      process.env.GITHUB_JOB !== (diagnosticCase === "fleet-error" ? "fleet-root" : "all-roots") ||
+      original.bundledRoots.length !== 62)
+  )
+    throw new Error("Fixed exception diagnostic workflow required");
+  const rootIndices =
+    diagnosticCase === "fleet-error" ? [28] : original.bundledRoots.map((_, index) => index);
   const runnerTemp = process.env.RUNNER_TEMP!;
   const checkout = join(process.env.GITHUB_WORKSPACE!, "solaris-source");
   const source = join(checkout, "harnesses/openclaw");
@@ -139,6 +158,8 @@ export async function main(args = process.argv.slice(2)) {
     release: "solaris-dev-shop-openclaw@0.69.0",
     releaseId: "rd76tsvthmjkfzbqtytqwy0wb18h45ez",
     status: "setup_failed",
+    diagnosticCase,
+    selectedRootIndices: rootIndices,
     differencesFromProduction: [
       "manual singleton without queue, claims, judge or publication",
       "public Git container; all original file bytes and inventory verified",
@@ -173,10 +194,14 @@ export async function main(args = process.argv.slice(2)) {
       force: false,
     });
     summary.before = await verifySolarisDiagnosticInput(join(scratch, "artifact"));
+    const observer =
+      diagnosticCase === "all"
+        ? null
+        : await installSkillSpectorExceptionObserver(scratch, runnerTemp);
     // The actual worker helper admits only this environment. No CI/backend tokens.
     process.env = {
       ...settings,
-      PATH: process.env.PATH,
+      PATH: observer?.path ?? process.env.PATH,
       LANG: "C.UTF-8",
       CODEX_HOME: join(scratch, "home"),
     };
@@ -185,9 +210,9 @@ export async function main(args = process.argv.slice(2)) {
     try {
       await runBundledSkillSpector(
         scratch,
-        original.bundledRoots.map((rootPath) => ({
-          rootPath,
-          scanPath: join("artifact", rootPath),
+        rootIndices.map((rootIndex) => ({
+          rootPath: original.bundledRoots[rootIndex],
+          scanPath: join("artifact", original.bundledRoots[rootIndex]),
         })),
         (diagnostic) => {
           failure = diagnostic.bundledSkillSpector;
@@ -199,9 +224,9 @@ export async function main(args = process.argv.slice(2)) {
     }
     summary.elapsedMs = Math.floor(performance.now() - startedAt);
     summary.failure = failure ?? null;
-    summary.roots = await Promise.all(
-      original.bundledRoots.map(async (_, rootIndex) => {
-        const path = join(scratch, `skillspector-report-${rootIndex}.json`);
+    const roots = await Promise.all(
+      rootIndices.map(async (rootIndex, localIndex) => {
+        const path = join(scratch, `skillspector-report-${localIndex}.json`);
         return {
           rootIndex,
           terminal: await bundledSkillSpectorTerminalContext(path),
@@ -209,6 +234,43 @@ export async function main(args = process.argv.slice(2)) {
         };
       }),
     );
+    summary.roots = roots;
+    if (observer) {
+      const evidence = await readSkillSpectorExceptionEvents(observer.output);
+      summary.exceptionEvidence = evidence.events.some(
+        (event) => event.rootIndex >= rootIndices.length,
+      )
+        ? { presence: "invalid", events: [] }
+        : {
+            ...evidence,
+            events: evidence.events.map((event) => ({
+              ...event,
+              rootIndex: rootIndices[event.rootIndex],
+            })),
+          };
+      const started = roots
+        .filter((root) => root.terminal.presence !== "missing")
+        .map((root) => root.rootIndex)
+        .sort((a, b) => a - b);
+      const installed = evidence.events
+        .filter((event) => event.kind === "installed")
+        .map((event) => rootIndices[event.rootIndex])
+        .sort((a, b) => a - b);
+      const finished = evidence.events.filter((event) => event.kind === "finished");
+      const finishedRoots = finished
+        .map((event) => rootIndices[event.rootIndex])
+        .sort((a, b) => a - b);
+      const complete =
+        evidence.presence === "present" &&
+        JSON.stringify(installed) === JSON.stringify(started) &&
+        JSON.stringify(finishedRoots) === JSON.stringify(started) &&
+        finished.every(
+          (event) =>
+            event.kind === "finished" && event.calls === event.written && event.writeFailures === 0,
+        );
+      summary.observerComplete = complete;
+      if (!complete && summary.status === "completed") summary.status = "validation_failed";
+    }
     summary.after = await verifySolarisDiagnosticInput(join(scratch, "artifact"));
   } catch {
     summary.validationFailed = true;
