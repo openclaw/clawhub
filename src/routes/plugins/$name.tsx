@@ -1226,32 +1226,10 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const isDownloadBlocked =
     pkg.scanStatus === "malicious" || latestRelease?.verification?.scanStatus === "malicious";
   const skillInstallOwner = owner?.handle ?? pkg.ownerHandle ?? "owner";
-  // A tag keeps unscoped package names from matching bundled plugin shortcuts.
-  const pluginInstallTarget = pkg.name.includes("/") ? pkg.name : `${pkg.name}@latest`;
-  const installCommands =
-    pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
-      ? [
-          {
-            label: "Current stable OpenClaw · through 2026.10.4",
-            command: `openclaw plugins install clawhub:${pkg.name}`,
-            copyLabel: "Copy current stable plugin install command",
-            note: null,
-          },
-          {
-            label: "Updated OpenClaw · main/dev",
-            command: `openclaw plugins install ${pluginInstallTarget}`,
-            copyLabel: "Copy updated plugin install command",
-            note: "Requires a build with ClawHub-default support.",
-          },
-        ]
-      : [
-          {
-            label: null,
-            command: `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`,
-            copyLabel: "Copy skill install command",
-            note: null,
-          },
-        ];
+  const isPlugin = pkg.family === "code-plugin" || pkg.family === "bundle-plugin";
+  const installCommand = isPlugin
+    ? `openclaw plugins install clawhub:${pkg.name}`
+    : `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
@@ -1869,34 +1847,25 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   <CardHeader className="detail-hero-summary-row plugin-install-card-header">
                     <CardTitle className="skill-install-panel-title">Install</CardTitle>
                   </CardHeader>
-                  <CardContent className="gap-5">
-                    {installCommands.map(({ label, command, copyLabel, note }) => (
-                      <div
-                        className="skill-install-command-wrap gap-2"
-                        key={command}
-                        role="group"
-                        aria-label={label ?? undefined}
-                      >
-                        {label ? <p className="skill-install-panel-copy">{label}</p> : null}
-                        <div className="skill-install-command-shell skill-install-command-shell-cli">
-                          <span className="skill-install-command-prompt" aria-hidden="true">
-                            $
-                          </span>
-                          <pre className="skill-install-command">
-                            <OpenClawCliInstallCommand command={command} />
-                          </pre>
-                          <InstallCopyButton
-                            text={command}
-                            ariaLabel={copyLabel}
-                            showLabel={false}
-                            variant="ghost"
-                            size="icon-sm"
-                            className="skill-install-command-inline-button"
-                          />
-                        </div>
-                        {note ? <p className="skill-install-panel-copy">{note}</p> : null}
-                      </div>
-                    ))}
+                  <CardContent className="skill-install-command-wrap">
+                    <div className="skill-install-command-shell skill-install-command-shell-cli">
+                      <span className="skill-install-command-prompt" aria-hidden="true">
+                        $
+                      </span>
+                      <pre className="skill-install-command">
+                        <OpenClawCliInstallCommand command={installCommand} />
+                      </pre>
+                      <InstallCopyButton
+                        text={installCommand}
+                        ariaLabel={
+                          isPlugin ? "Copy plugin install command" : "Copy skill install command"
+                        }
+                        showLabel={false}
+                        variant="ghost"
+                        size="icon-sm"
+                        className="skill-install-command-inline-button"
+                      />
+                    </div>
                   </CardContent>
                 </Card>
               </div>

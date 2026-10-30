@@ -272,14 +272,15 @@ describe("plugin detail route", () => {
   });
 
   it.each([
-    { family: "code-plugin", name: "demo-plugin", target: "demo-plugin@latest" },
-    { family: "code-plugin", name: "discord", target: "discord@latest" },
-    { family: "code-plugin", name: "@composio/composio", target: "@composio/composio" },
-    { family: "code-plugin", name: "owner/plugin", target: "owner/plugin" },
-    { family: "bundle-plugin", name: "demo-bundle", target: "demo-bundle@latest" },
+    { family: "code-plugin", name: "demo-plugin" },
+    { family: "code-plugin", name: "discord" },
+    { family: "code-plugin", name: "@shopify/ai-toolkit" },
+    { family: "code-plugin", name: "owner/plugin" },
+    { family: "bundle-plugin", name: "demo-bundle" },
+    { family: "bundle-plugin", name: "@owner/scoped-bundle" },
   ] as const)(
-    "shows and copies stable and updated OpenClaw commands for $name",
-    async ({ family, name, target }) => {
+    "shows and copies one explicit ClawHub command for $name",
+    async ({ family, name }) => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       vi.stubGlobal("navigator", { clipboard: { writeText } });
       loaderDataMock.detail.package = { ...loaderDataMock.detail.package!, family, name };
@@ -288,33 +289,49 @@ describe("plugin detail route", () => {
 
       render(<Component />);
 
-      const stable = screen.getByRole("group", {
-        name: "Current stable OpenClaw · through 2026.10.4",
-      });
-      const updated = screen.getByRole("group", { name: "Updated OpenClaw · main/dev" });
-      expect(stable.querySelector(".skill-install-command")?.textContent).toBe(
-        `openclaw plugins install clawhub:${name}`,
-      );
-      expect(updated.querySelector(".skill-install-command")?.textContent).toBe(
-        `openclaw plugins install ${target}`,
-      );
-      expect(
-        within(updated).getByText("Requires a build with ClawHub-default support."),
-      ).toBeTruthy();
+      const card = screen
+        .getByRole("heading", { name: "Install" })
+        .closest(".skill-install-command-card")!;
+      const command = `openclaw plugins install clawhub:${name}`;
+      expect(card.querySelectorAll("pre")).toHaveLength(1);
+      expect(card.querySelector(".skill-install-command-wrap pre")).toBeTruthy();
+      expect(card.querySelector("pre")?.textContent).toBe(command);
+      expect(card.querySelector("p")).toBeNull();
+      expect(within(card as HTMLElement).getAllByRole("button")).toHaveLength(1);
       fireEvent.click(
-        within(stable).getByRole("button", { name: "Copy current stable plugin install command" }),
+        within(card as HTMLElement).getByRole("button", { name: "Copy plugin install command" }),
       );
-      await waitFor(() =>
-        expect(writeText).toHaveBeenCalledWith(`openclaw plugins install clawhub:${name}`),
-      );
-      fireEvent.click(
-        within(updated).getByRole("button", { name: "Copy updated plugin install command" }),
-      );
-      await waitFor(() =>
-        expect(writeText).toHaveBeenCalledWith(`openclaw plugins install ${target}`),
-      );
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
     },
   );
+
+  it.each([488, 1280])("preserves the skill command at viewport width %i", async (width) => {
+    setViewportWidth(width);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    loaderDataMock.detail.package = {
+      ...loaderDataMock.detail.package!,
+      family: "skill",
+      name: "demo-skill",
+    };
+    loaderDataMock.detail.owner = { handle: "@demo-owner", displayName: "Demo Owner", image: null };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const card = screen
+      .getByRole("heading", { name: "Install" })
+      .closest(".skill-install-command-card")!;
+    const command = "openclaw skills install @demo-owner/demo-skill";
+    expect(card.querySelectorAll("pre")).toHaveLength(1);
+    expect(card.querySelector("pre")?.textContent).toBe(command);
+    expect(card.querySelector("p")).toBeNull();
+    fireEvent.click(
+      within(card as HTMLElement).getByRole("button", { name: "Copy skill install command" }),
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
+  });
 
   it("uses mobile About and Stats tabs below 901px", async () => {
     setViewportWidth(488);
@@ -1856,9 +1873,9 @@ describe("plugin detail route", () => {
     expect(screen.getByText("ClawPack")).toBeTruthy();
     expect(screen.getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
     expect(screen.getByText("sha512-demo")).toBeTruthy();
-    expect(screen.getAllByText("openclaw plugins install")).toHaveLength(2);
+    expect(screen.getAllByText("openclaw plugins install")).toHaveLength(1);
     expect(
-      screen.getByText("demo-plugin@latest", { selector: ".skill-install-command-target" }),
+      screen.getByText("clawhub:demo-plugin", { selector: ".skill-install-command-target" }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",

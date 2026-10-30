@@ -980,6 +980,13 @@ or:
 openclaw plugins install clawhub:@scope/pkg
 ```
 
+The plugin detail Install card shows only the `Install` heading and one copyable
+command block. Code and bundle plugins use the explicit
+`openclaw plugins install clawhub:<package-name>` command, which works across
+released and updated OpenClaw versions without bundled-shortcut ambiguity. Do not
+add version labels, an alternate command, or explanatory subtext to this card.
+Keep CLI compatibility guidance in the public docs instead.
+
 Skills should also install directly from ClawHub:
 
 ```bash
