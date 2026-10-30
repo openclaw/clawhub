@@ -48,6 +48,108 @@ const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 20;
 const MAX_MAX_BATCHES = 200;
 
+// Operator-only removal of one unwanted redirect left by a same-owner merge.
+// The merged parent and its retained uploads must remain hidden and untouched.
+export const removeMergedSkillSlugAliasInternal = internalMutation({
+  args: {
+    aliasId: v.id("skillSlugAliases"),
+    sourceSkillId: v.id("skills"),
+    targetSkillId: v.id("skills"),
+    expectedSlug: v.string(),
+    expectedOwnerUserId: v.id("users"),
+    expectedOwnerPublisherId: v.optional(v.id("publishers")),
+    expectedUpdatedAt: v.number(),
+    actorUserId: v.id("users"),
+    reason: v.string(),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt !== undefined || actor.deactivatedAt !== undefined) {
+      throw new ConvexError("Active admin actor is required");
+    }
+    assertRole(actor, ["admin"]);
+    const reason = args.reason.trim();
+    if (!reason || reason.length > 500 || !Number.isFinite(args.expectedUpdatedAt)) {
+      throw new ConvexError("Supply a 1–500 character reason and the observed update time");
+    }
+    const dryRun = args.dryRun !== false;
+    const rejected = (code: string) => ({ eligible: false, removed: false, dryRun, reason: code });
+    const alias = await ctx.db.get(args.aliasId);
+    if (!alias) return rejected("alias-not-found");
+    if (
+      alias.updatedAt !== args.expectedUpdatedAt ||
+      alias.slug !== args.expectedSlug ||
+      alias.skillId !== args.targetSkillId ||
+      alias.ownerUserId !== args.expectedOwnerUserId ||
+      alias.ownerPublisherId !== args.expectedOwnerPublisherId
+    ) {
+      return rejected("alias-changed");
+    }
+    const source = await ctx.db.get(args.sourceSkillId);
+    const target = await ctx.db.get(args.targetSkillId);
+    const sameOwner = (skill: Doc<"skills">) =>
+      skill.ownerUserId === alias.ownerUserId && skill.ownerPublisherId === alias.ownerPublisherId;
+    if (
+      !source ||
+      !target ||
+      source._id === target._id ||
+      source.slug !== alias.slug ||
+      target.slug === alias.slug ||
+      !sameOwner(source) ||
+      !sameOwner(target) ||
+      source.softDeletedAt === undefined ||
+      source.moderationStatus !== "hidden" ||
+      source.moderationReason !== "owner.merged" ||
+      source.canonicalSkillId !== target._id ||
+      source.forkOf?.skillId !== target._id ||
+      source.forkOf.kind !== "duplicate" ||
+      target.softDeletedAt !== undefined ||
+      target.moderationStatus !== "active"
+    ) {
+      return rejected("merge-lineage-changed");
+    }
+    const owner = await ctx.db.get(alias.ownerUserId);
+    const publisher = alias.ownerPublisherId ? await ctx.db.get(alias.ownerPublisherId) : null;
+    if (
+      !owner ||
+      owner.deletedAt !== undefined ||
+      owner.deactivatedAt !== undefined ||
+      (alias.ownerPublisherId !== undefined && !isPublisherActive(publisher))
+    ) {
+      return rejected("owner-unavailable");
+    }
+    const aliases = alias.ownerPublisherId
+      ? await ctx.db
+          .query("skillSlugAliases")
+          .withIndex("by_owner_publisher_slug", (q) =>
+            q.eq("ownerPublisherId", alias.ownerPublisherId).eq("slug", alias.slug),
+          )
+          .take(2)
+      : await ctx.db
+          .query("skillSlugAliases")
+          .withIndex("by_owner_slug", (q) =>
+            q.eq("ownerUserId", alias.ownerUserId).eq("slug", alias.slug),
+          )
+          .take(2);
+    if (aliases.length !== 1 || aliases[0]?._id !== alias._id) {
+      return rejected("alias-scope-ambiguous");
+    }
+    if (!dryRun) {
+      await ctx.db.delete(alias._id);
+      await ctx.db.insert("auditLogs", {
+        actorUserId: actor._id,
+        action: "maintenance.skill.alias.remove",
+        targetType: "skillSlugAlias",
+        targetId: alias._id,
+        metadata: { reason, alias, sourceSkillId: source._id },
+        createdAt: Date.now(),
+      });
+    }
+    return { eligible: true, removed: !dryRun, dryRun, aliasId: alias._id };
+  },
+});
+
 export const retryFailedPublishAttemptChecksInternal = internalMutation({
   args: {
     attemptId: v.id("publishAttempts"),
