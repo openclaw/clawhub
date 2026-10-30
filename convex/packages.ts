@@ -8827,7 +8827,8 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
     for (const release of releases) {
       if (!prioritizeRecent) nextCursor = release._creationTime;
       if (results.length >= batchSize) break;
-      if (release.softDeletedAt) continue;
+      // Prepublication owns retained releases, including exhausted failed attempts.
+      if (!isPublishedPackageRelease(release)) continue;
 
       const pkg = await ctx.db.get(release.packageId);
       if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
