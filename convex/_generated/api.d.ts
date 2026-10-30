@@ -128,6 +128,7 @@ import type * as lib_openClawInspectorTarget from "../lib/openClawInspectorTarge
 import type * as lib_openClawPublishAuthorization from "../lib/openClawPublishAuthorization.js";
 import type * as lib_openaiResponse from "../lib/openaiResponse.js";
 import type * as lib_packageArtifacts from "../lib/packageArtifacts.js";
+import type * as lib_packageCatalogRead from "../lib/packageCatalogRead.js";
 import type * as lib_packageClawpackPublish from "../lib/packageClawpackPublish.js";
 import type * as lib_packageIcons from "../lib/packageIcons.js";
 import type * as lib_packagePublishRecovery from "../lib/packagePublishRecovery.js";
@@ -146,6 +147,7 @@ import type * as lib_pluginCategoryClassification from "../lib/pluginCategoryCla
 import type * as lib_pluginCategoryClassificationContract from "../lib/pluginCategoryClassificationContract.js";
 import type * as lib_pluginCategoryReview from "../lib/pluginCategoryReview.js";
 import type * as lib_pluginDiscovery from "../lib/pluginDiscovery.js";
+import type * as lib_pluginDiscoveryQueries from "../lib/pluginDiscoveryQueries.js";
 import type * as lib_public from "../lib/public.js";
 import type * as lib_publicBrowse from "../lib/publicBrowse.js";
 import type * as lib_publicRouteReservations from "../lib/publicRouteReservations.js";
@@ -239,6 +241,7 @@ import type * as pluginSearchObservations from "../pluginSearchObservations.js";
 import type * as prepublicationObservability from "../prepublicationObservability.js";
 import type * as promotions from "../promotions.js";
 import type * as promotionsFeed from "../promotionsFeed.js";
+import type * as publicPluginDiscovery from "../publicPluginDiscovery.js";
 import type * as publicSkillVersions from "../publicSkillVersions.js";
 import type * as publishAttemptDispatch from "../publishAttemptDispatch.js";
 import type * as publishAttempts from "../publishAttempts.js";
@@ -418,6 +421,7 @@ declare const fullApi: ApiFromModules<{
   "lib/openClawPublishAuthorization": typeof lib_openClawPublishAuthorization;
   "lib/openaiResponse": typeof lib_openaiResponse;
   "lib/packageArtifacts": typeof lib_packageArtifacts;
+  "lib/packageCatalogRead": typeof lib_packageCatalogRead;
   "lib/packageClawpackPublish": typeof lib_packageClawpackPublish;
   "lib/packageIcons": typeof lib_packageIcons;
   "lib/packagePublishRecovery": typeof lib_packagePublishRecovery;
@@ -436,6 +440,7 @@ declare const fullApi: ApiFromModules<{
   "lib/pluginCategoryClassificationContract": typeof lib_pluginCategoryClassificationContract;
   "lib/pluginCategoryReview": typeof lib_pluginCategoryReview;
   "lib/pluginDiscovery": typeof lib_pluginDiscovery;
+  "lib/pluginDiscoveryQueries": typeof lib_pluginDiscoveryQueries;
   "lib/public": typeof lib_public;
   "lib/publicBrowse": typeof lib_publicBrowse;
   "lib/publicRouteReservations": typeof lib_publicRouteReservations;
@@ -529,6 +534,7 @@ declare const fullApi: ApiFromModules<{
   prepublicationObservability: typeof prepublicationObservability;
   promotions: typeof promotions;
   promotionsFeed: typeof promotionsFeed;
+  publicPluginDiscovery: typeof publicPluginDiscovery;
   publicSkillVersions: typeof publicSkillVersions;
   publishAttemptDispatch: typeof publishAttemptDispatch;
   publishAttempts: typeof publishAttempts;

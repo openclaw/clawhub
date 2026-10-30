@@ -137,13 +137,15 @@ const apiRefs = api as unknown as {
   };
 };
 const internalRefs = internal as unknown as {
+  publicPluginDiscovery: {
+    listPluginOverviewCategoryInternal: unknown;
+    listPluginDiscoveryCategoryInternal: unknown;
+  };
   packages: {
     countPublicPluginsInternal: unknown;
     getByNameForViewerInternal: unknown;
     hasMissingRecommendationScoresInternal: unknown;
     listPluginExportPageInternal: unknown;
-    listPluginOverviewCategoryInternal: unknown;
-    listPluginDiscoveryCategoryInternal: unknown;
     listPluginValidationReportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
@@ -1678,7 +1680,7 @@ async function listPackages(
       page: CatalogListItem[];
       isDone: boolean;
       continueCursor: string;
-    }>(ctx, internalRefs.packages.listPluginDiscoveryCategoryInternal, {
+    }>(ctx, internalRefs.publicPluginDiscovery.listPluginDiscoveryCategoryInternal, {
       category: resolvePluginCategoryFilter(rawCategory),
       family: effectiveFamily,
       channel: channelParam.value,
@@ -2539,7 +2541,7 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
     ...categories.map((category) =>
       runQueryRef<CatalogListItem[]>(
         ctx,
-        internalRefs.packages.listPluginOverviewCategoryInternal,
+        internalRefs.publicPluginDiscovery.listPluginOverviewCategoryInternal,
         {
           category: category.slug,
           numItems: PLUGIN_OVERVIEW_SECTION_SIZE,

@@ -26,7 +26,6 @@ import {
   type PackageOfficialMigrationListPhase,
   type PackageOfficialMigrationPhase,
   type ServerPackagePublishRequest,
-  type PackageVerificationTier,
 } from "clawhub-schema";
 import { getPage, type IndexKey } from "convex-helpers/server/pagination";
 import { paginationOptsValidator, type PaginationOptions } from "convex/server";
@@ -82,6 +81,22 @@ import type { StaticScanResult } from "./lib/moderationEngine";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
+import {
+  MAX_PUBLIC_LIST_PAGE_SIZE,
+  MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS,
+  packageListScanStatusValidator,
+  type PackageListScanStatus,
+  type PublicPackageListItem,
+  type PackageDigestLike,
+  type PackageOwnerAccessRef,
+  type PublicPackageListPage,
+  viewerCanAccessPackageOwner,
+  canViewerReadPackage,
+  digestMatchesFilters,
+  digestMatchesSearchFilters,
+  toPublicPackageListItem,
+  getPackageByNormalizedName,
+} from "./lib/packageCatalogRead";
 import { resolvePackageIcon } from "./lib/packageIcons";
 import {
   assertManualRecoveryFinalization,
@@ -137,7 +152,11 @@ import {
   pluginCategoryClassificationValidator,
   type PluginCategoryClassification,
 } from "./lib/pluginCategoryClassificationContract";
-import { getPluginDiscoveryPins, isEnglishPluginListing } from "./lib/pluginDiscovery";
+import { isEnglishPluginListing } from "./lib/pluginDiscovery";
+import {
+  listCuratedPluginCategoryPage,
+  listPluginOverviewCategory,
+} from "./lib/pluginDiscoveryQueries";
 import { toPublicPublisher } from "./lib/public";
 import { assertOperationalPackageRetryFinalization } from "./lib/publishAttemptOperationalRecovery";
 import {
@@ -186,8 +205,6 @@ import { ACTIVE_PUBLISH_ATTEMPT_STATUSES, failedPublishAttemptPatch } from "./pu
 import schema, { llmAnalysisValidator } from "./schema";
 type PackageFamily = StoredPackageFamily;
 
-const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
-const MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS = 500;
 const MAX_PUBLIC_LIST_FILTER_SCAN_PAGES = 6;
 const MAX_PLUGIN_EXPORT_LIST_LIMIT = 250;
 const MAX_PLUGIN_VALIDATION_REPORT_PAGE_SIZE = 50;
@@ -202,14 +219,6 @@ const PACKAGE_RELEASE_TAG_CLEANUP_BATCH_SIZE = 4;
 // The recent scan probe reads full release rows plus each parent package in one transaction.
 const MAX_PACKAGE_RELEASE_SCAN_RECENT_CANDIDATES = 4;
 const MAX_PACKAGE_RELEASE_SCAN_BACKLOG_CANDIDATES = 8;
-const packageListScanStatusValidator = v.union(
-  v.literal("clean"),
-  v.literal("suspicious"),
-  v.literal("malicious"),
-  v.literal("pending"),
-  v.literal("not-run"),
-);
-type PackageListScanStatus = NonNullable<Doc<"packages">["scanStatus"]>;
 const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
 const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
@@ -716,28 +725,6 @@ type PackagePublishOptions = {
   onFilesAdopted?: () => void;
 };
 type PackageDoc = Doc<"packages">;
-type PublicPackageListItem = {
-  name: string;
-  displayName: string;
-  family: PublicPackageFamily;
-  runtimeId: string | null;
-  channel: PackageChannel;
-  isOfficial: boolean;
-  summary: string | null;
-  icon: string | null;
-  ownerHandle: string | null;
-  ownerImage: string | null;
-  ownerOfficial: boolean;
-  createdAt: number;
-  updatedAt: number;
-  latestVersion: string | null;
-  categories?: string[];
-  topics?: string[];
-  featuredAt?: number;
-  trending24h?: { downloads: number; installs: number; windowStart: number; windowEnd: number };
-  verificationTier: PackageVerificationTier | null;
-  stats: Doc<"packages">["stats"];
-};
 type PackageReleaseScanStatus = ReturnType<typeof resolvePackageReleaseScanStatus>;
 type PackageReleaseModerationQueueDoc = Omit<Doc<"packageReleases">, "createdAt"> & {
   createdAt?: number;
@@ -965,36 +952,6 @@ function toPackageModerationQueueItem(
 }
 
 type PackageBadgeKind = Doc<"packageBadges">["kind"];
-type PackageDigestLike = Pick<
-  Doc<"packageSearchDigest">,
-  | "packageId"
-  | "name"
-  | "normalizedName"
-  | "displayName"
-  | "family"
-  | "runtimeId"
-  | "channel"
-  | "isOfficial"
-  | "ownerUserId"
-  | "ownerPublisherId"
-  | "summary"
-  | "icon"
-  | "ownerHandle"
-  | "ownerKind"
-  | "createdAt"
-  | "updatedAt"
-  | "latestVersion"
-  | "categories"
-  | "topics"
-  | "pluginCategoryTags"
-  | "verificationTier"
-  | "stats"
-  | "recommendedScore"
-  | "scanStatus"
-  | "softDeletedAt"
-> & { pluginCategory?: string };
-type PackageOwnerAccessRef = Pick<PackageDigestLike, "ownerUserId" | "ownerPublisherId"> &
-  Partial<Pick<PackageDigestLike, "ownerKind">>;
 type PublicPageCursorState = {
   cursor: string | null;
   offset: number;
@@ -1008,11 +965,6 @@ const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
 type OfficialFirstPackageCategoryCursorState = {
   phase: "official" | "community";
   cursor: string | null;
-};
-type PublicPackageListPage = {
-  page: PublicPackageListItem[];
-  isDone: boolean;
-  continueCursor: string;
 };
 const STABLE_PACKAGE_DISCOVERY_CURSOR_PREFIX = "pkgstable:";
 type StablePackageFamily = (typeof STABLE_PACKAGE_FAMILIES)[number];
@@ -1154,38 +1106,6 @@ type DashboardPackageListItem = {
   } | null;
 };
 
-function requiresPrivilegedPackageAccess(
-  digest: Pick<PackageDigestLike, "channel" | "scanStatus">,
-) {
-  return digest.channel === "private" || isPackageBlockedFromPublic(digest.scanStatus);
-}
-
-async function viewerCanAccessPackageOwner(
-  ctx: DbReaderCtx,
-  digest: PackageOwnerAccessRef,
-  viewerUserId: Id<"users"> | undefined,
-  membershipCache?: Map<string, Promise<boolean>>,
-) {
-  if (!viewerUserId) return false;
-  if (!digest.ownerPublisherId) return digest.ownerUserId === viewerUserId;
-
-  const ownerPublisherId = digest.ownerPublisherId;
-  const cacheKey = `${ownerPublisherId}:${digest.ownerUserId}`;
-  const cached = membershipCache?.get(cacheKey);
-  if (cached) return await cached;
-
-  const membershipPromise = (async () => {
-    const ownerPublisher = await ctx.db.get(ownerPublisherId);
-    return await canAccessPublisherOwnerScope(ctx, {
-      publisher: ownerPublisher,
-      userId: viewerUserId,
-      legacyOwnerUserId: digest.ownerUserId,
-    });
-  })();
-  membershipCache?.set(cacheKey, membershipPromise);
-  return await membershipPromise;
-}
-
 async function viewerCanManagePackageOwner(
   ctx: DbReaderCtx,
   digest: PackageOwnerAccessRef,
@@ -1201,26 +1121,6 @@ async function viewerCanManagePackageOwner(
     allowedPublisherRoles: ["admin"],
     legacyOwnerUserId: digest.ownerUserId,
   });
-}
-
-async function canViewerReadPackage(
-  ctx: DbReaderCtx,
-  digest: Pick<PackageDigestLike, "channel" | "scanStatus" | "ownerUserId" | "ownerPublisherId"> &
-    Partial<Pick<PackageDigestLike, "ownerKind">>,
-  viewerUserId: Id<"users"> | undefined,
-  membershipCache?: Map<string, Promise<boolean>>,
-) {
-  if (!requiresPrivilegedPackageAccess(digest)) return true;
-  const isPrivilegedViewer = await viewerCanAccessPackageOwner(
-    ctx,
-    digest,
-    viewerUserId,
-    membershipCache,
-  );
-  return (
-    (digest.channel !== "private" || isPrivilegedViewer) &&
-    (!isPackageBlockedFromPublic(digest.scanStatus) || isPrivilegedViewer)
-  );
 }
 
 function resolvePublicPackageScanStatus(
@@ -1493,59 +1393,6 @@ async function isTemplateCatalogPublisherAvailable(
   );
 }
 
-function digestMatchesFilters(
-  digest: PackageDigestLike,
-  args: {
-    channel?: PackageChannel;
-    category?: string;
-    topic?: string;
-    createdAfter?: number;
-    excludedScanStatuses?: PackageListScanStatus[];
-  },
-) {
-  // Catalog discovery must not inherit an owner's permission to inspect hidden reservations.
-  if (digest.softDeletedAt || !digest.latestVersion) return false;
-  if (digest.channel === "private" && args.channel !== "private") return false;
-  if (isPackageBlockedFromPublic(digest.scanStatus)) return false;
-  if (digest.scanStatus && args.excludedScanStatuses?.includes(digest.scanStatus)) return false;
-  if (args.category) {
-    if (digest.family === "claw") {
-      if (!(digest.categories ?? []).includes(args.category)) return false;
-    } else if (digest.pluginCategory) {
-      if (digest.pluginCategory !== args.category) return false;
-    } else if (!(digest.pluginCategoryTags ?? []).includes(args.category)) {
-      return false;
-    }
-  }
-  if (args.topic && !getCatalogTopicSlugs(digest.topics).includes(args.topic)) {
-    return false;
-  }
-  if (args.createdAfter !== undefined && digest.createdAt < args.createdAfter) return false;
-  return true;
-}
-
-function digestMatchesSearchFilters(
-  digest: PackageDigestLike,
-  args: {
-    family?: PackageFamily;
-    families?: PackageFamily[];
-    channel?: PackageChannel;
-    isOfficial?: boolean;
-    category?: string;
-    topic?: string;
-    createdAfter?: number;
-    excludedScanStatuses?: PackageListScanStatus[];
-  },
-) {
-  if (args.family && digest.family !== args.family) return false;
-  if (args.families?.length && !args.families.includes(digest.family)) return false;
-  if (args.channel && digest.channel !== args.channel) return false;
-  if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) {
-    return false;
-  }
-  return digestMatchesFilters(digest, args);
-}
-
 function packageMatchesListFilters(
   pkg: Doc<"packages">,
   args: {
@@ -1617,51 +1464,6 @@ async function removePackageBadge(
   if (!existing) return false;
   await ctx.db.delete(existing._id);
   return true;
-}
-
-function defaultPackageStats(): Doc<"packages">["stats"] {
-  return { downloads: 0, installs: 0, stars: 0, versions: 0 };
-}
-
-async function resolvePackageListStats(
-  ctx: DbReaderCtx,
-  digest: PackageDigestLike,
-): Promise<Doc<"packages">["stats"]> {
-  const pkg = await ctx.db.get(digest.packageId);
-  return pkg?.stats ?? digest.stats ?? defaultPackageStats();
-}
-
-async function toPublicPackageListItem(
-  ctx: DbReaderCtx,
-  digest: PackageDigestLike,
-  featuredAt?: number,
-): Promise<PublicPackageListItem> {
-  // Publisher identity is independent of the package's official channel. Resolve
-  // current status so granting/revoking a badge needs no package digest backfill.
-  const publisher = digest.ownerPublisherId
-    ? await ctx.db.get(digest.ownerPublisherId)
-    : await getOwnerPublisher(ctx, digest);
-  return {
-    name: digest.name,
-    displayName: digest.displayName,
-    family: toPublicPackageFamily(digest.family),
-    runtimeId: digest.runtimeId ?? null,
-    channel: digest.channel,
-    isOfficial: digest.isOfficial,
-    summary: digest.summary ?? null,
-    icon: digest.icon ?? null,
-    ownerHandle: digest.ownerHandle || null,
-    ownerImage: toPublicPublisher(publisher)?.image ?? null,
-    ownerOfficial: await isOfficialPublisher(ctx, publisher),
-    createdAt: digest.createdAt,
-    updatedAt: digest.updatedAt,
-    latestVersion: digest.latestVersion ?? null,
-    categories: digest.categories,
-    topics: digest.topics,
-    ...(featuredAt === undefined ? {} : { featuredAt }),
-    verificationTier: digest.verificationTier ?? null,
-    stats: await resolvePackageListStats(ctx, digest),
-  };
 }
 
 async function toPublicPackageListItemFromPackage(
@@ -2835,151 +2637,6 @@ async function takeVisiblePackageCategoryDigestPage(
   };
 }
 
-type CuratedCategoryArgs = {
-  category: PluginCategorySlug;
-  englishOnly?: boolean;
-  family?: PackageFamily;
-  channel?: PackageChannel;
-  isOfficial?: boolean;
-  topic?: string;
-  excludedScanStatuses?: PackageListScanStatus[];
-  paginationOpts: { cursor: string | null; numItems: number };
-};
-
-type CuratedCategoryCursor = {
-  scope: string;
-  pinOffset: number;
-  downloads?: number | null;
-  name?: string;
-};
-
-async function listCuratedPluginCategoryPage(
-  ctx: DbReaderCtx,
-  args: CuratedCategoryArgs,
-): Promise<PublicPackageListPage> {
-  const scope = JSON.stringify([
-    args.category,
-    args.family,
-    args.channel,
-    args.isOfficial,
-    args.topic,
-    args.excludedScanStatuses,
-    args.englishOnly ?? false,
-  ]);
-  let state: CuratedCategoryCursor = { scope, pinOffset: 0 };
-  if (args.paginationOpts.cursor) {
-    try {
-      const value = JSON.parse(decodeURIComponent(atob(args.paginationOpts.cursor)));
-      if (
-        value.scope !== scope ||
-        !Number.isSafeInteger(value.pinOffset) ||
-        value.pinOffset < 0 ||
-        (value.downloads !== undefined &&
-          value.downloads !== null &&
-          (typeof value.downloads !== "number" ||
-            !Number.isFinite(value.downloads) ||
-            value.downloads < 0)) ||
-        (value.name !== undefined && typeof value.name !== "string")
-      )
-        throw new Error();
-      state = value;
-    } catch {
-      throw new ConvexError("Invalid curated category cursor");
-    }
-  }
-  const targetCount = Math.max(
-    1,
-    Math.min(args.paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE),
-  );
-  const pins = getPluginDiscoveryPins(args.category);
-  const pinNames = new Set(pins);
-  const page: PublicPackageListItem[] = [];
-  const membershipCache = new Map<string, Promise<boolean>>();
-  const eligible = async (digest: PackageDigestLike) =>
-    (digest.family === "code-plugin" || digest.family === "bundle-plugin") &&
-    digestMatchesSearchFilters(digest, args) &&
-    (!args.englishOnly || isEnglishPluginListing(digest)) &&
-    (await canViewerReadPackage(ctx, digest, undefined, membershipCache));
-  const result = (isDone: boolean): PublicPackageListPage => ({
-    page,
-    isDone,
-    continueCursor: isDone ? "" : btoa(encodeURIComponent(JSON.stringify(state))),
-  });
-
-  // Resolve pins by canonical identity before taking the top N. A downloaded tail
-  // cannot crowd them out, and missing/private/blocked pins consume no visible slot.
-  while (state.pinOffset < pins.length && page.length < targetCount) {
-    const name = pins[state.pinOffset++];
-    const pkg = await getPackageByNormalizedName(ctx, name);
-    if (!pkg) continue;
-    const digest = await ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
-      .unique();
-    if (digest && (await eligible(digest))) page.push(await toPublicPackageListItem(ctx, digest));
-  }
-  if (page.length >= targetCount) return result(false);
-
-  // Walk one download-count group at a time: downloads descend, canonical names
-  // ascend even across page boundaries. The bounded scan also advances over
-  // ineligible rows, so a sparse category can backfill without repeating a page.
-  let remaining = MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS;
-  while (page.length < targetCount && remaining > 0) {
-    if (!state.name) {
-      const next = await ctx.db
-        .query("packagePluginCategorySearchDigest")
-        .withIndex("by_active_category_downloads_name", (q) => {
-          const range = q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category);
-          return state.downloads === undefined
-            ? range
-            : range.lt("stats.downloads", state.downloads ?? undefined);
-        })
-        .order("desc")
-        .first();
-      if (!next) return result(true);
-      state.downloads = next.stats?.downloads ?? null;
-      state.name = "";
-    }
-    const rows = await ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_category_downloads_name", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("pluginCategory", args.category)
-          .eq("stats.downloads", state.downloads ?? undefined)
-          .gt("name", state.name!),
-      )
-      .order("asc")
-      .take(Math.min(remaining, Math.max(targetCount - page.length, 20)));
-    if (rows.length === 0) {
-      delete state.name;
-      continue;
-    }
-    for (const digest of rows) {
-      remaining -= 1;
-      state.name = digest.name;
-      if (!pinNames.has(digest.name) && (await eligible(digest)))
-        page.push(await toPublicPackageListItem(ctx, digest));
-      if (page.length >= targetCount) return result(false);
-    }
-  }
-  return result(false);
-}
-
-async function listPluginOverviewCategory(
-  ctx: DbReaderCtx,
-  args: { category: PluginCategorySlug; numItems: number },
-) {
-  if (args.category === "other") return [];
-  return (
-    await listCuratedPluginCategoryPage(ctx, {
-      category: args.category,
-      englishOnly: true,
-      paginationOpts: { cursor: null, numItems: args.numItems },
-    })
-  ).page;
-}
-
 async function fetchHighlightedPackageEntries(
   ctx: DbReaderCtx,
   args: {
@@ -3046,13 +2703,6 @@ async function fetchHighlightedPackagePage(
   const official = items.filter((item) => item.isOfficial);
   const community = items.filter((item) => !item.isOfficial);
   return [...official, ...community].slice(0, args.numItems);
-}
-
-async function getPackageByNormalizedName(ctx: DbReaderCtx, normalizedName: string) {
-  return (await ctx.db
-    .query("packages")
-    .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
-    .unique()) as Doc<"packages"> | null;
 }
 
 async function getReadablePackageByName(
