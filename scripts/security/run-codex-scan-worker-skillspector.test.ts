@@ -1,6 +1,6 @@
 /* @vitest-environment node */
-import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -157,13 +157,22 @@ ${writeReport(findings)}`,
     // Advance only the budget clock after the first real subprocess writes its
     // report. Timers and the second subprocess remain real; no 20-minute sleep.
     vi.spyOn(Date, "now").mockImplementation(
-      () => startedAt + (existsSync(firstReport) ? 20 * 60_000 - remainingMs : 0),
+      () =>
+        startedAt +
+        (existsSync(firstReport) && readFileSync(firstReport, "utf8").length > 0
+          ? 20 * 60_000 - remainingMs
+          : 0),
     );
     await expect(run()).rejects.toThrow(error);
     expect(JSON.parse(await readFile(firstReport, "utf8"))).toEqual(findings);
-    await expect(readFile(join(workspace, "skillspector-report-1.json"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
+    const secondReport = join(workspace, "skillspector-report-1.json");
+    if (remainingMs > 0) {
+      // A started child has a private output slot, never a completed report.
+      expect(await readFile(secondReport, "utf8")).toBe("");
+      expect((await stat(secondReport)).mode & 0o777).toBe(0o600);
+    } else {
+      await expect(readFile(secondReport)).rejects.toMatchObject({ code: "ENOENT" });
+    }
     await expect(readFile(handoff)).rejects.toMatchObject({ code: "ENOENT" });
   },
 );
