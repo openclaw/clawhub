@@ -185,6 +185,7 @@ import type * as lib_skillDownloadBackfill from "../lib/skillDownloadBackfill.js
 import type * as lib_skillEvaluationConfig from "../lib/skillEvaluationConfig.js";
 import type * as lib_skillEvaluationResult from "../lib/skillEvaluationResult.js";
 import type * as lib_skillFileAccess from "../lib/skillFileAccess.js";
+import type * as lib_skillFileReadAccess from "../lib/skillFileReadAccess.js";
 import type * as lib_skillHourlyStats from "../lib/skillHourlyStats.js";
 import type * as lib_skillInstallBackfill from "../lib/skillInstallBackfill.js";
 import type * as lib_skillPresentation from "../lib/skillPresentation.js";
@@ -210,6 +211,7 @@ import type * as lib_skillsShMirrorPublic from "../lib/skillsShMirrorPublic.js";
 import type * as lib_skillsShPublicVisibility from "../lib/skillsShPublicVisibility.js";
 import type * as lib_staticPublishScan from "../lib/staticPublishScan.js";
 import type * as lib_storageDigests from "../lib/storageDigests.js";
+import type * as lib_storageText from "../lib/storageText.js";
 import type * as lib_templateCategoryClassification from "../lib/templateCategoryClassification.js";
 import type * as lib_templateFeedStorage from "../lib/templateFeedStorage.js";
 import type * as lib_templateStorage from "../lib/templateStorage.js";
@@ -275,6 +277,7 @@ import type * as skillPresentationAssetsHttp from "../skillPresentationAssetsHtt
 import type * as skillPresentationBackfill from "../skillPresentationBackfill.js";
 import type * as skillPresentationImageNode from "../skillPresentationImageNode.js";
 import type * as skillPublishUploads from "../skillPublishUploads.js";
+import type * as skillReadme from "../skillReadme.js";
 import type * as skillStatEvents from "../skillStatEvents.js";
 import type * as skillTransfers from "../skillTransfers.js";
 import type * as skills from "../skills.js";
@@ -479,6 +482,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillEvaluationConfig": typeof lib_skillEvaluationConfig;
   "lib/skillEvaluationResult": typeof lib_skillEvaluationResult;
   "lib/skillFileAccess": typeof lib_skillFileAccess;
+  "lib/skillFileReadAccess": typeof lib_skillFileReadAccess;
   "lib/skillHourlyStats": typeof lib_skillHourlyStats;
   "lib/skillInstallBackfill": typeof lib_skillInstallBackfill;
   "lib/skillPresentation": typeof lib_skillPresentation;
@@ -504,6 +508,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillsShPublicVisibility": typeof lib_skillsShPublicVisibility;
   "lib/staticPublishScan": typeof lib_staticPublishScan;
   "lib/storageDigests": typeof lib_storageDigests;
+  "lib/storageText": typeof lib_storageText;
   "lib/templateCategoryClassification": typeof lib_templateCategoryClassification;
   "lib/templateFeedStorage": typeof lib_templateFeedStorage;
   "lib/templateStorage": typeof lib_templateStorage;
@@ -569,6 +574,7 @@ declare const fullApi: ApiFromModules<{
   skillPresentationBackfill: typeof skillPresentationBackfill;
   skillPresentationImageNode: typeof skillPresentationImageNode;
   skillPublishUploads: typeof skillPublishUploads;
+  skillReadme: typeof skillReadme;
   skillStatEvents: typeof skillStatEvents;
   skillTransfers: typeof skillTransfers;
   skills: typeof skills;

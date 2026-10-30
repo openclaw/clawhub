@@ -243,7 +243,7 @@ export function SkillDetailPage({
   const reportSkill = useMutation(api.skills.report);
   const updateSummary = useMutation(api.skills.updateSummary);
   const setCatalogMetadata = useMutation(api.skills.setCatalogMetadata);
-  const getReadme = useAction(api.skills.getReadme);
+  const getReadme = useAction(api.skillReadme.getReadme);
   const getSkillCard = useAction(api.skills.getSkillCard);
   const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>

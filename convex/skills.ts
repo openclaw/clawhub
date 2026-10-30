@@ -18,7 +18,7 @@ import { ConvexError, v, type Value } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   action,
   internalAction,
@@ -31,7 +31,6 @@ import {
   assertAdmin,
   assertModerator,
   getOptionalActiveAuthUserId,
-  getOptionalActiveAuthUserIdFromAction,
   requireUser,
   requireUserFromAction,
 } from "./lib/access";
@@ -134,13 +133,13 @@ import {
   isPublishedSkillVersion,
   isPublicSkillVersionAvailableForSkill,
 } from "./lib/skillFileAccess";
+import { canReadSkillVersionFiles } from "./lib/skillFileReadAccess";
 import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
 import {
   readSkillPublicationProgress,
   readSkillVersionPublicationProgress,
 } from "./lib/skillPublicationProgress";
 import {
-  fetchText,
   publishVersionForUser,
   queueHighlightedWebhook,
   type SkillPublishResult,
@@ -173,6 +172,7 @@ import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidat
 import { readCanonicalStat, readPublicDownloads, readSkillMetricSources } from "./lib/skillStats";
 import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
+import { fetchText } from "./lib/storageText";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 import schema from "./schema";
 import { consumeSkillPublishUploads } from "./skillPublishUploads";
@@ -10292,42 +10292,6 @@ export const generateChangelogPreview = action({
   },
 });
 
-async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersions">) {
-  const skill = (await ctx.runQuery(internal.skillFileReads.getSkillByIdInternal, {
-    skillId: version.skillId,
-  })) as Doc<"skills"> | null;
-  if (!skill) return false;
-
-  const authUserId = await getOptionalActiveAuthUserIdFromAction(ctx);
-  if (authUserId) {
-    if (isDirectSkillOwner(skill, authUserId) && !skill.softDeletedAt && !version.softDeletedAt) {
-      return true;
-    }
-    if (skill.ownerPublisherId && !skill.softDeletedAt && !version.softDeletedAt) {
-      const canAccessOwnerScope = (await ctx.runQuery(
-        internal.publishers.canAccessOwnerScopeInternal,
-        {
-          publisherId: skill.ownerPublisherId,
-          userId: authUserId,
-          allowedPublisherRoles: ["publisher"],
-          legacyOwnerUserId: skill.ownerUserId,
-        },
-      )) as boolean;
-      if (canAccessOwnerScope) {
-        return true;
-      }
-    }
-    const actor = (await ctx.runQuery(internal.users.getByIdInternal, {
-      userId: authUserId,
-    })) as Doc<"users"> | null;
-    if (actor?.role === "admin" || actor?.role === "moderator") return true;
-  }
-
-  if (skill.softDeletedAt || version.softDeletedAt) return false;
-
-  return Boolean(toPublicSkill(skill)) && isPublicSkillVersionAvailableForSkill(version, skill._id);
-}
-
 async function canReadGitHubSkillContent(ctx: QueryCtx, skill: Doc<"skills">) {
   const authUserId = await getOptionalActiveAuthUserId(ctx);
   if (authUserId) {
@@ -10408,24 +10372,8 @@ function buildGitHubMarkdownSourceBaseUrl(repo: string, commit: string, githubPa
   return `https://github.com/${encodedRepo}/blob/${encodeURIComponent(commit)}${encodedPath}`;
 }
 
-export const getReadme: ReturnType<typeof action> = action({
-  args: { versionId: v.id("skillVersions") },
-  handler: async (ctx, args): Promise<ReadmeResult> => {
-    const version = (await ctx.runQuery(internal.skillFileReads.getVersionByIdInternal, {
-      versionId: args.versionId,
-    })) as Doc<"skillVersions"> | null;
-    if (!version) throw new ConvexError("Version not found");
-    if (!(await canReadSkillVersionFiles(ctx, version))) {
-      throw new ConvexError("Version not available");
-    }
-    const readmeFile = version.files.find(
-      (file) => file.path.toLowerCase() === "skill.md" || file.path.toLowerCase() === "skills.md",
-    );
-    if (!readmeFile) throw new ConvexError("SKILL.md not found");
-    const text = await fetchText(ctx, readmeFile.storageId);
-    return { path: readmeFile.path, text };
-  },
-});
+// Retain the existing public RPC name for older clients.
+export { getReadme } from "./skillReadme";
 
 export const getSkillCard: ReturnType<typeof action> = action({
   args: { versionId: v.id("skillVersions") },

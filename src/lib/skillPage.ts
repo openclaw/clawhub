@@ -132,7 +132,7 @@ export async function fetchSkillPageData(
 
     if (result.latestVersion?._id) {
       try {
-        const response = await convexHttp.action(api.skills.getReadme, {
+        const response = await convexHttp.action(api.skillReadme.getReadme, {
           versionId: result.latestVersion._id,
         });
         readme = readActionText(response);

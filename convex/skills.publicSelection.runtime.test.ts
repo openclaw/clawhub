@@ -240,13 +240,15 @@ it("preserves authenticated owner preview of pending bytes while anonymous previ
     });
   });
   const owner = f.t.withIdentity({ subject: f.userId });
-  expect(await owner.action(api.skills.getReadme, { versionId: f.pendingId })).toEqual({
-    path: "SKILL.md",
-    text: "# Pending owner preview",
-  });
-  await expect(f.t.action(api.skills.getReadme, { versionId: f.pendingId })).rejects.toThrow(
-    "Version not available",
-  );
+  for (const readme of [api.skills.getReadme, api.skillReadme.getReadme]) {
+    expect(await owner.action(readme, { versionId: f.pendingId })).toEqual({
+      path: "SKILL.md",
+      text: "# Pending owner preview",
+    });
+    await expect(f.t.action(readme, { versionId: f.pendingId })).rejects.toThrow(
+      "Version not available",
+    );
+  }
 });
 
 async function publicVersionMetadata(f: Awaited<ReturnType<typeof fixture>>) {

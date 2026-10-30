@@ -1,10 +1,10 @@
 import {
-  decodeUtf8Text,
   normalizeCatalogTopics,
   normalizeContentType,
   normalizeSkillCategories,
   resolveSkillCategories,
 } from "clawhub-schema";
+import { decodeUtf8Text } from "clawhub-schema/textFiles";
 import { ConvexError } from "convex/values";
 import semver from "semver";
 import { api, internal } from "../_generated/api";
@@ -55,6 +55,7 @@ import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSkillSummary } from "./skillSummary";
 import { normalizeSkillTags } from "./skillTags";
 import { runStaticPublishScan } from "./staticPublishScan";
+import { fetchText } from "./storageText";
 import { getWebhookConfig, type WebhookSkillPayload } from "./webhooks";
 
 const MAX_FILES_FOR_EMBEDDING = 40;
@@ -924,17 +925,6 @@ export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<"ski
     event: "skill.highlighted",
     skill: payload,
   });
-}
-
-export async function fetchText(
-  ctx: { storage: { get: (id: Id<"_storage">) => Promise<Blob | null> } },
-  storageId: Id<"_storage">,
-) {
-  const blob = await ctx.storage.get(storageId);
-  if (!blob) throw new Error("File missing in storage");
-  const text = decodeUtf8Text(new Uint8Array(await blob.arrayBuffer()));
-  if (text === null) throw new Error("File is not valid UTF-8 text");
-  return text;
 }
 
 async function hostDirectSkillPresentationIcon(
