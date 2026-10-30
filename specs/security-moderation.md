@@ -646,6 +646,30 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   per-scanner outputs without per-file or aggregate-size truncation. Bounded
   metadata/error fields may remain capped. Artifact upload still requires the
   existing verified-secret scan to pass.
+- The fixed Solaris exception diagnostic is a separate, nonpublishing manual
+  workflow on `main`, admitted only on the qualified GitHub-hosted Ubuntu 22.04
+  runner with the fixed source, original-byte inventory, model policy and scan
+  budgets. It accepts no dispatch inputs or arbitrary targets. Original root 28
+  runs first; all 62 roots run only after that job succeeds with complete observer
+  evidence. It cannot claim queue work, invoke the judge, retry a publication or
+  write publication state, and it never executes publisher code.
+  The observer verifies the pinned analyzer source and invokes the installed CLI
+  and interpreter. It calls the original failure classifier first and preserves
+  its result, exceptions and retry behavior. Exported exception data is limited
+  to fixed module IDs, qualified line numbers, allowlisted classes, bounded HTTP
+  status codes, root indices, counts and lifecycle flags. Frame provenance must
+  match the loaded module's globals and source filename. Export limits are three
+  chained exceptions, eight frames per exception and eight failure records per
+  root; traversal is capped at 64 frames, line numbers at 1,000,000 and the private
+  event file at 2 MiB/1,024 records. Reaching a limit that loses observer records
+  cannot produce a successful diagnostic. Messages, provider bodies, raw paths,
+  source text, findings and credentials must never enter exported summaries or
+  logs. The reader reprojects allowed fields from a private regular file and
+  rejects symlinks, insecure permissions, malformed data and incomplete lifecycle
+  or count evidence. Private raw reports, events, scratch and source are removed
+  after readers settle; only the restricted summary may be uploaded. Diagnostic
+  success is neither publication acceptance nor proof of recovery or unblocking;
+  normal scanner, judge and package-specific live verification remain required.
 - Claimable queue work edge-triggers a coalesced GitHub Actions worker dispatch.
   Successful completion requests another dispatch while queued work remains; a
   five-minute Convex cron is only a recovery watchdog for lost dispatch signals.
