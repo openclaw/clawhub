@@ -287,6 +287,51 @@ export async function skillSpectorTerminalMetadata(path: string) {
   };
 }
 
+// Exception names are provider/source controlled; never export unknown labels.
+const runtimeErrorClasses = [
+  "RateLimitError",
+  "APITimeoutError",
+  "APIConnectionError",
+  "InternalServerError",
+  "BadRequestError",
+  "AuthenticationError",
+  "PermissionDeniedError",
+  "NotFoundError",
+  "UnprocessableEntityError",
+  "TypeError",
+  "ValueError",
+  "KeyError",
+  "IndexError",
+  "RuntimeError",
+  "TimeoutError",
+  "OSError",
+  "MemoryError",
+  "ValidationError",
+  "UnexpectedStructuredResponse",
+  "LLMRuntimeLimitError",
+  "NotImplementedError",
+] as const;
+
+export function projectBundledRuntimeErrors(value: unknown) {
+  const raw = record(record(value)?.analysis_completeness)?.ledger_exceptions;
+  const exceptions = Array.isArray(raw) && raw.length <= 100_000 ? raw : null;
+  const classes: Record<string, number> = {};
+  let unknownClasses: number | null = exceptions === null ? null : 0;
+  for (const item of exceptions ?? []) {
+    const entry = record(item);
+    if (!entry || entry.error_class === undefined) continue;
+    const known = runtimeErrorClasses.find((name) => entry.error_class === name);
+    if (known) classes[known] = (classes[known] ?? 0) + 1;
+    else if (unknownClasses !== null) unknownClasses++;
+  }
+  return { classes, unknownClasses };
+}
+
+export async function skillSpectorRuntimeErrorMetadata(path: string) {
+  const { value } = await readRestrictedDiagnosticJson(path);
+  return projectBundledRuntimeErrors(value);
+}
+
 export async function fullProfileSkillSpectorMetadata(path: string) {
   const { presence, sha256, value } = await readRestrictedDiagnosticJson(path);
   const root = record(value);

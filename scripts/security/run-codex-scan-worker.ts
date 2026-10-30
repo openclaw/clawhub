@@ -1683,7 +1683,7 @@ export function aggregateSkillSpectorAnalyses(
   };
 }
 
-async function runBundledSkillSpector(
+export async function runBundledSkillSpector(
   workspace: string,
   scanInputs: BundledSkillSpectorScanInput[],
   onDiagnostic: (diagnostic: Partial<ClawScanCommandDiagnostic>) => void,

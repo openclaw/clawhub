@@ -1,0 +1,64 @@
+name: Nonpublishing Solaris bundled diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nonpublishing-solaris-bundled-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnostic:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    environment: Production
+    timeout-minutes: 50
+    env:
+      CLAWSCAN_DIAGNOSTIC_RUNNER: ubuntu-22.04
+      GOTOOLCHAIN: go1.27.3
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: Shaisolaris/solaris-dev-shop-plugins
+          ref: f197f4566f8a3c11755bc6688ec92a2c3347b4dd
+          path: solaris-source
+          sparse-checkout: harnesses/openclaw
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.22.1
+      - uses: ./.github/actions/setup-bun
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.16"
+      - name: Install exact production scanner sources and adapters
+        run: |
+          set -euo pipefail
+          sh scripts/security/install-clawscan.sh
+          sh scripts/security/install-clawscan-scanners.sh skillspector
+      - name: Run fixed original bundled roots without publication
+        id: probe
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
+          LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
+          DEFAULT_BASE_URL: https://api.openai.com/v1
+          DEFAULT_MODEL: ${{ vars.DEFAULT_MODEL || 'gpt-6.1-sol' }}
+          REASONING_EFFORT: ${{ vars.REASONING_EFFORT || 'medium' }}
+          SKILLSPECTOR_MODEL: ${{ vars.SKILLSPECTOR_MODEL || 'gpt-6.1-sol' }}
+          SKILLSPECTOR_REASONING_EFFORT: ${{ vars.SKILLSPECTOR_REASONING_EFFORT || 'medium' }}
+        run: bun scripts/security/solaris-bundled-diagnostic.ts
+      - name: Upload allowlisted summary only
+        if: ${{ !cancelled() && steps.probe.outputs.safe-output != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: NONPRODUCTION_SOLARIS_BUNDLED-${{ github.run_id }}
+          path: ${{ steps.probe.outputs.safe-output }}/summary.json
+          if-no-files-found: error
+          retention-days: 7
