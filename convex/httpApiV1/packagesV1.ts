@@ -74,6 +74,7 @@ import {
   getPackageTrustReasons,
   resolvePackageReleaseScanStatus,
 } from "../lib/packageSecurity";
+import { getPluginBrowseSnapshotKind } from "../lib/pluginBrowseSnapshot";
 import { getPluginDiscoveryCategories } from "../lib/pluginDiscovery";
 import type { PublicPublisher } from "../lib/public";
 import {
@@ -2035,7 +2036,12 @@ async function listPackages(
         ...(totalCount !== null ? { totalCount } : {}),
       },
       200,
-      rate.headers,
+      !viewerUserId &&
+        !request.headers.has("authorization") &&
+        !request.headers.has("cookie") &&
+        getPluginBrowseSnapshotKind(url) === "default"
+        ? mergeHeaders(rate.headers, { "Cache-Control": "public, max-age=0, s-maxage=30" })
+        : rate.headers,
     );
   }
 

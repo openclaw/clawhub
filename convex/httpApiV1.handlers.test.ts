@@ -13333,6 +13333,52 @@ describe("httpApiV1 handlers", () => {
     expect(codePluginCursors).toEqual([null, "code-downloads-cursor"]);
   });
 
+  it.each(["", "?limit=25&sort=recommended"])(
+    "shares the anonymous default plugin browse snapshot: %s",
+    async (search) => {
+      const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+        if (Object.keys(args).length === 0) return 0;
+        if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+        return { page: [], isDone: true, continueCursor: "" };
+      });
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const response = await __handlers.listPluginsV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(`https://example.com/api/v1/plugins${search}`),
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, s-maxage=30");
+      expect(runMutation).toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { search: "?limit=25&sort=recommended", cookie: "session=private" },
+    { search: "?limit=12" },
+    { search: "?limit=25&sort=downloads" },
+    { search: "?limit=25&isOfficial=true" },
+    { search: "?limit=25&channel=private" },
+    { search: "?limit=25&limit=25" },
+    { search: "?limit=25&unused=parameter" },
+  ])("keeps other default catalog responses uncacheable: %j", async ({ search, cookie }) => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 0;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+      return { page: [], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(`https://example.com/api/v1/plugins${search}`, {
+        headers: cookie ? { cookie } : {},
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).not.toContain("s-maxage");
+  });
+
   it("plugins list recommended sort uses weighted scores across plugin families", async () => {
     const codePlugin = makeCatalogItem("code-starred", {
       family: "code-plugin",

@@ -355,6 +355,47 @@ describe("fetchPackages", () => {
     expect(requestInit?.headers).not.toHaveProperty("cookie");
   });
 
+  it.each([
+    { sort: "recommended" as const },
+    { category: "channels", curated: true, sort: "downloads" as const },
+  ])("lets anonymous production browse reach the CDN: %j", async (params) => {
+    vi.stubEnv("VITE_CLAWHUB_DEPLOY_ENV", "production");
+    vi.stubEnv("VITE_CONVEX_SITE_URL", "https://wry-manatee-359.convex.site");
+    getRequestHeadersMock.mockReturnValue(new Headers({ cookie: "session=private" }));
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPluginCatalog({ ...params, limit: 25, viewerMode: "anonymous" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(serverFetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: "omit" });
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("cookie");
+  });
+
+  it.each([
+    { params: { limit: 25 }, mode: "request", env: "production" },
+    { params: { limit: 25 }, mode: "anonymous", env: "preview" },
+    { params: { limit: 12 }, mode: "anonymous", env: "production" },
+    { params: { limit: 25, q: "matrix" }, mode: "anonymous", env: "production" },
+    { params: { limit: 25, cursor: "next-page" }, mode: "anonymous", env: "production" },
+    { params: { limit: 25, isOfficial: true }, mode: "anonymous", env: "production" },
+    { params: { limit: 25, sort: "updated" }, mode: "anonymous", env: "production" },
+  ] as const)("keeps other SSR reads on the internal proxy: %j", async ({ params, mode, env }) => {
+    vi.stubEnv("VITE_CLAWHUB_DEPLOY_ENV", env);
+    vi.stubEnv("VITE_CONVEX_SITE_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+    );
+
+    await fetchPluginCatalog({ ...params, viewerMode: mode });
+
+    expect(serverFetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("uses the dedicated plugins search endpoint for mixed plugin search", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi

@@ -8,8 +8,10 @@ import type {
   PackageVerificationSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
+import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { publicApiUrl } from "./publicApiUrl";
+import { getRuntimeEnv } from "./runtimeEnv";
 
 export type PackageListItem = {
   name: string;
@@ -290,13 +292,21 @@ const getForwardedHeaders = createIsomorphicFn()
   .client(async (_viewerMode: PackageApiViewerMode): Promise<Record<string, string>> => ({}));
 
 const fetchPackageResponse = createIsomorphicFn()
-  .server(async (url: string, init: RequestInit) => {
+  .server(async (url: string, init: RequestInit, viewerMode: PackageApiViewerMode) => {
+    if (
+      viewerMode === "anonymous" &&
+      getRuntimeEnv("VITE_CLAWHUB_DEPLOY_ENV") === "production" &&
+      getPluginBrowseSnapshotKind(new URL(url))
+    ) {
+      // A native fetch reaches the CDN; Nitro's internal dispatch bypasses it.
+      return fetch(url, init);
+    }
     const { serverFetch } = await import("nitro/app");
     // Nitro routes locally by path, even for absolute URLs. Our API proxy adds
     // edge identity instead of following Convex redirects through Vercel protection.
     return serverFetch(url, init);
   })
-  .client((url: string, init: RequestInit) => fetch(url, init));
+  .client((url: string, init: RequestInit, _viewerMode: PackageApiViewerMode) => fetch(url, init));
 
 async function packageFetch(
   url: URL,
@@ -306,19 +316,23 @@ async function packageFetch(
 ) {
   const forwarded = await getForwardedHeaders(viewerMode);
   const isSameOrigin = typeof window !== "undefined" && url.origin === window.location.origin;
-  return await fetchPackageResponse(url.toString(), {
-    method: "GET",
-    // Only send credentials for same-origin requests (production Vercel
-    // rewrite). Cross-origin requests to the Convex site URL don't need
-    // cookies, and `credentials: "include"` is rejected when the server
-    // responds with `Access-Control-Allow-Origin: *`.
-    credentials: viewerMode === "request" && isSameOrigin ? "include" : "omit",
-    headers: {
-      Accept: accept,
-      ...forwarded,
+  return await fetchPackageResponse(
+    url.toString(),
+    {
+      method: "GET",
+      // Only send credentials for same-origin requests (production Vercel
+      // rewrite). Cross-origin requests to the Convex site URL don't need
+      // cookies, and `credentials: "include"` is rejected when the server
+      // responds with `Access-Control-Allow-Origin: *`.
+      credentials: viewerMode === "request" && isSameOrigin ? "include" : "omit",
+      headers: {
+        Accept: accept,
+        ...forwarded,
+      },
+      signal,
     },
-    signal,
-  });
+    viewerMode,
+  );
 }
 
 function parseRetryAfterSeconds(value: string | null): number | null {

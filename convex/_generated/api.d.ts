@@ -143,6 +143,7 @@ import type * as lib_packageSearchDigest from "../lib/packageSearchDigest.js";
 import type * as lib_packageSecurity from "../lib/packageSecurity.js";
 import type * as lib_packageStatEvents from "../lib/packageStatEvents.js";
 import type * as lib_pluginApiRetirements from "../lib/pluginApiRetirements.js";
+import type * as lib_pluginBrowseSnapshot from "../lib/pluginBrowseSnapshot.js";
 import type * as lib_pluginCategoryClassification from "../lib/pluginCategoryClassification.js";
 import type * as lib_pluginCategoryClassificationContract from "../lib/pluginCategoryClassificationContract.js";
 import type * as lib_pluginCategoryReview from "../lib/pluginCategoryReview.js";
@@ -437,6 +438,7 @@ declare const fullApi: ApiFromModules<{
   "lib/packageSecurity": typeof lib_packageSecurity;
   "lib/packageStatEvents": typeof lib_packageStatEvents;
   "lib/pluginApiRetirements": typeof lib_pluginApiRetirements;
+  "lib/pluginBrowseSnapshot": typeof lib_pluginBrowseSnapshot;
   "lib/pluginCategoryClassification": typeof lib_pluginCategoryClassification;
   "lib/pluginCategoryClassificationContract": typeof lib_pluginCategoryClassificationContract;
   "lib/pluginCategoryReview": typeof lib_pluginCategoryReview;
