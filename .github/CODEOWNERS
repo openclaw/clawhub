@@ -27,6 +27,7 @@
 /convex/publishers.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/rateLimits.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/skills.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/publicSkillVersions.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/skillTransfers.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/tokens.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/uploads.ts @openclaw/openclaw-secops @Patrick-Erichsen
