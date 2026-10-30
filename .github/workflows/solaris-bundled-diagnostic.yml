@@ -37,11 +37,11 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12.16"
-      - name: Install exact production scanner sources and adapters
-        run: |
-          set -euo pipefail
-          sh scripts/security/install-clawscan.sh
-          sh scripts/security/install-clawscan-scanners.sh skillspector
+      - name: Install exact production ClawScan source
+        run: sh scripts/security/install-clawscan.sh
+      # The installer publishes CLAWSCAN_SOURCE_DIR through GITHUB_ENV.
+      - name: Install matched SkillSpector source and adapters
+        run: sh scripts/security/install-clawscan-scanners.sh skillspector
       - name: Run fixed original bundled roots without publication
         id: probe
         env:

@@ -79,6 +79,15 @@ it("has no dispatch selectors, worker/backend credentials or broad artifact uplo
   expect(workflow.on.workflow_dispatch).toBeNull();
   expect(workflow.permissions).toEqual({ contents: "read" });
   const job = workflow.jobs.diagnostic;
+  const installerIndex = job.steps.findIndex((step: { run?: string }) =>
+    step.run?.includes("sh scripts/security/install-clawscan.sh"),
+  );
+  const scannerIndex = job.steps.findIndex((step: { run?: string }) =>
+    step.run?.includes("sh scripts/security/install-clawscan-scanners.sh skillspector"),
+  );
+  // install-clawscan.sh writes GITHUB_ENV; its value exists only in later steps.
+  expect(installerIndex).toBeGreaterThanOrEqual(0);
+  expect(scannerIndex).toBeGreaterThan(installerIndex);
   expect(job.environment).toBe("Production");
   expect(job["runs-on"]).toBe("ubuntu-22.04");
   expect(job.if).toContain("github.ref == 'refs/heads/main'");
