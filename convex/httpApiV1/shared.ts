@@ -303,7 +303,7 @@ export async function readPublicSkillVersionSelections(
       start += batchSize
     ) {
       batches.push(
-        ctx.runQuery(internal.skills.getPublicVersionSelectionsInternal, {
+        ctx.runQuery(internal.publicSkillVersions.getPublicVersionSelectionsInternal, {
           selections: selections.slice(start, start + batchSize),
         }),
       );

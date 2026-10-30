@@ -237,6 +237,7 @@ import type * as pluginSearchObservations from "../pluginSearchObservations.js";
 import type * as prepublicationObservability from "../prepublicationObservability.js";
 import type * as promotions from "../promotions.js";
 import type * as promotionsFeed from "../promotionsFeed.js";
+import type * as publicSkillVersions from "../publicSkillVersions.js";
 import type * as publishAttemptDispatch from "../publishAttemptDispatch.js";
 import type * as publishAttempts from "../publishAttempts.js";
 import type * as publisherAbuse from "../publisherAbuse.js";
@@ -524,6 +525,7 @@ declare const fullApi: ApiFromModules<{
   prepublicationObservability: typeof prepublicationObservability;
   promotions: typeof promotions;
   promotionsFeed: typeof promotionsFeed;
+  publicSkillVersions: typeof publicSkillVersions;
   publishAttemptDispatch: typeof publishAttemptDispatch;
   publishAttempts: typeof publishAttempts;
   publisherAbuse: typeof publisherAbuse;

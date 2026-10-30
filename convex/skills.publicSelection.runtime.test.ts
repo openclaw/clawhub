@@ -95,7 +95,7 @@ it("selects published and legacy versions by current version, tag, latest, and I
     { versionId: f.publishedId },
   ]) {
     expect(
-      await f.t.query(internal.skills.getPublicVersionSelectionInternal, {
+      await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionInternal, {
         skillId: f.skillId,
         ...selector,
       }),
@@ -106,7 +106,7 @@ it("selects published and legacy versions by current version, tag, latest, and I
     });
   }
   expect(
-    await f.t.query(internal.skills.getPublicVersionSelectionInternal, {
+    await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionInternal, {
       skillId: f.skillId,
       tag: "legacy",
     }),
@@ -124,7 +124,7 @@ it("withholds unpublished and foreign selections without exposing a version docu
     { tag: "missing" },
   ]) {
     expect(
-      await f.t.query(internal.skills.getPublicVersionSelectionInternal, {
+      await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionInternal, {
         skillId: f.skillId,
         ...selector,
       }),
@@ -132,7 +132,9 @@ it("withholds unpublished and foreign selections without exposing a version docu
   }
   await f.t.run((ctx) => ctx.db.patch(f.skillId, { latestVersionId: f.pendingId }));
   expect(
-    await f.t.query(internal.skills.getPublicVersionSelectionInternal, { skillId: f.skillId }),
+    await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionInternal, {
+      skillId: f.skillId,
+    }),
   ).toEqual({ status: "not_found" });
 });
 
@@ -140,7 +142,7 @@ it("retains the deleted outcome only for published withdrawn versions", async ()
   const f = await fixture();
   for (const versionId of [f.deletedId, f.withdrawnId]) {
     expect(
-      await f.t.query(internal.skills.getPublicVersionSelectionInternal, {
+      await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionInternal, {
         skillId: f.skillId,
         versionId,
       }),
@@ -148,7 +150,7 @@ it("retains the deleted outcome only for published withdrawn versions", async ()
   }
   await f.t.run((ctx) => ctx.db.patch(f.pendingId, { softDeletedAt: 2 }));
   expect(
-    await f.t.query(internal.skills.getPublicVersionSelectionInternal, {
+    await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionInternal, {
       skillId: f.skillId,
       versionId: f.pendingId,
     }),
@@ -157,7 +159,7 @@ it("retains the deleted outcome only for published withdrawn versions", async ()
 
 it("binds each batch pair, preserves order, and checks the current parent", async () => {
   const f = await fixture();
-  const results = await f.t.query(internal.skills.getPublicVersionSelectionsInternal, {
+  const results = await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionsInternal, {
     selections: [
       { skillId: f.skillId, versionId: f.publishedId },
       { skillId: f.skillId, versionId: f.foreignId },
@@ -175,13 +177,13 @@ it("binds each batch pair, preserves order, and checks the current parent", asyn
   ]);
   await f.t.run((ctx) => ctx.db.patch(f.skillId, { softDeletedAt: 3 }));
   expect(
-    await f.t.query(internal.skills.getPublicVersionSelectionInternal, {
+    await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionInternal, {
       skillId: f.skillId,
       versionId: f.publishedId,
     }),
   ).toEqual({ status: "not_found" });
   expect(
-    await f.t.query(internal.skills.getPublicVersionSelectionsInternal, {
+    await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionsInternal, {
       selections: [{ skillId: f.skillId, versionId: f.publishedId }],
     }),
   ).toEqual([{ status: "not_found" }]);
@@ -193,7 +195,9 @@ it("keeps current moderation in the snapshot for inspection and download adapter
     ctx.db.patch(f.skillId, { moderationStatus: "hidden", moderationVerdict: "malicious" }),
   );
   expect(
-    await f.t.query(internal.skills.getPublicVersionSelectionInternal, { skillId: f.skillId }),
+    await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionInternal, {
+      skillId: f.skillId,
+    }),
   ).toMatchObject({
     status: "available",
     skill: { moderationStatus: "hidden", moderationVerdict: "malicious" },
@@ -209,7 +213,7 @@ it("keeps current moderation in the snapshot for inspection and download adapter
 it("bounds batch reads before loading records", async () => {
   const f = await fixture();
   await expect(
-    f.t.query(internal.skills.getPublicVersionSelectionsInternal, {
+    f.t.query(internal.publicSkillVersions.getPublicVersionSelectionsInternal, {
       selections: Array.from({ length: 251 }, () => ({
         skillId: f.skillId,
         versionId: f.publishedId,
@@ -326,3 +330,15 @@ it.each(["owner", "moderator"] as const)(
     expect(versions.map((version) => version.version)).toContain("2.0.0");
   },
 );
+
+it("preserves the legacy internal entrypoints during rollout", async () => {
+  const f = await fixture();
+  const selector = { skillId: f.skillId, versionId: f.publishedId };
+  expect(await f.t.query(internal.skills.getPublicVersionSelectionInternal, selector)).toEqual(
+    await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionInternal, selector),
+  );
+  const batch = { selections: [selector, { skillId: f.skillId, versionId: f.pendingId }] };
+  expect(await f.t.query(internal.skills.getPublicVersionSelectionsInternal, batch)).toEqual(
+    await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionsInternal, batch),
+  );
+});

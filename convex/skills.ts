@@ -146,11 +146,7 @@ import {
   type SkillPublishResult,
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
-import {
-  getPublicSkillMetadataOwner,
-  readPublicSkillVersion,
-  readPublicSkillVersionSelections,
-} from "./lib/skills/publicVersions";
+import { getPublicSkillMetadataOwner } from "./lib/skills/publicVersions";
 import {
   getSkillBySlugForPublisher,
   getSkillSlugAliasBySlugForPublisher,
@@ -7800,28 +7796,11 @@ export const getVersionById = query({
   },
 });
 
-// Publication selection is separate from each route's parent authorization and
-// scan policy. These internal snapshots must never be serialized wholesale.
-export const getPublicVersionSelectionInternal = internalQuery({
-  args: {
-    skillId: v.id("skills"),
-    versionId: v.optional(v.id("skillVersions")),
-    version: v.optional(v.string()),
-    tag: v.optional(v.string()),
-  },
-  handler: readPublicSkillVersion,
-});
-
-export const getPublicVersionSelectionsInternal = internalQuery({
-  args: {
-    selections: v.array(v.object({ skillId: v.id("skills"), versionId: v.id("skillVersions") })),
-  },
-  handler: async (ctx, args) => {
-    if (args.selections.length > 250)
-      throw new ConvexError("At most 250 version selections are allowed.");
-    return readPublicSkillVersionSelections(ctx, args.selections);
-  },
-});
+// Preserve the existing internal paths while HTTP rechecks use the lightweight module.
+export {
+  getPublicVersionSelectionInternal,
+  getPublicVersionSelectionsInternal,
+} from "./publicSkillVersions";
 
 export const getVersionsByIdsInternal = internalQuery({
   args: { versionIds: v.array(v.id("skillVersions")) },

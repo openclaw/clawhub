@@ -132,10 +132,13 @@ export async function downloadZipHandler(
     });
   }
 
-  const selection = await ctx.runQuery(internal.skills.getPublicVersionSelectionInternal, {
-    skillId: skillResult.skill._id,
-    ...(versionParam ? { version: versionParam } : tagParam ? { tag: tagParam } : {}),
-  });
+  const selection = await ctx.runQuery(
+    internal.publicSkillVersions.getPublicVersionSelectionInternal,
+    {
+      skillId: skillResult.skill._id,
+      ...(versionParam ? { version: versionParam } : tagParam ? { tag: tagParam } : {}),
+    },
+  );
   if (selection.status !== "available") {
     if (
       selection.status === "not_found" &&

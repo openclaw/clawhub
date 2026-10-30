@@ -81,8 +81,8 @@ function fixture(selected: keyof typeof ids = "published") {
   }
   const runQuery = vi.fn(async (ref: unknown, args: Record<string, unknown>) => {
     const name = getFunctionName(ref as never);
-    if (name === "skills:getPublicVersionSelectionInternal") return selection(args);
-    if (name === "skills:getPublicVersionSelectionsInternal")
+    if (name === "publicSkillVersions:getPublicVersionSelectionInternal") return selection(args);
+    if (name === "publicSkillVersions:getPublicVersionSelectionsInternal")
       return (args.selections as Record<string, unknown>[]).map(selection);
     if (name === "skills:getBySlug" || name === "skills:getVerifyTargetBySlugInternal") {
       return {

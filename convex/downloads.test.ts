@@ -1179,7 +1179,7 @@ describe("downloads helpers", () => {
         if (isRateLimitArgs(args)) return okRate();
         if (
           getFunctionName(_query as Parameters<typeof getFunctionName>[0]) ===
-          getFunctionName(internal.skills.getPublicVersionSelectionInternal)
+          getFunctionName(internal.publicSkillVersions.getPublicVersionSelectionInternal)
         )
           return { status: "not_found" };
         if ("slug" in args) {
@@ -1318,7 +1318,7 @@ describe("downloads helpers", () => {
         if (isRateLimitArgs(args)) return okRate();
         if (
           getFunctionName(_query as Parameters<typeof getFunctionName>[0]) ===
-          getFunctionName(internal.skills.getPublicVersionSelectionInternal)
+          getFunctionName(internal.publicSkillVersions.getPublicVersionSelectionInternal)
         )
           return { status: "not_found" };
         if ("slug" in args) {
@@ -1411,7 +1411,7 @@ describe("downloads helpers", () => {
         if (isRateLimitArgs(args)) return okRate();
         if (
           getFunctionName(_query as Parameters<typeof getFunctionName>[0]) ===
-          getFunctionName(internal.skills.getPublicVersionSelectionInternal)
+          getFunctionName(internal.publicSkillVersions.getPublicVersionSelectionInternal)
         )
           return { status: "not_found" };
         if ("slug" in args) {
@@ -1471,7 +1471,7 @@ describe("downloads helpers", () => {
           .filter(
             ([query]) =>
               getFunctionName(query as Parameters<typeof getFunctionName>[0]) !==
-              getFunctionName(internal.skills.getPublicVersionSelectionInternal),
+              getFunctionName(internal.publicSkillVersions.getPublicVersionSelectionInternal),
           )
           .some(([, args]) => args.skillId === "skills:github"),
       ).toBe(false);
