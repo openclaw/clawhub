@@ -660,8 +660,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   status codes, root indices, counts and lifecycle flags. One boolean may identify
   the exact known Pydantic MockValSer/SchemaSerializer TypeError; matching must
   inspect only its single string argument without stringifying arbitrary values
-  or exporting any message text. Frame provenance must
-  match the loaded module's globals and source filename. Export limits are three
+  or exporting any message text. Only a qualified Pydantic `model_dump` frame may
+  provide fixed enums for response family and serializer kind, plus whether the
+  model is built. These come from class dictionaries without calling properties
+  or serializers.
+  TypeError argument metadata is capped at three primitive-type labels. Up to 23
+  fixed public error/type tokens may be recognized in a sole built-in string
+  argument of at most 2,048 characters; unknown text is always discarded. These
+  tokens classify known vocabulary rather than exporting message fragments.
+  Frame provenance must match the loaded module's globals and source filename.
+  Export limits are three
   chained exceptions, eight frames per exception and eight failure records per
   root; traversal is capped at 64 frames, line numbers at 1,000,000 and the private
   event file at 2 MiB/1,024 records. Reaching a limit that loses observer records

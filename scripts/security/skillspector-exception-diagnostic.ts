@@ -46,6 +46,81 @@ const record = (v: unknown): Record<string, unknown> | undefined =>
     : undefined;
 const integer = (v: unknown, maximum: number): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0 && v <= maximum;
+const errorTokens = [
+  "mock_val_ser",
+  "schema_serializer",
+  "not_instance",
+  "cannot_convert",
+  "none_type",
+  "unexpected_keyword",
+  "required_argument",
+  "not_callable",
+  "not_iterable",
+  "unhashable",
+  "unknown_type",
+  "not_json",
+  "serialization_info",
+  "polymorphic",
+  "serialize_as_any",
+  "include",
+  "exclude",
+  "dict_type",
+  "list_type",
+  "str_type",
+  "int_type",
+  "tuple_type",
+  "bytes_type",
+];
+
+function projectSerializerFailure(raw: unknown, exceptionClass: string) {
+  if (raw === undefined || raw === null) return null;
+  const value = record(raw);
+  if (
+    !value ||
+    exceptionClass !== "TypeError" ||
+    typeof value.builtinTypeError !== "boolean" ||
+    !Array.isArray(value.argumentKinds) ||
+    value.argumentKinds.length > 3 ||
+    !value.argumentKinds.every((kind) =>
+      ["str", "int", "float", "bool", "none", "bytes", "other"].includes(kind),
+    ) ||
+    typeof value.argumentsTruncated !== "boolean" ||
+    typeof value.qualifiedDump !== "boolean" ||
+    typeof value.tokensInspected !== "boolean" ||
+    !Array.isArray(value.tokens) ||
+    value.tokens.length > errorTokens.length ||
+    !value.tokens.every((token) => errorTokens.includes(token)) ||
+    new Set(value.tokens).size !== value.tokens.length ||
+    !["unavailable", "parsed_response", "response", "other"].includes(value.model as string) ||
+    !(value.modelComplete === null || typeof value.modelComplete === "boolean") ||
+    !["unavailable", "schema", "mock", "missing", "other"].includes(value.serializer as string) ||
+    (!value.qualifiedDump &&
+      (value.tokens.length > 0 ||
+        value.tokensInspected ||
+        value.model !== "unavailable" ||
+        value.modelComplete !== null ||
+        value.serializer !== "unavailable")) ||
+    (value.tokens.length > 0 && !value.tokensInspected) ||
+    (value.tokensInspected &&
+      (!value.builtinTypeError ||
+        value.argumentsTruncated ||
+        JSON.stringify(value.argumentKinds) !== '["str"]')) ||
+    (!value.builtinTypeError && (value.argumentKinds.length > 0 || value.argumentsTruncated)) ||
+    (value.model === "other" && (value.modelComplete !== null || value.serializer !== "other"))
+  )
+    throw new Error("Invalid serializer failure projection");
+  return {
+    builtinTypeError: value.builtinTypeError,
+    argumentKinds: value.argumentKinds as string[],
+    argumentsTruncated: value.argumentsTruncated,
+    qualifiedDump: value.qualifiedDump,
+    tokensInspected: value.tokensInspected,
+    tokens: errorTokens.filter((token) => (value.tokens as string[]).includes(token)),
+    model: value.model as string,
+    modelComplete: value.modelComplete as boolean | null,
+    serializer: value.serializer as string,
+  };
+}
 
 export async function installSkillSpectorExceptionObserver(workspace: string, runnerTemp: string) {
   const runnerRoot = await realpath(runnerTemp);
@@ -131,6 +206,7 @@ export function projectSkillSpectorExceptionEvents(text: string) {
       return {
         class: value.class,
         mockSchemaSerializer: value.mockSchemaSerializer === true,
+        serializerFailure: projectSerializerFailure(value.serializerFailure, value.class),
         statusCode: value.statusCode as number | null,
         unknownFrames: value.unknownFrames,
         framesTruncated: value.framesTruncated,

@@ -133,6 +133,111 @@ print(json.dumps([m.project_exception(exc) for exc in cases]))
   ).toThrow();
 });
 
+it("projects qualified serializer state and fixed tokens without private text or type names", async () => {
+  const code = `
+import importlib.util,json,sys,types
+spec=importlib.util.spec_from_file_location("diagnostic",sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+sdk=types.ModuleType("openai.types.responses.response")
+class Response:pass
+sdk.Response=Response;sys.modules[sdk.__name__]=sdk
+parsed=types.ModuleType("openai.types.responses.parsed_response")
+Mock=type("MockValSer",(),{"__module__":"pydantic._internal._mock_val_ser"})
+class Parsed(Response):
+ __pydantic_complete__=False
+ __pydantic_serializer__=Mock()
+parsed.ParsedResponse=Parsed;sys.modules[parsed.__name__]=parsed
+trusted=types.ModuleType("pydantic.main");trusted.__file__="/qualified-pydantic-main.py";sys.modules[trusted.__name__]=trusted
+exec(compile("def model_dump(self):raise TypeError(\\"PRIVATE 'MockValSer' object is not an instance of 'SchemaSerializer' PRIVATE\\")",trusted.__file__,"exec"),trusted.__dict__)
+try:trusted.model_dump(Parsed())
+except TypeError as exc:projected=m.project_exception(exc)
+fake={"__name__":"pydantic.main"}
+exec(compile("def model_dump(self):raise TypeError(\\"PRIVATE MockValSer SchemaSerializer\\")",trusted.__file__,"exec"),fake)
+try:fake["model_dump"](Parsed())
+except TypeError as exc:forged=m.project_exception(exc)
+exec(compile("def model_dump(self,error):raise error",trusted.__file__,"exec"),trusted.__dict__)
+def project(error):
+ try:trusted.model_dump(Parsed(),error)
+ except TypeError as exc:return m.project_exception(exc)
+class Sneaky:
+ def __str__(self):raise AssertionError("PRIVATE stringification")
+other=project(TypeError(Sneaky()))
+oversize=project(TypeError("PRIVATE MockValSer "+"x"*2048))
+Parsed.__pydantic_complete__=property(lambda self:(_ for _ in ()).throw(AssertionError("PRIVATE getter")))
+Parsed.__pydantic_serializer__=property(lambda self:(_ for _ in ()).throw(AssertionError("PRIVATE getter")))
+descriptor=project(TypeError("PRIVATE"))
+print(json.dumps({"trusted":projected,"forged":forged,"other":other,"oversize":oversize,"descriptor":descriptor}))
+`;
+  const result = await promisify(execFile)(
+    "python3",
+    ["-B", "-c", code, new URL("./skillspector_exception_diagnostic.py", import.meta.url).pathname],
+    { env: { PATH: process.env.PATH } },
+  );
+  expect(result.stdout).not.toContain("PRIVATE");
+  expect(result.stdout).not.toContain("/qualified-");
+  const data = JSON.parse(result.stdout);
+  expect(data.trusted[0].serializerFailure).toEqual({
+    builtinTypeError: true,
+    argumentKinds: ["str"],
+    argumentsTruncated: false,
+    qualifiedDump: true,
+    tokensInspected: true,
+    tokens: ["mock_val_ser", "schema_serializer", "not_instance"],
+    model: "parsed_response",
+    modelComplete: false,
+    serializer: "mock",
+  });
+  expect(data.forged[0].serializerFailure).toMatchObject({ qualifiedDump: false, tokens: [] });
+  expect(data.other[0].serializerFailure).toMatchObject({
+    argumentKinds: ["other"],
+    tokensInspected: false,
+    tokens: [],
+  });
+  expect(data.oversize[0].serializerFailure).toMatchObject({
+    argumentKinds: ["str"],
+    tokensInspected: false,
+    tokens: [],
+  });
+  expect(data.descriptor[0].serializerFailure).toMatchObject({
+    modelComplete: null,
+    serializer: "other",
+  });
+  const event = { rootIndex: 19, kind: "failure", chain: data.trusted };
+  expect(projectSkillSpectorExceptionEvents(JSON.stringify(event))[0]).toMatchObject({
+    chain: [{ serializerFailure: data.trusted[0].serializerFailure }],
+  });
+  expect(() =>
+    projectSkillSpectorExceptionEvents(
+      JSON.stringify({
+        ...event,
+        chain: [
+          {
+            ...data.trusted[0],
+            serializerFailure: {
+              ...data.trusted[0].serializerFailure,
+              tokens: ["PRIVATE"],
+            },
+          },
+        ],
+      }),
+    ),
+  ).toThrow();
+  for (const serializerFailure of [
+    { ...data.trusted[0].serializerFailure, tokensInspected: false },
+    { ...data.trusted[0].serializerFailure, argumentKinds: ["str", "str", "str", "str"] },
+    { ...data.trusted[0].serializerFailure, model: "PRIVATE" },
+    { ...data.trusted[0].serializerFailure, serializer: "PRIVATE" },
+  ]) {
+    expect(() =>
+      projectSkillSpectorExceptionEvents(
+        JSON.stringify({
+          ...event,
+          chain: [{ ...data.trusted[0], serializerFailure }],
+        }),
+      ),
+    ).toThrow();
+  }
+});
+
 it("installs only over the qualified venv entrypoint and reads private regular files only", async () => {
   const root = await mkdtemp(join(tmpdir(), "exception-observer-"));
   roots.push(root);

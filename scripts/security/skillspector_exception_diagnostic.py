@@ -38,6 +38,72 @@ CLASSES = {
     "APIConnectionError", "APITimeoutError", "BadRequestError", "InternalServerError",
     "AuthenticationError", "PermissionDeniedError", "APIResponseValidationError",
 }
+ERROR_TOKENS = {
+    "mock_val_ser": "MockValSer", "schema_serializer": "SchemaSerializer",
+    "not_instance": "not an instance", "cannot_convert": "cannot be converted",
+    "none_type": "NoneType", "unexpected_keyword": "unexpected keyword",
+    "required_argument": "required positional argument", "not_callable": "not callable",
+    "not_iterable": "not iterable", "unhashable": "unhashable",
+    "unknown_type": "unknown type", "not_json": "not JSON serializable",
+    "serialization_info": "SerializationInfo", "polymorphic": "polymorphic_serialization",
+    "serialize_as_any": "serialize_as_any", "include": "include", "exclude": "exclude",
+    "dict_type": "'dict'", "list_type": "'list'", "str_type": "'str'",
+    "int_type": "'int'", "tuple_type": "'tuple'", "bytes_type": "'bytes'",
+}
+
+
+def serializer_failure(exc, frame):
+    if type(exc).__name__ != "TypeError":
+        return None
+    builtin = type(exc) is TypeError
+    args = exc.args if builtin else ()
+    kinds = ((str, "str"), (int, "int"), (float, "float"), (bool, "bool"),
+             (type(None), "none"), (bytes, "bytes"))
+    value = {
+        "builtinTypeError": builtin,
+        "argumentKinds": [next((label for cls, label in kinds if type(arg) is cls), "other")
+                          for arg in args[:3]],
+        "argumentsTruncated": len(args) > 3,
+        "qualifiedDump": frame is not None,
+        "tokensInspected": False,
+        "tokens": [], "model": "unavailable", "modelComplete": None,
+        "serializer": "unavailable",
+    }
+    if frame is None:
+        return value
+    if len(args) == 1 and type(args[0]) is str and len(args[0]) <= 2048:
+        value["tokensInspected"] = True
+        value["tokens"] = [label for label, token in ERROR_TOKENS.items() if token in args[0]]
+    # Only inspect class dictionaries; never call model properties or serializers.
+    cls = type(frame.f_locals.get("self"))
+    mro = cls.__mro__[:16]
+    response_module = sys.modules.get("openai.types.responses.response")
+    parsed_module = sys.modules.get("openai.types.responses.parsed_response")
+    response = vars(response_module).get("Response") if response_module else None
+    parsed = vars(parsed_module).get("ParsedResponse") if parsed_module else None
+    family = "parsed_response" if parsed in mro else "response" if response in mro else "other"
+    value["model"] = family
+    value["serializer"] = "other"
+    if family == "other":
+        return value
+    def class_value(key):
+        missing = object()
+        for base in mro:
+            result = base.__dict__.get(key, missing)
+            if result is not missing:
+                return result
+        return None
+
+    complete = class_value("__pydantic_complete__")
+    value["modelComplete"] = complete if type(complete) is bool else None
+    serializer = class_value("__pydantic_serializer__")
+    serializer_type = type(serializer)
+    value["serializer"] = {
+        ("pydantic_core._pydantic_core", "SchemaSerializer"): "schema",
+        ("pydantic._internal._mock_val_ser", "MockValSer"): "mock",
+        ("builtins", "NoneType"): "missing",
+    }.get((serializer_type.__module__, serializer_type.__name__), "other")
+    return value
 
 
 def project_exception(exc):
@@ -49,6 +115,7 @@ def project_exception(exc):
         unknown = 0
         trace = exc.__traceback__
         traversed = 0
+        dump_frame = None
         while trace is not None and traversed < 64:
             traversed += 1
             frame = trace.tb_frame
@@ -60,6 +127,8 @@ def project_exception(exc):
                     and os.path.realpath(frame.f_code.co_filename) == os.path.realpath(source)
                     and 0 < trace.tb_lineno <= 1_000_000):
                 frames.append({"module": MODULES[name], "line": trace.tb_lineno})
+                if name == "pydantic.main" and frame.f_code.co_name == "model_dump" and dump_frame is None:
+                    dump_frame = frame
             else:
                 unknown += 1
             trace = trace.tb_next
@@ -71,6 +140,7 @@ def project_exception(exc):
                 and type(exc.args[0]) is str
                 and exc.args[0] == "'MockValSer' object cannot be converted to 'SchemaSerializer'"
             ),
+            "serializerFailure": serializer_failure(exc, dump_frame),
             "statusCode": code if type(code) is int and 100 <= code <= 599 else None,
             "frames": frames[-8:],
             "unknownFrames": unknown,
