@@ -1,4 +1,5 @@
-import { getSecurityAuditOverviewCopy, type PackageEndorAnalysis } from "clawhub-schema";
+import type { PackageEndorAnalysis } from "clawhub-schema";
+import { getSecurityAuditOverviewCopy } from "clawhub-schema/securityAudit";
 import { ArrowLeft, Check, Clock, Download, Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";

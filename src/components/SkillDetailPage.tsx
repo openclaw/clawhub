@@ -1,10 +1,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
-import {
-  inferSkillCategories,
-  resolveSkillCategories,
-  type ClawdisSkillMetadata,
-} from "clawhub-schema";
+import type { ClawdisSkillMetadata } from "clawhub-schema";
+import { inferSkillCategories, resolveSkillCategories } from "clawhub-schema/catalogMetadata";
 import { useAction, useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import { ArrowLeft, TriangleAlert, Upload } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";

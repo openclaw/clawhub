@@ -6,8 +6,8 @@ import {
   isSkillCategorySlug,
   LEGACY_PLUGIN_CATEGORY_DEFINITIONS,
   normalizeCatalogTopic,
-  resolveStoredPluginCategories,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
+import { resolveStoredPluginCategories } from "clawhub-schema/pluginCategories";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import {
   ArrowRight,

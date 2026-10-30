@@ -1,5 +1,8 @@
-import { getClawScanDisplayStatus, isVisibleAgenticRiskFinding } from "clawhub-schema";
-export { getClawScanDisplayStatus } from "clawhub-schema";
+import {
+  getClawScanDisplayStatus,
+  isVisibleAgenticRiskFinding,
+} from "clawhub-schema/securityAudit";
+export { getClawScanDisplayStatus } from "clawhub-schema/securityAudit";
 import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { MarkdownPreview } from "./MarkdownPreview";

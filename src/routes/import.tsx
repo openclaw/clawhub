@@ -1,5 +1,5 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { inferSkillCategories, resolveSkillCategories } from "clawhub-schema";
+import { inferSkillCategories, resolveSkillCategories } from "clawhub-schema/catalogMetadata";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,

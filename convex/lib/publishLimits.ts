@@ -1,4 +1,4 @@
-import { MAX_PACKAGE_CLAWPACK_BYTES } from "clawhub-schema";
+import { MAX_PACKAGE_CLAWPACK_BYTES } from "clawhub-schema/packageUploadLimits";
 
 export {
   estimatePackageMultipartUploadBytes,
@@ -7,7 +7,7 @@ export {
   MAX_PACKAGE_MULTIPART_BYTES,
   type PackageMultipartUploadField,
   type PackageMultipartUploadPart,
-} from "clawhub-schema";
+} from "clawhub-schema/packageUploadLimits";
 
 export const MAX_PUBLISH_TOTAL_BYTES = 50 * 1024 * 1024;
 export const MAX_PUBLISH_FILE_BYTES = 10 * 1024 * 1024;

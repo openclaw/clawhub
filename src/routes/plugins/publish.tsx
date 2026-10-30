@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { DocsLinks, getPackageScopeOwnerMismatch } from "clawhub-schema";
+import { DocsLinks } from "clawhub-schema/docsLinks";
+import { getPackageScopeOwnerMismatch } from "clawhub-schema/packageNames";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ExternalLink, Info, Lock } from "lucide-react";
 import { type ReactNode, startTransition, useEffect, useMemo, useRef, useState } from "react";

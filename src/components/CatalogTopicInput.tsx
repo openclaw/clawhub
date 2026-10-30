@@ -1,4 +1,4 @@
-import { CATALOG_TOPIC_LIMIT, normalizeCatalogTopic } from "clawhub-schema";
+import { CATALOG_TOPIC_LIMIT, normalizeCatalogTopic } from "clawhub-schema/catalogMetadata";
 import { X } from "lucide-react";
 import { useRef, useState } from "react";
 import { cn } from "../lib/utils";

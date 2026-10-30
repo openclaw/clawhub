@@ -1,3 +1,4 @@
+import type { PluginCategorySlug, SkillCategorySlug } from "clawhub-schema";
 import {
   isPluginCategorySlug,
   isSkillCategorySlug,
@@ -6,9 +7,7 @@ import {
   PLUGIN_CATEGORY_DEFINITIONS,
   resolveStoredSkillCategories,
   SKILL_CATEGORY_DEFINITIONS,
-  type PluginCategorySlug,
-  type SkillCategorySlug,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 
 export type SkillCategory = {
   slug: string;

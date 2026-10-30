@@ -1,4 +1,4 @@
-import { normalizeCatalogTopic } from "clawhub-schema";
+import { normalizeCatalogTopic } from "clawhub-schema/catalogMetadata";
 
 function parseTopicSlug(value: string | undefined) {
   if (!value) return undefined;

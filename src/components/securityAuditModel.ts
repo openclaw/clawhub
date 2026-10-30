@@ -1,4 +1,4 @@
-export { aggregateAuditVerdict } from "clawhub-schema";
+export { aggregateAuditVerdict } from "clawhub-schema/securityAudit";
 import type { PackageEndorAnalysis } from "clawhub-schema";
 import {
   type AigAnalysis,

@@ -1,14 +1,7 @@
 import { type inferred } from "arktype";
 export declare const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
 export declare const PACKAGE_CATEGORY_BATCH_LIMIT = 200;
-export declare function normalizePackageOwnerHandle(handle: string | null | undefined): string | undefined;
-export declare function inferPackageNameScope(name: string): string | undefined;
-export declare function getPackageScopeOwnerMismatch(name: string, ownerHandle: string | null | undefined): {
-    scope: string;
-    selectedOwner: string;
-    suggestedName: string;
-    message: string;
-} | null;
+export { normalizePackageOwnerHandle, inferPackageNameScope, getPackageScopeOwnerMismatch, } from "./packageNames.js";
 export declare const PackageFamilySchema: import("arktype/internal/variants/string.ts").StringType<"bundle-plugin" | "code-plugin" | "skill" | "template", {}>;
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
 export declare const PackagePublishFamilySchema: import("arktype/internal/variants/string.ts").StringType<"bundle-plugin" | "code-plugin" | "skill" | "template", {}>;
@@ -319,22 +312,7 @@ export declare const PackageTrustedPublisherSchema: import("arktype/internal/var
     environment?: string | undefined;
 }, {}>;
 export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
-export declare const MAX_PACKAGE_MULTIPART_BYTES: number;
-export declare const MAX_PACKAGE_CLAWPACK_BYTES: number;
-export type PackageMultipartUploadField = "files" | "clawpack";
-export type PackageMultipartUploadPart = {
-    name: string;
-    size: number;
-    type?: string;
-};
-export type PackageMultipartUploadSizeInput = {
-    payloadJson: string;
-    fileFieldName: PackageMultipartUploadField;
-    files: readonly PackageMultipartUploadPart[];
-};
-export declare function estimatePackageMultipartUploadBytes(input: PackageMultipartUploadSizeInput): number;
-export declare function isPackageMultipartUploadTooLarge(input: PackageMultipartUploadSizeInput): boolean;
-export declare function getPackageMultipartSizeError(): string;
+export { MAX_PACKAGE_MULTIPART_BYTES, MAX_PACKAGE_CLAWPACK_BYTES, estimatePackageMultipartUploadBytes, isPackageMultipartUploadTooLarge, getPackageMultipartSizeError, type PackageMultipartUploadField, type PackageMultipartUploadPart, type PackageMultipartUploadSizeInput, } from "./packageUploadLimits.js";
 export declare const PackagePublishMetadataSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
     displayName?: string | undefined;

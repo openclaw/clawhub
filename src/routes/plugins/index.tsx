@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { isPluginCategorySlug } from "clawhub-schema";
+import { isPluginCategorySlug } from "clawhub-schema/catalogMetadata";
 import { useQuery } from "convex/react";
 import { PackageSearch, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";

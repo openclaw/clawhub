@@ -3,7 +3,7 @@ import {
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
   isSkillCategorySlug,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 import { useEffect, useState } from "react";
 import { getUserFacingConvexError } from "../lib/convexError";
 import {

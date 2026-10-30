@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { isPluginCategorySlug } from "clawhub-schema";
+import { isPluginCategorySlug } from "clawhub-schema/catalogMetadata";
 import { Download } from "lucide-react";
 import { emitAnalytics, publicAnalyticsContentId } from "../lib/analyticsEvents";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
