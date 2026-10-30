@@ -358,6 +358,8 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin", "template"] as const;
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
+const PLUGIN_DISCOVERY_CACHE_CONTROL =
+  "public, max-age=60, s-maxage=300, stale-while-revalidate=3600";
 const PACKAGE_LIST_SORT_VALUES = [
   "updated",
   "recommended",
@@ -1696,7 +1698,14 @@ async function listPackages(
         categories: getPluginDiscoveryCategories().filter((entry) => entry.slug === category),
       },
       200,
-      rate.headers,
+      // Curated discovery always uses public visibility. Only anonymous reads
+      // share its snapshot; credentials and private filters keep fresh responses.
+      !viewerUserId &&
+        !request.headers.has("authorization") &&
+        !request.headers.has("cookie") &&
+        channelParam.value !== "private"
+        ? mergeHeaders(rate.headers, { "Cache-Control": PLUGIN_DISCOVERY_CACHE_CONTROL })
+        : rate.headers,
     );
   }
 
@@ -2571,7 +2580,7 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
     response,
     200,
     mergeHeaders(rate.headers, {
-      "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=3600",
+      "Cache-Control": PLUGIN_DISCOVERY_CACHE_CONTROL,
     }),
   );
 }
@@ -2579,7 +2588,7 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
 export async function listPluginCategoriesV1Handler(_ctx: ActionCtx, _request: Request) {
   // This taxonomy is static and identical for every viewer.
   return json({ categories: getPluginDiscoveryCategories() }, 200, {
-    "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=3600",
+    "Cache-Control": PLUGIN_DISCOVERY_CACHE_CONTROL,
   });
 }
 

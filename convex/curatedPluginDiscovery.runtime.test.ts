@@ -8,6 +8,7 @@ vi.mock("./lib/verifiedClientIp", () => ({ getVerifiedClientIp: async () => "203
 import { internal } from "./_generated/api";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { isEnglishPluginListing } from "./lib/pluginDiscovery";
+import { hashToken } from "./lib/tokens";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -74,6 +75,83 @@ async function setup(fixtures: Fixture[]) {
 }
 
 describe("curated plugin discovery", () => {
+  it.each(["plugins", "code-plugins", "bundle-plugins"])(
+    "makes anonymous curated %s pages cacheable without exposing private or blocked entries",
+    async (route) => {
+      const t = await setup([
+        { name: "public-code", downloads: 3 },
+        { name: "public-bundle", downloads: 2, family: "bundle-plugin" },
+        { name: "private", downloads: 100, private: true },
+        { name: "blocked", downloads: 99, blocked: true },
+      ]);
+      const response = await t.fetch(
+        `/api/v1/${route}?curated=true&category=memory&sort=downloads&limit=1`,
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Cache-Control")).toBe(
+        "public, max-age=60, s-maxage=300, stale-while-revalidate=3600",
+      );
+      const payload = await response.json();
+      expect(payload.items.map((item: { name: string }) => item.name)).toEqual([
+        route === "bundle-plugins" ? "public-bundle" : "public-code",
+      ]);
+    },
+  );
+
+  it.each<{ headers: Record<string, string>; query: string }>([
+    { headers: { Authorization: "Bearer invalid-fixture-token" }, query: "" },
+    { headers: { Cookie: "fixture=session" }, query: "" },
+    { headers: {}, query: "&channel=private" },
+  ])("does not share curated responses with credentials or private filters: %j", async (input) => {
+    const t = await setup([{ name: "public", downloads: 1 }]);
+    const response = await t.fetch(
+      `/api/v1/plugins?curated=true&category=memory&sort=downloads${input.query}`,
+      { headers: input.headers },
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("keeps non-curated requests and invalid curated requests uncacheable", async () => {
+    const t = await setup([{ name: "public", downloads: 1 }]);
+    for (const [query, status] of [
+      ["category=memory&sort=downloads", 200],
+      ["curated=true&category=memory&sort=trending", 400],
+    ] as const) {
+      const response = await t.fetch(`/api/v1/plugins?${query}`);
+      expect(response.status).toBe(status);
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+    }
+  });
+
+  it("keeps authenticated curated reads fresh and public-only even for the private package owner", async () => {
+    const t = await setup([
+      { name: "public", downloads: 1 },
+      { name: "private", downloads: 100, private: true },
+    ]);
+    const token = "clh_disposable-curated-cache-fixture";
+    await t.run(async (ctx) => {
+      const user = await ctx.db.query("users").first();
+      if (!user) throw new Error("Missing fixture owner");
+      await ctx.db.insert("apiTokens", {
+        userId: user._id,
+        label: "Fixture",
+        prefix: token.slice(0, 12),
+        tokenHash: await hashToken(token),
+        createdAt: Date.now(),
+      });
+    });
+    const response = await t.fetch("/api/v1/plugins?curated=true&category=memory&sort=downloads", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("RateLimit-Limit")).toBe("12000");
+    expect((await response.json()).items.map((item: { name: string }) => item.name)).toEqual([
+      "public",
+    ]);
+  });
+
   it("round-trips a Unicode topic through the public curated cursor", async () => {
     const t = await setup([
       { name: "first", downloads: 2, topic: "研究" },
@@ -84,10 +162,12 @@ describe("curated plugin discovery", () => {
       encodeURIComponent("研究");
     const first = await t.fetch(url);
     expect(first.status).toBe(200);
+    expect(first.headers.get("Cache-Control")).toContain("s-maxage=300");
     const payload = await first.json();
     expect(payload.items.map((item: { name: string }) => item.name)).toEqual(["first"]);
     const second = await t.fetch(url + "&cursor=" + encodeURIComponent(payload.nextCursor));
     expect(second.status).toBe(200);
+    expect(second.headers.get("Cache-Control")).toBe(first.headers.get("Cache-Control"));
     expect((await second.json()).items.map((item: { name: string }) => item.name)).toEqual([
       "second",
     ]);
