@@ -82,6 +82,12 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/t
 if [ "$needs_bash_parser" = 1 ]; then
   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_skillspector_shell_source.py"
 fi
+# Historical incident pins predate these controls. Current source includes both;
+# verify them in the installed scanner environment before exposing its entrypoint.
+if [ "$scanner" = skillspector ] && [ -f "$runtime_dir/tests/test_skillspector_destructive_quoted_operand_boundaries.py" ]; then
+  test -f "$runtime_dir/tests/test_skillspector_fragment_quote_ownership.py"
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_skillspector_destructive_quoted_operand_boundaries.py" "$runtime_dir/tests/test_skillspector_fragment_quote_ownership.py"
+fi
 uv pip check --python "$venv/bin/python"
 if [ "$scanner" = aig ]; then command_name=aig-skill-scan; else command_name=skillspector; fi
 "$venv/bin/$command_name" --help >/dev/null
