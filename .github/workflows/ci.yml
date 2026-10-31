@@ -190,6 +190,7 @@ jobs:
             specs: |
               e2e/local-auth/header-profile-link.pw.test.ts
               e2e/local-auth/manage-context-proof.pw.test.ts
+              e2e/local-auth/plugin-catalog-api.pw.test.ts
               e2e/local-auth/publisher-github-profile.pw.test.ts
               e2e/local-auth/skill-hero-metadata.pw.test.ts
           - name: moderation-malicious
