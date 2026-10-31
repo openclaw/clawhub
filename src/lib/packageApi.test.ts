@@ -1,8 +1,12 @@
 /* @vitest-environment node */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const { serverFetchMock } = vi.hoisted(() => ({
+const { serverFetchMock, initialPublicCatalogMock } = vi.hoisted(() => ({
   serverFetchMock: vi.fn((url: string, init: RequestInit) => fetch(url, init)),
+  initialPublicCatalogMock: vi.fn(),
+}));
+vi.mock("./publicPluginBrowse", () => ({
+  fetchInitialPublicPluginCatalog: initialPublicCatalogMock,
 }));
 const getRequestHeadersMock = vi.fn();
 const getRequestUrlMock = vi.fn();
@@ -29,9 +33,11 @@ import {
 describe("fetchPackages", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_CONVEX_SITE_URL", "");
+    initialPublicCatalogMock.mockRejectedValue(new Error("Public reader unavailable"));
   });
 
   afterEach(() => {
+    initialPublicCatalogMock.mockReset();
     serverFetchMock.mockReset();
     getRequestHeadersMock.mockReset();
     getRequestUrlMock.mockReset();
@@ -355,6 +361,67 @@ describe("fetchPackages", () => {
     expect(requestInit?.headers).not.toHaveProperty("cookie");
   });
 
+  it("loads the anonymous first page through public queries without HTTP admission", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const signal = new AbortController().signal;
+    initialPublicCatalogMock.mockResolvedValue({ items: [], nextCursor: "same-cursor" });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: "legacy" }), { status: 200 }),
+      );
+    const result = await fetchPluginCatalog({ limit: 25, viewerMode: "anonymous", signal });
+    expect(result).toEqual({ items: [], nextCursor: "same-cursor", totalCount: null });
+    expect(initialPublicCatalogMock).toHaveBeenCalledWith(signal);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(serverFetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back to the HTTP API after a public-read navigation abort", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const controller = new AbortController();
+    initialPublicCatalogMock.mockImplementation(async () => {
+      controller.abort();
+      throw controller.signal.reason;
+    });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+    await expect(
+      fetchPluginCatalog({ limit: 25, viewerMode: "anonymous", signal: controller.signal }),
+    ).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(serverFetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { viewerMode: "request" },
+    { family: "code-plugin" },
+    { q: "matrix" },
+    { cursor: "next-page" },
+    { isOfficial: true },
+    { featured: true },
+    { category: "channels", curated: true, sort: "downloads" },
+    { topic: "Matrix" },
+    { officialFirst: true },
+    { excludedScanStatuses: ["malicious"] },
+    { sort: "downloads" },
+    { limit: 100 },
+  ] satisfies Array<Parameters<typeof fetchPluginCatalog>[0]>)(
+    "keeps other catalog reads on the HTTP API: %j",
+    async (params) => {
+      vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null, results: [] }), { status: 200 }),
+      );
+      await fetchPluginCatalog({ limit: 25, viewerMode: "anonymous", ...params });
+      expect(initialPublicCatalogMock).not.toHaveBeenCalled();
+      expect(serverFetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it.each([
     { sort: "recommended" as const },
     { category: "channels", curated: true, sort: "downloads" as const },
@@ -388,17 +455,20 @@ describe("fetchPackages", () => {
     { params: { limit: 25, cursor: "next-page" }, mode: "anonymous", env: "production" },
     { params: { limit: 25, isOfficial: true }, mode: "anonymous", env: "production" },
     { params: { limit: 25, sort: "updated" }, mode: "anonymous", env: "production" },
-  ] as const)("keeps other SSR reads on the internal proxy: %j", async ({ params, mode, env }) => {
-    vi.stubEnv("VITE_CLAWHUB_DEPLOY_ENV", env);
-    vi.stubEnv("VITE_CONVEX_SITE_URL", "https://registry.example");
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
-    );
+  ] as const)(
+    "keeps HTTP fallbacks and other SSR reads on the internal proxy: %j",
+    async ({ params, mode, env }) => {
+      vi.stubEnv("VITE_CLAWHUB_DEPLOY_ENV", env);
+      vi.stubEnv("VITE_CONVEX_SITE_URL", "https://registry.example");
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
 
-    await fetchPluginCatalog({ ...params, viewerMode: mode });
+      await fetchPluginCatalog({ ...params, viewerMode: mode });
 
-    expect(serverFetchMock).toHaveBeenCalledTimes(1);
-  });
+      expect(serverFetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("uses the dedicated plugins search endpoint for mixed plugin search", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");

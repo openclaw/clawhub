@@ -11,6 +11,7 @@ import { ApiRoutes } from "clawhub-schema/routes";
 import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { publicApiUrl } from "./publicApiUrl";
+import { fetchInitialPublicPluginCatalog } from "./publicPluginBrowse";
 import { getRuntimeEnv } from "./runtimeEnv";
 import { getPublicClawHubSiteUrl } from "./site";
 
@@ -556,6 +557,19 @@ export async function fetchPluginCatalog(params: {
     url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
   }
   if (params.sort) url.searchParams.set("sort", params.sort);
+  if (params.viewerMode === "anonymous" && getPluginBrowseSnapshotKind(url) === "default") {
+    try {
+      const result = await fetchInitialPublicPluginCatalog(params.signal);
+      return {
+        items: result.items,
+        nextCursor: result.nextCursor,
+        totalCount: result.totalCount ?? null,
+      };
+    } catch (error) {
+      if (params.signal?.aborted) throw error;
+      // Retain the HTTP path during deployment skew or a failed public read.
+    }
+  }
   const result = await fetchJson<PluginCatalogResult>(url, params.signal, params.viewerMode);
   return {
     items: result?.items ?? [],
