@@ -194,29 +194,29 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "$SKILLS_SH_RESTORE_MODE" ]]; then
-            bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE off --prod
+            node scripts/set-release-convex-env.mjs CLAWHUB_SKILLS_SH_ROLLOUT_MODE off
           fi
           if [[ -n "$GITHUB_SKILL_SYNC_RESTORE_MODE" ]]; then
-            bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE off --prod
+            node scripts/set-release-convex-env.mjs CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE off
           fi
 
       - name: Stamp Convex runtime environment
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex env set CLAWHUB_ENV production --prod
+        run: node scripts/set-release-convex-env.mjs CLAWHUB_ENV production
 
       - name: Stamp Convex build SHA
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex env set APP_BUILD_SHA "${GITHUB_SHA}" --prod
+        run: node scripts/set-release-convex-env.mjs APP_BUILD_SHA "${GITHUB_SHA}"
 
       - name: Stamp Convex deploy time
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex env set APP_DEPLOYED_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" --prod
+        run: node scripts/set-release-convex-env.mjs APP_DEPLOYED_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
       - name: Deploy Convex
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
@@ -270,13 +270,13 @@ jobs:
           set -uo pipefail
           restore_failed=0
           if [[ -n "$SKILLS_SH_RESTORE_MODE" ]] &&
-            ! bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE "$SKILLS_SH_RESTORE_MODE" --prod
+            ! node scripts/set-release-convex-env.mjs CLAWHUB_SKILLS_SH_ROLLOUT_MODE "$SKILLS_SH_RESTORE_MODE"
           then
             echo "::error::Failed to restore CLAWHUB_SKILLS_SH_ROLLOUT_MODE."
             restore_failed=1
           fi
           if [[ -n "$GITHUB_SKILL_SYNC_RESTORE_MODE" ]] &&
-            ! bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE "$GITHUB_SKILL_SYNC_RESTORE_MODE" --prod
+            ! node scripts/set-release-convex-env.mjs CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE "$GITHUB_SKILL_SYNC_RESTORE_MODE"
           then
             echo "::error::Failed to restore CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE."
             restore_failed=1

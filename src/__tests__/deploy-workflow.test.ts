@@ -125,9 +125,11 @@ describe("production deploy workflow", () => {
     );
     expect(inspect?.run).not.toContain("${{ inputs.active_rollout_deploy_confirm }}");
     expect(pause?.if).toBe("steps.rollout.outputs.pause_required == 'true'");
-    expect(pause?.run).toContain("convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE off --prod");
     expect(pause?.run).toContain(
-      "convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE off --prod",
+      "scripts/set-release-convex-env.mjs CLAWHUB_SKILLS_SH_ROLLOUT_MODE off",
+    );
+    expect(pause?.run).toContain(
+      "scripts/set-release-convex-env.mjs CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE off",
     );
     expect(verifyDark?.run).toContain("rolloutCapabilities:getPublicCapabilities");
     expect(verifyDark?.run).toContain('.environment == "production"');
@@ -135,10 +137,10 @@ describe("production deploy workflow", () => {
     expect(verifyDark?.run).toContain(".githubSkillSync.selfServiceEnabled == false");
     expect(restore?.if).toContain("always()");
     expect(restore?.run).toContain(
-      'convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE "$SKILLS_SH_RESTORE_MODE" --prod',
+      'scripts/set-release-convex-env.mjs CLAWHUB_SKILLS_SH_ROLLOUT_MODE "$SKILLS_SH_RESTORE_MODE"',
     );
     expect(restore?.run).toContain(
-      'convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE "$GITHUB_SKILL_SYNC_RESTORE_MODE" --prod',
+      'scripts/set-release-convex-env.mjs CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE "$GITHUB_SKILL_SYNC_RESTORE_MODE"',
     );
     expect(verifyRestored?.if).toContain("always()");
     expect(verifyRestored?.run).toContain(".skillsSh.mode == $skills_sh_mode");
@@ -168,7 +170,7 @@ describe("production deploy workflow", () => {
 
     expect(stampIndex).toBeGreaterThanOrEqual(0);
     expect(stampIndex).toBeLessThan(deployIndex);
-    expect(stamp?.run).toBe("bunx convex env set CLAWHUB_ENV production --prod");
+    expect(stamp?.run).toBe("node scripts/set-release-convex-env.mjs CLAWHUB_ENV production");
   });
 
   it("publishes the initial promotions snapshot after backend deploy", async () => {
