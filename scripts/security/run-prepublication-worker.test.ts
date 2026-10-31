@@ -232,7 +232,15 @@ describe("pre-publication worker", () => {
       status: "clean",
       summary: "TruffleHog found no verified secrets.",
     });
+    const skillSpectorAnalysis = {
+      status: "suspicious",
+      inspectionStatus: "partial" as const,
+      issueCount: 1,
+      issues: [{ issueId: "gap", severity: "high", explanation: "Partial evidence." }],
+      checkedAt: 123,
+    };
     const runClawScan = vi.fn().mockResolvedValue({
+      skillSpectorAnalysis,
       aigAnalysis: {
         checkedAt: 123,
         findings: [],
@@ -274,6 +282,7 @@ describe("pre-publication worker", () => {
         trufflehog: { status: "clean", summary: "TruffleHog found no verified secrets." },
         clawscan: expect.objectContaining({ status: "clean" }),
         aigAnalysis: expect.objectContaining({ status: "clean", issueCount: 0 }),
+        skillSpectorAnalysis,
       }),
     );
     expect(client.action.mock.calls[0]?.[1].trufflehog).not.toHaveProperty("exitCode");
@@ -1134,6 +1143,11 @@ JSON
             verdict: "benign",
           }),
           aigAnalysis: undefined,
+          skillSpectorAnalysis: expect.objectContaining({
+            status: "clean",
+            issueCount: 0,
+            issues: [],
+          }),
           check: {
             status: "clean",
             summary: "Native ClawScan passed.",

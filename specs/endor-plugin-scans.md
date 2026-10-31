@@ -58,7 +58,17 @@ supports paced batches and preserves active jobs.
   Keep roots sequential rather than multiplying the scanner's own API fan-out.
   This lets later roots use the preparation envelope already reserved for Endor
   without allowing root count to extend the job indefinitely. A root or total
-  timeout still fails the scan; never hand partial results to the judge. Keep
+  timeout still fails the scan. Usable partial SkillSpector reports may reach
+  the judge under ClawScan's explicit `judge-gaps` policy: retain every original
+  bundled-root report alongside the aggregate findings, including completeness,
+  analyzer failures, limitations, and suppressed findings. Accept exit 0 or 1
+  only with usable structured evidence; reject unsuccessful, malformed,
+  duplicate-key, crashed, and timed-out reports. Coverage gaps are evidence for
+  independent adjudication, without a minimum coverage threshold. Within a new
+  partial wrapper, every complete sibling must explicitly declare root
+  `execution_successful=true` and accounting `execution_successful=true`,
+  `is_complete=true`, with existing error/fatal guards. Complete-only legacy
+  aggregation keeps its existing contract. Keep
   exit/findings validation, stdout cap, and structured termination diagnostics;
   other worker commands keep their limits.
 

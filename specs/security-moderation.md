@@ -584,6 +584,22 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   the normal retry lifecycle, but an A.I.G finding never independently blocks,
   hides, or changes installability. Package releases skip the skill-only A.I.G
   scanner.
+- SkillSpector coverage may remain partial when its execution produced usable
+  evidence. Both worker consumers accept only native `skillspector.status=partial`
+  with `reportPolicy=judge-gaps`, successful structured report evidence, and a
+  completed independent ClawScan judge with a valid v2 artifact-inspection
+  receipt matching the final native attempt. Preserve coverage gaps and findings;
+  no coverage percentage or exhaustive gap inspection is an admission gate.
+  Missing/malformed/unsuccessful scanner evidence, process failure, invalid
+  receipts, and failed judges still fail through the ordinary retry lifecycle.
+  Benign and suspicious judge verdicts retain their existing publication and
+  warning semantics; malicious verdicts block. Prepublication completion retains
+  the normalized SkillSpector findings on both skill versions and plugin releases
+  through finalization, alongside judge and A.I.G evidence. Optional
+  `inspectionStatus=completed|partial` preserves explicit raw completeness
+  separately from risk `status`; absent completeness stays unknown. A benign
+  judge does not erase partial inspection provenance. Secret and unsafe
+  bytecode rejection remain independent gates.
 - Published skill verification retains complete upstream A.I.G and SkillSpector
   JSON in a version-owned storage blob, separate from capped database summaries.
   `/verify` returns these reports under `security.scannerReports`, alongside the

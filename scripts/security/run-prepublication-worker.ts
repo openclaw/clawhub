@@ -25,10 +25,12 @@ import {
   type ClaimedJob,
   resolveClawScanTarget,
   type StoredLlmAnalysis,
+  type SkillSpectorAnalysis,
   validateClawScanArtifactForClawHubProfile,
   writeArtifactWorkspace,
 } from "./run-codex-scan-worker";
 import { securityScannerEnvironment } from "./securityModelPolicy";
+import { isAdjudicableSkillSpectorResult } from "./skillSpectorReportPolicy";
 
 type ClaimedPrePublicationAttempt = {
   attemptId: Id<"publishAttempts">;
@@ -88,6 +90,7 @@ type ClawScanResult = {
   check: WorkerCheckResult;
   analysis?: StoredLlmAnalysis;
   aigAnalysis?: AigAnalysis;
+  skillSpectorAnalysis?: SkillSpectorAnalysis;
 };
 
 type ProcessAttemptDeps = {
@@ -451,6 +454,7 @@ function collectClawScanScannerFailures(
     if (value === undefined) continue;
     const scannerRecord = asRecord(value);
     const status = readString(scannerRecord, ["status"]) ?? "unknown";
+    if (scanner === "skillspector" && isAdjudicableSkillSpectorResult(scannerRecord)) continue;
     if (status !== "completed") {
       const error = readString(scannerRecord, ["error"]);
       const errorTail = error ? publicText(error.slice(-450), 450) : undefined;
@@ -466,6 +470,7 @@ function storedAnalysisFromClawScanArtifact(
 ): {
   analysis?: StoredLlmAnalysis;
   aigAnalysis?: AigAnalysis;
+  skillSpectorAnalysis?: SkillSpectorAnalysis;
   error?: string;
 } {
   const record = asRecord(artifact);
@@ -498,7 +503,11 @@ function storedAnalysisFromClawScanArtifact(
   try {
     if (!record) throw new Error("ClawScan artifact was missing");
     const mapped = validateClawScanArtifactForClawHubProfile(record, requiredScanners);
-    return { aigAnalysis: mapped.aigAnalysis, analysis: mapped.llmAnalysis };
+    return {
+      aigAnalysis: mapped.aigAnalysis,
+      analysis: mapped.llmAnalysis,
+      skillSpectorAnalysis: mapped.skillSpectorAnalysis,
+    };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "ClawScan artifact was invalid" };
   }
@@ -611,6 +620,7 @@ export async function runNativeClawScan(
   return {
     analysis: parsed.analysis,
     aigAnalysis: parsed.aigAnalysis,
+    skillSpectorAnalysis: parsed.skillSpectorAnalysis,
     check: clawScanCheckResult(parsed.analysis),
   };
 }
@@ -631,6 +641,7 @@ async function completeAttempt(
   clawscan: WorkerCheckResult,
   clawscanAnalysis?: StoredLlmAnalysis,
   aigAnalysis?: AigAnalysis,
+  skillSpectorAnalysis?: SkillSpectorAnalysis,
 ) {
   return await client.action(api.publishAttempts.completePrePublicationChecks, {
     token,
@@ -641,6 +652,7 @@ async function completeAttempt(
     clawscan: checkResultForConvex(clawscan),
     ...(clawscanAnalysis ? { clawscanAnalysis } : {}),
     ...(aigAnalysis ? { aigAnalysis } : {}),
+    ...(skillSpectorAnalysis ? { skillSpectorAnalysis } : {}),
   });
 }
 
@@ -758,6 +770,7 @@ export async function processPrePublicationAttempt(
     let clawscan: WorkerCheckResult;
     let clawscanAnalysis: StoredLlmAnalysis | undefined;
     let aigAnalysis: AigAnalysis | undefined;
+    let skillSpectorAnalysis: SkillSpectorAnalysis | undefined;
     const existingClawscanAnalysis = attempt.existingClawscanAnalysis;
     const existingAigAnalysis = attempt.existingAigAnalysis;
     if (
@@ -788,6 +801,7 @@ export async function processPrePublicationAttempt(
         });
         clawscanAnalysis = review.analysis;
         aigAnalysis = review.aigAnalysis;
+        skillSpectorAnalysis = review.skillSpectorAnalysis;
         clawscan = review.check;
       } catch (error) {
         clawscan = {
@@ -806,6 +820,7 @@ export async function processPrePublicationAttempt(
       clawscan,
       clawscanAnalysis,
       aigAnalysis,
+      skillSpectorAnalysis,
     );
     logger.info(
       {

@@ -55,6 +55,13 @@ import {
   type SecurityScanQueueHealth,
 } from "./security-scan-worker-summary";
 import { configuredClawScanJudgeModel, securityScannerEnvironment } from "./securityModelPolicy";
+import {
+  isAdjudicableSkillSpectorResult,
+  isUsableSkillSpectorCompleteBundleChild,
+  isUsableSkillSpectorPartial,
+  isUsableSkillSpectorReport,
+  parseSkillSpectorReport,
+} from "./skillSpectorReportPolicy";
 
 export type ClaimedJob = {
   scannerReportsUploadUrl?: string | null;
@@ -114,6 +121,7 @@ type SkillSpectorIssue = {
 
 export type SkillSpectorAnalysis = {
   status: string;
+  inspectionStatus?: "completed" | "partial";
   score?: number;
   severity?: string;
   recommendation?: string;
@@ -149,6 +157,9 @@ export type AigAnalysis = {
 
 type SkillSpectorScannerResult = {
   applicable: boolean;
+  bundled_reports?: Array<{ rootPath: string; report: unknown }>;
+  execution_successful?: true;
+  analysis_completeness?: { execution_successful: true; is_complete: false; status: "partial" };
   error?: string;
   filtered_findings: SkillSpectorIssue[];
   issue_count: number;
@@ -189,6 +200,7 @@ export type ClawScanCommandDiagnostic = {
   stdout?: string;
   timedOut?: boolean;
   mapping?: {
+    skillSpectorReportPolicy?: string;
     judge?: {
       configuredModel?: string;
       outputSchemaSha256?: string;
@@ -1220,6 +1232,20 @@ export function normalizeSkillSpectorAnalysis(
     readNumber(record, ["issue_count", "issueCount", "finding_count", "findingCount"]) ??
     rawIssueList.length;
   const completeness = asRecord(record.analysis_completeness ?? record.analysisCompleteness);
+  const completenessStatus = readString(completeness ?? {}, ["status"]);
+  // Inspection completeness is provenance, independent of the existing risk status.
+  const inspectionStatus =
+    completeness?.is_complete === false ||
+    completeness?.isComplete === false ||
+    completenessStatus === "partial" ||
+    completenessStatus === "incomplete"
+      ? "partial"
+      : completeness?.is_complete === true ||
+          completeness?.isComplete === true ||
+          completenessStatus === "completed" ||
+          completenessStatus === "complete"
+        ? "completed"
+        : undefined;
   const incomplete =
     completeness?.is_complete === false ||
     completeness?.isComplete === false ||
@@ -1232,6 +1258,7 @@ export function normalizeSkillSpectorAnalysis(
   });
   return {
     status: normalizedStatus === "clean" && incomplete ? "suspicious" : normalizedStatus,
+    ...(inspectionStatus ? { inspectionStatus } : {}),
     score,
     severity,
     recommendation,
@@ -1689,6 +1716,19 @@ export async function runBundledSkillSpector(
   onDiagnostic: (diagnostic: Partial<ClawScanCommandDiagnostic>) => void,
 ) {
   const analyses: SkillSpectorAnalysis[] = [];
+  const reports: Array<{ rootPath: string; report: unknown }> = [];
+  const readReport = (raw: string, scanInput: BundledSkillSpectorScanInput) => {
+    const report = parseSkillSpectorReport(raw);
+    if (!isUsableSkillSpectorReport(report))
+      throw new Error("SkillSpector returned unusable bundled-skill evidence");
+    return {
+      report,
+      analysis: prefixSkillSpectorFindingPaths(
+        normalizeSkillSpectorAnalysis(raw, 0),
+        scanInput.rootPath,
+      ),
+    };
+  };
   const rootTimeoutMs = clawScanTimeoutMs();
   // Keep roots sequential to avoid multiplying SkillSpector's own API fan-out.
   // The total ceiling preserves room for the judge within the hosted job/lease.
@@ -1725,30 +1765,26 @@ export async function runBundledSkillSpector(
           termination = next;
         },
       });
-      analyses.push(
-        prefixSkillSpectorFindingPaths(
-          normalizeSkillSpectorAnalysis(await readFile(resultPath, "utf8"), 0),
-          scanInput.rootPath,
-        ),
-      );
+      const { report, analysis } = readReport(await readFile(resultPath, "utf8"), scanInput);
+      analyses.push(analysis);
+      reports.push({ rootPath: scanInput.rootPath, report });
     } catch (error) {
       let acceptedFindings = false;
       try {
         if (error instanceof CommandFailure) {
           const rawResult = await readFile(resultPath, "utf8").catch(() => undefined);
           if (rawResult) {
-            const analysis = prefixSkillSpectorFindingPaths(
-              normalizeSkillSpectorAnalysis(rawResult, 0),
-              scanInput.rootPath,
-            );
+            const { report, analysis } = readReport(rawResult, scanInput);
             const validFindingsExit =
               !error.timedOut &&
               error.exitCode === 1 &&
-              (analysis.status === "suspicious" || analysis.status === "malicious") &&
-              analysis.issueCount > 0 &&
-              analysis.issues.length > 0;
+              (isUsableSkillSpectorPartial(report) ||
+                ((analysis.status === "suspicious" || analysis.status === "malicious") &&
+                  analysis.issueCount > 0 &&
+                  analysis.issues.length > 0));
             if (validFindingsExit) {
               analyses.push(analysis);
+              reports.push({ rootPath: scanInput.rootPath, report });
               acceptedFindings = true;
               continue;
             }
@@ -1775,7 +1811,27 @@ export async function runBundledSkillSpector(
       throw error;
     }
   }
-  return aggregateSkillSpectorAnalyses(analyses);
+  const aggregate = aggregateSkillSpectorAnalyses(analyses);
+  if (reports.some(({ report }) => isUsableSkillSpectorPartial(report))) {
+    if (
+      reports.some(
+        ({ report }) =>
+          !isUsableSkillSpectorPartial(report) && !isUsableSkillSpectorCompleteBundleChild(report),
+      )
+    ) {
+      throw new Error("SkillSpector bundled complete child lacked successful completion evidence");
+    }
+    // Keep every original root report alongside the display aggregate. Native
+    // ClawScan validates these before it applies the judge-gaps policy.
+    aggregate.bundled_reports = reports;
+    aggregate.execution_successful = true;
+    aggregate.analysis_completeness = {
+      execution_successful: true,
+      is_complete: false,
+      status: "partial",
+    };
+  }
+  return aggregate;
 }
 
 async function prepareBundledSkillSpector(
@@ -1981,6 +2037,11 @@ function clawScanDiagnosticMapping(
   const result = asRecord(judge?.result);
   const scannerStatuses = readClawScanScannerStatuses(artifact, scannerSet);
   return {
+    skillSpectorReportPolicy: isAdjudicableSkillSpectorResult(
+      asRecord(artifact.scanners)?.skillspector,
+    )
+      ? "judge-gaps"
+      : undefined,
     judge: {
       configuredModel: configuredClawScanJudgeModel(judge),
       outputSchemaSha256: readString(judge ?? {}, ["outputSchemaSha256", "outputSchemaSHA"]),
@@ -2017,10 +2078,23 @@ export function validateClawScanArtifactForClawHubProfile(
     skillspector: new Set(["completed"]),
   };
   for (const [scanner, status] of Object.entries(scannerStatuses)) {
+    // Native ClawScan explicitly distinguishes usable gaps from failed execution.
+    // Judge/schema/receipt validation below still applies to these artifacts.
+    const scannerRecord = asRecord(asRecord(artifact.scanners)?.[scanner]);
+    if (scanner === "skillspector" && isAdjudicableSkillSpectorResult(scannerRecord)) {
+      continue;
+    }
     const allowed = allowedScannerStatuses[scanner] ?? new Set(["completed"]);
     if (!allowed.has(status)) {
       throw new Error(`ClawScan scanner ${scanner} status was ${status}`);
     }
+  }
+
+  if (
+    scannerStatuses.skillspector === "partial" &&
+    (artifact.status !== "completed" || artifact.complete !== true)
+  ) {
+    throw new Error("ClawScan partial evidence requires a completed native run");
   }
 
   const judge = asRecord(artifact.judge);
@@ -2035,6 +2109,9 @@ export function validateClawScanArtifactForClawHubProfile(
   }
   validateClawScanJudgeResultShape(result);
   const inspection = asRecord(result.artifact_inspection)!;
+  if (scannerStatuses.skillspector === "partial" && inspection.version !== 2) {
+    throw new Error("ClawScan partial evidence requires a v2 artifact inspection receipt");
+  }
   if (inspection.version === 2) {
     const exposure = clawScanExposure(artifact);
     const attempts = Array.isArray(judge.attempts) ? judge.attempts : [];
@@ -2279,11 +2356,16 @@ export function scanHealthClassification(input: {
     input.clawscan.bundledSkillSpector?.timedOut ||
     input.endor?.timedOut,
   );
-  const scannerStatuses = Object.values(input.clawscan.mapping?.scanners ?? {}).filter(
-    (status): status is string => Boolean(status),
-  );
-  let scannerStageFailed = scannerStatuses.some(
-    (status) => status !== "completed" && status !== "missing",
+  let scannerStageFailed = Object.entries(input.clawscan.mapping?.scanners ?? {}).some(
+    ([scanner, status]) =>
+      Boolean(status) &&
+      status !== "completed" &&
+      status !== "missing" &&
+      !(
+        scanner === "skillspectorStatus" &&
+        status === "partial" &&
+        input.clawscan.mapping?.skillSpectorReportPolicy === "judge-gaps"
+      ),
   );
   // processJob records an Endor error for every failed run, including exits and timeouts.
   scannerStageFailed ||= Boolean(input.endor?.error);

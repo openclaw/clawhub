@@ -8,6 +8,8 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
+import completeReport from "./fixtures/skillspector-completed.json";
+import partialReport from "./fixtures/skillspector-usable-partial.json";
 import type { ClaimedJob, ClawScanCommandDiagnostic } from "./run-codex-scan-worker";
 import {
   aggregateSkillSpectorAnalyses,
@@ -16,6 +18,7 @@ import {
   resolveClawScanTarget,
   resolveBundledSkillSpectorScanInputs,
   runClawScan,
+  runBundledSkillSpector,
   writeJobDiagnostic,
 } from "./run-codex-scan-worker";
 import {
@@ -987,6 +990,103 @@ JSON`,
       summary: "Scanned 2 bundled skills. alpha clean beta suspicious",
     });
   });
+
+  it.each([0, 1])(
+    "retains original partial bundled reports for adjudication on exit %s without findings",
+    async (exitCode) => {
+      const workspace = await tempDir();
+      const partial = { ...structuredClone(partialReport), issues: [] };
+      const complete = structuredClone(completeReport);
+      const command = join(workspace, "skillspector");
+      await writeFakeClawScanCommand(
+        command,
+        `target="$2"
+while [[ "$1" != --output ]]; do shift; done
+case "$target" in
+  *alpha) printf '%s' '${JSON.stringify(partial)}' > "$2"; exit ${exitCode} ;;
+  *) printf '%s' '${JSON.stringify(complete)}' > "$2" ;;
+esac`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH ?? ""}`);
+      const onDiagnostic = vi.fn();
+      const result = await runBundledSkillSpector(
+        workspace,
+        [
+          { rootPath: "skills/alpha", scanPath: "artifact/skills/alpha" },
+          { rootPath: "skills/beta", scanPath: "artifact/skills/beta" },
+        ],
+        onDiagnostic,
+      );
+      expect(result).toMatchObject({
+        status: "suspicious",
+        analysis_completeness: { status: "partial", is_complete: false },
+        bundled_reports: [
+          { rootPath: "skills/alpha", report: partial },
+          { rootPath: "skills/beta", report: complete },
+        ],
+      });
+      expect(onDiagnostic).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["no-partial", "partial"])(
+    "requires explicit complete-child controls only in a partial bundle (%s)",
+    async (mode) => {
+      const workspace = await tempDir();
+      const command = join(workspace, "skillspector");
+      const alpha = mode === "partial" ? partialReport : { status: "clean", issues: [] };
+      await writeFakeClawScanCommand(
+        command,
+        `target="$2"
+while [[ "$1" != --output ]]; do shift; done
+case "$target" in
+  *alpha) printf '%s' '${JSON.stringify(alpha)}' > "$2" ;;
+  *) printf '%s' '{"status":"clean","issues":[]}' > "$2" ;;
+esac`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH ?? ""}`);
+      const result = runBundledSkillSpector(
+        workspace,
+        [
+          { rootPath: "skills/alpha", scanPath: "artifact/skills/alpha" },
+          { rootPath: "skills/beta", scanPath: "artifact/skills/beta" },
+        ],
+        vi.fn(),
+      );
+      if (mode === "partial") await expect(result).rejects.toThrow();
+      else await expect(result).resolves.toMatchObject({ status: "clean" });
+    },
+  );
+
+  it.each(["crashed", "malformed", "duplicate-keys", "unsuccessful"])(
+    "rejects %s bundled evidence before the judge",
+    async (mode) => {
+      const workspace = await tempDir();
+      let raw = JSON.stringify(partialReport);
+      if (mode === "malformed") raw = "[]";
+      if (mode === "duplicate-keys")
+        raw = raw.replace(
+          '"execution_successful":true',
+          '"execution_successful":false,"execution_successful":true',
+        );
+      if (mode === "unsuccessful")
+        raw = JSON.stringify({ ...partialReport, execution_successful: false });
+      await writeFakeClawScanCommand(
+        join(workspace, "skillspector"),
+        `while [[ "$1" != --output ]]; do shift; done
+printf '%s' '${raw}' > "$2"
+exit ${mode === "crashed" ? 2 : 0}`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH ?? ""}`);
+      await expect(
+        runBundledSkillSpector(
+          workspace,
+          [{ rootPath: "skills/alpha", scanPath: "artifact/skills/alpha" }],
+          vi.fn(),
+        ),
+      ).rejects.toThrow();
+    },
+  );
 
   it.each([0, 1])(
     "never passes a package root to SkillSpector (findings exit %s)",

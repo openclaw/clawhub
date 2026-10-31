@@ -563,6 +563,33 @@ describe("run-codex-scan-worker diagnostics", () => {
     });
   });
 
+  it.each([
+    {
+      completeness: { is_complete: false, status: "partial" },
+      inspection: "partial",
+      risk: "suspicious",
+    },
+    {
+      completeness: { is_complete: true, status: "completed" },
+      inspection: "completed",
+      risk: "clean",
+    },
+    { completeness: undefined, inspection: undefined, risk: "clean" },
+  ])(
+    "retains inspection provenance separately from risk: $inspection",
+    ({ completeness, inspection, risk }) => {
+      const analysis = normalizeSkillSpectorAnalysis(
+        JSON.stringify({
+          status: "clean",
+          issues: [],
+          analysis_completeness: completeness,
+        }),
+      );
+      expect(analysis.status).toBe(risk);
+      expect(analysis.inspectionStatus).toBe(inspection);
+    },
+  );
+
   it("caps stored SkillSpector issues while preserving the full issue count", () => {
     const longSnippet = "sensitive artifact text ".repeat(200);
     const analysis = normalizeSkillSpectorAnalysis(
