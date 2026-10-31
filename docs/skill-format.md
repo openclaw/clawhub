@@ -83,6 +83,8 @@ metadata:
 
 Use `requires.env` for environment variables that must be present before the skill can run. Use `envVars` when you need per-variable metadata, including optional variables with `required: false`.
 
+A top-level scalar such as `env: TODOIST_API_KEY` is also accepted as a single required environment variable when no `metadata.openclaw`, `metadata.clawdbot`, or `metadata.clawdis` block is present. Use `metadata.openclaw.requires.env` for new skills and for declaring multiple required variables.
+
 ### Full field reference
 
 | Field              | Type       | Description                                                                                                                                  |

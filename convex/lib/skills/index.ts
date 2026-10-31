@@ -486,7 +486,11 @@ function parseFrontmatterLevelDeclarations(
     metadata.primaryEnv = frontmatter.primaryEnv.trim();
   }
 
-  const envVars = parseEnvVarDeclarations(frontmatter.env);
+  const env = frontmatter.env;
+  // Scalar shorthand declares one env name, never an assignment or a list.
+  const envVars = parseEnvVarDeclarations(
+    typeof env === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(env.trim()) ? [env] : env,
+  );
   if (envVars.length > 0) metadata.envVars = envVars;
 
   const dependencies = parseDependencyDeclarations(frontmatter.dependencies);
