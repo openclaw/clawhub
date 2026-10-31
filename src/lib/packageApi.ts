@@ -11,7 +11,10 @@ import { ApiRoutes } from "clawhub-schema/routes";
 import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { publicApiUrl } from "./publicApiUrl";
-import { fetchInitialPublicPluginCatalog } from "./publicPluginBrowse";
+import {
+  fetchInitialPublicPluginCatalog,
+  fetchInitialPublicPluginCategory,
+} from "./publicPluginBrowse";
 import { getRuntimeEnv } from "./runtimeEnv";
 import { getPublicClawHubSiteUrl } from "./site";
 
@@ -557,9 +560,13 @@ export async function fetchPluginCatalog(params: {
     url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
   }
   if (params.sort) url.searchParams.set("sort", params.sort);
-  if (params.viewerMode === "anonymous" && getPluginBrowseSnapshotKind(url) === "default") {
+  const snapshotKind = params.viewerMode === "anonymous" ? getPluginBrowseSnapshotKind(url) : null;
+  if (snapshotKind) {
     try {
-      const result = await fetchInitialPublicPluginCatalog(params.signal);
+      const result =
+        snapshotKind === "category"
+          ? await fetchInitialPublicPluginCategory(url.searchParams.get("category")!, params.signal)
+          : await fetchInitialPublicPluginCatalog(params.signal);
       return {
         items: result.items,
         nextCursor: result.nextCursor,

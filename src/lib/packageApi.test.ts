@@ -1,12 +1,14 @@
 /* @vitest-environment node */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const { serverFetchMock, initialPublicCatalogMock } = vi.hoisted(() => ({
+const { serverFetchMock, initialPublicCatalogMock, initialPublicCategoryMock } = vi.hoisted(() => ({
   serverFetchMock: vi.fn((url: string, init: RequestInit) => fetch(url, init)),
   initialPublicCatalogMock: vi.fn(),
+  initialPublicCategoryMock: vi.fn(),
 }));
 vi.mock("./publicPluginBrowse", () => ({
   fetchInitialPublicPluginCatalog: initialPublicCatalogMock,
+  fetchInitialPublicPluginCategory: initialPublicCategoryMock,
 }));
 const getRequestHeadersMock = vi.fn();
 const getRequestUrlMock = vi.fn();
@@ -34,10 +36,12 @@ describe("fetchPackages", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_CONVEX_SITE_URL", "");
     initialPublicCatalogMock.mockRejectedValue(new Error("Public reader unavailable"));
+    initialPublicCategoryMock.mockRejectedValue(new Error("Public category reader unavailable"));
   });
 
   afterEach(() => {
     initialPublicCatalogMock.mockReset();
+    initialPublicCategoryMock.mockReset();
     serverFetchMock.mockReset();
     getRequestHeadersMock.mockReset();
     getRequestUrlMock.mockReset();
@@ -396,6 +400,49 @@ describe("fetchPackages", () => {
     expect(serverFetchMock).not.toHaveBeenCalled();
   });
 
+  it("loads the anonymous first curated category page through its bounded public query", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const signal = new AbortController().signal;
+    initialPublicCategoryMock.mockResolvedValue({ items: [], nextCursor: "curated-cursor" });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    expect(
+      await fetchPluginCatalog({
+        category: "channels",
+        curated: true,
+        sort: "downloads",
+        limit: 25,
+        viewerMode: "anonymous",
+        signal,
+      }),
+    ).toEqual({ items: [], nextCursor: "curated-cursor", totalCount: null });
+    expect(initialPublicCategoryMock).toHaveBeenCalledWith("channels", signal);
+    expect(initialPublicCatalogMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(serverFetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not restart category HTTP work after a navigation abort", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const controller = new AbortController();
+    initialPublicCategoryMock.mockImplementation(async () => {
+      controller.abort();
+      throw controller.signal.reason;
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    await expect(
+      fetchPluginCatalog({
+        category: "channels",
+        curated: true,
+        sort: "downloads",
+        limit: 25,
+        viewerMode: "anonymous",
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(serverFetchMock).not.toHaveBeenCalled();
+  });
+
   it.each([
     { viewerMode: "request" },
     { family: "code-plugin" },
@@ -403,7 +450,11 @@ describe("fetchPackages", () => {
     { cursor: "next-page" },
     { isOfficial: true },
     { featured: true },
-    { category: "channels", curated: true, sort: "downloads" },
+    { category: "channels", curated: true, sort: "downloads", cursor: "curated-next" },
+    { category: "channels", curated: true, sort: "downloads", topic: "matrix" },
+    { category: "channels", curated: true, sort: "downloads", family: "code-plugin" },
+    { category: "channels", curated: true, sort: "downloads", limit: 100 },
+    { category: "other", curated: true, sort: "downloads" },
     { topic: "Matrix" },
     { officialFirst: true },
     { excludedScanStatuses: ["malicious"] },
@@ -418,6 +469,7 @@ describe("fetchPackages", () => {
       );
       await fetchPluginCatalog({ limit: 25, viewerMode: "anonymous", ...params });
       expect(initialPublicCatalogMock).not.toHaveBeenCalled();
+      expect(initialPublicCategoryMock).not.toHaveBeenCalled();
       expect(serverFetchMock).toHaveBeenCalledTimes(1);
     },
   );
