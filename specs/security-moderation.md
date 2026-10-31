@@ -679,6 +679,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   per-scanner outputs without per-file or aggregate-size truncation. Bounded
   metadata/error fields may remain capped. Artifact upload still requires the
   existing verified-secret scan to pass.
+- The native prepublication failure event preserves the existing SkillSpector
+  projection and adds only fixed scanner names, allowlisted status/error classes,
+  bounded exit/timing numbers, and presence/byte-count/SHA-256 metadata. Arbitrary
+  error text, command arguments, paths, raw reports, and subprocess streams must
+  not enter this event. Artifact hashes cover original bytes; scanner raw hashes
+  cover parsed JSON serialization. Missing, unreadable, malformed, and wrong-schema
+  artifacts remain failed and emit metadata without trusting their scanner fields.
+  This event does not provide private full-report retention or adapter command-boundary
+  capture; both remain separate unresolved work before temporary outputs are deleted.
 - SkillSpector starts from its upstream locked environment. Until that lock
   includes the deferred-model serialization repair, replace only Pydantic and
   pydantic-core and their required typing dependencies with the reviewed
