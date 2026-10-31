@@ -2153,7 +2153,7 @@ exit 2`,
         join(workspace, "skillspector"),
         `echo ${contentCanary}
 echo ${credentialCanary} >&2
-touch ${JSON.stringify(started)}
+: > ${JSON.stringify(started)}
 exec sleep 10`,
       );
       vi.stubEnv("PATH", `${workspace}:${process.env.PATH}`);
