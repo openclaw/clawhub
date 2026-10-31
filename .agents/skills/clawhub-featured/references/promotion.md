@@ -1,10 +1,10 @@
-# Team-requested Featured promotion
+# Authorized Featured promotion
 
-The request must reach ClawHub Admin from the team with an exact item and explicit
-intent to feature it. Record the request's Slack permalink, requester, identity,
-and reason in Admin's existing thread. If the identity or requested operation is
-ambiguous, resolve that before writing. Read the deployed `clawhub-moderation`
-skill for staff-operation rules and use the existing authenticated admin CLI.
+Require an explicit request to feature an exact item. Record the request reference,
+requester, item identity, and reason in the existing review evidence. Resolve any
+ambiguity about the identity or requested operation before writing. Read the
+deployed `clawhub-moderation` skill for staff-operation rules and use the existing
+authenticated admin CLI.
 
 ## One item
 
@@ -25,23 +25,26 @@ bun run admin -- skills feature 'skills-sh:owner/repo/slug' --json
 Native skill slugs are not globally unique: use the owner-qualified ref. External
 skills keep their `skills-sh:` provenance and need an existing public installable
 mirror entry. Preserve all server checks and staff audit logging. A full shelf or
-security refusal goes back to the team; it does not authorize unfeaturing another
-item, clearing a verdict, restoring hidden content, or changing account state.
+security refusal goes back to the requester; it does not authorize unfeaturing
+another item, clearing a verdict, restoring hidden content, or changing account
+state.
 The `promotions` command group manages different platform records; use `feature`
 for Featured membership.
 
 After a successful command, read back the exact listing and public Featured shelf
-and, where available, its staff audit record. Return command result, verification,
-and request link to Admin's main thread for the Slack reply. A membership command
-may trigger the existing skill Featured notification; do not send a second one.
+and, where available, its staff audit record. Report the command result,
+verification, and request reference. A membership command may trigger the existing
+skill Featured notification.
 If the command outcome is uncertain, inspect membership/audit before retrying.
 
 ## Complete selection
 
-Only use `featured publish` when the team explicitly requests the complete
-replacement, including removals, and the required exact-selection approval exists
-(the current repo requires Patrick's approval). Asking to feature one candidate
-does not authorize publishing the report's complete lineup.
+Only use `featured publish` for an explicitly requested complete replacement,
+including removals. Obtain the exact-selection approval required by current
+repository policy (`specs/search-insights.md` → “Featured selection”) from its
+designated owner before applying. A general staff request or API token does not
+substitute for that owner approval. Asking to feature one candidate does not
+authorize publishing the report's complete lineup.
 
 Use the saved report's exact identities, versions, order, reasons, install counts,
 period, and baseline to construct the existing publication schema. Read current
@@ -55,8 +58,9 @@ bun run admin -- featured publish plugin approved-plugins.json
 bun run admin -- featured publish plugin approved-plugins.json --apply
 ```
 
-The first command is the existing dry-run. Apply only after approval covers that
-exact complete set. Any expired evidence, changed version, revision conflict, or
-changed selection requires fresh evidence and review before applying. Use the
-equivalent `skill` command only for an explicitly approved skill selection. Verify
-the resulting shelf and staff audit evidence and return them to Admin.
+The first command is the existing dry-run. Apply only after the required owner
+approval covers that exact complete set. Any expired evidence, changed version,
+revision conflict, or changed selection requires fresh evidence and review before
+applying. Use the equivalent `skill` command only for an explicitly approved skill
+selection. Verify the resulting shelf and staff audit evidence and report the
+outcome.
