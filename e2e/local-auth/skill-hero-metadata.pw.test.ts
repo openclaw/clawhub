@@ -1,10 +1,92 @@
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
+import { buildSkillDetailHref, signInAsLocalPersona } from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
   "skill hero metadata tests require the local dev auth runner",
 );
+
+function seedMetadataSkill() {
+  const config = JSON.parse(readFileSync(".convex/local/default/config.json", "utf8")) as {
+    deploymentName?: unknown;
+  };
+  if (typeof config.deploymentName !== "string" || !config.deploymentName) {
+    throw new Error("Local Convex deployment name was not available");
+  }
+  const result = spawnSync(
+    "bunx",
+    [
+      "convex",
+      "run",
+      "--typecheck",
+      "disable",
+      "--codegen",
+      "disable",
+      "devSeed:seedAgenticRiskDemoSkill",
+      JSON.stringify({ reset: true }),
+    ],
+    {
+      cwd: process.cwd(),
+      env: { ...process.env, CONVEX_DEPLOYMENT: `local:${config.deploymentName}` },
+      encoding: "utf8",
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      ["Failed to seed metadata skill.", result.stdout?.trim(), result.stderr?.trim()].join("\n"),
+    );
+  }
+}
+
+test("owner metadata save persists categories and topics after reload", async ({ page }) => {
+  seedMetadataSkill();
+  const errors = trackRuntimeErrors(page);
+  const ownerHandle = await signInAsLocalPersona(page, "owner");
+  const detailHref = buildSkillDetailHref(ownerHandle, "local-agentic-risk-demo");
+  await page.goto(`${detailHref}/settings`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+
+  const editor = page.locator(".catalog-metadata-settings-editor");
+  const categories = editor.getByRole("button", { name: "Categories", exact: true });
+  await categories.click();
+  const checkedCategories = page.getByRole("menuitemcheckbox", { checked: true });
+  while ((await checkedCategories.count()) > 0) await checkedCategories.first().click();
+  await page.getByRole("menuitemcheckbox", { name: "Productivity", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Research", exact: true }).click();
+  await page.keyboard.press("Escape");
+
+  const removeTopics = editor.getByRole("button", { name: /^Remove .+ topic$/ });
+  while ((await removeTopics.count()) > 0) await removeTopics.first().click();
+  const topics = editor.getByRole("textbox", { name: "Topics", exact: true });
+  await topics.fill("metadata-persistence");
+  await topics.press("Enter");
+  await topics.fill("local-testing");
+  await topics.press("Enter");
+
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Catalog metadata updated.", { exact: true })).toBeVisible();
+  await expect(editor.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+
+  // Reload discards editor state; a success toast alone cannot prove persistence.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect.soft(categories).toHaveText(/^(Productivity, Research|Research, Productivity)$/);
+
+  await page.goto(detailHref, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  const metadata = page.getByLabel("Skill metadata");
+  const persisted = expect.configure({ soft: true });
+  await persisted
+    .poll(async () => (await metadata.locator(".skill-category-meta-link").allInnerTexts()).sort())
+    .toEqual(["Productivity", "Research"]);
+  await persisted
+    .poll(async () => (await metadata.locator(".skill-hero-topic").allInnerTexts()).sort())
+    .toEqual(["#local-testing", "#metadata-persistence"]);
+  await expectHealthyPage(page, errors);
+});
 
 test("skill hero metadata keeps semantic wrap groups on mobile", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
