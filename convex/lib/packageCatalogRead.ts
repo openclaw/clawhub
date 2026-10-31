@@ -7,7 +7,8 @@ import { getCatalogTopicSlugs } from "clawhub-schema/catalogMetadata";
 import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { isOfficialPublisher } from "./officialPublishers";
+import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./officialPublishers";
+import { extractPackageDigestFields } from "./packageSearchDigest";
 import { isPackageBlockedFromPublic } from "./packageSecurity";
 import { toPublicPublisher } from "./public";
 import { canAccessPublisherOwnerScope, getOwnerPublisher } from "./publishers";
@@ -246,4 +247,68 @@ export async function getPackageByNormalizedName(ctx: DbReaderCtx, normalizedNam
     .query("packages")
     .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
     .unique()) as Doc<"packages"> | null;
+}
+
+export function packageMatchesListFilters(
+  pkg: Doc<"packages">,
+  args: {
+    family?: PackageFamily;
+    families?: PackageFamily[];
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    category?: string;
+    topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
+  },
+) {
+  if (pkg.softDeletedAt || !pkg.latestVersionSummary?.version) return false;
+  if (pkg.channel === "private" && args.channel !== "private") return false;
+  if (isPackageBlockedFromPublic(pkg.scanStatus)) return false;
+  if (pkg.scanStatus && args.excludedScanStatuses?.includes(pkg.scanStatus)) return false;
+  if (args.family && pkg.family !== args.family) return false;
+  if (args.families?.length && !args.families.includes(pkg.family)) return false;
+  if (args.channel && pkg.channel !== args.channel) return false;
+  if (typeof args.isOfficial === "boolean" && pkg.isOfficial !== args.isOfficial) return false;
+  if (args.category) {
+    if (!(pkg.categories ?? []).includes(args.category)) return false;
+  }
+  if (args.topic && !getCatalogTopicSlugs(pkg.topics).includes(args.topic)) return false;
+  return true;
+}
+
+export async function toPublicPackageListItemFromPackage(
+  ctx: DbReaderCtx,
+  pkg: Doc<"packages">,
+): Promise<PublicPackageListItem> {
+  const catalogMetadata =
+    pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
+      ? extractPackageDigestFields(pkg)
+      : pkg;
+  const owner = await toPublicPublisherWithOfficial(
+    ctx,
+    await getOwnerPublisher(ctx, {
+      ownerPublisherId: pkg.ownerPublisherId,
+      ownerUserId: pkg.ownerUserId,
+    }),
+  );
+  return {
+    name: pkg.name,
+    displayName: pkg.displayName,
+    family: toPublicPackageFamily(pkg.family),
+    runtimeId: pkg.runtimeId ?? null,
+    channel: pkg.channel,
+    isOfficial: pkg.isOfficial,
+    summary: pkg.summary ?? null,
+    icon: pkg.icon ?? null,
+    ownerHandle: owner?.handle ?? null,
+    ownerImage: owner?.image ?? null,
+    ownerOfficial: owner?.official === true,
+    createdAt: pkg.createdAt,
+    updatedAt: pkg.updatedAt,
+    latestVersion: pkg.latestVersionSummary?.version ?? null,
+    categories: catalogMetadata.categories,
+    topics: catalogMetadata.topics,
+    verificationTier: pkg.verification?.tier ?? null,
+    stats: pkg.stats,
+  };
 }

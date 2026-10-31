@@ -76,12 +76,18 @@ import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
+import {
+  readInitialPluginFamilyPage,
+  canReadInitialPluginFamilyPage,
+} from "./lib/initialPluginFamilyRead";
 import { toDayKey } from "./lib/leaderboards";
 import type { StaticScanResult } from "./lib/moderationEngine";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import {
+  packageMatchesListFilters,
+  toPublicPackageListItemFromPackage,
   MAX_PUBLIC_LIST_PAGE_SIZE,
   MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS,
   packageListScanStatusValidator,
@@ -98,6 +104,7 @@ import {
   getPackageByNormalizedName,
 } from "./lib/packageCatalogRead";
 import { resolvePackageIcon } from "./lib/packageIcons";
+import { decodePublicPageCursor, encodePublicPageCursor } from "./lib/packagePageCursor";
 import {
   assertManualRecoveryFinalization,
   assertPackageRecoveryEligibility,
@@ -893,16 +900,6 @@ function toPackageModerationQueueItem(
 }
 
 type PackageBadgeKind = Doc<"packageBadges">["kind"];
-type PublicPageCursorState = {
-  cursor: string | null;
-  offset: number;
-  pageSize: number | null;
-  done: boolean;
-  mode?: "packages" | "digest";
-  sort?: "updated" | "downloads" | "recommended" | "installs" | "trending";
-  packageIndex?: "family-official-downloads";
-};
-const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
 type OfficialFirstPackageCategoryCursorState = {
   phase: "official" | "community";
   cursor: string | null;
@@ -1334,33 +1331,6 @@ async function isTemplateCatalogPublisherAvailable(
   );
 }
 
-function packageMatchesListFilters(
-  pkg: Doc<"packages">,
-  args: {
-    family?: PackageFamily;
-    families?: PackageFamily[];
-    channel?: PackageChannel;
-    isOfficial?: boolean;
-    category?: string;
-    topic?: string;
-    excludedScanStatuses?: PackageListScanStatus[];
-  },
-) {
-  if (pkg.softDeletedAt || !pkg.latestVersionSummary?.version) return false;
-  if (pkg.channel === "private" && args.channel !== "private") return false;
-  if (isPackageBlockedFromPublic(pkg.scanStatus)) return false;
-  if (pkg.scanStatus && args.excludedScanStatuses?.includes(pkg.scanStatus)) return false;
-  if (args.family && pkg.family !== args.family) return false;
-  if (args.families?.length && !args.families.includes(pkg.family)) return false;
-  if (args.channel && pkg.channel !== args.channel) return false;
-  if (typeof args.isOfficial === "boolean" && pkg.isOfficial !== args.isOfficial) return false;
-  if (args.category) {
-    if (!(pkg.categories ?? []).includes(args.category)) return false;
-  }
-  if (args.topic && !getCatalogTopicSlugs(pkg.topics).includes(args.topic)) return false;
-  return true;
-}
-
 async function upsertPackageBadge(
   ctx: MutationCtx,
   pkg: Doc<"packages">,
@@ -1405,43 +1375,6 @@ async function removePackageBadge(
   if (!existing) return false;
   await ctx.db.delete(existing._id);
   return true;
-}
-
-async function toPublicPackageListItemFromPackage(
-  ctx: DbReaderCtx,
-  pkg: Doc<"packages">,
-): Promise<PublicPackageListItem> {
-  const catalogMetadata =
-    pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
-      ? extractPackageDigestFields(pkg)
-      : pkg;
-  const owner = await toPublicPublisherWithOfficial(
-    ctx,
-    await getOwnerPublisher(ctx, {
-      ownerPublisherId: pkg.ownerPublisherId,
-      ownerUserId: pkg.ownerUserId,
-    }),
-  );
-  return {
-    name: pkg.name,
-    displayName: pkg.displayName,
-    family: toPublicPackageFamily(pkg.family),
-    runtimeId: pkg.runtimeId ?? null,
-    channel: pkg.channel,
-    isOfficial: pkg.isOfficial,
-    summary: pkg.summary ?? null,
-    icon: pkg.icon ?? null,
-    ownerHandle: owner?.handle ?? null,
-    ownerImage: owner?.image ?? null,
-    ownerOfficial: owner?.official === true,
-    createdAt: pkg.createdAt,
-    updatedAt: pkg.updatedAt,
-    latestVersion: pkg.latestVersionSummary?.version ?? null,
-    categories: catalogMetadata.categories,
-    topics: catalogMetadata.topics,
-    verificationTier: pkg.verification?.tier ?? null,
-    stats: pkg.stats,
-  };
 }
 
 async function toDashboardPackageListItem(
@@ -1617,42 +1550,6 @@ async function listDashboardPackagesForOwnerUser(
       filtered.map(async (pkg) => await toDashboardPackageListItem(ctx, pkg, viewerUserId)),
     )
   ).filter((pkg): pkg is DashboardPackageListItem => Boolean(pkg));
-}
-
-function encodePublicPageCursor(state: PublicPageCursorState) {
-  if (state.done && state.offset === 0) return "";
-  return `${PUBLIC_PAGE_CURSOR_PREFIX}${JSON.stringify(state)}`;
-}
-
-function decodePublicPageCursor(raw: string | null | undefined): PublicPageCursorState {
-  if (!raw) return { cursor: null, offset: 0, pageSize: null, done: false };
-  if (!raw.startsWith(PUBLIC_PAGE_CURSOR_PREFIX)) {
-    return { cursor: raw, offset: 0, pageSize: null, done: false };
-  }
-  try {
-    const parsed = JSON.parse(
-      raw.slice(PUBLIC_PAGE_CURSOR_PREFIX.length),
-    ) as Partial<PublicPageCursorState>;
-    return {
-      cursor: typeof parsed.cursor === "string" ? parsed.cursor : null,
-      offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
-      pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
-      done: parsed.done === true,
-      mode: parsed.mode === "packages" || parsed.mode === "digest" ? parsed.mode : undefined,
-      sort:
-        parsed.sort === "updated" ||
-        parsed.sort === "downloads" ||
-        parsed.sort === "recommended" ||
-        parsed.sort === "installs" ||
-        parsed.sort === "trending"
-          ? parsed.sort
-          : undefined,
-      packageIndex:
-        parsed.packageIndex === "family-official-downloads" ? parsed.packageIndex : undefined,
-    };
-  } catch {
-    return { cursor: null, offset: 0, pageSize: null, done: false };
-  }
 }
 
 function encodeOfficialFirstPackageCategoryCursor(state: OfficialFirstPackageCategoryCursorState) {
@@ -4562,6 +4459,10 @@ async function listPackagePageImpl(
   const canViewPackage = async (digest: PackageDigestLike) =>
     await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache);
   const targetCount = args.paginationOpts.numItems;
+  if (canReadInitialPluginFamilyPage(args)) {
+    const initialPage = await readInitialPluginFamilyPage(ctx, args);
+    if (initialPage) return initialPage;
+  }
   const topic = args.topic ? normalizeCatalogTopic(args.topic) : undefined;
   const hasCatalogMetadataFilter = Boolean(category || topic);
   if (args.topic !== undefined && !topic) {
