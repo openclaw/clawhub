@@ -1,4 +1,7 @@
+import { createRequire } from "node:module";
 import { fireEvent, render } from "@testing-library/react";
+import { act, type ReactNode } from "react";
+import { hydrateRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 
@@ -51,6 +54,40 @@ describe("MarketplaceIcon", () => {
       expect(container.querySelector("img")?.getAttribute("src")).toBe(
         storageUrl.replace("f92f78e3", "a92f78e3"),
       );
+    });
+
+    it("recovers a raster that failed before hydration attached the error handler", async () => {
+      const { renderToString } = createRequire(`${process.cwd()}/package.json`)(
+        "react-dom/server",
+      ) as { renderToString: (node: ReactNode) => string };
+      const element = (
+        <MarketplaceIcon
+          kind="plugin"
+          label="Lobster"
+          imageUrl={openclawIcon}
+          rasterAssetUrl={storageUrl}
+        />
+      );
+      const container = document.createElement("div");
+      container.innerHTML = renderToString(element);
+      document.body.append(container);
+      // The browser has already emitted this error; hydration cannot replay it.
+      const complete = vi
+        .spyOn(HTMLImageElement.prototype, "complete", "get")
+        .mockImplementation(function (this: HTMLImageElement) {
+          return this.getAttribute("src") === storageUrl;
+        });
+      let root: Root | undefined;
+      try {
+        await act(async () => {
+          root = hydrateRoot(container, element);
+        });
+        expect(container.querySelector("img")?.getAttribute("src")).toBe(openclawIcon);
+      } finally {
+        await act(async () => root?.unmount());
+        container.remove();
+        complete.mockRestore();
+      }
     });
 
     it.each([

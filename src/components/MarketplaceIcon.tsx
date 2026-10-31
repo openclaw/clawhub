@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { getPluginCategoryBySlug, getSkillIconCategoryForSkill } from "../lib/categories";
 import { getCategoryIconComponent, UNRESOLVED_SKILL_CATEGORY_ICON } from "../lib/categoryIcons";
 import { MARKETPLACE_KIND_ICONS, type MarketplaceIconKind } from "../lib/marketplaceIcons";
@@ -53,6 +53,7 @@ export function MarketplaceIcon({
   size = "sm",
   tone = "default",
 }: MarketplaceIconProps) {
+  const imageRef = useRef<HTMLImageElement>(null);
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   useEffect(() => {
     setFailedImageUrls((failed) => (failed.length ? [] : failed));
@@ -86,6 +87,17 @@ export function MarketplaceIcon({
     [directRasterUrl, supportedImageUrl].find((url) => url && !failedImageUrls.includes(url)) ??
     null;
 
+  useEffect(() => {
+    // SSR images can fail before React attaches onError. Recover the completed
+    // failure after hydration as well as handling later browser error events.
+    const image = imageRef.current;
+    if (visibleImageUrl && image?.complete && image.naturalWidth === 0) {
+      setFailedImageUrls((failed) =>
+        failed.includes(visibleImageUrl) ? failed : [...failed, visibleImageUrl],
+      );
+    }
+  }, [visibleImageUrl]);
+
   return (
     <span
       className={`marketplace-icon marketplace-icon-${kind} marketplace-icon-${size}${
@@ -105,6 +117,7 @@ export function MarketplaceIcon({
     >
       {visibleImageUrl ? (
         <img
+          ref={imageRef}
           className="marketplace-icon-image"
           src={visibleImageUrl}
           alt=""
