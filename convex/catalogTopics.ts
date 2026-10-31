@@ -3,11 +3,10 @@ import {
   isPluginCategorySlug,
   isSkillCategorySlug,
   resolveStoredSkillCategories,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
-import { query } from "./functions";
+import { query, type QueryCtx } from "./_generated/server";
 import { isPublicPluginDoc, isPublicSkillDoc } from "./lib/globalStats";
 
 const TOP_CATEGORY_TOPIC_LIMIT = 8;
