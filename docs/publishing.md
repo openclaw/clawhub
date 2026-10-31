@@ -265,9 +265,16 @@ Actions environment claim must match that name exactly.
 
 ClawHub verifies the configured GitHub repository when trusted publisher config
 is set. Public repositories can be verified through public GitHub metadata.
-Private repositories require ClawHub to have GitHub access to that repository,
-for example through a future ClawHub GitHub App installation or another
-authorized GitHub integration.
+Private repositories are rejected, including when an authenticated GitHub
+integration can read them. Make the repository public only after its owners
+approve the visibility change and audit its contents and history.
+
+Claws use this package flow, including the initial manual publish and per-package
+binding. The reusable workflow accepts `family: claw` with a prebuilt `.tgz`;
+the package publisher validates the Claw envelope and exact artifact digest.
+Plugin Inspector does not apply to Claws. Skills still use the separate skill
+publishing flow and do not support OIDC. Trusted publishes must omit `owner`:
+ownership is inherited from the existing package, not selected by the workflow.
 
 The current reusable package publish workflow supports secretless trusted
 publishing for `workflow_dispatch` publishes when `id-token: write` is

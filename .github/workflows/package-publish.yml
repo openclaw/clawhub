@@ -47,7 +47,7 @@ on:
         required: false
         type: string
       family:
-        description: Optional package family override for legacy package rows.
+        description: Optional package family override (code-plugin, bundle-plugin, or claw). Claws require a prebuilt .tgz.
         required: false
         type: string
       version:
@@ -565,7 +565,7 @@ jobs:
           if owner:
               cmd += ["--owner", owner]
           if family:
-              valid_families = {"code-plugin", "bundle-plugin"}
+              valid_families = {"code-plugin", "bundle-plugin", "claw"}
               if family not in valid_families:
                   raise SystemExit(
                       f"Invalid package family override {family!r}; expected one of {sorted(valid_families)}."
@@ -702,6 +702,7 @@ jobs:
           path: clawhub-publish-source
 
       - name: Run plugin validation
+        if: inputs.family != 'claw'
         env:
           INSPECT_LOCAL_ROOT: ${{ steps.resolve_publish.outputs.inspect_local_root }}
           INSPECT_SUBDIR: ${{ steps.resolve_publish.outputs.inspect_subdir }}
