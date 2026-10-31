@@ -11,7 +11,7 @@ export async function fetchInitialPublicPluginCatalog(signal?: AbortSignal) {
   });
   const result = await readInitialPublicPluginPage({
     readMetadata: () => client.query(api.publicPluginBrowse.getMetadata, {}),
-    fetchPage: (args) => client.query(api.packages.listPublicPage, args),
+    fetchPage: (args) => client.query(api.publicPluginFamily.listPage, args),
   });
   signal?.throwIfAborted();
   const items = result.items.map((item) => {
