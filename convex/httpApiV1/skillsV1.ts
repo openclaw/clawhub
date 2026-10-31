@@ -48,7 +48,11 @@ import {
 } from "../lib/githubHandoff";
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
+import {
+  isConvexWritePressureError,
+  parseBooleanQueryParam,
+  resolveBooleanQueryParam,
+} from "../lib/httpUtils";
 import {
   buildSkillInstallResolution,
   type InstallResolverSkill,
@@ -3076,9 +3080,16 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       if (sha256 !== expected.sha256) {
         return text("Uploaded file SHA-256 does not match its upload ticket", 400, rate.headers);
       }
-      storageId = await ctx.storage.store(
-        new Blob([bytes], expected.contentType ? { type: expected.contentType } : undefined),
-      );
+      try {
+        storageId = await ctx.storage.store(
+          new Blob([bytes], expected.contentType ? { type: expected.contentType } : undefined),
+        );
+      } catch (error) {
+        // Retry only a typed rejection before this action has a blob ID.
+        // Attachment failures must not trigger a fresh storage upload.
+        if (isConvexWritePressureError(error)) return text(error.message, 503, rate.headers);
+        throw error;
+      }
       await ctx.runMutation(internal.skillPublishUploads.attachSkillPublishUploadInternal, {
         userId: auth.userId,
         uploadTicket,

@@ -1,3 +1,10 @@
+export function isConvexWritePressureError(error: unknown): error is Error {
+  return (
+    error instanceof Error &&
+    /\bCommitterFullError: Too many writes in a short period of time\./.test(error.message)
+  );
+}
+
 export function parseBooleanQueryParam(value: string | null) {
   if (!value) return false;
   const normalized = value.trim().toLowerCase();
