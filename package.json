@@ -122,7 +122,7 @@
     "@shikijs/rehype": "4.5.0",
     "@tanstack/react-router": "1.170.44",
     "@tanstack/react-start": "1.169.2",
-    "@vercel/oidc": "^3.8.10",
+    "@vercel/oidc": "^4.0.1",
     "class-variance-authority": "0.7.1",
     "clawhub-schema": "workspace:0.0.2",
     "clsx": "2.1.1",
