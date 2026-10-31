@@ -1,12 +1,26 @@
 import { isPluginCategorySlug } from "clawhub-schema/pluginCategories";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { internalQuery } from "./_generated/server";
+import { internalQuery, query } from "./_generated/server";
 import { packageListScanStatusValidator } from "./lib/packageCatalogRead";
 import {
   listCuratedPluginCategoryPage,
   listPluginOverviewCategory,
 } from "./lib/pluginDiscoveryQueries";
+
+// Public browse uses the same anonymous selection as the curated HTTP route.
+// Keep the initial page bounded; filtered and continuation requests retain HTTP.
+export const listInitialPage = query({
+  args: { category: v.string() },
+  handler: async (ctx, args) => {
+    if (!isPluginCategorySlug(args.category) || args.category === "other")
+      return { page: [], isDone: true, continueCursor: "" };
+    return await listCuratedPluginCategoryPage(ctx, {
+      category: args.category,
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+  },
+});
 
 // Keep public category reads independent of publishing-module initialization.
 export const listPluginDiscoveryCategoryInternal = internalQuery({
