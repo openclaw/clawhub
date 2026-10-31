@@ -17,7 +17,7 @@ import {
 
 const sourceCommit = "f197f4566f8a3c11755bc6688ec92a2c3347b4dd";
 const sourceTree = "bcf058341b9cfa6290525a3980eab50e6b4b356f";
-const scannerCommit = "c0b813f1001062257758f079795cdd176b7e31a4";
+const scannerCommit = "a5301cca147f088a53f3403cb2cb9a71a0df9c88";
 
 export function assertSolarisDiagnosticAdmission(
   env: NodeJS.ProcessEnv & { platform?: string },
