@@ -554,6 +554,53 @@ describe("Header", () => {
     });
   });
 
+  it("indicates that more suggestions are pending beside ready matches", () => {
+    useUnifiedSearchMock.mockReturnValue({ ...defaultUnifiedSearchResult, isSearching: true });
+    const { rerender } = render(<Header />);
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+    expect(screen.getByRole("option", { name: /Weather Skill/i })).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Searching" })).toBeTruthy();
+    useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
+    rerender(<Header />);
+    expect(screen.queryByRole("status", { name: "Searching" })).toBeNull();
+  });
+
+  it.each(["keyboard", "pointer"])(
+    "preserves the selected suggestion when other groups arrive (%s)",
+    (method) => {
+      useUnifiedSearchMock.mockReturnValue({
+        ...defaultUnifiedSearchResult,
+        pluginResults: [],
+        creatorResults: [],
+        isSearching: true,
+      });
+      const { rerender } = render(<Header />);
+      const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "weather" } });
+      if (method === "keyboard") {
+        fireEvent.keyDown(input, { key: "ArrowDown" });
+      } else {
+        fireEvent.mouseEnter(screen.getByRole("option", { name: /Weather Skill/i }));
+      }
+      const selected = input.getAttribute("aria-activedescendant");
+      expect(selected).toBeTruthy();
+      scrollIntoViewMock.mockClear();
+      useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
+      rerender(<Header />);
+      expect(input.getAttribute("aria-activedescendant")).toBe(selected);
+      expect(scrollIntoViewMock).toHaveBeenCalledWith({ block: "nearest" });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(navigateMock).toHaveBeenCalledWith(
+        method === "keyboard"
+          ? { to: "/search", search: { q: "weather", type: "skills" } }
+          : { to: "/local/skills/weather" },
+      );
+    },
+  );
+
   it("opens external skill typeahead results on their stored catalog route", () => {
     navigateMock.mockReset();
     useUnifiedSearchMock.mockReturnValue({

@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isUnifiedNativeSkillResult, useUnifiedSearch } from "./useUnifiedSearch";
 
@@ -123,11 +123,139 @@ function makeCreator(handle: string) {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("useUnifiedSearch", () => {
   beforeEach(() => {
     searchSkillsMock.mockReset();
     fetchPluginCatalogMock.mockReset();
     convexQueryMock.mockReset();
+  });
+
+  it("shows ready skill matches while plugin search is still pending", async () => {
+    const plugins = deferred<{ items: ReturnType<typeof makePlugin>[]; nextCursor: null }>();
+    searchSkillsMock.mockResolvedValue([makeCanonicalSkill("weather")]);
+    fetchPluginCatalogMock.mockReturnValue(plugins.promise);
+    convexQueryMock.mockResolvedValue({ page: [], isDone: true });
+
+    const { result } = renderHook(() =>
+      useUnifiedSearch("weather", "all", { debounceMs: 0, publishPartialResults: true }),
+    );
+    try {
+      await waitFor(() => expect(result.current.skillCount).toBe(1));
+      expect(result.current.results.map((entry) => entry.type)).toEqual(["skill"]);
+      expect(result.current.isSearching).toBe(true);
+    } finally {
+      await act(async () => {
+        plugins.resolve({ items: [makePlugin("weather")], nextCursor: null });
+      });
+    }
+    await waitFor(() => expect(result.current.isSearching).toBe(false));
+    expect(result.current.results.map((entry) => entry.type)).toEqual(["plugin", "skill"]);
+    expect(searchSkillsMock).toHaveBeenCalledTimes(1);
+    expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the default loading boundary until every result type settles", async () => {
+    const skills = deferred<ReturnType<typeof makeCanonicalSkill>[]>();
+    searchSkillsMock.mockReturnValue(skills.promise);
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+    convexQueryMock.mockResolvedValue({ page: [makeCreator("weather")], isDone: true });
+    const { result } = renderHook(() => useUnifiedSearch("weather", "all", { debounceMs: 0 }));
+    await waitFor(() => expect(convexQueryMock).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(result.current.creatorCount).toBe(0);
+    expect(result.current.isSearching).toBe(true);
+    await act(async () => skills.resolve([]));
+    await waitFor(() => expect(result.current.isSearching).toBe(false));
+    expect(result.current.creatorCount).toBe(1);
+  });
+
+  it("keeps ready matches when another result type fails later", async () => {
+    const skills = deferred<ReturnType<typeof makeCanonicalSkill>[]>();
+    searchSkillsMock.mockReturnValue(skills.promise);
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+    convexQueryMock.mockResolvedValue({ page: [makeCreator("weather")], isDone: true });
+
+    const { result } = renderHook(() =>
+      useUnifiedSearch("weather", "all", { debounceMs: 0, publishPartialResults: true }),
+    );
+    try {
+      await waitFor(() => expect(result.current.creatorCount).toBe(1));
+      expect(result.current.isSearching).toBe(true);
+    } finally {
+      await act(async () => skills.reject(new Error("Skill search unavailable")));
+    }
+    await waitFor(() => expect(result.current.isSearching).toBe(false));
+    expect(result.current.creatorCount).toBe(1);
+    expect(result.current.skillSearchError).toBe(true);
+    expect(result.current.pluginSearchError).toBe(false);
+  });
+
+  it("ignores individual responses from a query that has been replaced", async () => {
+    const oldSkills = deferred<ReturnType<typeof makeCanonicalSkill>[]>();
+    const oldPlugins = deferred<{ items: ReturnType<typeof makePlugin>[]; nextCursor: null }>();
+    searchSkillsMock.mockReturnValueOnce(oldSkills.promise);
+    searchSkillsMock.mockResolvedValue([makeCanonicalSkill("new")]);
+    fetchPluginCatalogMock.mockReturnValueOnce(oldPlugins.promise);
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+    convexQueryMock.mockResolvedValue({ page: [], isDone: true });
+
+    const { result, rerender } = renderHook(
+      ({ query }) => useUnifiedSearch(query, "all", { debounceMs: 0 }),
+      { initialProps: { query: "old" } },
+    );
+    await waitFor(() => expect(searchSkillsMock).toHaveBeenCalledTimes(1));
+    rerender({ query: "new" });
+    await waitFor(() => expect(result.current.isSearching).toBe(false));
+    await act(async () => {
+      oldPlugins.resolve({ items: [makePlugin("old")], nextCursor: null });
+    });
+    expect(result.current.pluginCount).toBe(0);
+    await act(async () => oldSkills.resolve([makeCanonicalSkill("old")]));
+    expect(result.current.skillResults).toEqual([
+      expect.objectContaining({ skill: expect.objectContaining({ slug: "new" }) }),
+    ]);
+    expect(result.current.pluginCount).toBe(0);
+    expect(result.current.isSearching).toBe(false);
+  });
+
+  it("hides the previous query's matches while the next query is pending", async () => {
+    const skills = deferred<ReturnType<typeof makeCanonicalSkill>[]>();
+    const plugins = deferred<{ items: ReturnType<typeof makePlugin>[]; nextCursor: null }>();
+    const creators = deferred<{ page: ReturnType<typeof makeCreator>[]; isDone: true }>();
+    searchSkillsMock.mockResolvedValueOnce([makeCanonicalSkill("old")]);
+    searchSkillsMock.mockReturnValue(skills.promise);
+    fetchPluginCatalogMock.mockResolvedValueOnce({ items: [], nextCursor: null });
+    fetchPluginCatalogMock.mockReturnValue(plugins.promise);
+    convexQueryMock.mockResolvedValueOnce({ page: [], isDone: true });
+    convexQueryMock.mockReturnValue(creators.promise);
+    const { result, rerender } = renderHook(
+      ({ query }) => useUnifiedSearch(query, "all", { debounceMs: 0 }),
+      { initialProps: { query: "old" } },
+    );
+    await waitFor(() => expect(result.current.isSearching).toBe(false));
+    expect(result.current.skillCount).toBe(1);
+    rerender({ query: "new" });
+    try {
+      expect(result.current.results).toEqual([]);
+      expect(result.current.skillCount).toBe(0);
+      expect(result.current.isSearching).toBe(true);
+    } finally {
+      await act(async () => {
+        skills.resolve([]);
+        plugins.resolve({ items: [], nextCursor: null });
+        creators.resolve({ page: [], isDone: true });
+      });
+    }
   });
 
   it("uses matching loader data without repeating the initial skill search", async () => {

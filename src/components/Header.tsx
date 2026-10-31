@@ -152,7 +152,7 @@ export default function Header() {
   const [navSearchQuery, setNavSearchQuery] = useState("");
   const manualCatalogSearchRef = useRef<ManualCatalogSearch | null>(null);
   const [typeaheadOpen, setTypeaheadOpen] = useState(false);
-  const [typeaheadActiveIndex, setTypeaheadActiveIndex] = useState(0);
+  const [typeaheadActiveKey, setTypeaheadActiveKey] = useState<string | null>(null);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
@@ -175,6 +175,7 @@ export default function Header() {
   } = useUnifiedSearch(navSearchQuery, "all", {
     manualCatalogSearch: manualCatalogSearchRef.current,
     detectPluginHasMore: false,
+    publishPartialResults: true,
     debounceMs: 180,
     enabled: typeaheadOpen && hasNavSearchQuery,
     limits: { skills: 4, plugins: 4, creators: 4 },
@@ -237,18 +238,23 @@ export default function Header() {
     () => [...typeaheadPluginItems, ...typeaheadSkillItems, ...typeaheadCreatorItems],
     [typeaheadCreatorItems, typeaheadPluginItems, typeaheadSkillItems],
   );
+  // Later result groups can be inserted before a suggestion being used. Track
+  // its identity so keyboard and pointer selection cannot jump to another row.
+  const typeaheadActiveIndex = Math.max(
+    0,
+    typeaheadItems.findIndex((item) => item.key === typeaheadActiveKey),
+  );
+  const selectTypeaheadIndex = (index: number) => {
+    setTypeaheadActiveKey(typeaheadItems[index]?.key ?? null);
+  };
   const activeTypeaheadItem = showTypeahead ? typeaheadItems[typeaheadActiveIndex] : undefined;
   const activeTypeaheadId = activeTypeaheadItem
     ? getTypeaheadOptionId(activeTypeaheadItem)
     : undefined;
 
   useEffect(() => {
-    setTypeaheadActiveIndex(0);
+    setTypeaheadActiveKey(null);
   }, [trimmedNavSearchQuery]);
-
-  useEffect(() => {
-    setTypeaheadActiveIndex((index) => Math.min(index, Math.max(typeaheadItems.length - 1, 0)));
-  }, [typeaheadItems.length]);
 
   useEffect(() => {
     if (!typeaheadOpen && !mobileSearchOpen) return () => {};
@@ -400,11 +406,11 @@ export default function Header() {
     if (typeaheadItems.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setTypeaheadActiveIndex((index) => (index + 1) % typeaheadItems.length);
+      selectTypeaheadIndex((typeaheadActiveIndex + 1) % typeaheadItems.length);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setTypeaheadActiveIndex(
-        (index) => (index - 1 + typeaheadItems.length) % typeaheadItems.length,
+      selectTypeaheadIndex(
+        (typeaheadActiveIndex - 1 + typeaheadItems.length) % typeaheadItems.length,
       );
     } else if (event.key === "Enter") {
       const activeItem = typeaheadItems[typeaheadActiveIndex];
@@ -588,7 +594,7 @@ export default function Header() {
                   loading={typeaheadSearching}
                   pluginSearchError={pluginSearchError}
                   skillSearchError={skillSearchError}
-                  onHoverItem={setTypeaheadActiveIndex}
+                  onHoverItem={selectTypeaheadIndex}
                   onSelectItem={navigateToTypeaheadItem}
                   creatorItems={typeaheadCreatorItems}
                   pluginItems={typeaheadPluginItems}
@@ -800,7 +806,7 @@ export default function Header() {
                 loading={typeaheadSearching}
                 pluginSearchError={pluginSearchError}
                 skillSearchError={skillSearchError}
-                onHoverItem={setTypeaheadActiveIndex}
+                onHoverItem={selectTypeaheadIndex}
                 onSelectItem={navigateToTypeaheadItem}
                 creatorItems={typeaheadCreatorItems}
                 pluginItems={typeaheadPluginItems}
@@ -995,6 +1001,20 @@ function SearchTypeahead({
             ) : null}
           </div>
         ) : null}
+        {hasQuery && loading && hasMatches ? (
+          <div
+            className="navbar-search-typeahead-status is-loading"
+            role="status"
+            aria-label="Searching"
+          >
+            <Loader2
+              className="navbar-search-typeahead-status-spinner"
+              size={17}
+              aria-hidden="true"
+            />
+            <span>Searching…</span>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1019,7 +1039,7 @@ function TypeaheadRow({
   useEffect(() => {
     if (!active) return;
     rowRef.current?.scrollIntoView({ block: "nearest" });
-  }, [active]);
+  }, [active, index]);
 
   return (
     <button
