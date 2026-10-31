@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -547,6 +548,57 @@ function clawScanCheckResult(analysis: StoredLlmAnalysis): WorkerCheckResult {
   };
 }
 
+// Failure diagnostics must never publish source/provider text, even after redaction.
+function diagnosticFingerprint(value: string | Buffer | null | undefined) {
+  return {
+    present: value != null,
+    bytes: value == null ? null : Buffer.byteLength(value),
+    sha256: value == null ? null : createHash("sha256").update(value).digest("hex"),
+  };
+}
+
+function nativeScannerDiagnostic(value: unknown) {
+  const scanner = asRecord(value);
+  const error = typeof scanner?.error === "string" ? scanner.error : undefined;
+  // Only classify bounded redacted errors; hashes distinguish every other error.
+  const safeError = error && error.length <= 4_096 ? publicText(error, 4_096) : "";
+  const errorClass = !error
+    ? scanner?.error == null || error === ""
+      ? "none"
+      : "invalid"
+    : safeError.endsWith("aig-skill-scan did not write SARIF output.")
+      ? "missing_sarif"
+      : safeError.endsWith("aig-skill-scan returned invalid SARIF 2.1.0 JSON")
+        ? "invalid_sarif"
+        : "other";
+  let raw = { present: scanner?.raw != null, bytes: null, sha256: null } as ReturnType<
+    typeof diagnosticFingerprint
+  >;
+  try {
+    // Raw hashes cover the parsed JSON serialization, not original SARIF bytes.
+    if (raw.present) raw = diagnosticFingerprint(JSON.stringify(scanner?.raw));
+  } catch {
+    // Deep/unserializable untrusted JSON must not replace the scan failure.
+  }
+  const boundedInteger = (entry: unknown, maximum: number) =>
+    typeof entry === "number" && Number.isSafeInteger(entry) && entry >= 0 && entry <= maximum
+      ? entry
+      : null;
+  const status = scanner?.status;
+  return {
+    status: !scanner
+      ? "missing"
+      : typeof status === "string" &&
+          ["pending", "running", "completed", "failed", "skipped"].includes(status)
+        ? status
+        : "unknown",
+    exitCode: boundedInteger(scanner?.exitCode, 255),
+    durationMs: boundedInteger(scanner?.durationMs, 86_400_000),
+    error: { class: errorClass, ...diagnosticFingerprint(error || undefined) },
+    raw,
+  };
+}
+
 export async function runNativeClawScan(
   job: ClaimedJob,
   workspace: string,
@@ -567,6 +619,7 @@ export async function runNativeClawScan(
   }
 
   onExposure?.(clawScanExposure());
+  const startedAt = Date.now();
   const output = await runCommand(command, args, {
     cwd: workspace,
     env: {
@@ -575,22 +628,42 @@ export async function runNativeClawScan(
     },
     timeoutMs: clawScanTimeoutMs(),
   });
+  const durationMs = Date.now() - startedAt;
   let artifact: unknown;
+  let artifactBytes: Buffer | undefined;
+  let artifactPresence: "missing" | "unreadable" | "malformed" | "invalid_schema" | "present" =
+    "missing";
   try {
-    artifact = JSON.parse(await readFile(artifactPath, "utf8"));
-  } catch {
+    artifactBytes = await readFile(artifactPath);
+    artifactPresence = "malformed";
+    artifact = JSON.parse(artifactBytes.toString("utf8"));
+    const root = asRecord(artifact);
+    artifactPresence =
+      root?.schemaVersion === "clawscan-run-v1" && root.profile === "clawhub"
+        ? "present"
+        : "invalid_schema";
+  } catch (error) {
+    if (!artifactBytes)
+      artifactPresence =
+        (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable";
     artifact = undefined;
   }
   onExposure?.(clawScanExposure(artifact));
   const logFailureDiagnostic = () => {
-    const root = asRecord(artifact);
-    if (root?.schemaVersion !== "clawscan-run-v1" || root.profile !== "clawhub") return;
-    const scanner = asRecord(asRecord(root.scanners)?.skillspector);
+    const root = artifactPresence === "present" ? asRecord(artifact) : undefined;
+    const scanners = asRecord(root?.scanners);
+    const scanner = asRecord(scanners?.skillspector);
     logger.info(
       {
         attemptId: String(job.job._id),
         event: "prepublication_clawscan_failure_diagnostic",
-        skillSpector: projectSkillSpectorReport(scanner?.raw),
+        exitCode: output.code,
+        durationMs,
+        artifact: { ...diagnosticFingerprint(artifactBytes), presence: artifactPresence },
+        scanners: Object.fromEntries(
+          REQUIRED_SKILL_SCANNERS.map((name) => [name, nativeScannerDiagnostic(scanners?.[name])]),
+        ),
+        ...(root ? { skillSpector: projectSkillSpectorReport(scanner?.raw) } : {}),
       },
       "pre-publication scanner completeness diagnostic",
     );

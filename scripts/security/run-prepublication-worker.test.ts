@@ -88,6 +88,47 @@ async function tempDir() {
   return dir;
 }
 
+async function nativeDiagnosticCase(artifactText: string | null, exitCode = 1) {
+  const workspace = await tempDir();
+  await mkdir(join(workspace, "artifact"));
+  await writeFile(join(workspace, "artifact", "SKILL.md"), "# Synthetic diagnostic control\n");
+  const fakeClawScan = join(workspace, "fake-clawscan");
+  await writeFile(
+    fakeClawScan,
+    `#!/usr/bin/env node
+const fs = require('node:fs');
+const text = ${JSON.stringify(artifactText)};
+if (text !== null) fs.writeFileSync(process.argv[process.argv.indexOf('--output') + 1], text);
+if (${exitCode} !== 0) process.stderr.write('judge not started: scanner aig failed\\nscan incomplete: failed\\n');
+process.exit(${exitCode});
+`,
+  );
+  await chmod(fakeClawScan, 0o755);
+  vi.stubEnv("PREPUBLICATION_CLAWSCAN_COMMAND", fakeClawScan);
+  diagnosticLogs.info.mockClear();
+  const exposures: unknown[] = [];
+  const result = await runNativeClawScan(
+    {
+      job: {
+        _id: String(attempt.attemptId),
+        attempts: 1,
+        hasMaliciousSignal: false,
+        leaseToken: attempt.claimId,
+        source: "pre-publication",
+        targetKind: "skillVersion",
+        waitForVtUntil: 0,
+      },
+      target: {},
+    },
+    workspace,
+    (exposure) => exposures.push(exposure),
+  );
+  const event = diagnosticLogs.info.mock.calls.find(
+    ([row]) => row.event === "prepublication_clawscan_failure_diagnostic",
+  )?.[0];
+  return { result, event, exposures };
+}
+
 async function readStartedPid(path: string) {
   while (true) {
     const contents = await readFile(path, "utf8").catch((error: NodeJS.ErrnoException) => {
@@ -1159,6 +1200,187 @@ JSON
       }
     },
   );
+
+  it("distinguishes native A.I.G failures without changing failed checks or completeness", async () => {
+    const observations = [];
+    for (const [error, errorClass] of [
+      ["aig-skill-scan did not write SARIF output.", "missing_sarif"],
+      ["aig-skill-scan returned invalid SARIF 2.1.0 JSON", "invalid_sarif"],
+    ]) {
+      const report = {
+        ...legacyArtifact(),
+        scanners: {
+          ...legacyArtifact().scanners,
+          aig: { status: "failed", error, exitCode: 2, durationMs: 42, raw: null },
+          skillspector: {
+            status: "completed",
+            raw: {
+              execution_successful: true,
+              issues: [{ finding_id: "synthetic-finding", message: "Suspicious instruction" }],
+              analysis_completeness: {
+                status: "partial",
+                total_components: 2,
+                fully_inspected_files: 1,
+                partially_inspected_files: 1,
+                findings_before_filtering: 1,
+                findings_after_filtering: 1,
+                ledger_exceptions: [{ reason_code: "static_parse_limit", path: "reference.md" }],
+                limitations: ["synthetic gap"],
+              },
+            },
+          },
+        },
+        judge: { status: "not_started" },
+      };
+      const { result, event } = await nativeDiagnosticCase(JSON.stringify(report));
+      expect(result).toEqual({
+        check: {
+          status: "failed",
+          summary:
+            "ClawScan failed before returning a verdict: judge not started: scanner aig failed\nscan incomplete: failed\n",
+        },
+      });
+      expect(event).toMatchObject({
+        exitCode: 1,
+        artifact: {
+          presence: "present",
+          bytes: expect.any(Number),
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+        scanners: {
+          aig: {
+            status: "failed",
+            exitCode: 2,
+            durationMs: 42,
+            error: {
+              class: errorClass,
+              present: true,
+              bytes: expect.any(Number),
+              sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+            },
+            raw: { present: false, bytes: null, sha256: null },
+          },
+        },
+        skillSpector: {
+          reasonCounts: { static_parse_limit: 1 },
+          findings: { reported: 1, beforeFiltering: 1, afterFiltering: 1 },
+          completeness: { counts: { fully_inspected_files: 1, partially_inspected_files: 1 } },
+        },
+      });
+      expect(JSON.stringify(event)).not.toContain(error);
+      observations.push({ result, event });
+    }
+    expect(observations[0].result).toEqual(observations[1].result);
+    expect(observations[0].event.skillSpector).toEqual(observations[1].event.skillSpector);
+    expect(observations[0].event.scanners.aig.error.sha256).not.toBe(
+      observations[1].event.scanners.aig.error.sha256,
+    );
+  });
+
+  it.each([0, 7])(
+    "diagnoses missing, malformed and invalid-schema artifacts at exit %s",
+    async (code) => {
+      for (const [text, presence] of [
+        [null, "missing"],
+        ["not JSON: PRIVATE-SOURCE-SECRET", "malformed"],
+        ["null", "invalid_schema"],
+        [
+          JSON.stringify({
+            schemaVersion: "private-schema",
+            profile: "private-profile",
+            scanners: {
+              aig: { status: "PRIVATE-SOURCE-SECRET", error: "PRIVATE-SOURCE-SECRET" },
+            },
+          }),
+          "invalid_schema",
+        ],
+      ]) {
+        const { result, event } = await nativeDiagnosticCase(text, code);
+        expect(result.check.status).toBe("failed");
+        expect(result.analysis).toBeUndefined();
+        expect(event).toMatchObject({
+          exitCode: code,
+          artifact: { presence, bytes: text === null ? null : Buffer.byteLength(text) },
+          scanners: { aig: { status: "missing", error: { class: "none" } } },
+        });
+        expect(event.skillSpector).toBeUndefined();
+        expect(JSON.stringify(event)).not.toMatch(
+          /PRIVATE|not JSON|private-schema|private-profile/,
+        );
+      }
+    },
+  );
+
+  it("bounds native diagnostics and excludes secrets, signed URLs, controls and arbitrary source text", async () => {
+    const privateText =
+      "PRIVATE-SOURCE-SECRET api_key=synthetic-credential Authorization: Bearer synthetic-bearer " +
+      "https://private.invalid/path?X-Amz-Signature=synthetic-signature \u001b[31m\r\n::error::injected";
+    const errors = [privateText, privateText + "x".repeat(100_000), { message: privateText }, ""];
+    for (const error of errors) {
+      const artifact = legacyArtifact();
+      Object.assign(artifact.scanners.aig, {
+        status: privateText,
+        error,
+        exitCode: privateText,
+        durationMs: -1,
+        command: [privateText],
+        startedAt: privateText,
+        completedAt: privateText,
+        raw: { privateText },
+      });
+      const { event, result } = await nativeDiagnosticCase(JSON.stringify(artifact));
+      expect(result.check.status).toBe("failed");
+      expect(event.scanners.aig).toMatchObject({
+        status: "unknown",
+        exitCode: null,
+        durationMs: null,
+        error: { class: typeof error === "object" ? "invalid" : error === "" ? "none" : "other" },
+        raw: {
+          present: true,
+          bytes: expect.any(Number),
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      });
+      const serialized = JSON.stringify(event);
+      expect(serialized.length).toBeLessThan(20_000);
+      expect(serialized).not.toMatch(
+        /PRIVATE|synthetic-credential|synthetic-bearer|synthetic-signature|private.invalid|injected|\\u001b|::error::/,
+      );
+      expect(serialized).not.toContain(privateText);
+    }
+  });
+
+  it("emits failure diagnostics for unusable zero-exit output without changing successful verdicts", async () => {
+    const failed = legacyArtifact({ version: "2.1.0", runs: [] });
+    const { result, event } = await nativeDiagnosticCase(JSON.stringify(failed), 0);
+    expect(result.check).toEqual({
+      status: "failed",
+      summary: "A.I.G SARIF output did not contain a run.",
+    });
+    expect(event).toMatchObject({
+      exitCode: 0,
+      artifact: { presence: "present" },
+      scanners: {
+        aig: { status: "completed", raw: { present: true } },
+      },
+    });
+    for (const [verdict, status] of [
+      ["benign", "clean"],
+      ["suspicious", "clean"],
+      ["malicious", "blocked"],
+    ]) {
+      const artifact = legacyArtifact();
+      artifact.judge.result = legacyJudgeResult(verdict);
+      const successful = await nativeDiagnosticCase(JSON.stringify(artifact), 0);
+      expect(successful.event).toBeUndefined();
+      expect(successful.result.check.status).toBe(status);
+      expect(successful.result.analysis?.verdict).toBe(verdict);
+      if (verdict !== "benign")
+        expect(successful.result.check.redactedFindings).toEqual([
+          `status=${verdict}; verdict=${verdict}`,
+        ]);
+    }
+  });
 
   it("logs allowlisted completeness evidence for a failed scanner without artifact text", async () => {
     const workspace = await tempDir();
