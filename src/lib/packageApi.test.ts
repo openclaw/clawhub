@@ -40,6 +40,7 @@ describe("fetchPackages", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     initialPublicCatalogMock.mockReset();
     initialPublicCategoryMock.mockReset();
     serverFetchMock.mockReset();
@@ -400,47 +401,129 @@ describe("fetchPackages", () => {
     expect(serverFetchMock).not.toHaveBeenCalled();
   });
 
-  it("loads the anonymous first curated category page through its bounded public query", async () => {
+  function waitForAbort(_input: Parameters<typeof fetch>[0], init?: RequestInit) {
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) throw new Error("Expected a request-scoped abort signal");
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  }
+
+  const firstCategoryPage = {
+    category: "channels",
+    curated: true,
+    sort: "downloads",
+    limit: 25,
+    viewerMode: "anonymous",
+  } as const;
+
+  it("keeps a fast anonymous curated CDN snapshot without starting another query", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
-    const signal = new AbortController().signal;
-    initialPublicCategoryMock.mockResolvedValue({ items: [], nextCursor: "curated-cursor" });
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    expect(
-      await fetchPluginCatalog({
-        category: "channels",
-        curated: true,
-        sort: "downloads",
-        limit: 25,
-        viewerMode: "anonymous",
-        signal,
-      }),
-    ).toEqual({ items: [], nextCursor: "curated-cursor", totalCount: null });
-    expect(initialPublicCategoryMock).toHaveBeenCalledWith("channels", signal);
+    initialPublicCategoryMock.mockResolvedValue({ items: [], nextCursor: "query-cursor" });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: "edge-cursor" }), { status: 200 }),
+      );
+    expect(await fetchPluginCatalog(firstCategoryPage)).toEqual({
+      items: [],
+      nextCursor: "edge-cursor",
+      totalCount: null,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(initialPublicCategoryMock).not.toHaveBeenCalled();
     expect(initialPublicCatalogMock).not.toHaveBeenCalled();
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(serverFetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not restart category HTTP work after a navigation abort", async () => {
+  it("switches a slow category HTTP read to the public query after 250ms", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.useFakeTimers();
+    const signal = new AbortController().signal;
+    initialPublicCategoryMock.mockResolvedValue({ items: [], nextCursor: "curated-cursor" });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(waitForAbort);
+    const pending = fetchPluginCatalog({ ...firstCategoryPage, signal });
+    await vi.advanceTimersByTimeAsync(249);
+    expect(initialPublicCategoryMock).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await pending).toEqual({ items: [], nextCursor: "curated-cursor", totalCount: null });
+    expect(initialPublicCategoryMock).toHaveBeenCalledWith("channels", signal);
+    expect(initialPublicCatalogMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    expect(signal.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not start category query or HTTP fallback after a navigation abort", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.useFakeTimers();
     const controller = new AbortController();
-    initialPublicCategoryMock.mockImplementation(async () => {
-      controller.abort();
-      throw controller.signal.reason;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(waitForAbort);
+    const pending = fetchPluginCatalog({ ...firstCategoryPage, signal: controller.signal });
+    const rejected = expect(pending).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort();
+    await rejected;
+    expect(initialPublicCategoryMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("retains the full HTTP fallback if the deployed public category query is unavailable", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.useFakeTimers();
+    const signal = new AbortController().signal;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(waitForAbort)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ items: [], nextCursor: "legacy-cursor" }), { status: 200 }),
+      );
+    const pending = fetchPluginCatalog({ ...firstCategoryPage, signal });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(await pending).toEqual({ items: [], nextCursor: "legacy-cursor", totalCount: null });
+    expect(initialPublicCategoryMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[1]?.signal).toBe(signal);
+    expect(signal.aborted).toBe(false);
+  });
+
+  it("does not restart HTTP when navigation aborts after the category query starts", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    initialPublicCategoryMock.mockImplementation(
+      (_category: string, signal: AbortSignal) =>
+        new Promise((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+        ),
+    );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(waitForAbort);
+    const pending = fetchPluginCatalog({ ...firstCategoryPage, signal: controller.signal });
+    const rejected = expect(pending).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(initialPublicCategoryMock).toHaveBeenCalledTimes(1);
+    controller.abort();
+    await rejected;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("retains fast category quota denials and their retry metadata", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    initialPublicCategoryMock.mockResolvedValue({ items: [], nextCursor: "query-cursor" });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response("Rate limit exceeded", { status: 429, headers: { "Retry-After": "7" } }),
+      );
+    await expect(fetchPluginCatalog(firstCategoryPage)).rejects.toMatchObject({
+      status: 429,
+      retryAfterSeconds: 7,
     });
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    await expect(
-      fetchPluginCatalog({
-        category: "channels",
-        curated: true,
-        sort: "downloads",
-        limit: 25,
-        viewerMode: "anonymous",
-        signal: controller.signal,
-      }),
-    ).rejects.toThrow();
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(serverFetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(initialPublicCategoryMock).not.toHaveBeenCalled();
   });
 
   it.each([
