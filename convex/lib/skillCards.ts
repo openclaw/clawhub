@@ -1,4 +1,4 @@
-import { hashSkillFiles } from "./skills";
+import { hashSkillFiles } from "./skills/fileHash";
 
 export const SKILL_CARD_FILE_PATH = "skill-card.md";
 export const MAX_SKILL_CARD_FILE_BYTES = 200 * 1024;

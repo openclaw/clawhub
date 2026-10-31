@@ -1,3 +1,8 @@
+import { toHex } from "./fileHash";
+import { getFrontmatterValue, type ParsedSkillFrontmatter } from "./frontmatterValue";
+export { getFrontmatterValue } from "./frontmatterValue";
+export type { ParsedSkillFrontmatter } from "./frontmatterValue";
+export { hashSkillFiles } from "./fileHash";
 import {
   type ClawdbotConfigSpec,
   type ClawdisSkillMetadata,
@@ -8,7 +13,6 @@ import {
 } from "clawhub-schema";
 import { parse as parseYaml } from "yaml";
 
-export type ParsedSkillFrontmatter = Record<string, unknown>;
 export type ParsedSkillMarkdown = {
   frontmatter: ParsedSkillFrontmatter;
   body: string;
@@ -58,11 +62,6 @@ function isFrontmatterDelimiter(line: string | undefined) {
 
 export function parseFrontmatter(content: string): ParsedSkillFrontmatter {
   return parseSkillMarkdown(content).frontmatter;
-}
-
-export function getFrontmatterValue(frontmatter: ParsedSkillFrontmatter, key: string) {
-  const raw = frontmatter[key];
-  return typeof raw === "string" ? raw : undefined;
 }
 
 export function getFrontmatterMetadata(frontmatter: ParsedSkillFrontmatter) {
@@ -216,16 +215,6 @@ export function buildEmbeddingText(params: {
   return truncateUtf8Bytes(charLimited, maxBytes);
 }
 
-export async function hashSkillFiles(files: Array<{ path: string; sha256: string }>) {
-  const normalized = files
-    .filter((file) => Boolean(file.path) && Boolean(file.sha256))
-    .map((file) => ({ path: file.path, sha256: file.sha256 }))
-    .sort((a, b) => a.path.localeCompare(b.path));
-  const payload = normalized.map((file) => `${file.path}:${file.sha256}`).join("\n");
-  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(payload));
-  return toHex(new Uint8Array(digest));
-}
-
 export async function buildPackageInventoryDigest(
   files: Array<{ path: string; sha256: string; size: number }>,
 ) {
@@ -365,12 +354,6 @@ function parseClawdbotConfigSpec(input: unknown): ClawdbotConfigSpec | undefined
   if (stateDirs.length > 0) spec.stateDirs = stateDirs;
   if (example) spec.example = example;
   return Object.keys(spec).length > 0 ? spec : undefined;
-}
-
-function toHex(bytes: Uint8Array) {
-  let out = "";
-  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
-  return out;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

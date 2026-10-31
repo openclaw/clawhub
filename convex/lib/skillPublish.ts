@@ -1,3 +1,5 @@
+import { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
+export { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
 import {
   normalizeCatalogTopics,
   normalizeContentType,
@@ -857,19 +859,6 @@ function mergeSourceIntoMetadata(
   }
 
   return Object.keys(base).length ? base : undefined;
-}
-
-export function buildSkillPublishAttemptIdempotencyKey(args: {
-  userId: Id<"users">;
-  ownerPublisherId?: Id<"publishers">;
-  slug: string;
-  version: string;
-  fingerprint: string;
-}) {
-  const ownerScope = args.ownerPublisherId
-    ? `publisher:${args.ownerPublisherId}`
-    : `user:${args.userId}`;
-  return ["skill", ownerScope, args.slug, args.version, args.fingerprint].join(":");
 }
 
 function stripUndefinedForStoredAttempt(value: unknown): unknown {
