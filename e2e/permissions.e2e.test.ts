@@ -79,49 +79,47 @@ async function writeE2ECodePluginFixture(packageDir: string, packageName: string
 }
 
 describe("permission boundary e2e", () => {
-  it("rejects unauthenticated protected write endpoints before mutation", async () => {
-    const registry = getRegistry();
-    const cases = [
-      { method: "DELETE", path: `${ApiRoutes.skills}/gifgrep` },
-      { method: "POST", path: `${ApiRoutes.skills}/gifgrep/undelete`, body: {} },
-      {
-        method: "POST",
-        path: `${ApiRoutes.skills}/gifgrep/transfer`,
-        body: { toUserHandle: "openclaw" },
+  const cases = [
+    { method: "DELETE", path: `${ApiRoutes.skills}/gifgrep` },
+    { method: "POST", path: `${ApiRoutes.skills}/gifgrep/undelete`, body: {} },
+    {
+      method: "POST",
+      path: `${ApiRoutes.skills}/gifgrep/transfer`,
+      body: { toUserHandle: "openclaw" },
+    },
+    { method: "DELETE", path: `${ApiRoutes.packages}/e2e-nonexistent-permission` },
+    { method: "POST", path: `${ApiRoutes.packages}/e2e-nonexistent-permission/undelete` },
+    {
+      method: "POST",
+      path: `${ApiRoutes.packages}/e2e-nonexistent-permission/transfer`,
+      body: { toOwner: "openclaw" },
+    },
+    {
+      method: "POST",
+      path: `${ApiRoutes.packages}/e2e-nonexistent-permission/trusted-publisher`,
+      body: {
+        repository: "openclaw/clawhub",
+        workflowFilename: "release.yml",
       },
-      { method: "DELETE", path: `${ApiRoutes.packages}/e2e-nonexistent-permission` },
-      { method: "POST", path: `${ApiRoutes.packages}/e2e-nonexistent-permission/undelete` },
-      {
-        method: "POST",
-        path: `${ApiRoutes.packages}/e2e-nonexistent-permission/transfer`,
-        body: { toOwner: "openclaw" },
-      },
-      {
-        method: "POST",
-        path: `${ApiRoutes.packages}/e2e-nonexistent-permission/trusted-publisher`,
-        body: {
-          repository: "openclaw/clawhub",
-          workflowFilename: "release.yml",
-        },
-      },
-      {
-        method: "DELETE",
-        path: `${ApiRoutes.packages}/e2e-nonexistent-permission/trusted-publisher`,
-      },
-      { method: "POST", path: `${ApiRoutes.users}/reclaim`, body: { handle: "nobody" } },
-      { method: "POST", path: `${ApiRoutes.users}/reserve`, body: { handle: "nobody" } },
-      { method: "POST", path: `${ApiRoutes.users}/publisher`, body: { handle: "nobody" } },
-    ] as const;
+    },
+    {
+      method: "DELETE",
+      path: `${ApiRoutes.packages}/e2e-nonexistent-permission/trusted-publisher`,
+    },
+    { method: "POST", path: `${ApiRoutes.users}/reclaim`, body: { handle: "nobody" } },
+    { method: "POST", path: `${ApiRoutes.users}/reserve`, body: { handle: "nobody" } },
+    { method: "POST", path: `${ApiRoutes.users}/publisher`, body: { handle: "nobody" } },
+  ] as const;
 
-    for (const testCase of cases) {
-      const response = await fetchWithRetry(new URL(testCase.path, registry), {
-        method: testCase.method,
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: "body" in testCase ? JSON.stringify(testCase.body) : undefined,
-      });
-      expect(response.status, `${testCase.method} ${testCase.path}`).toBe(401);
-      expect(await response.text()).toMatch(/Unauthorized/i);
-    }
+  it.each(cases)("rejects unauthenticated $method $path before mutation", async (testCase) => {
+    const registry = getRegistry();
+    const response = await fetchWithRetry(new URL(testCase.path, registry), {
+      method: testCase.method,
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: "body" in testCase ? JSON.stringify(testCase.body) : undefined,
+    });
+    expect(response.status, `${testCase.method} ${testCase.path}`).toBe(401);
+    expect(await response.text()).toMatch(/Unauthorized/i);
   });
 
   itIfLiveMutationsAndUserToken(
