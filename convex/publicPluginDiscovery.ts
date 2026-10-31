@@ -7,6 +7,7 @@ import {
   listCuratedPluginCategoryPage,
   listPluginOverviewCategory,
 } from "./lib/pluginDiscoveryQueries";
+import { withPublicPluginArtwork } from "./lib/publicPluginArtwork";
 
 // Public browse uses the same anonymous selection as the curated HTTP route.
 // Keep the initial page bounded; filtered and continuation requests retain HTTP.
@@ -15,10 +16,11 @@ export const listInitialPage = query({
   handler: async (ctx, args) => {
     if (!isPluginCategorySlug(args.category) || args.category === "other")
       return { page: [], isDone: true, continueCursor: "" };
-    return await listCuratedPluginCategoryPage(ctx, {
+    const page = await listCuratedPluginCategoryPage(ctx, {
       category: args.category,
       paginationOpts: { cursor: null, numItems: 25 },
     });
+    return { ...page, page: await withPublicPluginArtwork(ctx, page.page) };
   },
 });
 

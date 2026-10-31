@@ -156,6 +156,7 @@ import type * as lib_pluginDiscovery from "../lib/pluginDiscovery.js";
 import type * as lib_pluginDiscoveryQueries from "../lib/pluginDiscoveryQueries.js";
 import type * as lib_public from "../lib/public.js";
 import type * as lib_publicBrowse from "../lib/publicBrowse.js";
+import type * as lib_publicPluginArtwork from "../lib/publicPluginArtwork.js";
 import type * as lib_publicRouteReservations from "../lib/publicRouteReservations.js";
 import type * as lib_publishAttemptOperationalRecovery from "../lib/publishAttemptOperationalRecovery.js";
 import type * as lib_publishLimits from "../lib/publishLimits.js";
@@ -466,6 +467,7 @@ declare const fullApi: ApiFromModules<{
   "lib/pluginDiscoveryQueries": typeof lib_pluginDiscoveryQueries;
   "lib/public": typeof lib_public;
   "lib/publicBrowse": typeof lib_publicBrowse;
+  "lib/publicPluginArtwork": typeof lib_publicPluginArtwork;
   "lib/publicRouteReservations": typeof lib_publicRouteReservations;
   "lib/publishAttemptOperationalRecovery": typeof lib_publishAttemptOperationalRecovery;
   "lib/publishLimits": typeof lib_publishLimits;

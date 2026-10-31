@@ -7,6 +7,11 @@ import {
   readInitialPluginFamilyPage,
 } from "./lib/initialPluginFamilyRead";
 import type { PublicPackageListPage } from "./lib/packageCatalogRead";
+import { withPublicPluginArtwork, type PublicPluginArtwork } from "./lib/publicPluginArtwork";
+
+type PublicPluginArtworkPage = Omit<PublicPackageListPage, "page"> & {
+  page: Array<PublicPackageListPage["page"][number] & PublicPluginArtwork>;
+};
 
 export const listPage = query({
   args: {
@@ -14,10 +19,10 @@ export const listPage = query({
     sort: v.union(v.literal("recommended"), v.literal("downloads")),
     paginationOpts: paginationOptsValidator,
   },
-  handler: async (ctx, args): Promise<PublicPackageListPage> => {
+  handler: async (ctx, args): Promise<PublicPluginArtworkPage> => {
     if (canReadInitialPluginFamilyPage(args)) {
       const page = await readInitialPluginFamilyPage(ctx, args);
-      if (page) return page;
+      if (page) return { ...page, page: await withPublicPluginArtwork(ctx, page.page) };
     }
     return await ctx.runQuery(api.packages.listPublicPage, args);
   },
