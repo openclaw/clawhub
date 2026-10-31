@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
+import { internal } from "../_generated/api";
 import { generateEmbedding } from "./embeddings";
 import { MAX_PUBLISH_FILE_BYTES } from "./publishLimits";
 import { finalizeSkillPublishAttempt, publishVersionForUser, __test } from "./skillPublish";
@@ -341,6 +342,7 @@ describe("skillPublish", () => {
 
       await vi.waitFor(() => expect(ctx.runQuery).toHaveBeenCalledOnce());
       expect(settled).not.toHaveBeenCalled();
+      expect(recordFinalized).toHaveBeenCalledOnce();
 
       webhookLookup.resolve({
         skill: {
@@ -1230,19 +1232,11 @@ description: Security scanner smoke fixture.
         publicationStatus: undefined,
       }),
     );
-    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
-      versionId: "skillVersions:pending",
-    });
-    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
-      versionId: "skillVersions:pending",
-      source: "publish",
-    });
-    expect(scheduler.runAfter).toHaveBeenCalledWith(15_000, expect.anything(), {
-      versionId: "skillVersions:pending",
-      source: "publish",
-      preserveActiveJob: true,
-      preserveExistingJob: true,
-    });
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.publishAttempts.recordSkillPublishAttemptFinalizedInternal,
+      expect.objectContaining({ result, attemptId: "publishAttempts:security-scanner-smoke" }),
+    );
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("releases the staged publish finalization claim when promotion fails", async () => {
@@ -1371,9 +1365,7 @@ description: Security scanner smoke fixture.
       expect.anything(),
       expect.objectContaining({ result: recoveredResult }),
     );
-    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
-      versionId: "skillVersions:demo",
-    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("finalizes legacy attempts that still store insert args instead of pending version ids", async () => {
@@ -1425,9 +1417,7 @@ description: Security scanner smoke fixture.
     ).resolves.toEqual(publishResult);
 
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), insertArgs);
-    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
-      versionId: "skillVersions:demo",
-    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("merges github source into metadata", () => {
