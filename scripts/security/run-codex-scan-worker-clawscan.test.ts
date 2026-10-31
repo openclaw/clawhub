@@ -2045,6 +2045,7 @@ exit 2`,
       const diagnosticsRoot = await tempDir();
       const callLog = join(workspace, "clawscan-called");
       const started = join(workspace, "skillspector-started");
+      const timeoutMs = 2_000;
       const fakeClawScan = join(workspace, "fake-clawscan");
       const contentCanary = "synthetic-private-scan-content";
       const credentialCanary = "synthetic-private-scanner-token";
@@ -2058,7 +2059,8 @@ exec sleep 10`,
       );
       vi.stubEnv("PATH", `${workspace}:${process.env.PATH}`);
       vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
-      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "500");
+      // Allow the instrumented child to launch before testing its ten-second hang.
+      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", String(timeoutMs));
       vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "0");
       const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry })) };
       const onHealth = vi.fn();
@@ -2093,7 +2095,7 @@ exec sleep 10`,
           rootIndex: 0,
           rootCount: 1,
           completedRoots: 0,
-          childBudgetMs: 500,
+          childBudgetMs: timeoutMs,
           remainingStageBudgetMs: expect.any(Number),
           terminal: { presence: "invalid", executionSuccessful: null },
         },
