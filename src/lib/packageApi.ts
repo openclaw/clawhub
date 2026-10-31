@@ -27,6 +27,7 @@ export type PackageListItem = {
   isOfficial: boolean;
   summary?: string | null;
   icon?: string | null;
+  iconAssetUrl?: string;
   ownerHandle?: string | null;
   ownerImage?: string | null;
   ownerOfficial?: boolean;

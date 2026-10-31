@@ -75,6 +75,7 @@ export function PluginListItem({
             kind="plugin"
             label={displayName}
             imageUrl={item.icon}
+            rasterAssetUrl={item.iconAssetUrl}
             publisherImageUrl={item.ownerImage}
             categorySlug={primaryCategory?.slug}
             size="md"
@@ -134,6 +135,7 @@ export function PluginListItem({
         kind="plugin"
         label={displayName}
         imageUrl={item.icon}
+        rasterAssetUrl={item.iconAssetUrl}
         publisherImageUrl={item.ownerImage}
         categorySlug={primaryCategory?.slug}
       />

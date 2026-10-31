@@ -15,6 +15,28 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 describe("PluginListItem", () => {
+  it.each(["list", "card"] as const)("uses verified raster artwork in %s rows", (variant) => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://catalog.convex.cloud");
+    const iconAssetUrl =
+      "https://catalog.convex.cloud/api/storage/f92f78e3-1994-49e3-91ca-e49a896a4186";
+    try {
+      const { container } = render(
+        <PluginListItem
+          variant={variant}
+          item={makePlugin({
+            icon: "/api/v1/skill-icons/" + "a".repeat(64),
+            iconAssetUrl,
+          })}
+        />,
+      );
+      expect(container.querySelector(".marketplace-icon img")?.getAttribute("src")).toBe(
+        iconAssetUrl,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it.each(["list", "card"] as const)(
     "renders complete Markdown links separately from %s navigation",
     (variant) => {

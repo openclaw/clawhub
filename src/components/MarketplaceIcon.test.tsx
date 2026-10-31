@@ -1,10 +1,99 @@
 import { fireEvent, render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 
 describe("MarketplaceIcon", () => {
   const openclawIcon =
     "/api/v1/skill-icons/79e24bf179e94e005912591a67ecdf30f04df50204ff5fa5fed06a8e8eb88532";
+
+  describe("verified raster storage artwork", () => {
+    const storageUrl =
+      "https://catalog.convex.cloud/api/storage/f92f78e3-1994-49e3-91ca-e49a896a4186";
+    beforeEach(() => vi.stubEnv("VITE_CONVEX_URL", "https://catalog.convex.cloud"));
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("uses the configured storage origin and preserves the original artwork padding", () => {
+      const { container } = render(
+        <MarketplaceIcon
+          kind="plugin"
+          label="Lobster"
+          imageUrl={openclawIcon}
+          rasterAssetUrl={storageUrl}
+        />,
+      );
+      expect(container.querySelector(".marketplace-icon-openclaw img")?.getAttribute("src")).toBe(
+        storageUrl,
+      );
+    });
+
+    it("falls back to the original icon once, then a glyph without retrying failed sources", () => {
+      const { container, rerender } = render(
+        <MarketplaceIcon
+          kind="plugin"
+          label="Lobster"
+          imageUrl={openclawIcon}
+          rasterAssetUrl={storageUrl}
+        />,
+      );
+      fireEvent.error(container.querySelector("img")!);
+      expect(container.querySelector("img")?.getAttribute("src")).toBe(openclawIcon);
+      fireEvent.error(container.querySelector("img")!);
+      expect(container.querySelector("img")).toBeNull();
+      expect(container.querySelector(".marketplace-icon-glyph")).toBeTruthy();
+      rerender(
+        <MarketplaceIcon
+          kind="plugin"
+          label="New artwork"
+          imageUrl={"/api/v1/skill-icons/" + "b".repeat(64)}
+          rasterAssetUrl={storageUrl.replace("f92f78e3", "a92f78e3")}
+        />,
+      );
+      expect(container.querySelector("img")?.getAttribute("src")).toBe(
+        storageUrl.replace("f92f78e3", "a92f78e3"),
+      );
+    });
+
+    it.each([
+      storageUrl.replace("catalog.convex.cloud", "untrusted.example"),
+      storageUrl.replace("catalog.convex.cloud", "catalog.convex.cloud.untrusted.example"),
+      storageUrl.replace("https://", "http://"),
+      storageUrl.replace("https://", "https://user:password@"),
+      storageUrl.replace("/api/storage/", "/other/"),
+      storageUrl + "#fragment",
+      "not a URL",
+    ])("rejects a noncanonical storage source: %s", (rasterAssetUrl) => {
+      const { container } = render(
+        <MarketplaceIcon
+          kind="plugin"
+          label="Lobster"
+          imageUrl={openclawIcon}
+          rasterAssetUrl={rasterAssetUrl}
+        />,
+      );
+      expect(container.querySelector("img")?.getAttribute("src")).toBe(openclawIcon);
+    });
+
+    it("does not promote remote manifest artwork or skill icons to the direct raster path", () => {
+      const { container, rerender } = render(
+        <MarketplaceIcon
+          kind="plugin"
+          label="Remote manifest"
+          imageUrl="https://untrusted.example/icon.png"
+          rasterAssetUrl={storageUrl}
+        />,
+      );
+      expect(container.querySelector("img")).toBeNull();
+      rerender(
+        <MarketplaceIcon
+          kind="skill"
+          label="Skill"
+          imageUrl={openclawIcon}
+          rasterAssetUrl={storageUrl}
+        />,
+      );
+      expect(container.querySelector("img")?.getAttribute("src")).toBe(openclawIcon);
+    });
+  });
 
   it.each(["xs", "sm", "md"] as const)(
     "insets the shared OpenClaw plugin artwork at %s size",

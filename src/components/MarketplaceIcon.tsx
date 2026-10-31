@@ -2,11 +2,13 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { getPluginCategoryBySlug, getSkillIconCategoryForSkill } from "../lib/categories";
 import { getCategoryIconComponent, UNRESOLVED_SKILL_CATEGORY_ICON } from "../lib/categoryIcons";
 import { MARKETPLACE_KIND_ICONS, type MarketplaceIconKind } from "../lib/marketplaceIcons";
+import { getRuntimeEnv } from "../lib/runtimeEnv";
 
 type MarketplaceIconProps = {
   kind: MarketplaceIconKind;
   label: string;
   imageUrl?: string | null;
+  rasterAssetUrl?: string | null;
   publisherImageUrl?: string | null;
   categorySlug?: string | null;
   skill?: {
@@ -44,16 +46,17 @@ export function MarketplaceIcon({
   kind,
   label,
   imageUrl,
+  rasterAssetUrl,
   publisherImageUrl,
   categorySlug,
   skill,
   size = "sm",
   tone = "default",
 }: MarketplaceIconProps) {
-  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   useEffect(() => {
-    setFailedImageUrl(null);
-  }, [imageUrl, publisherImageUrl]);
+    setFailedImageUrls((failed) => (failed.length ? [] : failed));
+  }, [imageUrl, rasterAssetUrl, publisherImageUrl]);
 
   const skillCategory = kind === "skill" && skill ? getSkillIconCategoryForSkill(skill) : null;
   const pluginCategory = kind === "plugin" ? getPluginCategoryBySlug(categorySlug) : null;
@@ -71,15 +74,24 @@ export function MarketplaceIcon({
       : kind === "plugin"
         ? publisherImageUrl
         : null;
+  const directRasterUrl =
+    kind === "plugin" &&
+    isHostedSkillPresentationIcon(imageUrl) &&
+    isConfiguredStorageUrl(rasterAssetUrl)
+      ? rasterAssetUrl
+      : null;
+  // Try the verified raster, then the original sandboxed endpoint once. Retain
+  // both failures so errors cannot alternate indefinitely between the sources.
   const visibleImageUrl =
-    supportedImageUrl && failedImageUrl !== supportedImageUrl ? supportedImageUrl : null;
+    [directRasterUrl, supportedImageUrl].find((url) => url && !failedImageUrls.includes(url)) ??
+    null;
 
   return (
     <span
       className={`marketplace-icon marketplace-icon-${kind} marketplace-icon-${size}${
         tone === "muted" ? " marketplace-icon-muted" : ""
       }${visibleImageUrl ? " marketplace-icon-image-backed" : ""}${
-        kind === "plugin" && visibleImageUrl === OPENCLAW_PLUGIN_ICON
+        kind === "plugin" && visibleImageUrl && imageUrl === OPENCLAW_PLUGIN_ICON
           ? " marketplace-icon-openclaw"
           : ""
       }`}
@@ -99,7 +111,11 @@ export function MarketplaceIcon({
           referrerPolicy="no-referrer"
           loading="lazy"
           decoding="async"
-          onError={() => setFailedImageUrl(visibleImageUrl)}
+          onError={() =>
+            setFailedImageUrls((failed) =>
+              failed.includes(visibleImageUrl) ? failed : [...failed, visibleImageUrl],
+            )
+          }
         />
       ) : (
         <Icon className="marketplace-icon-glyph" strokeWidth={1.8} />
@@ -110,4 +126,21 @@ export function MarketplaceIcon({
 
 function isHostedSkillPresentationIcon(value: string | null | undefined) {
   return /^\/api\/v1\/skill-icons\/[a-f\d]{64}$/u.test(value ?? "");
+}
+
+function isConfiguredStorageUrl(value: string | null | undefined) {
+  const convexUrl = getRuntimeEnv("VITE_CONVEX_URL");
+  if (!value || !convexUrl) return false;
+  try {
+    const url = new URL(value);
+    return (
+      url.origin === new URL(convexUrl).origin &&
+      !url.username &&
+      !url.password &&
+      !url.hash &&
+      /^\/api\/storage\/[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/iu.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
 }
