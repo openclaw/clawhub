@@ -448,6 +448,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Unconsumed staged files are deleted when their tickets expire. Failed
   attachment attempts delete the just-created storage blob immediately.
 
+- A captured `CommitterFullError: Too many writes in a short period of time.`
+  rejection from `storage.store`, before it returns a storage id, is HTTP 503.
+  The shared CLI uses its existing bounded HTTP retry policy. This classification
+  is limited to that storage call: validation, ownership, expired/consumed-ticket,
+  attachment, and unclassified write failures keep their existing responses.
+  Upload limits, deadlines, ticket lifetime, and the post-store lifecycle are
+  unchanged. This does not guarantee recovery of a stored blob after an action
+  dies or loses its storage response.
+
 ## Package publish upload boundary
 
 - Package publish is multipart-only. `POST /api/v1/packages` must reject JSON
