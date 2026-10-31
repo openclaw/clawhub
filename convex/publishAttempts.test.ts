@@ -1827,6 +1827,7 @@ describe("publishAttempts", () => {
   it("clears private pending skill metadata when finalization is recorded", async () => {
     const now = Date.now();
     const ctx = {
+      scheduler: { runAfter: vi.fn() },
       db: {
         delete: vi.fn(),
         get: vi.fn(async (id: string) =>
@@ -1837,6 +1838,7 @@ describe("publishAttempts", () => {
                 status: "finalizing",
                 skillVersionId: "skillVersions:pending",
                 followup: {},
+                artifactFingerprint: "fingerprint",
                 finalizationClaimId: "finalize:claim",
                 finalizationClaimExpiresAt: now + 60_000,
               }
@@ -1845,7 +1847,25 @@ describe("publishAttempts", () => {
         insert: vi.fn(),
         normalizeId: vi.fn(),
         patch: vi.fn(),
-        query: vi.fn(),
+        query: vi.fn((table: string) => {
+          const query = {
+            withIndex: vi.fn(() => query),
+            take: vi.fn(async () => []),
+            unique: vi.fn(
+              async () =>
+                ({
+                  skills: { _id: "skills:demo" },
+                  skillVersions: {
+                    _id: "skillVersions:pending",
+                    fingerprint: "fingerprint",
+                    publicationStatus: "published",
+                  },
+                  skillEmbeddings: { _id: "skillEmbeddings:demo" },
+                })[table],
+            ),
+          };
+          return query;
+        }),
         replace: vi.fn(),
         system: {},
       },
