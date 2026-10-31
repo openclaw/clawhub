@@ -293,8 +293,19 @@ describe("publish attempt runtime recovery", () => {
     }
   });
 
-  it.each(["success", "security enqueue", "receipt", "legacy owner"] as const)(
-    "commits package VT, security job and receipt together: %s",
+  it.each([
+    "success",
+    "security enqueue",
+    "receipt",
+    "legacy owner",
+    "org member",
+    "legacy org member",
+    "wrong org",
+    "wrong legacy org",
+    "wrong legacy user",
+    "unexpected publisher",
+  ] as const)(
+    "commits package VT, security job and receipt together with ownership binding: %s",
     async (failure) => {
       vi.useFakeTimers();
       try {
@@ -376,6 +387,96 @@ describe("publish attempt runtime recovery", () => {
               packageInsertArgs: { ownerUserId: attempt!.ownerUserId },
             });
           });
+        }
+        if (
+          failure === "org member" ||
+          failure === "legacy org member" ||
+          failure === "wrong org" ||
+          failure === "wrong legacy org" ||
+          failure === "unexpected publisher"
+        ) {
+          await t.run(async (ctx) => {
+            const actorId = await ctx.db.insert("users", {});
+            const publisherId = await ctx.db.insert("publishers", {
+              kind: "org",
+              handle: "transaction-org",
+              displayName: "Transaction Org",
+              createdAt: 1,
+              updatedAt: 1,
+            });
+            await ctx.db.insert("publisherMembers", {
+              publisherId,
+              userId: actorId,
+              role: "publisher",
+              createdAt: 1,
+              updatedAt: 1,
+            });
+            const wrongPublisherId = await ctx.db.insert("publishers", {
+              kind: "org",
+              handle: "other-org",
+              displayName: "Other Org",
+              createdAt: 1,
+              updatedAt: 1,
+            });
+            await ctx.db.patch(fixture.result.packageId, { ownerPublisherId: publisherId });
+            if (failure === "unexpected publisher") return;
+            const ownerPublisherId =
+              failure === "wrong org" || failure === "wrong legacy org"
+                ? wrongPublisherId
+                : publisherId;
+            const legacy = failure === "legacy org member" || failure === "wrong legacy org";
+            await ctx.db.patch(fixture.attemptId, {
+              userId: actorId,
+              ownerUserId: legacy ? undefined : actorId,
+              ownerPublisherId: legacy ? undefined : ownerPublisherId,
+              ...(legacy
+                ? {
+                    packageId: undefined,
+                    packageReleaseId: undefined,
+                    packageInsertArgs: { ownerUserId: actorId, ownerPublisherId },
+                  }
+                : {}),
+            });
+            await ctx.db.patch(fixture.result.releaseId, {
+              createdBy: actorId,
+              publishActor: { kind: "user", userId: actorId },
+            });
+          });
+        }
+        if (failure === "wrong legacy user") {
+          await t.run(async (ctx) => {
+            const actorId = await ctx.db.insert("users", {});
+            await ctx.db.patch(fixture.attemptId, {
+              userId: actorId,
+              ownerUserId: undefined,
+              packageId: undefined,
+              packageReleaseId: undefined,
+              packageInsertArgs: { ownerUserId: actorId },
+            });
+          });
+        }
+        if (
+          failure === "wrong org" ||
+          failure === "wrong legacy org" ||
+          failure === "wrong legacy user" ||
+          failure === "unexpected publisher"
+        ) {
+          await expect(
+            t.mutation(
+              internal.publishAttempts.recordPackagePublishAttemptFinalizedInternal,
+              finalizationArgs,
+            ),
+          ).rejects.toThrow("Publish attempt public result does not match.");
+          const rejected = await t.run(async (ctx) => ({
+            jobs: await ctx.db.system.query("_scheduled_functions").collect(),
+            scans: await ctx.db.query("securityScanJobs").collect(),
+            attempt: await ctx.db.get(fixture.attemptId),
+          }));
+          expect(rejected.jobs).toEqual([]);
+          expect(rejected.scans).toEqual([]);
+          expect(rejected.attempt?.status).toBe("finalizing");
+          expect(rejected.attempt?.result).toBeUndefined();
+          return;
         }
         if (failure === "security enqueue" || failure === "receipt") {
           const { recordPackagePublishAttemptFinalizedInternal } =

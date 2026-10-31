@@ -1450,6 +1450,7 @@ export const recordPackagePublishAttemptFinalizedInternal = internalMutation({
     const legacyInsertArgs = asRecord(attempt.packageInsertArgs);
     const expectedOwnerUserId =
       attempt.ownerUserId ?? legacyInsertArgs.ownerUserId ?? attempt.userId;
+    const expectedOwnerPublisherId = attempt.ownerPublisherId ?? legacyInsertArgs.ownerPublisherId;
     const release = await ctx.db.get(args.result.releaseId);
     const pkg = await ctx.db.get(args.result.packageId);
     if (
@@ -1457,8 +1458,10 @@ export const recordPackagePublishAttemptFinalizedInternal = internalMutation({
       !release ||
       !pkg ||
       pkg.name !== attempt.slug ||
-      pkg.ownerUserId !== expectedOwnerUserId ||
-      (attempt.ownerPublisherId && pkg.ownerPublisherId !== attempt.ownerPublisherId) ||
+      // Org members share publisher ownership, not the package's legacy user field.
+      (expectedOwnerPublisherId !== undefined
+        ? pkg.ownerPublisherId !== expectedOwnerPublisherId
+        : pkg.ownerPublisherId !== undefined || pkg.ownerUserId !== expectedOwnerUserId) ||
       release.version !== attempt.version ||
       (release.clawManifestSummary ? release.clawpackSha256 : release.integritySha256) !==
         attempt.artifactFingerprint ||
