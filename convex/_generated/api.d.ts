@@ -133,6 +133,7 @@ import type * as lib_packageCatalogRead from "../lib/packageCatalogRead.js";
 import type * as lib_packageClawpackPublish from "../lib/packageClawpackPublish.js";
 import type * as lib_packageIcons from "../lib/packageIcons.js";
 import type * as lib_packagePublishRecovery from "../lib/packagePublishRecovery.js";
+import type * as lib_packageRecommendationRead from "../lib/packageRecommendationRead.js";
 import type * as lib_packageRegistry from "../lib/packageRegistry.js";
 import type * as lib_packageReleaseFamily from "../lib/packageReleaseFamily.js";
 import type * as lib_packageReleaseVisibility from "../lib/packageReleaseVisibility.js";
@@ -439,6 +440,7 @@ declare const fullApi: ApiFromModules<{
   "lib/packageClawpackPublish": typeof lib_packageClawpackPublish;
   "lib/packageIcons": typeof lib_packageIcons;
   "lib/packagePublishRecovery": typeof lib_packagePublishRecovery;
+  "lib/packageRecommendationRead": typeof lib_packageRecommendationRead;
   "lib/packageRegistry": typeof lib_packageRegistry;
   "lib/packageReleaseFamily": typeof lib_packageReleaseFamily;
   "lib/packageReleaseVisibility": typeof lib_packageReleaseVisibility;

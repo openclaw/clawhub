@@ -1,5 +1,6 @@
-import { internal } from "./_generated/api";
 import { query } from "./_generated/server";
+import { readGlobalPublicPluginsCount } from "./lib/globalStats";
+import { hasMissingPackageRecommendedScore } from "./lib/packageRecommendationRead";
 import type { PublicPluginBrowseMetadata } from "./lib/pluginBrowseRead";
 
 // Family pages use the already-public packages.listPublicPage query. They must
@@ -7,14 +8,11 @@ import type { PublicPluginBrowseMetadata } from "./lib/pluginBrowseRead";
 export const getMetadata = query({
   args: {},
   handler: async (ctx): Promise<PublicPluginBrowseMetadata> => {
-    const totalCount: number | null = await ctx.runQuery(
-      internal.packages.countPublicPluginsInternal,
-      {},
-    );
-    const missingScores: boolean = await ctx.runQuery(
-      internal.packages.hasMissingRecommendationScoresInternal,
-      { families: ["code-plugin", "bundle-plugin"] },
-    );
+    // Keep these bounded reads in this query to avoid nested-query startup and dispatch.
+    const totalCount = await readGlobalPublicPluginsCount(ctx);
+    const missingScores =
+      (await hasMissingPackageRecommendedScore(ctx, "code-plugin")) ||
+      (await hasMissingPackageRecommendedScore(ctx, "bundle-plugin"));
     return { totalCount, recommendedFallback: missingScores ? "downloads" : null };
   },
 });
