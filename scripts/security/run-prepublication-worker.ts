@@ -589,7 +589,7 @@ function nativeScannerDiagnostic(value: unknown) {
     status: !scanner
       ? "missing"
       : typeof status === "string" &&
-          ["pending", "running", "completed", "failed", "skipped"].includes(status)
+          ["pending", "running", "completed", "partial", "failed", "skipped"].includes(status)
         ? status
         : "unknown",
     exitCode: boundedInteger(scanner?.exitCode, 255),

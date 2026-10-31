@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import { summarizeClawScanExposure } from "./clawscan-exposure";
+import partialReport from "./fixtures/skillspector-usable-partial.json";
 import {
   DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS,
   claimBatchDrainedQueue,
@@ -18,6 +19,7 @@ import {
   resolveTruffleHogImage,
   runNativeTruffleHog,
 } from "./run-prepublication-worker";
+import { isAdjudicableSkillSpectorResult } from "./skillSpectorReportPolicy";
 
 const diagnosticLogs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock("../lib/workerLogger", () => ({ createWorkerLogger: () => diagnosticLogs }));
@@ -1275,6 +1277,59 @@ JSON
     expect(observations[0].event.scanners.aig.error.sha256).not.toBe(
       observations[1].event.scanners.aig.error.sha256,
     );
+  });
+
+  it("preserves partial SkillSpector diagnostics when A.I.G fails without changing the failed result", async () => {
+    const skillspector = {
+      status: "partial",
+      reportPolicy: "judge-gaps",
+      exitCode: 1,
+      raw: structuredClone(partialReport),
+    };
+    expect(isAdjudicableSkillSpectorResult(skillspector)).toBe(true);
+    const report = {
+      ...legacyArtifact(),
+      scanners: {
+        ...legacyArtifact().scanners,
+        aig: { status: "failed", error: "aig-skill-scan did not write SARIF output.", raw: null },
+        skillspector,
+      },
+      judge: { status: "not_started" },
+    };
+    const partial = await nativeDiagnosticCase(JSON.stringify(report));
+    const completedStatus = await nativeDiagnosticCase(
+      JSON.stringify({
+        ...report,
+        scanners: { ...report.scanners, skillspector: { ...skillspector, status: "completed" } },
+      }),
+    );
+    expect(partial.event.scanners.skillspector.status).toBe("partial");
+    expect(partial.result).toEqual({
+      check: {
+        status: "failed",
+        summary:
+          "ClawScan failed before returning a verdict: judge not started: scanner aig failed\nscan incomplete: failed\n",
+      },
+    });
+    expect(partial.result).toEqual(completedStatus.result);
+    expect(partial.exposures).toEqual(completedStatus.exposures);
+    expect(partial.event.skillSpector).toEqual(completedStatus.event.skillSpector);
+    expect(partial.event.skillSpector).toMatchObject({
+      executionSuccessful: true,
+      findings: { reported: 1 },
+      reasonCounts: {},
+      unknownReasons: 1,
+      completeness: {
+        status: "partial",
+        counts: {
+          total_components: 2,
+          fully_inspected_files: 0,
+          partially_inspected_files: 1,
+          entirely_uninspected_files: 1,
+        },
+        ledgerExceptionCount: 1,
+      },
+    });
   });
 
   it.each([0, 7])(
