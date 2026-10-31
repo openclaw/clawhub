@@ -132,6 +132,7 @@ type SkillSpectorIssueForStorage = {
 
 type SkillSpectorAnalysisForStorage = {
   status: string;
+  inspectionStatus?: "completed" | "partial";
   score?: number;
   severity?: string;
   recommendation?: string;
@@ -258,6 +259,7 @@ const skillSpectorIssueValidator = v.object({
 
 const skillSpectorAnalysisValidator = v.object({
   status: v.string(),
+  inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
   score: v.optional(v.number()),
   severity: v.optional(v.string()),
   recommendation: v.optional(v.string()),
@@ -468,6 +470,7 @@ function capSkillSpectorAnalysisForStorage(
     status:
       truncateSkillSpectorStorageText(analysis.status, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
       "error",
+    ...(analysis.inspectionStatus ? { inspectionStatus: analysis.inspectionStatus } : {}),
     score: analysis.score,
     severity: truncateSkillSpectorStorageText(
       analysis.severity,

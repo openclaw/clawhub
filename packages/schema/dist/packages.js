@@ -155,6 +155,7 @@ export const PackageSkillSpectorIssueSchema = type({
 });
 export const PackageSkillSpectorAnalysisSchema = type({
     status: "string",
+    "inspectionStatus?": '"completed"|"partial"',
     score: "number?",
     severity: "string?",
     recommendation: "string?",

@@ -262,6 +262,7 @@ const skillSpectorIssueValidator = v.object({
 
 const skillSpectorAnalysisValidator = v.object({
   status: v.string(),
+  inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
   score: v.optional(v.number()),
   severity: v.optional(v.string()),
   recommendation: v.optional(v.string()),
@@ -12492,6 +12493,7 @@ export const insertVersion = internalMutation({
       checkedAt: v.number(),
     }),
     llmAnalysis: v.optional(v.any()),
+    skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     embedding: v.array(v.number()),
     publicationStatus: v.optional(v.union(v.literal("pending"), v.literal("published"))),
     deferredAiEnrichment: v.optional(v.any()),
@@ -13018,6 +13020,7 @@ export const insertVersion = internalMutation({
       parsed: args.parsed,
       staticScan: args.staticScan,
       llmAnalysis: args.llmAnalysis,
+      skillSpectorAnalysis: args.skillSpectorAnalysis,
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,

@@ -545,6 +545,14 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Skill moderation pipeline
 
+- Deploy optional backend receiving, schema, storage, and finalization support
+  before shipping workers that send `inspectionStatus` or prepublication
+  `skillSpectorAnalysis`; older Convex object validators reject unknown fields.
+  Keep existing workers and the native scanner pin unchanged for that first
+  deployment, and continue accepting requests that omit the new fields.
+  Inspection completeness (`completed` or `partial`) remains independent of
+  risk status and never bypasses existing judge, receipt, scanner, or publication
+  gates. Ship the worker policy layer only after the backend deployment.
 - New skill publishes now persist a deterministic static scan result on the version.
 - Static findings are internal evidence for Codex-backed ClawScan only. They do
   not hide, block, set public security status, affect installability, or trigger

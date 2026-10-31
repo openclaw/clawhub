@@ -219,6 +219,7 @@ export type PackageSkillSpectorIssue = (typeof PackageSkillSpectorIssueSchema)[i
 
 export const PackageSkillSpectorAnalysisSchema = type({
   status: "string",
+  "inspectionStatus?": '"completed"|"partial"',
   score: "number?",
   severity: "string?",
   recommendation: "string?",

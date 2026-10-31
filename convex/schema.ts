@@ -64,8 +64,9 @@ const skillSpectorIssueValidator = v.object({
   codeSnippet: v.optional(v.string()),
 });
 
-const skillSpectorAnalysisValidator = v.object({
+export const skillSpectorAnalysisValidator = v.object({
   status: v.string(),
+  inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
   score: v.optional(v.number()),
   severity: v.optional(v.string()),
   recommendation: v.optional(v.string()),

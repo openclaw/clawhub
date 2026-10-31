@@ -87,6 +87,7 @@ export type PackageVersionDetail = {
     } | null;
     skillSpectorAnalysis?: {
       status: string;
+      inspectionStatus?: "completed" | "partial";
       score?: number;
       severity?: string;
       recommendation?: string;

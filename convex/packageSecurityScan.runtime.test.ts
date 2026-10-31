@@ -142,6 +142,13 @@ it("claims an assigned plugin, stores its Endor summary, and serves the exact re
     reachableFunctionCount: 4,
     findings: [{ severity: "high", summary: "Reachable vulnerable function" }],
   };
+  const skillSpectorAnalysis = {
+    status: "suspicious",
+    inspectionStatus: "partial" as const,
+    issueCount: 0,
+    issues: [],
+    checkedAt: 10,
+  };
 
   await expect(
     t.mutation(internal.packages.completeReleaseSecurityScanInternal, {
@@ -151,12 +158,14 @@ it("claims an assigned plugin, stores its Endor summary, and serves the exact re
       runId: "run-one",
       llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 10 },
       endorAnalysis,
+      skillSpectorAnalysis,
     }),
   ).resolves.toEqual({ ok: true });
 
   const { release, job } = await readReleaseAndJob(t, releaseId, jobId);
   expect(release).toMatchObject({
     endorAnalysis,
+    skillSpectorAnalysis,
     llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 10 },
   });
   expect(job).toMatchObject({ status: "succeeded", runId: "run-one" });
@@ -166,6 +175,7 @@ it("claims an assigned plugin, stores its Endor summary, and serves the exact re
   expect(versionResponse.status).toBe(200);
   const versionBody = await versionResponse.json();
   expect(versionBody.version.endorAnalysis).toEqual(endorAnalysis);
+  expect(versionBody.version.skillSpectorAnalysis).toEqual(skillSpectorAnalysis);
 
   const securityResponse = await t.fetch("/api/v1/packages/endor-plugin/versions/1.0.0/security");
   expect(securityResponse.status).toBe(200);

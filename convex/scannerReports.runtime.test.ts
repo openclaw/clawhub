@@ -109,7 +109,8 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
       llmAnalysis: { status: "clean", verdict: "benign", checkedAt },
       aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt },
       skillSpectorAnalysis: {
-        status: "clean",
+        status: "suspicious",
+        inspectionStatus: "partial",
         score: 0,
         recommendation: "CAUTION",
         issueCount: 0,
@@ -122,6 +123,10 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
     });
   }
   await complete(10);
+  expect((await t.run((ctx) => ctx.db.get(versionId)))?.skillSpectorAnalysis).toMatchObject({
+    status: "suspicious",
+    inspectionStatus: "partial",
+  });
   const firstId = await t.run(
     async (ctx) => (await ctx.db.get(versionId))!.scannerReportsStorageId!,
   );

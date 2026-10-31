@@ -101,6 +101,7 @@ export type SkillSpectorIssue = {
 
 export type SkillSpectorAnalysis = {
   status: string;
+  inspectionStatus?: "completed" | "partial";
   score?: number;
   severity?: string;
   recommendation?: string;

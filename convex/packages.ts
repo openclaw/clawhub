@@ -369,6 +369,7 @@ const skillSpectorIssueValidator = v.object({
 
 const skillSpectorAnalysisValidator = v.object({
   status: v.string(),
+  inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
   score: v.optional(v.number()),
   severity: v.optional(v.string()),
   recommendation: v.optional(v.string()),
@@ -11995,6 +11996,7 @@ export const insertReleaseInternal = internalMutation({
     verification: v.optional(v.any()),
     staticScan: v.optional(v.any()),
     llmAnalysis: v.optional(v.any()),
+    skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     allowExistingRelease: v.optional(v.boolean()),
     files: v.array(
       v.object({
@@ -12352,6 +12354,7 @@ export const insertReleaseInternal = internalMutation({
       verification: releaseVerification,
       staticScan: args.staticScan,
       llmAnalysis: args.llmAnalysis,
+      skillSpectorAnalysis: args.skillSpectorAnalysis,
       source: args.source,
       createdBy: args.actorUserId,
       publishActor: args.publishActor,

@@ -9,6 +9,7 @@ import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
+import { skillSpectorAnalysisValidator } from "./schema";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
@@ -106,11 +107,16 @@ function withoutUndefined<T extends Record<string, unknown>>(value: T) {
   ) as Partial<T>;
 }
 
-function withClawscanAnalysis(insertArgs: unknown, clawscanAnalysis: unknown) {
-  if (!clawscanAnalysis) return insertArgs;
+function withClawscanAnalysis(
+  insertArgs: unknown,
+  clawscanAnalysis: unknown,
+  skillSpectorAnalysis: unknown,
+) {
+  if (!clawscanAnalysis && !skillSpectorAnalysis) return insertArgs;
   return {
     ...asRecord(insertArgs),
-    llmAnalysis: clawscanAnalysis,
+    ...(clawscanAnalysis ? { llmAnalysis: clawscanAnalysis } : {}),
+    ...(skillSpectorAnalysis ? { skillSpectorAnalysis } : {}),
   };
 }
 
@@ -751,6 +757,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     clawscan: workerCheckResultValidator,
     clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
     aigAnalysis: v.optional(workerAigAnalysisValidator),
+    skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   },
   handler: async (ctx, args) => {
     const attempt = await ctx.db.get(args.attemptId);
@@ -821,6 +828,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
         await ctx.db.patch(attempt.skillVersionId, {
           publicationStatus: "blocked",
           llmAnalysis: args.clawscanAnalysis,
+          ...(args.skillSpectorAnalysis ? { skillSpectorAnalysis: args.skillSpectorAnalysis } : {}),
           ...(args.aigAnalysis ? { aigAnalysis: args.aigAnalysis } : {}),
           publishAttemptId: attempt._id,
         });
@@ -834,6 +842,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
           publicationStatus: "blocked",
           verification,
           llmAnalysis: args.clawscanAnalysis,
+          ...(args.skillSpectorAnalysis ? { skillSpectorAnalysis: args.skillSpectorAnalysis } : {}),
           ...(args.aigAnalysis ? { aigAnalysis: args.aigAnalysis } : {}),
           publishAttemptId: attempt._id,
         });
@@ -844,14 +853,22 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
         skillInsertArgs:
           attempt.kind === "skill"
             ? withAigAnalysis(
-                withClawscanAnalysis(attempt.skillInsertArgs, args.clawscanAnalysis),
+                withClawscanAnalysis(
+                  attempt.skillInsertArgs,
+                  args.clawscanAnalysis,
+                  args.skillSpectorAnalysis,
+                ),
                 args.aigAnalysis,
               )
             : attempt.skillInsertArgs,
         packageInsertArgs:
           attempt.kind === "package"
             ? withAigAnalysis(
-                withClawscanAnalysis(attempt.packageInsertArgs, args.clawscanAnalysis),
+                withClawscanAnalysis(
+                  attempt.packageInsertArgs,
+                  args.clawscanAnalysis,
+                  args.skillSpectorAnalysis,
+                ),
                 args.aigAnalysis,
               )
             : attempt.packageInsertArgs,
@@ -922,17 +939,19 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     if (
       attempt.kind === "skill" &&
       attempt.skillVersionId &&
-      (args.clawscanAnalysis || submittedAigAnalysis)
+      (args.clawscanAnalysis || submittedAigAnalysis || args.skillSpectorAnalysis)
     ) {
       await ctx.db.patch(attempt.skillVersionId, {
         ...(args.clawscanAnalysis ? { llmAnalysis: args.clawscanAnalysis } : {}),
         ...(submittedAigAnalysis ? { aigAnalysis: submittedAigAnalysis } : {}),
+        ...(args.skillSpectorAnalysis ? { skillSpectorAnalysis: args.skillSpectorAnalysis } : {}),
         publishAttemptId: attempt._id,
       });
     }
     if (attempt.kind === "package" && attempt.packageReleaseId && args.clawscanAnalysis) {
       await ctx.db.patch(attempt.packageReleaseId, {
         llmAnalysis: args.clawscanAnalysis,
+        ...(args.skillSpectorAnalysis ? { skillSpectorAnalysis: args.skillSpectorAnalysis } : {}),
         ...(args.aigAnalysis ? { aigAnalysis: args.aigAnalysis } : {}),
         publishAttemptId: attempt._id,
       });
@@ -944,14 +963,22 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
       skillInsertArgs:
         attempt.kind === "skill"
           ? withAigAnalysis(
-              withClawscanAnalysis(attempt.skillInsertArgs, args.clawscanAnalysis),
+              withClawscanAnalysis(
+                attempt.skillInsertArgs,
+                args.clawscanAnalysis,
+                args.skillSpectorAnalysis,
+              ),
               effectiveAigAnalysis,
             )
           : attempt.skillInsertArgs,
       packageInsertArgs:
         attempt.kind === "package"
           ? withAigAnalysis(
-              withClawscanAnalysis(attempt.packageInsertArgs, args.clawscanAnalysis),
+              withClawscanAnalysis(
+                attempt.packageInsertArgs,
+                args.clawscanAnalysis,
+                args.skillSpectorAnalysis,
+              ),
               args.aigAnalysis,
             )
           : attempt.packageInsertArgs,
@@ -1567,6 +1594,7 @@ export const completePrePublicationChecks: ReturnType<typeof action> = action({
     clawscan: workerCheckResultValidator,
     clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
     aigAnalysis: v.optional(workerAigAnalysisValidator),
+    skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   },
   handler: async (ctx, args): Promise<unknown> => {
     assertWorkerToken(args.token);
@@ -1580,6 +1608,7 @@ export const completePrePublicationChecks: ReturnType<typeof action> = action({
         clawscan: args.clawscan,
         clawscanAnalysis: args.clawscanAnalysis,
         aigAnalysis: args.aigAnalysis,
+        skillSpectorAnalysis: args.skillSpectorAnalysis,
       },
     )) as {
       attemptId: Id<"publishAttempts">;

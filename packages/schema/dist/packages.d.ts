@@ -175,6 +175,7 @@ export declare const PackageSkillSpectorIssueSchema: import("arktype/internal/va
 export type PackageSkillSpectorIssue = (typeof PackageSkillSpectorIssueSchema)[inferred];
 export declare const PackageSkillSpectorAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     status: string;
+    inspectionStatus?: "completed" | "partial" | undefined;
     score?: number | undefined;
     severity?: string | undefined;
     recommendation?: string | undefined;
@@ -897,6 +898,7 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
         } | null | undefined;
         skillSpectorAnalysis?: {
             status: string;
+            inspectionStatus?: "completed" | "partial" | undefined;
             score?: number | undefined;
             severity?: string | undefined;
             recommendation?: string | undefined;
@@ -1299,6 +1301,7 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
         } | null | undefined;
         skillSpectorAnalysis?: {
             status: string;
+            inspectionStatus?: "completed" | "partial" | undefined;
             score?: number | undefined;
             severity?: string | undefined;
             recommendation?: string | undefined;
