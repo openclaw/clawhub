@@ -211,12 +211,33 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          deploy_cmd=(bun run convex:deploy)
           if [[ "${{ inputs.allow_deleting_large_indexes }}" == "true" ]]; then
-            bunx convex deploy --typecheck=disable --yes --allow-deleting-large-indexes
-          else
-            bun run convex:deploy
+            deploy_cmd=(bunx convex deploy --typecheck=disable --yes --allow-deleting-large-indexes)
           fi
+          # Write-capacity admission can refuse the push before it starts. A
+          # refused start_push changes nothing on the deployment, so retry only
+          # that exact failure, bounded, with jittered backoff. Every other
+          # failure (including errors after the push started) fails at once.
+          max_attempts=24
+          for attempt in $(seq 1 "$max_attempts"); do
+            log="$(mktemp)"
+            if "${deploy_cmd[@]}" 2>&1 | tee "$log"; then
+              exit 0
+            fi
+            if ! grep -q "Unable to start push" "$log" || ! grep -q "CommitterFullError" "$log"; then
+              echo "::error::Convex deploy failed after the push started or for another reason; not retrying."
+              exit 1
+            fi
+            if [[ "$attempt" == "$max_attempts" ]]; then
+              echo "::error::Convex push admission refused $max_attempts times (CommitterFullError)."
+              exit 1
+            fi
+            delay=$((10 + RANDOM % 20))
+            echo "::warning::Push admission refused (CommitterFullError), attempt $attempt/$max_attempts; retrying in ${delay}s."
+            sleep "$delay"
+          done
 
       # A failed code push must not advertise the candidate as the deployed build.
       - name: Stamp Convex build SHA
