@@ -56,10 +56,10 @@ test("dated API updates stay informational for visitors and managers", async ({
   await expect(page.getByRole("heading", { name: "Install", exact: true })).toBeVisible();
 
   await page.goto("/plugins/local-api-retirement-incompatible", { waitUntil: "domcontentloaded" });
+  await expect(notice).toBeVisible();
   await expect(
     page.getByText("This plugin is incompatible with OpenClaw versions greater than 2026.10.1."),
-  ).toBeVisible();
-  await expect(notice).toBeVisible();
+  ).toHaveCount(0);
 
   await signInAsLocalPersona(page, "owner");
   await page.goto("/dashboard");
