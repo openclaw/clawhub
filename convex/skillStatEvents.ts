@@ -1090,26 +1090,37 @@ const EVENT_BATCH_SIZE = 500;
 const MAX_SKILLS_PER_RUN = 50;
 
 /**
- * Fetch a batch of events after the given cursor (by _creationTime).
- * Returns events sorted by _creationTime ascending.
+ * Fetch the next page of stat events in (`_creationTime`, `_id`) order.
+ *
+ * A legacy install mutation inserts up to 100 `install_new` rows at one
+ * `_creationTime`. `gt("_creationTime", pageEnd)` skips the rest of that
+ * group. Pagination keeps the id of the last returned row, so the next
+ * page continues inside the group.
  */
 export const getUnprocessedEventBatch = internalQuery({
   args: {
     cursorCreationTime: v.optional(v.number()),
+    rangeLowerBound: v.optional(v.number()),
+    paginationCursor: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? EVENT_BATCH_SIZE;
-    const cursor = args.cursorCreationTime;
-
-    // Query events after the cursor using the built-in creation time index
-    const events = await ctx.db
+    const rangeLowerBound = args.rangeLowerBound ?? args.cursorCreationTime;
+    const page = await ctx.db
       .query("skillStatEvents")
       .withIndex("by_creation_time", (q) =>
-        cursor !== undefined ? q.gt("_creationTime", cursor) : q,
+        rangeLowerBound !== undefined ? q.gt("_creationTime", rangeLowerBound) : q,
       )
-      .take(limit);
-    return events;
+      .paginate({
+        numItems: limit,
+        cursor: args.paginationCursor ?? null,
+      });
+    return {
+      events: page.page,
+      continueCursor: page.isDone ? null : page.continueCursor,
+      rangeLowerBound: rangeLowerBound ?? null,
+    };
   },
 });
 
@@ -1124,6 +1135,22 @@ export const getStatEventCursor = internalQuery({
       .withIndex("by_key", (q) => q.eq("key", CURSOR_KEY))
       .unique();
     return cursor?.cursorCreationTime;
+  },
+});
+
+export const getStatEventAggregationCursor = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const cursor = await ctx.db
+      .query("skillStatUpdateCursors")
+      .withIndex("by_key", (q) => q.eq("key", CURSOR_KEY))
+      .unique();
+    return {
+      cursorCreationTime: cursor?.cursorCreationTime ?? null,
+      paginationCursor: cursor?.paginationCursor ?? null,
+      paginationLowerBound: cursor?.paginationLowerBound ?? null,
+      pendingCreationTime: cursor?.pendingCreationTime ?? null,
+    };
   },
 });
 
@@ -1150,7 +1177,11 @@ const skillDeltaValidator = v.object({
 export const applyAggregatedStatsAndUpdateCursor = internalMutation({
   args: {
     skillDeltas: v.array(skillDeltaValidator),
-    newCursor: v.number(),
+    newCursor: v.optional(v.number()),
+    paginationCursor: v.optional(v.string()),
+    paginationLowerBound: v.optional(v.number()),
+    pendingCreationTime: v.optional(v.number()),
+    clearPaginationCursor: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -1228,16 +1259,37 @@ export const applyAggregatedStatsAndUpdateCursor = internalMutation({
       .withIndex("by_key", (q) => q.eq("key", CURSOR_KEY))
       .unique();
 
-    if (existingCursor) {
-      await ctx.db.patch(existingCursor._id, {
-        cursorCreationTime: args.newCursor,
+    const cursorCreationTime = args.newCursor ?? existingCursor?.cursorCreationTime;
+    if (existingCursor && args.clearPaginationCursor) {
+      await ctx.db.replace(existingCursor._id, {
+        key: existingCursor.key,
         updatedAt: now,
+        ...(cursorCreationTime !== undefined ? { cursorCreationTime } : {}),
+      });
+    } else if (existingCursor) {
+      await ctx.db.patch(existingCursor._id, {
+        updatedAt: now,
+        ...(args.newCursor !== undefined ? { cursorCreationTime: args.newCursor } : {}),
+        ...(args.paginationCursor !== undefined ? { paginationCursor: args.paginationCursor } : {}),
+        ...(args.paginationLowerBound !== undefined
+          ? { paginationLowerBound: args.paginationLowerBound }
+          : {}),
+        ...(args.pendingCreationTime !== undefined
+          ? { pendingCreationTime: args.pendingCreationTime }
+          : {}),
       });
     } else {
       await ctx.db.insert("skillStatUpdateCursors", {
         key: CURSOR_KEY,
-        cursorCreationTime: args.newCursor,
         updatedAt: now,
+        ...(cursorCreationTime !== undefined ? { cursorCreationTime } : {}),
+        ...(args.paginationCursor !== undefined ? { paginationCursor: args.paginationCursor } : {}),
+        ...(args.paginationLowerBound !== undefined
+          ? { paginationLowerBound: args.paginationLowerBound }
+          : {}),
+        ...(args.pendingCreationTime !== undefined
+          ? { pendingCreationTime: args.pendingCreationTime }
+          : {}),
       });
     }
 
@@ -1258,11 +1310,16 @@ export const applyAggregatedStatsAndUpdateCursor = internalMutation({
 export const processSkillStatEventsAction = internalAction({
   args: {},
   handler: async (ctx) => {
-    // Get current cursor position (convert null to undefined for consistency)
-    const cursorResult = await ctx.runQuery(internal.skillStatEvents.getStatEventCursor);
-    let cursor: number | undefined = cursorResult ?? undefined;
+    const cursorState = await ctx.runQuery(internal.skillStatEvents.getStatEventAggregationCursor);
+    let rangeLowerBound: number | undefined = cursorState.paginationCursor
+      ? (cursorState.paginationLowerBound ?? undefined)
+      : (cursorState.cursorCreationTime ?? undefined);
+    let paginationCursor = cursorState.paginationCursor ?? undefined;
+    const persistedWatermark = cursorState.cursorCreationTime ?? undefined;
 
-    console.log(`[STAT-AGG] Starting aggregation, cursor=${cursor ?? "none"}`);
+    console.log(
+      `[STAT-AGG] Starting aggregation, cursor=${persistedWatermark ?? "none"} page=${paginationCursor ? "resume" : "new"}`,
+    );
 
     // Aggregated deltas per skill
     const aggregatedBySkill = new Map<
@@ -1277,27 +1334,30 @@ export const processSkillStatEventsAction = internalAction({
       }
     >();
 
-    let maxCreationTime: number | undefined = cursor;
+    let maxCreationTime: number | undefined;
     let exhausted = false;
     let totalEventsFetched = 0;
+    let resumeCursor: string | undefined;
 
     // Fetch and aggregate until we have enough skills or run out of events
     while (aggregatedBySkill.size < MAX_SKILLS_PER_RUN) {
-      const events = await ctx.runQuery(internal.skillStatEvents.getUnprocessedEventBatch, {
-        cursorCreationTime: cursor,
+      const batch = await ctx.runQuery(internal.skillStatEvents.getUnprocessedEventBatch, {
         limit: EVENT_BATCH_SIZE,
+        ...(rangeLowerBound !== undefined ? { rangeLowerBound } : {}),
+        ...(paginationCursor ? { paginationCursor } : {}),
       });
 
-      if (events.length === 0) {
+      if (batch.events.length === 0) {
         exhausted = true;
+        resumeCursor = undefined;
         break;
       }
 
-      totalEventsFetched += events.length;
+      totalEventsFetched += batch.events.length;
       const skillsBefore = aggregatedBySkill.size;
 
       // Aggregate events into per-skill deltas
-      for (const event of events) {
+      for (const event of batch.events) {
         let skillDelta = aggregatedBySkill.get(event.skillId);
         if (!skillDelta) {
           skillDelta = {
@@ -1346,31 +1406,47 @@ export const processSkillStatEventsAction = internalAction({
             break;
         }
 
-        // Track highest _creationTime seen
         if (maxCreationTime === undefined || event._creationTime > maxCreationTime) {
           maxCreationTime = event._creationTime;
         }
       }
 
-      // Update cursor for next batch fetch
-      cursor = events[events.length - 1]._creationTime;
-
       console.log(
-        `[STAT-AGG] Fetched ${events.length} events, ${aggregatedBySkill.size - skillsBefore} new skills (${aggregatedBySkill.size} total)`,
+        `[STAT-AGG] Fetched ${batch.events.length} events, ${aggregatedBySkill.size - skillsBefore} new skills (${aggregatedBySkill.size} total)`,
       );
 
-      // If we got fewer than requested, we've exhausted the events
-      if (events.length < EVENT_BATCH_SIZE) {
+      if (batch.continueCursor === null) {
         exhausted = true;
+        resumeCursor = undefined;
         break;
       }
+
+      paginationCursor = batch.continueCursor;
+      rangeLowerBound = batch.rangeLowerBound ?? undefined;
+      resumeCursor = batch.continueCursor;
     }
 
-    // If we have nothing to process, we're done
+    // If we have nothing to process, we're done. An empty page after a saved
+    // pagination cursor is the end of that range: promote the creation time
+    // already committed with the previous page and drop the cursor. Leaving
+    // it open caps pruning at the old watermark forever.
     if (aggregatedBySkill.size === 0 || maxCreationTime === undefined) {
+      const finishedCreationTime = cursorState.pendingCreationTime ?? persistedWatermark;
+      if (cursorState.paginationCursor && finishedCreationTime !== undefined) {
+        console.log("[STAT-AGG] Empty terminal page, finishing checkpoint");
+        await ctx.runMutation(internal.skillStatEvents.applyAggregatedStatsAndUpdateCursor, {
+          skillDeltas: [],
+          newCursor: finishedCreationTime,
+          clearPaginationCursor: true,
+        });
+        await ctx.runMutation(internal.skillHourlyStats.markAggregationCompletedInternal, {
+          cursorCreationTime: finishedCreationTime,
+        });
+        return { processed: 0, skillsUpdated: 0, exhausted: true };
+      }
       console.log("[STAT-AGG] No events to process, done");
       await ctx.runMutation(internal.skillHourlyStats.markAggregationCompletedInternal, {
-        cursorCreationTime: cursor,
+        cursorCreationTime: persistedWatermark,
       });
       return { processed: 0, skillsUpdated: 0, exhausted: true };
     }
@@ -1385,10 +1461,18 @@ export const processSkillStatEventsAction = internalAction({
       `[STAT-AGG] Running mutation for ${skillDeltas.length} skills (${totalEventsFetched} total events)`,
     );
 
-    // Apply all deltas and update cursor atomically
+    // A finished page may end inside one shared creation time. Keep the
+    // numeric watermark behind that group and resume with the pagination cursor.
     await ctx.runMutation(internal.skillStatEvents.applyAggregatedStatsAndUpdateCursor, {
       skillDeltas,
-      newCursor: maxCreationTime,
+      ...(exhausted
+        ? { newCursor: maxCreationTime, clearPaginationCursor: true as const }
+        : {
+            ...(persistedWatermark !== undefined ? { newCursor: persistedWatermark } : {}),
+            ...(resumeCursor ? { paginationCursor: resumeCursor } : {}),
+            ...(rangeLowerBound !== undefined ? { paginationLowerBound: rangeLowerBound } : {}),
+            pendingCreationTime: Math.max(maxCreationTime, cursorState.pendingCreationTime ?? 0),
+          }),
     });
 
     // Self-schedule if we stopped because of skill limit, not exhaustion

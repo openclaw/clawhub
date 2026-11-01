@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 const apiRefs = vi.hoisted(() => ({
   applyAggregatedStatsAndUpdateCursor: Symbol("applyAggregatedStatsAndUpdateCursor"),
   claimSkillStatDocSyncLeaseInternal: Symbol("claimSkillStatDocSyncLeaseInternal"),
+  getStatEventAggregationCursor: Symbol("getStatEventAggregationCursor"),
   getStatEventCursor: Symbol("getStatEventCursor"),
   getUnprocessedEventBatch: Symbol("getUnprocessedEventBatch"),
   kickProcessedSkillStatEventPruneInternal: Symbol("kickProcessedSkillStatEventPruneInternal"),
@@ -27,6 +28,7 @@ vi.mock("./_generated/api", () => ({
     skillStatEvents: {
       applyAggregatedStatsAndUpdateCursor: apiRefs.applyAggregatedStatsAndUpdateCursor,
       claimSkillStatDocSyncLeaseInternal: apiRefs.claimSkillStatDocSyncLeaseInternal,
+      getStatEventAggregationCursor: apiRefs.getStatEventAggregationCursor,
       getStatEventCursor: apiRefs.getStatEventCursor,
       getUnprocessedEventBatch: apiRefs.getUnprocessedEventBatch,
       kickProcessedSkillStatEventPruneInternal: apiRefs.kickProcessedSkillStatEventPruneInternal,
@@ -44,6 +46,7 @@ vi.mock("./_generated/api", () => ({
 }));
 
 const {
+  getUnprocessedEventBatch,
   processSkillStatEventBatchInternal,
   processSkillStatEventsAction,
   processSkillStatEventsInternal,
@@ -117,6 +120,85 @@ const pruneProcessedSkillStatEventsInternalHandler = (
   }
 )._handler;
 
+type StatEventRow = {
+  _id: string;
+  _creationTime: number;
+  skillId: string;
+  kind: "install_new";
+  occurredAt: number;
+  processedAt: undefined;
+};
+
+function statEventCreationIndex(events: StatEventRow[]) {
+  const ordered = [...events].sort((left, right) => {
+    if (left._creationTime !== right._creationTime) return left._creationTime - right._creationTime;
+    if (left._id < right._id) return -1;
+    if (left._id > right._id) return 1;
+    return 0;
+  });
+  return {
+    query() {
+      return {
+        withIndex(
+          _name: string,
+          buildRange: (range: { gt: (field: string, value: number) => unknown }) => unknown,
+        ) {
+          let lowerTime: number | undefined;
+          const range = {
+            gt(field: string, value: number) {
+              if (field === "_creationTime") lowerTime = value;
+              return range;
+            },
+          };
+          buildRange(range);
+          const filtered = ordered.filter((event) =>
+            lowerTime === undefined ? true : event._creationTime > lowerTime,
+          );
+          return {
+            take(limit: number) {
+              return Promise.resolve(filtered.slice(0, limit));
+            },
+            paginate(opts: { numItems: number; cursor: string | null }) {
+              let start = 0;
+              if (opts.cursor) {
+                const parsed = JSON.parse(opts.cursor) as { afterId: string };
+                const index = filtered.findIndex((event) => event._id === parsed.afterId);
+                start = index === -1 ? filtered.length : index + 1;
+              }
+              const page = filtered.slice(start, start + opts.numItems);
+              const isDone = start + opts.numItems >= filtered.length;
+              const last = page.at(-1);
+              return Promise.resolve({
+                page,
+                isDone,
+                continueCursor: last ? JSON.stringify({ afterId: last._id }) : "",
+              });
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+type UnprocessedEventBatchResult =
+  | StatEventRow[]
+  | { events: StatEventRow[]; continueCursor: string | null; rangeLowerBound: number | null };
+
+const getUnprocessedEventBatchHandler = (
+  getUnprocessedEventBatch as unknown as {
+    _handler: (
+      ctx: { db: ReturnType<typeof statEventCreationIndex> },
+      args: {
+        limit?: number;
+        cursorCreationTime?: number;
+        rangeLowerBound?: number;
+        paginationCursor?: string;
+      },
+    ) => Promise<UnprocessedEventBatchResult>;
+  }
+)._handler;
+
 const kickProcessedSkillStatEventPruneInternalHandler = (
   kickProcessedSkillStatEventPruneInternal as unknown as {
     _handler: (
@@ -150,7 +232,18 @@ describe("skill stat events", () => {
       occurredAt: 1000,
       processedAt: undefined,
     };
-    const runQuery = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce([event]);
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        cursorCreationTime: null,
+        paginationCursor: null,
+        paginationLowerBound: null,
+      })
+      .mockResolvedValueOnce({
+        events: [event],
+        continueCursor: null,
+        rangeLowerBound: null,
+      });
     const runMutation = vi.fn(async () => ({ skillsUpdated: 1 }));
     const scheduler = { runAfter: vi.fn() };
     const ctx = { runQuery, runMutation, scheduler };
@@ -160,9 +253,8 @@ describe("skill stat events", () => {
       exhausted: true,
     });
 
-    expect(runQuery).toHaveBeenNthCalledWith(1, apiRefs.getStatEventCursor);
+    expect(runQuery).toHaveBeenNthCalledWith(1, apiRefs.getStatEventAggregationCursor);
     expect(runQuery).toHaveBeenNthCalledWith(2, apiRefs.getUnprocessedEventBatch, {
-      cursorCreationTime: undefined,
       limit: 500,
     });
     expect(runMutation).toHaveBeenCalledWith(apiRefs.applyAggregatedStatsAndUpdateCursor, {
@@ -178,9 +270,128 @@ describe("skill stat events", () => {
         },
       ],
       newCursor: 456,
+      clearPaginationCursor: true,
     });
     expect(runMutation).toHaveBeenCalledWith(apiRefs.markHourlyAggregationCompletedInternal, {
       cursorCreationTime: 456,
+    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("reads the rest of a shared creation time on the next page", async () => {
+    const sharedCreationTime = 1_700_000_000_000;
+    const events: StatEventRow[] = Array.from({ length: 600 }, (_, index) => ({
+      _id: `skillStatEvents:${String(index).padStart(4, "0")}`,
+      _creationTime: sharedCreationTime,
+      skillId: "skills:1",
+      kind: "install_new",
+      occurredAt: sharedCreationTime + index,
+      processedAt: undefined,
+    }));
+    const ctx = { db: statEventCreationIndex(events) };
+    const first = await getUnprocessedEventBatchHandler(ctx, { limit: 500 });
+    const firstEvents = Array.isArray(first) ? first : first.events;
+    const second = Array.isArray(first)
+      ? await getUnprocessedEventBatchHandler(ctx, {
+          limit: 500,
+          cursorCreationTime: firstEvents.at(-1)?._creationTime,
+        })
+      : await getUnprocessedEventBatchHandler(ctx, {
+          limit: 500,
+          ...(first.continueCursor ? { paginationCursor: first.continueCursor } : {}),
+          ...(first.rangeLowerBound !== null ? { rangeLowerBound: first.rangeLowerBound } : {}),
+        });
+    const secondEvents = Array.isArray(second) ? second : second.events;
+    const seen = new Set([...firstEvents, ...secondEvents].map((event) => event._id));
+    expect(firstEvents).toHaveLength(500);
+    expect(seen.size).toBe(600);
+    if (!Array.isArray(second)) expect(second.continueCursor).toBeNull();
+  });
+
+  it("asks for the following page with the pagination cursor", async () => {
+    const sharedCreationTime = 1_700_000_000_000;
+    const event = (id: string) => ({
+      _id: id,
+      _creationTime: sharedCreationTime,
+      skillId: "skills:1",
+      kind: "install_new" as const,
+      occurredAt: sharedCreationTime,
+      processedAt: undefined,
+    });
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        cursorCreationTime: null,
+        paginationCursor: null,
+        paginationLowerBound: null,
+      })
+      .mockResolvedValueOnce({
+        events: [event("skillStatEvents:0000")],
+        continueCursor: "page-2",
+        rangeLowerBound: null,
+      })
+      .mockResolvedValueOnce({
+        events: [event("skillStatEvents:0001")],
+        continueCursor: null,
+        rangeLowerBound: null,
+      });
+    const runMutation = vi.fn(async () => ({ skillsUpdated: 1 }));
+    const scheduler = { runAfter: vi.fn() };
+
+    await expect(
+      processSkillStatEventsActionHandler({ runQuery, runMutation, scheduler }, {}),
+    ).resolves.toEqual({
+      skillsUpdated: 1,
+      exhausted: true,
+    });
+
+    expect(runQuery).toHaveBeenNthCalledWith(3, apiRefs.getUnprocessedEventBatch, {
+      limit: 500,
+      paginationCursor: "page-2",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      apiRefs.applyAggregatedStatsAndUpdateCursor,
+      expect.objectContaining({
+        newCursor: sharedCreationTime,
+        clearPaginationCursor: true,
+      }),
+    );
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("finishes the checkpoint when the resumed page is empty", async () => {
+    const committedCreationTime = 1_700_000_000_000;
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        cursorCreationTime: 10,
+        paginationCursor: "page-2",
+        paginationLowerBound: 10,
+        pendingCreationTime: committedCreationTime,
+      })
+      .mockResolvedValueOnce({
+        events: [],
+        continueCursor: null,
+        rangeLowerBound: 10,
+      });
+    const runMutation = vi.fn(async () => ({ skillsUpdated: 0 }));
+    const scheduler = { runAfter: vi.fn() };
+
+    await expect(
+      processSkillStatEventsActionHandler({ runQuery, runMutation, scheduler }, {}),
+    ).resolves.toEqual({
+      processed: 0,
+      skillsUpdated: 0,
+      exhausted: true,
+    });
+
+    expect(runMutation).toHaveBeenCalledWith(apiRefs.applyAggregatedStatsAndUpdateCursor, {
+      skillDeltas: [],
+      newCursor: committedCreationTime,
+      clearPaginationCursor: true,
+    });
+    expect(runMutation).toHaveBeenCalledWith(apiRefs.markHourlyAggregationCompletedInternal, {
+      cursorCreationTime: committedCreationTime,
     });
     expect(scheduler.runAfter).not.toHaveBeenCalled();
   });

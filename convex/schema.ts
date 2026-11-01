@@ -3106,6 +3106,13 @@ const skillStatEvents = defineTable({
 const skillStatUpdateCursors = defineTable({
   key: v.string(),
   cursorCreationTime: v.optional(v.number()),
+  // Opaque Convex pagination cursor for the creation-time index. It keeps
+  // the id tie-break when a page ends inside one shared _creationTime.
+  paginationCursor: v.optional(v.string()),
+  paginationLowerBound: v.optional(v.number()),
+  // Highest creation time already written while a pagination cursor is open.
+  // An empty final page promotes this to cursorCreationTime.
+  pendingCreationTime: v.optional(v.number()),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 
