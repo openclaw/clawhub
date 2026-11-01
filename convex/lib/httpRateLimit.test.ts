@@ -1001,6 +1001,50 @@ describe("batched quota accounting", () => {
     expect(consumed).toEqual([16]);
   });
 
+  it.each(["read", "download"] as const)(
+    "unmetered mode admits %s requests without any quota read or write",
+    async (kind) => {
+      process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING = "unmetered";
+      const { ctx, runMutation, runQuery } = makeBatchedCtx({ bucketOpen: false });
+      for (let i = 0; i < 5; i++) {
+        const result = await applyRateLimit(
+          ctx,
+          new Request("https://example.com/api/v1/skills"),
+          kind,
+        );
+        expect(result.ok).toBe(true);
+      }
+      expect(runMutation).not.toHaveBeenCalled();
+      expect(runQuery.mock.calls.filter(([, args]) => "config" in (args as object))).toHaveLength(
+        0,
+      );
+    },
+  );
+
+  it.each(["write", "export", "trustedPublish"] as const)(
+    "unmetered mode keeps exact enforcement for %s",
+    async (kind) => {
+      process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING = "unmetered";
+      const { ctx, consumed } = makeBatchedCtx({ bucketOpen: false });
+      const result = await applyRateLimit(ctx, new Request("https://example.com/api/v1/x"), kind);
+      expect(result.ok).toBe(false);
+      expect(consumed).toEqual([1]);
+    },
+  );
+
+  it("unmetered mode still rejects unverified anonymous direct callers", async () => {
+    process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING = "unmetered";
+    vi.mocked(getVerifiedClientIp).mockResolvedValue(null);
+    const { ctx, runMutation } = makeBatchedCtx();
+    const result = await applyRateLimit(
+      ctx,
+      new Request("https://example.convex.site/api/v1/skills"),
+      "read",
+    );
+    expect(result.ok).toBe(false);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
   it("restores exact accounting when batching is switched off", async () => {
     process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING = "off";
     vi.spyOn(Math, "random").mockReturnValue(0.9);

@@ -315,6 +315,10 @@ export function getRateLimitBatchSize(kind: RateLimitKind): number {
   if (!defaultBatch) return 1;
   const mode = process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING?.trim().toLowerCase();
   if (mode === "off") return 1;
+  // Emergency write-pressure switch: read/download buckets are not metered in
+  // Convex at all (no quota write, no quota read). Identity verification,
+  // anonymous-edge enforcement and exact write/export/publish limits remain.
+  if (mode === "unmetered") return 0;
   const requested = mode && /^\d+$/.test(mode) ? Number(mode) : defaultBatch;
   return Math.max(1, Math.min(requested, maxBatchForKind(kind)));
 }
@@ -328,6 +332,9 @@ async function checkRateLimit(
   batchSize: number,
 ): Promise<RateLimitResult> {
   const now = Date.now();
+  if (batchSize === 0) {
+    return { allowed: true, limit, resetAt: getCurrentWindowResetAt(now) };
+  }
   try {
     const status =
       batchSize > 1 && Math.random() * batchSize >= 1
