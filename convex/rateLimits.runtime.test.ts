@@ -3,7 +3,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { afterEach, expect, it, vi } from "vitest";
-import { internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -72,3 +72,78 @@ it("rolls back quota when a parent transaction aborts after a combined check", a
     retryAfter: 20_000,
   });
 });
+
+it("consumes batched counts in one write and exposes exhaustion to read-only checks", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+  const t = convexTest(schema, modules);
+  registerRateLimiter(t);
+  const request = {
+    name: "batched-proof",
+    key: "ip:203.0.113.79:read",
+    config: { kind: "fixed window", rate: 40, period: 60_000, start: 0, shards: 1 },
+  } as const;
+  for (let i = 0; i < 10; i++) {
+    expect(
+      await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, {
+        ...request,
+        count: 4,
+      }),
+    ).toEqual({ ok: true });
+  }
+  expect(
+    await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, { ...request, count: 4 }),
+  ).toMatchObject({ ok: false });
+  const peek = await t.run(async (ctx) =>
+    ctx.runQuery(components.rateLimiter.lib.checkRateLimit, {
+      name: request.name,
+      key: request.key,
+      config: request.config,
+    }),
+  );
+  expect(peek).toMatchObject({ ok: false });
+});
+
+it.each([
+  ["readIp", 3000],
+  ["downloadIp", 1200],
+  ["readKey", 12000],
+] as const)(
+  "keeps admitted %s traffic at the limit under batched accounting at 3x load",
+  async (name, rate) => {
+    vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+    const t = convexTest(schema, modules);
+    registerRateLimiter(t);
+    const shards = Math.max(1, Math.min(32, Math.floor(rate / 10)));
+    const request = {
+      name,
+      key: `ip:203.0.113.81:${name}`,
+      config: { kind: "fixed window", rate, period: 60_000, start: 0, shards },
+    } as const;
+    // Mirrors applyRateLimit: one request in four consumes a batch, the rest
+    // run the read-only check for the same count.
+    let admitted = 0;
+    let consumed = 0;
+    for (let i = 0; i < rate * 3; i++) {
+      if (i % 4 === 0) {
+        const status = await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, {
+          ...request,
+          count: 4,
+        });
+        if (status.ok) {
+          admitted++;
+          consumed += 4;
+        }
+      } else {
+        const status = await t.run(async (ctx) =>
+          ctx.runQuery(components.rateLimiter.lib.checkRateLimit, { ...request, count: 4 }),
+        );
+        if (status.ok) admitted++;
+      }
+    }
+    expect(consumed).toBeLessThanOrEqual(rate);
+    // Deterministic sampling: admitted traffic cannot exceed the limit.
+    expect(admitted).toBeLessThanOrEqual(rate);
+    expect(admitted).toBeGreaterThanOrEqual(rate * 0.9);
+  },
+  120_000,
+);

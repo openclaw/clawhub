@@ -1,5 +1,5 @@
 import { MINUTE, type RateLimitConfig } from "@convex-dev/rate-limiter";
-import { internal } from "../_generated/api";
+import { components, internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUser } from "./apiTokenAuth";
@@ -16,6 +16,15 @@ export const RATE_LIMITS = {
 } as const;
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
+// High-volume buckets record consumption in batches: one request in N writes
+// a count of N, while every other request performs a read-only bucket check.
+// The expected consumption is unchanged and exhausted buckets still deny every
+// request, but each committed quota write now covers N requests. Low-volume
+// buckets (write, export, trusted publish) stay exactly accounted.
+const HTTP_RATE_LIMIT_BATCHED_KINDS: Partial<Record<RateLimitKind, number>> = {
+  read: 4,
+  download: 4,
+};
 const HTTP_RATE_LIMIT_SHARDS = 32;
 const HTTP_RATE_LIMIT_MIN_SHARD_CAPACITY = 10;
 const HTTP_RATE_LIMIT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -86,6 +95,7 @@ export async function applyRateLimit(
   const preappliedHeaders = preappliedRateLimitHeaders.get(request);
   if (preappliedHeaders) return { ok: true, headers: preappliedHeaders };
 
+  const batchSize = getRateLimitBatchSize(kind);
   const auth = await getOptionalApiTokenUser(ctx, request);
   const verifiedIp = await getVerifiedClientIp(request);
   if (verifiedIp) verifiedClientIps.set(request, verifiedIp);
@@ -108,6 +118,7 @@ export async function applyRateLimit(
       userLimit.name,
       userLimit.limit,
       combineMetadata,
+      batchSize,
     );
     const headers = {
       ...rateHeaders(userResult),
@@ -154,6 +165,7 @@ export async function applyRateLimit(
     getHttpRateLimitName(kind, "ip"),
     RATE_LIMITS[kind].ip,
     combineMetadata,
+    batchSize,
   );
   const headers = rateHeaders(ipResult);
   if (ipResult.unavailable) return rateLimitUnavailable(headers);
@@ -266,16 +278,47 @@ function anonymousEdgeResponse(request: Request): ApplyRateLimitResult {
   };
 }
 
+// The component rejects any single request larger than
+// capacity / (shards / 2); a misconfigured batch would turn every sampled
+// request into a 500, so fail at module load instead.
+for (const [kind, batch] of Object.entries(HTTP_RATE_LIMIT_BATCHED_KINDS) as [
+  RateLimitKind,
+  number,
+][]) {
+  for (const subject of ["ip", "key", "adminKey"] as const) {
+    const config = HTTP_RATE_LIMIT_CONFIGS[getHttpRateLimitName(kind, subject)];
+    const shards = config.shards ?? 1;
+    const maxPerRequest = config.rate / (shards < 3 ? 1 : shards / 2);
+    if (batch > maxPerRequest) {
+      throw new Error(`Rate limit batch ${batch} exceeds ${kind}/${subject} per-request maximum`);
+    }
+  }
+}
+
+export function getRateLimitBatchSize(kind: RateLimitKind): number {
+  const mode = process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING?.trim().toLowerCase();
+  if (mode === "off") return 1;
+  return HTTP_RATE_LIMIT_BATCHED_KINDS[kind] ?? 1;
+}
+
 async function checkRateLimit(
   ctx: ActionCtx,
   key: string,
   name: HttpRateLimitName,
   limit: number,
   combineMetadata: boolean,
+  batchSize: number,
 ): Promise<RateLimitResult> {
   const now = Date.now();
   try {
-    const status = await consumeRateLimitWithMetadata(ctx, { name, key, now }, combineMetadata);
+    const status =
+      batchSize > 1 && Math.random() * batchSize >= 1
+        ? await peekRateLimit(ctx, { name, key, now, count: batchSize })
+        : await consumeRateLimitWithMetadata(
+            ctx,
+            { name, key, now, count: batchSize },
+            combineMetadata,
+          );
     if (!status.ok) {
       return {
         allowed: false,
@@ -302,15 +345,36 @@ async function checkRateLimit(
   }
 }
 
+async function peekRateLimit(
+  ctx: ActionCtx,
+  args: { name: HttpRateLimitName; key: string; now: number; count: number },
+): Promise<{ ok: true; retryAfter?: number } | { ok: false; retryAfter: number }> {
+  // Read-only: an exhausted bucket denies without adding a quota write. The
+  // check must ask for the same count a sampled write consumes; a one-token
+  // check would keep passing on shard remainders that can no longer fit a
+  // batch, admitting unbounded traffic past the limit.
+  const status = await ctx.runQuery(components.rateLimiter.lib.checkRateLimit, {
+    name: args.name,
+    key: args.key,
+    config: HTTP_RATE_LIMIT_CONFIGS[args.name],
+    count: args.count,
+  });
+  // Denied traffic still refreshes retention metadata so cleanup cannot reset
+  // a bucket that is actively being limited. The refresh rarely writes.
+  if (!status.ok) await touchRateLimitKeyMetadata(ctx, args);
+  return status;
+}
+
 async function consumeRateLimitWithMetadata(
   ctx: ActionCtx,
-  args: { name: HttpRateLimitName; key: string; now: number },
+  args: { name: HttpRateLimitName; key: string; now: number; count: number },
   combineMetadata: boolean,
 ) {
   const counterArgs = {
     name: args.name,
     key: args.key,
     config: HTTP_RATE_LIMIT_CONFIGS[args.name],
+    ...(args.count > 1 ? { count: args.count } : {}),
   };
   if (!combineMetadata) {
     await touchRateLimitKeyMetadata(ctx, args);
@@ -339,7 +403,9 @@ async function touchRateLimitKeyMetadata(
 ) {
   try {
     await ctx.runMutation(internal.rateLimits.touchHttpRateLimitKeyInternal, {
-      ...args,
+      name: args.name,
+      key: args.key,
+      now: args.now,
       ttlMs: HTTP_RATE_LIMIT_KEY_TTL_MS,
     });
   } catch (error) {

@@ -105,6 +105,8 @@ export const consumeHttpRateLimitKeyInternal = internalMutation({
     name: v.string(),
     key: v.string(),
     config: fixedWindowRateLimitConfigValidator,
+    // Batched accounting consumes several requests in one committed write.
+    count: v.optional(v.number()),
     metadata: v.optional(v.object({ now: v.number(), ttlMs: v.number() })),
   },
   returns: rateLimitStatusValidator,
@@ -114,10 +116,15 @@ export const consumeHttpRateLimitKeyInternal = internalMutation({
     if (args.metadata) {
       await touchHttpRateLimitKey(ctx, { name: args.name, key: args.key, ...args.metadata });
     }
+    const count =
+      Number.isFinite(args.count) && (args.count ?? 1) > 1
+        ? Math.floor(args.count ?? 1)
+        : undefined;
     return await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
       name: args.name,
       key: args.key,
       config: args.config,
+      ...(count ? { count } : {}),
     });
   },
 });
