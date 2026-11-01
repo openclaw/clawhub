@@ -206,18 +206,6 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: node scripts/set-release-convex-env.mjs CLAWHUB_ENV production
 
-      - name: Stamp Convex build SHA
-        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: node scripts/set-release-convex-env.mjs APP_BUILD_SHA "${GITHUB_SHA}"
-
-      - name: Stamp Convex deploy time
-        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: node scripts/set-release-convex-env.mjs APP_DEPLOYED_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-
       - name: Deploy Convex
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         env:
@@ -229,6 +217,19 @@ jobs:
           else
             bun run convex:deploy
           fi
+
+      # A failed code push must not advertise the candidate as the deployed build.
+      - name: Stamp Convex build SHA
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: node scripts/set-release-convex-env.mjs APP_BUILD_SHA "${GITHUB_SHA}"
+
+      - name: Stamp Convex deploy time
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: node scripts/set-release-convex-env.mjs APP_DEPLOYED_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
       - name: Publish promotions feed snapshot
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'

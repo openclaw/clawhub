@@ -101,7 +101,101 @@ function set(f, value = "production") {
   return run(f.runner, [helper, "CLAWHUB_ENV", value], f.env);
 }
 
+async function deployBackend(pushCode) {
+  const workflow = parseYaml(await readFile(".github/workflows/deploy.yml", "utf8"));
+  const f = await fixture([{}]);
+  await writeFile(
+    join(dirname(f.runner), "bun"),
+    `#!${process.execPath}
+import { readFileSync, writeFileSync } from 'node:fs';
+const path = ${JSON.stringify(join(dirname(f.runner), "calls.json"))};
+const calls = JSON.parse(readFileSync(path, 'utf8'));
+writeFileSync(path, JSON.stringify([...calls, ['deploy', ...process.argv.slice(2)]]));
+process.exitCode = ${pushCode};
+`,
+    { mode: 0o755 },
+  );
+  const lifecycle = new Set([
+    "Pause external skill rollouts",
+    "Stamp Convex runtime environment",
+    "Stamp Convex build SHA",
+    "Stamp Convex deploy time",
+    "Deploy Convex",
+    "Restore external skill rollouts",
+  ]);
+  let succeeded = true;
+  for (const step of workflow.jobs["deploy-production"].steps) {
+    if (!lifecycle.has(step.name)) continue;
+    // Model the default Actions success gate; restoration must keep its always() gate.
+    if (!succeeded && !step.if?.includes("always()")) continue;
+    const result = await run(
+      "/bin/bash",
+      [
+        "-e",
+        "-o",
+        "pipefail",
+        "-c",
+        step.run.replaceAll("${{ inputs.allow_deleting_large_indexes }}", "false"),
+      ],
+      {
+        ...f.env,
+        GITHUB_SHA: "a".repeat(40),
+        SKILLS_SH_RESTORE_MODE: "production",
+        GITHUB_SKILL_SYNC_RESTORE_MODE: "test",
+      },
+    );
+    if (result.code !== 0) succeeded = false;
+  }
+  return { succeeded, calls: await f.calls() };
+}
+
 describe("release Convex env writes", () => {
+  it("preserves the previous build identity when the code push fails", async () => {
+    const result = await deployBackend(17);
+    expect(result.succeeded).toBe(false);
+    expect(result.calls).toContainEqual(["deploy", "run", "convex:deploy"]);
+    expect(
+      result.calls.filter((args) => ["APP_BUILD_SHA", "APP_DEPLOYED_AT"].includes(args[3])),
+    ).toEqual([]);
+  });
+
+  it("stamps the build identity only after a successful code push", async () => {
+    const result = await deployBackend(0);
+    expect(result.succeeded).toBe(true);
+    const push = result.calls.findIndex((args) => args[0] === "deploy");
+    for (const name of ["APP_BUILD_SHA", "APP_DEPLOYED_AT"]) {
+      expect(result.calls.findIndex((args) => args[3] === name)).toBeGreaterThan(push);
+    }
+    expect(result.calls).toContainEqual([
+      "convex",
+      "env",
+      "set",
+      "APP_BUILD_SHA",
+      "a".repeat(40),
+      "--prod",
+    ]);
+    expect(result.calls).toContainEqual([
+      "convex",
+      "env",
+      "set",
+      "APP_DEPLOYED_AT",
+      expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
+      "--prod",
+    ]);
+  });
+
+  it("restores both paused rollout modes even when the code push fails", async () => {
+    const result = await deployBackend(17);
+    expect(result.succeeded).toBe(false);
+    for (const [name, mode] of [
+      ["CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "production"],
+      ["CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "test"],
+    ]) {
+      const writes = result.calls.filter((args) => args[3] === name);
+      expect(writes.map((args) => args[4])).toEqual(["off", mode]);
+    }
+  });
+
   it("recovers from the captured rejection with the same argv and bounded exponential backoff", async () => {
     const f = await fixture([
       ...Array.from({ length: 4 }, () => ({ code: 1, stderr: capturedError })),
