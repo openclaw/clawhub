@@ -30,7 +30,8 @@ dashboard nudge. Duplicate API/replacement/date entries collapse; distinct dates
 remain distinct. These entries do not contribute to the dashboard warning count
 or alarming validation presentation. Missing metadata and actual errors keep the
 existing behavior. In particular, an error, breakage, or P0 finding cannot become
-an informational retirement notice, and the public incompatibility alert is unchanged.
+an informational retirement notice. Plugin pages do not show a blanket
+incompatibility alert; manager validation details retain the underlying findings.
 
 Before and on the final compatibility day (UTC), the notice says the API keeps
 working until that date. Afterward it states the recorded retirement date without

@@ -1342,21 +1342,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         skills={pluginManifestSummary.bundledSkills}
       />
     ) : null;
-  const incompatibilityAlert = validationSummaryUnavailable ? (
+  const validationAvailabilityAlert = validationSummaryUnavailable ? (
     <Alert variant="warn" className="plugin-validation-alert">
       <AlertTriangle size={16} aria-hidden="true" />
       <AlertDescription>
         Compatibility details are temporarily unavailable. Please try again later.
-      </AlertDescription>
-    </Alert>
-  ) : validationSummary &&
-    validationSummary.errorCount > 0 &&
-    validationSummary.incompatibleAfterOpenClawVersion ? (
-    <Alert variant="destructive" className="plugin-validation-alert">
-      <AlertTriangle size={16} aria-hidden="true" />
-      <AlertDescription>
-        This plugin is incompatible with OpenClaw versions greater than{" "}
-        {validationSummary.incompatibleAfterOpenClawVersion}.
       </AlertDescription>
     </Alert>
   ) : null;
@@ -1838,7 +1828,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
             >
               {validationPanel}
               <div className="plugin-install-stack detail-mobile-install">
-                {incompatibilityAlert}
+                {validationAvailabilityAlert}
                 <PluginApiRetirementNotice
                   id="api-updates"
                   retirements={validationSummary?.apiRetirements ?? []}
