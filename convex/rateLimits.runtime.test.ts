@@ -3,7 +3,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { afterEach, expect, it, vi } from "vitest";
-import { internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -71,4 +71,56 @@ it("rolls back quota when a parent transaction aborts after a combined check", a
     ok: false,
     retryAfter: 20_000,
   });
+});
+
+it("consumes batched counts in one write and exposes exhaustion to read-only checks", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+  const t = convexTest(schema, modules);
+  registerRateLimiter(t);
+  const request = {
+    name: "batched-proof",
+    key: "ip:203.0.113.79:read",
+    config: { kind: "fixed window", rate: 40, period: 60_000, start: 0, shards: 1 },
+  } as const;
+  for (let i = 0; i < 10; i++) {
+    expect(
+      await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, {
+        ...request,
+        count: 4,
+      }),
+    ).toEqual({ ok: true });
+  }
+  expect(
+    await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, { ...request, count: 4 }),
+  ).toMatchObject({ ok: false });
+  const peek = await t.run(async (ctx) =>
+    ctx.runQuery(components.rateLimiter.lib.checkRateLimit, {
+      name: request.name,
+      key: request.key,
+      config: request.config,
+    }),
+  );
+  expect(peek).toMatchObject({ ok: false });
+});
+
+it("never exceeds the production read bucket with batched counts", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+  const t = convexTest(schema, modules);
+  registerRateLimiter(t);
+  const request = {
+    name: "readIp",
+    key: "ip:203.0.113.80:read",
+    config: { kind: "fixed window", rate: 3000, period: 60_000, start: 0, shards: 32 },
+  } as const;
+  let consumed = 0;
+  for (let i = 0; i < 850; i++) {
+    const status = await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, {
+      ...request,
+      count: 4,
+    });
+    if (status.ok) consumed += 4;
+  }
+  // Shard fragmentation can strand less than one batch per shard.
+  expect(consumed).toBeLessThanOrEqual(3000);
+  expect(consumed).toBeGreaterThanOrEqual(3000 - 4 * 32);
 });

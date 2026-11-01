@@ -859,3 +859,133 @@ describe("RPC rollout guard", () => {
     },
   );
 });
+
+describe("batched quota accounting", () => {
+  function makeBatchedCtx(options: { bucketOpen?: boolean } = {}) {
+    const bucketOpen = options.bucketOpen ?? true;
+    const consumed: number[] = [];
+    const runQuery = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
+      if ("tokenHash" in args) return null;
+      if ("name" in args && "config" in args) {
+        return bucketOpen ? { ok: true } : { ok: false, retryAfter: 5_000 };
+      }
+      throw new Error(`Unexpected runQuery args: ${JSON.stringify(args)}`);
+    });
+    const runMutation = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && "key" in args && !("config" in args)) {
+        return { action: "retained", expiresAt: Date.now() + 86_400_000 };
+      }
+      if (!("config" in args))
+        throw new Error(`Unexpected runMutation args: ${JSON.stringify(args)}`);
+      consumed.push(typeof args.count === "number" ? args.count : 1);
+      return bucketOpen ? { ok: true } : { ok: false, retryAfter: 5_000 };
+    });
+    const ctx = { runQuery, runMutation } as unknown as Parameters<typeof applyRateLimit>[0];
+    return { ctx, runQuery, runMutation, consumed };
+  }
+
+  beforeEach(() => {
+    delete process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING;
+    vi.mocked(getVerifiedClientIp).mockResolvedValue("203.0.113.1");
+  });
+  afterEach(() => {
+    process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING = "off";
+    vi.mocked(getVerifiedClientIp).mockResolvedValue(null);
+    vi.restoreAllMocks();
+  });
+
+  it("records one batched write per four read requests with unchanged expected consumption", async () => {
+    let call = 0;
+    vi.spyOn(Math, "random").mockImplementation(() => (call++ % 4) / 4);
+    const { ctx, runMutation, runQuery, consumed } = makeBatchedCtx();
+    for (let i = 0; i < 800; i++) {
+      const result = await applyRateLimit(
+        ctx,
+        new Request("https://example.com/api/v1/skills"),
+        "read",
+      );
+      expect(result.ok).toBe(true);
+    }
+    expect(consumed).toHaveLength(200);
+    expect(consumed.every((count) => count === 4)).toBe(true);
+    expect(consumed.reduce((sum, count) => sum + count, 0)).toBe(800);
+    // Metadata is refreshed only alongside committed consumption.
+    expect(runMutation.mock.calls.length).toBe(400);
+    expect(componentRateLimitCalls(runMutation)[0][1]).toMatchObject({
+      name: "readIp",
+      key: "ip:203.0.113.1:read",
+      count: 4,
+    });
+    const peeks = runQuery.mock.calls.filter(([, args]) => "config" in (args as object));
+    expect(peeks).toHaveLength(600);
+    expect(peeks[0][1]).toEqual({
+      name: "readIp",
+      key: "ip:203.0.113.1:read",
+      config: { kind: "fixed window", rate: 3000, period: 60_000, start: 0, shards: 32 },
+    });
+  });
+
+  it("denies a request from an exhausted bucket without consuming quota", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const { ctx, runMutation, consumed } = makeBatchedCtx({ bucketOpen: false });
+    const result = await applyRateLimit(
+      ctx,
+      new Request("https://example.com/api/v1/skills"),
+      "read",
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(429);
+    expect(consumed).toEqual([]);
+    // Denied traffic keeps retention metadata fresh (spec invariant).
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation.mock.calls[0][1]).toMatchObject({
+      name: "readIp",
+      key: "ip:203.0.113.1:read",
+      ttlMs: 86_400_000,
+    });
+  });
+
+  it("denies a sampled request when the batched consumption does not fit", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const { ctx, consumed } = makeBatchedCtx({ bucketOpen: false });
+    const result = await applyRateLimit(
+      ctx,
+      new Request("https://example.com/api/v1/download"),
+      "download",
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(429);
+    expect(consumed).toEqual([4]);
+  });
+
+  it.each(["write", "export", "trustedPublish"] as const)(
+    "keeps exact per-request accounting for %s",
+    async (kind) => {
+      vi.spyOn(Math, "random").mockReturnValue(0.9);
+      const { ctx, runQuery, consumed } = makeBatchedCtx();
+      const result = await applyRateLimit(ctx, new Request("https://example.com/api/v1/x"), kind);
+      expect(result.ok).toBe(true);
+      expect(consumed).toEqual([1]);
+      expect(
+        componentRateLimitCalls(
+          (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation,
+        )[0][1],
+      ).not.toHaveProperty("count");
+      expect(runQuery.mock.calls.filter(([, args]) => "config" in (args as object))).toHaveLength(
+        0,
+      );
+    },
+  );
+
+  it("restores exact accounting when batching is switched off", async () => {
+    process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING = "off";
+    vi.spyOn(Math, "random").mockReturnValue(0.9);
+    const { ctx, consumed } = makeBatchedCtx();
+    for (let i = 0; i < 3; i++) {
+      await applyRateLimit(ctx, new Request("https://example.com/api/v1/skills"), "read");
+    }
+    expect(consumed).toEqual([1, 1, 1]);
+  });
+});

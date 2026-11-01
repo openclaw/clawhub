@@ -51,6 +51,29 @@ sharded buckets, successful HTTP responses must not synthesize a global
 `RateLimit-Remaining` value. Denied responses can still return an exact
 remaining value of `0`.
 
+## Batched accounting for high-volume buckets
+
+Every consumed request used to be one committed quota write. On 2026-11-01 that
+was about 86% of all committed write transactions in production while Convex
+write admission (`CommitterFull`) was saturated, so quota accounting was
+competing with deploys, scanner acknowledgements and publication writes.
+
+The `read` and `download` buckets therefore account in batches of four: one
+request in four (chosen at random) consumes a count of four in one committed
+write and refreshes retention metadata; every other request performs a
+read-only component check and is denied when the sampled shards are exhausted.
+Expected consumption equals the request count, limits are never exceeded, and
+an exhausted bucket still denies every request. The trade-off is granularity:
+with 32 shards, batched consumption can strand up to one batch per shard, so a
+client at the very top of the limit may be denied a few percent early
+(measured on the real component: total admitted about 2,944 of 3,000 versus
+about 2,998 with exact accounting). Denied read-only checks also refresh
+retention metadata, preserving the cleanup invariant above.
+
+`write`, `export` and `trustedPublish` stay exactly accounted because their
+limits are low. Set `CLAWHUB_HTTP_RATE_LIMIT_BATCHING=off` to restore exact
+per-request accounting for every bucket.
+
 ## Guarded RPC comparison
 
 `CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE` defaults to the existing separate metadata
