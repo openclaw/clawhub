@@ -278,6 +278,23 @@ function anonymousEdgeResponse(request: Request): ApplyRateLimitResult {
   };
 }
 
+// The component rejects any single request larger than
+// capacity / (shards / 2); a misconfigured batch would turn every sampled
+// request into a 500, so fail at module load instead.
+for (const [kind, batch] of Object.entries(HTTP_RATE_LIMIT_BATCHED_KINDS) as [
+  RateLimitKind,
+  number,
+][]) {
+  for (const subject of ["ip", "key", "adminKey"] as const) {
+    const config = HTTP_RATE_LIMIT_CONFIGS[getHttpRateLimitName(kind, subject)];
+    const shards = config.shards ?? 1;
+    const maxPerRequest = config.rate / (shards < 3 ? 1 : shards / 2);
+    if (batch > maxPerRequest) {
+      throw new Error(`Rate limit batch ${batch} exceeds ${kind}/${subject} per-request maximum`);
+    }
+  }
+}
+
 export function getRateLimitBatchSize(kind: RateLimitKind): number {
   const mode = process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING?.trim().toLowerCase();
   if (mode === "off") return 1;
@@ -296,7 +313,7 @@ async function checkRateLimit(
   try {
     const status =
       batchSize > 1 && Math.random() * batchSize >= 1
-        ? await peekRateLimit(ctx, { name, key, now })
+        ? await peekRateLimit(ctx, { name, key, now, count: batchSize })
         : await consumeRateLimitWithMetadata(
             ctx,
             { name, key, now, count: batchSize },
@@ -330,13 +347,17 @@ async function checkRateLimit(
 
 async function peekRateLimit(
   ctx: ActionCtx,
-  args: { name: HttpRateLimitName; key: string; now: number },
+  args: { name: HttpRateLimitName; key: string; now: number; count: number },
 ): Promise<{ ok: true; retryAfter?: number } | { ok: false; retryAfter: number }> {
-  // Read-only: an exhausted bucket denies without adding a quota write.
+  // Read-only: an exhausted bucket denies without adding a quota write. The
+  // check must ask for the same count a sampled write consumes; a one-token
+  // check would keep passing on shard remainders that can no longer fit a
+  // batch, admitting unbounded traffic past the limit.
   const status = await ctx.runQuery(components.rateLimiter.lib.checkRateLimit, {
     name: args.name,
     key: args.key,
     config: HTTP_RATE_LIMIT_CONFIGS[args.name],
+    count: args.count,
   });
   // Denied traffic still refreshes retention metadata so cleanup cannot reset
   // a bucket that is actively being limited. The refresh rarely writes.

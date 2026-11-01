@@ -922,6 +922,7 @@ describe("batched quota accounting", () => {
       name: "readIp",
       key: "ip:203.0.113.1:read",
       config: { kind: "fixed window", rate: 3000, period: 60_000, start: 0, shards: 32 },
+      count: 4,
     });
   });
 

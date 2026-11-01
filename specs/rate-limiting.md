@@ -61,14 +61,24 @@ competing with deploys, scanner acknowledgements and publication writes.
 The `read` and `download` buckets therefore account in batches of four: one
 request in four (chosen at random) consumes a count of four in one committed
 write and refreshes retention metadata; every other request performs a
-read-only component check and is denied when the sampled shards are exhausted.
-Expected consumption equals the request count, limits are never exceeded, and
-an exhausted bucket still denies every request. The trade-off is granularity:
-with 32 shards, batched consumption can strand up to one batch per shard, so a
-client at the very top of the limit may be denied a few percent early
-(measured on the real component: total admitted about 2,944 of 3,000 versus
-about 2,998 with exact accounting). Denied read-only checks also refresh
-retention metadata, preserving the cleanup invariant above.
+read-only component check for the same count of four and is denied when the
+sampled shards cannot fit it. The check must use the batch count: with sharded
+buckets, every shard can end at a remainder smaller than a batch (for example
+1.75 of `readIp`'s 93.75 per shard), so a one-token check would keep admitting
+traffic indefinitely after batched writes are denied.
+
+Expected consumption equals the request count, committed consumption never
+exceeds the limit, and admitted traffic is approximately the limit (random
+sampling adds a small variance; a deterministic one-in-four replay against the
+real component admits at most the limit at three times the load). Shard
+fragmentation can strand up to one batch per shard, so a client at the very top
+of the limit may be denied a few percent early (measured about 2,944 of 3,000
+for `readIp`, against about 2,998 with exact accounting). Read-only checks are
+Convex queries and may be served from the query cache; a cached denial can
+outlive a window rollover until a sampled write touches its shards, which fails
+closed. Denied read-only checks refresh retention metadata, preserving the
+cleanup invariant above. A module-load guard rejects any batch larger than the
+component's per-request maximum for a batched bucket.
 
 `write`, `export` and `trustedPublish` stay exactly accounted because their
 limits are low. Set `CLAWHUB_HTTP_RATE_LIMIT_BATCHING=off` to restore exact
