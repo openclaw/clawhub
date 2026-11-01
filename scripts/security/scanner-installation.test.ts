@@ -111,13 +111,17 @@ describe("reviewed ClawScan installation", () => {
             "",
           );
           await writeFile(join(runtime, "tests/test_skillspector_fragment_quote_ownership.py"), "");
+          await writeFile(
+            join(runtime, "tests/test_skillspector_javascript_parenthesized_capabilities.py"),
+            "",
+          );
         }
         const fake = [
           "#!/bin/sh",
           'echo "$(basename "$0") $*" >> "$COMMAND_LOG"',
           'case "$(basename "$0")" in',
           ' git) if [ "${3:-}" = rev-parse ]; then case "$2" in */clawscan) echo "$CLAWSCAN_PIN";; *) echo "$SCANNER_PIN";; esac; elif [ "${3:-}" = apply ] && [ "${4:-}" != --check ] && [ "$HAS_SHELL_PARSER" = 1 ]; then case "$2" in */skillspector-source.*) mkdir -p "$2/src/skillspector"; : > "$2/src/skillspector/shell_source.py";; esac; fi;;',
-          ' python) if [ "${1:-}" = -c ]; then printf "%s\\n" "$SELECTED_PYTHON"; elif [ "${1:-}" = -m ] && [ "${2:-}" = venv ]; then mkdir -p "$3/bin"; cp "$0" "$3/bin/python"; cp "$0" "$3/bin/aig-skill-scan"; elif [ "${FAIL_QUOTE_TESTS:-0}" = 1 ]; then case "$*" in *test_skillspector_destructive_quoted_operand_boundaries.py*) exit 79;; esac; fi;;',
+          ' python) if [ "${1:-}" = -c ]; then printf "%s\\n" "$SELECTED_PYTHON"; elif [ "${1:-}" = -m ] && [ "${2:-}" = venv ]; then mkdir -p "$3/bin"; cp "$0" "$3/bin/python"; cp "$0" "$3/bin/aig-skill-scan"; elif [ "${FAIL_QUOTE_TESTS:-0}" = 1 ]; then case "$*" in *test_skillspector_destructive_quoted_operand_boundaries.py*) exit 79;; esac; elif [ "${FAIL_NATIVE_CALLEE_TESTS:-0}" = 1 ]; then case "$*" in *test_skillspector_javascript_parenthesized_capabilities.py*) exit 78;; esac; fi;;',
           ' uv) if [ "${1:-}" = sync ]; then for last; do :; done; mkdir -p "$last/.venv/bin"; cp "$0" "$last/.venv/bin/python"; cp "$0" "$last/.venv/bin/skillspector"; fi;;',
           ' go) mkdir -p "$GOBIN"; cp "$0" "$GOBIN/shfmt";;',
           ' shfmt) printf "%s\\n" "${SHFMT_REPORTED_VERSION:-v3.14.1}";;',
@@ -166,6 +170,11 @@ describe("reviewed ClawScan installation", () => {
           expect(commands).toContain("-m pytest -q " + quoteTests);
           expect(commands).toContain(
             runtime + "/tests/test_skillspector_fragment_quote_ownership.py",
+          );
+          expect(commands).toContain(
+            "-m pytest -q " +
+              runtime +
+              "/tests/test_skillspector_javascript_parenthesized_capabilities.py",
           );
         } else {
           expect(commands).not.toContain(
@@ -225,6 +234,12 @@ describe("reviewed ClawScan installation", () => {
           }),
         ).rejects.toMatchObject({ code: 79 });
         expect(await readFile(join(root, "github-path"), "utf8")).toBe(paths);
+        await expect(
+          run("sh", [join(scriptDir, "install.sh"), "skillspector"], {
+            env: { ...retryEnv, FAIL_NATIVE_CALLEE_TESTS: "1" },
+          }),
+        ).rejects.toMatchObject({ code: 78 });
+        expect(await readFile(join(root, "github-path"), "utf8")).toBe(paths);
         for (const invalidPin of ["", "latest", "v3.14.1\nARG SHFMT_VERSION=v3.14.1"]) {
           await writeFile(
             join(runtime, "Dockerfile"),
@@ -234,7 +249,7 @@ describe("reviewed ClawScan installation", () => {
             run("sh", [join(scriptDir, "install.sh"), "skillspector"], { env: retryEnv }),
           ).rejects.toThrow();
         }
-        expect((await readFile(log, "utf8")).match(/go install /g)).toHaveLength(2);
+        expect((await readFile(log, "utf8")).match(/go install /g)).toHaveLength(3);
         await writeFile(
           join(runtime, "Dockerfile"),
           "ARG SHFMT_VERSION=v3.14.1\nARG SKILLSPECTOR_REF=" + scannerPin + "\n",
