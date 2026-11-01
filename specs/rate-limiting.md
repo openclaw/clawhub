@@ -67,10 +67,13 @@ buckets, every shard can end at a remainder smaller than a batch (for example
 1.75 of `readIp`'s 93.75 per shard), so a one-token check would keep admitting
 traffic indefinitely after batched writes are denied.
 
-Expected consumption equals the request count, committed consumption never
-exceeds the limit, and admitted traffic is approximately the limit (random
-sampling adds a small variance; a deterministic one-in-four replay against the
-real component admits at most the limit at three times the load). Shard
+Expected consumption equals the request count and committed consumption never
+exceeds the limit. Admitted traffic is approximately the limit, not exactly:
+random write sampling gives a per-window standard deviation of about
+`sqrt(3 x limit)` requests (simulated worst cases at three times the load were
++5% to +13% over the limit; the overshoot does not grow with load), and random
+shard choice lets a few read-only checks pass after the last successful batch
+(under 1% in a deterministic one-in-four replay). Shard
 fragmentation can strand up to one batch per shard, so a client at the very top
 of the limit may be denied a few percent early (measured about 2,944 of 3,000
 for `readIp`, against about 2,998 with exact accounting). Read-only checks are

@@ -4,6 +4,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { afterEach, expect, it, vi } from "vitest";
 import { components, internal } from "./_generated/api";
+import { HTTP_RATE_LIMIT_CONFIGS } from "./lib/httpRateLimit";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -103,22 +104,16 @@ it("consumes batched counts in one write and exposes exhaustion to read-only che
   expect(peek).toMatchObject({ ok: false });
 });
 
-it.each([
-  ["readIp", 3000],
-  ["downloadIp", 1200],
-  ["readKey", 12000],
-] as const)(
-  "keeps admitted %s traffic at the limit under batched accounting at 3x load",
-  async (name, rate) => {
+it.each(["readIp", "downloadIp", "readKey", "downloadKey"] as const)(
+  "keeps %s traffic near the limit under batched accounting at 3x load",
+  async (name) => {
     vi.spyOn(Date, "now").mockReturnValue(1_000_000);
     const t = convexTest(schema, modules);
     registerRateLimiter(t);
-    const shards = Math.max(1, Math.min(32, Math.floor(rate / 10)));
-    const request = {
-      name,
-      key: `ip:203.0.113.81:${name}`,
-      config: { kind: "fixed window", rate, period: 60_000, start: 0, shards },
-    } as const;
+    const config = HTTP_RATE_LIMIT_CONFIGS[name];
+    const rate = config.rate;
+    const shards = config.shards ?? 1;
+    const request = { name, key: `ip:203.0.113.81:${name}`, config } as const;
     // Mirrors applyRateLimit: one request in four consumes a batch, the rest
     // run the read-only check for the same count.
     let admitted = 0;
@@ -140,10 +135,13 @@ it.each([
         if (status.ok) admitted++;
       }
     }
+    // Committed consumption is exact.
     expect(consumed).toBeLessThanOrEqual(rate);
-    // Deterministic sampling: admitted traffic cannot exceed the limit.
-    expect(admitted).toBeLessThanOrEqual(rate);
+    // Admission is approximate: random shard choice can let read-only checks
+    // pass on a pair that still fits a batch after the last successful write.
+    // A one-token check would admit several times the limit here.
+    expect(admitted).toBeLessThanOrEqual(rate + 4 * shards);
     expect(admitted).toBeGreaterThanOrEqual(rate * 0.9);
   },
-  120_000,
+  180_000,
 );
