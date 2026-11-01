@@ -42,6 +42,9 @@ const MAX_ARCHIVE_MANIFEST_BYTES = 16 * 1024 * 1024;
 const SKILL_EXPORT_STORAGE_PREFETCH = 8;
 const ARCHIVE_FILENAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,499}\.zip$/;
 const ARCHIVE_METRIC_FETCH_TIMEOUT_MS = 1_500;
+const PACKAGE_METADATA_PROXY_ATTEMPTS = 2;
+const PACKAGE_METADATA_PROXY_ATTEMPT_TIMEOUT_MS = 4_000;
+const PACKAGE_METADATA_PROXY_RETRY_DELAY_MS = 1_000;
 const ARCHIVE_REPRESENTATION_HEADERS = [
   "accept-ranges",
   "content-digest",
@@ -134,6 +137,46 @@ export function buildConvexProxyTarget(pathAndQuery: string, env: ProxyEnv) {
   return targetUrl.toString();
 }
 
+export function isRetryablePackageMetadataRead(method: string, pathname: string) {
+  if (method !== "GET") return false;
+  const prefix = "/api/v1/packages/";
+  if (!pathname.startsWith(prefix)) return false;
+  let segments: string[];
+  try {
+    segments = pathname
+      .slice(prefix.length)
+      .split("/")
+      .filter(Boolean)
+      .map((segment) => decodeURIComponent(segment));
+  } catch {
+    return false;
+  }
+  if (segments.length === 1) {
+    const packageName = segments[0]!;
+    if (packageName.startsWith("@")) {
+      return /^@[^/]+\/[^/]+$/.test(packageName);
+    }
+    return (
+      !packageName.includes("/") &&
+      ![
+        "-",
+        "appeals",
+        "migrations",
+        "moderation",
+        "reports",
+        "search",
+        "validation-report",
+      ].includes(packageName)
+    );
+  }
+  return (
+    segments.length === 2 &&
+    /^@[^/]+$/.test(segments[0]!) &&
+    segments[1]!.length > 0 &&
+    !segments[1]!.includes("/")
+  );
+}
+
 export async function proxyConvexRequest(
   event: H3Event,
   env: ProxyEnv = resolveConvexProxyEnv(process.env),
@@ -188,16 +231,15 @@ export async function proxyConvexRequest(
         event.req.headers.get("x-vercel-forwarded-for") ?? event.req.headers.get("x-forwarded-for")
       )?.trim()
     : undefined;
-  const proxied = await proxyRequest(event, target, {
-    fetchOptions: {
-      headers: {
-        [ARCHIVE_REQUEST_IDENTITY_HEADER]: archiveRequestToken ?? "",
-        [STAGING_EDGE_SECRET_HEADER]: stagingEdgeSecret ?? "",
-        [VERIFIED_CLIENT_IP_HEADER]: clientIp ?? "",
-        ...(isArchiveRequest ? { [ARCHIVE_MANIFEST_REQUEST_HEADER]: "v1" } : {}),
-      },
-    },
-  });
+  const proxyHeaders = {
+    [ARCHIVE_REQUEST_IDENTITY_HEADER]: archiveRequestToken ?? "",
+    [STAGING_EDGE_SECRET_HEADER]: stagingEdgeSecret ?? "",
+    [VERIFIED_CLIENT_IP_HEADER]: clientIp ?? "",
+    ...(isArchiveRequest ? { [ARCHIVE_MANIFEST_REQUEST_HEADER]: "v1" } : {}),
+  };
+  const proxied = isRetryablePackageMetadataRead(event.req.method, requestUrl.pathname)
+    ? await proxyPackageMetadataRead(event, target, proxyHeaders)
+    : await proxyRequest(event, target, { fetchOptions: { headers: proxyHeaders } });
   // H3's HTTPResponse is not guaranteed to share Nitro's bundled class identity.
   // Normalize it before crossing that boundary or Nitro can stringify the wrapper.
   const response = new Response(proxied.body, {
@@ -224,6 +266,75 @@ export async function proxyConvexRequest(
   }
   addDeploymentProofHeader(response, env, target);
   return response;
+}
+
+async function proxyPackageMetadataRead(
+  event: H3Event,
+  target: string,
+  headers: Record<string, string>,
+) {
+  for (let attempt = 1; attempt <= PACKAGE_METADATA_PROXY_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const abortForClient = () => controller.abort(event.req.signal.reason);
+    if (event.req.signal.aborted) abortForClient();
+    else event.req.signal.addEventListener("abort", abortForClient, { once: true });
+    const timeout = setTimeout(
+      () => controller.abort(new Error("Package metadata backend timed out")),
+      PACKAGE_METADATA_PROXY_ATTEMPT_TIMEOUT_MS,
+    );
+
+    try {
+      const response = await proxyRequest(event, target, {
+        fetchOptions: { headers, signal: controller.signal },
+      });
+      const body = await new Response(response.body).arrayBuffer();
+      const buffered = new Response(body, {
+        status: response.status ?? 200,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+      const retryableWritePressure =
+        buffered.status === 503 && buffered.headers.get("Retry-After") === "1";
+      if (!retryableWritePressure || attempt === PACKAGE_METADATA_PROXY_ATTEMPTS) {
+        return buffered;
+      }
+      console.warn("convex_package_metadata_retry", { attempt, status: buffered.status });
+    } catch (error) {
+      if (event.req.signal.aborted) throw error;
+      const timedOut = controller.signal.aborted;
+      if (!timedOut || attempt === PACKAGE_METADATA_PROXY_ATTEMPTS) {
+        return new Response("Package metadata backend temporarily unavailable", {
+          status: timedOut ? 504 : 502,
+          headers: { "Cache-Control": "no-store", "Retry-After": "1" },
+        });
+      }
+      console.warn("convex_package_metadata_retry", { attempt, status: "timeout" });
+    } finally {
+      clearTimeout(timeout);
+      event.req.signal.removeEventListener("abort", abortForClient);
+    }
+
+    await waitForPackageMetadataRetry(event.req.signal);
+  }
+  throw new Error("Package metadata retry loop exhausted without a response");
+}
+
+async function waitForPackageMetadataRetry(signal: AbortSignal) {
+  await new Promise<void>((resolve, reject) => {
+    let timeout: ReturnType<typeof setTimeout>;
+    const abort = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+      reject(signal.reason);
+    };
+    const finish = () => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    };
+    timeout = setTimeout(finish, PACKAGE_METADATA_PROXY_RETRY_DELAY_MS);
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function isArchivePath(pathname: string) {

@@ -16,6 +16,7 @@ import { STAGING_EDGE_SECRET_HEADER } from "../convex/lib/clawhubVercelOidc";
 import {
   buildConvexProxyTarget,
   isConvexProxyMethodAllowed,
+  isRetryablePackageMetadataRead,
   proxyConvexRequest,
   resolveConvexStorageOrigin,
   resolveConvexProxyEnv,
@@ -143,6 +144,148 @@ describe("Convex HTTP proxy", () => {
         VITE_CONVEX_URL: "https://wry-manatee-359.convex.cloud",
       }),
     ).toBeNull();
+  });
+
+  it.each([
+    ["GET", "/api/v1/packages/demo", true],
+    ["GET", "/api/v1/packages/%40openclaw%2Fwhatsapp", true],
+    ["GET", "/api/v1/packages/@openclaw/whatsapp", true],
+    ["HEAD", "/api/v1/packages/demo", false],
+    ["GET", "/api/v1/packages/search", false],
+    ["GET", "/api/v1/packages/%73earch", false],
+    ["GET", "/api/v1/packages/%E0%A4%A", false],
+    ["GET", "/api/v1/packages/demo/versions", false],
+    ["GET", "/api/v1/packages/@openclaw/whatsapp/download", false],
+  ])("classifies retryable package metadata reads: %s %s", (method, pathname, expected) => {
+    expect(isRetryablePackageMetadataRead(method, pathname)).toBe(expected);
+  });
+
+  it("retries typed package metadata write pressure once after backoff", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("write pressure", { status: 503, headers: { "Retry-After": "1" } }),
+      )
+      .mockResolvedValueOnce(Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const event = mockEvent("https://clawhub.ai/api/v1/packages/%40openclaw%2Fwhatsapp");
+
+    const responsePromise = proxyConvexRequest(
+      event,
+      {
+        VERCEL_ENV: "production",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+    await vi.advanceTimersByTimeAsync(1_000);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(call[1]).toEqual(expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }
+    expect(console.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry an untyped package metadata 500", async () => {
+    const fetchMock = vi.fn(async () => new Response("internal error", { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const event = mockEvent("https://clawhub.ai/api/v1/packages/demo");
+
+    const response = await proxyConvexRequest(
+      event,
+      {
+        VERCEL_ENV: "production",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+
+    expect(response.status).toBe(500);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the final write-pressure response after one retry", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      async () => new Response("write pressure", { status: 503, headers: { "Retry-After": "1" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const event = mockEvent("https://clawhub.ai/api/v1/packages/demo");
+
+    const responsePromise = proxyConvexRequest(
+      event,
+      {
+        VERCEL_ENV: "production",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+    await vi.advanceTimersByTimeAsync(1_000);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(503);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry package subroutes", async () => {
+    const fetchMock = vi.fn(async () => new Response("write pressure", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const event = mockEvent("https://clawhub.ai/api/v1/packages/demo/versions");
+
+    const response = await proxyConvexRequest(
+      event,
+      {
+        VERCEL_ENV: "production",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+
+    expect(response.status).toBe(503);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds stalled package metadata bodies and returns a retryable timeout", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal;
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            signal?.addEventListener("abort", () => controller.error(signal.reason), {
+              once: true,
+            });
+          },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const event = mockEvent("https://clawhub.ai/api/v1/packages/demo");
+
+    const responsePromise = proxyConvexRequest(
+      event,
+      {
+        VERCEL_ENV: "production",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+    await vi.advanceTimersByTimeAsync(4_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(4_000);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(504);
+    expect(response.headers.get("Retry-After")).toBe("1");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("proxies reads and exposes the non-secret preview deployment name for proof", async () => {

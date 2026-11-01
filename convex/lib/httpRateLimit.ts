@@ -5,6 +5,7 @@ import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUser } from "./apiTokenAuth";
 import { ARCHIVE_REQUEST_IDENTITY_HEADER } from "./clawhubVercelOidc";
 import { corsHeaders, mergeHeaders } from "./httpHeaders";
+import { isConvexWritePressureError } from "./httpUtils";
 import { getVerifiedClientIp, VERIFIED_CLIENT_IP_HEADER } from "./verifiedClientIp";
 
 export const RATE_LIMITS = {
@@ -352,7 +353,8 @@ async function checkRateLimit(
       resetAt: getCurrentWindowResetAt(now),
     };
   } catch (error) {
-    if (!isRateLimitCounterWriteConflict(error)) throw error;
+    const batchedWritePressure = batchSize > 1 && isConvexWritePressureError(error);
+    if (!batchedWritePressure && !isRateLimitCounterWriteConflict(error)) throw error;
     return {
       allowed: false,
       remaining: 0,

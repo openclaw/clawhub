@@ -80,6 +80,12 @@ closed. Denied read-only checks refresh retention metadata, preserving the
 cleanup invariant above. A module-load guard rejects any batch larger than the
 component's per-request maximum for a batched bucket.
 
+If Convex refuses a sampled `read` or `download` batch with its typed
+`CommitterFullError`, the backend returns 503 with `Retry-After: 1` instead of
+leaking an internal 500. The public edge may retry only idempotent package
+metadata reads within a bounded deadline; the rejected transaction does not
+consume quota. Exactly-accounted buckets and other errors remain fail-closed.
+
 `write`, `export` and `trustedPublish` stay exactly accounted because their
 limits are low. Set `CLAWHUB_HTTP_RATE_LIMIT_BATCHING=off` to restore exact
 per-request accounting for every bucket, or to an integer from 2 to 16 to change

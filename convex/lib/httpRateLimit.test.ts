@@ -761,19 +761,25 @@ describe("RPC rollout guard", () => {
     vi.unstubAllEnvs();
   });
 
-  it.each([undefined, "on"])("keeps metadata capacity errors fatal in mode %s", async (mode) => {
-    vi.stubEnv("CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE", mode);
-    const capacityError = new Error("CommitterFullError: Too many writes");
-    const runMutation = vi.fn().mockRejectedValueOnce(capacityError);
-    await expect(
-      applyRateLimit(
-        { runMutation } as unknown as Parameters<typeof applyRateLimit>[0],
-        new Request("https://example.com/api/v1/plugins"),
-        "read",
-      ),
-    ).rejects.toBe(capacityError);
-    expect(runMutation).toHaveBeenCalledTimes(1);
-  });
+  it.each([undefined, "on"])(
+    "keeps exact-accounting capacity errors fatal in mode %s",
+    async (mode) => {
+      vi.stubEnv("CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE", mode);
+      vi.stubEnv("CLAWHUB_HTTP_RATE_LIMIT_BATCHING", "off");
+      const capacityError = new Error(
+        "CommitterFullError: Too many writes in a short period of time.",
+      );
+      const runMutation = vi.fn().mockRejectedValueOnce(capacityError);
+      await expect(
+        applyRateLimit(
+          { runMutation } as unknown as Parameters<typeof applyRateLimit>[0],
+          new Request("https://example.com/api/v1/plugins"),
+          "read",
+        ),
+      ).rejects.toBe(capacityError);
+      expect(runMutation).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("keeps the default metadata-conflict fallback separate from quota", async () => {
     vi.stubEnv("CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE", undefined);
@@ -999,6 +1005,39 @@ describe("batched quota accounting", () => {
     const { ctx, consumed } = makeBatchedCtx();
     await applyRateLimit(ctx, new Request("https://example.com/api/v1/skills"), "read");
     expect(consumed).toEqual([16]);
+  });
+
+  it("returns a retryable 503 when a sampled batch is refused by write admission", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { ctx, runMutation, runQuery } = makeBatchedCtx();
+    runMutation.mockRejectedValueOnce(
+      new Error("CommitterFullError: Too many writes in a short period of time."),
+    );
+
+    const result = await applyRateLimit(
+      ctx,
+      new Request("https://example.com/api/v1/skills"),
+      "read",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(503);
+    expect(result.response.headers.get("Retry-After")).toBe("1");
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("does not hide unrelated batched write failures", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const { ctx, runMutation } = makeBatchedCtx();
+    const unexpectedError = new Error("unexpected component failure");
+    runMutation.mockRejectedValueOnce(unexpectedError);
+
+    await expect(
+      applyRateLimit(ctx, new Request("https://example.com/api/v1/skills"), "read"),
+    ).rejects.toBe(unexpectedError);
   });
 
   it("restores exact accounting when batching is switched off", async () => {
