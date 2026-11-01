@@ -20,10 +20,14 @@ let publishResponse: Record<string, unknown>;
 
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../registry.js", () => registryMocks.moduleFactory());
-vi.mock("../../http.js", () => httpMocks.moduleFactory());
+vi.mock("../../http.js", async () => {
+  const actual = await vi.importActual<typeof import("../../http.js")>("../../http.js");
+  return { ...httpMocks.moduleFactory(), getHttpErrorDiagnostic: actual.getHttpErrorDiagnostic };
+});
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const { cmdPublish } = await import("./publish");
+const realHttp = await vi.importActual<typeof import("../../http.js")>("../../http.js");
 
 async function makeTmpWorkdir() {
   const root = await mkdtemp(join(tmpdir(), "clawhub-publish-"));
@@ -44,6 +48,154 @@ beforeEach(() => {
 });
 
 describe("cmdPublish", () => {
+  it.each([
+    { status: 400, body: "Version already exists", expected: "Version already exists" },
+    {
+      status: 400,
+      body: "Unknown publisher @missing-owner",
+      expected: "Unknown publisher @missing-owner",
+    },
+    {
+      status: 401,
+      body: "Unauthorized",
+      expected: "Authentication failed. Run `clawhub login` again.",
+    },
+  ])("preserves actionable API guidance on HTTP $status: $body", async (fixture) => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "validation-error");
+      await mkdir(folder);
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n");
+      const client = realHttp.createHttpClient({
+        runtime: "node",
+        configureDispatcher: false,
+        env: {},
+        fetchImpl: vi.fn(
+          async () => new Response(fixture.body, { status: fixture.status }),
+        ) as typeof fetch,
+      });
+      const failure = await client
+        .apiRequest("https://fixture.invalid", {
+          method: "POST",
+          path: "/api/v1/skills",
+          retryCount: 0,
+        })
+        .catch((error: unknown) => error);
+      const defaultRequest = httpMocks.apiRequest.getMockImplementation();
+      httpMocks.apiRequest.mockImplementation(async (registry, request, schema) => {
+        if ((request as { path?: string }).path === "/api/v1/skills") throw failure;
+        return await defaultRequest?.(registry, request, schema);
+      });
+      const caught = await cmdPublish(makeOpts(workdir), "validation-error", {}).catch(
+        (error: unknown) => error,
+      );
+      expect(caught).toBe(failure);
+      expect((caught as Error).message).toContain("Publish (files 1/1)");
+      expect((caught as Error).message).toContain(`HTTP ${fixture.status}`);
+      expect((caught as Error).message).toContain(fixture.expected);
+      expect(realHttp.getHttpErrorStatus(caught)).toBe(fixture.status);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  for (const mode of [{}, { quiet: true }, { json: true }]) {
+    it.each([
+      { phase: "ticket", status: 400, label: "Upload ticket (file 2/2)", uploads: 1 },
+      { phase: "body", status: 503, label: "File body (file 2/2)", uploads: 2 },
+      { phase: "publish", status: 500, label: "Publish (files 2/2)", uploads: 2 },
+    ])(`reports $phase failure safely with ${JSON.stringify(mode)}`, async (fixture) => {
+      const workdir = await makeTmpWorkdir();
+      try {
+        const folder = join(workdir, "diagnostics");
+        await mkdir(folder);
+        await writeFile(join(folder, "SKILL.md"), "# Skill\n");
+        await writeFile(join(folder, "extra.txt"), "file bytes");
+        const client = realHttp.createHttpClient({
+          runtime: "node",
+          configureDispatcher: false,
+          env: {},
+          random: () => 0,
+          fetchImpl: vi.fn(
+            async () =>
+              new Response("[Request ID: 0123456789abcdef] Request rejected", {
+                status: fixture.status,
+                headers: { "Retry-After": "53" },
+              }),
+          ) as typeof fetch,
+          setTimeoutImpl: ((callback: () => void, ms: number) => {
+            if (ms !== 15_000) callback();
+            return 1;
+          }) as unknown as typeof setTimeout,
+          clearTimeoutImpl: vi.fn(),
+        });
+        const failure = await client
+          .apiRequest("https://fixture.invalid", { method: "POST", path: "/x", retryCount: 0 })
+          .catch((error: unknown) => error);
+        const defaultRequest = httpMocks.apiRequest.getMockImplementation();
+        let tickets = 0;
+        httpMocks.apiRequest.mockImplementation(async (registry, request, schema) => {
+          const args = request as { path?: string };
+          if (args.path === "/api/v1/skills/-/upload-url") {
+            tickets += 1;
+            if (fixture.phase === "ticket" && tickets === 2) throw failure;
+          }
+          if (fixture.phase === "publish" && args.path === "/api/v1/skills") throw failure;
+          return await defaultRequest?.(registry, request, schema);
+        });
+        if (fixture.phase === "body") {
+          httpMocks.uploadBinary
+            .mockResolvedValueOnce({ storageId: "storage:1" })
+            .mockRejectedValueOnce(failure);
+        }
+
+        const caught = await cmdPublish(makeOpts(workdir), "diagnostics", mode).catch(
+          (error: unknown) => error,
+        );
+        expect(caught).toBe(failure);
+        expect(realHttp.getHttpErrorStatus(caught)).toBe(fixture.status);
+        expect((caught as Error).message).toBe(
+          `${fixture.label}: HTTP ${fixture.status} (Request ID: 0123456789abcdef): Request rejected (retry in 53s, reset in 53s)`,
+        );
+        expect(tickets).toBe(2);
+        expect(httpMocks.uploadBinary).toHaveBeenCalledTimes(fixture.uploads);
+        const publishes = httpMocks.apiRequest.mock.calls.filter(
+          (call) => (call[1] as { path?: string }).path === "/api/v1/skills",
+        );
+        expect(publishes).toHaveLength(fixture.phase === "publish" ? 1 : 0);
+        if (mode.quiet || mode.json) {
+          expect(uiMocks.spinner.fail).not.toHaveBeenCalled();
+        } else {
+          expect(uiMocks.spinner.fail).toHaveBeenCalledWith((caught as Error).message);
+        }
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("omits transport messages and causes from file-body failures", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "transport-failure");
+      await mkdir(folder);
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n");
+      httpMocks.uploadBinary.mockRejectedValueOnce(
+        new TypeError("fetch failed https://upload.invalid/private?token=secret", {
+          cause: new Error("Authorization: Bearer secret"),
+        }),
+      );
+      const caught = await cmdPublish(makeOpts(workdir), "transport-failure", {}).catch(
+        (error: unknown) => error,
+      );
+      expect((caught as Error).message).toBe("File body (file 1/1): Request failed");
+      expect((caught as Error).cause).toBeUndefined();
+      expect(httpMocks.uploadBinary).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("skips publishing when the local skill already matches ClawHub", async () => {
     const workdir = await makeTmpWorkdir();
     try {
