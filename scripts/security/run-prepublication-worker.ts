@@ -557,6 +557,43 @@ function diagnosticFingerprint(value: string | Buffer | null | undefined) {
   };
 }
 
+function completionDeliveryDiagnostic(error: unknown) {
+  let message: string | undefined;
+  let safeError = "";
+  try {
+    const rawMessage = error instanceof Error ? error.message : error;
+    message = typeof rawMessage === "string" ? rawMessage : undefined;
+    safeError = message && message.length <= 4_096 ? publicText(message, 4_096) : "";
+  } catch {
+    // A diagnostic must not replace the original completion failure.
+  }
+  const errorClass = /TooManyWrites|CommitterFullError|Too many writes in a short period/i.test(
+    safeError,
+  )
+    ? "capacity"
+    : /Publish attempt (?:check claim is not active|artifact fingerprint does not match scanned input|is already finalizing)/i.test(
+          safeError,
+        )
+      ? "claim"
+      : /\bUnauthorized\b/.test(safeError)
+        ? "authentication"
+        : /ArgumentValidationError|ReturnValidationError|Could not serialize|Unsupported type/.test(
+              safeError,
+            )
+          ? "validation"
+          : /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket hang up/i.test(safeError)
+            ? "transport"
+            : "other";
+  // Only retain a canonical Convex prefix, never a request-like string in artifact text.
+  const requestId =
+    safeError
+      .match(
+        /^(?:Error:\s*)?(?:\[CONVEX [A-Z]\([A-Za-z0-9_/:.-]+\)\]\s*)?\[Request ID:\s*([a-f0-9]{16})\](?:\s|$)/i,
+      )?.[1]
+      ?.toLowerCase() ?? null;
+  return { class: errorClass, requestId, ...diagnosticFingerprint(message) };
+}
+
 function nativeScannerDiagnostic(value: unknown) {
   const scanner = asRecord(value);
   const error = typeof scanner?.error === "string" ? scanner.error : undefined;
@@ -778,10 +815,11 @@ export async function processPrePublicationAttempt(
         "pre-publication attempt finalization retried",
       );
       return { completed: (result as { status?: string })?.status === "finalized", result };
-    } catch {
+    } catch (error) {
       logger.warn(
         {
           attemptId: attempt.attemptId,
+          completionError: completionDeliveryDiagnostic(error),
           event: "prepublication_attempt_finalization_retry_failed",
           kind: attempt.kind,
         },
@@ -914,6 +952,7 @@ export async function processPrePublicationAttempt(
       logger.error(
         {
           attemptId: attempt.attemptId,
+          completionError: completionDeliveryDiagnostic(error),
           durationMs: Date.now() - startedAt,
           event: "prepublication_attempt_secret_block_completion_failed",
           kind: attempt.kind,
@@ -926,6 +965,7 @@ export async function processPrePublicationAttempt(
       logger.warn(
         {
           attemptId: attempt.attemptId,
+          completionError: completionDeliveryDiagnostic(error),
           durationMs: Date.now() - startedAt,
           event: "prepublication_attempt_completion_failed",
           kind: attempt.kind,
@@ -941,10 +981,11 @@ export async function processPrePublicationAttempt(
     let result: unknown;
     try {
       result = await completeAttempt(client, token, attempt, failure, failure);
-    } catch {
+    } catch (completionError) {
       logger.warn(
         {
           attemptId: attempt.attemptId,
+          completionError: completionDeliveryDiagnostic(completionError),
           durationMs: Date.now() - startedAt,
           event: "prepublication_attempt_failure_record_failed",
           kind: attempt.kind,
