@@ -25,6 +25,17 @@
 
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
+## 0.25.0 - 2026-11-01
+
+### Compatibility
+
+- Experimental Claw packages are now Templates. Use `clawhub package explore --family template` and `clawhub package publish <artifact.tgz> --family template`; `--family claw` is rejected. Public scoped routes use `/<owner>/templates/<slug>` instead of `/<owner>/claws/<slug>`.
+- New packages use `openclaw.template` in `package.json`. `CLAW.md`, existing package/version identities and published artifact bytes remain unchanged.
+
+### Fixes
+
+- CLI: show the publishing step, file position, HTTP status and safe request ID when an upload fails, while preserving retry timing and existing error messages.
+
 ## 0.24.1 - 2026-10-28
 
 ### Fixes
