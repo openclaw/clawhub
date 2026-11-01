@@ -1,7 +1,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import semver from "semver";
-import { apiRequest, registryUrl, uploadBinary } from "../../http.js";
+import { apiRequest, getHttpErrorDiagnostic, registryUrl, uploadBinary } from "../../http.js";
 import {
   ApiRoutes,
   ApiUploadFileResponseSchema,
@@ -15,7 +15,7 @@ import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
-import { createCrabLoader, fail, formatError } from "../ui.js";
+import { createCrabLoader, fail, formatError, withTransportErrorContext } from "../ui.js";
 import { normalizeGitHubRepo } from "./github.js";
 
 const MAX_PUBLISH_FILE_BYTES = 10 * 1024 * 1024;
@@ -95,6 +95,7 @@ export async function cmdPublish(
   if (explicitVersion && !semver.valid(explicitVersion)) fail("--version must be valid semver");
 
   const spinner = options.json || options.quiet ? null : createCrabLoader(`Preparing ${slug}`);
+  let requestPhase: string | undefined;
   try {
     const filesOnDisk = await prepareSkillFilesForPublish(folder);
     if (filesOnDisk.length === 0) fail("No files found");
@@ -187,6 +188,7 @@ export async function cmdPublish(
       const hash = fileHashes.get(file.relPath);
       if (!hash) fail(`Unable to hash ${file.relPath}`);
       const contentType = file.contentType ?? "application/octet-stream";
+      requestPhase = `Upload ticket (file ${index}/${filesOnDisk.length})`;
       const { uploadUrl, uploadTicket } = await apiRequest(
         registry,
         {
@@ -202,6 +204,7 @@ export async function cmdPublish(
         },
         ApiV1SkillUploadUrlResponseSchema,
       );
+      requestPhase = `File body (file ${index}/${filesOnDisk.length})`;
       const { storageId } = await uploadBinary(
         {
           url: uploadUrl,
@@ -211,6 +214,7 @@ export async function cmdPublish(
         },
         ApiUploadFileResponseSchema,
       );
+      requestPhase = undefined;
       uploadedFiles.push({
         path: file.relPath,
         size: hash.size,
@@ -222,6 +226,7 @@ export async function cmdPublish(
     }
 
     if (spinner) spinner.text = `Publishing ${slug}@${version}`;
+    requestPhase = `Publish (files ${uploadedFiles.length}/${filesOnDisk.length})`;
     const result = await apiRequest(
       registry,
       {
@@ -247,6 +252,7 @@ export async function cmdPublish(
       },
       ApiV1PublishResponseSchema,
     );
+    requestPhase = undefined;
 
     const publicationStatus = result.publicationStatus;
     const publishResult = buildPublishResult({
@@ -281,6 +287,27 @@ export async function cmdPublish(
     writePublishJsonIfRequested(options.json, publishResult);
     return publishResult;
   } catch (error) {
+    if (requestPhase) {
+      const diagnostic = getHttpErrorDiagnostic(error);
+      const transportError = !diagnostic
+        ? withTransportErrorContext(error, requestPhase)
+        : undefined;
+      if (transportError) {
+        spinner?.fail(formatError(transportError));
+        throw transportError;
+      }
+      // Preserve existing HTTP guidance; only typed metadata supplies status/identity.
+      // Untyped transport errors can carry signed URLs or raw causes.
+      const requestError = diagnostic && error instanceof Error ? error : new Error();
+      const detail = diagnostic && error instanceof Error ? formatError(error) : undefined;
+      requestError.message = [
+        requestPhase,
+        diagnostic ?? "Request failed",
+        ...(detail && detail !== diagnostic ? [detail] : []),
+      ].join(": ");
+      spinner?.fail(requestError.message);
+      throw requestError;
+    }
     spinner?.fail(formatError(error));
     throw error;
   }
