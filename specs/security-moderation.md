@@ -482,6 +482,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - For tarball uploads, ClawHub stores the uploaded tarball, derives its
   artifact hashes and npm metadata, and derives package file metadata from the
   tarball contents.
+- A captured `CommitterFullError: Too many writes in a short period of time.`
+  rejection from the first inline ClawPack tarball `storage.store` is HTTP 503
+  only before publication dispatch and while the request owns no storage IDs.
+  The shared CLI keeps its existing bounded retry policy. Later stores, loose-file
+  uploads, staged tarballs, validation and publication failures keep their existing
+  classification and cleanup ownership. This does not guarantee recovery of a
+  stored blob after a lost storage response or action termination.
 - Experimental `family: template` publication requires one already-built npm-pack
   `.tgz` plus the publisher-computed canonical lowercase SHA-256. It must not
   accept source directories, GitHub checkout sources, extracted-file
