@@ -24,10 +24,18 @@ vi.mock("../../http.js", async () => {
   const actual = await vi.importActual<typeof import("../../http.js")>("../../http.js");
   return { ...httpMocks.moduleFactory(), getHttpErrorDiagnostic: actual.getHttpErrorDiagnostic };
 });
-vi.mock("../ui.js", () => uiMocks.moduleFactory());
+vi.mock("../ui.js", async () => {
+  const actual = await vi.importActual<typeof import("../ui.js")>("../ui.js");
+  return {
+    ...uiMocks.moduleFactory(),
+    formatError: actual.formatError,
+    withTransportErrorContext: actual.withTransportErrorContext,
+  };
+});
 
 const { cmdPublish } = await import("./publish");
 const realHttp = await vi.importActual<typeof import("../../http.js")>("../../http.js");
+const realUi = await vi.importActual<typeof import("../ui.js")>("../ui.js");
 
 async function makeTmpWorkdir() {
   const root = await mkdtemp(join(tmpdir(), "clawhub-publish-"));
@@ -48,6 +56,61 @@ beforeEach(() => {
 });
 
 describe("cmdPublish", () => {
+  for (const phase of ["ticket", "body", "publish"] as const) {
+    it.each([
+      { code: "ENOTFOUND", reason: "DNS lookup failed" },
+      { code: "ERR_TLS_CERT_ALTNAME_INVALID", reason: "TLS or certificate validation failed" },
+      { code: "ETIMEDOUT", reason: "the request timed out" },
+      { code: "PROXY_CONNECTION_FAILED", reason: "proxy connection failed" },
+      { code: "ECONNREFUSED", reason: "the registry was unreachable" },
+    ])(
+      `retains safe $code recovery guidance for ${phase} through the real formatter`,
+      async (fixture) => {
+        const workdir = await makeTmpWorkdir();
+        try {
+          const folder = join(workdir, "transport-guidance");
+          await mkdir(folder);
+          await writeFile(join(folder, "SKILL.md"), "# Skill\n");
+          const failure = new TypeError("fetch failed PRIVATE_TRANSPORT_DETAIL", {
+            cause: Object.assign(new Error("PRIVATE_CAUSE_DETAIL https://upload.invalid/private"), {
+              code: fixture.code,
+            }),
+          });
+          const defaultRequest = httpMocks.apiRequest.getMockImplementation();
+          httpMocks.apiRequest.mockImplementation(async (registry, request, schema) => {
+            const path = (request as { path?: string }).path;
+            if (
+              (phase === "ticket" && path === "/api/v1/skills/-/upload-url") ||
+              (phase === "publish" && path === "/api/v1/skills")
+            )
+              throw failure;
+            return await defaultRequest?.(registry, request, schema);
+          });
+          if (phase === "body") httpMocks.uploadBinary.mockRejectedValueOnce(failure);
+          const caught = await cmdPublish(makeOpts(workdir), "transport-guidance", {}).catch(
+            (error: unknown) => error,
+          );
+          const formatted = realUi.formatError(caught);
+          const label =
+            phase === "ticket"
+              ? "Upload ticket (file 1/1)"
+              : phase === "body"
+                ? "File body (file 1/1)"
+                : "Publish (files 1/1)";
+          expect(formatted).toContain(label);
+          expect(formatted).toContain(fixture.reason);
+          expect(formatted).toContain("Check the registry URL, network connection, proxy settings");
+          expect(formatted).not.toContain("PRIVATE_");
+          expect(formatted).not.toContain("upload.invalid");
+          expect((caught as Error).cause).toBeUndefined();
+          expect(uiMocks.spinner.fail).toHaveBeenCalledWith(formatted);
+        } finally {
+          await rm(workdir, { recursive: true, force: true });
+        }
+      },
+    );
+  }
+
   it.each([
     { status: 400, body: "Version already exists", expected: "Version already exists" },
     {
@@ -188,7 +251,9 @@ describe("cmdPublish", () => {
       const caught = await cmdPublish(makeOpts(workdir), "transport-failure", {}).catch(
         (error: unknown) => error,
       );
-      expect((caught as Error).message).toBe("File body (file 1/1): Request failed");
+      expect((caught as Error).message).toContain("File body (file 1/1): Network request failed.");
+      expect(realUi.formatError(caught)).not.toContain("upload.invalid");
+      expect(realUi.formatError(caught)).not.toContain("Bearer secret");
       expect((caught as Error).cause).toBeUndefined();
       expect(httpMocks.uploadBinary).toHaveBeenCalledTimes(1);
     } finally {

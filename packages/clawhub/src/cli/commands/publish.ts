@@ -15,7 +15,7 @@ import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
-import { createCrabLoader, fail, formatError } from "../ui.js";
+import { createCrabLoader, fail, formatError, withTransportErrorContext } from "../ui.js";
 import { normalizeGitHubRepo } from "./github.js";
 
 const MAX_PUBLISH_FILE_BYTES = 10 * 1024 * 1024;
@@ -289,6 +289,13 @@ export async function cmdPublish(
   } catch (error) {
     if (requestPhase) {
       const diagnostic = getHttpErrorDiagnostic(error);
+      const transportError = !diagnostic
+        ? withTransportErrorContext(error, requestPhase)
+        : undefined;
+      if (transportError) {
+        spinner?.fail(formatError(transportError));
+        throw transportError;
+      }
       // Preserve existing HTTP guidance; only typed metadata supplies status/identity.
       // Untyped transport errors can carry signed URLs or raw causes.
       const requestError = diagnostic && error instanceof Error ? error : new Error();
