@@ -295,10 +295,28 @@ for (const [kind, batch] of Object.entries(HTTP_RATE_LIMIT_BATCHED_KINDS) as [
   }
 }
 
+// Operators can raise the batch for high-volume buckets without a deploy
+// (`CLAWHUB_HTTP_RATE_LIMIT_BATCHING=<2-16>`), e.g. to shed quota writes while
+// write admission is saturated. A batch never exceeds the smallest per-shard
+// capacity of that kind, so every shard can still admit at least one batch.
+const MAX_HTTP_RATE_LIMIT_BATCH = 16;
+
+function maxBatchForKind(kind: RateLimitKind): number {
+  let max = MAX_HTTP_RATE_LIMIT_BATCH;
+  for (const subject of ["ip", "key", "adminKey"] as const) {
+    const config = HTTP_RATE_LIMIT_CONFIGS[getHttpRateLimitName(kind, subject)];
+    max = Math.min(max, Math.floor(config.rate / (config.shards ?? 1)));
+  }
+  return Math.max(1, max);
+}
+
 export function getRateLimitBatchSize(kind: RateLimitKind): number {
+  const defaultBatch = HTTP_RATE_LIMIT_BATCHED_KINDS[kind];
+  if (!defaultBatch) return 1;
   const mode = process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING?.trim().toLowerCase();
   if (mode === "off") return 1;
-  return HTTP_RATE_LIMIT_BATCHED_KINDS[kind] ?? 1;
+  const requested = mode && /^\d+$/.test(mode) ? Number(mode) : defaultBatch;
+  return Math.max(1, Math.min(requested, maxBatchForKind(kind)));
 }
 
 async function checkRateLimit(

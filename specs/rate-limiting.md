@@ -82,7 +82,12 @@ component's per-request maximum for a batched bucket.
 
 `write`, `export` and `trustedPublish` stay exactly accounted because their
 limits are low. Set `CLAWHUB_HTTP_RATE_LIMIT_BATCHING=off` to restore exact
-per-request accounting for every bucket.
+per-request accounting for every bucket, or to an integer from 2 to 16 to change
+the batch for `read` and `download` without a deploy. The batch is capped at the
+smallest per-shard capacity of the bucket kind, so every shard can still admit
+a batch. Larger batches shed more quota writes but strand more capacity per
+shard, so a client at the very top of a limit is denied earlier (up to one
+batch per shard); use large values only as a temporary write-pressure measure.
 
 ## Guarded RPC comparison
 

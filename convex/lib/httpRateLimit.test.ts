@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyRateLimit, getClientIp, RATE_LIMITS } from "./httpRateLimit";
+import { applyRateLimit, getClientIp, getRateLimitBatchSize, RATE_LIMITS } from "./httpRateLimit";
 import { getVerifiedClientIp } from "./verifiedClientIp";
 
 vi.mock("./verifiedClientIp", async (importOriginal) => ({
@@ -979,6 +979,27 @@ describe("batched quota accounting", () => {
       );
     },
   );
+
+  it.each([
+    ["16", "read", 16],
+    ["16", "download", 16],
+    ["64", "read", 16],
+    ["2", "read", 2],
+    ["0", "read", 1],
+    ["16", "write", 1],
+    ["garbage", "read", 4],
+  ] as const)("BATCHING=%s gives %s a batch of %i", (mode, kind, expected) => {
+    process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING = mode;
+    expect(getRateLimitBatchSize(kind)).toBe(expected);
+  });
+
+  it("consumes the configured batch for sampled requests", async () => {
+    process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING = "16";
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const { ctx, consumed } = makeBatchedCtx();
+    await applyRateLimit(ctx, new Request("https://example.com/api/v1/skills"), "read");
+    expect(consumed).toEqual([16]);
+  });
 
   it("restores exact accounting when batching is switched off", async () => {
     process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING = "off";
