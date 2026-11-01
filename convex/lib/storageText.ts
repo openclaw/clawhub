@@ -1,6 +1,8 @@
 import { decodeUtf8Text } from "clawhub-schema/textFiles";
 import type { Id } from "../_generated/dataModel";
 
+export const MAX_RAW_FILE_BYTES = 200 * 1024;
+
 export async function fetchText(
   ctx: { storage: { get: (id: Id<"_storage">) => Promise<Blob | null> } },
   storageId: Id<"_storage">,

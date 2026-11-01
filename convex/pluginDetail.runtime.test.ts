@@ -4,6 +4,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
+import { api } from "./_generated/api";
 import { MAX_RAW_FILE_BYTES } from "./httpApiV1/shared";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
@@ -81,6 +82,20 @@ async function fixture(family: "code-plugin" | "bundle-plugin" = "code-plugin") 
 }
 
 describe("plugin detail snapshot", () => {
+  it("returns the same package, selected release and README through the public page read", async () => {
+    const { t } = await fixture();
+    const response = await t.fetch(`${path}/detail`);
+    expect(response.status).toBe(200);
+    const { versions: _versions, security: _security, ...expected } = await response.json();
+
+    const page = await t.action(api.publicPluginDetail.getPage, { name: "@fixture/plugin" });
+
+    expect(page).toEqual(expected);
+    expect(page?.version?.version).toBe("12.0.0");
+    expect(page?.readme).toBe("# Plugin README");
+    expect(JSON.stringify(page)).not.toContain("storageId");
+  });
+
   it.each(["code-plugin", "bundle-plugin"] as const)(
     "matches the five existing responses for %s and keeps history bounded",
     async (family) => {
@@ -115,6 +130,7 @@ describe("plugin detail snapshot", () => {
     const { t, packageId, ownerHeaders } = await fixture();
     await t.run((ctx) => ctx.db.patch(packageId, { channel: "private" }));
     expect((await t.fetch(`${path}/detail`)).status).toBe(404);
+    expect(await t.action(api.publicPluginDetail.getPage, { name: "@fixture/plugin" })).toBeNull();
     expect((await t.fetch(`${path}/detail`, { headers: ownerHeaders })).status).toBe(200);
     await t.run((ctx) =>
       ctx.db.patch(packageId, { channel: "community", scanStatus: "malicious" }),
@@ -131,6 +147,7 @@ describe("plugin detail snapshot", () => {
       });
     });
     expect((await t.fetch(`${path}/detail`)).status).toBe(404);
+    expect(await t.action(api.publicPluginDetail.getPage, { name: "@fixture/plugin" })).toBeNull();
     expect((await t.fetch(`${path}/detail?version=1.0.0`)).status).toBe(404);
     const olderReadmePath = `${path}/file?path=README.md&preview=1&version=1.0.0`;
     expect((await t.fetch(olderReadmePath)).status).toBe(404);
@@ -181,6 +198,9 @@ describe("plugin detail snapshot", () => {
       const response = await t.fetch(`${path}/detail`);
       expect(response.status).toBe(state === "oversized" ? 413 : 200);
       if (response.ok) expect((await response.json()).readme).toBeNull();
+      const page = t.action(api.publicPluginDetail.getPage, { name: "@fixture/plugin" });
+      if (state === "oversized") await expect(page).rejects.toThrow("File too large");
+      else expect((await page)?.readme).toBeNull();
     },
   );
 
@@ -190,5 +210,11 @@ describe("plugin detail snapshot", () => {
     const response = await t.fetch(`${path}/detail`);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ version: null, security: null, readme: null });
+    expect(
+      await t.action(api.publicPluginDetail.getPage, { name: "@fixture/plugin" }),
+    ).toMatchObject({
+      version: null,
+      readme: null,
+    });
   });
 });

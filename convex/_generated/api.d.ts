@@ -135,6 +135,7 @@ import type * as lib_packageClawpackPublish from "../lib/packageClawpackPublish.
 import type * as lib_packageIcons from "../lib/packageIcons.js";
 import type * as lib_packagePageCursor from "../lib/packagePageCursor.js";
 import type * as lib_packagePublishRecovery from "../lib/packagePublishRecovery.js";
+import type * as lib_packageReadProjection from "../lib/packageReadProjection.js";
 import type * as lib_packageRecommendationRead from "../lib/packageRecommendationRead.js";
 import type * as lib_packageRegistry from "../lib/packageRegistry.js";
 import type * as lib_packageReleaseFamily from "../lib/packageReleaseFamily.js";
@@ -255,6 +256,7 @@ import type * as prepublicationObservability from "../prepublicationObservabilit
 import type * as promotions from "../promotions.js";
 import type * as promotionsFeed from "../promotionsFeed.js";
 import type * as publicPluginBrowse from "../publicPluginBrowse.js";
+import type * as publicPluginDetail from "../publicPluginDetail.js";
 import type * as publicPluginDiscovery from "../publicPluginDiscovery.js";
 import type * as publicPluginFamily from "../publicPluginFamily.js";
 import type * as publicSkillPage from "../publicSkillPage.js";
@@ -446,6 +448,7 @@ declare const fullApi: ApiFromModules<{
   "lib/packageIcons": typeof lib_packageIcons;
   "lib/packagePageCursor": typeof lib_packagePageCursor;
   "lib/packagePublishRecovery": typeof lib_packagePublishRecovery;
+  "lib/packageReadProjection": typeof lib_packageReadProjection;
   "lib/packageRecommendationRead": typeof lib_packageRecommendationRead;
   "lib/packageRegistry": typeof lib_packageRegistry;
   "lib/packageReleaseFamily": typeof lib_packageReleaseFamily;
@@ -566,6 +569,7 @@ declare const fullApi: ApiFromModules<{
   promotions: typeof promotions;
   promotionsFeed: typeof promotionsFeed;
   publicPluginBrowse: typeof publicPluginBrowse;
+  publicPluginDetail: typeof publicPluginDetail;
   publicPluginDiscovery: typeof publicPluginDiscovery;
   publicPluginFamily: typeof publicPluginFamily;
   publicSkillPage: typeof publicSkillPage;

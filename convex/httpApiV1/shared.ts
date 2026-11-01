@@ -16,7 +16,7 @@ import { isMacJunkPath } from "../lib/skills";
 import type { PublicSkillVersionSelection } from "../lib/skills/publicVersions";
 export { getPathSegments, parsePackagePathSegments } from "../lib/httpPathSegments";
 
-export const MAX_RAW_FILE_BYTES = 200 * 1024;
+export { MAX_RAW_FILE_BYTES } from "../lib/storageText";
 const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 
 const SAFE_TEXT_FILE_CSP =
