@@ -89,6 +89,13 @@ a batch. Larger batches shed more quota writes but strand more capacity per
 shard, so a client at the very top of a limit is denied earlier (up to one
 batch per shard); use large values only as a temporary write-pressure measure.
 
+`CLAWHUB_HTTP_RATE_LIMIT_BATCHING=unmetered` is an emergency switch for write
+saturation: `read` and `download` requests are not metered in Convex at all (no
+quota read or write). Identity verification, the verified-edge requirement for
+anonymous callers, and exact `write`, `export` and `trustedPublish` limits are
+unchanged. While it is set, abusive read traffic is limited only by upstream
+edge protection, so return to a batch value once write admission recovers.
+
 ## Guarded RPC comparison
 
 `CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE` defaults to the existing separate metadata
