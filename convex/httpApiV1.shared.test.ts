@@ -282,3 +282,32 @@ describe("http API v1 shared helpers", () => {
     expect(remove).not.toHaveBeenCalled();
   });
 });
+
+describe("anonymousCatalogCacheHeaders", () => {
+  it("marks anonymous catalog reads edge-cacheable", async () => {
+    const { anonymousCatalogCacheHeaders } = await import("./httpApiV1/shared");
+    const headers = new Headers(
+      anonymousCatalogCacheHeaders(new Request("https://example.com/api/v1/skills"), {
+        "X-RateLimit-Limit": "3000",
+      }),
+    );
+    expect(headers.get("Cache-Control")).toBe(
+      "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+    );
+    expect(headers.get("X-RateLimit-Limit")).toBe("3000");
+  });
+
+  it.each([
+    ["authorization", "Bearer clh_x"],
+    ["cookie", "a=b"],
+  ])("never marks requests with %s cacheable", async (name, value) => {
+    const { anonymousCatalogCacheHeaders } = await import("./httpApiV1/shared");
+    const headers = new Headers(
+      anonymousCatalogCacheHeaders(
+        new Request("https://example.com/api/v1/skills", { headers: { [name]: value } }),
+        { "X-RateLimit-Limit": "3000" },
+      ),
+    );
+    expect(headers.get("Cache-Control")).toBeNull();
+  });
+});
