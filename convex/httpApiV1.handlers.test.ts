@@ -866,10 +866,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         expect(args.selections).toEqual([
           { skillId: "skills:alice", versionId: "skillVersions:alice" },
           { skillId: "skills:bob", versionId: "skillVersions:bob" },
@@ -971,10 +968,7 @@ describe("httpApiV1 handlers", () => {
       user: { _id: "users:actor", role: "user" },
     } as never);
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         expect(args.selections).toEqual([
           { skillId: "skills:demo", versionId: "skillVersions:demo" },
         ]);
@@ -1099,10 +1093,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
     const longUnicodePath = `${"界".repeat(490)}.md`;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         expect(args.selections).toEqual([
           { skillId: "skills:demo", versionId: "skillVersions:demo" },
         ]);
@@ -1199,10 +1190,7 @@ describe("httpApiV1 handlers", () => {
     const commit = "2".repeat(40);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         expect(args.selections).toEqual([
           { skillId: "skills:hosted", versionId: "skillVersions:hosted" },
         ]);
@@ -1335,10 +1323,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         expect(args.selections).toEqual([
           { skillId: "skills:demo", versionId: "skillVersions:other" },
           { skillId: "skills:deleted", versionId: "skillVersions:deleted" },
@@ -1420,10 +1405,7 @@ describe("httpApiV1 handlers", () => {
       user: { _id: "users:actor", role: "user" },
     } as never);
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         expect(args.selections).toEqual([
           { skillId: "skills:demo", versionId: "skillVersions:demo" },
         ]);
@@ -1505,10 +1487,7 @@ describe("httpApiV1 handlers", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         expect(args.selections).toEqual([
           { skillId: "skills:first", versionId: "skillVersions:first" },
           { skillId: "skills:second", versionId: "skillVersions:second" },
@@ -3213,10 +3192,7 @@ describe("httpApiV1 handlers", () => {
       { status: "available", skill: selectedSkill0, version: selectedVersion0 },
     ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
           const index = [{ skillId: "skills:1", versionId: "versions:1" }].findIndex(
             (expected) =>
@@ -3286,10 +3262,7 @@ describe("httpApiV1 handlers", () => {
         : null,
     }));
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
           const row = rows.find(
             (candidate) =>
@@ -3385,10 +3358,7 @@ describe("httpApiV1 handlers", () => {
       { status: "available", skill: selectedSkill0, version: selectedVersion0 },
     ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
           const index = [{ skillId: "skills:1", versionId: "skillVersions:0" }].findIndex(
             (expected) =>
@@ -3504,10 +3474,7 @@ describe("httpApiV1 handlers", () => {
       },
     ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
           const index = [
             { skillId: "skills:1", versionId: "versions:1" },
@@ -3556,9 +3523,7 @@ describe("httpApiV1 handlers", () => {
     ).toEqual(["2.0.0", "1.0.0"]);
     // Latest and tag selectors share the same bounded checked-query budget.
     const batchCalls = runQuery.mock.calls.filter(
-      ([query]) =>
-        getFunctionName(query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal",
+      ([query]) => getFunctionName(query as never) === "skills:getPublicVersionSelectionsInternal",
     );
     expect(batchCalls).toHaveLength(1);
     expect(batchCalls.map(([, args]) => (args.selections as unknown[]).length)).toEqual([3]);
@@ -3917,16 +3882,11 @@ describe("httpApiV1 handlers", () => {
       { status: "available", skill: selectedSkill0, version: selectedVersion0 },
     ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill0, version: selectedVersion0 };
       }
 
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
           const index = [{ skillId: "skills:1", versionId: "versions:1" }].findIndex(
             (expected) =>
@@ -4007,9 +3967,7 @@ describe("httpApiV1 handlers", () => {
       softDeletedAt: undefined,
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -4846,16 +4804,11 @@ describe("httpApiV1 handlers", () => {
       { status: "available", skill: selectedSkill0, version: selectedVersion0 },
     ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill0, version: selectedVersion0 };
       }
 
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
           const index = [{ skillId: "skills:1", versionId: "versions:1" }].findIndex(
             (expected) =>
@@ -5660,9 +5613,7 @@ describe("httpApiV1 handlers", () => {
       ],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -5708,9 +5659,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -5774,9 +5723,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -5832,9 +5779,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -5893,9 +5838,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -5942,9 +5885,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -5994,9 +5935,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -6055,9 +5994,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -6124,9 +6061,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -6182,9 +6117,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -6225,10 +6158,7 @@ describe("httpApiV1 handlers", () => {
           if (slugLookupCount === 1) return null;
           return selectedSkill;
         }
-        if (
-          getFunctionName(_query as never) ===
-          "publicSkillVersions:getPublicVersionSelectionInternal"
-        ) {
+        if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
           return {
             status: "available",
             skill: selectedSkill,
@@ -6277,9 +6207,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -6334,9 +6262,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -6398,9 +6324,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -6444,9 +6368,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -6510,9 +6432,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         if (args.versionId === moderationVersion._id)
           return { status: "available", skill: selectedSkill, version: moderationVersion };
 
@@ -6577,9 +6497,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -6651,9 +6569,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -6727,9 +6643,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         if (args.versionId === moderationVersion._id)
           return { status: "available", skill: selectedSkill, version: moderationVersion };
 
@@ -6811,9 +6725,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         if (args.versionId === moderationVersion._id)
           return { status: "available", skill: selectedSkill, version: moderationVersion };
 
@@ -6865,9 +6777,7 @@ describe("httpApiV1 handlers", () => {
       updatedAt: 2,
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "not_found" };
       }
 
@@ -6923,9 +6833,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -7023,9 +6931,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -7126,9 +7032,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -7186,9 +7090,7 @@ describe("httpApiV1 handlers", () => {
       ],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -7241,9 +7143,7 @@ describe("httpApiV1 handlers", () => {
       softDeletedAt: undefined,
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -7295,9 +7195,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         if (args.versionId === "skillVersions:1" || args.version === "1.0.0")
           return { status: "available", skill: selectedSkill, version: selectedVersion0 };
         if (args.versionId === "skillVersions:other" || args.version === "9.9.9")
@@ -7331,9 +7229,7 @@ describe("httpApiV1 handlers", () => {
 
   it("does not serve raw files from an unpublished version", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         expect(args.version).toBe("2.0.0");
         return { status: "not_found" };
       }
@@ -7404,9 +7300,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -7466,9 +7360,7 @@ describe("httpApiV1 handlers", () => {
       softDeletedAt: undefined,
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -7514,9 +7406,7 @@ describe("httpApiV1 handlers", () => {
       latestVersionId: "skillVersions:1",
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "not_found" };
       }
 
@@ -7546,9 +7436,7 @@ describe("httpApiV1 handlers", () => {
 
   it("does not serve Skill Cards from an unpublished version", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         expect(args.version).toBe("2.0.0");
         return { status: "not_found" };
       }
@@ -7600,9 +7488,7 @@ describe("httpApiV1 handlers", () => {
       latestVersionId: "skillVersions:1",
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "not_found" };
       }
 
@@ -7650,9 +7536,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -7704,9 +7588,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -8300,9 +8182,7 @@ describe("httpApiV1 handlers", () => {
 
   it("does not verify an unpublished skill version", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         expect(args.version).toBe("2.0.0");
         return { status: "not_found" };
       }
@@ -8445,9 +8325,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -8578,9 +8456,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -8662,9 +8538,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -8749,9 +8623,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -8830,9 +8702,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -8876,9 +8746,7 @@ describe("httpApiV1 handlers", () => {
       latestVersionId: "skillVersions:1",
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "deleted" };
       }
 
@@ -8947,9 +8815,7 @@ describe("httpApiV1 handlers", () => {
     };
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -14497,10 +14363,7 @@ describe("httpApiV1 handlers", () => {
       { status: "available", skill: selectedSkill0, version: selectedVersion0 },
     ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) ===
-        "publicSkillVersions:getPublicVersionSelectionsInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
           const index = [{ skillId: "skills:demo", versionId: "skillVersions:demo-1" }].findIndex(
             (expected) =>
@@ -14687,9 +14550,7 @@ describe("httpApiV1 handlers", () => {
       ],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -14741,9 +14602,7 @@ describe("httpApiV1 handlers", () => {
       softDeletedAt: undefined,
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -14790,9 +14649,7 @@ describe("httpApiV1 handlers", () => {
       updatedAt: 2,
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "not_found" };
       }
 
@@ -15102,9 +14959,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 
@@ -15139,9 +14994,7 @@ describe("httpApiV1 handlers", () => {
 
   it("packages version detail hides unpublished skill versions", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         expect(args.version).toBe("2.0.0");
         return { status: "not_found" };
       }
@@ -15201,9 +15054,7 @@ describe("httpApiV1 handlers", () => {
       files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (
-        getFunctionName(_query as never) === "publicSkillVersions:getPublicVersionSelectionInternal"
-      ) {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
       }
 

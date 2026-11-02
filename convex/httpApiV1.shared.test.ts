@@ -98,12 +98,9 @@ describe("http API v1 shared helpers", () => {
     expect(
       await resolvePublicSkillVersions(ctx, [{ skillId, tags: {}, latestVersionId: versionId }]),
     ).toEqual([{ tags: {}, latestVersion: { version: "2.0.0" } }]);
-    expect(ctx.runQuery).toHaveBeenCalledWith(
-      internal.publicSkillVersions.getPublicVersionSelectionsInternal,
-      {
-        selections: [{ skillId, versionId }],
-      },
-    );
+    expect(ctx.runQuery).toHaveBeenCalledWith(internal.skills.getPublicVersionSelectionsInternal, {
+      selections: [{ skillId, versionId }],
+    });
   });
 
   it("deduplicates latest and tag targets in the checked batch", async () => {
@@ -124,12 +121,9 @@ describe("http API v1 shared helpers", () => {
     ).toEqual([
       { tags: { latest: "2.0.0", stable: "2.0.0" }, latestVersion: { version: "2.0.0" } },
     ]);
-    expect(ctx.runQuery).toHaveBeenCalledWith(
-      internal.publicSkillVersions.getPublicVersionSelectionsInternal,
-      {
-        selections: [{ skillId, versionId }],
-      },
-    );
+    expect(ctx.runQuery).toHaveBeenCalledWith(internal.skills.getPublicVersionSelectionsInternal, {
+      selections: [{ skillId, versionId }],
+    });
   });
 
   it.each(["removed", "repointed"] as const)(
@@ -160,7 +154,7 @@ describe("http API v1 shared helpers", () => {
       ).toEqual([{ tags: { latest: "1.0.0" }, latestVersion: null }]);
       expect(ctx.runQuery).toHaveBeenCalledTimes(1);
       expect(ctx.runQuery).toHaveBeenCalledWith(
-        internal.publicSkillVersions.getPublicVersionSelectionsInternal,
+        internal.skills.getPublicVersionSelectionsInternal,
         {
           selections: [{ skillId, versionId }],
         },

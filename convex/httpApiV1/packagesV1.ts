@@ -65,6 +65,7 @@ import {
 } from "../lib/catalogPage";
 import { recordCatalogSearchObservation } from "../lib/catalogSearchObservations";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
+import { areDownloadMetricsPaused } from "../lib/downloadMetricsSwitch";
 import {
   fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
@@ -806,7 +807,7 @@ async function streamClawPackRelease(
       });
     }
 
-    if (metricArgs) {
+    if (metricArgs && !areDownloadMetricsPaused()) {
       await runMutationRef(
         ctx,
         internalRefs.downloadMetrics.recordDownloadMetricInternal,
@@ -4593,7 +4594,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const [zipSha256, zipSha256Base64] = await Promise.all([sha256Hex(zip), sha256Base64(zip)]);
     try {
       const identity = getDownloadIdentity(request, viewerUserId ? String(viewerUserId) : null);
-      if (identity) {
+      if (identity && !areDownloadMetricsPaused()) {
         await runMutationRef(
           ctx,
           internalRefs.downloadMetrics.recordDownloadMetricInternal,
