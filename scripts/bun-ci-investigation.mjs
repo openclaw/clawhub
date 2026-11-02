@@ -9,7 +9,9 @@ const cwd = path.resolve(process.env.SOURCE_DIRECTORY);
 const name = process.env.PROOF_REPOSITORY;
 const tool = process.env.PROOF_TOOL;
 const phase = process.env.PROOF_PHASE;
-const bun = path.join(process.env.RUNNER_TEMP, "bun-ci-tools/bun-linux-x64/bun");
+const macOnly = process.env.PROOF_CI_MAC_ONLY === "1";
+const bun =
+  process.env.PROOF_BUN ?? path.join(process.env.RUNNER_TEMP, "bun-ci-tools/bun-linux-x64/bun");
 const packageFile = path.join(cwd, "package.json");
 const original = fs.readFileSync(packageFile, "utf8");
 const manifest = JSON.parse(original);
@@ -57,7 +59,7 @@ if (name === "clawhub" && baselineManifest.scripts.format === "bun fmt --no-scri
   baselineManifest.scripts.format = "oxfmt --write";
 const nativeTypeScript = ["lobster", "clawpatch", "crabfleet"].includes(name);
 const typeCommand = name === "crabfleet" ? "build" : "typecheck";
-if (tool === "candidate") {
+if (tool === "candidate" && !macOnly) {
   manifest.scripts[command] = baselineFormatScript.replace(
     "oxfmt --check",
     "bun fmt --no-script --check",
@@ -75,22 +77,30 @@ const baselinePackage =
   formatScript === baselineFormatScript
     ? original
     : `${JSON.stringify(baselineManifest, null, indentation)}\n`;
-if (formatScript !== baselineFormatScript) assert.equal(candidatePackage, original);
+if (formatScript !== baselineFormatScript || macOnly) assert.equal(candidatePackage, original);
 fs.writeFileSync(packageFile, candidatePackage);
 const expectSuccess = (result) => assert.equal(result.exit, 0, `${result.label}: ${result.output}`);
 const expectFailure = (result) => assert(result.exit !== 0 && result.exit !== null, result.label);
-const format = (label) => run(label, manager, ["run", command]);
+let activeTool = tool;
+const format = (label) =>
+  macOnly
+    ? activeTool === "baseline"
+      ? run(label, manager, ["format:check"])
+      : run(label, bun, ["fmt", "--no-script", "--check", "."])
+    : run(label, manager, ["run", command]);
 const paired = (label, operation) => {
   if (tool !== "candidate") return;
   try {
     for (let repetition = 1; repetition <= 3; repetition += 1) {
       const order = repetition % 2 ? ["baseline", "candidate"] : ["candidate", "baseline"];
       for (const selected of order) {
+        activeTool = selected;
         fs.writeFileSync(packageFile, selected === "baseline" ? baselinePackage : candidatePackage);
         expectSuccess(operation(`paired-${label}-${selected}-${repetition}`));
       }
     }
   } finally {
+    activeTool = tool;
     fs.writeFileSync(packageFile, candidatePackage);
   }
 };
@@ -107,7 +117,12 @@ try {
     command,
     originalScript: formatScript,
     baselineScript: baselineFormatScript,
-    actualScript: manifest.scripts[command],
+    actualScript: macOnly
+      ? tool === "baseline"
+        ? "pnpm format:check"
+        : "bun fmt --no-script --check ."
+      : manifest.scripts[command],
+    macOnly,
     nativeTypeScript,
     checkerScript: nativeTypeScript ? manifest.scripts[typeCommand] : null,
     cache:
@@ -204,6 +219,7 @@ try {
     expectSuccess(check("typecheck-restored-clean"));
   }
   expectSuccess(format("format-restored-clean"));
+  if (macOnly) expectSuccess(run("native-unchanged-ts6-typecheck", manager, ["typecheck"]));
   if (name === "clawhub") {
     const ignoredFixture = path.join(cwd, "convex/_generated/bun-ci-excluded-control.ts");
     assert(!fs.existsSync(ignoredFixture));

@@ -2,7 +2,7 @@ name: Bun native setup cost
 
 on:
   push:
-    branches: [investigate/bun-ci-owner-proof-20261102]
+    branches: [investigate/bun-ci-setup-cost-only]
 
 permissions:
   contents: read
