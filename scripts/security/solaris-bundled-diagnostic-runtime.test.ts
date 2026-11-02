@@ -8,7 +8,7 @@ const probe = vi.hoisted(() => ({
   calls: 0,
   leakedEnvironment: false,
   scannerCommit: "",
-  adoptedCommit: "",
+  adoptedCommitOverride: null as string | null,
 }));
 vi.mock("./fixtures/solaris-069-bundled.json", async () => {
   const { createHash } = await import("node:crypto");
@@ -30,10 +30,11 @@ vi.mock("node:fs/promises", async (original) => {
     ...actual,
     readFile: (...args: Parameters<typeof readFile>) => {
       if (
+        probe.adoptedCommitOverride !== null &&
         args[0] instanceof URL &&
         args[0].href === new URL("./clawscan-source-commit.txt", import.meta.url).href
       )
-        return Promise.resolve(`${probe.adoptedCommit}\n`);
+        return Promise.resolve(`${probe.adoptedCommitOverride}\n`);
       return args[0] === "/etc/os-release"
         ? Promise.resolve('VERSION_ID="22.04"\n')
         : actual.readFile(...args);
@@ -123,10 +124,10 @@ afterEach(async () => {
 async function setup(corrupt = false) {
   probe.calls = 0;
   probe.leakedEnvironment = false;
-  // This historical diagnostic intentionally admits its original scanner only.
-  // Advancing the production pin must not relabel the frozen diagnostic.
-  probe.scannerCommit = "7b1fee40e020c8576136b67582a1f72b449836d2";
-  probe.adoptedCommit = probe.scannerCommit;
+  probe.adoptedCommitOverride = null;
+  probe.scannerCommit = (
+    await readFile(new URL("./clawscan-source-commit.txt", import.meta.url), "utf8")
+  ).trim();
   const root = await mkdtemp(join(tmpdir(), "solaris-diagnostic-test-"));
   roots.push(root);
   const source = join(root, "solaris-source/harnesses/openclaw/skills/control");
@@ -224,9 +225,9 @@ it("rejects a scanner checkout that differs from the adopted production pin befo
   });
 });
 
-it("rejects a changed production pin instead of relabeling the fixed diagnostic", async () => {
+it("rejects an unreviewed production pin before invoking any model", async () => {
   const root = await setup();
-  probe.adoptedCommit = "0".repeat(40);
+  probe.adoptedCommitOverride = "0".repeat(40);
   await main([]);
   expect(probe.calls).toBe(0);
   const output = (await readFile(join(root, "output"), "utf8")).trim().split("=")[1];
