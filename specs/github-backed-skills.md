@@ -158,6 +158,13 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
   Rows below it are deliberately absent. Raise the window only with a matching
   run-time budget. The 50,000-row source capacity remains a hard guard on
   measurement, proof snapshots, and Convex run totals.
+- Malformed source identities remain at their original captured page/offset for
+  quarantine; they must not abort source measurement or shift later rows/ranks.
+  Capture keeps the existing string-typed row shape, using a per-position
+  `missing:<page>:<offset>` value for missing IDs and empty identity fields for
+  non-string values. These placeholders cannot form accepted skill identities.
+  Duplicate-ID checks count real nonempty string IDs; metadata sampling skips
+  rows that cannot supply the required string fields and exact skills.sh URL.
 - Snapshot ingestion uses bounded page/offset cursors. Pause is checked before
   another source batch is fetched; resume continues at the exact stored cursor.
   Reconciliation tombstones disappeared rows and reactivates later
