@@ -1,0 +1,169 @@
+name: Bun CI owner proof
+
+on:
+  push:
+    branches: [investigate/bun-ci-owner-proof-20261102]
+
+permissions:
+  contents: read
+
+jobs:
+  cold:
+    name: cold / ${{ matrix.repository }} / ${{ matrix.tool }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: &proof-matrix
+        repository:
+          [clawhub, mcporter, clickclack, clawsweeper, lobster, clawpatch, crabfleet, gogcli]
+        tool: [baseline, candidate]
+        include:
+          - repository: clawhub
+            sha: 615dc45d1ec6dfae9c43a0af508239ec1f64969c
+            pm: bun
+            directory: source
+          - repository: mcporter
+            sha: 8ba0ef967805b8d3fca7a9bc47c725a476e1282b
+            pm: 10.34.6
+            directory: source
+          - repository: clickclack
+            sha: fb9b9314bdfe18b77961edcddd7b1d53f1444d86
+            pm: 12.15.0
+            directory: source
+          - repository: clawsweeper
+            sha: aa20b22bbd865be8a12a97b9e302e4bf61e80760
+            pm: 12.15.0
+            directory: source
+          - repository: lobster
+            sha: bfad09a497477a28df43e34d188ec2a71109237a
+            pm: 12.15.0
+            directory: source
+          - repository: clawpatch
+            sha: 79c1495f20d33b68ca4439dfa9dfef18ed7a460e
+            pm: 11.28.6
+            directory: source
+          - repository: crabfleet
+            sha: 8ba22e9dddabcd14cd4367469ef092c8092f6d90
+            pm: 11.27.1
+            directory: source
+          - repository: gogcli
+            sha: 82e7fd6005d4ed29f8edfa2a44475e08fe3051a0
+            pm: 11.28.5
+            directory: source/internal/tracking/worker
+    env: &proof-env
+      PROOF_REPOSITORY: ${{ matrix.repository }}
+      PROOF_TOOL: ${{ matrix.tool }}
+      SOURCE_SHA: ${{ matrix.sha }}
+      SOURCE_DIRECTORY: ${{ matrix.directory }}
+      NO_COLOR: 1
+      FORCE_COLOR: 0
+    steps:
+      - name: Configure isolated cache paths
+        run: &cache-env |
+          printf 'BUN_INSTALL_CACHE_DIR=%s/bun-ci-cache/bun\nnpm_config_cache=%s/bun-ci-cache/npm\n' "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: openclaw/${{ matrix.repository }}
+          ref: ${{ matrix.sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 26.12.1
+      - name: Require genuinely cold caches
+        run: test ! -e "$RUNNER_TEMP/bun-ci-cache" && test ! -e "$RUNNER_TEMP/bun-ci-tools" && test ! -e "$SOURCE_DIRECTORY/node_modules"
+      - name: Provision native manager and exact candidate
+        run: &provision |
+          set -euo pipefail
+          start=$(date +%s%N)
+          if [[ '${{ matrix.pm }}' != bun ]]; then
+            npm install --prefix "$RUNNER_TEMP/bun-ci-pm" --ignore-scripts --no-audit --no-fund 'pnpm@${{ matrix.pm }}'
+            echo "$RUNNER_TEMP/bun-ci-pm/node_modules/.bin" >> "$GITHUB_PATH"
+          fi
+          if [[ '${{ matrix.tool }}' == candidate || '${{ matrix.pm }}' == bun ]]; then
+            if [[ ! -e "$RUNNER_TEMP/bun-ci-tools/bun-linux-x64/bun" ]]; then
+              mkdir -p "$RUNNER_TEMP/bun-ci-tools"
+              curl --fail --location --silent --show-error -o "$RUNNER_TEMP/bun-ci-tools/bun.zip" https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-x64.zip
+              echo "bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c  $RUNNER_TEMP/bun-ci-tools/bun.zip" | sha256sum --check
+              unzip -q "$RUNNER_TEMP/bun-ci-tools/bun.zip" -d "$RUNNER_TEMP/bun-ci-tools"
+            fi
+            echo "$RUNNER_TEMP/bun-ci-tools/bun-linux-x64" >> "$GITHUB_PATH"
+          fi
+          echo "BUN_CI_PROVISION {\"nanoseconds\":$(( $(date +%s%N) - start ))}"
+      - name: Install frozen source dependencies
+        run: &install |
+          set -euo pipefail
+          test ! -e "$SOURCE_DIRECTORY/node_modules"
+          cd "$SOURCE_DIRECTORY"
+          start=$(date +%s%N)
+          if [[ '${{ matrix.pm }}' == bun ]]; then
+            bun install --frozen-lockfile
+          else
+            pnpm install --frozen-lockfile --store-dir "$RUNNER_TEMP/bun-ci-cache/pnpm"
+          fi
+          echo "BUN_CI_INSTALL {\"nanoseconds\":$(( $(date +%s%N) - start ))}"
+      - name: Actual command, hot repeats and negative controls
+        id: proof
+        continue-on-error: true
+        env:
+          PROOF_PHASE: cold
+        run: node scripts/bun-ci-investigation.mjs
+      - name: Save task-only caches, never node_modules
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ runner.temp }}/bun-ci-cache
+            ${{ runner.temp }}/bun-ci-tools
+          key: bun-ci-owner-proof-${{ github.sha }}-${{ matrix.repository }}-${{ matrix.tool }}
+      - if: steps.proof.outcome != 'success'
+        run: exit 1
+  restored:
+    name: restored / ${{ matrix.repository }} / ${{ matrix.tool }}
+    needs: cold
+    if: always() && needs.cold.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: *proof-matrix
+    env: *proof-env
+    steps:
+      - name: Configure isolated cache paths
+        run: *cache-env
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: openclaw/${{ matrix.repository }}
+          ref: ${{ matrix.sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 26.12.1
+      - name: Restore exact task-only caches
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ runner.temp }}/bun-ci-cache
+            ${{ runner.temp }}/bun-ci-tools
+          key: bun-ci-owner-proof-${{ github.sha }}-${{ matrix.repository }}-${{ matrix.tool }}
+          fail-on-cache-miss: true
+      - name: Require restored cache and fresh dependency workspace
+        run: test '${{ steps.cache.outputs.cache-hit }}' = true && test ! -e "$SOURCE_DIRECTORY/node_modules"
+      - name: Provision native manager and exact candidate
+        run: *provision
+      - name: Install from restored cache into fresh workspace
+        run: *install
+      - name: Actual command, hot repeats and negative controls
+        env:
+          PROOF_PHASE: restored
+        run: node scripts/bun-ci-investigation.mjs
