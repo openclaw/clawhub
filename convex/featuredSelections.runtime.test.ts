@@ -19,7 +19,7 @@ const reservation = {
 
 async function fixture() {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   registerWorkpool(t, "searchReports");
   const actor = await t.run((ctx) =>
     ctx.db.insert("users", { handle: "curator", role: "moderator" }),

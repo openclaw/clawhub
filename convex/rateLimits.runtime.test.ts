@@ -15,14 +15,14 @@ it("does not reset an active quota when expired metadata is pruned", async () =>
   vi.spyOn(Date, "now").mockReturnValue(now);
   vi.spyOn(Math, "random").mockReturnValue(0.5);
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const request = {
     name: "retention-proof",
     key: "ip:203.0.113.77:read",
     config: { kind: "fixed window", rate: 1, period: 60_000, start: 0, shards: 1 },
   } as const;
   await t.run(async (ctx) => {
-    await ctx.db.insert("httpRateLimitKeys", {
+    await ctx.db.insert("httpRateLimitKeysV2", {
       name: request.name,
       key: request.key,
       shard: 0,
@@ -50,7 +50,7 @@ it("does not reset an active quota when expired metadata is pruned", async () =>
 it("rolls back quota when a parent transaction aborts after a combined check", async () => {
   vi.spyOn(Date, "now").mockReturnValue(1_000_000);
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const request = {
     name: "rollback-proof",
     key: "ip:203.0.113.78:read",
@@ -76,7 +76,7 @@ it("rolls back quota when a parent transaction aborts after a combined check", a
 it("consumes batched counts in one write and exposes exhaustion to read-only checks", async () => {
   vi.spyOn(Date, "now").mockReturnValue(1_000_000);
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const request = {
     name: "batched-proof",
     key: "ip:203.0.113.79:read",
@@ -94,7 +94,7 @@ it("consumes batched counts in one write and exposes exhaustion to read-only che
     await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, { ...request, count: 4 }),
   ).toMatchObject({ ok: false });
   const peek = await t.run(async (ctx) =>
-    ctx.runQuery(components.rateLimiter.lib.checkRateLimit, {
+    ctx.runQuery(components.rateLimiterV2.lib.checkRateLimit, {
       name: request.name,
       key: request.key,
       config: request.config,
@@ -112,7 +112,7 @@ it.each([
   async (name, rate) => {
     vi.spyOn(Date, "now").mockReturnValue(1_000_000);
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     const shards = Math.max(1, Math.min(32, Math.floor(rate / 10)));
     const request = {
       name,
@@ -135,7 +135,7 @@ it.each([
         }
       } else {
         const status = await t.run(async (ctx) =>
-          ctx.runQuery(components.rateLimiter.lib.checkRateLimit, { ...request, count: 4 }),
+          ctx.runQuery(components.rateLimiterV2.lib.checkRateLimit, { ...request, count: 4 }),
         );
         if (status.ok) admitted++;
       }
@@ -153,9 +153,9 @@ it("skips pruning entirely while rate-limiter storage is off", async () => {
   vi.stubEnv("CLAWHUB_RATE_LIMITER_DISABLED", "1");
   try {
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     await t.run(async (ctx) => {
-      await ctx.db.insert("httpRateLimitKeys", {
+      await ctx.db.insert("httpRateLimitKeysV2", {
         name: "readIp",
         key: "ip:203.0.113.90:read",
         shard: 0,
@@ -167,7 +167,7 @@ it("skips pruning entirely while rate-limiter storage is off", async () => {
       deleted: 0,
       hasMore: false,
     });
-    const remaining = await t.run(async (ctx) => ctx.db.query("httpRateLimitKeys").collect());
+    const remaining = await t.run(async (ctx) => ctx.db.query("httpRateLimitKeysV2").collect());
     expect(remaining).toHaveLength(1);
   } finally {
     vi.unstubAllEnvs();

@@ -57,7 +57,7 @@ function oldArchive(name: string, version: string) {
 
 async function historicalFixture() {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const ids = await t.run(async (ctx) => {
     const ownerUserId = await ctx.db.insert("users", { handle: "historical-owner", role: "admin" });
     const publisherId = await ctx.db.insert("publishers", {

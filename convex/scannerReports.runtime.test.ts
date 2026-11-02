@@ -17,7 +17,7 @@ afterEach(() => vi.unstubAllEnvs());
 it("returns complete vendor JSON through scan completion and verify, replacing stale reports", async () => {
   vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-fixture");
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const { versionId, jobId } = await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { handle: "report-owner" });
     const publisherId = await ctx.db.insert("publishers", {

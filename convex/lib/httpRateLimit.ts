@@ -382,7 +382,7 @@ async function peekRateLimit(
   // check must ask for the same count a sampled write consumes; a one-token
   // check would keep passing on shard remainders that can no longer fit a
   // batch, admitting unbounded traffic past the limit.
-  const status = await ctx.runQuery(components.rateLimiter.lib.checkRateLimit, {
+  const status = await ctx.runQuery(components.rateLimiterV2.lib.checkRateLimit, {
     name: args.name,
     key: args.key,
     config: HTTP_RATE_LIMIT_CONFIGS[args.name],
@@ -516,7 +516,7 @@ function isRateLimitCounterWriteConflict(error: unknown) {
 function isRateLimitMetadataWriteConflict(error: unknown) {
   if (!(error instanceof Error)) return false;
   return (
-    error.message.includes("httpRateLimitKeys") &&
+    error.message.includes("httpRateLimitKeysV2") &&
     error.message.includes("changed while this mutation was being run")
   );
 }
