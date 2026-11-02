@@ -18,7 +18,7 @@ const path = "/api/v1/packages/%40fixture%2Fplugin";
 
 async function fixture(family: "code-plugin" | "bundle-plugin" = "code-plugin") {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const token = "local-plugin-detail-owner";
   const tokenHash = await hashToken(token);
   const ids = await t.run(async (ctx) => {

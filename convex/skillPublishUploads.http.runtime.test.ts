@@ -24,7 +24,7 @@ async function fixture(
   message = capacityMessage,
 ) {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const userId = await t.run(async (ctx) => {
     const id = await ctx.db.insert("users", { handle: "upload-containment-fixture" });
     await ctx.db.insert("apiTokens", {

@@ -4818,7 +4818,7 @@ export default defineSchema({
   vtScanLogs,
   apiTokens,
   cliDeviceCodes,
-  httpRateLimitKeys,
+  httpRateLimitKeysV2: httpRateLimitKeys,
   downloadMetricDedupes,
   packageInstallMetricDedupes,
   installTelemetryDedupes,

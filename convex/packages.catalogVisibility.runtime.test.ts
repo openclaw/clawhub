@@ -22,7 +22,7 @@ const bearer = "local-catalog-visibility-fixture";
 
 async function fixture(role: "user" | "admin" = "admin", categories = ["channels"]) {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const fixtureOwnerUserId = await t.run(async (ctx) => {
     await ctx.db.insert("globalStats", {
       key: "default",

@@ -40,7 +40,7 @@ function inventory(entries = [entry()]): SdkUsageReport {
 async function fixture() {
   vi.stubEnv("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN", "sdk-usage-test-worker");
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const ids = await t.run(async (ctx) => {
     const ownerUserId = await ctx.db.insert("users", { handle: "sdk-owner", role: "user" });
     const packageId = await ctx.db.insert("packages", {

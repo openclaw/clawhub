@@ -16,7 +16,7 @@ const modules = import.meta.glob("./**/*.ts");
 
 async function createPackageScanFixture() {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const fixture = await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { handle: "endor-owner" });
     const publisherId = await ctx.db.insert("publishers", {

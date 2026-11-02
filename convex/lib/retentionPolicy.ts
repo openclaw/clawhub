@@ -410,7 +410,7 @@ export const RETENTION_POLICIES = {
     prune: "usage-time expiry plus pending retention cleanup",
     retention: "Device code TTL.",
   }),
-  httpRateLimitKeys: ephemeral(
+  httpRateLimitKeysV2: ephemeral(
     "Component-backed HTTP rate-limit key metadata is operational cleanup state.",
     {
       expirationField: "expiresAt",

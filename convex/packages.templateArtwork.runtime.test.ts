@@ -88,7 +88,7 @@ it("publishes a Template's packaged PNG through the validated content-addressed 
     return arrayBuffer.call(this);
   });
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   await t.run(async (ctx) => {
     // convex-test 0.0.62 shares transaction depth between concurrent blob
     // stores. Serialize only its storage syscall, retaining real hashes/bytes.

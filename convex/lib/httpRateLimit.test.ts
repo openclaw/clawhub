@@ -266,7 +266,7 @@ describe("applyRateLimit headers", () => {
       .fn()
       .mockRejectedValueOnce(
         new Error(
-          'Document in table "httpRateLimitKeys" changed while this mutation was being run',
+          'Document in table "httpRateLimitKeysV2" changed while this mutation was being run',
         ),
       )
       .mockResolvedValueOnce({ ok: true });
@@ -295,7 +295,7 @@ describe("applyRateLimit headers", () => {
       .fn()
       .mockRejectedValueOnce(
         new Error(
-          'Document in table "httpRateLimitKeys" changed while this mutation was being run',
+          'Document in table "httpRateLimitKeysV2" changed while this mutation was being run',
         ),
       )
       .mockRejectedValueOnce(
@@ -782,7 +782,7 @@ describe("RPC rollout guard", () => {
       .fn()
       .mockRejectedValueOnce(
         new Error(
-          'Document in table "httpRateLimitKeys" changed while this mutation was being run',
+          'Document in table "httpRateLimitKeysV2" changed while this mutation was being run',
         ),
       )
       .mockResolvedValueOnce({ ok: true });
