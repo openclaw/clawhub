@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
-const probe = vi.hoisted(() => ({ calls: 0, leakedEnvironment: false, scannerCommit: "" }));
+const probe = vi.hoisted(() => ({
+  calls: 0,
+  leakedEnvironment: false,
+  scannerCommit: "",
+  adoptedCommit: "",
+}));
 vi.mock("./fixtures/solaris-069-bundled.json", async () => {
   const { createHash } = await import("node:crypto");
   const hash = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -23,10 +28,16 @@ vi.mock("node:fs/promises", async (original) => {
   const actual = await original<typeof import("node:fs/promises")>();
   return {
     ...actual,
-    readFile: (...args: Parameters<typeof readFile>) =>
-      args[0] === "/etc/os-release"
+    readFile: (...args: Parameters<typeof readFile>) => {
+      if (
+        args[0] instanceof URL &&
+        args[0].href === new URL("./clawscan-source-commit.txt", import.meta.url).href
+      )
+        return Promise.resolve(`${probe.adoptedCommit}\n`);
+      return args[0] === "/etc/os-release"
         ? Promise.resolve('VERSION_ID="22.04"\n')
-        : actual.readFile(...args),
+        : actual.readFile(...args);
+    },
   };
 });
 vi.mock("../lib/runWorkerCommand", async (original) => {
@@ -112,9 +123,10 @@ afterEach(async () => {
 async function setup(corrupt = false) {
   probe.calls = 0;
   probe.leakedEnvironment = false;
-  probe.scannerCommit = (
-    await readFile(new URL("./clawscan-source-commit.txt", import.meta.url), "utf8")
-  ).trim();
+  // This historical diagnostic intentionally admits its original scanner only.
+  // Advancing the production pin must not relabel the frozen diagnostic.
+  probe.scannerCommit = "7b1fee40e020c8576136b67582a1f72b449836d2";
+  probe.adoptedCommit = probe.scannerCommit;
   const root = await mkdtemp(join(tmpdir(), "solaris-diagnostic-test-"));
   roots.push(root);
   const source = join(root, "solaris-source/harnesses/openclaw/skills/control");
@@ -202,6 +214,19 @@ it("rejects a changed original before invoking any model and still cleans up", a
 it("rejects a scanner checkout that differs from the adopted production pin before any model", async () => {
   const root = await setup();
   probe.scannerCommit = "0".repeat(40);
+  await main([]);
+  expect(probe.calls).toBe(0);
+  const output = (await readFile(join(root, "output"), "utf8")).trim().split("=")[1];
+  expect(JSON.parse(await readFile(join(output, "summary.json"), "utf8"))).toMatchObject({
+    status: "validation_failed",
+    validationFailed: true,
+    cleanup: true,
+  });
+});
+
+it("rejects a changed production pin instead of relabeling the fixed diagnostic", async () => {
+  const root = await setup();
+  probe.adoptedCommit = "0".repeat(40);
   await main([]);
   expect(probe.calls).toBe(0);
   const output = (await readFile(join(root, "output"), "utf8")).trim().split("=")[1];
