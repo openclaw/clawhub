@@ -40,8 +40,7 @@ jobs:
         run: |
           corepack enable
           test ! -e "$RUNNER_TEMP/contract-proof-store"
-          export npm_config_store_dir="$RUNNER_TEMP/contract-proof-store"
-          echo "npm_config_store_dir=$npm_config_store_dir" >> "$GITHUB_ENV"
+          corepack pnpm config set store-dir "$RUNNER_TEMP/contract-proof-store" --global
           echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         if: matrix.mode == 'candidate'
@@ -99,8 +98,7 @@ jobs:
         run: |
           corepack enable
           test ! -e "$RUNNER_TEMP/contract-proof-store"
-          export npm_config_store_dir="$RUNNER_TEMP/contract-proof-store"
-          echo "npm_config_store_dir=$npm_config_store_dir" >> "$GITHUB_ENV"
+          corepack pnpm config set store-dir "$RUNNER_TEMP/contract-proof-store" --global
           echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         if: matrix.mode == 'candidate'

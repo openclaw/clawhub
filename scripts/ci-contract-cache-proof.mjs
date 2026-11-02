@@ -11,6 +11,7 @@ const external = join(source, ".artifacts/openclaw-contract");
 const mode = process.env.PROOF_MODE;
 const phase = process.env.PROOF_PHASE;
 const results = { mode, phase, measurements: [] };
+let reportNumber = 0;
 
 function command(root, program, args, options = {}) {
   const start = performance.now();
@@ -36,6 +37,9 @@ function command(root, program, args, options = {}) {
 }
 
 function contract(root, failure = false) {
+  reportNumber += 1;
+  const reportPath = join(process.env.RUNNER_TEMP, `contract-proof-${reportNumber}.json`);
+  assert.equal(existsSync(reportPath), false);
   const output = command(
     source,
     "bunx",
@@ -45,6 +49,7 @@ function contract(root, failure = false) {
       "scripts/templates-feed-openclaw-e2e.test.ts",
       "--maxWorkers=1",
       "--reporter=json",
+      `--outputFile=${reportPath}`,
     ],
     {
       env: { OPENCLAW_TEMPLATES_CHECKOUT: root },
@@ -55,7 +60,7 @@ function contract(root, failure = false) {
     assert.notEqual(output.status, 0);
     return { rejected: true, ms: output.ms };
   }
-  const report = JSON.parse(output.stdout.slice(output.stdout.indexOf("{")));
+  const report = JSON.parse(readFileSync(reportPath, "utf8"));
   assert.equal(report.success, true);
   assert.equal(report.numFailedTests, 0);
   assert.equal(report.numPendingTests, 0);
