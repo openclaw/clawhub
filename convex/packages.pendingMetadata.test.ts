@@ -69,6 +69,58 @@ it.each(["https://github.com/publisher/original", undefined])(
   },
 );
 
+it("keeps channel and official status when an older release finalizes late", async () => {
+  const { t, stage } = await fixture();
+  const older = await stage("1.0.0", "Original name");
+  const newer = await stage("2.0.0", "Current name");
+  await t.mutation(internal.packages.publishPendingReleaseInternal, {
+    releaseId: newer.releaseId,
+  });
+  const packageId = await t.run(async (ctx) => (await ctx.db.get(newer.releaseId))!.packageId);
+  await t.run(async (ctx) => {
+    await ctx.db.patch(packageId, { channel: "official", isOfficial: true });
+  });
+
+  await t.mutation(internal.packages.publishPendingReleaseInternal, {
+    releaseId: older.releaseId,
+  });
+
+  expect(await t.run(async (ctx) => ctx.db.get(packageId))).toMatchObject({
+    channel: "official",
+    isOfficial: true,
+    latestReleaseId: newer.releaseId,
+  });
+  expect(await t.run(async (ctx) => ctx.db.get(older.releaseId))).toMatchObject({
+    publicationStatus: "published",
+  });
+});
+
+it("applies the staged channel when that release becomes latest", async () => {
+  const { t, stage } = await fixture();
+  const first = await stage("1.0.0", "First name");
+  await t.run(async (ctx) => {
+    const release = await ctx.db.get(first.releaseId);
+    const pending = release?.pendingPublication;
+    if (!pending || typeof pending !== "object" || Array.isArray(pending)) {
+      throw new Error("missing pending publication");
+    }
+    await ctx.db.patch(first.releaseId, {
+      pendingPublication: { ...pending, channel: "private", isOfficial: false },
+    });
+  });
+
+  await t.mutation(internal.packages.publishPendingReleaseInternal, {
+    releaseId: first.releaseId,
+  });
+
+  const packageId = await t.run(async (ctx) => (await ctx.db.get(first.releaseId))!.packageId);
+  expect(await t.run(async (ctx) => ctx.db.get(packageId))).toMatchObject({
+    channel: "private",
+    isOfficial: false,
+    latestReleaseId: first.releaseId,
+  });
+});
+
 it("sets the first published metadata and updates it when a newer release becomes latest", async () => {
   const { t, stage, readMetadata } = await fixture();
   // The package row starts with this pending release, not the first one finalized.

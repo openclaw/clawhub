@@ -114,6 +114,17 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   quarantined/revoked package downloads remain blocked. A pending package scan is
   not an unpublished release. Authorized owner/staff submission previews retain
   their separate access path.
+- Pending skill finalization must not lift `softDeletedAt`, `moderationStatus`
+  `removed`, or a hidden staff hold such as security redaction, a ban, publisher
+  deletion, or manual review. A first publish hidden only for
+  `pending.publication` still finalizes. A version that becomes latest may
+  replace scanner state, a quality quarantine, publisher moderation, or
+  `manual.version_revoked`, and it copies the staged icon the same way an
+  immediate publish does. An older version still becomes published, and it
+  leaves the live skill's moderation, hold, and icon alone.
+- Pending package finalization changes `channel` and `isOfficial` only when
+  that release becomes latest. An older release can still publish without
+  rolling the live package back to the channel it staged.
 - Changes to version publication or owner-deletion state invalidate public browse
   projections. A pending replacement must preserve an older approved version where
   the existing latest-version policy selects it.

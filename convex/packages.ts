@@ -11754,8 +11754,12 @@ export const publishPendingReleaseInternal = internalMutation({
         ? stringPendingField(metadata, "sourceRepo", release.sourceRepo)
         : pkg.sourceRepo,
       runtimeId: shouldPromoteLatest ? release.runtimeId : pkg.runtimeId,
-      channel: stringPendingField(metadata, "channel", pkg.channel) as Doc<"packages">["channel"],
-      isOfficial: booleanPendingField(metadata, "isOfficial", pkg.isOfficial),
+      channel: (shouldPromoteLatest
+        ? stringPendingField(metadata, "channel", pkg.channel)
+        : pkg.channel) as Doc<"packages">["channel"],
+      isOfficial: shouldPromoteLatest
+        ? booleanPendingField(metadata, "isOfficial", pkg.isOfficial)
+        : pkg.isOfficial,
       latestReleaseId: shouldPromoteLatest ? release._id : pkg.latestReleaseId,
       latestVersionSummary: shouldPromoteLatest
         ? packageLatestSummaryFromRelease(publishedRelease)
@@ -12235,8 +12239,8 @@ export const insertReleaseInternal = internalMutation({
         : {}),
       sourceRepo: args.sourceRepo,
       runtimeId: shouldPromoteLatest ? args.runtimeId : pkg.runtimeId,
-      channel: nextChannel,
-      isOfficial: nextIsOfficial,
+      channel: shouldPromoteLatest ? nextChannel : pkg.channel,
+      isOfficial: shouldPromoteLatest ? nextIsOfficial : pkg.isOfficial,
       latestReleaseId: shouldPromoteLatest ? releaseId : pkg.latestReleaseId,
       latestVersionSummary: shouldPromoteLatest
         ? {
