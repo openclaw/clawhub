@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Tooling: use the existing pinned Bun formatter for format commands while preserving Oxfmt configuration and exclusions.
+
 - Publishing: prepare staged ClawPacks in the Node runtime so large archives can reach package validation without exhausting the HTTP action memory limit.
 - Scanning: stop classifying Manifest V3 browser host permissions as installation sources while retaining checks for install URLs elsewhere in the manifest.
 
