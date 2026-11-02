@@ -66,7 +66,7 @@ function fixedWindowRateLimit(rate: number): FixedWindowRateLimitConfig {
   };
 }
 
-const HTTP_RATE_LIMIT_CONFIGS = {
+export const HTTP_RATE_LIMIT_CONFIGS = {
   readIp: fixedWindowRateLimit(RATE_LIMITS.read.ip),
   readKey: fixedWindowRateLimit(RATE_LIMITS.read.key),
   readAdminKey: fixedWindowRateLimit(RATE_LIMITS.read.adminKey),
