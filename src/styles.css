@@ -2223,7 +2223,7 @@ code {
 .endor-audit-checked,
 .endor-audit-note {
   margin: 0;
-  color: var(--ink-soft);
+  color: var(--oc-text-secondary);
   font-size: var(--font-size-fs-sm);
   line-height: 1.5;
 }
@@ -2238,13 +2238,13 @@ code {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  color: var(--ink);
+  color: var(--oc-text-primary);
   font-weight: 600;
 }
 
 .endor-audit-result svg {
   flex-shrink: 0;
-  color: var(--ink-soft);
+  color: var(--oc-text-secondary);
 }
 
 .endor-audit-result p {
@@ -2283,7 +2283,7 @@ code {
 
 .endor-audit-finding:not(:last-child) {
   padding-bottom: var(--space-6);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--oc-border-subtle);
 }
 
 .endor-audit-severity {
@@ -2298,7 +2298,7 @@ code {
 
 .endor-audit-finding-content h3 {
   margin: 0;
-  color: var(--ink);
+  color: var(--oc-text-primary);
   font-size: var(--font-size-fs-lg);
   font-weight: 650;
   line-height: 1.5;
@@ -2307,7 +2307,7 @@ code {
 
 .endor-audit-finding p {
   margin: 0;
-  color: var(--ink-soft);
+  color: var(--oc-text-secondary);
   font-size: var(--font-size-fs-sm);
   line-height: 1.6;
   white-space: pre-line;
@@ -2315,7 +2315,7 @@ code {
 }
 
 .endor-audit-finding .endor-audit-finding-meta {
-  color: var(--ink);
+  color: var(--oc-text-primary);
   font-size: var(--font-size-fs-base);
 }
 
@@ -2328,7 +2328,7 @@ code {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-4);
-  color: var(--ink-soft);
+  color: var(--oc-text-secondary);
   font-size: var(--font-size-fs-sm);
   line-height: 1.6;
   overflow-wrap: anywhere;
