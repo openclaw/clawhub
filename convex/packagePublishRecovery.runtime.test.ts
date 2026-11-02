@@ -168,7 +168,7 @@ async function fixture() {
   vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
   vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const ids = await t.run(async (ctx) => {
     const now = Date.now();
     const owner = await ctx.db.insert("users", { handle: "original-owner" });

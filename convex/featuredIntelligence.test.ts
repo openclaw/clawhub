@@ -18,7 +18,7 @@ async function setup() {
   vi.useFakeTimers();
   vi.setSystemTime(END + 12 * 3_600_000);
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   registerWorkpool(t, "searchReports");
   const staff = await t.run(async (ctx) => {
     const id = await ctx.db.insert("users", { handle: "reviewer", role: "moderator" });

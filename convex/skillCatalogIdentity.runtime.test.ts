@@ -20,7 +20,7 @@ it.each(["updated", "newest"])(
   "preserves complete skill identities and metadata across tied %s cursor pages",
   async (sort) => {
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     const expected = await t.run(async (ctx) => {
       const owners = await Promise.all(
         ["fixture-owner-a", "fixture-owner-b"].map(async (handle) => ({

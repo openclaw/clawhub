@@ -15,7 +15,7 @@ vi.mock("./lib/verifiedClientIp", () => ({
 const modules = import.meta.glob("./**/*.ts");
 it("public Featured reads put new and re-added selections first despite an older published lineup", async () => {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const data = await t.run(async (ctx) => {
     const ownerUserId = await ctx.db.insert("users", { handle: "curator", role: "moderator" });
     const publisher = await ctx.db.insert("publishers", {

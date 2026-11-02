@@ -26,7 +26,7 @@ type Fixture = {
 
 async function setup(fixtures: Fixture[]) {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   await t.run(async (ctx) => {
     const ownerUserId = await ctx.db.insert("users", { handle: "fixture-publisher" });
     for (const [index, fixture] of fixtures.entries()) {

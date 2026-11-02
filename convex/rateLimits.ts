@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./functions";
+import { isRateLimiterStorageDisabled } from "./lib/rateLimiterSwitch";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 
 const DEFAULT_HTTP_RATE_LIMIT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -71,7 +72,7 @@ async function touchHttpRateLimitKey(
   const expiresAt = now + ttlMs;
   const shard = normalizeHttpRateLimitKeyShard(args.shard);
   const matches = await ctx.db
-    .query("httpRateLimitKeys")
+    .query("httpRateLimitKeysV2")
     .withIndex("by_name_and_key_and_shard", (q) =>
       q.eq("name", args.name).eq("key", args.key).eq("shard", shard),
     )
@@ -90,7 +91,7 @@ async function touchHttpRateLimitKey(
     return { action: "updated" as const, expiresAt, shard };
   }
 
-  await ctx.db.insert("httpRateLimitKeys", {
+  await ctx.db.insert("httpRateLimitKeysV2", {
     name: args.name,
     key: args.key,
     shard,
@@ -120,7 +121,7 @@ export const consumeHttpRateLimitKeyInternal = internalMutation({
       Number.isFinite(args.count) && (args.count ?? 1) > 1
         ? Math.floor(args.count ?? 1)
         : undefined;
-    return await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
+    return await ctx.runMutation(components.rateLimiterV2.lib.rateLimit, {
       name: args.name,
       key: args.key,
       config: args.config,
@@ -148,7 +149,7 @@ async function hasActiveHttpRateLimitKeyMetadata(
   now: number,
 ) {
   const activeRows = await ctx.db
-    .query("httpRateLimitKeys")
+    .query("httpRateLimitKeysV2")
     .withIndex("by_name_and_key_and_expires_at", (q) =>
       q.eq("name", row.name).eq("key", row.key).gte("expiresAt", now),
     )
@@ -163,7 +164,7 @@ async function deleteExpiredHttpRateLimitKeyMetadata(
   deletedRowIds: Set<string>,
 ) {
   const expiredRows = await ctx.db
-    .query("httpRateLimitKeys")
+    .query("httpRateLimitKeysV2")
     .withIndex("by_name_and_key_and_expires_at", (q) =>
       q.eq("name", row.name).eq("key", row.key).lt("expiresAt", now),
     )
@@ -184,6 +185,8 @@ export const pruneHttpRateLimitKeysInternal = internalMutation({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Rate-limiter tables may be dropped and recreated while storage is off.
+    if (isRateLimiterStorageDisabled()) return { deleted: 0, hasMore: false };
     const now = Date.now();
     const batchSize = clampBatchSize(
       args.batchSize,
@@ -191,7 +194,7 @@ export const pruneHttpRateLimitKeysInternal = internalMutation({
       MAX_PRUNE_HTTP_RATE_LIMIT_KEYS_BATCH_SIZE,
     );
     const stale = await ctx.db
-      .query("httpRateLimitKeys")
+      .query("httpRateLimitKeysV2")
       .withIndex("by_expires_at", (q) => q.lt("expiresAt", now))
       .take(batchSize);
 
@@ -211,7 +214,7 @@ export const pruneHttpRateLimitKeysInternal = internalMutation({
       }
 
       if (!resetKeys.has(key)) {
-        await ctx.runMutation(components.rateLimiter.lib.resetRateLimit, {
+        await ctx.runMutation(components.rateLimiterV2.lib.resetRateLimit, {
           name: row.name,
           key: row.key,
         });

@@ -115,12 +115,12 @@ describe("component HTTP rate limit key metadata", () => {
     });
 
     expect(result).toEqual({ action: "inserted", expiresAt: 70_000, shard: 3 });
-    expect(ctx.db.query).toHaveBeenCalledWith("httpRateLimitKeys");
+    expect(ctx.db.query).toHaveBeenCalledWith("httpRateLimitKeysV2");
     expect(withIndex).toHaveBeenCalledWith("by_name_and_key_and_shard", expect.any(Function));
     expect(eqName).toHaveBeenCalledWith("name", "downloadIp");
     expect(eqKey).toHaveBeenCalledWith("key", "ip:203.0.113.1:download");
     expect(eqShard).toHaveBeenCalledWith("shard", 3);
-    expect(insert).toHaveBeenCalledWith("httpRateLimitKeys", {
+    expect(insert).toHaveBeenCalledWith("httpRateLimitKeysV2", {
       name: "downloadIp",
       key: "ip:203.0.113.1:download",
       shard: 3,
@@ -408,7 +408,7 @@ describe("component HTTP rate limit key metadata", () => {
     const result = await pruneHttpKeyHandler(ctx, { batchSize: 10 });
 
     expect(result).toEqual({ deleted: 2, hasMore: false });
-    expect(ctx.db.query).toHaveBeenCalledWith("httpRateLimitKeys");
+    expect(ctx.db.query).toHaveBeenCalledWith("httpRateLimitKeysV2");
     expect(withIndex).toHaveBeenCalledWith("by_expires_at", expect.any(Function));
     expect(staleTake).not.toHaveBeenCalled();
     expect(take).toHaveBeenCalledWith(10);

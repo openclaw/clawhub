@@ -26,7 +26,7 @@ type Kind = "skill" | "package";
 async function stagedFixture(kind: Kind) {
   vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", WORKER_TOKEN);
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const fixture = await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { handle: "fail-closed-owner", role: "user" });
     const storageId = await ctx.storage.store(new Blob(["# Fail closed\n"]));

@@ -21,7 +21,7 @@ afterEach(() => {
 
 async function fixture() {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const data = await t.run(async (ctx) => {
     const actor = await ctx.db.insert("users", { handle: "curator", role: "moderator" });
     const reader = await ctx.db.insert("users", { handle: "reader", role: "user" });

@@ -101,6 +101,7 @@ import {
   publicApiOrigin,
   requireAdminOrResponse,
   requireApiTokenUserOrResponse,
+  anonymousCatalogCacheHeaders,
   resolvePublicSkillVersions,
   readPublicSkillVersionSelections,
   safeStoredFilePreviewResponse,
@@ -1648,7 +1649,11 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
           Link: `<${ApiRoutes.trending}?kind=skills>; rel="successor-version"`,
         })
       : rate.headers;
-  return json({ items, nextCursor: result.nextCursor ?? null }, 200, responseHeaders);
+  return json(
+    { items, nextCursor: result.nextCursor ?? null },
+    200,
+    anonymousCatalogCacheHeaders(request, responseHeaders),
+  );
 }
 
 async function isCurrentSkillHttpOwner(
@@ -2079,7 +2084,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           : null,
       },
       200,
-      rate.headers,
+      anonymousCatalogCacheHeaders(request, rate.headers),
     );
   }
 
