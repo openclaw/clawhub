@@ -124,7 +124,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   leaves the live skill's moderation, hold, and icon alone.
 - Pending package finalization changes `channel` and `isOfficial` only when
   that release becomes latest. An older release can still publish without
-  rolling the live package back to the channel it staged.
+  rolling the live package back to the channel it staged. A private release
+  that would not become latest is refused instead, because package privacy
+  is the parent channel and publishing it would expose the artifact.
 - Changes to version publication or owner-deletion state invalidate public browse
   projections. A pending replacement must preserve an older approved version where
   the existing latest-version policy selects it.

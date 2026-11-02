@@ -95,6 +95,76 @@ it("keeps channel and official status when an older release finalizes late", asy
   });
 });
 
+it("refuses a private older release that would publish under a public package", async () => {
+  const { t, stage } = await fixture();
+  const older = await stage("1.5.0", "Older private");
+  const newer = await stage("2.0.0", "Current public");
+  await t.mutation(internal.packages.publishPendingReleaseInternal, {
+    releaseId: newer.releaseId,
+  });
+  await t.run(async (ctx) => {
+    const release = await ctx.db.get(older.releaseId);
+    const pending = release?.pendingPublication;
+    if (!pending || typeof pending !== "object" || Array.isArray(pending)) {
+      throw new Error("missing pending publication");
+    }
+    await ctx.db.patch(older.releaseId, {
+      pendingPublication: { ...pending, channel: "private", isOfficial: false },
+    });
+  });
+
+  await expect(
+    t.mutation(internal.packages.publishPendingReleaseInternal, { releaseId: older.releaseId }),
+  ).rejects.toThrow(
+    "A private package release cannot publish while a newer public release stays latest.",
+  );
+
+  const packageId = await t.run(async (ctx) => (await ctx.db.get(newer.releaseId))!.packageId);
+  expect(await t.run(async (ctx) => ctx.db.get(packageId))).toMatchObject({
+    channel: "community",
+    latestReleaseId: newer.releaseId,
+  });
+  expect(await t.run(async (ctx) => ctx.db.get(older.releaseId))).toMatchObject({
+    publicationStatus: "pending",
+    pendingPublication: { channel: "private" },
+  });
+});
+
+it("refuses an immediate private backport under a public package", async () => {
+  const { t, stage } = await fixture();
+  const newer = await stage("2.0.0", "Current public");
+  await t.mutation(internal.packages.publishPendingReleaseInternal, {
+    releaseId: newer.releaseId,
+  });
+  const ownerUserId = await t.run(async (ctx) => (await ctx.db.get(newer.releaseId))!.createdBy);
+  await expect(
+    t.mutation(internal.packages.insertReleaseInternal, {
+      actorUserId: ownerUserId,
+      ownerUserId,
+      name,
+      displayName: "Older private",
+      family: "code-plugin",
+      runtimeId: "metadata-fixture",
+      version: "1.5.0",
+      publicationStatus: "published",
+      channel: "private",
+      changelog: "Backport",
+      tags: ["latest"],
+      summary: "Summary 1.5.0",
+      files: [],
+      integritySha256: "c".repeat(64),
+      sha256hash: "d".repeat(64),
+    }),
+  ).rejects.toThrow(
+    "A private package release cannot publish while a newer public release stays latest.",
+  );
+  const packageId = await t.run(async (ctx) => (await ctx.db.get(newer.releaseId))!.packageId);
+  expect(await t.run(async (ctx) => ctx.db.get(packageId))).toMatchObject({
+    channel: "community",
+    latestReleaseId: newer.releaseId,
+  });
+});
+
 it("applies the staged channel when that release becomes latest", async () => {
   const { t, stage } = await fixture();
   const first = await stage("1.0.0", "First name");
