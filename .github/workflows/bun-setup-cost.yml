@@ -1,0 +1,32 @@
+name: Bun native setup cost
+
+on:
+  push:
+    branches: [investigate/bun-ci-owner-proof-20261102]
+
+permissions:
+  contents: read
+
+jobs:
+  setup-cost:
+    name: native setup / ${{ matrix.sample }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      max-parallel: 3
+      matrix:
+        sample: [1, 2, 3]
+    steps:
+      - name: Start native action timer
+        id: timer
+        run: echo "nanoseconds=$(date +%s%N)" >> "$GITHUB_OUTPUT"
+      - name: Provision the exact native action
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - name: Record fresh-runner setup cost
+        run: |
+          set -euo pipefail
+          elapsed=$(( $(date +%s%N) - ${{ steps.timer.outputs.nanoseconds }} ))
+          test "$(bun --version)" = 1.4.4
+          echo "BUN_CI_SETUP_COST {\"sample\":${{ matrix.sample }},\"nanoseconds\":$elapsed,\"version\":\"1.4.4\",\"kind\":\"fresh standard runner native action plus step boundary; not restored project proof\"}"

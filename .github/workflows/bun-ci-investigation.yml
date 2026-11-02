@@ -2,7 +2,7 @@ name: Bun CI owner proof
 
 on:
   push:
-    branches: [investigate/bun-ci-owner-proof-20261102]
+    branches: [investigate/bun-ci-final-head-only]
 
 permissions:
   contents: read
