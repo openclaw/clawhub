@@ -56,6 +56,9 @@ async function seedSkillFinalization(t: ReturnType<typeof convexTest>) {
       files: [],
       followup: {},
       checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+      checkClaimId: "finalization-retry-checks",
+      checkClaimedAt: Date.now(),
+      checkClaimExpiresAt: Date.now() + 60_000,
       finalizationClaimId: "finalizer",
       finalizationClaimExpiresAt: Date.now() + 60_000,
       createdAt: 1,
@@ -94,6 +97,9 @@ describe("publish attempt runtime recovery", () => {
         jobs: await ctx.db.system.query("_scheduled_functions").collect(),
       }));
       expect(state.attempt).toMatchObject({ status: "finalized", result: fixture.result });
+      expect(state.attempt?.checkClaimId).toBeUndefined();
+      expect(state.attempt?.checkClaimedAt).toBeUndefined();
+      expect(state.attempt?.checkClaimExpiresAt).toBeUndefined();
       expect(state.version).toMatchObject({
         publicationStatus: "published",
         fingerprint: "fingerprint",
@@ -201,6 +207,7 @@ describe("publish attempt runtime recovery", () => {
           jobs: await ctx.db.system.query("_scheduled_functions").collect(),
         }));
         expect(state.attempt?.status).toBe("finalizing");
+        expect(state.attempt?.checkClaimId).toBe("finalization-retry-checks");
         expect(state.version?.pendingPublication).toEqual({ skillInsertArgs: {} });
         expect(state.jobs).toEqual([]);
         await t.mutation(internal.publishAttempts.recordSkillPublishAttemptFinalizedInternal, {
@@ -258,6 +265,7 @@ describe("publish attempt runtime recovery", () => {
         jobs: await ctx.db.system.query("_scheduled_functions").collect(),
       }));
       expect(state.attempt?.status).toBe("finalizing");
+      expect(state.attempt?.checkClaimId).toBe("finalization-retry-checks");
       expect(state.jobs).toEqual([]);
     } finally {
       vi.useRealTimers();
@@ -366,6 +374,9 @@ describe("publish attempt runtime recovery", () => {
             files: [],
             packageFollowup: {},
             checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+            checkClaimId: "finalization-retry-checks",
+            checkClaimedAt: Date.now(),
+            checkClaimExpiresAt: Date.now() + 60_000,
             finalizationClaimId: "finalizer",
             finalizationClaimExpiresAt: Date.now() + 60_000,
             createdAt: 1,
@@ -475,6 +486,7 @@ describe("publish attempt runtime recovery", () => {
           expect(rejected.jobs).toEqual([]);
           expect(rejected.scans).toEqual([]);
           expect(rejected.attempt?.status).toBe("finalizing");
+          expect(rejected.attempt?.checkClaimId).toBe("finalization-retry-checks");
           expect(rejected.attempt?.result).toBeUndefined();
           return;
         }
@@ -514,6 +526,7 @@ describe("publish attempt runtime recovery", () => {
           expect(rolledBack.jobs).toEqual([]);
           expect(rolledBack.scans).toEqual([]);
           expect(rolledBack.attempt?.status).toBe("finalizing");
+          expect(rolledBack.attempt?.checkClaimId).toBe("finalization-retry-checks");
         }
         await Promise.all([
           t.mutation(
@@ -533,6 +546,9 @@ describe("publish attempt runtime recovery", () => {
           pkg: await ctx.db.get(fixture.result.packageId),
         }));
         expect(state.attempt).toMatchObject({ status: "finalized", result: fixture.result });
+        expect(state.attempt?.checkClaimId).toBeUndefined();
+        expect(state.attempt?.checkClaimedAt).toBeUndefined();
+        expect(state.attempt?.checkClaimExpiresAt).toBeUndefined();
         expect(state.jobs).toMatchObject([
           {
             name: "vt:scanPackageReleaseWithVirusTotal",
