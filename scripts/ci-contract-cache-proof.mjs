@@ -12,6 +12,24 @@ const mode = process.env.PROOF_MODE;
 const phase = process.env.PROOF_PHASE;
 const results = { mode, phase, measurements: [] };
 let reportNumber = 0;
+const nativeWorkflow = JSON.parse(
+  command(source, "bun", ["-e", 'console.log(JSON.stringify(Bun.YAML.parse(await Bun.file(".github/workflows/ci.yml").text())))']).stdout,
+);
+const nativeSteps = nativeWorkflow.jobs["templates-openclaw-contract"].steps;
+const nativeInstall = nativeSteps.find((step) => step.name === "Install pinned OpenClaw dependencies").run;
+const nativeContract = nativeSteps.find((step) => step.name === "Run ClawHub to OpenClaw contract proof").run;
+assert.match(nativeInstall, /corepack pnpm install --frozen-lockfile/);
+assert.equal(nativeContract, "bunx vitest run scripts/templates-feed-openclaw-e2e.test.ts --maxWorkers=1");
+if (mode === "candidate") {
+  const restore = nativeSteps.find((step) => step.id === "openclaw-cache");
+  const save = nativeSteps.find((step) => step.name === "Save the trusted OpenClaw package store");
+  assert.equal(restore.uses, "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9");
+  assert.equal(restore.with["restore-keys"], undefined);
+  for (const input of ["runner.os", "runner.arch", "steps.openclaw-store.outputs.runtime", "env.OPENCLAW_CONTRACT_SHA", "pnpm-lock.yaml", "package.json"]) assert.ok(restore.with.key.includes(input));
+  assert.equal(save.if, "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.openclaw-cache.outputs.cache-hit != 'true' }}");
+  assert.ok(nativeSteps.indexOf(save) > nativeSteps.findIndex((step) => step.run === nativeContract));
+  results.candidateCachePolicyVerified = true;
+}
 
 function command(root, program, args, options = {}) {
   const start = performance.now();
@@ -42,15 +60,8 @@ function contract(root, failure = false) {
   assert.equal(existsSync(reportPath), false);
   const output = command(
     source,
-    "bunx",
-    [
-      "vitest",
-      "run",
-      "scripts/templates-feed-openclaw-e2e.test.ts",
-      "--maxWorkers=1",
-      "--reporter=json",
-      `--outputFile=${reportPath}`,
-    ],
+    "bash",
+    ["-euo", "pipefail", "-c", `${nativeContract} --reporter=json --outputFile=${JSON.stringify(reportPath)}`],
     {
       env: { OPENCLAW_TEMPLATES_CHECKOUT: root },
       failure,
@@ -77,14 +88,15 @@ function contract(root, failure = false) {
 }
 
 function installAndTest(root, label) {
-  const install = command(root, "corepack", ["pnpm", "install", "--frozen-lockfile"]);
+  const install = command(root, "bash", ["-euo", "pipefail", "-c", nativeInstall]);
   results.measurements.push({ label, installMs: install.ms, contract: contract(root) });
 }
 
 assert.equal(
   command(source, "git", ["rev-parse", "HEAD"]).stdout.trim(),
-  "56e7ee8aaef8a0e180f906fd7bf194dd1b03bc45",
+  mode === "baseline" ? "56e7ee8aaef8a0e180f906fd7bf194dd1b03bc45" : "7ba70d749b42362cf0fa8842cb87aa92fa9056e4",
 );
+results.sourceHead = command(source, "git", ["rev-parse", "HEAD"]).stdout.trim();
 assert.equal(
   command(external, "git", ["rev-parse", "HEAD"]).stdout.trim(),
   "bad082feced849567953588d4b1bc7ffc3188839",

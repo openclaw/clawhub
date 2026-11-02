@@ -21,7 +21,7 @@ jobs:
           path: harness
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 56e7ee8aaef8a0e180f906fd7bf194dd1b03bc45
+          ref: ${{ matrix.mode == 'baseline' && '56e7ee8aaef8a0e180f906fd7bf194dd1b03bc45' || '7ba70d749b42362cf0fa8842cb87aa92fa9056e4' }}
           path: source
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
@@ -47,7 +47,12 @@ jobs:
         id: restore
         with:
           path: ${{ steps.store.outputs.path }}
-          key: contract-proof-v1-${{ runner.os }}-${{ runner.arch }}-node24.22.1-pnpm12.15.0-bad082feced849567953588d4b1bc7ffc3188839-${{ hashFiles('source/.artifacts/openclaw-contract/pnpm-lock.yaml', 'source/.artifacts/openclaw-contract/package.json') }}
+          key: contract-proof-v2-${{ runner.os }}-${{ runner.arch }}-node24.22.1-pnpm12.15.0-bad082feced849567953588d4b1bc7ffc3188839-${{ hashFiles('source/.artifacts/openclaw-contract/pnpm-lock.yaml', 'source/.artifacts/openclaw-contract/package.json') }}
+      - name: Require a genuine cold candidate miss
+        if: matrix.mode == 'candidate'
+        env:
+          CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+        run: test "$CACHE_HIT" != true
       - name: Actual cold install and contract
         env:
           PROOF_MODE: ${{ matrix.mode }}
@@ -73,7 +78,7 @@ jobs:
           path: harness
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 56e7ee8aaef8a0e180f906fd7bf194dd1b03bc45
+          ref: ${{ matrix.mode == 'baseline' && '56e7ee8aaef8a0e180f906fd7bf194dd1b03bc45' || '7ba70d749b42362cf0fa8842cb87aa92fa9056e4' }}
           path: source
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
@@ -105,7 +110,7 @@ jobs:
         id: restore
         with:
           path: ${{ steps.store.outputs.path }}
-          key: contract-proof-v1-${{ runner.os }}-${{ runner.arch }}-node24.22.1-pnpm12.15.0-bad082feced849567953588d4b1bc7ffc3188839-${{ hashFiles('source/.artifacts/openclaw-contract/pnpm-lock.yaml', 'source/.artifacts/openclaw-contract/package.json') }}
+          key: contract-proof-v2-${{ runner.os }}-${{ runner.arch }}-node24.22.1-pnpm12.15.0-bad082feced849567953588d4b1bc7ffc3188839-${{ hashFiles('source/.artifacts/openclaw-contract/pnpm-lock.yaml', 'source/.artifacts/openclaw-contract/package.json') }}
       - name: Require exact hit only for candidate
         if: matrix.mode == 'candidate'
         env:
