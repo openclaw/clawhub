@@ -1409,6 +1409,10 @@ export const recordSkillPublishAttemptFinalizedInternal = internalMutation({
 
     await ctx.db.patch(attempt._id, {
       status: "finalized",
+      // A finalization-only worker may have reserved the check lease after checks passed.
+      checkClaimId: undefined,
+      checkClaimedAt: undefined,
+      checkClaimExpiresAt: undefined,
       finalizationClaimId: undefined,
       finalizationClaimedAt: undefined,
       finalizationClaimExpiresAt: undefined,
@@ -1492,6 +1496,10 @@ export const recordPackagePublishAttemptFinalizedInternal = internalMutation({
 
     await ctx.db.patch(attempt._id, {
       status: "finalized",
+      // A finalization-only worker may have reserved the check lease after checks passed.
+      checkClaimId: undefined,
+      checkClaimedAt: undefined,
+      checkClaimExpiresAt: undefined,
       finalizationClaimId: undefined,
       finalizationClaimedAt: undefined,
       finalizationClaimExpiresAt: undefined,
