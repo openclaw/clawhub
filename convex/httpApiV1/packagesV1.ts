@@ -71,6 +71,7 @@ import {
 } from "../lib/githubActionsOidc";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import { isConvexWritePressureError } from "../lib/httpUtils";
 import { verifyOpenClawPublishAuthorization } from "../lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "../lib/packageArtifacts";
 import {
@@ -1142,6 +1143,8 @@ type PackagePublishTarballPart =
 
 type StoredPackagePublishFile = ServerPackagePublishRequest["files"][number];
 
+class InlinePackagePreBlobWritePressureError extends Error {}
+
 async function storeUploadedPackageFile(
   ctx: ActionCtx,
   entry: File,
@@ -1305,11 +1308,20 @@ async function parseMultipartPackagePublish(
     const artifactBytes = new Uint8Array(await tarballEntry.arrayBuffer());
     const parsed = await parseClawPack(artifactBytes);
     assertClawPackPublicationIdentity(metadata, parsed);
-    const artifactStorageId = await storeRequestPackageBlob(
-      ctx,
-      requestStorageIds,
-      new Blob([bytesToArrayBuffer(artifactBytes)], { type: "application/octet-stream" }),
-    );
+    let artifactStorageId: Id<"_storage">;
+    try {
+      artifactStorageId = await storeRequestPackageBlob(
+        ctx,
+        requestStorageIds,
+        new Blob([bytesToArrayBuffer(artifactBytes)], { type: "application/octet-stream" }),
+      );
+    } catch (error) {
+      // Only this first inline store can reject before any request blob exists.
+      if (isConvexWritePressureError(error)) {
+        throw new InlinePackagePreBlobWritePressureError(error.message);
+      }
+      throw error;
+    }
     return await buildPackagePublishRequestFromClawPack(
       ctx,
       metadata,
@@ -2414,6 +2426,13 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
           });
     return json(result, 200, rate.headers);
   } catch (error) {
+    if (
+      !publicationOwnsCleanup &&
+      requestStorageIds.size === 0 &&
+      error instanceof InlinePackagePreBlobWritePressureError
+    ) {
+      return text(error.message, 503, rate.headers);
+    }
     if (!publicationOwnsCleanup) {
       await Promise.allSettled([...requestStorageIds].map((id) => ctx.storage.delete(id)));
     }

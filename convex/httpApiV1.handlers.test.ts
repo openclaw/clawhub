@@ -18161,6 +18161,100 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it.each([
+    { stage: "first-store", typed: true, status: 503 },
+    { stage: "first-store", typed: false, status: 400 },
+    { stage: "extracted-store", typed: true, status: 400 },
+    { stage: "publish", typed: true, status: 400 },
+    { stage: "loose-file-store", typed: true, status: 400 },
+    { stage: "none", typed: true, status: 200 },
+  ])(
+    "inline package storage classification preserves $stage (typed=$typed)",
+    async ({ stage, typed, status }) => {
+      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+        kind: "user",
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const message = `${typed ? "CommitterFullError: " : ""}Too many writes in a short period of time. Reduce your writes, spread your writes out over time or remove unused indexes to reduce load and avoid errors. (reset in 43s)`;
+      const runAction = vi.fn().mockImplementation(async () => {
+        if (stage === "publish") throw new Error(message);
+        return { ok: true, packageId: "pkg:1", releaseId: "rel:1" };
+      });
+      const storedIds: string[] = [];
+      let calls = 0;
+      const storageStore = vi.fn(async (_blob: Blob) => {
+        calls += 1;
+        if (
+          (["first-store", "loose-file-store"].includes(stage) && calls === 1) ||
+          (stage === "extracted-store" && calls === 2)
+        )
+          throw new Error(message);
+        const id = `storage:${calls}`;
+        storedIds.push(id);
+        return id;
+      });
+      const storageDelete = vi.fn().mockResolvedValue(undefined);
+      const form = packagePublishForm(packagePublishMetadata({ family: "code-plugin" }));
+      if (stage === "loose-file-store") {
+        form.append(
+          "files",
+          new File(["{}"], "openclaw.plugin.json", { type: "application/json" }),
+        );
+      } else {
+        const pack = npmPackFixture({
+          "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+          "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+          "package/dist/index.js": "export const demo = true;\n",
+        });
+        form.append(
+          "clawpack",
+          new File([bytesToArrayBuffer(pack)], "demo-plugin-1.0.0.tgz", {
+            type: "application/octet-stream",
+          }),
+        );
+      }
+      const response = await __handlers.publishPackageV1Handler(
+        makeCtx({
+          runAction,
+          runMutation: vi.fn().mockResolvedValue(okRate()),
+          storage: { store: storageStore, delete: storageDelete },
+        }),
+        new Request("https://example.com/api/v1/packages", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: form,
+        }),
+      );
+      expect(response.status).toBe(status);
+      if (stage === "first-store" || stage === "loose-file-store") {
+        expect(storageStore).toHaveBeenCalledTimes(1);
+        expect(runAction).not.toHaveBeenCalled();
+        expect(storageDelete).not.toHaveBeenCalled();
+      } else if (stage === "extracted-store") {
+        expect(runAction).not.toHaveBeenCalled();
+        expect(storedIds.length).toBeGreaterThan(0);
+        expect(
+          storageDelete.mock.calls
+            .map(([id]) => id)
+            .sort((left, right) => String(left).localeCompare(String(right))),
+        ).toEqual(storedIds.sort((left, right) => left.localeCompare(right)));
+      } else {
+        expect(runAction).toHaveBeenCalledTimes(1);
+        expect(storageDelete).not.toHaveBeenCalled();
+        if (stage === "none") {
+          expect(runAction.mock.calls[0]?.[1]).toMatchObject({
+            actorUserId: "users:1",
+            payload: { family: "code-plugin", artifact: { kind: "npm-pack", format: "tgz" } },
+            requestStorageIds: storedIds,
+          });
+        }
+      }
+      if (stage !== "none") expect(await response.text()).toContain(message);
+    },
+  );
+
   it("package publish returns retryable status for transient Convex contention", async () => {
     vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
       userId: "users:1",
