@@ -16,13 +16,17 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix: &proof-matrix
-        repository: [clawhub]
+        repository: [crabfleet, gogcli]
         tool: [baseline, candidate]
         include:
-          - repository: clawhub
-            sha: 615dc45d1ec6dfae9c43a0af508239ec1f64969c
-            pm: bun
+          - repository: crabfleet
+            sha: 8ba22e9dddabcd14cd4367469ef092c8092f6d90
+            pm: 11.27.1
             directory: source
+          - repository: gogcli
+            sha: 82e7fd6005d4ed29f8edfa2a44475e08fe3051a0
+            pm: 11.28.5
+            directory: source/internal/tracking/worker
     env: &proof-env
       PROOF_REPOSITORY: ${{ matrix.repository }}
       PROOF_TOOL: ${{ matrix.tool }}
@@ -36,6 +40,7 @@ jobs:
           printf 'BUN_INSTALL_CACHE_DIR=%s/bun-ci-cache/bun\nnpm_config_cache=%s/bun-ci-cache/npm\n' "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          path: harness
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -86,7 +91,7 @@ jobs:
         continue-on-error: true
         env:
           PROOF_PHASE: cold
-        run: node scripts/bun-ci-investigation.mjs
+        run: node harness/scripts/bun-ci-investigation.mjs
       - name: Save task-only caches, never node_modules
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
@@ -112,6 +117,7 @@ jobs:
         run: *cache-env
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          path: harness
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -140,4 +146,4 @@ jobs:
       - name: Actual command, hot repeats and negative controls
         env:
           PROOF_PHASE: restored
-        run: node scripts/bun-ci-investigation.mjs
+        run: node harness/scripts/bun-ci-investigation.mjs
