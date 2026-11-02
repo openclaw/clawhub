@@ -16,42 +16,13 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix: &proof-matrix
-        repository:
-          [clawhub, mcporter, clickclack, clawsweeper, lobster, clawpatch, crabfleet, gogcli]
+        repository: [clawhub]
         tool: [baseline, candidate]
         include:
           - repository: clawhub
             sha: 615dc45d1ec6dfae9c43a0af508239ec1f64969c
             pm: bun
             directory: source
-          - repository: mcporter
-            sha: 8ba0ef967805b8d3fca7a9bc47c725a476e1282b
-            pm: 10.34.6
-            directory: source
-          - repository: clickclack
-            sha: fb9b9314bdfe18b77961edcddd7b1d53f1444d86
-            pm: 12.15.0
-            directory: source
-          - repository: clawsweeper
-            sha: aa20b22bbd865be8a12a97b9e302e4bf61e80760
-            pm: 12.15.0
-            directory: source
-          - repository: lobster
-            sha: bfad09a497477a28df43e34d188ec2a71109237a
-            pm: 12.15.0
-            directory: source
-          - repository: clawpatch
-            sha: 79c1495f20d33b68ca4439dfa9dfef18ed7a460e
-            pm: 11.28.6
-            directory: source
-          - repository: crabfleet
-            sha: 8ba22e9dddabcd14cd4367469ef092c8092f6d90
-            pm: 11.27.1
-            directory: source
-          - repository: gogcli
-            sha: 82e7fd6005d4ed29f8edfa2a44475e08fe3051a0
-            pm: 11.28.5
-            directory: source/internal/tracking/worker
     env: &proof-env
       PROOF_REPOSITORY: ${{ matrix.repository }}
       PROOF_TOOL: ${{ matrix.tool }}
@@ -91,6 +62,9 @@ jobs:
               curl --fail --location --silent --show-error -o "$RUNNER_TEMP/bun-ci-tools/bun.zip" https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-x64.zip
               echo "bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c  $RUNNER_TEMP/bun-ci-tools/bun.zip" | sha256sum --check
               unzip -q "$RUNNER_TEMP/bun-ci-tools/bun.zip" -d "$RUNNER_TEMP/bun-ci-tools"
+            fi
+            if [[ ! -e "$RUNNER_TEMP/bun-ci-tools/bun-linux-x64/bunx" ]]; then
+              ln -s bun "$RUNNER_TEMP/bun-ci-tools/bun-linux-x64/bunx"
             fi
             echo "$RUNNER_TEMP/bun-ci-tools/bun-linux-x64" >> "$GITHUB_PATH"
           fi

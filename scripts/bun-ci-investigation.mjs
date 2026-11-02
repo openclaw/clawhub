@@ -54,6 +54,7 @@ const nativeTypeScript = ["lobster", "clawpatch", "crabfleet"].includes(name);
 const typeCommand = name === "crabfleet" ? "build" : "typecheck";
 if (tool === "candidate") {
   manifest.scripts[command] = formatScript.replace("oxfmt --check", "bun fmt --no-script --check");
+  if (name === "clawhub") manifest.scripts.format = "bun fmt --no-script --write";
   if (nativeTypeScript)
     manifest.scripts[typeCommand] = manifest.scripts[typeCommand].replace(
       /\btsc\b/,
@@ -189,6 +190,36 @@ try {
     expectSuccess(check("typecheck-restored-clean"));
   }
   expectSuccess(format("format-restored-clean"));
+  if (name === "clawhub") {
+    const ignoredFixture = path.join(cwd, "convex/_generated/bun-ci-excluded-control.ts");
+    assert(!fs.existsSync(ignoredFixture));
+    try {
+      fs.writeFileSync(ignoredFixture, "export const = ;\n");
+      expectSuccess(format("format-excluded-generated-control"));
+      expectSuccess(run("actual-format-writer", manager, ["run", "format"]));
+    } finally {
+      fs.unlinkSync(ignoredFixture);
+    }
+    expectSuccess(run("native-static-gate", manager, ["run", "ci:static"]));
+    expectSuccess(
+      run("native-schema-type-gate", bun, [
+        "x",
+        "tsc",
+        "-p",
+        "packages/schema/tsconfig.json",
+        "--noEmit",
+      ]),
+    );
+    expectSuccess(
+      run("native-cli-type-gate", bun, [
+        "x",
+        "tsc",
+        "-p",
+        "packages/clawhub/tsconfig.json",
+        "--noEmit",
+      ]),
+    );
+  }
   report("COMPLETE", { passed: true, samples: samples.length });
 } catch (error) {
   primaryError = error;
