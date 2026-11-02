@@ -24,6 +24,22 @@ const selection = (params: Record<string, unknown>) =>
   }) as AnalyticsEvent;
 
 describe("selection destination fields", () => {
+  it("preserves the public footer selection contract for the tagged community redirect", () => {
+    const link = anchor("https://openclaw.ai/discord?from=clawhub-community-nav");
+    const footer = document.createElement("footer");
+    footer.append(link);
+    expect(analyticsPublicResourcePlacement(link)).toBe("footer");
+    const fields = analyticsExternalLinkParameters(link, origin);
+    expect(analyticsEventParameters(selection(fields), origin)).toEqual({
+      content_type: "resource",
+      content_id: "footer_link",
+      ui_location: "footer",
+      link_url: "https://openclaw.ai/discord",
+      link_domain: "openclaw.ai",
+    });
+    expect(link.search).toBe("?from=clawhub-community-nav");
+  });
+
   it("uses actual external HTTP anchors, strips query/hash in telemetry only, and derives the hostname", () => {
     const link = anchor("https://Example.test:8443/guide?utm_source=public#section");
     const href = link.href;

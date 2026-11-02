@@ -151,7 +151,7 @@ type ProfileCatalogSort = "downloads" | "recent" | "stars";
 const VISIBLE_ORG_CHIPS = 2;
 const VISIBLE_MEMBER_STACK = 8;
 const CATALOG_SEARCH_THRESHOLD = 8;
-const PUBLISHER_REPORT_DISCORD_URL = "https://discord.gg/clawd";
+const PUBLISHER_REPORT_DISCORD_URL = "https://openclaw.ai/discord?from=clawhub-publisher-report";
 const DEFAULT_PUBLISHER_BIO = "Publisher on Clawhub.";
 
 const PROFILE_CATALOG_SORT_OPTIONS = [
