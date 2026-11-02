@@ -164,7 +164,7 @@ function pushPackageAttention(
       reason: "OpenClaw API update",
       preview: "Review replacement APIs and retirement dates.",
       severity: "info",
-      href: `${buildPluginDetailHref(pkg.name)}#api-updates`,
+      href: buildPluginDetailHref(pkg.name),
       actionLabel: "View API updates →",
     });
   }
