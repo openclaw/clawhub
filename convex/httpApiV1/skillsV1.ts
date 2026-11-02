@@ -1080,7 +1080,7 @@ async function readPublicSkillVersionSelection(
   skillId: Id<"skills">,
   selector: { version?: string; tag?: string; versionId?: Id<"skillVersions"> } = {},
 ): Promise<PublicSkillVersionSelection> {
-  return await ctx.runQuery(internal.publicSkillVersions.getPublicVersionSelectionInternal, {
+  return await ctx.runQuery(internal.skills.getPublicVersionSelectionInternal, {
     skillId,
     ...selector,
   });
