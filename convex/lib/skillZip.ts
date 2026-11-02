@@ -78,6 +78,11 @@ export function buildSkillMeta(meta: SkillZipMeta) {
   };
 }
 
+function hasOriginalSkillMetaPath(entries: { path: string }[]) {
+  // Generated metadata must not replace an original file or conflict with its directory.
+  return entries.some(({ path }) => path === "_meta.json" || path.startsWith("_meta.json/"));
+}
+
 export function buildDeterministicZip(entries: ZipEntry[], meta?: SkillZipMeta) {
   const sorted = [...entries].sort((a, b) => a.path.localeCompare(b.path));
   const zipData: ZipInput = {};
@@ -86,7 +91,7 @@ export function buildDeterministicZip(entries: ZipEntry[], meta?: SkillZipMeta) 
     zipData[entry.path] = [entry.bytes, { mtime: FIXED_ZIP_DATE }];
   }
 
-  if (meta) {
+  if (meta && !hasOriginalSkillMetaPath(sorted)) {
     const metaContent = new TextEncoder().encode(JSON.stringify(buildSkillMeta(meta), null, 2));
     zipData["_meta.json"] = [metaContent, { mtime: FIXED_ZIP_DATE }];
   }
@@ -262,7 +267,7 @@ function orderZipEntries(entries: AsyncZipEntry[], meta?: SkillZipMeta) {
   const zipDataOrder: Record<string, true> = {};
   for (const entry of sorted) zipDataOrder[entry.path] = true;
 
-  if (meta) {
+  if (meta && !hasOriginalSkillMetaPath(sorted)) {
     const metaBytes = new TextEncoder().encode(JSON.stringify(buildSkillMeta(meta), null, 2));
     byPath.set("_meta.json", {
       path: "_meta.json",
