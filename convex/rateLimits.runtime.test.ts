@@ -147,3 +147,29 @@ it.each([
   },
   120_000,
 );
+
+it("skips pruning entirely while rate-limiter storage is off", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+  vi.stubEnv("CLAWHUB_RATE_LIMITER_DISABLED", "1");
+  try {
+    const t = convexTest(schema, modules);
+    registerRateLimiter(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("httpRateLimitKeys", {
+        name: "readIp",
+        key: "ip:203.0.113.90:read",
+        shard: 0,
+        lastTouchedAt: 1,
+        expiresAt: 2,
+      });
+    });
+    expect(await t.mutation(internal.rateLimits.pruneHttpRateLimitKeysInternal, {})).toEqual({
+      deleted: 0,
+      hasMore: false,
+    });
+    const remaining = await t.run(async (ctx) => ctx.db.query("httpRateLimitKeys").collect());
+    expect(remaining).toHaveLength(1);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
