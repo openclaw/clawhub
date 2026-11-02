@@ -28,6 +28,12 @@ runner capacity. The short `static`, `packages`, `types-build`, and `e2e-http`
 jobs also run on GitHub-hosted Ubuntu runners. Other non-browser gates retain
 their five-minute timeout.
 
+The pinned OpenClaw contract job caches only the pnpm package store, keyed by
+OS, architecture, actual Node/pnpm versions, the pinned source commit and its
+lockfile/package manifest. It always performs the frozen install and full
+contract proof. Pull requests only restore; successful main pushes may save an
+exact-key miss. There are no fallback keys or cached installed workspaces.
+
 - `playwright-smoke` builds the app and runs a chromium browser smoke against the
   public read backend.
 - `playwright-local-auth` uses `test:pw:local-auth` to start a local anonymous
