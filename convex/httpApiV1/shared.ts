@@ -649,3 +649,15 @@ export function formatAuthzMessage(error: unknown, fallback: "Unauthorized" | "F
   if (!stripped || stripped.toLowerCase() === fallback.toLowerCase()) return fallback;
   return stripped;
 }
+
+/**
+ * Lets the public edge cache anonymous catalog reads briefly. Cached responses
+ * skip the batched public-version checks that dominate database reads.
+ * Requests with credentials are never marked cacheable.
+ */
+export function anonymousCatalogCacheHeaders(request: Request, headers: HeadersInit): HeadersInit {
+  if (request.headers.has("authorization") || request.headers.has("cookie")) return headers;
+  return mergeHeaders(headers, {
+    "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+  });
+}
