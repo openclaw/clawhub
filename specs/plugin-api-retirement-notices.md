@@ -25,15 +25,19 @@ their existing manager/staff authorization boundary. Existing records without
 structured metadata continue through the existing validation path; no migration
 or inferred dates are needed. The fields share the finding table's retention policy.
 
-A complete deprecation warning gets a calm informational notice and a manager
-dashboard nudge. Duplicate API/replacement/date entries collapse; distinct dates
+A complete deprecation warning gets a calm informational notice in the manager
+dashboard review sheet and a manager dashboard nudge. Public plugin detail pages
+do not render retirement notices, including for signed-in managers; keep author
+migration guidance in the dashboard rather than above the install command.
+Dashboard detail links point to the plugin page without the removed `#api-updates`
+anchor. Duplicate API/replacement/date entries collapse; distinct dates
 remain distinct. These entries do not contribute to the dashboard warning count
 or alarming validation presentation. Missing metadata and actual errors keep the
 existing behavior. In particular, an error, breakage, or P0 finding cannot become
 an informational retirement notice. Plugin pages do not show a blanket
 incompatibility alert; manager validation details retain the underlying findings.
 
-Before and on the final compatibility day (UTC), the notice says the API keeps
+Before and on the final compatibility day (UTC), the dashboard notice says the API keeps
 working until that date. Afterward it states the recorded retirement date without
 claiming continued compatibility or inventing a new incompatibility verdict.
 Long replacement guidance stays in expandable details; the compact notice points

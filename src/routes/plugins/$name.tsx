@@ -49,7 +49,6 @@ import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
-import { PluginApiRetirementNotice } from "../../components/PluginApiRetirementNotice";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
@@ -1111,7 +1110,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     | Error
     | undefined;
   const validationSummaryUnavailable = validationSummaryResult instanceof Error;
-  const validationSummary = validationSummaryUnavailable ? undefined : validationSummaryResult;
   const activityTrendEndDay = getActivityTrendEndDay();
   const { trend: activityTrend, loading: activityTrendLoading } = useDeferredPackageActivityTrend(
     detail.package ? { name: detail.package.name, endDay: activityTrendEndDay } : null,
@@ -1829,10 +1827,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
               {validationPanel}
               <div className="plugin-install-stack detail-mobile-install">
                 {validationAvailabilityAlert}
-                <PluginApiRetirementNotice
-                  id="api-updates"
-                  retirements={validationSummary?.apiRetirements ?? []}
-                />
                 <Card className="skill-install-command-card">
                   <CardHeader className="detail-hero-summary-row plugin-install-card-header">
                     <CardTitle className="skill-install-panel-title">Install</CardTitle>

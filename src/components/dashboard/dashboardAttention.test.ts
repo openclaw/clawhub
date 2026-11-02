@@ -75,7 +75,7 @@ describe("collectAttentionItems", () => {
         severity: "info",
         apiRetirements,
         reason: "OpenClaw API update",
-        href: "/plugins/beta-plugin#api-updates",
+        href: "/plugins/beta-plugin",
       }),
     ]);
     const mixed = collectAttentionItems(

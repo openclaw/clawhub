@@ -1938,7 +1938,7 @@ describe("plugin detail route", () => {
     );
   });
 
-  it("keeps API updates without the public incompatibility alert or validation outputs", async () => {
+  it("hides retirement notices, incompatibility alerts, and validation outputs from visitors", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -2004,7 +2004,9 @@ describe("plugin detail route", () => {
     expect(
       screen.queryByText("This plugin is incompatible with OpenClaw versions greater than 0.9.0."),
     ).toBeNull();
-    expect(screen.getByRole("region", { name: "OpenClaw API updates" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "OpenClaw API updates" })).toBeNull();
+    expect(screen.queryByText("API details")).toBeNull();
+    expect(screen.getByRole("heading", { name: /^Install$/ })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
   });
