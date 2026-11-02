@@ -49,11 +49,19 @@ const command = manifest.scripts["format:check"]
     ? "fmt:ts:check"
     : "check";
 const formatScript = manifest.scripts[command];
-assert(formatScript.includes("oxfmt --check"));
+const baselineFormatScript = formatScript.replace("bun fmt --no-script --check", "oxfmt --check");
+assert(baselineFormatScript.includes("oxfmt --check"));
+const baselineManifest = JSON.parse(original);
+baselineManifest.scripts[command] = baselineFormatScript;
+if (name === "clawhub" && baselineManifest.scripts.format === "bun fmt --no-script --write")
+  baselineManifest.scripts.format = "oxfmt --write";
 const nativeTypeScript = ["lobster", "clawpatch", "crabfleet"].includes(name);
 const typeCommand = name === "crabfleet" ? "build" : "typecheck";
 if (tool === "candidate") {
-  manifest.scripts[command] = formatScript.replace("oxfmt --check", "bun fmt --no-script --check");
+  manifest.scripts[command] = baselineFormatScript.replace(
+    "oxfmt --check",
+    "bun fmt --no-script --check",
+  );
   if (name === "clawhub") manifest.scripts.format = "bun fmt --no-script --write";
   if (nativeTypeScript)
     manifest.scripts[typeCommand] = manifest.scripts[typeCommand].replace(
@@ -63,6 +71,11 @@ if (tool === "candidate") {
 }
 const indentation = original.match(/\n([\t ]+)"/)?.[1] ?? "  ";
 const candidatePackage = `${JSON.stringify(manifest, null, indentation)}\n`;
+const baselinePackage =
+  formatScript === baselineFormatScript
+    ? original
+    : `${JSON.stringify(baselineManifest, null, indentation)}\n`;
+if (formatScript !== baselineFormatScript) assert.equal(candidatePackage, original);
 fs.writeFileSync(packageFile, candidatePackage);
 const expectSuccess = (result) => assert.equal(result.exit, 0, `${result.label}: ${result.output}`);
 const expectFailure = (result) => assert(result.exit !== 0 && result.exit !== null, result.label);
@@ -73,7 +86,7 @@ const paired = (label, operation) => {
     for (let repetition = 1; repetition <= 3; repetition += 1) {
       const order = repetition % 2 ? ["baseline", "candidate"] : ["candidate", "baseline"];
       for (const selected of order) {
-        fs.writeFileSync(packageFile, selected === "baseline" ? original : candidatePackage);
+        fs.writeFileSync(packageFile, selected === "baseline" ? baselinePackage : candidatePackage);
         expectSuccess(operation(`paired-${label}-${selected}-${repetition}`));
       }
     }
@@ -93,6 +106,7 @@ try {
     manager: manifest.packageManager ?? "Bun 1.4.4",
     command,
     originalScript: formatScript,
+    baselineScript: baselineFormatScript,
     actualScript: manifest.scripts[command],
     nativeTypeScript,
     checkerScript: nativeTypeScript ? manifest.scripts[typeCommand] : null,
