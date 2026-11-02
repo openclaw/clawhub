@@ -5,6 +5,7 @@ import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUser } from "./apiTokenAuth";
 import { ARCHIVE_REQUEST_IDENTITY_HEADER } from "./clawhubVercelOidc";
 import { corsHeaders, mergeHeaders } from "./httpHeaders";
+import { isRateLimiterStorageDisabled } from "./rateLimiterSwitch";
 import { getVerifiedClientIp, VERIFIED_CLIENT_IP_HEADER } from "./verifiedClientIp";
 
 export const RATE_LIMITS = {
@@ -332,6 +333,9 @@ async function checkRateLimit(
   batchSize: number,
 ): Promise<RateLimitResult> {
   const now = Date.now();
+  if (isRateLimiterStorageDisabled()) {
+    return { allowed: true, limit, resetAt: getCurrentWindowResetAt(now) };
+  }
   if (batchSize === 0) {
     return { allowed: true, limit, resetAt: getCurrentWindowResetAt(now) };
   }

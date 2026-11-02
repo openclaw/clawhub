@@ -96,6 +96,17 @@ anonymous callers, and exact `write`, `export` and `trustedPublish` limits are
 unchanged. While it is set, abusive read traffic is limited only by upstream
 edge protection, so return to a batch value once write admission recovers.
 
+## Rate-limiter storage off switch
+
+`CLAWHUB_RATE_LIMITER_DISABLED=1` stops every HTTP quota read and write for all
+buckets, the hourly `httpRateLimitKeys` prune, and public MCP inspection (which
+fails closed as `unavailable` because its outbound provider budgets cannot be
+enforced). Nothing touches the `rateLimiter` component tables or
+`httpRateLimitKeys` while it is set, so they can be cleared or dropped and then
+recreated by a redeploy. API-token identity checks and the verified-edge
+requirement for anonymous callers are unchanged. Remove the variable to restore
+limits.
+
 ## Guarded RPC comparison
 
 `CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE` defaults to the existing separate metadata

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./functions";
+import { isRateLimiterStorageDisabled } from "./lib/rateLimiterSwitch";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 
 const DEFAULT_HTTP_RATE_LIMIT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -184,6 +185,8 @@ export const pruneHttpRateLimitKeysInternal = internalMutation({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Rate-limiter tables may be dropped and recreated while storage is off.
+    if (isRateLimiterStorageDisabled()) return { deleted: 0, hasMore: false };
     const now = Date.now();
     const batchSize = clampBatchSize(
       args.batchSize,

@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { action, internalAction } from "./_generated/server";
 import { inspectPublicMcp, type McpPublicInspection } from "./lib/mcpPublicInspection";
+import { isRateLimiterStorageDisabled } from "./lib/rateLimiterSwitch";
 
 export const inspectEndpointInternal = internalAction({
   args: {
@@ -33,6 +34,9 @@ export const inspectPackageServer = action({
     // URLs and versions must share a destination budget; varying paths/query strings
     // cannot multiply the traffic we send to a provider. Anonymous callers also share
     // a global ceiling because actions do not expose a trustworthy client IP.
+    // Outbound provider budgets cannot be enforced while rate-limiter storage
+    // is off, so public inspection fails closed instead of running unbounded.
+    if (isRateLimiterStorageDisabled()) return { status: "unavailable", observedAt: Date.now() };
     for (const [name, key, rate] of [
       ["mcp-public-inspection-global", "all", 100],
       [

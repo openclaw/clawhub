@@ -1045,6 +1045,41 @@ describe("batched quota accounting", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
+  it.each(["read", "download", "write", "export", "trustedPublish"] as const)(
+    "rate-limiter storage switch admits %s without any quota read or write",
+    async (kind) => {
+      process.env.CLAWHUB_RATE_LIMITER_DISABLED = "1";
+      try {
+        const { ctx, runMutation, runQuery } = makeBatchedCtx({ bucketOpen: false });
+        const result = await applyRateLimit(ctx, new Request("https://example.com/api/v1/x"), kind);
+        expect(result.ok).toBe(true);
+        expect(runMutation).not.toHaveBeenCalled();
+        expect(runQuery.mock.calls.filter(([, args]) => "config" in (args as object))).toHaveLength(
+          0,
+        );
+      } finally {
+        delete process.env.CLAWHUB_RATE_LIMITER_DISABLED;
+      }
+    },
+  );
+
+  it("rate-limiter storage switch still rejects unverified anonymous direct callers", async () => {
+    process.env.CLAWHUB_RATE_LIMITER_DISABLED = "1";
+    try {
+      vi.mocked(getVerifiedClientIp).mockResolvedValue(null);
+      const { ctx, runMutation } = makeBatchedCtx();
+      const result = await applyRateLimit(
+        ctx,
+        new Request("https://example.convex.site/api/v1/skills"),
+        "write",
+      );
+      expect(result.ok).toBe(false);
+      expect(runMutation).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.CLAWHUB_RATE_LIMITER_DISABLED;
+    }
+  });
+
   it("restores exact accounting when batching is switched off", async () => {
     process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING = "off";
     vi.spyOn(Math, "random").mockReturnValue(0.9);
