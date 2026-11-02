@@ -1,0 +1,132 @@
+name: Isolated contract cache proof
+
+on:
+  push:
+    branches: [investigate/ci-contract-cache-20261102]
+
+permissions:
+  contents: read
+
+jobs:
+  cold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [baseline, candidate]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: harness
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 56e7ee8aaef8a0e180f906fd7bf194dd1b03bc45
+          path: source
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: openclaw/openclaw
+          ref: bad082feced849567953588d4b1bc7ffc3188839
+          path: source/.artifacts/openclaw-contract
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.22.1
+      - name: Prepare isolated pinned store
+        id: store
+        working-directory: source/.artifacts/openclaw-contract
+        run: |
+          corepack enable
+          test ! -e "$RUNNER_TEMP/contract-proof-store"
+          export npm_config_store_dir="$RUNNER_TEMP/contract-proof-store"
+          echo "npm_config_store_dir=$npm_config_store_dir" >> "$GITHUB_ENV"
+          echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        if: matrix.mode == 'candidate'
+        id: restore
+        with:
+          path: ${{ steps.store.outputs.path }}
+          key: contract-proof-v1-${{ runner.os }}-${{ runner.arch }}-node24.22.1-pnpm12.15.0-bad082feced849567953588d4b1bc7ffc3188839-${{ hashFiles('source/.artifacts/openclaw-contract/pnpm-lock.yaml', 'source/.artifacts/openclaw-contract/package.json') }}
+      - name: Actual cold install and contract
+        env:
+          PROOF_MODE: ${{ matrix.mode }}
+          PROOF_PHASE: cold
+        run: node harness/scripts/ci-contract-cache-proof.mjs
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        if: matrix.mode == 'candidate'
+        with:
+          path: ${{ steps.store.outputs.path }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
+
+  restored:
+    needs: cold
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [baseline, candidate]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: harness
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 56e7ee8aaef8a0e180f906fd7bf194dd1b03bc45
+          path: source
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: openclaw/openclaw
+          ref: bad082feced849567953588d4b1bc7ffc3188839
+          path: source/.artifacts/openclaw-contract
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: matrix.mode == 'candidate'
+        with:
+          repository: openclaw/openclaw
+          ref: bad082feced849567953588d4b1bc7ffc3188839
+          path: baseline
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.22.1
+      - name: Prepare isolated pinned store
+        id: store
+        working-directory: source/.artifacts/openclaw-contract
+        run: |
+          corepack enable
+          test ! -e "$RUNNER_TEMP/contract-proof-store"
+          export npm_config_store_dir="$RUNNER_TEMP/contract-proof-store"
+          echo "npm_config_store_dir=$npm_config_store_dir" >> "$GITHUB_ENV"
+          echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        if: matrix.mode == 'candidate'
+        id: restore
+        with:
+          path: ${{ steps.store.outputs.path }}
+          key: contract-proof-v1-${{ runner.os }}-${{ runner.arch }}-node24.22.1-pnpm12.15.0-bad082feced849567953588d4b1bc7ffc3188839-${{ hashFiles('source/.artifacts/openclaw-contract/pnpm-lock.yaml', 'source/.artifacts/openclaw-contract/package.json') }}
+      - name: Require exact hit only for candidate
+        if: matrix.mode == 'candidate'
+        env:
+          CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = true
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        if: matrix.mode == 'candidate'
+        id: mismatch
+        with:
+          path: ${{ runner.temp }}/must-not-restore
+          key: ${{ steps.restore.outputs.cache-primary-key }}-wrong-platform-or-lock
+          lookup-only: true
+      - name: Reject mismatched key
+        if: matrix.mode == 'candidate'
+        env:
+          CACHE_HIT: ${{ steps.mismatch.outputs.cache-hit }}
+        run: test "$CACHE_HIT" != true
+      - name: Actual restored install and interleaved hot contract
+        env:
+          PROOF_MODE: ${{ matrix.mode }}
+          PROOF_PHASE: restored
+        run: node harness/scripts/ci-contract-cache-proof.mjs
