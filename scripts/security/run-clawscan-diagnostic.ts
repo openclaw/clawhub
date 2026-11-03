@@ -167,7 +167,7 @@ export async function runDiagnosticProcess(
 
 export async function attestRuntime(
   source: "reviewed" | "incident",
-  fixture: "tiny" | "incident" | "receipt-incident" | "small-timeout-paired",
+  fixture: "tiny" | "incident" | "receipt-incident" | "small-timeout-paired" | "original038",
   root: string,
   env: NodeJS.ProcessEnv,
   installed?: { sourceDir: string; pin: string; binary: string },
@@ -209,9 +209,10 @@ export async function attestRuntime(
   const aig = /^ARG AIG_SKILL_SCAN_REF=([a-f0-9]{40})$/m.exec(dockerfile)?.[1];
   const ubuntu = /^VERSION_ID="(\d+\.\d+)"$/m.exec(await readFile("/etc/os-release", "utf8"))?.[1];
   const expectedUbuntu =
-    allowHostedTiny &&
     source === "reviewed" &&
-    fixture === "tiny" &&
+    ((allowHostedTiny && fixture === "tiny") ||
+      (fixture === "original038" &&
+        installed?.pin === "b08e2907eb60b33bf712b07673aff565c13d9ad7")) &&
     process.env.CLAWSCAN_DIAGNOSTIC_RUNNER === "ubuntu-22.04"
       ? "22.04"
       : "24.04";
@@ -304,6 +305,16 @@ export function assertDisposableDiagnosticEnvironment(allowHostedTiny = false) {
 }
 
 export async function main(args = process.argv.slice(2)) {
+  if (
+    args.length === 4 &&
+    args[0] === "--fixture" &&
+    args[1] === "original-038-encrypted" &&
+    args[2] === "--source" &&
+    args[3] === "reviewed"
+  ) {
+    const { mainOriginal038Diagnostic } = await import("./run-clawscan-original038-diagnostic");
+    return mainOriginal038Diagnostic();
+  }
   const hostedTiny =
     args.length === 4 &&
     args[0] === "--fixture" &&

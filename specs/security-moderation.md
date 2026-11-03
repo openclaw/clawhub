@@ -699,6 +699,21 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   per-scanner outputs without per-file or aggregate-size truncation. Bounded
   metadata/error fields may remain capped. Artifact upload still requires the
   existing verified-secret scan to pass.
+- The separate fixed original038 diagnostic permits one fresh Ubuntu 22.04 X64
+  run against the exact merged source, production dependencies and normal full
+  profile. It verifies every retained original file from the anonymous download;
+  the generated ZIP is a transfer container, not the original immutable archive.
+  Synchronous scanner/judge captures preserve reports, streams, gaps and receipts
+  before native cleanup. Existing injected-credential redaction/withholding and
+  a final plaintext evidence check remain mandatory. Only checksum-pinned age
+  ciphertext and bounded metadata may enter Actions artifacts; the per-run private
+  identity stays with the consuming controller. Failed encryption, secret checks
+  or unconfirmed process cleanup prevent upload. Capture completeness and scanner
+  coverage remain separate. A fully captured operational failure still fails the
+  diagnostic job; normal accepted partial or suspicious results need not be benign
+  or claim complete scanner coverage. The fixed038 run name binds the public age
+  recipient even when no artifact is uploaded. This nonpublishing diagnostic adds
+  no recovery count or retry authority.
 - The native prepublication failure event preserves the existing SkillSpector
   projection and adds only fixed scanner names, allowlisted status/error classes,
   bounded exit/timing numbers, and presence/byte-count/SHA-256 metadata. Arbitrary

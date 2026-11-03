@@ -187,6 +187,7 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "fixture",
     "source",
     "runner",
+    "age_recipient",
   ]);
   expect(workflow.on.workflow_dispatch.inputs.fixture.options).toEqual([
     "tiny",
@@ -196,6 +197,7 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "original-scanner-only",
     "original-candidate-full",
     "original-candidate-290-full",
+    "original-038-encrypted",
   ]);
   expect(workflow.on.workflow_dispatch.inputs.source.options).toEqual(["reviewed", "incident"]);
   const job = workflow.jobs.diagnostic;
@@ -211,7 +213,12 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "${{ inputs.runner == 'ubuntu-22.04' && 'ubuntu-22.04' || 'blacksmith-16vcpu-ubuntu-2404' }}",
   );
   expect(job.env.CLAWSCAN_DIAGNOSTIC_RUNNER).toBe(job["runs-on"]);
-  expect(job.if).toContain("inputs.fixture == 'tiny' && inputs.source == 'reviewed'");
+  expect(job.if).toContain("inputs.source == 'reviewed'");
+  expect(job.if).toContain(
+    "inputs.fixture == 'tiny' || inputs.fixture == 'original-038-encrypted'",
+  );
+  expect(job.if).toContain("inputs.runner == 'ubuntu-22.04'");
+  expect(job.if).toContain("github.run_attempt == 1");
   expect(job.environment).toBe("Production");
   expect(workflow.permissions).toEqual({ contents: "read" });
   for (const name of [
@@ -219,7 +226,7 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "Install matched reviewed scanner sources and Responses adapters",
   ]) {
     expect(job.steps.find((step: { name?: string }) => step.name === name).if).toBe(
-      "${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' }}",
+      "${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' && inputs.fixture != 'original-038-encrypted' }}",
     );
   }
   const probe = job.steps.find((step: { id?: string }) => step.id === "probe");
@@ -234,6 +241,20 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
       .split("\n")
       .map((path: string) => path.split("/").at(-1)),
   ).toEqual(["summary.json", "events.jsonl", "attestation.json"]);
+  const encryptedUpload = job.steps.find(
+    (step: { name?: string }) => step.name === "Upload encrypted fixed038 evidence only",
+  );
+  expect(
+    encryptedUpload.with.path
+      .trim()
+      .split("\n")
+      .map((path: string) => path.split("/").at(-1)),
+  ).toEqual(["capture.tar.gz.age", "receipt.json"]);
+  expect(encryptedUpload.if).toBe(
+    "${{ !cancelled() && steps.probe.outputs.encrypted-output != '' }}",
+  );
+  expect(probe.env.DIAGNOSTIC_AGE_RECIPIENT).toBe("${{ inputs.age_recipient }}");
+  expect(probe.env.DIAGNOSTIC_AGE_BINARY).toBe("${{ steps.encryption.outputs.age-binary }}");
   expect(raw).not.toMatch(
     /CONVEX|WORKER_TOKEN|repository_dispatch|codex login|auth\.json|@latest|\*\.json/,
   );
@@ -324,4 +345,13 @@ it("admits the hosted recovery image only through an explicit tiny-control opt-i
   }
   process.env.CLAWSCAN_DIAGNOSTIC_RUNNER = "untrusted-runner";
   expect(() => assertDisposableDiagnosticEnvironment(true)).toThrow();
+});
+
+it("binds only fixed038 run names to their public recipient, including when no artifact is uploaded", async () => {
+  const workflow = parseYaml(
+    await readFile(".github/workflows/clawscan-judge-diagnostic.yml", "utf8"),
+  );
+  expect(workflow["run-name"]).toBe(
+    "${{ inputs.fixture == 'original-038-encrypted' && format('original-038-encrypted {0}', inputs.age_recipient) || 'Nonproduction ClawScan judge diagnostic' }}",
+  );
 });
