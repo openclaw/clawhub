@@ -25,6 +25,7 @@ import { reportRequest } from "./lib/searchReportContract";
 import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
+  staticScanValidator,
   vtAnalysisValidator,
 } from "./lib/securityAnalysisValidators";
 
@@ -118,24 +119,6 @@ export const llmAnalysisValidator = v.object({
     }),
   ),
   model: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const staticScanValidator = v.object({
-  status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-  reasonCodes: v.array(v.string()),
-  findings: v.array(
-    v.object({
-      code: v.string(),
-      severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-      file: v.string(),
-      line: v.number(),
-      message: v.string(),
-      evidence: v.string(),
-    }),
-  ),
-  summary: v.string(),
-  engineVersion: v.string(),
   checkedAt: v.number(),
 });
 
@@ -1230,25 +1213,7 @@ const skillVersions = defineTable({
   ),
   depRegistryAnalysis: v.optional(depRegistryAnalysisValidator),
   depRegistryScanStatus: v.optional(depRegistryStatusValidator),
-  staticScan: v.optional(
-    v.object({
-      status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-      reasonCodes: v.array(v.string()),
-      findings: v.array(
-        v.object({
-          code: v.string(),
-          severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-          file: v.string(),
-          line: v.number(),
-          message: v.string(),
-          evidence: v.string(),
-        }),
-      ),
-      summary: v.string(),
-      engineVersion: v.string(),
-      checkedAt: v.number(),
-    }),
-  ),
+  staticScan: v.optional(staticScanValidator),
 })
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
@@ -1905,25 +1870,7 @@ const packageReleases = defineTable({
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   endorAnalysis: v.optional(endorAnalysisValidator),
   llmAnalysis: v.optional(llmAnalysisValidator),
-  staticScan: v.optional(
-    v.object({
-      status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-      reasonCodes: v.array(v.string()),
-      findings: v.array(
-        v.object({
-          code: v.string(),
-          severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-          file: v.string(),
-          line: v.number(),
-          message: v.string(),
-          evidence: v.string(),
-        }),
-      ),
-      summary: v.string(),
-      engineVersion: v.string(),
-      checkedAt: v.number(),
-    }),
-  ),
+  staticScan: v.optional(staticScanValidator),
   manualModeration: v.optional(packageReleaseModerationOverrideValidator),
   source: v.optional(v.any()),
   createdBy: v.id("users"),

@@ -19,6 +19,7 @@ import {
 import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
+  staticScanValidator,
 } from "./lib/securityAnalysisValidators";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
 import {
@@ -259,24 +260,6 @@ const scanRequestFileValidator = v.object({
   storageId: v.id("_storage"),
   sha256: v.string(),
   contentType: v.optional(v.string()),
-});
-
-const staticScanResultValidator = v.object({
-  status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-  reasonCodes: v.array(v.string()),
-  findings: v.array(
-    v.object({
-      code: v.string(),
-      severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-      file: v.string(),
-      line: v.number(),
-      message: v.string(),
-      evidence: v.string(),
-    }),
-  ),
-  summary: v.string(),
-  engineVersion: v.string(),
-  checkedAt: v.number(),
 });
 
 const githubSkillScanStatusValidator = v.union(
@@ -1597,7 +1580,7 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
         }),
       ),
     }),
-    staticScan: staticScanResultValidator,
+    staticScan: staticScanValidator,
   },
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);
