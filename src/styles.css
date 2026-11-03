@@ -1843,16 +1843,6 @@ code {
   gap: 12px;
 }
 
-.security-report-panel-body .agentic-risk-findings > .scan-findings-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.35rem;
-  line-height: 1.15;
-  color: var(--ink);
-  text-transform: none;
-  letter-spacing: 0;
-}
-
 .security-report-panel-header {
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
@@ -2068,59 +2058,8 @@ code {
   gap: 10px 12px;
 }
 
-.security-report-panel-body .clawscan-risk-review {
-  gap: 26px;
-  margin-top: 0;
-}
-
 .security-report-panel-body-findings {
   padding-top: 12px;
-}
-
-.security-report-panel-body .clawscan-scope-note {
-  display: none;
-}
-
-.security-report-panel-body .clawscan-risk-buckets {
-  grid-template-columns: 1fr;
-  gap: 14px;
-}
-
-.security-report-panel-body .clawscan-risk-bucket {
-  padding: 16px 20px;
-}
-
-.security-report-panel-body .agentic-risk-findings {
-  gap: 40px;
-}
-
-.security-report-panel-body .agentic-risk-finding-groups {
-  display: grid;
-  gap: 32px;
-}
-
-.security-report-panel-body .agentic-risk-finding-group {
-  display: grid;
-  gap: 14px;
-}
-
-.security-report-panel-body .agentic-risk-finding-group-header {
-  display: grid;
-  gap: 6px;
-}
-
-.security-report-panel-body .agentic-risk-finding-group-header .clawscan-risk-bucket-label {
-  font-family: var(--font-display);
-  font-size: 1.05rem;
-  line-height: 1.2;
-}
-
-.security-report-panel-body .agentic-risk-finding-group-header p {
-  margin: 0;
-  max-width: 980px;
-  color: var(--ink-soft);
-  font-size: 0.88rem;
-  line-height: 1.5;
 }
 
 .security-report-sidebar {
@@ -2478,10 +2417,6 @@ code {
   .security-report-metadata {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 18px 24px;
-  }
-
-  .security-report-panel-body .clawscan-risk-buckets {
-    grid-template-columns: 1fr;
   }
 
   .static-analysis-finding-details > div {
@@ -12675,85 +12610,6 @@ a.skills-sh-security-audit-row:focus-visible {
   font-weight: 650;
 }
 
-.skill-version-release .version-scan-badge-row {
-  display: inline-flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-}
-
-.skill-version-release .version-scan-badge {
-  display: inline-grid;
-  grid-template-columns: 14px 58px 12px;
-  align-items: center;
-  column-gap: 4px;
-  flex: 0 0 88px;
-  width: 88px;
-  min-width: 88px;
-  max-width: 88px;
-}
-
-.skill-version-release .version-scan-icon {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 auto;
-  font-size: 0.82rem;
-  line-height: 1;
-}
-
-.skill-version-release .version-scan-status-badge,
-.skill-version-release .version-scan-badge > span {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  width: 58px;
-  min-width: 58px;
-  max-width: 58px;
-  min-height: 22px;
-  padding: 2px 4px;
-  border-radius: var(--r-pill);
-  font-size: 0.72rem;
-  font-weight: 650;
-  line-height: 1;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.skill-version-release .version-scan-badge .scan-result-status.scan-status-clean {
-  width: 22px;
-  min-width: 22px;
-  height: 22px;
-  min-height: 22px;
-  justify-content: center;
-  gap: 0;
-  padding: 0;
-  border-color: color-mix(in srgb, var(--status-success-fg) 24%, var(--line));
-  border-radius: var(--r-pill);
-  font-size: 0;
-}
-
-.skill-version-release .version-scan-badge .scan-result-status.scan-status-clean::before {
-  content: "✓";
-  font-size: 0.74rem;
-  line-height: 1;
-}
-
-.skill-version-release .version-scan-badge .scan-status-pending {
-  border-color: color-mix(in srgb, var(--ink-soft) 34%, var(--line));
-  background: color-mix(in srgb, var(--ink-soft) 10%, transparent);
-  color: color-mix(in srgb, var(--ink) 68%, transparent);
-}
-
-.skill-version-release .version-scan-badge .scan-status-warn,
-.skill-version-release .version-scan-badge .scan-status-suspicious {
-  border-color: color-mix(in srgb, var(--status-warning-fg) 34%, var(--line));
-  background: var(--status-warning-bg);
-  color: var(--status-warning-fg);
-}
-
 @media (max-width: 760px) {
   .skill-versions-header {
     align-items: flex-start;
@@ -12821,10 +12677,6 @@ a.skills-sh-security-audit-row:focus-visible {
 
   .skill-version-release-actions:empty {
     display: none;
-  }
-
-  .skill-version-release-scan .version-scan-badge-row {
-    width: auto;
   }
 
   .skill-version-release-tags .version-release-channel-badge {
@@ -13010,8 +12862,7 @@ a.skills-sh-security-audit-row:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .security-report-layout,
-  .security-report-panel-body .clawscan-risk-buckets {
+  .security-report-layout {
     grid-template-columns: 1fr;
   }
 
@@ -16372,63 +16223,7 @@ a.skills-sh-security-audit-row:focus-visible {
   }
 }
 
-/* Security Scan Results */
-.scan-results-panel {
-  margin-top: 16px;
-  padding: 14px 16px;
-  border-radius: var(--oc-radius-surface);
-  border: 1px solid var(--line);
-  background: var(--oc-surface-card);
-  text-align: left;
-}
-
-.scan-results-title {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--ink-soft);
-  margin-bottom: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.scan-results-list {
-  display: grid;
-  gap: 0;
-}
-
-.scan-result-row {
-  display: grid;
-  grid-template-columns: minmax(120px, auto) auto 1fr;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
-}
-
-.scan-result-row:last-child {
-  border-bottom: none;
-}
-
-.scan-result-row:first-child {
-  padding-top: 0;
-}
-
-.scan-result-scanner {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
-.scan-result-icon {
-  font-size: 1rem;
-}
-
-.scan-result-icon-oc {
-  color: var(--accent);
-}
-
+/* Shared scan status badges */
 .scan-result-status {
   padding: 2px 10px;
   border-radius: var(--r-pill);
@@ -16463,326 +16258,6 @@ a.skills-sh-security-audit-row:focus-visible {
   color: var(--oc-status-error-fg);
 }
 
-.version-scan-results {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.version-scan-toggle {
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--ink-soft);
-  border-radius: var(--r-pill);
-  padding: 2px 8px;
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-
-.version-scan-toggle:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.version-scan-badge {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.75rem;
-}
-
-.version-scan-badge-row {
-  display: inline-flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.version-scan-badge .scan-result-status {
-  padding: 1px 6px;
-  font-size: 0.7rem;
-}
-
-.version-scan-icon {
-  font-size: 0.9rem;
-}
-
-.version-scan-icon-oc {
-  color: var(--accent);
-}
-
-.scan-disclaimer {
-  font-size: 0.8rem;
-  color: var(--ink-soft);
-  opacity: 0.8;
-  margin: 8px 0 0;
-  font-style: italic;
-}
-
-/* LLM Analysis Detail */
-.analysis-detail {
-  margin-top: 10px;
-  border-radius: 12px;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-
-.analysis-detail-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 14px;
-  cursor: pointer;
-  user-select: text;
-  border-radius: 12px;
-  transition: background 0.15s ease;
-}
-
-.analysis-detail-header:hover {
-  background: rgba(0, 0, 0, 0.03);
-}
-
-.analysis-detail-toggle {
-  font-size: 0.82rem;
-  color: var(--accent);
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.analysis-detail-toggle .chevron {
-  transition: transform 0.2s;
-}
-
-.analysis-detail.is-open .analysis-detail-toggle .chevron {
-  transform: rotate(180deg);
-}
-
-.analysis-summary-text {
-  font-size: 0.86rem;
-  color: var(--ink-soft);
-  line-height: 1.5;
-  flex: 1;
-  min-width: 0;
-  cursor: text;
-  user-select: text;
-  text-align: left;
-  overflow-wrap: anywhere;
-}
-
-.analysis-body {
-  display: none;
-  padding: 0 14px 14px;
-}
-
-.analysis-detail.is-open .analysis-body {
-  display: block;
-}
-
-.analysis-dimensions {
-  display: grid;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.dimension-row {
-  display: grid;
-  grid-template-columns: 20px 1fr;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--surface-muted);
-  align-items: start;
-}
-
-.dimension-icon {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 0.65rem;
-  font-weight: 700;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.dimension-icon-ok {
-  background: var(--oc-status-success-bg);
-  color: var(--oc-status-success-fg);
-}
-
-.dimension-icon-note {
-  background: var(--oc-surface-interactive);
-  color: var(--oc-text-muted);
-}
-
-.dimension-icon-concern {
-  background: var(--oc-status-warning-bg);
-  color: var(--oc-status-warning-fg);
-}
-
-.dimension-icon-danger {
-  background: var(--oc-status-error-bg);
-  color: var(--oc-status-error-fg);
-}
-
-.dimension-content {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.dimension-label {
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ink);
-  margin-bottom: 3px;
-}
-
-.dimension-detail {
-  font-size: 0.84rem;
-  color: var(--ink-soft);
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.dimension-detail code {
-  font-size: 0.78rem;
-  background: rgba(0, 0, 0, 0.06);
-  padding: 1px 5px;
-  border-radius: 4px;
-}
-
-/* Analysis guidance panel */
-.analysis-guidance {
-  margin-top: 12px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  font-size: 0.84rem;
-  line-height: 1.55;
-  color: var(--ink);
-}
-
-.analysis-guidance.benign {
-  background: var(--oc-status-success-bg);
-  border-left: 3px solid var(--oc-status-success-fg);
-}
-
-.analysis-guidance.suspicious {
-  background: var(--oc-status-warning-bg);
-  border-left: 3px solid var(--oc-status-warning-fg);
-}
-
-.analysis-guidance.malicious {
-  background: var(--oc-status-error-bg);
-  border-left: 3px solid var(--oc-status-error-fg);
-}
-
-.analysis-guidance-label {
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 4px;
-}
-
-.analysis-guidance.benign .analysis-guidance-label {
-  color: var(--oc-status-success-fg);
-}
-
-.analysis-guidance.suspicious .analysis-guidance-label {
-  color: var(--oc-status-warning-fg);
-}
-
-.analysis-guidance.malicious .analysis-guidance-label {
-  color: var(--oc-status-error-fg);
-}
-
-/* Scan findings section */
-.scan-findings-section {
-  margin-top: 10px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: var(--surface-muted);
-  border: 1px solid var(--line);
-}
-
-.scan-findings-title {
-  margin: 0 0 6px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-soft);
-}
-
-.scan-finding-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 0.82rem;
-  color: var(--ink-soft);
-  padding: 4px 0;
-}
-
-.clawscan-risk-review {
-  display: grid;
-  gap: 12px;
-  margin-top: 10px;
-}
-
-.clawscan-scope-note {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: var(--ink-soft);
-}
-
-.clawscan-risk-buckets {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.clawscan-risk-bucket,
-.agentic-risk-finding {
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-muted);
-}
-
-.clawscan-risk-bucket {
-  display: grid;
-  gap: 7px;
-  padding: 10px 12px;
-}
-
-.clawscan-risk-bucket-header,
-.agentic-risk-finding-header {
-  display: grid;
-  min-width: 0;
-  gap: 14px;
-}
-
-.clawscan-risk-bucket-label {
-  min-width: 0;
-  font-size: 0.84rem;
-  font-weight: 700;
-  line-height: 1.35;
-  color: var(--ink);
-}
-
 .agentic-risk-finding-title {
   min-width: 0;
   width: fit-content;
@@ -16791,43 +16266,6 @@ a.skills-sh-security-audit-row:focus-visible {
   font-weight: 750;
   line-height: 1.25;
   color: var(--ink);
-}
-
-.agentic-risk-finding-title-row {
-  position: relative;
-  display: inline-flex;
-  align-items: baseline;
-  width: fit-content;
-  max-width: 100%;
-}
-
-.agentic-risk-finding-anchor {
-  position: absolute;
-  right: calc(100% + 8px);
-  top: 0.15em;
-  color: color-mix(in srgb, var(--ink-soft) 58%, transparent);
-  font-size: 0.95rem;
-  font-weight: 750;
-  line-height: 1;
-  opacity: 0;
-  text-decoration: none;
-  transition:
-    color 0.15s ease,
-    opacity 0.15s ease;
-}
-
-.agentic-risk-finding-title-row:hover .agentic-risk-finding-anchor,
-.agentic-risk-finding-title-row:focus-within .agentic-risk-finding-anchor {
-  opacity: 1;
-}
-
-.agentic-risk-finding-anchor:hover,
-.agentic-risk-finding-anchor:focus-visible {
-  color: var(--accent);
-}
-
-.agentic-risk-finding {
-  scroll-margin-top: 132px;
 }
 
 a.agentic-risk-finding-title {
@@ -16841,52 +16279,6 @@ a.agentic-risk-finding-title:hover,
 a.agentic-risk-finding-title:focus-visible {
   color: var(--accent);
   text-decoration-color: currentColor;
-}
-
-.clawscan-risk-bucket-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.clawscan-risk-severity {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-
-.clawscan-risk-summary-text {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: var(--ink-soft);
-}
-
-.agentic-risk-findings {
-  display: grid;
-  gap: 28px;
-}
-
-.agentic-risk-finding {
-  display: grid;
-  gap: 18px;
-  padding: 28px 0 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.agentic-risk-finding:first-child {
-  padding-top: 0;
-}
-
-.agentic-risk-finding-header {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 12px;
 }
 
 .agentic-risk-finding-badges {
@@ -16905,66 +16297,6 @@ a.agentic-risk-finding-title:focus-visible {
   line-height: 1.2;
 }
 
-.agentic-risk-report-rows {
-  display: grid;
-  gap: 0;
-}
-
-.agentic-risk-report-row {
-  display: grid;
-  grid-template-columns: minmax(140px, 190px) minmax(0, 1fr);
-  gap: clamp(18px, 3.5vw, 52px);
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
-}
-
-.agentic-risk-report-row:first-child {
-  padding-top: 0;
-  border-top: 0;
-}
-
-.agentic-risk-report-row-secondary {
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.agentic-risk-finding > .agentic-risk-report-row:last-child,
-.agentic-risk-report-rows .agentic-risk-report-row:last-child {
-  padding-bottom: 0;
-}
-
-.agentic-risk-report-label {
-  color: var(--ink);
-  font-size: 0.86rem;
-  font-weight: 680;
-  line-height: 1.35;
-}
-
-.agentic-risk-report-row p {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.88rem;
-  line-height: 1.55;
-}
-
-.agentic-risk-report-content {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-}
-
-.agentic-risk-evidence-path {
-  width: fit-content;
-  max-width: 100%;
-  border-radius: var(--r-pill);
-  background: rgba(0, 0, 0, 0.05);
-  padding: 3px 8px;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--ink-soft);
-  overflow-wrap: anywhere;
-}
-
 .agentic-risk-evidence-snippet {
   margin: 0;
   max-width: 100%;
@@ -16978,42 +16310,6 @@ a.agentic-risk-finding-title:focus-visible {
   font-size: 0.76rem;
   line-height: 1.45;
   color: var(--ink);
-}
-
-.agentic-risk-evidence-explanation {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: var(--ink-soft);
-}
-
-.agentic-risk-impact,
-.agentic-risk-recommendation {
-  display: grid;
-  gap: 6px;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: var(--ink);
-}
-
-@media (max-width: 720px) {
-  .agentic-risk-finding-header {
-    gap: 14px;
-  }
-
-  .agentic-risk-report-row {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-}
-
-.agentic-risk-impact span,
-.agentic-risk-recommendation span {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
 }
 
 /* Pending Review Banner */
@@ -17277,11 +16573,6 @@ a.agentic-risk-finding-title:focus-visible {
   .markdown img {
     max-width: 100%;
     height: auto;
-  }
-
-  .scan-result-row {
-    grid-template-columns: 1fr auto;
-    gap: 6px 10px;
   }
 }
 
