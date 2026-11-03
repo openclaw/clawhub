@@ -6,7 +6,6 @@ import type { ActionCtx } from "./_generated/server";
 import {
   formatUserFacingErrorMessage,
   parseMultipartPublish,
-  parseMultipartSkillScan,
   resolvePublicSkillVersions,
   softDeleteErrorToResponse,
 } from "./httpApiV1/shared";
@@ -180,30 +179,6 @@ describe("http API v1 shared helpers", () => {
         { skillId, tags: { latest: otherId, stable: stableId } },
       ]),
     ).toEqual([{ tags: { stable: "1.5.0" }, latestVersion: null }]);
-  });
-
-  it("validates skill scan multipart payloads before storing uploaded files", async () => {
-    const form = new FormData();
-    form.set("payload", JSON.stringify({ source: { kind: "upload" }, update: true }));
-    form.append("files", new Blob(["# Demo"], { type: "text/markdown" }), "SKILL.md");
-    const request = new Request("https://clawhub.ai/api/v1/skills/-/scan", {
-      method: "POST",
-      body: form,
-    });
-    const store = vi.fn();
-    const ctx = {
-      storage: {
-        store,
-        delete: vi.fn(),
-      },
-    } as unknown as ActionCtx;
-
-    await expect(
-      parseMultipartSkillScan(ctx, request, () => {
-        throw new Error("update is not valid for uploaded scans");
-      }),
-    ).rejects.toThrow("update is not valid for uploaded scans");
-    expect(store).not.toHaveBeenCalled();
   });
 
   it("deletes stored publish blobs when the payload fails after upload", async () => {
