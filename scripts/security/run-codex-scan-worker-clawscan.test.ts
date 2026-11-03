@@ -1598,7 +1598,7 @@ JSON`,
   it.each([
     { status: "completed", exitCode: 0, output: endorArtifactJson() },
     { status: "failed", exitCode: 17, output: "{}" },
-  ])("saves $status Endor analysis without passing it to the judge by default", async (scan) => {
+  ])("saves $status official-code Endor analysis without passing it to the judge", async (scan) => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const cleanupMarker = join(workspace, "endor-cleaned");
@@ -1630,9 +1630,10 @@ JSON`,
       }),
       workspace,
     });
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "");
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", " @openclaw/other, @openclaw/fixture-plugin ");
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "0");
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", " @openclaw/* ");
     const job = pluginPackageJob(`securityScanJobs:endor-report-only-${scan.status}`);
+    job.target.trustedOpenClawPlugin = true;
     job.target.release = {
       ...job.target.release,
       endorAnalysis: { status: "completed", reachableFunctionCount: 99 },
@@ -1669,7 +1670,26 @@ JSON`,
     ]);
   });
 
-  it("does not launch Endor for a plugin outside the configured rollout cohort", async () => {
+  it.each([
+    {
+      excluded: "an unlisted name",
+      packages: " @openclaw/discord, @openclaw/codex ",
+      trustedOpenClawPlugin: true,
+      family: "code-plugin",
+    },
+    {
+      excluded: "an untrusted publisher",
+      packages: " @openclaw/* ",
+      trustedOpenClawPlugin: false,
+      family: "code-plugin",
+    },
+    {
+      excluded: "a trusted bundle",
+      packages: " @openclaw/* ",
+      trustedOpenClawPlugin: true,
+      family: "bundle-plugin",
+    },
+  ])("does not launch Endor for $excluded outside the rollout cohort", async (cohort) => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const dockerLog = join(workspace, "unexpected-docker-call");
@@ -1687,16 +1707,16 @@ JSON`,
       dockerBody: `touch ${JSON.stringify(dockerLog)}; exit 99`,
       workspace,
     });
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", " @openclaw/discord, @openclaw/codex ");
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", cohort.packages);
+    const job = pluginPackageJob("securityScanJobs:outside-cohort");
+    job.target.trustedOpenClawPlugin = cohort.trustedOpenClawPlugin;
+    job.target.package = { name: "@openclaw/fixture-plugin", family: cohort.family };
     const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
-    await expect(
-      processJob(
-        client,
-        "worker-auth",
-        pluginPackageJob("securityScanJobs:outside-cohort"),
-        undefined,
-      ),
-    ).resolves.toEqual({ completed: true, hardFailed: false, retryableFailed: false });
+    await expect(processJob(client, "worker-auth", job, undefined)).resolves.toEqual({
+      completed: true,
+      hardFailed: false,
+      retryableFailed: false,
+    });
     expect(client.action).toHaveBeenCalledTimes(1);
     expect(client.action.mock.calls[0]?.[1]).toMatchObject({
       llmAnalysis: { status: "clean", verdict: "benign" },
