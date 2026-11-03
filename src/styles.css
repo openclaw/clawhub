@@ -34713,3 +34713,43 @@ a[class*="rounded-full"] {
   gap: 10px;
   min-width: 0;
 }
+
+/* Plugin capabilities are readable in one pass, above the README. */
+.plugin-detail-content {
+  min-width: 0;
+}
+.plugin-content-section {
+  padding-block: var(--space-5);
+  border-bottom: 1px solid var(--line);
+  scroll-margin-top: var(--space-6);
+}
+.plugin-content-section > h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+.plugin-content-section .plugin-manifest-list {
+  gap: 0;
+}
+.plugin-content-section .plugin-manifest-row {
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--line);
+  padding: var(--space-3) 0;
+  background: transparent;
+}
+.plugin-content-section .plugin-manifest-row:first-child {
+  border-top: 0;
+}
+.plugin-content-disclosure {
+  border-bottom: 1px solid var(--line);
+  padding-block: var(--space-4);
+}
+.plugin-content-disclosure > summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.plugin-content-disclosure[open] > summary {
+  margin-bottom: var(--space-4);
+}

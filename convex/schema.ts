@@ -724,6 +724,22 @@ const packageCompatibilityValidator = v.optional(
 );
 
 export const pluginManifestSummaryValidator = v.object({
+  controlUi: v.optional(v.object({ entry: v.string() })),
+  uiCapabilities: v.optional(
+    v.array(
+      v.union(
+        v.literal("page"),
+        v.literal("navigation"),
+        v.literal("panel"),
+        v.literal("action"),
+        v.literal("accessory"),
+        v.literal("widget"),
+        v.literal("inline"),
+        v.literal("replacement"),
+        v.literal("link-reader"),
+      ),
+    ),
+  ),
   schemaVersion: v.literal(1),
   contracts: v.optional(v.record(v.string(), v.array(v.string()))),
   providers: v.optional(v.array(v.string())),

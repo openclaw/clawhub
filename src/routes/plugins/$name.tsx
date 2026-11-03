@@ -5,6 +5,7 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
+import { PLUGIN_UI_CAPABILITIES } from "clawhub-schema";
 import { useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import {
   AlertTriangle,
@@ -335,7 +336,19 @@ function pluginDetailTabFromHash(hashValue: string): PluginDetailTab {
 
 const PLUGIN_README_COLLAPSED_LINE_COUNT = 50;
 
-function PluginDetailTabs({
+const PLUGIN_EXTENSION_LABELS = {
+  page: ["Pages", "Full pages in the Control UI."],
+  navigation: ["Navigation", "Entries in the Control UI navigation."],
+  panel: ["Panels", "Panels alongside the main workspace."],
+  action: ["Actions", "Contextual actions and commands."],
+  accessory: ["Accessories", "Supporting controls in existing views."],
+  widget: ["Widgets", "Compact, reusable UI surfaces."],
+  inline: ["Inline UI", "Embedded content within existing views."],
+  replacement: ["Replacements", "Replacements for host UI surfaces."],
+  "link-reader": ["Link readers", "Custom views for supported links."],
+} as const;
+
+function PluginDetailContent({
   activeTab,
   setActiveTab,
   readme,
@@ -345,6 +358,7 @@ function PluginDetailTabs({
   configurationPanel,
   mcpServersPanel,
   skillsPanel,
+  manifest,
 }: {
   activeTab: PluginDetailTab;
   setActiveTab: (tab: PluginDetailTab) => void;
@@ -355,176 +369,145 @@ function PluginDetailTabs({
   configurationPanel: ReactNode | null;
   mcpServersPanel: ReactNode | null;
   skillsPanel: ReactNode | null;
+  manifest: PluginManifestSummary | null;
 }) {
-  const [hasMountedVersions, setHasMountedVersions] = useState(activeTab === "versions");
   const [isReadmeExpanded, setIsReadmeExpanded] = useState(false);
-  const readmeLineCount = useMemo(() => readme?.split(/\r\n|\n|\r/).length ?? 0, [readme]);
-  const isReadmeLong = readmeLineCount > PLUGIN_README_COLLAPSED_LINE_COUNT;
-
+  const [hasMountedVersions, setHasMountedVersions] = useState(activeTab === "versions");
+  const isReadmeLong =
+    (readme?.split(/\r\n|\n|\r/).length ?? 0) > PLUGIN_README_COLLAPSED_LINE_COUNT;
   useEffect(() => {
     setIsReadmeExpanded(false);
   }, [readme]);
-  const selectTab = (tab: PluginDetailTab) => {
-    const scrollPosition =
-      typeof window === "undefined" ? null : { left: window.scrollX, top: window.scrollY };
-    setActiveTab(tab);
-    if (typeof window === "undefined") return;
-    const hash = tab === "readme" ? "" : tab === "mcpServers" ? "#mcp-servers" : `#${tab}`;
-    window.history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}${window.location.search}${hash}`,
-    );
-    window.requestAnimationFrame(() => {
-      if (!scrollPosition) return;
-      window.scrollTo(scrollPosition.left, scrollPosition.top);
-    });
-  };
-
-  const effectiveActiveTab =
-    activeTab === "versions"
-      ? "versions"
-      : activeTab === "compatibility" && compatibilityPanel
-        ? "compatibility"
-        : activeTab === "configuration" && configurationPanel
-          ? "configuration"
-          : activeTab === "mcpServers" && mcpServersPanel
-            ? "mcpServers"
-            : activeTab === "skills" && skillsPanel
-              ? "skills"
-              : "readme";
   useEffect(() => {
-    if (effectiveActiveTab === "versions") setHasMountedVersions(true);
-  }, [effectiveActiveTab]);
-  const readmePanel = readme ? (
-    <>
-      <div
-        className={`skill-readme-preview${
-          isReadmeLong && !isReadmeExpanded ? " is-collapsed" : ""
-        }`}
-        data-analytics-public-detail=""
-      >
-        <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
+    if (activeTab === "versions") setHasMountedVersions(true);
+  }, [activeTab]);
+  const section = (id: string, title: string, content: ReactNode) =>
+    content ? (
+      <section id={id} className="plugin-content-section" aria-labelledby={"plugin-heading-" + id}>
+        <h2 id={"plugin-heading-" + id}>{title}</h2>
+        {content}
+      </section>
+    ) : null;
+  const namedRows = (names: readonly string[] | undefined) =>
+    names?.length ? (
+      <div className="plugin-manifest-list">
+        {names.map((name) => (
+          <div key={name} className="plugin-manifest-row">
+            <div className="plugin-manifest-row-main">
+              <code>{name}</code>
+            </div>
+          </div>
+        ))}
       </div>
-      {isReadmeLong ? (
-        <button
-          type="button"
-          className="skill-readme-toggle"
-          aria-expanded={isReadmeExpanded}
-          onClick={() => setIsReadmeExpanded((expanded) => !expanded)}
-        >
-          {isReadmeExpanded ? "Show less" : "Read more"}
-        </button>
-      ) : null}
-    </>
-  ) : (
-    <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
-      <p className="empty-state-title">No README available</p>
-      <p className="empty-state-body">This plugin doesn't have a README yet.</p>
-    </div>
-  );
-  const activePanel =
-    effectiveActiveTab === "compatibility" && compatibilityPanel
-      ? compatibilityPanel
-      : effectiveActiveTab === "configuration" && configurationPanel
-        ? configurationPanel
-        : effectiveActiveTab === "mcpServers" && mcpServersPanel
-          ? mcpServersPanel
-          : effectiveActiveTab === "skills" && skillsPanel
-            ? skillsPanel
-            : readmePanel;
-
+    ) : null;
   return (
-    <div className="tab-card detail-mobile-tabs">
-      <div className="tab-header" role="tablist" aria-label="Plugin detail tabs">
-        <button
-          id="plugin-tab-readme"
-          className={`tab-button${effectiveActiveTab === "readme" ? " is-active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={effectiveActiveTab === "readme"}
-          aria-controls="plugin-tabpanel-readme"
-          onClick={() => selectTab("readme")}
+    <div className="plugin-detail-content">
+      {section(
+        "extensions",
+        "Extensions",
+        manifest?.uiCapabilities?.length ? (
+          <div className="plugin-manifest-list">
+            {PLUGIN_UI_CAPABILITIES.filter((kind) => manifest.uiCapabilities?.includes(kind)).map(
+              (kind) => (
+                <div key={kind} className="plugin-manifest-row">
+                  <div className="plugin-manifest-row-main">
+                    <strong>{PLUGIN_EXTENSION_LABELS[kind][0]}</strong>
+                    <p>{PLUGIN_EXTENSION_LABELS[kind][1]}</p>
+                  </div>
+                </div>
+              ),
+            )}
+          </div>
+        ) : null,
+      )}
+      {section(
+        "custom-ui",
+        "Custom UI",
+        manifest?.controlUi ? (
+          <div className="plugin-manifest-row">
+            <div className="plugin-manifest-row-main">
+              <strong>Browser entry</strong>
+              <code>{manifest.controlUi.entry}</code>
+              <p>
+                Includes a custom browser interface. This does not declare which extension kinds it
+                provides.
+              </p>
+            </div>
+          </div>
+        ) : null,
+      )}
+      {section("skills", "Skills", skillsPanel)}
+      {section("tools", "Tools", namedRows(manifest?.contracts?.tools))}
+      {Object.entries(manifest?.contracts ?? {})
+        .filter(([family, names]) => family !== "tools" && names.length > 0)
+        .map(([family, names]) => (
+          <div key={family}>
+            {section("contract-" + family, formatCompatibilityLabel(family), namedRows(names))}
+          </div>
+        ))}
+      {section("providers", "Providers", namedRows(manifest?.providers))}
+      {section("channels", "Channels", namedRows(manifest?.channels))}
+      {section("mcp-servers", "MCP Servers", mcpServersPanel)}
+      {section("configuration", "Configuration", configurationPanel)}
+      {section(
+        "readme",
+        "README.md",
+        readme ? (
+          <>
+            <div
+              className={
+                "skill-readme-preview" + (isReadmeLong && !isReadmeExpanded ? " is-collapsed" : "")
+              }
+              data-analytics-public-detail=""
+            >
+              <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
+            </div>
+            {isReadmeLong ? (
+              <button
+                type="button"
+                className="skill-readme-toggle"
+                aria-expanded={isReadmeExpanded}
+                onClick={() => setIsReadmeExpanded((expanded) => !expanded)}
+              >
+                {isReadmeExpanded ? "Show less" : "Read more"}
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <p className="stat">No README available. This plugin doesn't have a README yet.</p>
+        ),
+      )}
+      {compatibilityPanel ? (
+        <details
+          id="compatibility"
+          className="plugin-content-disclosure"
+          open={activeTab === "compatibility" || undefined}
         >
-          README.md
-        </button>
-        {skillsPanel ? (
-          <button
-            id="plugin-tab-skills"
-            className={`tab-button${effectiveActiveTab === "skills" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "skills"}
-            aria-controls="plugin-tabpanel-skills"
-            onClick={() => selectTab("skills")}
-          >
-            Skills
-          </button>
-        ) : null}
-        {mcpServersPanel ? (
-          <button
-            id="plugin-tab-mcpServers"
-            className={`tab-button${effectiveActiveTab === "mcpServers" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "mcpServers"}
-            aria-controls="plugin-tabpanel-mcpServers"
-            onClick={() => selectTab("mcpServers")}
-          >
-            MCP Servers
-          </button>
-        ) : null}
-        {configurationPanel ? (
-          <button
-            id="plugin-tab-configuration"
-            className={`tab-button${effectiveActiveTab === "configuration" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "configuration"}
-            aria-controls="plugin-tabpanel-configuration"
-            onClick={() => selectTab("configuration")}
-          >
-            Configuration
-          </button>
-        ) : null}
-        {compatibilityPanel ? (
-          <button
-            id="plugin-tab-compatibility"
-            className={`tab-button${effectiveActiveTab === "compatibility" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "compatibility"}
-            aria-controls="plugin-tabpanel-compatibility"
-            onClick={() => selectTab("compatibility")}
-          >
-            Compatibility
-          </button>
-        ) : null}
-        <button
-          id="plugin-tab-versions"
-          className={`tab-button${effectiveActiveTab === "versions" ? " is-active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={effectiveActiveTab === "versions"}
-          aria-controls="plugin-tabpanel-versions"
-          onClick={() => selectTab("versions")}
-        >
-          Versions
-        </button>
-      </div>
-      {effectiveActiveTab !== "versions" ? (
-        <div
-          className={`tab-body${effectiveActiveTab === "readme" ? " skill-readme-body" : ""}`}
-          role="tabpanel"
-          id={`plugin-tabpanel-${effectiveActiveTab}`}
-          aria-labelledby={`plugin-tab-${effectiveActiveTab}`}
-        >
-          {activePanel}
-        </div>
+          <summary>Package details</summary>
+          {compatibilityPanel}
+        </details>
       ) : null}
-      {hasMountedVersions || effectiveActiveTab === "versions"
-        ? versionsPanel(effectiveActiveTab !== "versions")
-        : null}
+      <details id="versions" className="plugin-content-disclosure" open={activeTab === "versions"}>
+        <summary
+          id="plugin-versions-heading"
+          onClick={(event) => {
+            event.preventDefault();
+            setHasMountedVersions(true);
+            const open = activeTab !== "versions";
+            setActiveTab(open ? "versions" : "readme");
+            window.history.replaceState(
+              null,
+              "",
+              window.location.pathname + window.location.search + (open ? "#versions" : ""),
+            );
+          }}
+        >
+          Version history
+        </summary>
+        {hasMountedVersions || activeTab === "versions"
+          ? versionsPanel(activeTab !== "versions")
+          : null}
+      </details>
     </div>
   );
 }
@@ -616,16 +599,22 @@ function PluginManifestConfigurationPanel({ fields }: { fields: PluginConfigFiel
 
 function PluginManifestMcpServersPanel({ servers }: { servers: PluginMcpServer[] }) {
   return (
-    <div className="plugin-manifest-capabilities">
-      <section className="plugin-manifest-section">
-        <div className="plugin-manifest-chip-list">
-          {servers.map((server) => (
-            <Badge key={server.name} variant="compact">
-              {server.name}
-            </Badge>
-          ))}
-        </div>
-      </section>
+    <div className="plugin-manifest-list">
+      {servers.map((server) => (
+        <article key={server.name} className="plugin-manifest-row">
+          <div className="plugin-manifest-row-main">
+            <code>{server.name}</code>
+            {server.url ? <span>{server.url}</span> : null}
+            {server.scope ? <p>{server.scope}</p> : null}
+            {server.setup ? <p>{server.setup}</p> : null}
+            {server.endpointRedacted ? <span>Endpoint hidden for safety</span> : null}
+          </div>
+          <div className="plugin-manifest-badges">
+            {server.transport ? <Badge variant="compact">{server.transport}</Badge> : null}
+            {server.auth ? <Badge variant="compact">{server.auth}</Badge> : null}
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
@@ -1264,8 +1253,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       canDeleteVersions={canDeleteVersions === true}
       onVersionDeleted={() => router.invalidate()}
       onRetry={() => setLoadedVersions(undefined)}
-      panelId="plugin-tabpanel-versions"
-      labelledBy="plugin-tab-versions"
+      labelledBy="plugin-versions-heading"
       hidden={hidden}
     />
   );
@@ -1853,7 +1841,8 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   </CardContent>
                 </Card>
               </div>
-              <PluginDetailTabs
+              <PluginDetailContent
+                manifest={pluginManifestSummary}
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
                 readme={readme}

@@ -460,7 +460,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     expect(screen.getAllByText("v2.0.0").length).toBeGreaterThan(0);
     expect(screen.getByText(new Date(publishedAt).toLocaleDateString())).toBeTruthy();
@@ -498,7 +498,7 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     expect(fetchPackageVersions).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     await waitFor(() => expect(fetchPackageVersions).toHaveBeenCalledTimes(1));
     expect(fetchPackageVersions).toHaveBeenCalledWith("demo-plugin", {
@@ -518,7 +518,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     expect(await screen.findByText("Release history is temporarily unavailable.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -550,7 +550,7 @@ describe("plugin detail route", () => {
     const { rerender } = render(
       <PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />,
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
     await waitFor(() => expect(fetchPackageVersions).toHaveBeenCalledTimes(1));
     const firstSignal = vi.mocked(fetchPackageVersions).mock.calls[0]?.[1]?.signal;
 
@@ -660,7 +660,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
@@ -684,7 +684,7 @@ describe("plugin detail route", () => {
           ),
       ).toBe(true);
     });
-    openRelease("1.0.0");
+    await waitFor(() => openRelease("1.0.0"));
     expect(screen.getByText("Loaded next page")).toBeTruthy();
     expect(
       document.querySelector('a[href="/api/v1/packages/demo-plugin/download?version=1.0.0"]'),
@@ -692,8 +692,8 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("Download .zip")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "README.md" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     expect(
       screen
@@ -746,12 +746,12 @@ describe("plugin detail route", () => {
     const { rerender } = render(
       <PluginDetailPage name="shared-plugin" loaderData={loaderDataMock} />,
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
-    openRelease("1.0.0");
+    await waitFor(() => openRelease("1.0.0"));
     expect(screen.getByText("Plugin A loaded release")).toBeTruthy();
 
     window.history.pushState(null, "", "/plugins/@scope/plugin-b");
@@ -781,13 +781,13 @@ describe("plugin detail route", () => {
     };
     rerender(<PluginDetailPage name="shared-plugin" loaderData={loaderDataMock} />);
 
-    expect(screen.getByRole("tab", { name: "README.md" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(
+      screen.getByText("Version history", { selector: "summary" }).closest("details")?.open,
+    ).toBe(false);
     expect(screen.getByText("Plugin B README")).toBeTruthy();
     expect(screen.queryByText("Plugin A loaded release")).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     openRelease("3.0.0");
     expect(screen.getByText("Plugin B release")).toBeTruthy();
@@ -819,13 +819,13 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
 
-    openRelease("1.0.0");
+    await waitFor(() => openRelease("1.0.0"));
     expect(screen.getByText("Loaded after empty page")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
@@ -858,6 +858,13 @@ describe("plugin detail route", () => {
           verification: null,
           artifact: null,
           pluginManifestSummary: {
+            uiCapabilities: ["widget", "page", "link-reader"],
+            controlUi: { entry: "dist/control-ui/index.js" },
+            contracts: {
+              tools: ["workspace_search"],
+              imageGenerationProviders: ["workspace-images"],
+            },
+
             schemaVersion: 1,
             compatibility: { pluginApiRange: "^2.0.0" },
             configFields: [
@@ -895,30 +902,45 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
+    expect(screen.queryByRole("tab", { name: "Compatibility" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Versions" })).toBeNull();
     expect(
-      Array.from(document.querySelectorAll(".detail-mobile-tabs .tab-button"), (tab) =>
-        tab.textContent?.trim(),
+      Array.from(
+        document.querySelectorAll(".plugin-content-section > h2"),
+        (heading) => heading.textContent,
       ),
-    ).toEqual(["README.md", "Skills", "MCP Servers", "Configuration", "Compatibility", "Versions"]);
-    expect(screen.getByRole("tab", { name: "Compatibility" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Configuration" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "MCP Servers" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Skills" })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Compatibility" }));
+    ).toEqual([
+      "Extensions",
+      "Custom UI",
+      "Skills",
+      "Tools",
+      "Image Generation Providers",
+      "MCP Servers",
+      "Configuration",
+      "README.md",
+    ]);
+    const extensions = screen.getByRole("region", { name: "Extensions" });
+    expect(Array.from(extensions.querySelectorAll("strong"), (row) => row.textContent)).toEqual([
+      "Pages",
+      "Widgets",
+      "Link readers",
+    ]);
+    expect(screen.getByText("workspace_search")).toBeTruthy();
+    expect(screen.getByText("workspace-images")).toBeTruthy();
+    fireEvent.click(screen.getByText("Package details", { selector: "summary" }));
     expect(screen.getByText("OpenClaw plugin API")).toBeTruthy();
     expect(screen.getByText("^2.0.0")).toBeTruthy();
-    expect(screen.queryByText("EXAMPLE_PLUGIN_API_KEY")).toBeNull();
+    expect(screen.getByText("EXAMPLE_PLUGIN_API_KEY")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Configuration" }));
+    fireEvent.click(screen.getByRole("heading", { name: "Configuration" }));
     expect(screen.getByText("EXAMPLE_PLUGIN_API_KEY")).toBeTruthy();
     expect(screen.getByText("Required")).toBeTruthy();
     expect(screen.getByText("Sensitive")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("tab", { name: "MCP Servers" }));
+    fireEvent.click(screen.getByRole("heading", { name: "MCP Servers" }));
     expect(screen.getAllByText("exampleMcp").length).toBeGreaterThanOrEqual(1);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+    fireEvent.click(screen.getByRole("heading", { name: "Skills" }));
     expect(screen.getByText("Deep research assistant.")).toBeTruthy();
     expect(fetchPackageFile).not.toHaveBeenCalled();
 
@@ -972,7 +994,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
@@ -993,7 +1015,7 @@ describe("plugin detail route", () => {
       limit: 20,
       signal: expect.any(AbortSignal),
     });
-    openRelease("1.0.0");
+    await waitFor(() => openRelease("1.0.0"));
     expect(screen.getByText("Loaded after retry")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -1021,7 +1043,7 @@ describe("plugin detail route", () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
     const { rerender } = render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
     loaderDataMock = {
@@ -1069,7 +1091,7 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("Stale first plugin release")).toBeNull();
   });
 
-  it("selects the versions tab from the versions hash", async () => {
+  it("opens version history from the versions hash", async () => {
     window.location.hash = "#versions";
     loaderDataMock = {
       ...loaderDataMock,
@@ -1092,11 +1114,11 @@ describe("plugin detail route", () => {
     render(<Component />);
     await act(async () => {});
 
-    expect(screen.getByRole("tab", { name: "Versions" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(
+      screen.getByText("Version history", { selector: "summary" }).closest("details")?.open,
+    ).toBe(true);
     expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
-    openRelease("1.0.0");
+    await waitFor(() => openRelease("1.0.0"));
     expect(screen.getByText("Initial release")).toBeTruthy();
   });
 
@@ -1131,12 +1153,12 @@ describe("plugin detail route", () => {
     expect(html).not.toContain("Initial release");
   });
 
-  it("keeps the versions tab available for empty active release histories", async () => {
+  it("keeps version history available for empty active release histories", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     expect(screen.getByText("No active releases are available.")).toBeTruthy();
   });
@@ -1150,7 +1172,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     expect(screen.getByText("Release history is temporarily unavailable.")).toBeTruthy();
     expect(screen.queryByText("No active releases are available.")).toBeNull();
@@ -1574,7 +1596,7 @@ describe("plugin detail route", () => {
         .filter(([query]) => getFunctionName(query as never) === "packages:canDeleteVersions")
         .at(-1)?.[1],
     ).toBe("skip");
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
     await waitFor(() =>
       expect(
         useQueryMock.mock.calls.some(
@@ -1644,7 +1666,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByText("Version history", { selector: "summary" }));
 
     expect(screen.getByRole("link", { name: "New version" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Delete version/ })).toBeNull();
@@ -1869,7 +1891,7 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Compatibility" }));
+    fireEvent.click(screen.getByText("Package details", { selector: "summary" }));
     expect(screen.getByText("ClawPack")).toBeTruthy();
     expect(screen.getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
     expect(screen.getByText("sha512-demo")).toBeTruthy();
@@ -1930,7 +1952,7 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Compatibility" }));
+    fireEvent.click(screen.getByText("Package details", { selector: "summary" }));
     expect(screen.getByText("Legacy ZIP")).toBeTruthy();
     expect(screen.getByText(/legacy ZIP path/i)).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
@@ -2011,7 +2033,7 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
   });
 
-  it("shows validation outputs to plugin managers above the detail tabs", async () => {
+  it("shows validation outputs to plugin managers above the detail sections", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,

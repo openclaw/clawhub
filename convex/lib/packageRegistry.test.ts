@@ -15,6 +15,62 @@ import {
 } from "./packageRegistry";
 import { buildPackageInventoryDigest } from "./skills";
 
+describe("custom browser UI metadata", () => {
+  const entry = "dist/control-ui/index.js";
+  const files = [{ path: entry, sha256: "a".repeat(64), size: 12 }];
+  it("shows only an actual packaged browser entry, without inventing extension declarations", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: { controlUi: { entry: "./" + entry } },
+      files,
+    });
+    expect(summary.controlUi).toEqual({ entry });
+    expect(summary).not.toHaveProperty("uiCapabilities");
+  });
+  it.each(["../outside.js", "dist/../outside.js", "src/ui.ts", "dist/ui/missing.js"])(
+    "does not advertise an invalid or missing browser entry: %s",
+    (browserEntry) => {
+      expect(
+        derivePluginManifestSummary({
+          pluginManifest: { controlUi: { entry: browserEntry } },
+          files,
+        }),
+      ).not.toHaveProperty("controlUi");
+    },
+  );
+});
+
+describe("declared UI capabilities", () => {
+  it("preserves omission and explicit none without inferring browser entry kinds", () => {
+    expect(
+      derivePluginManifestSummary({
+        pluginManifest: { ui: { entry: "ui/index.html" } },
+        files: [],
+      }),
+    ).not.toHaveProperty("uiCapabilities");
+    expect(
+      derivePluginManifestSummary({ pluginManifest: { uiCapabilities: [] }, files: [] })
+        .uiCapabilities,
+    ).toEqual([]);
+  });
+  it.each(
+    [null, "page", ["future"], ["page", "future"], [1]].map((uiCapabilities) => ({
+      uiCapabilities,
+    })),
+  )("treats malformed declarations as unspecified: %j", ({ uiCapabilities }) => {
+    expect(
+      derivePluginManifestSummary({ pluginManifest: { uiCapabilities }, files: [] }),
+    ).not.toHaveProperty("uiCapabilities");
+  });
+  it("keeps known declarations in canonical order, without duplicates", () => {
+    expect(
+      derivePluginManifestSummary({
+        pluginManifest: { uiCapabilities: ["widget", "page", "widget", "link-reader"] },
+        files: [],
+      }).uiCapabilities,
+    ).toEqual(["page", "widget", "link-reader"]);
+  });
+});
+
 describe("packageRegistry", () => {
   it("derives bundle identity from the canonical name, never a native envelope or upload hint", () => {
     expect(

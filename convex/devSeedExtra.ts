@@ -11,6 +11,8 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
+import { assertLocalDevSeedAllowed } from "./lib/devSeed";
+import { derivePluginManifestSummary } from "./lib/packageRegistry";
 import { parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
 
 type SeedSkillSpec = {
@@ -553,5 +555,197 @@ export const seedExtraSkillsInternal = internalAction({
     const skipped = results.filter((r) => r.skipped).length;
 
     return { ok: true, total: results.length, created, skipped };
+  },
+});
+
+const readme = `# Workspace Toolkit
+
+A local fixture for reviewing declared plugin capabilities.
+
+## Getting started
+
+Install the plugin, configure your workspace, and review the bundled skill before use.
+
+This fixture does not run external tools, provider calls, or security scanners.`;
+const skill = `---
+name: workspace-research
+description: Research a workspace and summarize findings with sources.
+---
+
+# Workspace research
+
+Review the workspace and cite your sources.`;
+
+// Reusable full-stack fixtures for metadata rows, empty declarations and legacy releases.
+export const seedPluginDetailRows = internalMutation({
+  args: {
+    readmeStorageId: v.id("_storage"),
+    skillStorageId: v.id("_storage"),
+    browserStorageId: v.id("_storage"),
+  },
+  handler: async (ctx, { readmeStorageId, skillStorageId, browserStorageId }) => {
+    assertLocalDevSeedAllowed("plugin-detail");
+    const now = Date.now();
+    const handle = "plugin-detail-proof";
+    const owner = await ctx.db
+      .query("users")
+      .withIndex("handle", (q) => q.eq("handle", handle))
+      .unique();
+    const ownerUserId =
+      owner?._id ?? (await ctx.db.insert("users", { handle, name: "Plugin Detail Proof" }));
+    let created = 0;
+    for (const mode of ["full", "none", "legacy"] as const) {
+      const name = "local-plugin-detail-" + mode;
+      const existing = await ctx.db
+        .query("packages")
+        .withIndex("by_name", (q) => q.eq("normalizedName", name))
+        .unique();
+      if (existing) {
+        if (existing.ownerUserId !== ownerUserId)
+          throw new Error("Plugin detail fixture owner mismatch");
+        continue;
+      }
+      created += 1;
+      const packageId = await ctx.db.insert("packages", {
+        name,
+        normalizedName: name,
+        displayName:
+          mode === "full"
+            ? "Workspace Toolkit"
+            : mode === "none"
+              ? "Browser-only Toolkit"
+              : "Legacy Toolkit",
+        summary: "Inspect declared tools, skills, extensions, and configuration in one place.",
+        ownerUserId,
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        tags: {},
+        stats: { downloads: 42, installs: 0, stars: 0, versions: 1 },
+        createdAt: now,
+        updatedAt: now,
+      });
+      const files = [
+        {
+          path: "README.md",
+          size: readme.length,
+          storageId: readmeStorageId,
+          sha256: "a".repeat(64),
+          contentType: "text/markdown",
+        },
+        {
+          path: "skills/research/SKILL.md",
+          size: skill.length,
+          storageId: skillStorageId,
+          sha256: "b".repeat(64),
+          contentType: "text/markdown",
+        },
+      ];
+      if (mode !== "legacy")
+        files.push({
+          path: "dist/control-ui/index.js",
+          size: 10,
+          storageId: browserStorageId,
+          sha256: "d".repeat(64),
+          contentType: "text/javascript",
+        });
+      const pluginManifest =
+        mode === "full"
+          ? {
+              controlUi: { entry: "dist/control-ui/index.js" },
+              uiCapabilities: [
+                "page",
+                "navigation",
+                "panel",
+                "action",
+                "accessory",
+                "widget",
+                "inline",
+                "replacement",
+                "link-reader",
+              ],
+              contracts: {
+                tools: [
+                  "workspace_search",
+                  "workspace_summary_with_a_deliberately_long_identifier_to_check_narrow_layouts",
+                ],
+                imageGenerationProviders: ["workspace-images"],
+              },
+              providers: ["workspace-provider"],
+              channels: ["workspace-chat"],
+              skills: ["skills/research"],
+              configSchema: {
+                type: "object",
+                properties: {
+                  workspaceId: {
+                    type: "string",
+                    description: "The workspace to use for research.",
+                  },
+                },
+                required: ["workspaceId"],
+              },
+              mcpServers: {
+                research: {
+                  url: "https://example.invalid/mcp",
+                  transport: "streamable-http",
+                  auth: "oauth",
+                },
+              },
+            }
+          : mode === "none"
+            ? { uiCapabilities: [], controlUi: { entry: "dist/control-ui/index.js" } }
+            : {};
+      const releaseId = await ctx.db.insert("packageReleases", {
+        packageId,
+        version: "1.0.0",
+        publicationStatus: "published",
+        changelog: "Local UI fixture",
+        distTags: ["latest"],
+        files,
+        pluginManifestSummary: derivePluginManifestSummary({
+          pluginManifest,
+          files: files.map((file) => ({
+            ...file,
+            text: file.path === "README.md" ? readme : skill,
+          })),
+        }),
+        integritySha256: "c".repeat(64),
+        createdBy: ownerUserId,
+        createdAt: now,
+      });
+      await ctx.db.patch(packageId, {
+        latestReleaseId: releaseId,
+        tags: { latest: releaseId },
+        latestVersionSummary: { version: "1.0.0", createdAt: now, changelog: "Local UI fixture" },
+      });
+    }
+    return {
+      created,
+      owner: handle,
+      names: ["local-plugin-detail-full", "local-plugin-detail-none", "local-plugin-detail-legacy"],
+    };
+  },
+});
+
+export const seedPluginDetailFixtures = internalAction({
+  args: {},
+  handler: async (ctx): Promise<unknown> => {
+    assertLocalDevSeedAllowed("plugin-detail");
+    const readmeStorageId = await ctx.storage.store(new Blob([readme], { type: "text/markdown" }));
+    const skillStorageId = await ctx.storage.store(new Blob([skill], { type: "text/markdown" }));
+    const browserStorageId = await ctx.storage.store(
+      new Blob(["export {};"], { type: "text/javascript" }),
+    );
+    const result = await ctx.runMutation(internal.devSeedExtra.seedPluginDetailRows, {
+      readmeStorageId,
+      skillStorageId,
+      browserStorageId,
+    });
+    if (result.created === 0) {
+      await ctx.storage.delete(readmeStorageId);
+      await ctx.storage.delete(skillStorageId);
+      await ctx.storage.delete(browserStorageId);
+    }
+    return result;
   },
 });

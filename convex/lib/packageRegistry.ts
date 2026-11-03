@@ -1,4 +1,5 @@
 import {
+  PLUGIN_UI_CAPABILITIES,
   assertManagedMcpUrl,
   bundlePluginRuntimeId,
   listMissingOpenClawExternalCodePluginFieldPaths,
@@ -364,6 +365,25 @@ export function derivePluginManifestSummary(params: {
       .map(([key, value]) => [key, declaredCapabilityNames(value)] as const)
       .filter(([, names]) => names.length > 0),
   );
+  const rawUiCapabilities = params.pluginManifest.uiCapabilities;
+  // Match OpenClaw: malformed declarations are unspecified, not explicit none.
+  const uiCapabilities =
+    Array.isArray(rawUiCapabilities) &&
+    rawUiCapabilities.every((entry) => PLUGIN_UI_CAPABILITIES.some((kind) => kind === entry))
+      ? PLUGIN_UI_CAPABILITIES.filter((kind) => rawUiCapabilities.includes(kind))
+      : undefined;
+  const declaredBrowserEntry =
+    isRecord(params.pluginManifest.controlUi) &&
+    typeof params.pluginManifest.controlUi.entry === "string"
+      ? params.pluginManifest.controlUi.entry.replace(/^\.\//u, "")
+      : undefined;
+  const controlUi =
+    declaredBrowserEntry &&
+    declaredBrowserEntry.length <= 512 &&
+    /^dist\/(?:[\w-][\w.-]*\/)+[\w-][\w.-]*\.m?js$/u.test(declaredBrowserEntry) &&
+    params.files.some((file) => file.path === declaredBrowserEntry)
+      ? { entry: declaredBrowserEntry }
+      : undefined;
   const providers = declaredCapabilityNames(params.pluginManifest.providers);
   const channels = declaredCapabilityNames(params.pluginManifest.channels);
   const skillManifest = params.skillManifest ?? params.pluginManifest;
@@ -394,6 +414,9 @@ export function derivePluginManifestSummary(params: {
 
   return {
     schemaVersion: 1 as const,
+    // Omission means unspecified; an explicit empty list declares no UI extensions.
+    ...(uiCapabilities !== undefined ? { uiCapabilities } : {}),
+    ...(controlUi ? { controlUi } : {}),
     ...(params.categories ? { categories: [...params.categories] } : {}),
     ...(compatibility ? { compatibility } : {}),
     ...(manifestIdentity ? { manifestIdentity } : {}),
