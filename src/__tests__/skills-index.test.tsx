@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /* @vitest-environment jsdom */
@@ -13,6 +14,7 @@ import {
   convexReactMocks,
   resetConvexReactMocks,
   setupDefaultConvexReactMocks,
+  setupRealCountQuery,
 } from "./helpers/convexReactMocks";
 
 const navigateMock = vi.fn();
@@ -51,6 +53,7 @@ vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
   useAction: (...args: unknown[]) => convexReactMocks.useAction(...args),
   useQuery: (...args: unknown[]) => convexReactMocks.useQuery(...args),
+  useQueries: (...args: unknown[]) => convexReactMocks.useQueries(...args),
 }));
 
 vi.mock("../../src/convex/client", () => ({
@@ -388,7 +391,7 @@ describe("SkillsIndex", () => {
 
   it("renders the total skills count in the unfiltered page title", async () => {
     searchMock = {};
-    convexReactMocks.useQuery.mockReturnValue(70_300);
+    convexReactMocks.useQueries.mockReturnValue({ totalSkillsCount: 70_300 });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -413,11 +416,42 @@ describe("SkillsIndex", () => {
     await act(async () => {});
 
     expect(await screen.findByRole("heading", { name: "Skills 70.3K" })).toBeTruthy();
+    const request = convexReactMocks.useQueries.mock.calls.at(-1)?.[0]?.totalSkillsCount;
+    expect(request).toBeDefined();
+    expect(getFunctionName(request.query)).toBe("skills:countPublicSkills");
+    expect(request.args).toEqual({});
+  });
+
+  it("keeps skills browsable when the optional total count fails", async () => {
+    const failure = new Error("Count fixture timed out");
+    const { ConvexProvider, client, setCount } = await setupRealCountQuery(failure);
+    convexReactMocks.useQuery.mockImplementation((_reference, args) => {
+      if (args !== "skip") throw failure;
+      return null;
+    });
+    convexHttpMock.query.mockResolvedValue({
+      page: [makeListResult("available-skill", "Available Skill")],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(
+      <ConvexProvider client={client}>
+        <SkillsIndex />
+      </ConvexProvider>,
+    );
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { name: "Skills" })).toBeTruthy();
+    expect(screen.getByText("Available Skill")).toBeTruthy();
+    expect(screen.queryByText("Count fixture timed out")).toBeNull();
+    act(() => setCount(123));
+    expect(screen.getByRole("heading", { name: "Skills 123" })).toBeTruthy();
   });
 
   it("hides the total skills count when filters are active", async () => {
     searchMock = { category: "development" };
-    convexReactMocks.useQuery.mockReturnValue(70_300);
+    convexReactMocks.useQueries.mockReturnValue({ totalSkillsCount: 70_300 });
 
     render(<SkillsIndex />);
     await act(async () => {});

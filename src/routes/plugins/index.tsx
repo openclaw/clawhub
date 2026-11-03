@@ -1,6 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { isPluginCategorySlug } from "clawhub-schema/catalogMetadata";
-import { useQuery } from "convex/react";
+import { type RequestForQueries, useQueries, useQuery } from "convex/react";
 import { PackageSearch, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
@@ -376,11 +376,16 @@ function PluginsIndex() {
   const hasActiveFilters = hasQuery || Boolean(search.category) || Boolean(activeTopic);
   const shouldResolveTotalCount =
     !hasActiveFilters && !search.cursor && catalogData.totalCount == null;
-  const totalPluginsCount = useQuery(
-    api.packages.countPublicPlugins,
-    shouldResolveTotalCount ? {} : "skip",
-  );
-  const totalCount = catalogData.totalCount ?? totalPluginsCount ?? null;
+  const totalCountQueries = useMemo(() => {
+    const queries: RequestForQueries = {};
+    if (shouldResolveTotalCount) {
+      queries.totalPluginsCount = { query: api.packages.countPublicPlugins, args: {} };
+    }
+    return queries;
+  }, [shouldResolveTotalCount]);
+  const { totalPluginsCount } = useQueries(totalCountQueries);
+  const totalCount =
+    catalogData.totalCount ?? (typeof totalPluginsCount === "number" ? totalPluginsCount : null);
   const formattedCount = !hasActiveFilters && !search.cursor ? formatBrowseCount(totalCount) : null;
 
   useEffect(() => {
