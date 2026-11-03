@@ -57,7 +57,11 @@ const DEFAULT_BRANCH = "main";
 const GITHUB_SKILL_SCAN_ACTION_LEASE_MS = 15 * 60 * 1000;
 const PUBLIC_REPO_ONLY_ERROR = "Enter a public GitHub repo.";
 const MAX_UNZIPPED_BYTES = 80 * 1024 * 1024;
-const MAX_FILE_COUNT = 7_500;
+// Counts file entries only. MAX_UNZIPPED_BYTES and MAX_SINGLE_FILE_BYTES bound
+// memory for file contents; this cap only bounds per-entry overhead from archives
+// with huge numbers of tiny files. Whole-repo sources such as NVIDIA/skills carry
+// hundreds of skills, so keep it well above real catalog sizes.
+const MAX_FILE_COUNT = 75_000;
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_STATIC_SCAN_TEXT_FILES = 200;
 const MAX_STATIC_SCAN_TEXT_FILE_BYTES = 256 * 1024;
@@ -3269,8 +3273,8 @@ function getGitHubSkillSourceHostname(input: RequestInfo | URL) {
   }
 }
 
-function unzipToEntries(zipBytes: Uint8Array) {
-  const limits = createZipEntryLimitFilter();
+function unzipToEntries(zipBytes: Uint8Array, maxFileCount = MAX_FILE_COUNT) {
+  const limits = createZipEntryLimitFilter(maxFileCount);
   const entries = unzipSync(zipBytes, {
     filter: (file) => limits.accept(file),
   });
@@ -3287,14 +3291,14 @@ function unzipToEntries(zipBytes: Uint8Array) {
   return out;
 }
 
-function createZipEntryLimitFilter() {
+function createZipEntryLimitFilter(maxFileCount: number) {
   let fileCount = 0;
   let totalBytes = 0;
   return {
     accept(file: UnzipFileInfo) {
-      fileCount += 1;
-      if (fileCount > MAX_FILE_COUNT) throw new ConvexError("Repo archive has too many files");
       if (file.name.endsWith("/")) return false;
+      fileCount += 1;
+      if (fileCount > maxFileCount) throw new ConvexError("Repo archive has too many files");
 
       const normalizedPath = normalizeRepoPath(file.name);
       if (!normalizedPath) throw new ConvexError("Repo archive contains an invalid path");
@@ -3407,6 +3411,7 @@ function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T>
 }
 
 export const __test = {
+  MAX_FILE_COUNT,
   assertExactSkillsShSourceSelection,
   buildGitHubSkillSourceFetch,
   buildGitHubSourceImport,

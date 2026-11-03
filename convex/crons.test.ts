@@ -225,12 +225,12 @@ describe("crons", () => {
     );
   });
 
-  it("runs GitHub skill source sync every 15 minutes", async () => {
+  it("runs GitHub skill source sync once per day", async () => {
     await import("./crons");
 
     expect(mocks.interval).toHaveBeenCalledWith(
       "github-skill-source-sync",
-      { minutes: 15 },
+      { hours: 24 },
       mocks.githubSkillSyncRef,
       {},
     );
