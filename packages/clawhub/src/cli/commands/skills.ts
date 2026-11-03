@@ -709,6 +709,21 @@ export async function cmdUpdate(
     const entryLock = lock.skills[entry];
     const entryRef = parseStoredSkillRefOrFail(entryLock?.sourceRef ?? entry);
     const spinner = createCrabLoader(`Checking ${entry}`);
+    const confirmOverwrite = async (version: string) => {
+      spinner.stop();
+      if (!allowPrompt) {
+        console.log(`${entry}: local changes (no match). Use --force to overwrite.`);
+        return false;
+      }
+      if (
+        !(await promptConfirm(`${entry}: local changes (no match). Overwrite with ${version}?`))
+      ) {
+        console.log(`${entry}: skipped`);
+        return false;
+      }
+      spinner.start(`Updating ${entry} -> ${version}`);
+      return true;
+    };
     try {
       const target = skillTarget(opts.dir, entryRef);
       const exists = await fileExists(target);
@@ -753,21 +768,7 @@ export async function cmdUpdate(
             : null;
 
         if (hasLocalChanges && !options.force) {
-          spinner.stop();
-          if (!allowPrompt) {
-            console.log(`${entry}: local changes (no match). Use --force to overwrite.`);
-            continue;
-          }
-          const confirm = await promptConfirm(
-            `${entry}: local changes (no match). Overwrite with ${formatInstallResolutionVersion(
-              latestInstall,
-            )}?`,
-          );
-          if (!confirm) {
-            console.log(`${entry}: skipped`);
-            continue;
-          }
-          spinner.start(`Updating ${entry} -> ${formatInstallResolutionVersion(latestInstall)}`);
+          if (!(await confirmOverwrite(formatInstallResolutionVersion(latestInstall)))) continue;
         }
 
         if (
@@ -958,19 +959,7 @@ export async function cmdUpdate(
               : null;
 
           if (hasLocalChanges && !options.force) {
-            spinner.stop();
-            if (!allowPrompt) {
-              console.log(`${entry}: local changes (no match). Use --force to overwrite.`);
-              continue;
-            }
-            const confirm = await promptConfirm(
-              `${entry}: local changes (no match). Overwrite with ${formatGitHubVersion(targetVersion)}?`,
-            );
-            if (!confirm) {
-              console.log(`${entry}: skipped`);
-              continue;
-            }
-            spinner.start(`Updating ${entry} -> ${formatGitHubVersion(targetVersion)}`);
+            if (!(await confirmOverwrite(formatGitHubVersion(targetVersion)))) continue;
           }
 
           if (matched === targetVersion && !options.force && !hasLocalChanges) {
@@ -1078,19 +1067,7 @@ export async function cmdUpdate(
       }
 
       if (!matched && localFingerprint && !options.force) {
-        spinner.stop();
-        if (!allowPrompt) {
-          console.log(`${entry}: local changes (no match). Use --force to overwrite.`);
-          continue;
-        }
-        const confirm = await promptConfirm(
-          `${entry}: local changes (no match). Overwrite with ${options.version ?? latest}?`,
-        );
-        if (!confirm) {
-          console.log(`${entry}: skipped`);
-          continue;
-        }
-        spinner.start(`Updating ${entry} -> ${options.version ?? latest}`);
+        if (!(await confirmOverwrite(options.version ?? latest))) continue;
       }
 
       const targetVersion = options.version ?? latest;
