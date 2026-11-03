@@ -3883,32 +3883,6 @@ describe("moderationEngine", () => {
     expect(snapshot.legacyFlags).toEqual(["flagged.suspicious"]);
   });
 
-  it("does not let uncorroborated VT suspicious override clean local scans", () => {
-    const snapshot = buildModerationSnapshot({
-      staticScan: {
-        status: "clean",
-        reasonCodes: [],
-        findings: [],
-        summary: "",
-        engineVersion: "v2.1.1",
-        checkedAt: Date.now(),
-      },
-      vtAnalysis: {
-        status: "suspicious",
-        engineStats: {
-          malicious: 0,
-          suspicious: 0,
-          harmless: 12,
-          undetected: 54,
-        },
-      },
-      llmStatus: "clean",
-    });
-
-    expect(snapshot.verdict).toBe("clean");
-    expect(snapshot.reasonCodes).toEqual([]);
-  });
-
   it("keeps VT engine suspicious as telemetry only", () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {

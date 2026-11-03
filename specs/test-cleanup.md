@@ -17,7 +17,35 @@ evidence from https://github.com/openclaw/clawhub/pull/2226. It records validati
 and review samples for the original public seed; it is not a runtime fixture or
 fresh validation proof.
 
+Retain the V1/V2 listing-stub checks: they preserve distinct public response shapes
+and verify zero DB reads. The source explicitly retires V1/V2 while keeping V3 for
+remaining subscribers during migration to V4.
+
+The normalized callback audit at `4f4d9acc` covered 738 test files and 7,878
+callbacks. Its only two same-file duplicate groups are removed in the backend
+slice below. Two cross-file schema matches exercise separate copied modules;
+the shared worker-guard match needs a separate cleanup.
+
 ## Changes
+
+### Backend test contracts
+
+Remove the exact duplicate clean-local/VT-suspicious snapshot case and the second
+ended-before-launch promotion case. Retain the different engine telemetry and
+ended-after-scheduled-start cases.
+
+Replace event-log source scans with direct append-helper payload checks for skill
+and package reports and appeals. Assert the corresponding audit record, subject
+IDs, timestamps, and optional metadata. The deleted table-name regex could not
+see ordinary document-ID writes, including the intentional package purge path.
+These mocked tests cover helper payloads, not a global append-only guarantee or
+Convex transaction semantics. Keep the moderation state-transition tests.
+
+Validation: all 227 focused tests passed. Wrong audit actions passed all 44 old
+source/state checks and failed all four new payload cases; the helper was restored
+and all 46 helper/state checks passed. `ci:static`, `ci:types:packages`, and
+`ci:unit` passed (653 files, 8,827 tests; coverage thresholds met). Independent
+P0-P3 diff review: scoped-clean. Base: `dcdfefd9`.
 
 ### CLI package coverage
 
