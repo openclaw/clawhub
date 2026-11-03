@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- CI: use a single-commit checkout for static checks instead of fetching full history.
 - CI: cache the pinned OpenClaw contract package store while retaining frozen installs and full contract proof on every run.
 - Tooling: use the existing pinned Bun formatter for format commands while preserving Oxfmt configuration and exclusions.
 
