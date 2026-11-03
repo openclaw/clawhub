@@ -18,7 +18,8 @@ def save(path,value):
 
 def hashes(case):
     root=Path(case['path']);observed=[]
-    for path in sorted(root.rglob('*')):
+    # Match the manifest's relative path order, including dist and dist-server.
+    for path in sorted(root.rglob('*'),key=lambda path:str(path.relative_to(root))):
         if path.is_symlink():raise ValueError('input symlink')
         if path.is_file():observed.append({'path':str(path.relative_to(root)),
             'size':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()})

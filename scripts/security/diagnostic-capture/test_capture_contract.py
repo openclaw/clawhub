@@ -4,6 +4,33 @@ from pathlib import Path
 sys.dont_write_bytecode=True
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from validation import tool_capture_gaps
+from original038 import hashes
+
+
+class OriginalFileIdentity(unittest.TestCase):
+    def original(self,root):
+        files=[]
+        for name,data in [('workbench-runtime/dist-server/index.mjs',b'const marker = 1;\n'),
+                          ('workbench-runtime/dist/index.html',b'<!doctype html>\n')]:
+            path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data)
+            files.append({'path':name,'size':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+        return {'path':str(root),'files':sorted(files,key=lambda row:row['path'])}
+
+    def test_exact_inventory_uses_relative_path_order(self):
+        with tempfile.TemporaryDirectory()as name:
+            case=self.original(Path(name))
+            self.assertEqual(hashes(case),case['files'])
+
+    def test_changed_extra_missing_and_symlink_files_remain_rejected(self):
+        for change in ('changed','extra','missing','symlink'):
+            with self.subTest(change=change),tempfile.TemporaryDirectory()as name:
+                root=Path(name);case=self.original(root)
+                path=root/'workbench-runtime/dist-server/index.mjs'
+                if change=='changed':path.write_bytes(b'const marker = 2;\n')
+                elif change=='extra':(root/'extra.txt').write_bytes(b'')
+                elif change=='missing':path.unlink()
+                else:path.unlink();path.symlink_to('../dist/index.html')
+                with self.assertRaises(ValueError):hashes(case)
 
 
 class CaptureContract(unittest.TestCase):
