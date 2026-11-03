@@ -266,6 +266,21 @@ describe("clawhub-schema", () => {
       providers: ["model-provider"],
       channels: ["chat"],
     },
+    { uiCapabilities: [] },
+    { controlUi: { entry: "dist/control-ui/index.js" } },
+    {
+      uiCapabilities: [
+        "page",
+        "navigation",
+        "panel",
+        "action",
+        "accessory",
+        "widget",
+        "inline",
+        "replacement",
+        "link-reader",
+      ],
+    },
   ])("reads old and capability-enriched version summaries: %j", (capabilities) => {
     const summary = {
       schemaVersion: 1,

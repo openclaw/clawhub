@@ -36,8 +36,25 @@ export const PackageCompatibilitySchema = type({
 });
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
 
+export const PLUGIN_UI_CAPABILITIES = [
+  "page",
+  "navigation",
+  "panel",
+  "action",
+  "accessory",
+  "widget",
+  "inline",
+  "replacement",
+  "link-reader",
+] as const;
+export const PluginUiCapabilitySchema = type(
+  '"page"|"navigation"|"panel"|"action"|"accessory"|"widget"|"inline"|"replacement"|"link-reader"',
+);
+
 export const PluginManifestSummarySchema = type({
   schemaVersion: "number",
+  uiCapabilities: PluginUiCapabilitySchema.array().optional(),
+  controlUi: type({ entry: "string" }).optional(),
   contracts: type({ "[string]": "string[]" }).optional(),
   providers: "string[]?",
   channels: "string[]?",

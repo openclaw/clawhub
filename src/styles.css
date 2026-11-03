@@ -25097,3 +25097,164 @@ a[class*="rounded-full"] {
   gap: 10px;
   min-width: 0;
 }
+
+/* Plugin detail follows the Control UI capability anatomy, without changing
+ * ClawHub install/security ownership or mobile About/Stats navigation. */
+.plugin-detail-content {
+  min-width: 0;
+}
+.plugin-content-section {
+  margin-bottom: 28px;
+  scroll-margin-top: var(--space-6);
+}
+.plugin-content-section > h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+.plugin-capability-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding-inline: 4px;
+  border: 1px solid var(--border-ui);
+  border-radius: var(--oc-radius-round, 999px);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 400;
+}
+.plugin-capability-heading-icon {
+  display: inline-flex;
+}
+.plugin-capability-heading-icon svg,
+.plugin-capability-icon svg,
+.plugin-capability-chevron {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.plugin-capability-list {
+  min-width: 0;
+}
+.plugin-capability-row {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+.plugin-capability-row-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  padding: 12px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+}
+button.plugin-capability-row-body {
+  cursor: pointer;
+}
+button.plugin-capability-row-body:hover {
+  background: var(--surface-muted);
+}
+button.plugin-capability-row-body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.plugin-capability-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  color: var(--accent);
+}
+.plugin-capability-copy {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.plugin-capability-copy strong {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.plugin-capability-description,
+.plugin-capability-declarations {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.plugin-capability-declarations code {
+  font-size: 11px;
+  background: transparent;
+  padding: 0;
+}
+.plugin-capability-trailing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: end;
+  gap: 6px;
+  max-width: 38%;
+  font-size: 12px;
+}
+.plugin-capability-chevron {
+  color: var(--ink-soft);
+}
+.plugin-capability-open-label {
+  color: var(--ink-soft);
+}
+.plugin-content-section .skill-readme-preview {
+  padding-top: 16px;
+}
+.plugin-content-disclosure {
+  border-bottom: 1px solid var(--line);
+  padding-block: var(--space-4);
+}
+.plugin-content-disclosure > summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.plugin-content-disclosure[open] > summary {
+  margin-bottom: var(--space-4);
+}
+@media (min-width: 901px) {
+  .plugin-detail-page .skill-hero-layout.has-sidebar,
+  .plugin-detail-page .skill-hero-layout.has-sidebar > .skill-hero-lower.has-sidebar {
+    grid-template-columns: minmax(0, 3fr) minmax(196px, 1fr);
+    column-gap: 32px;
+    row-gap: 32px;
+  }
+  .plugin-detail-page .skill-hero-main-extra {
+    gap: 28px;
+  }
+}
+@media (max-width: 640px) {
+  .plugin-capability-row-body {
+    gap: 12px;
+    padding-inline: 8px;
+  }
+  .plugin-capability-trailing {
+    max-width: 28%;
+  }
+  .plugin-capability-open-label {
+    display: none;
+  }
+}

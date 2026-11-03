@@ -5,8 +5,17 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
+import { PLUGIN_UI_CAPABILITIES } from "clawhub-schema";
 import { useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import {
+  AppWindow,
+  BookOpenText,
+  Layers,
+  MessagesSquare,
+  Plug,
+  Puzzle,
+  SlidersHorizontal,
+  Wrench,
   AlertTriangle,
   Braces,
   ChevronRight,
@@ -49,6 +58,13 @@ import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
+import {
+  PLUGIN_CAPABILITY_FAMILIES,
+  PLUGIN_EXTENSION_LABELS,
+  PluginCapabilityRow,
+  PluginCapabilitySection,
+  PluginExtensionIcon,
+} from "../../components/PluginCapabilityRows";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
@@ -318,7 +334,7 @@ function pluginDetailTabFromHash(hashValue: string): PluginDetailTab {
 
 const PLUGIN_README_COLLAPSED_LINE_COUNT = 50;
 
-function PluginDetailTabs({
+function PluginDetailContent({
   activeTab,
   setActiveTab,
   readme,
@@ -328,6 +344,7 @@ function PluginDetailTabs({
   configurationPanel,
   mcpServersPanel,
   skillsPanel,
+  manifest,
 }: {
   activeTab: PluginDetailTab;
   setActiveTab: (tab: PluginDetailTab) => void;
@@ -338,176 +355,182 @@ function PluginDetailTabs({
   configurationPanel: ReactNode | null;
   mcpServersPanel: ReactNode | null;
   skillsPanel: ReactNode | null;
+  manifest: PluginManifestSummary | null;
 }) {
-  const [hasMountedVersions, setHasMountedVersions] = useState(activeTab === "versions");
   const [isReadmeExpanded, setIsReadmeExpanded] = useState(false);
-  const readmeLineCount = useMemo(() => readme?.split(/\r\n|\n|\r/).length ?? 0, [readme]);
-  const isReadmeLong = readmeLineCount > PLUGIN_README_COLLAPSED_LINE_COUNT;
-
+  const [hasMountedVersions, setHasMountedVersions] = useState(activeTab === "versions");
+  const isReadmeLong =
+    (readme?.split(/\r\n|\n|\r/).length ?? 0) > PLUGIN_README_COLLAPSED_LINE_COUNT;
   useEffect(() => {
     setIsReadmeExpanded(false);
   }, [readme]);
-  const selectTab = (tab: PluginDetailTab) => {
-    const scrollPosition =
-      typeof window === "undefined" ? null : { left: window.scrollX, top: window.scrollY };
-    setActiveTab(tab);
-    if (typeof window === "undefined") return;
-    const hash = tab === "readme" ? "" : tab === "mcpServers" ? "#mcp-servers" : `#${tab}`;
-    window.history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}${window.location.search}${hash}`,
-    );
-    window.requestAnimationFrame(() => {
-      if (!scrollPosition) return;
-      window.scrollTo(scrollPosition.left, scrollPosition.top);
-    });
-  };
-
-  const effectiveActiveTab =
-    activeTab === "versions"
-      ? "versions"
-      : activeTab === "compatibility" && compatibilityPanel
-        ? "compatibility"
-        : activeTab === "configuration" && configurationPanel
-          ? "configuration"
-          : activeTab === "mcpServers" && mcpServersPanel
-            ? "mcpServers"
-            : activeTab === "skills" && skillsPanel
-              ? "skills"
-              : "readme";
   useEffect(() => {
-    if (effectiveActiveTab === "versions") setHasMountedVersions(true);
-  }, [effectiveActiveTab]);
-  const readmePanel = readme ? (
-    <>
-      <div
-        className={`skill-readme-preview${
-          isReadmeLong && !isReadmeExpanded ? " is-collapsed" : ""
-        }`}
-        data-analytics-public-detail=""
-      >
-        <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
+    if (activeTab === "versions") setHasMountedVersions(true);
+  }, [activeTab]);
+  const section = (
+    id: string,
+    title: string,
+    content: ReactNode,
+    count?: number,
+    icon?: ReactNode,
+  ) =>
+    content ? (
+      <PluginCapabilitySection id={id} title={title} count={count} icon={icon}>
+        {content}
+      </PluginCapabilitySection>
+    ) : null;
+  const namedRows = (names: readonly string[] | undefined, icon: ReactNode) =>
+    names?.length ? (
+      <div className="plugin-capability-list" role="list">
+        {names.map((name) => (
+          <PluginCapabilityRow key={name} name={name} icon={icon} />
+        ))}
       </div>
-      {isReadmeLong ? (
-        <button
-          type="button"
-          className="skill-readme-toggle"
-          aria-expanded={isReadmeExpanded}
-          onClick={() => setIsReadmeExpanded((expanded) => !expanded)}
-        >
-          {isReadmeExpanded ? "Show less" : "Read more"}
-        </button>
-      ) : null}
-    </>
-  ) : (
-    <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
-      <p className="empty-state-title">No README available</p>
-      <p className="empty-state-body">This plugin doesn't have a README yet.</p>
-    </div>
+    ) : null;
+  const capabilityEntries = Object.entries(manifest?.contracts ?? {}).filter(
+    ([family, names]) => family !== "tools" && names.length > 0,
   );
-  const activePanel =
-    effectiveActiveTab === "compatibility" && compatibilityPanel
-      ? compatibilityPanel
-      : effectiveActiveTab === "configuration" && configurationPanel
-        ? configurationPanel
-        : effectiveActiveTab === "mcpServers" && mcpServersPanel
-          ? mcpServersPanel
-          : effectiveActiveTab === "skills" && skillsPanel
-            ? skillsPanel
-            : readmePanel;
-
+  const extensions = PLUGIN_UI_CAPABILITIES.filter((kind) =>
+    manifest?.uiCapabilities?.includes(kind),
+  );
   return (
-    <div className="tab-card detail-mobile-tabs">
-      <div className="tab-header" role="tablist" aria-label="Plugin detail tabs">
-        <button
-          id="plugin-tab-readme"
-          className={`tab-button${effectiveActiveTab === "readme" ? " is-active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={effectiveActiveTab === "readme"}
-          aria-controls="plugin-tabpanel-readme"
-          onClick={() => selectTab("readme")}
+    <div className="plugin-detail-content">
+      {section(
+        "capabilities",
+        "Capabilities",
+        capabilityEntries.length ? (
+          <div className="plugin-capability-list" role="list">
+            {capabilityEntries.map(([family, names]) => {
+              const copy = Object.hasOwn(PLUGIN_CAPABILITY_FAMILIES, family)
+                ? PLUGIN_CAPABILITY_FAMILIES[family]
+                : undefined;
+              return (
+                <PluginCapabilityRow
+                  key={family}
+                  name={copy?.[0] ?? formatCompatibilityLabel(family)}
+                  description={copy?.[1]}
+                  metadata={<code>{names.join(", ")}</code>}
+                  icon={<Layers />}
+                />
+              );
+            })}
+          </div>
+        ) : null,
+        capabilityEntries.length,
+      )}
+      {section(
+        "extensions",
+        "Extensions",
+        extensions.length ? (
+          <div className="plugin-capability-list" role="list">
+            {extensions.map((kind) => (
+              <PluginCapabilityRow
+                key={kind}
+                name={PLUGIN_EXTENSION_LABELS[kind][0]}
+                description={PLUGIN_EXTENSION_LABELS[kind][1]}
+                icon={<PluginExtensionIcon kind={kind} />}
+              />
+            ))}
+          </div>
+        ) : null,
+        extensions.length,
+        <Puzzle />,
+      )}
+      {section(
+        "custom-ui",
+        "Custom UI",
+        manifest?.controlUi ? (
+          <div className="plugin-capability-list" role="list">
+            <PluginCapabilityRow
+              name="Browser entry"
+              icon={<AppWindow />}
+              description="Packaged browser interface; extension kinds are declared separately."
+              metadata={<code>{manifest.controlUi.entry}</code>}
+            />
+          </div>
+        ) : null,
+        1,
+      )}
+      {section("skills", "Skills", skillsPanel, manifest?.bundledSkills.length)}
+      {section(
+        "tools",
+        "Tools",
+        namedRows(manifest?.contracts?.tools, <Wrench />),
+        manifest?.contracts?.tools?.length,
+      )}
+      {section(
+        "providers",
+        "Providers",
+        namedRows(manifest?.providers, <Server />),
+        manifest?.providers?.length,
+      )}
+      {section(
+        "channels",
+        "Channels",
+        namedRows(manifest?.channels, <MessagesSquare />),
+        manifest?.channels?.length,
+      )}
+      {section("mcp-servers", "MCP Servers", mcpServersPanel, manifest?.mcpServers.length)}
+      {section("configuration", "Configuration", configurationPanel, manifest?.configFields.length)}
+      {section(
+        "readme",
+        "README.md",
+        readme ? (
+          <>
+            <div
+              className={
+                "skill-readme-preview" + (isReadmeLong && !isReadmeExpanded ? " is-collapsed" : "")
+              }
+              data-analytics-public-detail=""
+            >
+              <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
+            </div>
+            {isReadmeLong ? (
+              <button
+                type="button"
+                className="skill-readme-toggle"
+                aria-expanded={isReadmeExpanded}
+                onClick={() => setIsReadmeExpanded((expanded) => !expanded)}
+              >
+                {isReadmeExpanded ? "Show less" : "Read more"}
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <p className="stat">No README available. This plugin doesn't have a README yet.</p>
+        ),
+      )}
+      {compatibilityPanel ? (
+        <details
+          id="compatibility"
+          className="plugin-content-disclosure"
+          open={activeTab === "compatibility" || undefined}
         >
-          README.md
-        </button>
-        {skillsPanel ? (
-          <button
-            id="plugin-tab-skills"
-            className={`tab-button${effectiveActiveTab === "skills" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "skills"}
-            aria-controls="plugin-tabpanel-skills"
-            onClick={() => selectTab("skills")}
-          >
-            Skills
-          </button>
-        ) : null}
-        {mcpServersPanel ? (
-          <button
-            id="plugin-tab-mcpServers"
-            className={`tab-button${effectiveActiveTab === "mcpServers" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "mcpServers"}
-            aria-controls="plugin-tabpanel-mcpServers"
-            onClick={() => selectTab("mcpServers")}
-          >
-            MCP Servers
-          </button>
-        ) : null}
-        {configurationPanel ? (
-          <button
-            id="plugin-tab-configuration"
-            className={`tab-button${effectiveActiveTab === "configuration" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "configuration"}
-            aria-controls="plugin-tabpanel-configuration"
-            onClick={() => selectTab("configuration")}
-          >
-            Configuration
-          </button>
-        ) : null}
-        {compatibilityPanel ? (
-          <button
-            id="plugin-tab-compatibility"
-            className={`tab-button${effectiveActiveTab === "compatibility" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "compatibility"}
-            aria-controls="plugin-tabpanel-compatibility"
-            onClick={() => selectTab("compatibility")}
-          >
-            Compatibility
-          </button>
-        ) : null}
-        <button
-          id="plugin-tab-versions"
-          className={`tab-button${effectiveActiveTab === "versions" ? " is-active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={effectiveActiveTab === "versions"}
-          aria-controls="plugin-tabpanel-versions"
-          onClick={() => selectTab("versions")}
-        >
-          Versions
-        </button>
-      </div>
-      {effectiveActiveTab !== "versions" ? (
-        <div
-          className={`tab-body${effectiveActiveTab === "readme" ? " skill-readme-body" : ""}`}
-          role="tabpanel"
-          id={`plugin-tabpanel-${effectiveActiveTab}`}
-          aria-labelledby={`plugin-tab-${effectiveActiveTab}`}
-        >
-          {activePanel}
-        </div>
+          <summary>Package details</summary>
+          {compatibilityPanel}
+        </details>
       ) : null}
-      {hasMountedVersions || effectiveActiveTab === "versions"
-        ? versionsPanel(effectiveActiveTab !== "versions")
-        : null}
+      <details id="versions" className="plugin-content-disclosure" open={activeTab === "versions"}>
+        <summary
+          id="plugin-versions-heading"
+          onClick={(event) => {
+            event.preventDefault();
+            setHasMountedVersions(true);
+            const open = activeTab !== "versions";
+            setActiveTab(open ? "versions" : "readme");
+            window.history.replaceState(
+              null,
+              "",
+              window.location.pathname + window.location.search + (open ? "#versions" : ""),
+            );
+          }}
+        >
+          Version history
+        </summary>
+        {hasMountedVersions || activeTab === "versions"
+          ? versionsPanel(activeTab !== "versions")
+          : null}
+      </details>
     </div>
   );
 }
@@ -576,39 +599,51 @@ function formatCompatibilityLabel(key: string): string {
 
 function PluginManifestConfigurationPanel({ fields }: { fields: PluginConfigField[] }) {
   return (
-    <div className="plugin-manifest-capabilities">
-      <section className="plugin-manifest-section">
-        <div className="plugin-manifest-list">
-          {fields.map((field) => (
-            <article key={field.name} className="plugin-manifest-row">
-              <div className="plugin-manifest-row-main">
-                <code>{field.name}</code>
-                {field.description ? <p>{field.description}</p> : null}
-              </div>
-              <div className="plugin-manifest-badges">
-                {field.required ? <Badge variant="warning">Required</Badge> : null}
-                {field.sensitive ? <Badge variant="review">Sensitive</Badge> : null}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+    <div className="plugin-capability-list" role="list">
+      {fields.map((field) => (
+        <PluginCapabilityRow
+          key={field.name}
+          name={field.name}
+          description={field.description}
+          icon={<SlidersHorizontal />}
+          trailing={
+            <>
+              {field.required ? <Badge variant="warning">Required</Badge> : null}
+              {field.sensitive ? <Badge variant="review">Sensitive</Badge> : null}
+            </>
+          }
+        />
+      ))}
     </div>
   );
 }
 
 function PluginManifestMcpServersPanel({ servers }: { servers: PluginMcpServer[] }) {
   return (
-    <div className="plugin-manifest-capabilities">
-      <section className="plugin-manifest-section">
-        <div className="plugin-manifest-chip-list">
-          {servers.map((server) => (
-            <Badge key={server.name} variant="compact">
-              {server.name}
-            </Badge>
-          ))}
-        </div>
-      </section>
+    <div className="plugin-capability-list" role="list">
+      {servers.map((server) => (
+        <PluginCapabilityRow
+          key={server.name}
+          name={server.name}
+          icon={<Plug />}
+          description={server.endpointRedacted ? "Endpoint hidden for safety" : server.url}
+          metadata={
+            server.scope || server.setup ? (
+              <>
+                {server.scope}
+                {server.scope && server.setup ? " · " : ""}
+                {server.setup}
+              </>
+            ) : null
+          }
+          trailing={
+            <>
+              {server.transport ? <Badge variant="compact">{server.transport}</Badge> : null}
+              {server.auth ? <Badge variant="compact">{server.auth}</Badge> : null}
+            </>
+          }
+        />
+      ))}
     </div>
   );
 }
@@ -643,29 +678,20 @@ function PluginManifestSkillsPanel({
   }
 
   return (
-    <div className="plugin-manifest-capabilities">
-      <section className="plugin-manifest-section">
-        <div className="plugin-manifest-list">
-          {skills.map((skill) => (
-            <article key={skill.skillMdPath} className="plugin-manifest-row">
-              <div className="plugin-manifest-row-main">
-                <code>{skill.name}</code>
-                {skill.description ? <p>{skill.description}</p> : null}
-                <span>{skill.rootPath}</span>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void openSkillPreview(skill)}
-                aria-label={`Preview ${skill.name}`}
-              >
-                Preview
-              </Button>
-            </article>
-          ))}
-        </div>
-      </section>
+    <div>
+      <div className="plugin-capability-list" role="list">
+        {skills.map((skill) => (
+          <PluginCapabilityRow
+            key={skill.skillMdPath}
+            name={skill.name}
+            description={skill.description}
+            icon={<BookOpenText />}
+            onOpen={() => void openSkillPreview(skill)}
+            openLabel={`Preview ${skill.name}`}
+            trailing={<span className="plugin-capability-open-label">Preview</span>}
+          />
+        ))}
+      </div>
       <Dialog open={Boolean(previewSkill)} onOpenChange={(open) => !open && setPreviewSkill(null)}>
         <DialogContent className="max-h-[85vh] max-w-[min(920px,92vw)] overflow-auto">
           <DialogHeader>
@@ -1247,8 +1273,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       canDeleteVersions={canDeleteVersions === true}
       onVersionDeleted={() => router.invalidate()}
       onRetry={() => setLoadedVersions(undefined)}
-      panelId="plugin-tabpanel-versions"
-      labelledBy="plugin-tab-versions"
+      labelledBy="plugin-versions-heading"
       hidden={hidden}
     />
   );
@@ -1836,7 +1861,8 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   </CardContent>
                 </Card>
               </div>
-              <PluginDetailTabs
+              <PluginDetailContent
+                manifest={pluginManifestSummary}
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
                 readme={readme}

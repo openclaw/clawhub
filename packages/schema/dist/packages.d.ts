@@ -19,8 +19,14 @@ export declare const PackageCompatibilitySchema: import("arktype/internal/varian
     minGatewayVersion?: string | undefined;
 }, {}>;
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
+export declare const PLUGIN_UI_CAPABILITIES: readonly ["page", "navigation", "panel", "action", "accessory", "widget", "inline", "replacement", "link-reader"];
+export declare const PluginUiCapabilitySchema: import("arktype/internal/variants/string.ts").StringType<"accessory" | "action" | "inline" | "link-reader" | "navigation" | "page" | "panel" | "replacement" | "widget", {}>;
 export declare const PluginManifestSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     schemaVersion: number;
+    uiCapabilities?: ("accessory" | "action" | "inline" | "link-reader" | "navigation" | "page" | "panel" | "replacement" | "widget")[] | undefined;
+    controlUi?: {
+        entry: string;
+    } | undefined;
     contracts?: {
         [x: string]: string[];
     } | undefined;
@@ -697,6 +703,10 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            uiCapabilities?: ("accessory" | "action" | "inline" | "link-reader" | "navigation" | "page" | "panel" | "replacement" | "widget")[] | undefined;
+            controlUi?: {
+                entry: string;
+            } | undefined;
             contracts?: {
                 [x: string]: string[];
             } | undefined;
@@ -816,6 +826,10 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            uiCapabilities?: ("accessory" | "action" | "inline" | "link-reader" | "navigation" | "page" | "panel" | "replacement" | "widget")[] | undefined;
+            controlUi?: {
+                entry: string;
+            } | undefined;
             contracts?: {
                 [x: string]: string[];
             } | undefined;
@@ -1109,6 +1123,10 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            uiCapabilities?: ("accessory" | "action" | "inline" | "link-reader" | "navigation" | "page" | "panel" | "replacement" | "widget")[] | undefined;
+            controlUi?: {
+                entry: string;
+            } | undefined;
             contracts?: {
                 [x: string]: string[];
             } | undefined;
@@ -1219,6 +1237,10 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            uiCapabilities?: ("accessory" | "action" | "inline" | "link-reader" | "navigation" | "page" | "panel" | "replacement" | "widget")[] | undefined;
+            controlUi?: {
+                entry: string;
+            } | undefined;
             contracts?: {
                 [x: string]: string[];
             } | undefined;
