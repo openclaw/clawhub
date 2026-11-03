@@ -22,7 +22,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-it("binds exactly ten skill identities, their retained manifests and source records", () => {
+it("binds exactly fifteen skill identities, their retained manifests and source records", () => {
   expect(validateFixedSkillRegistry(registry)).toEqual(registry);
   expect(FIXED_ORIGINAL_SELECTORS).toEqual([
     "original-038-encrypted",
@@ -37,11 +37,16 @@ it("binds exactly ten skill identities, their retained manifests and source reco
     "original-011-encrypted",
     "original-036-encrypted",
     "original-033-encrypted",
+    "original-065-encrypted",
+    "original-073-encrypted",
+    "original-042-encrypted",
+    "original-055-encrypted",
+    "original-039-encrypted",
   ]);
-  expect(registry.originals.flatMap((row) => row.files)).toHaveLength(21);
+  expect(registry.originals.flatMap((row) => row.files)).toHaveLength(41);
   expect(
     registry.originals.flatMap((row) => row.files).reduce((sum, file) => sum + file.size, 0),
-  ).toBe(470747);
+  ).toBe(665215);
   for (const row of registry.originals) {
     const selected = selectFixedSkill(row.fixture);
     expect(selected.identity).toEqual(row);
@@ -262,4 +267,119 @@ it("verifies Python custody and real proxy boundaries for all approved skills wi
       stdio: "pipe",
     }),
   ).not.toThrow();
+});
+
+const followingFive = [
+  {
+    fixture: "065",
+    package: "agent-betap",
+    version: "1.0.0",
+    owner: "xavierabraham",
+    kind: "skill",
+    attemptId: "zx739kkrb6530st41qjdzyj0498gy4ac",
+    versionId: "k974s4hvs82pcm87xq4kvcd6hh8gzh4a",
+    fingerprint: "f5dcf76230e987f39f1da5be27da41459e22e383307af2ebb3a3a2eecd4acfc2",
+    manifestSha256: "0df22e4c5e1e6ca5d1ca56d376a2a003b81b1ac392271329e3550d5beb5bb428",
+    sourceManifestSha256: "077a78803f16befe1561a9e387e1368676850464c6bfb1006334343238955f0e",
+    fileCount: 1,
+  },
+  {
+    fixture: "073",
+    package: "smartgate",
+    version: "1.0.0",
+    owner: "smartgate.network",
+    kind: "skill",
+    attemptId: "zx72gtz9rezd1kcsc8q3n7e6w18h5w7c",
+    versionId: "k9768gzc3ab096hhv1p435xksh8h5y3b",
+    fingerprint: "67120c9027ff61682adfde1110807d26653764c8cd0de8a04b5a0a06a2724436",
+    manifestSha256: "05a9cab246f922b8dda4e3c3647df42a82e00809b7baed32a697f2b93d3d0602",
+    sourceManifestSha256: "c92e03ebe0ea942d34d794abea3ea2ab1817307f9c8a84273bff62a4bc1ae55b",
+    fileCount: 1,
+  },
+  {
+    fixture: "042",
+    package: "mochilab-skills",
+    version: "1.1.1",
+    owner: "hznetnewpower",
+    kind: "skill",
+    attemptId: "zx78bax1x9pyt6qg30y28xx9918h1bcx",
+    versionId: "k975k2cff6d99s8b7dng06wy9x8h1zyw",
+    fingerprint: "0bfcee19b731b75413a92b08b5598546267ee2801f4734a2873927fcb0b655b3",
+    manifestSha256: "61573b29a052d0adbbbc06c9f5e4ac49c1d24e18e50262177a665783f29a32ee",
+    sourceManifestSha256: "e6f21d270eb1e48657459b8b5ec76d7bd02487b8354da723e89bb5fa972cf3a2",
+    fileCount: 5,
+  },
+  {
+    fixture: "055",
+    package: "gtrk-cover",
+    version: "1.3.10",
+    owner: "gitruck",
+    kind: "skill",
+    attemptId: "zx72jbarp0t1p4gqfx1hwq01xd8h7bzj",
+    versionId: "k97fpbaas23y9j1gdmhzrezs6n8h7qpd",
+    fingerprint: "97b77c7947a69a6e6fa14ac19fb9aa1b0352118153e30ff7a3c07c08328e501b",
+    manifestSha256: "b497cf1b721d3a337e652ac491cabe3edfcd2f5f20cd7f61370cdbcb57f96b1f",
+    sourceManifestSha256: "f0b29790043cb4b159c162a2ee541b59fd32beaf4008d130186f44afc33c6a25",
+    fileCount: 6,
+  },
+  {
+    fixture: "039",
+    package: "mochi-daily-brief",
+    version: "1.0.1",
+    owner: "hznetnewpower",
+    kind: "skill",
+    attemptId: "zx76t425vw81kfrq7vvwjx3m3s8h0mmm",
+    versionId: "k971cbssee2wcpn7yrtd77ecf58h0sd5",
+    fingerprint: "350b3b296e59cc0c8d1fdfe6f6029347234fbfe08044fcfef2ba7b1d96256e65",
+    manifestSha256: "f11b6cb2c09eee75006e571c82b327859728b9d9ec52b770de905cd0516253f0",
+    sourceManifestSha256: "6a4f91be65d710522d68a7bef35cbf0de63dd87a83d1cc0b0753f0e57942ca9e",
+    fileCount: 7,
+  },
+] as const;
+
+it.each(followingFive)(
+  "binds following original $fixture to its exact reported owner/version and retained files",
+  (expected) => {
+    const { fileCount, ...identity } = expected;
+    const selected = selectFixedSkill(expected.fixture);
+    expect(selected.identity).toMatchObject(identity);
+    expect(selected.id).toBe(`${expected.package}-${expected.version}`);
+    expect(selected.manifest.files).toHaveLength(fileCount);
+    expect(hash(JSON.stringify(selected.manifest.files))).toBe(expected.manifestSha256);
+  },
+);
+
+it.each(followingFive)(
+  "rejects every custody substitution for following original $fixture",
+  (expected) => {
+    const index = registry.originals.findIndex((row) => row.fixture === expected.fixture);
+    expect(index).toBeGreaterThanOrEqual(0);
+    for (const key of [
+      "version",
+      "owner",
+      "attemptId",
+      "versionId",
+      "fingerprint",
+      "sourceManifestSha256",
+      "manifestSha256",
+      "files",
+    ]) {
+      const changed = structuredClone(registry);
+      Object.assign(changed.originals[index], { [key]: "substituted" });
+      expect(() => validateFixedSkillRegistry(changed)).toThrow("registry identity");
+    }
+  },
+);
+
+it("preserves separate version obligations even when their payload hashes match", () => {
+  const earlier = selectFixedSkill("033");
+  const following = selectFixedSkill("055");
+  expect(earlier.manifest.files).toEqual(following.manifest.files);
+  expect(earlier.manifest.manifestSha256).toBe(following.manifest.manifestSha256);
+  expect(earlier.version).toBe("1.3.9");
+  expect(following.version).toBe("1.3.10");
+  expect(earlier.id).not.toBe(following.id);
+  expect(earlier.identity.attemptId).not.toBe(following.identity.attemptId);
+  expect(earlier.identity.versionId).not.toBe(following.identity.versionId);
+  expect(selectFixedSkill("027").id).not.toBe(selectFixedSkill("065").id);
 });
