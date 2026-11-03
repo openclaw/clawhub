@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Tooling: preserve the component example correction and canonical AGENTS.md when refreshing Convex AI guidance.
 - Tests: refresh development dependencies and anchor frozen-clock fixtures to Convex transaction timestamps and stored expiration boundaries.
 - Dependencies: patch Undici to 7.30.1 in the CLI, admin CLI, and development tools to address upstream transport advisories.
 - CI: escape Unicode line separators in security dataset JSONL so line readers preserve complete records during snapshot validation.
