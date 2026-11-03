@@ -57,7 +57,10 @@ const DEFAULT_BRANCH = "main";
 const GITHUB_SKILL_SCAN_ACTION_LEASE_MS = 15 * 60 * 1000;
 const PUBLIC_REPO_ONLY_ERROR = "Enter a public GitHub repo.";
 const MAX_UNZIPPED_BYTES = 80 * 1024 * 1024;
-const MAX_FILE_COUNT = 7_500;
+// Counts file entries only. Whole-repo source archives (for example NVIDIA/skills)
+// carry hundreds of skills, so this cap must leave room for catalog growth while
+// MAX_UNZIPPED_BYTES remains the memory bound.
+const MAX_FILE_COUNT = 20_000;
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_STATIC_SCAN_TEXT_FILES = 200;
 const MAX_STATIC_SCAN_TEXT_FILE_BYTES = 256 * 1024;
@@ -3292,9 +3295,9 @@ function createZipEntryLimitFilter() {
   let totalBytes = 0;
   return {
     accept(file: UnzipFileInfo) {
+      if (file.name.endsWith("/")) return false;
       fileCount += 1;
       if (fileCount > MAX_FILE_COUNT) throw new ConvexError("Repo archive has too many files");
-      if (file.name.endsWith("/")) return false;
 
       const normalizedPath = normalizeRepoPath(file.name);
       if (!normalizedPath) throw new ConvexError("Repo archive contains an invalid path");

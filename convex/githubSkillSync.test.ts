@@ -246,6 +246,36 @@ describe("unzipToEntries", () => {
     });
   });
 
+  it("accepts whole-repo archives above the old 7,500 entry cap", () => {
+    const files: Record<string, Uint8Array> = { "repo-main/": new Uint8Array() };
+    for (let index = 0; index < 2_500; index += 1) {
+      files[`repo-main/skills/skill-${index}/`] = new Uint8Array();
+      files[`repo-main/skills/skill-${index}/SKILL.md`] = new Uint8Array([35]);
+      files[`repo-main/skills/skill-${index}/README.md`] = new Uint8Array([35]);
+    }
+
+    expect(Object.keys(__test.unzipToEntries(zipSync(files)))).toHaveLength(5_000);
+  });
+
+  it("does not count directory entries toward the file cap", () => {
+    const files: Record<string, Uint8Array> = {};
+    for (let index = 0; index < 20_000; index += 1) {
+      files[`repo-main/skills/skill-${index}/SKILL.md`] = new Uint8Array();
+    }
+    files["repo-main/skills/extra/"] = new Uint8Array();
+
+    expect(Object.keys(__test.unzipToEntries(zipSync(files)))).toHaveLength(20_000);
+  });
+
+  it("rejects archives with more files than the source sync cap", () => {
+    const files: Record<string, Uint8Array> = {};
+    for (let index = 0; index <= 20_000; index += 1) {
+      files[`repo-main/skills/skill-${index}/SKILL.md`] = new Uint8Array();
+    }
+
+    expect(() => __test.unzipToEntries(zipSync(files))).toThrow("Repo archive has too many files");
+  });
+
   it("keeps valid filenames containing dot-dot text", () => {
     const zip = zipSync({
       "repo-main/skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
