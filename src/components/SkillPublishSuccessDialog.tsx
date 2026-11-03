@@ -16,7 +16,6 @@ import {
   emitAnalytics,
 } from "../lib/analyticsEvents";
 import { getPublicClawHubSiteUrl } from "../lib/site";
-import { cn } from "../lib/utils";
 import { copyText } from "./InstallCopyButton";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Button } from "./ui/button";
@@ -318,7 +317,10 @@ export function SkillPublishSuccessDialog({
                 }}
                 icon={<DiscordIcon className="h-3.5 w-3.5 text-white" aria-hidden="true" />}
               />
-              <ShareDivider orientation="horizontal" />
+              <span
+                className="shrink-0 bg-[color:color-mix(in_srgb,var(--line)_82%,transparent)] h-px w-full"
+                aria-hidden="true"
+              />
               <ShareListAction
                 href={xShareUrl}
                 onClick={(event) =>
@@ -387,24 +389,10 @@ function XIcon({ className, ...props }: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function ShareDivider({ orientation = "vertical" }: { orientation?: "horizontal" | "vertical" }) {
-  return (
-    <span
-      className={cn(
-        "shrink-0 bg-[color:color-mix(in_srgb,var(--line)_82%,transparent)]",
-        orientation === "horizontal" ? "h-px w-full" : "h-4 w-px",
-      )}
-      aria-hidden="true"
-    />
-  );
-}
-
 function ShareListAction({
   href,
   title,
   mobileTitle,
-  detail,
-  inlineDetail,
   channelName,
   serverName,
   onClick,
@@ -413,8 +401,6 @@ function ShareListAction({
   href: string;
   title: string;
   mobileTitle?: string;
-  detail?: string;
-  inlineDetail?: string;
   channelName?: string;
   serverName?: string;
   onClick?: MouseEventHandler<HTMLAnchorElement>;
@@ -438,19 +424,6 @@ function ShareListAction({
         ) : (
           <span className="min-w-0 truncate">{title}</span>
         )}
-        {inlineDetail ? (
-          <>
-            <span
-              className="hidden w-3 shrink-0 justify-center text-[color:color-mix(in_srgb,var(--ink-soft)_56%,var(--surface))] sm:inline-flex"
-              aria-hidden="true"
-            >
-              ·
-            </span>
-            <span className="hidden min-w-0 truncate text-xs font-medium text-[color:color-mix(in_srgb,var(--ink-soft)_76%,var(--surface))] sm:block">
-              {inlineDetail}
-            </span>
-          </>
-        ) : null}
         {channelName ? (
           <>
             <span
@@ -476,7 +449,6 @@ function ShareListAction({
         ) : null}
       </span>
       <span className="flex shrink-0 items-center gap-2 text-[color:color-mix(in_srgb,var(--ink-soft)_76%,var(--surface))]">
-        {detail ? <span className="hidden text-xs font-medium sm:inline">{detail}</span> : null}
         <ExternalLink className="h-3 w-3 shrink-0 opacity-55 transition group-hover:opacity-100" />
       </span>
     </a>
