@@ -2503,14 +2503,7 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
       PublishTokenMintRequestSchema,
       parsedBody,
       "Publish token mint payload",
-    ) as {
-      packageName: string;
-      version: string;
-      githubOidcToken: string;
-      scope?: "upload" | "publish";
-      inventoryDigest?: string;
-      trustedToolingIdentityJson?: string;
-    };
+    );
     const { pkg, trustedPublisher } = await getPackageAndTrustedPublisherByName(
       ctx,
       payload.packageName,
@@ -2821,11 +2814,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageReportTriageRequestSchema,
         await request.json(),
         "Package report triage payload",
-      ) as {
-        status: "open" | "confirmed" | "dismissed";
-        note?: string;
-        finalAction?: "none" | "quarantine" | "revoke";
-      };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.packages.triagePackageReportForUserInternal,
@@ -2863,11 +2852,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageAppealResolveRequestSchema,
         await request.json(),
         "Package appeal resolve payload",
-      ) as {
-        status: "open" | "accepted" | "rejected";
-        note?: string;
-        finalAction?: "none" | "approve";
-      };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.packages.resolvePackageAppealForUserInternal,
@@ -2907,12 +2892,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageHardDeleteRequestSchema,
         await request.json(),
         "Package hard-delete payload",
-      ) as {
-        ownerHandle: string;
-        reason: string;
-        dryRun?: boolean;
-        confirmationToken?: string;
-      };
+      );
       const result = await runMutationRef(ctx, internalRefs.packages.hardDeleteForAdminInternal, {
         actorUserId: auth.userId,
         name: packageName,
@@ -2966,13 +2946,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageRepairNameRequestSchema,
         await request.json(),
         "Package name repair payload",
-      ) as {
-        nextName: string;
-        retireTarget?: boolean;
-        owner?: string;
-        reason: string;
-        dryRun?: boolean;
-      };
+      );
       const nextName = tryNormalizePackageName(body.nextName);
       if (!nextName) {
         return text(
@@ -3125,11 +3099,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageRepairRuntimeIdRequestSchema,
         await request.json(),
         "Package runtime id repair payload",
-      ) as {
-        nextRuntimeId: string;
-        reason: string;
-        dryRun?: boolean;
-      };
+      );
       const nextRuntimeId = body.nextRuntimeId.trim();
       if (!nextRuntimeId) return text("Runtime id required", 400, rate.headers);
       const reason = body.reason.trim();
@@ -3196,10 +3166,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageReleaseModerationRequestSchema,
         await request.json(),
         "Package release moderation payload",
-      ) as {
-        state: "approved" | "quarantined" | "revoked";
-        reason: string;
-      };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.packages.moderatePackageReleaseForUserInternal,
@@ -3263,10 +3230,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageReportRequestSchema,
         await request.json(),
         "Package report payload",
-      ) as {
-        reason: string;
-        version?: string;
-      };
+      );
       const result = await runMutationRef(ctx, internalRefs.packages.reportPackageForUserInternal, {
         actorUserId: auth.userId,
         name: packageName,
@@ -3294,10 +3258,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageAppealRequestSchema,
         await request.json(),
         "Package appeal payload",
-      ) as {
-        version: string;
-        message: string;
-      };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.packages.submitPackageAppealForUserInternal,
@@ -3373,7 +3334,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageTransferRequestSchema,
         await request.json(),
         "Package transfer payload",
-      ) as { toOwner: string; reason?: string };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.packages.transferPackageOwnerForUserInternal,
@@ -3403,11 +3364,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       PackageTrustedPublisherUpsertRequestSchema,
       await request.json(),
       "Trusted publisher payload",
-    ) as {
-      repository: string;
-      workflowFilename: string;
-      environment?: string;
-    };
+    );
     const repositoryIdentity = await fetchGitHubRepositoryIdentity(body.repository);
     const trustedPublisher = await runMutationRef<PackageTrustedPublisherLike | null>(
       ctx,
