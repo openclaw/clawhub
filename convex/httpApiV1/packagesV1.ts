@@ -127,6 +127,12 @@ import { toPublicPackageFamily } from "../lib/templateStorage";
 import { generateToken, hashToken } from "../lib/tokens";
 import { managedMcpV1Handler } from "./managedMcpV1";
 import {
+  readOptionalJson,
+  optionalStringField,
+  resolveVersionPathTarget,
+  hasVersionDeleteSelector,
+  versionDeleteRouteGuidance,
+  chunkedParallel,
   MAX_RAW_FILE_BYTES,
   getPathSegments,
   json,
@@ -258,69 +264,6 @@ function packageOperationErrorToResponse(
   return text(message, 400, headers);
 }
 
-async function readOptionalJson(request: Request): Promise<unknown> {
-  const raw = await request.text();
-  if (!raw.trim()) return undefined;
-  return JSON.parse(raw) as unknown;
-}
-
-function optionalStringField(value: unknown, key: string): string | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === "string" ? field : undefined;
-}
-
-function hasOwnField(value: unknown, key: string) {
-  return Boolean(
-    value &&
-    typeof value === "object" &&
-    Object.prototype.hasOwnProperty.call(value as Record<string, unknown>, key),
-  );
-}
-
-function resolveVersionPathTarget(
-  pathVersion: string | undefined,
-  request: Request,
-  body: unknown,
-): { version?: string; error?: string } {
-  const rawBodyVersion = optionalStringField(body, "version");
-  if (hasOwnField(body, "version") && rawBodyVersion === undefined) {
-    return { error: "Version must be a non-empty string" };
-  }
-  const version = pathVersion?.trim();
-  const bodyVersion = rawBodyVersion?.trim();
-  const queryVersions = new URL(request.url).searchParams
-    .getAll("version")
-    .map((queryVersion) => queryVersion.trim());
-  if (
-    !version ||
-    (rawBodyVersion !== undefined && !bodyVersion) ||
-    queryVersions.some((queryVersion) => !queryVersion)
-  ) {
-    return { error: "Version cannot be empty" };
-  }
-  if (
-    (bodyVersion && bodyVersion !== version) ||
-    queryVersions.some((queryVersion) => queryVersion !== version)
-  ) {
-    return { error: "Version does not match request target" };
-  }
-  return { version };
-}
-
-function hasVersionDeleteSelector(request: Request, body: unknown) {
-  return hasOwnField(body, "version") || new URL(request.url).searchParams.has("version");
-}
-
-function versionDeleteRouteGuidance(basePath: string, request: Request, body: unknown) {
-  const version =
-    optionalStringField(body, "version")?.trim() ??
-    new URL(request.url).searchParams.get("version")?.trim();
-  return `Version deletion requires DELETE ${basePath}/versions/${
-    version ? encodeURIComponent(version) : "<version>"
-  }.`;
-}
-
 function isTransientConvexContentionMessage(message: string) {
   const lower = message.toLowerCase();
   return (
@@ -353,20 +296,6 @@ async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Pro
 
 async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runMutation(ref as never, args as never)) as T;
-}
-
-async function chunkedParallel<T, R>(
-  items: T[],
-  chunkSize: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  for (let i = 0; i < items.length; i += chunkSize) {
-    const chunk = items.slice(i, i + chunkSize);
-    const chunkResults = await Promise.all(chunk.map(fn));
-    results.push(...chunkResults);
-  }
-  return results;
 }
 
 async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Request) {
