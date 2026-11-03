@@ -33,3 +33,32 @@ export function hasSecretLikeValue(value: string) {
     return pattern.test(value);
   });
 }
+
+export function isExcludedSkillBundlePath(path: string) {
+  return (
+    isPrimarySkillReadmePath(path) || normalizeBundlePathForComparison(path) === "skill-card.md"
+  );
+}
+
+export function isPrimarySkillReadmePath(path: string) {
+  const normalized = normalizeBundlePathForComparison(path);
+  return normalized === "skill.md" || normalized === "skills.md";
+}
+
+function normalizeBundlePathForComparison(path: string) {
+  return path
+    .trim()
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((segment) => segment && segment !== ".")
+    .join("/")
+    .toLowerCase();
+}
+
+export function totalBundleBytes(files: Array<{ content: string }>) {
+  return files.reduce((sum, file) => sum + utf8Bytes(file.content), 0);
+}
+
+export function utf8Bytes(value: string) {
+  return new TextEncoder().encode(value).byteLength;
+}
