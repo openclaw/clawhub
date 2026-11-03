@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   adjustPublisherStatsForPackageChange,
   adjustPublisherStatsForSkillChange,
+  recomputePublisherStats,
 } from "./publisherStats";
 
 function makeSkill(overrides: Record<string, unknown>) {
@@ -278,24 +279,22 @@ describe("publisher stat maintenance", () => {
     expect(ctx.db.query).not.toHaveBeenCalled();
   });
 
-  it("counts a package when its first release is published", async () => {
-    const patch = vi.fn();
-    const ctx = {
-      db: {
-        get: vi.fn(async () => ({
-          _id: "publishers:alice",
-          publishedSkills: 0,
-          publishedPackages: 0,
-          totalInstalls: 0,
-          totalDownloads: 0,
-          totalStars: 0,
-          createdAt: 1,
-          updatedAt: 1,
-        })),
-        patch,
-        query: vi.fn(),
+  it("recomputes when the first release is published", async () => {
+    const published = makePackage({
+      latestReleaseId: "packageReleases:one",
+      stats: { downloads: 10, installs: 4, stars: 2, versions: 1 },
+    });
+    const { ctx, patch } = publisherDb({
+      publisher: {
+        _id: "publishers:alice",
+        publishedSkills: 0,
+        publishedPackages: 0,
+        totalInstalls: 0,
+        totalDownloads: 0,
+        totalStars: 0,
       },
-    };
+      packages: [published],
+    });
 
     await adjustPublisherStatsForPackageChange(
       ctx as never,
@@ -304,10 +303,7 @@ describe("publisher stat maintenance", () => {
         latestVersionSummary: undefined,
         stats: { downloads: 10, installs: 4, stars: 2, versions: 0 },
       }),
-      makePackage({
-        latestReleaseId: "packageReleases:one",
-        stats: { downloads: 10, installs: 4, stars: 2, versions: 1 },
-      }),
+      published,
     );
 
     expect(patch).toHaveBeenCalledWith("publishers:alice", {
@@ -316,7 +312,83 @@ describe("publisher stat maintenance", () => {
       totalInstalls: 4,
       totalDownloads: 10,
       totalStars: 2,
+      skillTotalInstalls: 0,
+      skillTotalDownloads: 0,
+      skillTotalStars: 0,
     });
-    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("does not add a second package when an old counter already included the staged parent", async () => {
+    const published = makePackage({
+      latestReleaseId: "packageReleases:one",
+      stats: { downloads: 10, installs: 4, stars: 2, versions: 1 },
+    });
+    const { ctx, patch } = publisherDb({
+      publisher: {
+        _id: "publishers:alice",
+        publishedSkills: 0,
+        publishedPackages: 1,
+        totalInstalls: 4,
+        totalDownloads: 10,
+        totalStars: 2,
+      },
+      packages: [published],
+    });
+
+    await adjustPublisherStatsForPackageChange(
+      ctx as never,
+      makePackage({
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        stats: { downloads: 10, installs: 4, stars: 2, versions: 0 },
+      }),
+      published,
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "publishers:alice",
+      expect.objectContaining({ publishedPackages: 1, totalDownloads: 10 }),
+    );
+    expect(patch.mock.calls[0]?.[1]).not.toMatchObject({ publishedPackages: 2 });
+  });
+
+  it("recompute drops a staged package from an old stored count", async () => {
+    const { ctx } = publisherDb({
+      publisher: { _id: "publishers:alice", publishedPackages: 1 },
+      packages: [
+        makePackage({
+          latestReleaseId: undefined,
+          latestVersionSummary: undefined,
+          stats: { downloads: 50_000_000, installs: 0, stars: 0, versions: 0 },
+        }),
+      ],
+    });
+
+    await expect(
+      recomputePublisherStats(ctx as never, "publishers:alice" as never),
+    ).resolves.toMatchObject({
+      publishedPackages: 0,
+      totalDownloads: 0,
+    });
   });
 });
+
+function publisherDb(args: {
+  publisher: Record<string, unknown>;
+  packages: unknown[];
+  skills?: unknown[];
+}) {
+  const patch = vi.fn();
+  const ctx = {
+    db: {
+      get: vi.fn(async () => args.publisher),
+      patch,
+      query: vi.fn((table: string) => ({
+        withIndex: () => ({
+          collect: async () => (table === "packages" ? args.packages : (args.skills ?? [])),
+        }),
+      })),
+    },
+  };
+  return { ctx, patch };
+}

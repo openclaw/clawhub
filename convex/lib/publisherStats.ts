@@ -256,6 +256,21 @@ export async function adjustPublisherStatsForSkillChange(
   }
 }
 
+function publishedPackageCount(contribution: PublisherStatsContribution | null) {
+  return contribution?.publishedPackages ?? 0;
+}
+
+async function recomputeAndPatchPublisherStats(
+  ctx: Pick<MutationCtx, "db">,
+  publisherId: Id<"publishers">,
+) {
+  const publisher = await ctx.db.get(publisherId);
+  if (!publisher) return;
+  // A staged parent used to increment publishedPackages. Adding one again when
+  // its first release publishes would store two packages. Read the rows.
+  await ctx.db.patch(publisherId, await recomputePublisherStats(ctx, publisherId));
+}
+
 export async function adjustPublisherStatsForPackageChange(
   ctx: Pick<MutationCtx, "db">,
   previousPackage: Doc<"packages"> | null | undefined,
@@ -269,8 +284,14 @@ export async function adjustPublisherStatsForPackageChange(
     ? getPackagePublisherContribution(previousPackage)
     : null;
   const nextContribution = nextPackage ? getPackagePublisherContribution(nextPackage) : null;
+  const previousCount = publishedPackageCount(previousContribution);
+  const nextCount = publishedPackageCount(nextContribution);
 
   if (previousPublisherId && previousPublisherId === nextPublisherId) {
+    if (previousCount !== nextCount) {
+      await recomputeAndPatchPublisherStats(ctx, previousPublisherId);
+      return;
+    }
     await patchPublisherStats(ctx, previousPublisherId, {
       ...diffPublisherStats(nextContribution, previousContribution),
     });
@@ -278,13 +299,21 @@ export async function adjustPublisherStatsForPackageChange(
   }
 
   if (previousPublisherId) {
-    await patchPublisherStats(
-      ctx,
-      previousPublisherId,
-      diffPublisherStats(null, previousContribution),
-    );
+    if (previousCount > 0) {
+      await recomputeAndPatchPublisherStats(ctx, previousPublisherId);
+    } else {
+      await patchPublisherStats(
+        ctx,
+        previousPublisherId,
+        diffPublisherStats(null, previousContribution),
+      );
+    }
   }
   if (nextPublisherId) {
-    await patchPublisherStats(ctx, nextPublisherId, diffPublisherStats(nextContribution, null));
+    if (nextCount > 0) {
+      await recomputeAndPatchPublisherStats(ctx, nextPublisherId);
+    } else {
+      await patchPublisherStats(ctx, nextPublisherId, diffPublisherStats(nextContribution, null));
+    }
   }
 }
