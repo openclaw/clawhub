@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CLI: reuse canonical schema implementations during builds while retaining standalone npm artifacts and embedding their debug sources.
+
 - Catalog: keep skill and plugin browsing available when optional heading counts fail.
 
 - Search: propagate cancelled initial requests without logging expected navigation changes as search failures.
