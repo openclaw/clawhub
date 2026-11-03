@@ -10199,102 +10199,6 @@ a.skills-sh-security-audit-row:focus-visible {
   width: min(100%, 520px);
 }
 
-.skill-diff-skeleton {
-  container-type: inline-size;
-  container-name: diff-skeleton;
-  display: grid;
-  gap: var(--space-4);
-  min-height: 530px;
-}
-
-.diff-skeleton-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: var(--space-3);
-}
-
-.diff-skeleton-version-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
-  align-items: end;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.diff-skeleton-field {
-  display: grid;
-  grid-template-rows: 12px 44px;
-  gap: 10px;
-  min-width: 0;
-}
-
-.diff-skeleton-label {
-  width: 76px;
-  height: 12px;
-}
-
-.diff-skeleton-label-short {
-  width: 32px;
-}
-
-.diff-skeleton-control,
-.diff-skeleton-swap,
-.diff-skeleton-toggle,
-.diff-skeleton-file-select,
-.diff-skeleton-arrow,
-.diff-skeleton-badge,
-.diff-skeleton-count {
-  border-radius: 12px;
-}
-
-.diff-skeleton-control,
-.diff-skeleton-swap {
-  width: 100%;
-  height: 44px;
-}
-
-.diff-skeleton-view {
-  grid-template-rows: 12px 36px;
-}
-
-.diff-skeleton-toggle {
-  width: 170px;
-  height: 36px;
-}
-
-.diff-skeleton-file-bar {
-  display: grid;
-  grid-template-columns: 32px minmax(180px, 1fr) 32px 78px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.diff-skeleton-arrow {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-}
-
-.diff-skeleton-file-select {
-  width: 100%;
-  height: 40px;
-}
-
-.diff-skeleton-badge {
-  width: 72px;
-  height: 22px;
-  border-radius: var(--r-pill);
-}
-
-.diff-skeleton-count {
-  grid-column: 6;
-  width: 78px;
-  height: 12px;
-  justify-self: end;
-}
-
 .diff-skeleton-editor {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr);
@@ -10331,24 +10235,6 @@ a.skills-sh-security-audit-row:focus-visible {
 .diff-skeleton-code > div {
   max-width: 100%;
   height: 10px;
-}
-
-@container diff-skeleton (max-width: 768px) {
-  .diff-skeleton-toolbar {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .diff-skeleton-view {
-    width: fit-content;
-  }
-
-  .diff-skeleton-file-bar {
-    grid-template-columns: 32px minmax(0, 1fr) 32px auto minmax(0, 1fr);
-  }
-
-  .diff-skeleton-count {
-    grid-column: 5;
-  }
 }
 
 .diff-card {
