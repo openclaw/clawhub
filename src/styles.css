@@ -3309,15 +3309,6 @@ code {
   font-size: inherit;
 }
 
-.browse-page .browse-results-grid .skill-card-updated {
-  grid-column: 1;
-  grid-row: 1;
-  min-width: 0;
-  color: var(--hv2-text-tertiary, var(--ink-soft));
-  font-size: 12px;
-  line-height: 1.25;
-}
-
 .browse-page .browse-results-grid .skill-card-grid-meta .skill-stats-triplet {
   grid-column: 2;
   grid-row: 1;
@@ -3327,10 +3318,6 @@ code {
   font-size: 12px;
   line-height: 1.25;
   white-space: nowrap;
-}
-
-.browse-page .browse-results-grid .skill-card-footer-rows {
-  gap: 8px;
 }
 
 .browse-page .browse-results-grid .skill-list-item-meta {
@@ -3357,57 +3344,12 @@ code {
   margin-top: auto;
 }
 
-.skill-card-footer-inline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.skill-card-footer-rows {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px;
-  align-items: start;
-}
-
-.skill-card-spaced-footer .skill-card-footer-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.skill-card-footer-rows .stat {
-  justify-self: end;
-}
-
-.skill-card-spaced-footer .skill-card-footer-rows .stat {
-  align-self: stretch;
-  margin-top: 0;
-  padding-top: 0;
-}
-
-.skill-card-statline,
 .skill-stats-triplet,
 .skill-stats-item {
   display: inline-flex;
   align-items: center;
 }
 
-.skill-card-statline {
-  width: 100%;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--ink-soft);
-  font-size: var(--fs-xs);
-}
-
-.skill-card-updated {
-  color: color-mix(in srgb, var(--ink-soft) 78%, var(--surface));
-}
-
-.skill-card-statline-dot,
 .skill-stats-dot {
   color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
 }
@@ -18989,21 +18931,6 @@ a.search-empty-action {
   flex-shrink: 0;
 }
 
-.footer-v2-eco-all-intro {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-soft);
-  white-space: nowrap;
-}
-
-.footer-v2-eco-all-sep {
-  width: 1px;
-  align-self: stretch;
-  min-height: 18px;
-  margin: 1px 0;
-  background: color-mix(in srgb, var(--ink) 16%, var(--line));
-}
-
 .footer-v2-eco-mark-all {
   padding: 0;
   border-color: transparent;
@@ -19029,21 +18956,6 @@ a.search-empty-action {
   margin: 0;
 }
 
-.footer-v2-copy-link {
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-  color: inherit;
-  text-decoration: none;
-  transition: color 0.15s ease;
-}
-
-.footer-v2-copy-link:hover,
-.footer-v2-copy-link:focus-visible {
-  color: var(--ink);
-  text-decoration: none;
-}
-
 .footer-v2-meta a {
   color: var(--ink-soft);
   text-decoration: none;
@@ -19064,7 +18976,6 @@ a.search-empty-action {
 .site-footer-v2 .footer-col-links a,
 .site-footer-v2 .footer-col-links span,
 .site-footer-v2 .footer-v2-eco-label,
-.site-footer-v2 .footer-v2-eco-all-intro,
 .site-footer-v2 .footer-v2-eco-mark,
 .site-footer-v2 .footer-v2-bottom,
 .site-footer-v2 .footer-v2-meta a {
@@ -19103,10 +19014,6 @@ a.search-empty-action {
 .site-footer-v2 .footer-v2-bottom {
   margin-top: 0;
   padding-top: 32px;
-}
-
-.site-footer-v2 .footer-v2-eco-all-sep {
-  background: var(--hv2-border, #2a2a2e);
 }
 
 .footer-grid {
@@ -19206,17 +19113,6 @@ a.search-empty-action {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-}
-
-.footer-v2-copy-link-icon {
-  margin-left: 3px;
-  vertical-align: -1px;
-}
-
-.footer-v2-copy-link:hover .footer-v2-copy-link-icon,
-.footer-v2-copy-link:focus-visible .footer-v2-copy-link-icon {
-  opacity: 0.9;
-  transform: translate(1px, -1px);
 }
 
 .footer-col-links a:hover,
