@@ -482,30 +482,7 @@ const internalRefs = internal as unknown as {
   };
 };
 
-const packageInspectorWarningInputValidator = v.object({
-  id: v.optional(v.string()),
-  code: v.string(),
-  severity: v.optional(v.string()),
-  level: v.optional(v.string()),
-  issueClass: v.optional(v.string()),
-  compatStatus: v.optional(v.string()),
-  deprecated: v.optional(v.boolean()),
-  deprecatedApi: v.optional(v.string()),
-  replacement: v.optional(v.string()),
-  removeAfter: v.optional(v.string()),
-  message: v.string(),
-  evidence: v.optional(v.array(v.string())),
-  authorRemediation: v.optional(
-    v.object({
-      summary: v.string(),
-      docsUrl: v.optional(v.string()),
-    }),
-  ),
-  fixture: v.optional(v.string()),
-  decision: v.optional(v.string()),
-});
-
-const packageInspectorFindingInputValidator = v.object({
+const packageInspectorIssueInputValidator = v.object({
   id: v.optional(v.string()),
   code: v.string(),
   severity: v.optional(v.string()),
@@ -10434,8 +10411,8 @@ export const insertPackageInspectorWarningsInternal = internalMutation({
     scanSource: v.optional(v.union(v.literal("publish"), v.literal("nightly"))),
     inspectorVersion: v.optional(v.string()),
     targetOpenClawVersion: v.optional(v.string()),
-    findings: v.optional(v.array(packageInspectorFindingInputValidator)),
-    warnings: v.optional(v.array(packageInspectorWarningInputValidator)),
+    findings: v.optional(v.array(packageInspectorIssueInputValidator)),
+    warnings: v.optional(v.array(packageInspectorIssueInputValidator)),
     sdkUsage: v.optional(sdkUsageReport),
   },
   handler: async (ctx, args) => {
@@ -11092,7 +11069,7 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
     inspectorVersion: v.optional(v.string()),
     targetOpenClawVersion: v.optional(v.string()),
     notifyOwners: v.optional(v.boolean()),
-    findings: v.array(packageInspectorFindingInputValidator),
+    findings: v.array(packageInspectorIssueInputValidator),
     sdkUsage: v.optional(sdkUsageReport),
     artifactSha256: v.optional(v.string()),
     inspectionFailed: v.optional(v.boolean()),
