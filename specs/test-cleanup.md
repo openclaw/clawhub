@@ -103,6 +103,27 @@ Validation: Crabbox passed `ci:static`, `ci:e2e-http`, `ci:types:packages`, and
 confirms the deleted suite is absent. Independent P0-P3 diff review: scoped-clean.
 Landed: https://github.com/openclaw/clawhub/pull/4256.
 
+### Worker admission proof
+
+Move the shared worker admission and local-home checks out of the security-worker
+suite into one canonical guard suite. Delete the Skill Card copy of the same
+empty-environment guard assertion. Keep supervisor admission coverage and the
+opted-in Skill Card subprocess contract.
+
+Add denied-entrypoint subprocess checks for both actual workers. Each uses an
+isolated temporary cwd, a minimal environment with no opt-in/CI identity, and a
+loopback registry; require the guard refusal and zero backend requests.
+
+Validation: all 77 focused tests passed. Removing admission from both real
+entrypoints leaves the five helper tests green but fails both subprocess cases;
+restoring admission passes all seven canonical cases. `ci:static`, root typecheck,
+full `ci:types-build`, and independent P0-P3 review passed. Coverage found an
+existing Skill Card fixture clock race, independently fixed in
+https://github.com/openclaw/clawhub/pull/4292. Restacked onto that landed fix;
+the repeated focused/static/root/package-type gates and `ci:unit` passed (656 files,
+8,858 tests; coverage thresholds met). Original base: `54d6eb85`; current base:
+`f2dafad5`.
+
 ### Route assertion coverage
 
 Await the canonical skill route's guard for all five accepted owner formats and
