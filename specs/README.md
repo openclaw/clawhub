@@ -24,6 +24,7 @@ into `docs/` and leave only the design record here.
 - `diffing.md`: skill version diffing UI/API design.
 - `slug-routing.md`: internal web route precedence and plugin alias contract.
 - `og-routes.md`: public OG card metadata fetches and hang timeouts.
+- `cli-request-deadlines.md`: CLI HTTP total-transfer deadlines, retries, and the package-publish override.
 - `catalog-taxonomy.md`: stored category, author topic, browse ordering, and correction contract.
 - `ci.md`: PR check and production deploy audit-tag policy.
 - `manual-testing.md`: maintainer CLI smoke checklist.
