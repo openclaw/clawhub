@@ -21688,9 +21688,7 @@ a.search-empty-action {
   );
 }
 
-[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-stack-trend-card,
-[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-collection-card,
-[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-stack-feature {
+[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-collection-card {
   background: var(--hv2-surface);
   border-color: var(--hv2-border-strong);
   box-shadow:
@@ -21707,48 +21705,9 @@ a.search-empty-action {
     0 16px 32px rgba(15, 23, 42, 0.16);
 }
 
-[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-stack-feature {
-  background:
-    radial-gradient(
-      120% 140% at 0% 0%,
-      color-mix(in srgb, var(--hv2-accent) 8%, transparent),
-      transparent 60%
-    ),
-    var(--hv2-surface);
-}
-
-[data-theme-resolved="light"]
-  .app-shell:has(.home-v2-main)
-  .home-v2-stack-feature.home-v2-stack-feature--muted {
-  background: var(--hv2-surface);
-}
-
-[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-stack-trend-card:hover,
-[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-collection-card:hover,
-[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-stack-feature-item:hover,
-[data-theme-resolved="light"]
-  .app-shell:has(.home-v2-main)
-  .home-v2-stack-feature-item:focus-visible {
+[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-collection-card:hover {
   background: linear-gradient(145deg, rgb(250 250 250) 0%, rgb(238 238 240) 100%);
   border-color: var(--hv2-border-hover);
-}
-
-[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-stack-feature-item {
-  background: linear-gradient(145deg, rgb(250 250 250) 0%, rgb(238 238 240) 100%);
-  border-color: var(--hv2-border);
-}
-
-[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-stack-avatar,
-[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-stack-avatar--image {
-  background: linear-gradient(145deg, #ffffff, #f1f1f4);
-  border-color: var(--hv2-border-strong);
-  color: var(--hv2-text);
-}
-
-[data-theme-resolved="light"]
-  .app-shell:has(.home-v2-main)
-  .home-v2-stack-avatar--user.home-v2-stack-avatar--image {
-  background: var(--hv2-surface);
 }
 
 [data-theme-resolved="light"] .site-footer-v2 .footer-v2-eco-mark,
