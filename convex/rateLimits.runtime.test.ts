@@ -94,13 +94,11 @@ it("consumes batched counts in one write and exposes exhaustion to read-only che
   expect(
     await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, { ...request, count: 4 }),
   ).toMatchObject({ ok: false });
-  const peek = await t.run(async (ctx) =>
-    ctx.runQuery(components.rateLimiterV2.lib.checkRateLimit, {
-      name: request.name,
-      key: request.key,
-      config: request.config,
-    }),
-  );
+  const peek = await t.query(components.rateLimiterV2.lib.checkRateLimit, {
+    name: request.name,
+    key: request.key,
+    config: request.config,
+  });
   expect(peek).toMatchObject({ ok: false });
 });
 
@@ -129,9 +127,11 @@ it.each(["readIp", "downloadIp", "readKey", "downloadKey"] as const)(
           consumed += 4;
         }
       } else {
-        const status = await t.run(async (ctx) =>
-          ctx.runQuery(components.rateLimiterV2.lib.checkRateLimit, { ...request, count: 4 }),
-        );
+        // Read the component directly instead of creating an unused parent mutation.
+        const status = await t.query(components.rateLimiterV2.lib.checkRateLimit, {
+          ...request,
+          count: 4,
+        });
         if (status.ok) admitted++;
       }
     }
