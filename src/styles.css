@@ -7432,11 +7432,6 @@ code {
   gap: 16px;
 }
 
-/* Removed two-column layout for .skill-hero-top.has-plugin so that
-   <SkillInstallSurface /> and sibling panels span the full hero width
-   directly below the title/description instead of being squeezed into
-   a narrow right column. */
-
 .skill-hero-content {
   display: grid;
   gap: 16px;
@@ -7557,15 +7552,6 @@ code {
 
 .skill-hero-sidebar > .card {
   width: 100%;
-}
-
-.skill-hero-sidebar .skill-install-panel {
-  width: 100%;
-  padding: 18px;
-}
-
-.skill-hero-sidebar .skill-install-panel-copy {
-  font-size: 0.9rem;
 }
 
 .skill-hero-sidebar .skill-install-command {
@@ -8355,101 +8341,12 @@ a.skills-sh-security-audit-row:focus-visible {
   gap: 6px;
 }
 
-.skill-install-surface {
-  display: grid;
-  gap: 16px;
-}
-
-.skill-install-panel {
-  display: grid;
-  gap: 16px;
-  padding: 20px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--line);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, white), var(--surface)),
-    var(--surface);
-  box-shadow: var(--shadow-card);
-  min-width: 0;
-}
-
-[data-theme-resolved="light"] .skill-install-panel {
-  border-color: var(--line);
-  background: var(--surface);
-}
-
-.skill-install-panel-header {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.skill-install-kicker {
-  margin: 0;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-
 .skill-install-panel-title {
   margin: 0;
   font-size: 1.08rem;
   font-weight: 700;
   color: var(--ink);
   text-wrap: balance;
-}
-
-.skill-install-panel-copy {
-  margin: 0;
-  max-width: 52ch;
-  font-size: 0.92rem;
-  line-height: 1.55;
-  color: var(--ink-soft);
-}
-
-.skill-install-panel-copy code {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 2px 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--ink);
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  overflow-wrap: anywhere;
-}
-
-[data-theme-resolved="light"] .skill-install-panel-copy code {
-  background: rgba(15, 12, 10, 0.08);
-}
-
-.skill-install-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.skill-install-prompt-trigger {
-  min-height: 46px;
-  border: 1px solid rgba(0, 0, 0, 0.7);
-  border-radius: 999px;
-  background: #0e0e10;
-  color: #f8f2e9;
-  padding-inline: 18px;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
-  transition:
-    transform 0.18s ease,
-    box-shadow 0.18s ease,
-    border-color 0.18s ease,
-    background-color 0.18s ease;
-  touch-action: manipulation;
-}
-
-.skill-install-prompt-trigger:hover {
-  border-color: rgba(0, 0, 0, 0.82);
-  background: #161619;
 }
 
 .skill-install-copy-button:not(.skill-install-command-inline-button) {
@@ -8479,53 +8376,6 @@ a.skills-sh-security-audit-row:focus-visible {
   color: var(--status-error-fg);
 }
 
-.skill-install-menu {
-  max-width: 280px;
-}
-
-.skill-install-menu-copy {
-  display: grid;
-  gap: 2px;
-}
-
-.skill-install-menu-label {
-  font-size: 0.9rem;
-}
-
-.skill-install-menu-description {
-  font-size: 0.78rem;
-  font-weight: 500;
-  line-height: 1.4;
-  color: var(--ink-soft);
-}
-
-.skill-install-copy-feedback {
-  /*
-   * Force the feedback line onto its own row inside `.skill-install-actions`
-   * regardless of the current string length. The feedback text changes between
-   * short ("Previewing Install Only.") and longer ("Install & Setup prompt
-   * copied.") states; without `flex-basis: 100%` the long state can push past
-   * the container width and wrap below the trigger button, causing the whole
-   * panel to visibly reflow vertically every time the user picks a prompt mode.
-   * Pinning the row makes the layout stable — only the `<pre>` preview below
-   * is allowed to grow/shrink with content.
-   */
-  flex-basis: 100%;
-  min-height: 1.25rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--ink-soft);
-}
-
-.skill-install-preview-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.skill-install-preview-label,
 .skill-install-command-label {
   margin: 0;
   font-size: 0.76rem;
@@ -8535,22 +8385,6 @@ a.skills-sh-security-audit-row:focus-visible {
   color: var(--ink-soft);
 }
 
-.skill-install-preview-mode {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--ink);
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-[data-theme-resolved="light"] .skill-install-preview-mode {
-  background: rgba(15, 12, 10, 0.08);
-}
-
-.skill-install-prompt-preview,
 .skill-install-command {
   margin: 0;
   min-width: 0;
@@ -8568,19 +8402,6 @@ a.skills-sh-security-audit-row:focus-visible {
   word-break: break-word;
   font-variant-numeric: tabular-nums;
   box-shadow: none;
-}
-
-/*
- * Keep the prompt preview at a stable height so that switching between
- * "Install Only" and "Install & Setup" does not shift the surrounding
- * layout. The setup prompt is noticeably longer than the install-only
- * prompt; without a min-height the whole panel (and its neighbour CLI
- * panel, since they share a grid row) visibly jumps on every toggle.
- * Only applied to the prompt preview — the CLI `<pre>` blocks stay
- * content-sized to avoid unnecessary blank space.
- */
-.skill-install-prompt-preview {
-  min-height: 22em;
 }
 
 .skill-install-command-card {
@@ -8950,7 +8771,6 @@ a.skills-sh-security-audit-row:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skill-install-prompt-trigger,
   .skill-install-copy-button,
   .skill-install-command-reveal,
   .skill-install-tab,
@@ -12968,10 +12788,6 @@ a.skills-sh-security-audit-row:focus-visible {
     min-width: 200px;
   }
 
-  .skill-install-panel {
-    padding: 18px;
-  }
-
   .skill-install-command-card {
     padding: 14px;
   }
@@ -16190,15 +16006,9 @@ a.agentic-risk-finding-title:focus-visible {
     justify-content: center;
   }
 
-  .skill-install-actions,
-  .skill-install-preview-meta,
   .skill-install-command-header {
     align-items: stretch;
     min-height: 0;
-  }
-
-  .skill-install-copy-feedback {
-    width: 100%;
   }
 
   .skill-install-command-shell-cli {
@@ -16279,7 +16089,6 @@ a.agentic-risk-finding-title:focus-visible {
     justify-content: center;
   }
 
-  .skill-install-prompt-trigger,
   .skill-install-copy-button:not(.skill-install-command-inline-button) {
     width: 100%;
     justify-content: center;
