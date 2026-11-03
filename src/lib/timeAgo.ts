@@ -25,8 +25,7 @@ export function timeAgo(timestamp: number): string {
   }
   // Derive years from whole 30-day months rather than from a separate 365-day
   // year: dividing a 365-day year by 30-day months leaves a 360-364 day gap
-  // that rendered as "12mo ago". Matches formatRelativeUpdatedAt in
-  // routes/user/$handle.tsx.
+  // that rendered as "12mo ago".
   const months = Math.floor(diff / MONTH);
   if (months < 12) return `${months}mo ago`;
   return `${Math.floor(months / 12)}y ago`;
