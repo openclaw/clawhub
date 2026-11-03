@@ -12,12 +12,13 @@ times overlap and each required check reports its own failure:
   inspect the current tree and installed packages, not Git history.
 - `unit` runs the Vitest coverage suite. This replaces a separate `test` run
   because coverage already executes the test suite.
-- `packages` builds `packages/schema` and verifies the ClawHub CLI package.
+- `packages` builds `packages/schema` and verifies both CLI packages, including
+  their native TypeScript checks.
 - CLI source and artifact tests belong to `ci:packages`. Root unit coverage
   excludes both CLI workspaces so their source tests run once, using each
   package's Node environment instead of also running under root jsdom.
-- `types-build` typechecks the app, schema package, and CLI package, then builds
-  the app.
+- `types-build` typechecks and builds the app. Package typechecks belong to
+  `packages` so CI runs them once.
 - `e2e-http` runs the secretless HTTP and CLI end-to-end subset.
   GitHub-backed package publish fixtures use bounded retries for network errors,
   HTTP 408/5xx responses, and server-declared 403/429 rate limits whose retry
@@ -59,8 +60,9 @@ still runs on every job to validate and install the requested browser revision.
 
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 covers the non-browser PR gates. Linux CI uses pinned tsrs for the root typecheck;
-local `ci:types-build` keeps native TypeScript for cross-platform support. Both
-use `ci:types:packages` for native package checks. To reproduce the Linux root
+local `ci:types-build` keeps native TypeScript for cross-platform support. The local
+aggregate also uses `ci:types:packages` for native package checks; CI delegates
+those checks to the required `packages` job. To reproduce the Linux root
 check, run `bunx --no-install tsrs --noEmit` on a supported Linux host.
 `bun run ci:playwright-smoke` assumes the chromium Playwright browser has already
 been installed.

@@ -12,6 +12,7 @@
 - Scanning: stop classifying Manifest V3 browser host permissions as installation sources while retaining checks for install URLs elsewhere in the manifest.
 
 - CI: speed up the Linux root typecheck with pinned tsrs while retaining native TypeScript for local checks and package builds.
+- CI: run native package typechecks in the packages job only, retaining full package checks in local `ci:types-build`.
 - skills.sh: sync once a day at 03:00 Pacific and mirror the top 4,000 rows of the all-time and trending views, so the sync completes again after skills.sh expanded its default feed to ~93k rows; Trending keeps the last skills.sh run for up to 50 hours.
 - Workers: include bounded, redacted skill evaluation failure reasons in CI logs so operators can diagnose failed runs.
 - Tooling: accept Bun's environment-file loading diagnostic in local dependency audits while preserving tool-error and malware failures.
