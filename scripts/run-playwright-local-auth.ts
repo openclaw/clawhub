@@ -696,6 +696,17 @@ async function main() {
   console.log("Seeding the local skills.sh route for browser layout proof.");
   await runConvexFunctionWhenReady("devSeed:seedCanonicalSearchFixture", {}, e2eEnv);
 
+  if (e2eEnv.PLAYWRIGHT_LOCAL_AUTH_SEED_CATALOG === "1") {
+    console.log("Seeding local catalog fixtures once before browser readers start.");
+    await runConvexFunctionWhenReady("devSeed:seedLocalFixtures", {}, e2eEnv);
+    console.log("Verifying the seeded Skills catalog is readable before browser startup.");
+    await runConvexFunctionWhenReady(
+      "skills:listPublicPageV4",
+      { numItems: 20, sort: "downloads", dir: "desc" },
+      e2eEnv,
+    );
+  }
+
   console.log("Building ClawHub for local-auth Playwright e2e.");
   await runRequired("bun", ["run", "build"], e2eEnv);
 

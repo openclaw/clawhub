@@ -327,8 +327,52 @@ async function gotoPluginDetailWithOwnerControls(page: Page) {
   throw lastError;
 }
 
+test.beforeAll(() => {
+  if (process.env.PLAYWRIGHT_LOCAL_AUTH_SEED_CATALOG !== "1") seedLocalModerationFixtures();
+});
+
+test("seeded public plugin detail supports versions navigation", async ({
+  page,
+  request,
+}, testInfo) => {
+  const name = "local-scanned-runtime-plugin";
+  const response = await request.get(
+    new URL(`/api/v1/packages/${name}`, process.env.VITE_CONVEX_SITE_URL).toString(),
+  );
+  expect(response.status()).toBe(200);
+  const payload = await response.json();
+  expect(payload.package).toMatchObject({ name, displayName: "Local Scanned Runtime Plugin" });
+  const errors = trackRuntimeErrors(page);
+  await page.goto(buildPluginDetailHref(name, { ownerHandle: "local" }), {
+    waitUntil: "domcontentloaded",
+  });
+  await waitForHydration(page);
+  await expect(
+    page.getByRole("heading", { name: "Local Scanned Runtime Plugin", exact: true }).first(),
+  ).toBeVisible();
+  const versions = page.getByRole("tab", { name: "Versions", exact: true });
+  await versions.click();
+  await expect(page).toHaveURL(/#versions$/);
+  await expect(versions).toHaveAttribute("aria-selected", "true");
+  const release = page.locator(".skill-version-release").filter({ hasText: "v0.1.0" });
+  await expect(release).toHaveCount(1);
+  await release.getByRole("button", { name: "Show changelog for v0.1.0", exact: true }).click();
+  await expect(release).toContainText(
+    "Seeded public scanned release for plugin scanner page previews.",
+  );
+  await expect(
+    page.getByText("Release history is temporarily unavailable.", { exact: true }),
+  ).toHaveCount(0);
+  const screenshotPath = testInfo.outputPath("plugin-release-history.png");
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  await testInfo.attach("Plugin release history", {
+    path: screenshotPath,
+    contentType: "image/png",
+  });
+  await expectHealthyManageContextPage(page, errors);
+});
+
 test("plugin manage context query returns only slim catalog metadata", async ({ page }) => {
-  seedLocalModerationFixtures();
   await installConvexFrameCapture(page);
   const errors = trackRuntimeErrors(page);
 
@@ -362,7 +406,6 @@ for (const persona of ["owner", "user"] as const) {
   test(`inspector summary timeout preserves ${persona} authorization and reports compatibility as unavailable`, async ({
     page,
   }) => {
-    seedLocalModerationFixtures();
     await installConvexFrameCapture(page, { failInspectorSummary: true });
     const errors = trackRuntimeErrors(page);
     await signInAsLocalPersona(page, persona);

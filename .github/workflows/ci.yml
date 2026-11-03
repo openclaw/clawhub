@@ -207,7 +207,10 @@ jobs:
               e2e/local-auth/delete-account-resources.pw.test.ts
               e2e/local-auth/delete-org-resources.pw.test.ts
           - name: profile-context
+            fixture_slug: local-agentic-risk-demo
+            fixture_owner: local
             specs: |
+              e2e/catalog-workflows.pw.test.ts
               e2e/local-auth/header-profile-link.pw.test.ts
               e2e/local-auth/manage-context-proof.pw.test.ts
               e2e/local-auth/plugin-catalog-api.pw.test.ts
@@ -216,6 +219,13 @@ jobs:
               e2e/local-auth/skill-hero-metadata.pw.test.ts
               e2e/local-auth/skill-presentation-metadata.pw.test.ts
               e2e/local-auth/featured-lineup.pw.test.ts
+          - name: catalog-mobile
+            project: mobile-chrome
+            fixture_slug: local-agentic-risk-demo
+            fixture_owner: local
+            specs: |
+              e2e/catalog-workflows.pw.test.ts
+              e2e/mobile-skills.pw.test.ts
           - name: template-artifacts
             specs: |
               e2e/local-auth/exact-template-artifact.pw.test.ts
@@ -272,6 +282,10 @@ jobs:
         env:
           PLAYWRIGHT_GREP: ${{ matrix.grep || '' }}
           PLAYWRIGHT_SPECS: ${{ matrix.specs }}
+          PLAYWRIGHT_PROJECT: ${{ matrix.project || 'chromium' }}
+          PLAYWRIGHT_LOCAL_AUTH_SEED_CATALOG: ${{ matrix.fixture_slug && '1' || '' }}
+          CLAWHUB_E2E_SKILL_SLUG: ${{ matrix.fixture_slug || '' }}
+          CLAWHUB_E2E_SKILL_OWNER: ${{ matrix.fixture_owner || '' }}
         run: |
           set -euo pipefail
           pressure_phase=before
@@ -296,7 +310,7 @@ jobs:
           trap report_runner_pressure EXIT
 
           mapfile -t specs < <(printf '%s\n' "$PLAYWRIGHT_SPECS" | sed '/^[[:space:]]*$/d')
-          args=(--project=chromium "${specs[@]}")
+          args=(--project="$PLAYWRIGHT_PROJECT" "${specs[@]}")
           if [[ -n "$PLAYWRIGHT_GREP" ]]; then
             args+=(--grep "$PLAYWRIGHT_GREP")
           fi

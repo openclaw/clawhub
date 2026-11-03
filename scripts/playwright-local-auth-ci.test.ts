@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -60,7 +60,11 @@ describe("local-auth CI selection", () => {
     const files = readdirSync(join(root, "e2e/local-auth"), { recursive: true, encoding: "utf8" })
       .filter((path) => path.endsWith(".pw.test.ts"))
       .map((path) => "e2e/local-auth/" + path.replaceAll("\\", "/"));
-    expect([...new Set(shards.flatMap(specsFor))].sort()).toEqual(files.sort());
+    const mapped = [...new Set(shards.flatMap(specsFor))];
+    for (const spec of mapped) expect(statSync(join(root, spec)).isFile(), spec).toBe(true);
+    expect(mapped.filter((spec) => spec.startsWith("e2e/local-auth/")).sort()).toEqual(
+      files.sort(),
+    );
   });
 
   it("covers every discovered test when a spec is split by grep", () => {
