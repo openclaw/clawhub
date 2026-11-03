@@ -9,6 +9,7 @@ const sharedSchemaModules = [
   "ark",
   "openclawContract",
   "packageShared",
+  "packageUploadLimits",
   "pluginInput",
   "schemaShared",
   "templatePackage",

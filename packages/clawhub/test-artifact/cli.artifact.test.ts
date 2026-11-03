@@ -317,6 +317,7 @@ describe("built CLI artifact", () => {
       "ark",
       "openclawContract",
       "packageShared",
+      "packageUploadLimits",
       "pluginInput",
       "schemaShared",
       "templatePackage",
