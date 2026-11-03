@@ -1,6 +1,6 @@
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { expandDroppedItems, expandFiles, expandFilesWithReport } from "./uploadFiles";
+import { expandDroppedItems, expandFilesWithReport } from "./uploadFiles";
 
 function readWithFileReader(blob: Blob) {
   return new Promise<ArrayBuffer>((resolve, reject) => {
@@ -15,7 +15,7 @@ function readWithFileReader(blob: Blob) {
   });
 }
 
-describe("expandFiles (jsdom)", () => {
+describe("expandFilesWithReport (jsdom)", () => {
   it("expands zip archives using FileReader fallback", async () => {
     const zip = zipSync({
       "hetzner-cloud-skill/SKILL.md": new Uint8Array(strToU8("hello")),
@@ -30,7 +30,7 @@ describe("expandFiles (jsdom)", () => {
       expect.arrayContaining(["hetzner-cloud-skill/SKILL.md", "hetzner-cloud-skill/notes.txt"]),
     );
 
-    const expanded = await expandFiles([zipFile]);
+    const { files: expanded } = await expandFilesWithReport([zipFile]);
     expect(expanded.map((file) => file.name)).toEqual(["SKILL.md", "notes.txt"]);
   });
 
