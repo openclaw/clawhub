@@ -476,6 +476,311 @@
           "size": 16311
         }
       ]
+    },
+    {
+      "fixture": "010",
+      "id": "brewpage-publish-1.0.8",
+      "selector": "original-010-encrypted",
+      "package": "brewpage-publish",
+      "version": "1.0.8",
+      "owner": "kochetkov-ma",
+      "kind": "skill",
+      "attemptId": "zx72qjk2b7adfc3xfketc55d7h8h2ct3",
+      "fingerprint": "0584354479d17011f38eb4122c8693e0d56ba3289c46caa4dc3226ad55266a3d",
+      "versionId": "k974szd30ckskwfma437qapfd58h34gv",
+      "sourceManifestSha256": "57f66ee901dd7ae2fbcf23954f055cc9ddff2a3ef79be8f9146a3cd342c210e3",
+      "historicalOriginalManifestSha256": "3292602370dc45f70d2d2cf815e6530f3844c6f4f12b77d83e1590d6b6c70891",
+      "download": "https://clawhub.ai/api/v1/download?slug=brewpage-publish&version=1.0.8",
+      "manifestSha256": "a37695ad0434ec3579f70705e2f5f10b73ff97317d02305c6bb7eac1dfd09160",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "4513bfc94a4eae4fe4d49f0b5727992266aa003bcfea7437d25bbf0869f04a84",
+          "size": 1142
+        },
+        {
+          "path": "README.md",
+          "sha256": "bad807de787f2b4bd4da1c2614a227c26e5f9faf7a870b46aa7a79109c8b7d98",
+          "size": 11377
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "77e0281e2fe8e4a3dcca2a4a4a975a67b317db1574f97f4a9291bdb16cef2904",
+          "size": 17656
+        },
+        {
+          "path": "scripts/brewpage-lib.sh",
+          "sha256": "904ed7bf7631a597476a493849e5ddc97b755b40a28cddeac60a264614dec655",
+          "size": 11761
+        },
+        {
+          "path": "scripts/brewpage-run.sh",
+          "sha256": "356cc62dc912ef01b46986c4cd3c170ef7543d6484e9d3ed0e123e460f61738a",
+          "size": 10356
+        },
+        {
+          "path": "scripts/history.py",
+          "sha256": "24d68381f27b13a727a5f342ae7396948a6e80123a926a627ecf956992906e61",
+          "size": 6048
+        },
+        {
+          "path": "scripts/publish.mjs",
+          "sha256": "23d15a831a4ae654b21c9ff469a17fbf3db96528a41969641ef105c2d3cf4f81",
+          "size": 17445
+        }
+      ]
+    },
+    {
+      "fixture": "019",
+      "id": "hookaido-2.15.3",
+      "selector": "original-019-encrypted",
+      "package": "hookaido",
+      "version": "2.15.3",
+      "owner": "7schmiede",
+      "kind": "skill",
+      "attemptId": "zx78v8whzmepebrr7t8489tqa58h877q",
+      "fingerprint": "aefe9b9deb288ad20fc5213557a142b059cacb9856bd97f9d5f32b5ab40f643e",
+      "versionId": "k971asg1bx11v8efjtdn554d8n8h9r4b",
+      "sourceManifestSha256": "b2039d335eebacfecd986a9f27f50899b6109bd7f427f6d2774ae6fdb16f52e6",
+      "historicalOriginalManifestSha256": "f010299b146e1943d39879aaeac28c85c57a12c539f542573c36db5ca2be7f2f",
+      "download": "https://clawhub.ai/api/v1/download?slug=hookaido&version=2.15.3",
+      "manifestSha256": "ec0a413aa333045b23a4d0e2acb195bb27b5bc110db123fccdde6c9e5380eb12",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "de9ec9fb41d0078e9ca541b57f310d57ceef1ebcd9a85b1febd03623b8365496",
+          "size": 904
+        },
+        {
+          "path": "README.md",
+          "sha256": "d874af717b76779fdc87aeb0260eed4c720656bc4d490b99ee18573e7ea0eba8",
+          "size": 2446
+        },
+        {
+          "path": "RELEASE_NOTES.md",
+          "sha256": "ff21458f172cbb239ce0a8fe366fa437ebdb4a042bfec4575af1348c5ca1fab2",
+          "size": 8826
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "c1f330191c12a3126594e720450167a3a148af3293d7b6c06ddfa0e5b15bc9c3",
+          "size": 15884
+        },
+        {
+          "path": "agents/openai.yaml",
+          "sha256": "5b6b4966f51d71c491c4e99556013d12c25acd6de68d2cca3dbabec7522f5f14",
+          "size": 353
+        },
+        {
+          "path": "references/openclaw.md",
+          "sha256": "38a2fc7276dd7057405f915c92c9ae25bf1132523349045768fc8bbeabcc600b",
+          "size": 9880
+        },
+        {
+          "path": "references/operations.md",
+          "sha256": "2217aad85e272f969fc30bee079d23583d5d8e844bcb09d47730a7973ce2f74b",
+          "size": 17287
+        },
+        {
+          "path": "scripts/install_hookaido.sh",
+          "sha256": "7efc3098434d67c9563a370f43d9dbe9364e2267fde5929ee7b4fb916b2cf0e7",
+          "size": 4712
+        },
+        {
+          "path": "scripts/openclaw_pull_relay.sh",
+          "sha256": "13348d30a5d1ab83c9b6bb64aeac74a932c5710fbc31f283a8afdbaf9cba4f26",
+          "size": 2673
+        }
+      ]
+    },
+    {
+      "fixture": "005",
+      "id": "xiapan-music-0.1.0",
+      "selector": "original-005-encrypted",
+      "package": "xiapan-music",
+      "version": "0.1.0",
+      "owner": "dongsheng123132",
+      "kind": "skill",
+      "attemptId": "zx7b487av1k20f0ctys5n9t8h58h4v9g",
+      "fingerprint": "92f5b51d896a15584a90034cf91a88d7108f0b727a009a5833b64230c40cedea",
+      "versionId": "k972v7hrpjv0ds1zwperc1yx858h43pp",
+      "sourceManifestSha256": "d22cacf3c276970c945b94509a3ba883c035863a3e05d698247a6a8a807acb55",
+      "historicalOriginalManifestSha256": "c2f30fe6f44e094e84b3aa0471635457976eaa68358fccfea2c9f6e65cd34895",
+      "download": "https://clawhub.ai/api/v1/download?slug=xiapan-music&version=0.1.0",
+      "manifestSha256": "83fa9eabb8ce424d2b2ac0daed1a671486e5740abb2e7a71da01224dc62aba59",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "479d5020bb2ac56b1dfeab33e1408bec4aa5730478fa8e19f208e1932a453b59",
+          "size": 3769
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "f089686b20d3689b05b6efe52692438f71884b5eb3e1788ba56b1bf59ead3250",
+          "size": 12484
+        },
+        {
+          "path": "references/music.md",
+          "sha256": "d14cddbba6ddca6337c9695c96586337aaf1bef754bf90257239f31ab15439a6",
+          "size": 4932
+        },
+        {
+          "path": "scripts/balance.mjs",
+          "sha256": "7e93d2243bafb2440413cc511365db45c7c18494be5d585425db929e2c033e6c",
+          "size": 1951
+        },
+        {
+          "path": "scripts/bgm.mjs",
+          "sha256": "a6f1ae8c4c89163e2e84862b5b8c1b2765990e161a4d7c9b9dd0c5677bd75eb1",
+          "size": 5182
+        },
+        {
+          "path": "scripts/lib/cli.mjs",
+          "sha256": "21fe4f514d0039d0ad6364ffb62a5e4e1dd78fb851a6ab2b36c561cf51fdf22f",
+          "size": 7897
+        },
+        {
+          "path": "scripts/lib/xiapan-music.mjs",
+          "sha256": "3984155a944a40ed2a01d859cd2228c0d158de070b3cdde759938ed4e7917ce5",
+          "size": 39151
+        },
+        {
+          "path": "scripts/lyrics.mjs",
+          "sha256": "eaadd78d7939003b0d9fc1e4119b445537bab6e48b886aab04837bc3ec429017",
+          "size": 3538
+        },
+        {
+          "path": "scripts/song.mjs",
+          "sha256": "2824181d53d69482708ea00be992d025bdecfb65e1bb9181741b6cf547e40793",
+          "size": 12536
+        }
+      ]
+    },
+    {
+      "fixture": "006",
+      "id": "xiapan-music-0.1.1",
+      "selector": "original-006-encrypted",
+      "package": "xiapan-music",
+      "version": "0.1.1",
+      "owner": "dongsheng123132",
+      "kind": "skill",
+      "attemptId": "zx7284aer96fg31dge0bs406rs8h53dc",
+      "fingerprint": "a8ce606b7131c63e7f92fb77b631096a6bf50defd75fbd73462f601af12fc27f",
+      "versionId": "k97b1ptq47bs8sjewf8xx73v898h4p75",
+      "sourceManifestSha256": "1cc155fc44227ecc4a4b3eba36321dc1f9aa959260ccb13d8b1e381f50e7f13b",
+      "historicalOriginalManifestSha256": "ab98be3bcec10ac3f83c2cb8bbdb90781f838ba126201c270e90b9dbfe26ca3e",
+      "download": "https://clawhub.ai/api/v1/download?slug=xiapan-music&version=0.1.1",
+      "manifestSha256": "121ce0a19ac22e8fbea4fed9025127429a8464fed8e82ff684d376ab961e199c",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "479d5020bb2ac56b1dfeab33e1408bec4aa5730478fa8e19f208e1932a453b59",
+          "size": 3769
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "9b83e364cbd201b9d9dbfbc900479f57c4475dd20d7c6087e2cdda6c9790ef85",
+          "size": 12484
+        },
+        {
+          "path": "references/music.md",
+          "sha256": "d14cddbba6ddca6337c9695c96586337aaf1bef754bf90257239f31ab15439a6",
+          "size": 4932
+        },
+        {
+          "path": "scripts/balance.mjs",
+          "sha256": "7e93d2243bafb2440413cc511365db45c7c18494be5d585425db929e2c033e6c",
+          "size": 1951
+        },
+        {
+          "path": "scripts/bgm.mjs",
+          "sha256": "a6f1ae8c4c89163e2e84862b5b8c1b2765990e161a4d7c9b9dd0c5677bd75eb1",
+          "size": 5182
+        },
+        {
+          "path": "scripts/lib/cli.mjs",
+          "sha256": "21fe4f514d0039d0ad6364ffb62a5e4e1dd78fb851a6ab2b36c561cf51fdf22f",
+          "size": 7897
+        },
+        {
+          "path": "scripts/lib/xiapan-music.mjs",
+          "sha256": "3984155a944a40ed2a01d859cd2228c0d158de070b3cdde759938ed4e7917ce5",
+          "size": 39151
+        },
+        {
+          "path": "scripts/lyrics.mjs",
+          "sha256": "eaadd78d7939003b0d9fc1e4119b445537bab6e48b886aab04837bc3ec429017",
+          "size": 3538
+        },
+        {
+          "path": "scripts/song.mjs",
+          "sha256": "2824181d53d69482708ea00be992d025bdecfb65e1bb9181741b6cf547e40793",
+          "size": 12536
+        }
+      ]
+    },
+    {
+      "fixture": "015",
+      "id": "agentlifeboat-1.0.2",
+      "selector": "original-015-encrypted",
+      "package": "agentlifeboat",
+      "version": "1.0.2",
+      "owner": "king-perb",
+      "kind": "skill",
+      "attemptId": "zx7f16v03prv0500fdvb092wxn8h2ejy",
+      "fingerprint": "b4a6891269bc096cc7679fcd4e44f2641b4f78867af5ffb090c52f4dd5f8cf2b",
+      "versionId": "k977873s0ct949cbq3p9etee1s8h2k4p",
+      "sourceManifestSha256": "dce8d0e7904374cb81ad51ed2cba4c23dd2f49671f74620abb6eed8c6730817c",
+      "historicalOriginalManifestSha256": "6adb03ab79fe36b34c0101b07441073133eacc1d71be5f14c315d73e0987e971",
+      "download": "https://clawhub.ai/api/v1/download?slug=agentlifeboat&version=1.0.2",
+      "manifestSha256": "1cf20d0e01a3a87af35e77e21e79ee094fdd5dedbe8ad5dc5f82800461ab4021",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "741d972ff6dfc5894edc5a7f95968002cbc5982c92e487a7f434cf1e273c9704",
+          "size": 5144
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "a7e1086bb2438aea352d0c09c4cce6a727c33d31c26cd6c41fe3058eb76b0464",
+          "size": 18393
+        },
+        {
+          "path": "package-lock.json",
+          "sha256": "722960307c7ff5fdd88c18d361cd4b87bba8358b397ceeb3555b5a467e8f8b5a",
+          "size": 15194
+        },
+        {
+          "path": "package.json",
+          "sha256": "305858f09d09d0910fb83a2f1a2ff62be3eacf9a10f5ddd7912115ec9c184068",
+          "size": 552
+        },
+        {
+          "path": "scripts/bundle.mjs",
+          "sha256": "7a1d9295ee62d045426928564ced15131fe33070b78318633708b509464c8161",
+          "size": 4297
+        },
+        {
+          "path": "scripts/check.mjs",
+          "sha256": "fdbfc5e51a53d2d38e2a8048edd90057f49da477e2598227fd97ea668993489b",
+          "size": 16131
+        },
+        {
+          "path": "scripts/environment.mjs",
+          "sha256": "ea178bd534e5418e4b41fd246aedb353fc508c67b9e43adad40d911af0808156",
+          "size": 10165
+        },
+        {
+          "path": "scripts/lib.mjs",
+          "sha256": "d57a4ff1d295e36181c8e8e29e3e4ef253ef3040fedcce9aba54ab65e6edf9f5",
+          "size": 18077
+        },
+        {
+          "path": "scripts/lifeboat.mjs",
+          "sha256": "4e27e78a6aeb07113cefcb742e8e96d742698cbccdff8dc009e0c2d9dffe525c",
+          "size": 18709
+        }
+      ]
     }
   ]
 }
