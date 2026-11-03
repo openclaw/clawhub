@@ -742,6 +742,29 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   or claim complete scanner coverage. The fixed038 run name binds the public age
   recipient even when no artifact is uploaded. This nonpublishing diagnostic adds
   no recovery count or retry authority.
+- The manual diagnostic workflow always dispatches from `main`. Its default
+  `consumer: workflow` executes that workflow revision. The bounded
+  `consumer: recovery-approved` mode instead checks out the reviewed immutable
+  consumer `39c955143f13aa4ddb4c47272262e7e82e3e5340`; it accepts no caller-supplied
+  commit. In `recovery-approved` mode, both the original and triggering actors
+  must be `Patrick-Erichsen`,
+  the run must be its first attempt, and inputs must select a fixed encrypted
+  original, reviewed scanner source and Ubuntu 22.04. Before checkout, inline
+  trusted workflow code verifies the repository, main workflow identity and
+  consumer ancestry. The actual checkout must then equal the approved consumer
+  before local actions or any provider credential is exposed. A failed guard
+  must prevent the credentialed diagnostic command from running.
+  Record workflow revision W and executable consumer C separately. Controllers
+  may admit an advanced W only with the same approved workflow bytes and valid
+  C ancestry; C remains fixed. This exception does not imply that all
+  application code on W has been qualified. Changing C requires a normal reviewed
+  workflow change, fresh exact-source/runtime qualification, and matching
+  controller, auditor and approval bindings; never advance it
+  implicitly to follow main. Recovery controllers must approve the entire workflow
+  content and reject changed workflow bytes until reviewed. The fixed consumer
+  retains the original hashes, encrypted capture, scanner/judge settings,
+  inspection receipts and nonpublishing boundary. This mode grants no publication,
+  retry, security bypass or issue-closeout authority.
 - The native prepublication failure event preserves the existing SkillSpector
   projection and adds only fixed scanner names, allowlisted status/error classes,
   bounded exit/timing numbers, and presence/byte-count/SHA-256 metadata. Arbitrary

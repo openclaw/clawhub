@@ -58,6 +58,12 @@ on:
         type: string
         required: false
         default: ""
+      consumer:
+        description: "Workflow source, or the fixed reviewed recovery consumer (never latest)"
+        type: choice
+        required: true
+        options: [workflow, recovery-approved]
+        default: workflow
 
 permissions:
   contents: read
@@ -69,6 +75,7 @@ concurrency:
 jobs:
   diagnostic:
     if: >-
+      github.repository == 'openclaw/clawhub' &&
       github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
       (inputs.runner == '' || inputs.runner == 'blacksmith-16vcpu-ubuntu-2404' ||
       (inputs.runner == 'ubuntu-22.04' && inputs.source == 'reviewed' &&
@@ -82,9 +89,50 @@ jobs:
       CLAWSCAN_DIAGNOSTIC_RUNNER: ${{ inputs.runner == 'ubuntu-22.04' && 'ubuntu-22.04' || 'blacksmith-16vcpu-ubuntu-2404' }}
       GOTOOLCHAIN: go1.27.3
     steps:
+      - name: Validate diagnostic consumer selection
+        id: consumer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONSUMER_CHOICE: ${{ inputs.consumer }}
+          FIXTURE_CHOICE: ${{ inputs.fixture }}
+          SOURCE_CHOICE: ${{ inputs.source }}
+          RUNNER_CHOICE: ${{ inputs.runner }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == openclaw/clawhub ]] || exit 1
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          [[ "$GITHUB_WORKFLOW_REF" == openclaw/clawhub/.github/workflows/clawscan-judge-diagnostic.yml@refs/heads/main ]] || exit 1
+          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ && "$GITHUB_WORKFLOW_SHA" == "$GITHUB_SHA" ]] || exit 1
+          case "${CONSUMER_CHOICE:-workflow}" in
+            workflow)
+              consumer_sha="$GITHUB_SHA"
+              ;;
+            recovery-approved)
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen && "$GITHUB_TRIGGERING_ACTOR" == Patrick-Erichsen ]] || exit 1
+              [[ "$GITHUB_RUN_ATTEMPT" == 1 && "$SOURCE_CHOICE" == reviewed && "$RUNNER_CHOICE" == ubuntu-22.04 ]] || exit 1
+              [[ "$FIXTURE_CHOICE" =~ ^original-(038|079|004|016|017|026|027|074|008|011|036|033|065|073|042|055|039|010|019|005|006|015)-encrypted$ ]] || exit 1
+              # Keep the consumer's reviewed code and dependencies stable as main advances.
+              consumer_sha=39c955143f13aa4ddb4c47272262e7e82e3e5340
+              comparison=$(gh api --method GET "repos/openclaw/clawhub/compare/${consumer_sha}...${GITHUB_SHA}" \
+                --jq '[.base_commit.sha,.merge_base_commit.sha,(.status == "ahead" or .status == "identical")]|@tsv')
+              [[ "$comparison" == "$(printf '%s\t%s\ttrue' "$consumer_sha" "$consumer_sha")" ]] || exit 1
+              ;;
+            *) exit 1 ;;
+          esac
+          printf 'consumer-sha=%s\nworkflow-sha=%s\n' "$consumer_sha" "$GITHUB_WORKFLOW_SHA" >> "$GITHUB_OUTPUT"
+          printf 'workflow_commit=%s consumer_commit=%s\n' "$GITHUB_WORKFLOW_SHA" "$consumer_sha"
       - uses: actions/checkout@v7.0.1
         with:
+          ref: ${{ steps.consumer.outputs.consumer-sha }}
           persist-credentials: false
+      - name: Verify diagnostic consumer checkout
+        shell: bash
+        env:
+          EXPECTED_CONSUMER_SHA: ${{ steps.consumer.outputs.consumer-sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_CONSUMER_SHA" ]] || exit 1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 24.22.1
