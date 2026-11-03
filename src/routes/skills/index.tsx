@@ -114,6 +114,7 @@ export async function loadInitialSkillsData(
         : ((await convexHttp.action(api.search.searchSkills, args)) as SkillSearchEntry[]);
       return { key, limit: SKILLS_INITIAL_SEARCH_LIMIT, results };
     } catch (error) {
+      if (signal?.aborted) throw error;
       console.error("Failed to load initial skills search:", error);
       return null;
     }
