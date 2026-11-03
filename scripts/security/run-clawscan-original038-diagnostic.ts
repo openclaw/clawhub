@@ -26,6 +26,11 @@ import {
   original038Manifest,
   ORIGINAL038_SOURCE,
 } from "./clawscan-diagnostic-fixed038";
+import {
+  downloadOriginal079,
+  materializeOriginal079,
+  original079Manifest,
+} from "./clawscan-diagnostic-fixed079";
 import { verifyDiagnosticTree } from "./clawscan-diagnostic-input";
 import { installOriginalRuntime } from "./clawscan-diagnostic-runtime";
 import {
@@ -61,7 +66,26 @@ export function original038DiagnosticPassed(input: {
   );
 }
 
-export async function mainOriginal038Diagnostic() {
+export async function mainFixedOriginalDiagnostic(fixture: "038" | "079" = "038") {
+  if (fixture !== "038" && fixture !== "079") throw new Error("Only fixed originals are supported");
+  const selected =
+    fixture === "038"
+      ? {
+          id: "sn-ppt-workbench-2026.10.29",
+          package: "sn-ppt-workbench",
+          version: "2026.10.29",
+          manifest: original038Manifest,
+          download: downloadOriginal038,
+          materialize: materializeOriginal038,
+        }
+      : {
+          id: "mcpherson-governance-openclaw-0.8.0",
+          package: "@mcphersonai/mcpherson-governance-openclaw",
+          version: "0.8.0",
+          manifest: original079Manifest,
+          download: downloadOriginal079,
+          materialize: materializeOriginal079,
+        };
   const recipient = requireDiagnosticRecipient(process.env.DIAGNOSTIC_AGE_RECIPIENT);
   assertDisposableDiagnosticEnvironment(true);
   if (
@@ -75,7 +99,9 @@ export async function mainOriginal038Diagnostic() {
   if (!ageBinary || !ageBinary.startsWith(`${process.env.RUNNER_TEMP}/clawscan-age.`))
     throw new Error("Pinned diagnostic age binary required");
   process.umask(0o077);
-  const root = await mkdtemp(join(process.env.RUNNER_TEMP!, "clawscan-original038-private-"));
+  const root = await mkdtemp(
+    join(process.env.RUNNER_TEMP!, `clawscan-original${fixture}-private-`),
+  );
   const evidence = join(root, "evidence");
   const output = `${root}-encrypted`;
   await mkdir(evidence, { mode: 0o700 });
@@ -98,9 +124,9 @@ export async function mainOriginal038Diagnostic() {
     runId: process.env.GITHUB_RUN_ID,
     runAttempt: 1,
     source: ORIGINAL038_SOURCE,
-    originalManifestSha256: original038Manifest.manifestSha256,
-    package: "sn-ppt-workbench",
-    version: "2026.10.29",
+    originalManifestSha256: selected.manifest.manifestSha256,
+    package: selected.package,
+    version: selected.version,
     recipient,
     automaticRetries: 0,
     maximumScans: 1,
@@ -132,13 +158,13 @@ export async function mainOriginal038Diagnostic() {
       { mode: 0o600 },
     );
     const target = join(root, "original");
-    const identity = await materializeOriginal038(await downloadOriginal038(), target);
+    const identity = await selected.materialize(await selected.download(), target);
     await writeFile(
       join(evidence, "original-custody.json"),
       JSON.stringify(
         {
           ...identity,
-          files: original038Manifest.files,
+          files: selected.manifest.files,
           package: envelope.package,
           version: envelope.version,
         },
@@ -192,7 +218,7 @@ export async function mainOriginal038Diagnostic() {
         childPath: `${installed.scannerBin}:${setupEnv.PATH}`,
         readyForReview: true,
         cases: {
-          "sn-ppt-workbench-2026.10.29": { path: target, files: original038Manifest.files },
+          [selected.id]: { path: target, files: selected.manifest.files },
         },
       }),
       { mode: 0o400, flag: "wx" },
@@ -240,7 +266,7 @@ export async function mainOriginal038Diagnostic() {
       JSON.stringify(terminal, null, 2),
       { mode: 0o600 },
     );
-    const after = await verifyDiagnosticTree(target, original038Manifest, 16 * 1024 * 1024);
+    const after = await verifyDiagnosticTree(target, selected.manifest, 16 * 1024 * 1024);
     await writeFile(join(evidence, "original-verification-after.json"), JSON.stringify(after), {
       mode: 0o600,
     });
@@ -357,7 +383,7 @@ export async function mainOriginal038Diagnostic() {
         ageBinary,
         runId: envelope.runId!,
         source: ORIGINAL038_SOURCE,
-        manifestSha256: original038Manifest.manifestSha256,
+        manifestSha256: selected.manifest.manifestSha256,
       });
       encrypted = true;
     } finally {

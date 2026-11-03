@@ -198,6 +198,7 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "original-candidate-full",
     "original-candidate-290-full",
     "original-038-encrypted",
+    "original-079-encrypted",
   ]);
   expect(workflow.on.workflow_dispatch.inputs.source.options).toEqual(["reviewed", "incident"]);
   const job = workflow.jobs.diagnostic;
@@ -215,7 +216,10 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
   expect(job.env.CLAWSCAN_DIAGNOSTIC_RUNNER).toBe(job["runs-on"]);
   expect(job.if).toContain("inputs.source == 'reviewed'");
   expect(job.if).toContain(
-    "inputs.fixture == 'tiny' || inputs.fixture == 'original-038-encrypted'",
+    "inputs.fixture == 'tiny' || inputs.fixture == 'original-038-encrypted' || inputs.fixture == 'original-079-encrypted'",
+  );
+  expect(job.if).toContain(
+    "inputs.fixture != 'original-038-encrypted' && inputs.fixture != 'original-079-encrypted'",
   );
   expect(job.if).toContain("inputs.runner == 'ubuntu-22.04'");
   expect(job.if).toContain("github.run_attempt == 1");
@@ -226,7 +230,7 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "Install matched reviewed scanner sources and Responses adapters",
   ]) {
     expect(job.steps.find((step: { name?: string }) => step.name === name).if).toBe(
-      "${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' && inputs.fixture != 'original-038-encrypted' }}",
+      "${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' && inputs.fixture != 'original-038-encrypted' && inputs.fixture != 'original-079-encrypted' }}",
     );
   }
   const probe = job.steps.find((step: { id?: string }) => step.id === "probe");
@@ -242,7 +246,10 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
       .map((path: string) => path.split("/").at(-1)),
   ).toEqual(["summary.json", "events.jsonl", "attestation.json"]);
   const encryptedUpload = job.steps.find(
-    (step: { name?: string }) => step.name === "Upload encrypted fixed038 evidence only",
+    (step: { name?: string }) => step.name === "Upload encrypted fixed original evidence only",
+  );
+  expect(encryptedUpload.with.name).toBe(
+    "ENCRYPTED_ORIGINAL${{ inputs.fixture == 'original-079-encrypted' && '079' || '038' }}-${{ github.run_id }}",
   );
   expect(
     encryptedUpload.with.path
@@ -347,11 +354,11 @@ it("admits the hosted recovery image only through an explicit tiny-control opt-i
   expect(() => assertDisposableDiagnosticEnvironment(true)).toThrow();
 });
 
-it("binds only fixed038 run names to their public recipient, including when no artifact is uploaded", async () => {
+it("binds only fixed original run names to their public recipient, including when no artifact is uploaded", async () => {
   const workflow = parseYaml(
     await readFile(".github/workflows/clawscan-judge-diagnostic.yml", "utf8"),
   );
   expect(workflow["run-name"]).toBe(
-    "${{ inputs.fixture == 'original-038-encrypted' && format('original-038-encrypted {0}', inputs.age_recipient) || 'Nonproduction ClawScan judge diagnostic' }}",
+    "${{ contains(fromJSON('[\"original-038-encrypted\",\"original-079-encrypted\"]'), inputs.fixture) && format('{0} {1}', inputs.fixture, inputs.age_recipient) || 'Nonproduction ClawScan judge diagnostic' }}",
   );
 });
