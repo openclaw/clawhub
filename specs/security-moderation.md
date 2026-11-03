@@ -758,6 +758,25 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   identity and consumer ancestry. The actual checkout must then equal the approved consumer
   before local actions or any provider credential is exposed. A failed guard
   must prevent the credentialed diagnostic command from running.
+  Diagnostic scheduling has exactly two server concurrency lanes, `0` and `1`,
+  with `0` as the default. The concurrency expression clamps every dispatch to
+  those two group keys; inline validation rejects other lane values before
+  checkout or provider credentials. Ordinary `consumer: workflow` controls stay
+  on lane `0`; only the guarded recovery mode may use lane `1`.
+  A root-approved parent may hold at most two in-flight original controllers,
+  one separate process and ephemeral recipient per case and occupied lane. It
+  must reconcile active ownership and current canonical identity/security state
+  before admission and never dispatch another case to an occupied lane. Queued,
+  waiting and running owned jobs all occupy a lane. GitHub's default pending
+  replacement is not a durable queue; `cancel-in-progress: false` alone does not
+  preserve multiple pending runs. Stop new admissions on failures or unknown
+  operations, while retaining the keys and collecting peers already in flight.
+  Use the exact GitHub dispatch response run ID, retaining all existing
+  recipient, actor, source, artifact and evidence checks. An uncertain POST must
+  never be repeated; existing bounded recipient discovery may collect its one
+  result. Concurrency adds no retries, new selectors, source advancement,
+  publication authority or relaxed security review. A newly approved workflow
+  still requires one fully collected and audited canary before a bounded pair.
   Record workflow revision W and executable consumer C separately. Controllers
   may admit an advanced W only with the same approved workflow bytes and valid
   C ancestry; C remains fixed. This exception does not imply that all

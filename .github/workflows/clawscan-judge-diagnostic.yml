@@ -74,12 +74,19 @@ on:
         required: true
         options: [workflow, recovery-approved]
         default: workflow
+      lane:
+        description: "Root-coordinated diagnostic lane; a lane must be idle before dispatch"
+        type: choice
+        required: true
+        options: ["0", "1"]
+        default: "0"
 
 permissions:
   contents: read
 
 concurrency:
-  group: nonproduction-clawscan-judge-diagnostic
+  # Clamp the group even when API dispatch inputs bypass the choice control.
+  group: nonproduction-clawscan-judge-diagnostic-${{ inputs.lane == '1' && '1' || '0' }}
   cancel-in-progress: false
 
 jobs:
@@ -105,17 +112,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CONSUMER_CHOICE: ${{ inputs.consumer }}
+          LANE_CHOICE: ${{ inputs.lane }}
           FIXTURE_CHOICE: ${{ inputs.fixture }}
           SOURCE_CHOICE: ${{ inputs.source }}
           RUNNER_CHOICE: ${{ inputs.runner }}
         run: |
           set -euo pipefail
+          case "${LANE_CHOICE:-0}" in 0|1) ;; *) exit 1 ;; esac
           [[ "$GITHUB_REPOSITORY" == openclaw/clawhub ]] || exit 1
           [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$GITHUB_REF" == refs/heads/main ]] || exit 1
           [[ "$GITHUB_WORKFLOW_REF" == openclaw/clawhub/.github/workflows/clawscan-judge-diagnostic.yml@refs/heads/main ]] || exit 1
           [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ && "$GITHUB_WORKFLOW_SHA" == "$GITHUB_SHA" ]] || exit 1
           case "${CONSUMER_CHOICE:-workflow}" in
             workflow)
+              [[ "${LANE_CHOICE:-0}" == 0 ]] || exit 1
               consumer_sha="$GITHUB_SHA"
               ;;
             recovery-approved)
@@ -131,7 +141,7 @@ jobs:
             *) exit 1 ;;
           esac
           printf 'consumer-sha=%s\nworkflow-sha=%s\n' "$consumer_sha" "$GITHUB_WORKFLOW_SHA" >> "$GITHUB_OUTPUT"
-          printf 'workflow_commit=%s consumer_commit=%s\n' "$GITHUB_WORKFLOW_SHA" "$consumer_sha"
+          printf 'workflow_commit=%s consumer_commit=%s diagnostic_lane=%s\n' "$GITHUB_WORKFLOW_SHA" "$consumer_sha" "${LANE_CHOICE:-0}"
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ steps.consumer.outputs.consumer-sha }}
