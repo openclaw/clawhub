@@ -33,7 +33,7 @@ const SHARED_KEYS = [
   "updatedAt",
 ] as const satisfies readonly SharedPackageKey[];
 
-const PLUGIN_CATEGORY_SHARED_KEYS = [
+const FACET_SHARED_KEYS = [
   "packageId",
   "name",
   "normalizedName",
@@ -60,36 +60,10 @@ const PLUGIN_CATEGORY_SHARED_KEYS = [
   "softDeletedAt",
   "createdAt",
   "updatedAt",
-] as const satisfies readonly (keyof Doc<"packagePluginCategorySearchDigest">)[];
-
-const TOPIC_SHARED_KEYS = [
-  "packageId",
-  "name",
-  "normalizedName",
-  "displayName",
-  "family",
-  "channel",
-  "isOfficial",
-  "ownerUserId",
-  "ownerPublisherId",
-  "ownerHandle",
-  "ownerKind",
-  "summary",
-  "icon",
-  "latestVersion",
-  "runtimeId",
-  "categories",
-  "topics",
-  "pluginCategoryTags",
-  "verificationTier",
-  "stats",
-  "recommendedScore",
-  "recommendedScoreVersion",
-  "scanStatus",
-  "softDeletedAt",
-  "createdAt",
-  "updatedAt",
-] as const satisfies readonly (keyof Doc<"packageTopicSearchDigest">)[];
+] as const satisfies readonly Extract<
+  keyof Doc<"packagePluginCategorySearchDigest">,
+  keyof Doc<"packageTopicSearchDigest">
+>[];
 
 export type PackageSearchDigestFields = Pick<Doc<"packages">, (typeof SHARED_KEYS)[number]> & {
   packageId: Id<"packages">;
@@ -102,14 +76,14 @@ export type PackageSearchDigestFields = Pick<Doc<"packages">, (typeof SHARED_KEY
 
 type PackagePluginCategorySearchDigestFields = Pick<
   PackageSearchDigestFields,
-  (typeof PLUGIN_CATEGORY_SHARED_KEYS)[number]
+  (typeof FACET_SHARED_KEYS)[number]
 > & {
   pluginCategory: string;
 };
 
 type PackageTopicSearchDigestFields = Pick<
   PackageSearchDigestFields,
-  (typeof TOPIC_SHARED_KEYS)[number]
+  (typeof FACET_SHARED_KEYS)[number]
 > & {
   topic: string;
 };
@@ -170,7 +144,7 @@ async function syncPackagePluginCategorySearchDigests(
   const nextByCategory = new Map<string, PackagePluginCategorySearchDigestFields>();
   for (const pluginCategory of categories) {
     nextByCategory.set(pluginCategory, {
-      ...pick(fields, [...PLUGIN_CATEGORY_SHARED_KEYS]),
+      ...pick(fields, [...FACET_SHARED_KEYS]),
       pluginCategory,
     });
   }
@@ -204,7 +178,7 @@ async function syncPackageTopicSearchDigests(
   const nextByTopic = new Map<string, PackageTopicSearchDigestFields>();
   for (const topic of topics) {
     nextByTopic.set(topic, {
-      ...pick(fields, [...TOPIC_SHARED_KEYS]),
+      ...pick(fields, [...FACET_SHARED_KEYS]),
       topic,
     });
   }
