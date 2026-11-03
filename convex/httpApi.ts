@@ -10,10 +10,9 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { httpAction } from "./functions";
-import { ambiguousSkillSlugMessage } from "./httpApiV1/shared";
+import { ambiguousSkillSlugMessage, json, text, toOptionalNumber } from "./httpApiV1/shared";
 import { requireApiTokenUser, requirePackagePublishAuth } from "./lib/apiTokenAuth";
 import { serializeCanonicalSkillSearchResults } from "./lib/canonicalSkillSearchResponse";
-import { corsHeaders, mergeHeaders } from "./lib/httpHeaders";
 import { applyRateLimit } from "./lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "./lib/httpUtils";
 import { publishVersionForUser } from "./skills";
@@ -404,44 +403,10 @@ async function cliDeviceTokenHandler(ctx: ActionCtx, request: Request) {
 
 export const cliDeviceTokenHttp = httpAction(cliDeviceTokenHandler);
 
-function json(value: unknown, status = 200, headers?: HeadersInit) {
-  return new Response(JSON.stringify(value), {
-    status,
-    headers: mergeHeaders(
-      {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-      },
-      headers,
-      corsHeaders(),
-    ),
-  });
-}
-
-function text(value: string, status: number, headers?: HeadersInit) {
-  return new Response(value, {
-    status,
-    headers: mergeHeaders(
-      {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-store",
-      },
-      headers,
-      corsHeaders(),
-    ),
-  });
-}
-
 function formatAuthFailure(error: unknown) {
   const message = error instanceof Error ? error.message.trim() : "";
   if (!message || /^unauthorized$/i.test(message)) return "Unauthorized";
   return message.replace(/^ConvexError:\s*/i, "").trim() || "Unauthorized";
-}
-
-function toOptionalNumber(value: string | null) {
-  if (!value) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function parsePublishBody(body: unknown) {
