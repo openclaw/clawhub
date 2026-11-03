@@ -8,10 +8,14 @@ The `CI` workflow runs the non-browser gates as independent jobs so their wall
 times overlap and each required check reports its own failure:
 
 - `static` runs peer dependency validation, dependency audit, formatting, lint,
-  and dead-code checks.
+  and dead-code checks. It uses a single-commit checkout because these checks
+  inspect the current tree and installed packages, not Git history.
 - `unit` runs the Vitest coverage suite. This replaces a separate `test` run
   because coverage already executes the test suite.
 - `packages` builds `packages/schema` and verifies the ClawHub CLI package.
+- CLI source and artifact tests belong to `ci:packages`. Root unit coverage
+  excludes both CLI workspaces so their source tests run once, using each
+  package's Node environment instead of also running under root jsdom.
 - `types-build` typechecks the app, schema package, and CLI package, then builds
   the app.
 - `e2e-http` runs the secretless HTTP and CLI end-to-end subset.
@@ -47,6 +51,11 @@ exact-key miss. There are no fallback keys or cached installed workspaces.
   The runner seeds the existing local skills.sh mirror fixture for the
   profile-context shard's metadata layout checks, so those assertions do not
   depend on the availability of a live public skill.
+
+Browser jobs cache downloads by the installed `playwright-core` version, runner
+OS, and architecture. Unrelated Bun lockfile updates reuse those downloads.
+There is no fallback across Playwright versions; `playwright install chromium`
+still runs on every job to validate and install the requested browser revision.
 
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 covers the non-browser PR gates. Linux CI uses pinned tsrs for the root typecheck;

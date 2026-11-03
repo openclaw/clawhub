@@ -29,11 +29,3 @@ export function getRequiredRuntimeEnv(name: string) {
   if (value) return value;
   throw new Error(`Missing required environment variable: ${name}`);
 }
-
-export function isDevRuntime() {
-  const nodeEnv = readProcessEnv("NODE_ENV");
-  if (nodeEnv) {
-    return nodeEnv !== "production";
-  }
-  return import.meta.env.DEV;
-}
