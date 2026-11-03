@@ -557,7 +557,7 @@ function diagnosticFingerprint(value: string | Buffer | null | undefined) {
   };
 }
 
-function completionDeliveryDiagnostic(error: unknown) {
+function backendFailureDiagnostic(error: unknown) {
   let message: string | undefined;
   let safeError = "";
   try {
@@ -565,7 +565,7 @@ function completionDeliveryDiagnostic(error: unknown) {
     message = typeof rawMessage === "string" ? rawMessage : undefined;
     safeError = message && message.length <= 4_096 ? publicText(message, 4_096) : "";
   } catch {
-    // A diagnostic must not replace the original completion failure.
+    // A diagnostic must not replace the original worker failure.
   }
   const errorClass = /TooManyWrites|CommitterFullError|Too many writes in a short period/i.test(
     safeError,
@@ -819,7 +819,7 @@ export async function processPrePublicationAttempt(
       logger.warn(
         {
           attemptId: attempt.attemptId,
-          completionError: completionDeliveryDiagnostic(error),
+          completionError: backendFailureDiagnostic(error),
           event: "prepublication_attempt_finalization_retry_failed",
           kind: attempt.kind,
         },
@@ -952,7 +952,7 @@ export async function processPrePublicationAttempt(
       logger.error(
         {
           attemptId: attempt.attemptId,
-          completionError: completionDeliveryDiagnostic(error),
+          completionError: backendFailureDiagnostic(error),
           durationMs: Date.now() - startedAt,
           event: "prepublication_attempt_secret_block_completion_failed",
           kind: attempt.kind,
@@ -965,7 +965,7 @@ export async function processPrePublicationAttempt(
       logger.warn(
         {
           attemptId: attempt.attemptId,
-          completionError: completionDeliveryDiagnostic(error),
+          completionError: backendFailureDiagnostic(error),
           durationMs: Date.now() - startedAt,
           event: "prepublication_attempt_completion_failed",
           kind: attempt.kind,
@@ -985,7 +985,7 @@ export async function processPrePublicationAttempt(
       logger.warn(
         {
           attemptId: attempt.attemptId,
-          completionError: completionDeliveryDiagnostic(completionError),
+          completionError: backendFailureDiagnostic(completionError),
           durationMs: Date.now() - startedAt,
           event: "prepublication_attempt_failure_record_failed",
           kind: attempt.kind,
@@ -1066,7 +1066,7 @@ export async function claimPrePublicationBatch(
     }
     failures.push(claim.reason);
     logger.warn(
-      { event: "prepublication_claim_failed" },
+      { event: "prepublication_claim_failed", claimError: backendFailureDiagnostic(claim.reason) },
       "pre-publication claim failed; continuing with successful claims",
     );
   }
