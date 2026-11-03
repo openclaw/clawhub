@@ -407,7 +407,6 @@ a.card:hover,
 a.skill-card:hover,
 a.skill-list-item:hover,
 a.home-quick-link:hover,
-a.home-v2-trend-card:hover,
 a.dashboard-import-banner-action:hover {
   text-decoration: none;
 }
@@ -20679,11 +20678,6 @@ a.search-empty-action {
   color: var(--hv2-text);
   outline: none;
 }
-
-/* ═══ TRENDING ═══ */
-.home-v2-trending-section {
-  padding: 48px 48px 80px;
-}
 .home-v2-discovery-section {
   padding: 48px 48px 80px;
   border-top: 1px solid var(--hv2-border);
@@ -20740,98 +20734,6 @@ a.search-empty-action {
 }
 .home-v2-section-link:hover {
   color: var(--hv2-text);
-}
-.home-v2-trending-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-.home-v2-trending-grid-stack {
-  grid-template-columns: 1fr;
-  gap: 14px;
-}
-.home-v2-trend-card {
-  background: var(--hv2-surface);
-  border: 1px solid var(--hv2-border);
-  border-radius: var(--hv2-radius-lg);
-  padding: 24px;
-  transition:
-    border-color 0.2s,
-    transform 0.2s,
-    box-shadow 0.25s,
-    background 0.2s;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  text-decoration: none;
-  color: inherit;
-}
-.home-v2-trend-card:hover {
-  border-color: var(--hv2-border-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  background: var(--hv2-surface-hover);
-}
-.home-v2-trend-head {
-  margin-bottom: 12px;
-}
-.home-v2-trend-title {
-  font-weight: 600;
-  font-size: 17px;
-  color: var(--hv2-text);
-  margin-bottom: 4px;
-}
-.home-v2-trend-creator {
-  font-size: 14px;
-  color: var(--hv2-text-secondary);
-}
-.home-v2-trend-desc {
-  font-size: 13px;
-  color: var(--hv2-text-secondary);
-  line-height: 1.55;
-  flex: 1;
-  margin-bottom: 20px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.home-v2-trend-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.home-v2-trend-signals {
-  display: flex;
-  gap: 14px;
-  font-size: 12px;
-  color: var(--hv2-text-secondary);
-  font-weight: 500;
-}
-.home-v2-trend-signals span {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.home-v2-trend-install {
-  background: var(--hv2-green-fill);
-  border: 1.5px solid var(--hv2-green-border);
-  border-radius: var(--hv2-radius-sm);
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--hv2-green);
-  cursor: pointer;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.home-v2-trend-card:hover .home-v2-trend-install {
-  background: var(--hv2-green-fill-hover);
-  border-color: var(--hv2-green-border-hover);
 }
 
 .site-footer-v2 {
@@ -22063,14 +21965,6 @@ a.search-empty-action {
   line-height: 1.6;
   color: var(--hv2-text-secondary);
   max-width: 60ch;
-}
-@keyframes home-v2-scroll {
-  0% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(calc(-50% - 8px));
-  }
 }
 
 @media (max-width: 760px) {
@@ -23686,9 +23580,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   .home-v2-discovery-grid {
     grid-template-columns: 1fr;
   }
-  .home-v2-trending-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 @media (max-width: 900px) {
   .home-v2-headline {
@@ -23705,9 +23596,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   .home-v2-section-header-stack {
     align-items: flex-start;
     flex-direction: column;
-  }
-  .home-v2-trending-grid {
-    grid-template-columns: 1fr;
   }
   .home-v2-listing {
     padding: 0 20px 64px;
@@ -23858,9 +23746,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   .home-v2-discovery-section {
     padding: 36px 20px 60px;
   }
-  .home-v2-trending-section {
-    padding: 36px 20px 60px;
-  }
   .home-v2-search-go-label {
     display: none;
   }
@@ -23869,9 +23754,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   }
 }
 .home-v2-section-header {
-  max-width: none;
-}
-.home-v2-trending-grid {
   max-width: none;
 }
 
@@ -23949,23 +23831,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   filter: none;
 }
 
-/* --- INSET SHADOW PATTERN — both modes ---
-   Darker border on outside, warm glow fading inward */
-
-/* Dark mode — cards get subtle warm-dark inner fade */
-.home-v2-trend-card {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    inset 0 0 20px rgba(0, 0, 0, 0.15),
-    0 1px 3px rgba(0, 0, 0, 0.12);
-}
-.home-v2-trend-card:hover {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    inset 0 0 24px rgba(0, 0, 0, 0.2),
-    0 6px 24px rgba(0, 0, 0, 0.22);
-}
-
 /* Dark mode — search bar inner fade */
 .home-v2-search-bar {
   box-shadow:
@@ -23977,22 +23842,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     inset 0 0 20px rgba(0, 0, 0, 0.14),
     0 2px 36px rgba(0, 0, 0, 0.2),
     0 0 0 3px var(--hv2-accent-glow);
-}
-
-/* --- Light-mode inset shadow pattern --- */
-[data-theme-resolved="light"] .home-v2-trend-card {
-  background: var(--hv2-surface);
-  border-color: var(--hv2-border-strong);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 1px 3px rgba(0, 0, 0, 0.05);
-}
-[data-theme-resolved="light"] .home-v2-trend-card:hover {
-  border-color: var(--hv2-border-hover);
-  background: var(--hv2-surface-hover);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    0 4px 14px rgba(0, 0, 0, 0.06);
 }
 
 /* Light — search bar */
@@ -24027,44 +23876,9 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   border-color: rgba(196, 58, 47, 0.4);
   box-shadow: 0 0 20px rgba(196, 58, 47, 0.06);
 }
-
-/* Light — install buttons (green) */
-[data-theme-resolved="light"] .home-v2-trend-install {
-  background: rgba(45, 138, 72, 0.05);
-  border-color: rgba(45, 138, 72, 0.2);
-  color: #2d8a48;
-  box-shadow: inset 0 0 8px rgba(45, 138, 72, 0.03);
-}
-[data-theme-resolved="light"] .home-v2-trend-card:hover .home-v2-trend-install {
-  background: rgba(45, 138, 72, 0.09);
-  border-color: rgba(45, 138, 72, 0.32);
-}
-
-/* Light — trending section */
-[data-theme-resolved="light"] .home-v2-trending-section {
-  background: var(--hv2-bg);
-  border-top: 1px solid var(--hv2-border);
-}
 [data-theme-resolved="light"] .home-v2-discovery-section {
   background: var(--hv2-bg);
   border-top-color: var(--hv2-border);
-}
-
-/* ═══ DARK MODE — Enhanced inset pattern ═══ */
-/* Strengthen the darker-outline-fading-inward on dark cards too */
-[data-theme-resolved="dark"] .home-v2-trend-card {
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    inset 0 0 28px rgba(0, 0, 0, 0.2),
-    0 1px 4px rgba(0, 0, 0, 0.18);
-}
-[data-theme-resolved="dark"] .home-v2-trend-card:hover {
-  border-color: rgba(255, 255, 255, 0.15);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    inset 0 0 32px rgba(0, 0, 0, 0.25),
-    0 6px 28px rgba(0, 0, 0, 0.28);
 }
 
 /* Dark — search inset */
@@ -24078,11 +23892,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     inset 0 0 24px rgba(0, 0, 0, 0.22),
     0 2px 36px rgba(0, 0, 0, 0.25),
     0 0 0 3px var(--hv2-accent-glow);
-}
-
-/* Dark — install buttons */
-[data-theme-resolved="dark"] .home-v2-trend-install {
-  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
 /* Home surfaces inherit geometry from the canonical design system. */
@@ -24213,7 +24022,6 @@ a[class*="rounded-full"] {
 }
 
 /* Home v2 install buttons — match system */
-.home-v2-trend-install,
 .home-v2-search-go {
   border-radius: var(--r-btn) !important;
 }
