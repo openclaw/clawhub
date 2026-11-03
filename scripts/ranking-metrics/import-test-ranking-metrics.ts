@@ -16,6 +16,7 @@ import {
   type RankingDataset,
   type RankingMetricDay,
   type RankingMetricTarget,
+  stableStringify,
 } from "./rankingDataset";
 
 type Mode = "import" | "readback" | "cleanup" | "rollback";
@@ -265,7 +266,7 @@ export async function readCurrentTestMetadata(snapshot: string) {
     ) {
       appendMapValue(
         packagesByIdentity,
-        packageIdentity(row.normalizedName, row.family, row.channel),
+        packageTargetIdentity(row.normalizedName, row.family, row.channel),
         match,
       );
     }
@@ -294,7 +295,7 @@ export function resolveTargets(
       }
       const matches =
         current.packagesByIdentity.get(
-          packageIdentity(target.normalizedName, target.family, target.channel),
+          packageTargetIdentity(target.normalizedName, target.family, target.channel),
         ) ?? [];
       if (matches.length > 1) {
         throw new Error(
@@ -344,10 +345,6 @@ function snapshotCreatedAt(row: Record<string, unknown>) {
   return typeof creationTime === "number" && Number.isFinite(creationTime) && creationTime >= 0
     ? Math.floor(creationTime)
     : null;
-}
-
-function packageIdentity(normalizedName: string, family: string, channel: string) {
-  return packageTargetIdentity(normalizedName, family, channel);
 }
 
 function appendMapValue<Key, Value>(map: Map<Key, Value[]>, key: Key, value: Value) {
@@ -693,17 +690,6 @@ async function logicalDigestSnapshotTable(snapshot: string, table: RankingTable)
     sum = (sum + rowHash) & mask;
   }
   return `${count}:${xor.toString(16).padStart(64, "0")}:${sum.toString(16).padStart(64, "0")}`;
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  if (isRecord(value)) {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 async function recordRollbackSourceState(
