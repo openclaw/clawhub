@@ -7,7 +7,7 @@ import {
 import registry from "./diagnostic-capture/fixed-originals.json";
 
 export const FIXED_SKILL_REGISTRY_SHA256 =
-  "3c9e7043b24b5550d267d681477e42e1306b410a57ae8c3c654032b1edd4fabe";
+  "da4a721fe5cfc70db4d5328b8a08b6349052ce363615e363f7d0930a65555b30";
 
 export function validateFixedSkillRegistry(value: unknown) {
   if (
