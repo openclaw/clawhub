@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import type { TemplateManifest } from "clawhub-schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applicationReasoning } from "./applicationModelPolicy";
