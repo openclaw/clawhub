@@ -41,7 +41,7 @@
     "@openclaw/plugin-inspector": "0.4.5",
     "arktype": "2.2.9",
     "commander": "15.0.0",
-    "croner": "10.0.1",
+    "croner": "11.0.0",
     "fflate": "0.8.3",
     "ignore": "7.0.14",
     "json5": "2.2.3",
