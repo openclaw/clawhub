@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-import { readFile, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { Command } from "commander";
-import { resolveClawdbotDefaultWorkspace } from "../../clawhub/src/cli/clawdbotConfig.js";
 import { cmdLoginFlow, cmdLogout, cmdWhoami } from "../../clawhub/src/cli/commands/auth.js";
 import { cmdUnhideSkill } from "../../clawhub/src/cli/commands/delete.js";
 import {
@@ -14,12 +13,12 @@ import {
   cmdListSkillReports,
   cmdTriageSkillReport,
 } from "../../clawhub/src/cli/commands/skills.js";
+import { resolveGlobalOpts as resolveGlobalOptsFromOptions } from "../../clawhub/src/cli/globalOpts.js";
 import {
   configureCommanderHelp,
   styleEnvBlock,
   styleTitle,
 } from "../../clawhub/src/cli/helpStyle.js";
-import { DEFAULT_REGISTRY, DEFAULT_SITE } from "../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../clawhub/src/cli/types.js";
 import { fail } from "../../clawhub/src/cli/ui.js";
 import { getAdminCliBuildLabel, getAdminCliVersion } from "./buildInfo.js";
@@ -114,58 +113,12 @@ async function resolveGlobalOpts(): Promise<GlobalOpts> {
     site?: string;
     registry?: string;
   }>();
-  const workdir = await resolveWorkdir(raw.workdir);
-  const dir = resolve(workdir, raw.dir ?? "skills");
-  const site = raw.site ?? process.env.CLAWHUB_SITE ?? process.env.CLAWDHUB_SITE ?? DEFAULT_SITE;
-  const registrySource = raw.registry
-    ? "cli"
-    : process.env.CLAWHUB_REGISTRY || process.env.CLAWDHUB_REGISTRY
-      ? "env"
-      : "default";
-  const registry =
-    raw.registry ??
-    process.env.CLAWHUB_REGISTRY ??
-    process.env.CLAWDHUB_REGISTRY ??
-    DEFAULT_REGISTRY;
-  return { workdir, dir, site, registry, registrySource };
+  return resolveGlobalOptsFromOptions(raw);
 }
 
 function isInputAllowed() {
   const globalFlags = program.opts<{ input?: boolean }>();
   return globalFlags.input !== false;
-}
-
-async function resolveWorkdir(explicit?: string) {
-  if (explicit?.trim()) return resolve(explicit.trim());
-  const envWorkdir = process.env.CLAWHUB_WORKDIR?.trim() ?? process.env.CLAWDHUB_WORKDIR?.trim();
-  if (envWorkdir) return resolve(envWorkdir);
-
-  const cwd = resolve(process.cwd());
-  const hasMarker = await hasClawhubMarker(cwd);
-  if (hasMarker) return cwd;
-
-  const clawdbotWorkspace = await resolveClawdbotDefaultWorkspace();
-  return clawdbotWorkspace ? resolve(clawdbotWorkspace) : cwd;
-}
-
-async function hasClawhubMarker(workdir: string) {
-  const lockfile = join(workdir, ".clawhub", "lock.json");
-  if (await pathExists(lockfile)) return true;
-  const markerDir = join(workdir, ".clawhub");
-  if (await pathExists(markerDir)) return true;
-  const legacyLockfile = join(workdir, ".clawdhub", "lock.json");
-  if (await pathExists(legacyLockfile)) return true;
-  const legacyMarkerDir = join(workdir, ".clawdhub");
-  return pathExists(legacyMarkerDir);
-}
-
-async function pathExists(path: string) {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 program
