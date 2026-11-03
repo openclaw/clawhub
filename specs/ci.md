@@ -59,8 +59,8 @@ Every local-auth spec must appear in the PR matrix. When several shards split a
 spec with `grep`, their combined patterns must cover every test title, including
 the pre-publication security checks. The selection guard uses Playwright discovery
 to compare unfiltered tests with the combined filters, including parameterized
-titles and describe groups, without starting a backend. Keep the exact-artifact and official-feed
-boundary cases in the isolated template shard.
+titles and describe groups, without starting a backend. Keep the exact-artifact
+and official-feed boundary cases in the isolated template shard.
 
 Browser jobs cache downloads by the installed `playwright-core` version, runner
 OS, and architecture. Unrelated Bun lockfile updates reuse those downloads.

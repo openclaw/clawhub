@@ -57,7 +57,7 @@ function discoverTests(spec: string, grep?: string) {
 
 describe("local-auth CI selection", () => {
   it("maps every local-auth spec to a PR CI shard", () => {
-    const files = readdirSync(join(root, "e2e/local-auth"), { recursive: true })
+    const files = readdirSync(join(root, "e2e/local-auth"), { recursive: true, encoding: "utf8" })
       .filter((path) => path.endsWith(".pw.test.ts"))
       .map((path) => "e2e/local-auth/" + path.replaceAll("\\", "/"));
     expect([...new Set(shards.flatMap(specsFor))].sort()).toEqual(files.sort());

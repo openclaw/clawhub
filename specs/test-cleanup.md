@@ -107,6 +107,9 @@ missing lifecycle cases (6/9 selected). Real local-auth profile-context (13 case
 template-artifact, and publish-security groups passed in Crabbox. `ci:static`,
 `ci:types:packages`, and `ci:unit` passed (654 files, 8,830 tests; coverage thresholds
 met). Independent P0-P3 diff review: scoped-clean. Base: `46c2e763`.
+Follow-up: explicit UTF-8 directory encoding fixes string/Buffer type inference
+with the existing runtime default. Both guard cases, Linux tsrs, native TypeScript,
+package types, build, and static checks passed.
 CLI/schema cleanup landed: https://github.com/openclaw/clawhub/pull/4276.
 
 ## Next slices
