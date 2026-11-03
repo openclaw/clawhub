@@ -279,6 +279,7 @@ export async function mainFixedOriginalDiagnostic(fixture: "038" | "079" = "038"
     const assessment = await diagnosticArtifactMetadata(
       join(evidence, "clawscan-result.json"),
       true,
+      fixture === "079" ? "fixed-original079" : undefined,
     );
     diagnosticPassed = original038DiagnosticPassed({
       captureComplete,
