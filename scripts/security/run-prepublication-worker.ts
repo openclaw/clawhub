@@ -7,6 +7,11 @@ import { pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import {
+  MAX_PREPUBLICATION_REPORT_BYTES,
+  prepublicationReportSchema,
+  type PrepublicationReport,
+} from "../../convex/lib/prepublicationReports";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskKnownWorkerSecrets,
@@ -50,6 +55,7 @@ type ClaimedPrePublicationAttempt = {
     contentType?: string;
   }>;
   clawpackUrl?: string | null;
+  prepublicationReportUploadUrl?: string | null;
   scanContext?: {
     trustedOpenClawPlugin?: boolean;
     skill?: Record<string, unknown>;
@@ -94,12 +100,15 @@ type ClawScanResult = {
   skillSpectorAnalysis?: SkillSpectorAnalysis;
 };
 
+type NativeExecutionReport = PrepublicationReport["execution"];
+
 type ProcessAttemptDeps = {
   onExposure?: (exposure: ClawScanExposure) => void;
   runClawScan?: (
     job: ClaimedJob,
     workspace: string,
     onExposure?: (exposure: ClawScanExposure) => void,
+    onExecutionReport?: (report: NativeExecutionReport) => Promise<void>,
   ) => Promise<ClawScanResult>;
   runTruffleHog?: (workspace: string) => Promise<TruffleHogResult>;
   writeWorkspace?: (job: ClaimedJob, workspace: string) => Promise<void>;
@@ -293,7 +302,12 @@ function parseTruffleHogFindings(stdout: string) {
 async function runCommand(
   command: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
+  options: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    timeoutMs: number;
+    onOutput?: (output: { code: number | null; stdout: string; stderr: string }) => void;
+  },
 ) {
   return await new Promise<{ code: number | null; stdout: string; stderr: string }>(
     (resolvePromise, reject) => {
@@ -334,12 +348,14 @@ async function runCommand(
         clearTimeout(timeout);
         if (timedOut) killProcessTree("SIGKILL");
         if (forceKillTimeout) clearTimeout(forceKillTimeout);
+        options.onOutput?.({ code: null, stdout, stderr });
         reject(error);
       });
       child.on("close", (code) => {
         clearTimeout(timeout);
         if (timedOut) killProcessTree("SIGKILL");
         if (forceKillTimeout) clearTimeout(forceKillTimeout);
+        options.onOutput?.({ code, stdout, stderr });
         if (timedOut) {
           reject(new Error(`${command} timed out`));
           return;
@@ -640,6 +656,7 @@ export async function runNativeClawScan(
   job: ClaimedJob,
   workspace: string,
   onExposure?: (exposure: ClawScanExposure) => void,
+  onExecutionReport?: (report: NativeExecutionReport) => Promise<void>,
 ): Promise<ClawScanResult> {
   const artifactPath = join(workspace, "clawscan-result.json");
   const target = await resolveClawScanTarget(workspace, job);
@@ -657,82 +674,140 @@ export async function runNativeClawScan(
 
   onExposure?.(clawScanExposure());
   const startedAt = Date.now();
-  const output = await runCommand(command, args, {
-    cwd: workspace,
-    env: {
-      ...restrictedChildEnvironment(workspace),
-      ...securityScannerEnvironment(process.env),
-    },
-    timeoutMs: clawScanTimeoutMs(),
-  });
-  const durationMs = Date.now() - startedAt;
-  let artifact: unknown;
+  let output: { code: number | null; stdout: string; stderr: string } | undefined;
   let artifactBytes: Buffer | undefined;
   let artifactPresence: "missing" | "unreadable" | "malformed" | "invalid_schema" | "present" =
     "missing";
+  let failure: NativeExecutionReport["failure"] = null;
   try {
-    artifactBytes = await readFile(artifactPath);
-    artifactPresence = "malformed";
-    artifact = JSON.parse(artifactBytes.toString("utf8"));
-    const root = asRecord(artifact);
-    artifactPresence =
-      root?.schemaVersion === "clawscan-run-v1" && root.profile === "clawhub"
-        ? "present"
-        : "invalid_schema";
-  } catch (error) {
-    if (!artifactBytes)
+    output = await runCommand(command, args, {
+      cwd: workspace,
+      env: {
+        ...restrictedChildEnvironment(workspace),
+        ...securityScannerEnvironment(process.env),
+      },
+      timeoutMs: clawScanTimeoutMs(),
+      onOutput: (captured) => {
+        output = captured;
+      },
+    });
+    const durationMs = Date.now() - startedAt;
+    let artifact: unknown;
+    try {
+      artifactBytes = await readFile(artifactPath);
+      artifactPresence = "malformed";
+      artifact = JSON.parse(artifactBytes.toString("utf8"));
+      const root = asRecord(artifact);
       artifactPresence =
-        (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable";
-    artifact = undefined;
-  }
-  onExposure?.(clawScanExposure(artifact));
-  const logFailureDiagnostic = () => {
-    const root = artifactPresence === "present" ? asRecord(artifact) : undefined;
-    const scanners = asRecord(root?.scanners);
-    const scanner = asRecord(scanners?.skillspector);
-    logger.info(
-      {
-        attemptId: String(job.job._id),
-        event: "prepublication_clawscan_failure_diagnostic",
-        exitCode: output.code,
-        durationMs,
-        artifact: { ...diagnosticFingerprint(artifactBytes), presence: artifactPresence },
-        scanners: Object.fromEntries(
-          REQUIRED_SKILL_SCANNERS.map((name) => [name, nativeScannerDiagnostic(scanners?.[name])]),
-        ),
-        ...(root ? { skillSpector: projectSkillSpectorReport(scanner?.raw) } : {}),
-      },
-      "pre-publication scanner completeness diagnostic",
-    );
-  };
-  if (output.code !== 0) {
-    logFailureDiagnostic();
-    return {
-      check: {
-        status: "failed",
-        summary: publicText(
-          `ClawScan failed before returning a verdict: ${output.stderr || output.stdout}`,
-        ),
-      },
+        root?.schemaVersion === "clawscan-run-v1" && root.profile === "clawhub"
+          ? "present"
+          : "invalid_schema";
+    } catch (error) {
+      if (!artifactBytes)
+        artifactPresence =
+          (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable";
+      artifact = undefined;
+    }
+    onExposure?.(clawScanExposure(artifact));
+    const logFailureDiagnostic = () => {
+      const root = artifactPresence === "present" ? asRecord(artifact) : undefined;
+      const scanners = asRecord(root?.scanners);
+      const scanner = asRecord(scanners?.skillspector);
+      logger.info(
+        {
+          attemptId: String(job.job._id),
+          event: "prepublication_clawscan_failure_diagnostic",
+          exitCode: output?.code ?? null,
+          durationMs,
+          artifact: { ...diagnosticFingerprint(artifactBytes), presence: artifactPresence },
+          scanners: Object.fromEntries(
+            REQUIRED_SKILL_SCANNERS.map((name) => [
+              name,
+              nativeScannerDiagnostic(scanners?.[name]),
+            ]),
+          ),
+          ...(root ? { skillSpector: projectSkillSpectorReport(scanner?.raw) } : {}),
+        },
+        "pre-publication scanner completeness diagnostic",
+      );
     };
-  }
+    if (output.code !== 0) {
+      logFailureDiagnostic();
+      return {
+        check: {
+          status: "failed",
+          summary: publicText(
+            `ClawScan failed before returning a verdict: ${output.stderr || output.stdout}`,
+          ),
+        },
+      };
+    }
 
-  const parsed = storedAnalysisFromClawScanArtifact(artifact, job.job.targetKind);
-  if (parsed.error || !parsed.analysis) {
-    logFailureDiagnostic();
+    const parsed = storedAnalysisFromClawScanArtifact(artifact, job.job.targetKind);
+    if (parsed.error || !parsed.analysis) {
+      logFailureDiagnostic();
+      return {
+        check: {
+          status: "failed",
+          summary: publicText(parsed.error ?? "ClawScan did not return a usable result."),
+        },
+      };
+    }
     return {
-      check: {
-        status: "failed",
-        summary: publicText(parsed.error ?? "ClawScan did not return a usable result."),
-      },
+      analysis: parsed.analysis,
+      aigAnalysis: parsed.aigAnalysis,
+      skillSpectorAnalysis: parsed.skillSpectorAnalysis,
+      check: clawScanCheckResult(parsed.analysis),
     };
+  } catch (error) {
+    failure =
+      error instanceof Error
+        ? { name: error.name, message: error.message }
+        : { name: "UnknownError", message: String(error) };
+    throw error;
+  } finally {
+    if (onExecutionReport) {
+      try {
+        // Keep failed/malformed output too; the caller stores it privately before cleanup.
+        if (!artifactBytes) {
+          artifactBytes = await readFile(artifactPath).catch(() => undefined);
+          if (artifactBytes) {
+            artifactPresence = "malformed";
+            try {
+              const root = asRecord(JSON.parse(artifactBytes.toString("utf8")));
+              artifactPresence =
+                root?.schemaVersion === "clawscan-run-v1" && root.profile === "clawhub"
+                  ? "present"
+                  : "invalid_schema";
+            } catch {
+              /* Retain malformed bytes without inventing a parsed report. */
+            }
+          }
+        }
+        await onExecutionReport({
+          startedAt,
+          completedAt: Date.now(),
+          exitCode: output?.code ?? null,
+          stdout: output?.stdout ?? "",
+          stderr: output?.stderr ?? "",
+          failure,
+          artifact: {
+            presence: artifactPresence,
+            encoding: "base64",
+            content: artifactBytes?.toString("base64") ?? null,
+            bytes: artifactBytes?.byteLength ?? null,
+            sha256: artifactBytes ? createHash("sha256").update(artifactBytes).digest("hex") : null,
+          },
+        });
+      } catch {
+        // Evidence capture must not replace the scanner outcome or expose private text.
+        logger.warn(
+          { event: "prepublication_report_capture_failed", attemptId: String(job.job._id) },
+          "Pre-publication execution evidence could not be captured",
+        );
+      }
+    }
   }
-  return {
-    analysis: parsed.analysis,
-    aigAnalysis: parsed.aigAnalysis,
-    skillSpectorAnalysis: parsed.skillSpectorAnalysis,
-    check: clawScanCheckResult(parsed.analysis),
-  };
 }
 
 function checkResultForConvex(result: WorkerCheckResult): WorkerCheckResult {
@@ -764,6 +839,96 @@ async function completeAttempt(
     ...(aigAnalysis ? { aigAnalysis } : {}),
     ...(skillSpectorAnalysis ? { skillSpectorAnalysis } : {}),
   });
+}
+
+async function retainExecutionReport(
+  token: string,
+  attempt: ClaimedPrePublicationAttempt,
+  execution: NativeExecutionReport,
+  projections: ClawScanResult,
+) {
+  if (!attempt.prepublicationReportUploadUrl) return;
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    const store = async () => {
+      const revision = (value: string | undefined) =>
+        value && /^[a-f0-9]{40}$/.test(value) ? value : null;
+      const numericId = (value: string | undefined) =>
+        value && /^\d+$/.test(value) ? value : null;
+      const clawscanSourceCommit = await readFile(
+        new URL("./clawscan-source-commit.txt", import.meta.url),
+        "utf8",
+      )
+        .then((value) => revision(value.trim()))
+        .catch(() => null);
+      const report = prepublicationReportSchema.parse({
+        schemaVersion: "clawhub-prepublication-execution-v1",
+        attempt: {
+          id: attempt.attemptId,
+          claimId: attempt.claimId,
+          artifactFingerprint: attempt.artifactFingerprint,
+          kind: attempt.kind,
+          slug: attempt.slug,
+          version: attempt.version,
+          files: attempt.files.map(({ path, size, sha256 }) => ({ path, size, sha256 })),
+        },
+        source: {
+          workerId: process.env.PREPUBLICATION_WORKER_ID ?? null,
+          workerRevision: revision(process.env.GITHUB_SHA),
+          githubRunId: numericId(process.env.GITHUB_RUN_ID),
+          githubRunAttempt: numericId(process.env.GITHUB_RUN_ATTEMPT),
+          configuredClawscanSourceCommit: clawscanSourceCommit,
+          nodeVersion: process.version,
+          platform: process.platform,
+          arch: process.arch,
+        },
+        execution,
+        projections,
+      });
+      const body = JSON.stringify(report);
+      if (Buffer.byteLength(body) > MAX_PREPUBLICATION_REPORT_BYTES)
+        throw new Error("Private report exceeds storage limit");
+      const response = await fetch(attempt.prepublicationReportUploadUrl!, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-ClawHub-Attempt-Id": attempt.attemptId,
+          "X-ClawHub-Claim-Id": attempt.claimId,
+          "X-ClawHub-Artifact-Fingerprint": attempt.artifactFingerprint,
+          "X-ClawHub-Report-SHA256": createHash("sha256").update(body).digest("hex"),
+        },
+        body,
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) throw new Error("Private report retention failed");
+      const receipt = asRecord(await response.json());
+      if (typeof receipt?.receiptId !== "string" || !receipt.receiptId)
+        throw new Error("Invalid private report receipt");
+      logger.info(
+        {
+          event: "prepublication_report_retained",
+          attemptId: attempt.attemptId,
+          receiptId: receipt.receiptId,
+        },
+        "Private pre-publication execution evidence retained",
+      );
+    };
+    await Promise.race([
+      store(),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error("Private report retention timed out")), 15_000);
+      }),
+    ]);
+  } catch {
+    // Never log the exception, upload URL, raw report, source or provider text.
+    logger.warn(
+      { event: "prepublication_report_retention_failed", attemptId: attempt.attemptId },
+      "Private execution evidence was not retained; normal checks continue",
+    );
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 export async function processPrePublicationAttempt(
@@ -840,6 +1005,7 @@ export async function processPrePublicationAttempt(
   const runClawScan = deps.runClawScan ?? runNativeClawScan;
   let truffleHogBlocked = false;
   let completionStarted = false;
+  let executionReport: NativeExecutionReport | undefined;
   try {
     const job = buildSyntheticScanJob(attempt);
     await writeWorkspace(job, workspace);
@@ -907,9 +1073,16 @@ export async function processPrePublicationAttempt(
     } else {
       try {
         scanDisposition = "new_scan";
-        const review = await runClawScan(job, workspace, (next) => {
-          exposure = next;
-        });
+        const review = await runClawScan(
+          job,
+          workspace,
+          (next) => {
+            exposure = next;
+          },
+          async (report) => {
+            executionReport = report;
+          },
+        );
         clawscanAnalysis = review.analysis;
         aigAnalysis = review.aigAnalysis;
         skillSpectorAnalysis = review.skillSpectorAnalysis;
@@ -922,6 +1095,14 @@ export async function processPrePublicationAttempt(
       }
     }
 
+    if (executionReport) {
+      await retainExecutionReport(token, attempt, executionReport, {
+        check: clawscan,
+        analysis: clawscanAnalysis,
+        aigAnalysis,
+        skillSpectorAnalysis,
+      });
+    }
     completionStarted = true;
     const result = await completeAttempt(
       client,
