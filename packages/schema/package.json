@@ -39,6 +39,26 @@
     "./rolloutCapabilities": {
       "types": "./dist/rolloutCapabilities.d.ts",
       "default": "./dist/rolloutCapabilities.js"
+    },
+    "./securityAudit": {
+      "types": "./dist/securityAudit.d.ts",
+      "default": "./dist/securityAudit.js"
+    },
+    "./openclawContract": {
+      "types": "./dist/openclawContract.d.ts",
+      "default": "./dist/openclawContract.js"
+    },
+    "./docsLinks": {
+      "types": "./dist/docsLinks.d.ts",
+      "default": "./dist/docsLinks.js"
+    },
+    "./packageNames": {
+      "types": "./dist/packageNames.d.ts",
+      "default": "./dist/packageNames.js"
+    },
+    "./packageUploadLimits": {
+      "types": "./dist/packageUploadLimits.d.ts",
+      "default": "./dist/packageUploadLimits.js"
     }
   },
   "scripts": {

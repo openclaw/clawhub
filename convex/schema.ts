@@ -1,5 +1,5 @@
 import { authTables } from "@convex-dev/auth/server";
-import { createClawManifestSummarySchema } from "clawhub-schema";
+import { createTemplateManifestSummarySchema } from "clawhub-schema";
 import { defineSchema, defineTable } from "convex/server";
 import { type GenericValidator, v } from "convex/values";
 import {
@@ -64,8 +64,9 @@ const skillSpectorIssueValidator = v.object({
   codeSnippet: v.optional(v.string()),
 });
 
-const skillSpectorAnalysisValidator = v.object({
+export const skillSpectorAnalysisValidator = v.object({
   status: v.string(),
+  inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
   score: v.optional(v.number()),
   severity: v.optional(v.string()),
   recommendation: v.optional(v.string()),
@@ -631,6 +632,8 @@ const githubSkillScans = defineTable({
   .index("by_skill_and_content_hash", ["skillId", "contentHash"])
   .index("by_github_source_and_updated_at", ["githubSourceId", "updatedAt"]);
 
+// Live production rows and all derived indexes retain the physical "claw" tag.
+// Public Template names are translated at the package boundary; do not narrow this without a staged data migration.
 const packageFamilyValidator = v.union(
   v.literal("skill"),
   v.literal("code-plugin"),
@@ -776,7 +779,7 @@ export const pluginManifestSummaryValidator = v.object({
   ),
 });
 
-const clawManifestSummaryValidator = createClawManifestSummarySchema<GenericValidator>({
+const clawManifestSummaryValidator = createTemplateManifestSummarySchema<GenericValidator>({
   literalOne: v.literal(1),
   string: v.string(),
   number: v.number(),
@@ -1169,6 +1172,13 @@ const skillSlugAliases = defineTable({
   .index("by_owner_slug", ["ownerUserId", "slug"])
   .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"]);
 
+const operationalPublishRetryValidator = v.object({
+  attemptId: v.id("publishAttempts"),
+  actorUserId: v.id("users"),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+});
+
 const skillVersions = defineTable({
   skillId: v.id("skills"),
   version: v.string(),
@@ -1176,6 +1186,7 @@ const skillVersions = defineTable({
     v.union(v.literal("pending"), v.literal("published"), v.literal("blocked")),
   ),
   publishAttemptId: v.optional(v.id("publishAttempts")),
+  operationalRetry: v.optional(operationalPublishRetryValidator),
   pendingPublication: v.optional(v.any()),
   fingerprint: v.optional(v.string()),
   sourceProvenance: v.optional(
@@ -1383,6 +1394,11 @@ const publishAttempts = defineTable({
   checkClaimExpiresAt: v.optional(v.number()),
   checkClaimLastError: v.optional(v.string()),
   checkFailureCount: v.optional(v.number()),
+  requiredScannerSource: v.optional(v.string()),
+  // Latest scan lease's reported source; retained after completion for attribution.
+  lastScannerSourceClaim: v.optional(
+    v.object({ claimId: v.string(), source: v.string(), claimedAt: v.number() }),
+  ),
   finalizationClaimId: v.optional(v.string()),
   finalizationClaimedAt: v.optional(v.number()),
   finalizationClaimExpiresAt: v.optional(v.number()),
@@ -1771,6 +1787,7 @@ const packages = defineTable({
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
   family: packageFamilyValidator,
+  // Physical historical key: public DTOs expose templateProfilePolicyVersion.
   clawProfilePolicyVersion: v.optional(v.literal(1)),
   channel: packageChannelValidator,
   isOfficial: v.boolean(),
@@ -1906,11 +1923,14 @@ const packages = defineTable({
 
 const packageReleases = defineTable({
   packageId: v.id("packages"),
+  // Immutable admitted plugin family; absent legacy releases use their parent.
+  pluginFamily: v.optional(v.union(v.literal("code-plugin"), v.literal("bundle-plugin"))),
   version: v.string(),
   publicationStatus: v.optional(
     v.union(v.literal("pending"), v.literal("published"), v.literal("blocked")),
   ),
   publishAttemptId: v.optional(v.id("publishAttempts")),
+  operationalRetry: v.optional(operationalPublishRetryValidator),
   pendingPublication: v.optional(v.any()),
   changelog: v.string(),
   summary: v.optional(v.string()),
@@ -1934,6 +1954,7 @@ const packageReleases = defineTable({
   manifestSearchTerms: v.optional(v.array(v.string())),
   pluginManifestSummary: v.optional(pluginManifestSummaryValidator),
   categoryClassification: v.optional(pluginCategoryClassificationValidator),
+  // Preserve published releases and immutable archive lineage; expose templateManifestSummary on the wire.
   clawManifestSummary: v.optional(clawManifestSummaryValidator),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
@@ -2245,6 +2266,12 @@ const skillEvaluationRuns = defineTable({
   updatedAt: v.number(),
 })
   .index("by_skill_content_hash_config_key", ["skillId", "contentHash", "configKey"])
+  .index("by_skill_content_status_completed_at", [
+    "skillId",
+    "contentHash",
+    "status",
+    "completedAt",
+  ])
   .index("by_status_next_run_at", ["status", "nextRunAt"])
   .index("by_status_source_next_run_at", ["status", "source", "nextRunAt"])
   .index("by_status_lease_expires_at", ["status", "leaseExpiresAt"]);
@@ -3257,6 +3284,7 @@ const catalogFeedPublications = defineTable({
   payload: v.string(),
   payloadSha256: v.string(),
   publishedAt: v.number(),
+  // Historical storage markers also exist on published empty snapshots. Keep their physical names.
   clawPolicyVersion: v.optional(v.literal(1)),
   clawEntryCount: v.optional(v.number()),
   clawPublisherId: v.optional(v.id("publishers")),
@@ -4795,7 +4823,7 @@ export default defineSchema({
   vtScanLogs,
   apiTokens,
   cliDeviceCodes,
-  httpRateLimitKeys,
+  httpRateLimitKeysV2: httpRateLimitKeys,
   downloadMetricDedupes,
   packageInstallMetricDedupes,
   installTelemetryDedupes,

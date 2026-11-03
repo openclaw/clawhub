@@ -16,7 +16,7 @@ import { isMacJunkPath } from "../lib/skills";
 import type { PublicSkillVersionSelection } from "../lib/skills/publicVersions";
 export { getPathSegments, parsePackagePathSegments } from "../lib/httpPathSegments";
 
-export const MAX_RAW_FILE_BYTES = 200 * 1024;
+export { MAX_RAW_FILE_BYTES } from "../lib/storageText";
 const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 
 const SAFE_TEXT_FILE_CSP =
@@ -648,4 +648,16 @@ export function formatAuthzMessage(error: unknown, fallback: "Unauthorized" | "F
   const stripped = cleanUserFacingErrorMessage(message);
   if (!stripped || stripped.toLowerCase() === fallback.toLowerCase()) return fallback;
   return stripped;
+}
+
+/**
+ * Lets the public edge cache anonymous catalog reads briefly. Cached responses
+ * skip the batched public-version checks that dominate database reads.
+ * Requests with credentials are never marked cacheable.
+ */
+export function anonymousCatalogCacheHeaders(request: Request, headers: HeadersInit): HeadersInit {
+  if (request.headers.has("authorization") || request.headers.has("cookie")) return headers;
+  return mergeHeaders(headers, {
+    "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+  });
 }

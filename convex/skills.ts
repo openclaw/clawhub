@@ -6,9 +6,9 @@ import {
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
-  normalizeContentType,
   resolveSkillCategories,
   resolveStoredSkillCategories,
+  type ApiV1SkillPublicationResponse,
   type SkillCategorySlug,
 } from "clawhub-schema";
 import { getPage, type IndexKey, paginator } from "convex-helpers/server/pagination";
@@ -17,7 +17,7 @@ import { ConvexError, v, type Value } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   action,
   internalAction,
@@ -30,7 +30,6 @@ import {
   assertAdmin,
   assertModerator,
   getOptionalActiveAuthUserId,
-  getOptionalActiveAuthUserIdFromAction,
   requireUser,
   requireUserFromAction,
 } from "./lib/access";
@@ -90,6 +89,7 @@ import {
   resolvePublicBrowseVersionForSkill,
   shouldExcludeSkillFromPublicBrowse,
 } from "./lib/publicBrowse";
+import { assertOperationalSkillRetryFinalization } from "./lib/publishAttemptOperationalRecovery";
 import {
   assertCanManageOwnedResource,
   canAccessPublisherOwnerScope,
@@ -123,25 +123,34 @@ import {
   type SearchTrustSignals,
 } from "./lib/searchRanking";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
+import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "./lib/skillCards";
 import {
-  selectGeneratedSkillCardFile,
-  selectSkillCardFile,
-  sourceSkillVersionFiles,
-} from "./lib/skillCards";
-import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
+  isPublishedSkillVersion,
+  isPublicSkillVersionAvailableForSkill,
+} from "./lib/skillFileAccess";
+import { canReadSkillVersionFiles } from "./lib/skillFileReadAccess";
+import {
+  resolveSkillBySlugOrAlias,
+  skillSummaryFromSkillVersion,
+  toPublicSkillVersion,
+  getGeneratedSkillCardPublicFile,
+  resolveSkillBySlugOrAliasForOwner,
+  isDirectSkillOwner,
+  readSkillPageBySlug,
+  type PublicSkillVersionParsed,
+} from "./lib/skillPageRead";
 import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
 import {
-  fetchText,
+  readSkillPublicationProgress,
+  readSkillVersionPublicationProgress,
+} from "./lib/skillPublicationProgress";
+import {
   publishVersionForUser,
   queueHighlightedWebhook,
   type SkillPublishResult,
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
-import {
-  getPublicSkillMetadataOwner,
-  readPublicSkillVersion,
-  readPublicSkillVersionSelections,
-} from "./lib/skills/publicVersions";
+import { getPublicSkillMetadataOwner } from "./lib/skills/publicVersions";
 import {
   getSkillBySlugForPublisher,
   getSkillSlugAliasBySlugForPublisher,
@@ -149,7 +158,6 @@ import {
   normalizeSkillSlugKey,
   resolveLegacySkillBySlugOrAlias,
   resolvePublisherByOwnerHandle,
-  type LegacyAmbiguousSkillMatch,
 } from "./lib/skills/slugResolution";
 import {
   computeIsSuspicious,
@@ -168,6 +176,7 @@ import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidat
 import { readCanonicalStat, readPublicDownloads, readSkillMetricSources } from "./lib/skillStats";
 import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
+import { fetchText } from "./lib/storageText";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 import schema from "./schema";
 import { consumeSkillPublishUploads } from "./skillPublishUploads";
@@ -257,6 +266,7 @@ const skillSpectorIssueValidator = v.object({
 
 const skillSpectorAnalysisValidator = v.object({
   status: v.string(),
+  inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
   score: v.optional(v.number()),
   severity: v.optional(v.string()),
   recommendation: v.optional(v.string()),
@@ -557,16 +567,6 @@ function latestVersionSummaryFromSkillVersion(
     description: skillSummaryFromSkillVersion(version),
     clawdis: version.parsed?.clawdis,
   };
-}
-
-function skillSummaryFromSkillVersion(
-  version: Pick<Doc<"skillVersions">, "parsed"> | null | undefined,
-) {
-  const presentationSummary = version?.parsed?.presentation?.summary?.trim();
-  if (presentationSummary) return presentationSummary;
-  return version?.parsed?.frontmatter
-    ? getFrontmatterValue(version.parsed.frontmatter, "description")?.trim() || undefined
-    : undefined;
 }
 
 function skillDisplayNameFromSkillVersion(
@@ -1012,6 +1012,28 @@ function shouldPreserveExistingModerationLock(
   return !isScannerManagedReason(skill.moderationReason);
 }
 
+// Delete, removal, and staff holds must survive a staged publish. The
+// operational retry helper is stricter: it also stops scanner and
+// quality hides, because a retry must not resume a skill held after
+// staging. A normal finalizer still has to publish a corrected version.
+function isPendingSkillFinalizationBlocked(
+  skill: Pick<Doc<"skills">, "softDeletedAt" | "moderationStatus" | "moderationReason">,
+) {
+  if (skill.softDeletedAt || skill.moderationStatus === "removed") return true;
+  if (skill.moderationStatus !== "hidden") return false;
+  const reason = skill.moderationReason;
+  if (
+    reason === "pending.publication" ||
+    reason === "quality.low" ||
+    reason === USER_MODERATION_REASON ||
+    reason === "manual.version_revoked" ||
+    isScannerManagedReason(reason)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function shouldSyncModerationFromLatestVersion(
   skill: Pick<Doc<"skills">, "moderationStatus" | "moderationReason" | "softDeletedAt">,
 ) {
@@ -1304,14 +1326,6 @@ async function releaseExpiredUnpublishedSkillSlug(
     createdAt: now,
   });
   return true;
-}
-
-async function resolveSkillBySlugOrAlias(
-  ctx: Pick<QueryCtx | MutationCtx, "db">,
-  slug: string,
-  options: { includeSoftDeleted?: boolean } = {},
-) {
-  return await resolveLegacySkillBySlugOrAlias(ctx, slug, options);
 }
 
 async function resolveUnambiguousSkillForLegacySlug(
@@ -1819,85 +1833,11 @@ type StaffSkillAuditLogEntry = Doc<"auditLogs"> & {
   actor: ReturnType<typeof toPublicUser> | null;
 };
 
-async function loadPublicSkillReference(ctx: QueryCtx, skillId: Id<"skills"> | null | undefined) {
-  if (!skillId) return null;
-  const skill = await ctx.db.get(skillId);
-  if (!isPublicSkillDoc(skill)) return null;
-
-  const owner = toPublicPublisher(
-    await getOwnerPublisher(ctx, {
-      ownerPublisherId: skill.ownerPublisherId,
-      ownerUserId: skill.ownerUserId,
-    }),
-  );
-  if (!owner) return null;
-
-  return { skill, owner };
-}
-
 type PublicSkillListVersion = Pick<
   Doc<"skillVersions">,
   "_id" | "_creationTime" | "skillId" | "version" | "createdAt" | "changelog" | "changelogSource"
 > & {
   parsed?: PublicSkillVersionParsed;
-};
-
-type PublicSkillVersionParsed = {
-  license?: typeof PLATFORM_SKILL_LICENSE;
-  description?: string;
-  clawdis?: {
-    os?: string[];
-    nix?: {
-      plugin?: boolean;
-      systems?: string[];
-    };
-  };
-};
-
-type PublicSkillVersion = {
-  _id: Id<"skillVersions">;
-  _creationTime?: number;
-  skillId?: Id<"skills">;
-  version: string;
-  fingerprint?: string;
-  changelog?: string;
-  changelogSource?: Doc<"skillVersions">["changelogSource"];
-  files: Array<{
-    path: string;
-    size: number;
-    sha256: string;
-    contentType?: string;
-  }>;
-  parsed?: PublicSkillVersionParsed;
-  createdBy?: Id<"users">;
-  createdAt?: number;
-  softDeletedAt?: number;
-  sha256hash?: string;
-  vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
-  aigAnalysis?: Doc<"skillVersions">["aigAnalysis"];
-  skillSpectorAnalysis?: Doc<"skillVersions">["skillSpectorAnalysis"];
-  llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
-  staticScan?: {
-    status: NonNullable<Doc<"skillVersions">["staticScan"]>["status"];
-    reasonCodes: NonNullable<Doc<"skillVersions">["staticScan"]>["reasonCodes"];
-    findings: Array<{
-      code: string;
-      severity: "info" | "warn" | "critical";
-      file: string;
-      line: number;
-      message: string;
-      evidence: string;
-    }>;
-    summary: NonNullable<Doc<"skillVersions">["staticScan"]>["summary"];
-    engineVersion: NonNullable<Doc<"skillVersions">["staticScan"]>["engineVersion"];
-    checkedAt: NonNullable<Doc<"skillVersions">["staticScan"]>["checkedAt"];
-  };
-  generatedSkillCard?: {
-    path: string;
-    size: number;
-    sha256: string;
-    contentType?: string;
-  } | null;
 };
 
 type ManagementSkillEntry = {
@@ -2103,60 +2043,6 @@ function toPublicSkillListVersion(
   };
 }
 
-function toPublicSkillVersion(
-  version: Doc<"skillVersions"> | null | undefined,
-): PublicSkillVersion | null {
-  if (!version) return null;
-  const description = skillSummaryFromSkillVersion(version);
-  return {
-    _id: version._id,
-    _creationTime: version._creationTime,
-    skillId: version.skillId,
-    version: version.version,
-    fingerprint: version.fingerprint,
-    changelog: version.changelog,
-    changelogSource: version.changelogSource,
-    files: (version.files ?? []).map((file) => ({
-      path: file.path,
-      size: file.size,
-      sha256: file.sha256,
-      contentType: normalizeContentType(file.contentType),
-    })),
-    parsed: version.parsed
-      ? {
-          license: version.parsed.license,
-          ...(description ? { description } : {}),
-          clawdis: version.parsed.clawdis,
-        }
-      : undefined,
-    createdBy: version.createdBy,
-    createdAt: version.createdAt,
-    softDeletedAt: version.softDeletedAt,
-    sha256hash: version.sha256hash,
-    vtAnalysis: version.vtAnalysis,
-    aigAnalysis: version.aigAnalysis,
-    skillSpectorAnalysis: version.skillSpectorAnalysis,
-    llmAnalysis: version.llmAnalysis,
-    staticScan: version.staticScan
-      ? {
-          status: version.staticScan.status,
-          reasonCodes: version.staticScan.reasonCodes,
-          findings: (version.staticScan.findings ?? []).map((finding) => ({
-            code: finding.code,
-            severity: finding.severity,
-            file: finding.file,
-            line: finding.line,
-            message: finding.message,
-            evidence: "",
-          })),
-          summary: version.staticScan.summary,
-          engineVersion: version.staticScan.engineVersion,
-          checkedAt: version.staticScan.checkedAt,
-        }
-      : undefined,
-  };
-}
-
 function toManagerSkillVersion(version: Doc<"skillVersions">) {
   return {
     ...toPublicSkillVersion(version)!,
@@ -2192,35 +2078,6 @@ function toPublicGitHubSkillScan(
     createdAt: scan.createdAt,
     updatedAt: scan.updatedAt,
   };
-}
-
-function toPublicSkillCardFile(file: Doc<"skillVersions">["files"][number]) {
-  return {
-    path: file.path,
-    size: file.size,
-    sha256: file.sha256,
-    contentType: normalizeContentType(file.contentType),
-  };
-}
-
-async function getGeneratedSkillCardPublicFile(
-  ctx: Pick<QueryCtx, "db">,
-  version: Doc<"skillVersions"> | null,
-) {
-  if (!version) return null;
-  const files = Array.isArray(version.files) ? version.files : [];
-  if (!selectSkillCardFile(files)) return null;
-  const entries = await ctx.db
-    .query("skillVersionFingerprints")
-    .withIndex("by_version_kind", (q) =>
-      q.eq("versionId", version._id).eq("kind", "generated-bundle"),
-    )
-    .collect();
-  const file = await selectGeneratedSkillCardFile(
-    files,
-    entries.map((entry) => entry.fingerprint),
-  );
-  return file ? toPublicSkillCardFile(file) : null;
 }
 
 function toPublicSkillListVersionFromSummary(
@@ -2430,85 +2287,6 @@ async function removeSkillBadge(ctx: MutationCtx, skillId: Id<"skills">, kind: B
   }
 }
 
-async function resolveSkillBySlugOrAliasForOwner(
-  ctx: Pick<QueryCtx | MutationCtx, "db">,
-  slug: string,
-  ownerHandle?: string,
-  options: { includeSoftDeleted?: boolean; includeInactiveOwnerFallback?: boolean } = {},
-) {
-  let skill: Doc<"skills"> | null = null;
-  let requestedSlug = normalizeSkillSlugKey(slug);
-  let resolvedSlug: string | null = null;
-  if (ownerHandle) {
-    const resolvedOwner = await resolvePublisherByOwnerHandle(ctx, ownerHandle);
-    const scopedOwnerPublisher = resolvedOwner.publisher;
-    if (scopedOwnerPublisher && requestedSlug) {
-      skill = await getSkillBySlugForPublisher(ctx, requestedSlug, scopedOwnerPublisher);
-      if (skill?.softDeletedAt && !options.includeSoftDeleted) {
-        skill = null;
-      }
-      if (!skill) {
-        const alias = await getSkillSlugAliasBySlugForPublisher(
-          ctx,
-          requestedSlug,
-          scopedOwnerPublisher,
-        );
-        skill = alias ? await ctx.db.get(alias.skillId) : null;
-        if (skill?.softDeletedAt && !options.includeSoftDeleted) {
-          skill = null;
-        }
-      }
-      resolvedSlug = skill?.slug ?? null;
-    }
-    if (!skill && options.includeInactiveOwnerFallback) {
-      const legacyResolved = await resolveLegacySkillBySlugOrAlias(ctx, requestedSlug, {
-        includeSoftDeleted: options.includeSoftDeleted,
-        ownerHandle,
-      });
-      if (legacyResolved.ambiguous) {
-        return {
-          requestedSlug,
-          resolvedSlug,
-          skill: null,
-          ambiguous: true as const,
-          ambiguousMatches: legacyResolved.ambiguousMatches,
-        };
-      }
-      skill = legacyResolved.skill;
-      requestedSlug = legacyResolved.requestedSlug;
-      resolvedSlug = legacyResolved.resolvedSlug;
-    }
-  } else {
-    const resolved = await resolveSkillBySlugOrAlias(ctx, slug, options);
-    if (resolved.ambiguous) {
-      return {
-        requestedSlug,
-        resolvedSlug,
-        skill: null,
-        ambiguous: true as const,
-        ambiguousMatches: resolved.ambiguousMatches,
-      };
-    }
-    skill = resolved.skill;
-    requestedSlug = resolved.requestedSlug;
-    resolvedSlug = resolved.resolvedSlug;
-  }
-  return {
-    requestedSlug,
-    resolvedSlug,
-    skill,
-    ambiguous: false as const,
-    ambiguousMatches: [] as LegacyAmbiguousSkillMatch[],
-  };
-}
-
-function isDirectSkillOwner(
-  skill: Pick<Doc<"skills">, "ownerUserId" | "ownerPublisherId">,
-  userId: Id<"users">,
-) {
-  return !skill.ownerPublisherId && skill.ownerUserId === userId;
-}
-
 export const getGitHubScanForAudit = query({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
@@ -2572,170 +2350,7 @@ export const getGitHubScanForAudit = query({
 
 export const getBySlug = query({
   args: { slug: v.string(), ownerHandle: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    const { skill, requestedSlug, resolvedSlug, ambiguous, ambiguousMatches } =
-      await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
-    if (ambiguous) {
-      return {
-        requestedSlug,
-        resolvedSlug,
-        skill: null,
-        latestVersion: null,
-        owner: null,
-        pendingReview: false,
-        moderationInfo: null,
-        forkOf: null,
-        canonical: null,
-        ambiguous: true as const,
-        ambiguousMatches,
-      };
-    }
-    if (!skill) return null;
-
-    const userId = await getOptionalActiveAuthUserId(ctx);
-    const ownerPublisher = await getOwnerPublisher(ctx, {
-      ownerPublisherId: skill.ownerPublisherId,
-      ownerUserId: skill.ownerUserId,
-    });
-    const skillOwnerPublisher = skill.ownerPublisherId
-      ? await ctx.db.get(skill.ownerPublisherId)
-      : null;
-    const publisherOwner =
-      userId && skillOwnerPublisher
-        ? await canAccessPublisherOwnerScope(ctx, {
-            publisher: skillOwnerPublisher,
-            userId,
-            legacyOwnerUserId: skill.ownerUserId,
-          })
-        : false;
-    const isOwner = Boolean(userId && (isDirectSkillOwner(skill, userId) || publisherOwner));
-
-    const latestVersionDoc = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
-    const publicLatestVersionDoc = isPublicSkillVersionAvailableForSkill(
-      latestVersionDoc,
-      skill._id,
-    )
-      ? latestVersionDoc
-      : null;
-    const latestVersion = toPublicSkillVersion(publicLatestVersionDoc);
-    const generatedSkillCard = await getGeneratedSkillCardPublicFile(ctx, publicLatestVersionDoc);
-    if (latestVersion) latestVersion.generatedSkillCard = generatedSkillCard;
-    const owner = toPublicPublisher(ownerPublisher);
-    if (!owner) return null;
-    const badges = await getSkillBadgeMap(ctx, skill._id);
-
-    const forkOf = await loadPublicSkillReference(ctx, skill.forkOf?.skillId);
-    const canonical = await loadPublicSkillReference(ctx, skill.canonicalSkillId);
-    const githubSource = skill.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
-    const githubSourceRepo = skill.githubCurrentRepo ?? githubSource?.repo;
-
-    const publicSkill = toPublicSkill({ ...skill, badges });
-
-    // Determine moderation state
-    const isPendingScan =
-      skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
-    const isMalwareBlocked =
-      skill.moderationVerdict === "malicious" ||
-      (skill.moderationFlags?.includes("blocked.malware") ?? false);
-    const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
-    const isReviewFlagged = isSkillReviewFlagged(skill);
-    const isHiddenByMod =
-      skill.moderationStatus === "hidden" && !isPendingScan && !isMalwareBlocked;
-    const isRemoved = skill.moderationStatus === "removed";
-
-    if (isMalwareBlocked) return null;
-
-    // Owners can see their non-malicious moderated skills.
-    if (!publicSkill && !isOwner) return null;
-
-    // For owners viewing their moderated skill, construct the response manually
-    const skillData = publicSkill ?? {
-      _id: skill._id,
-      _creationTime: skill._creationTime,
-      slug: skill.slug,
-      displayName: skill.displayName,
-      summary: skill.summary,
-      ownerUserId: skill.ownerUserId,
-      ownerPublisherId: skill.ownerPublisherId,
-      canonicalSkillId: skill.canonicalSkillId,
-      forkOf: skill.forkOf,
-      latestVersionId: skill.latestVersionId,
-      installKind: skill.installKind,
-      githubPath: skill.githubPath,
-      githubCurrentCommit: skill.githubCurrentCommit,
-      githubCurrentStatus: skill.githubCurrentStatus,
-      githubScanStatus: skill.githubScanStatus,
-      githubHasSkillCard: skill.githubHasSkillCard,
-      tags: skill.tags,
-      badges,
-      stats: skill.stats,
-      createdAt: skill.createdAt,
-      updatedAt: skill.updatedAt,
-    };
-    const responseSkillData = {
-      ...skillData,
-      canonicalSkillId: canonical ? skillData.canonicalSkillId : undefined,
-      forkOf: forkOf ? skillData.forkOf : undefined,
-      ...(githubSourceRepo ? { githubSourceRepo } : {}),
-    };
-
-    // Moderation info - visible to owners for all states, or anyone for flagged skills (transparency)
-    const showModerationInfo = isOwner || isMalwareBlocked || isSuspicious || isReviewFlagged;
-    const moderationInfo = showModerationInfo
-      ? {
-          isPendingScan,
-          isMalwareBlocked,
-          isSuspicious,
-          isReviewFlagged,
-          isHiddenByMod,
-          isRemoved,
-          verdict: skill.moderationVerdict,
-          reasonCodes: skill.moderationReasonCodes,
-          summary: skill.moderationSummary,
-          engineVersion: skill.moderationEngineVersion,
-          updatedAt: skill.moderationEvaluatedAt,
-          sourceVersionId: skill.moderationSourceVersionId ?? null,
-          reason: isOwner ? skill.moderationReason : undefined,
-        }
-      : null;
-
-    return {
-      requestedSlug,
-      resolvedSlug,
-      skill: responseSkillData,
-      latestVersion,
-      owner,
-      pendingReview: isOwner && isPendingScan,
-      moderationInfo,
-      forkOf: forkOf
-        ? {
-            kind: skill.forkOf?.kind ?? "fork",
-            version: skill.forkOf?.version ?? null,
-            skill: {
-              slug: forkOf.skill.slug,
-              displayName: forkOf.skill.displayName,
-            },
-            owner: {
-              handle: forkOf.owner.handle ?? null,
-              userId: forkOf.owner.linkedUserId ?? null,
-            },
-          }
-        : null,
-      canonical: canonical
-        ? {
-            skill: {
-              slug: canonical.skill.slug,
-              displayName: canonical.skill.displayName,
-            },
-            owner: {
-              handle: canonical.owner.handle ?? null,
-              userId: canonical.owner.linkedUserId ?? null,
-            },
-          }
-        : null,
-      ambiguous: false as const,
-    };
-  },
+  handler: readSkillPageBySlug,
 });
 
 export const getSecurityReviewForManager = query({
@@ -3115,6 +2730,7 @@ export const getBySlugForStaff = query({
       skill: { ...skill, badges },
       latestVersion: latestVersion ? { ...latestVersion, generatedSkillCard } : null,
       owner,
+      publicationProgress: await readSkillPublicationProgress(ctx, skill),
       auditLogs,
       forkOf: forkOfSkill
         ? {
@@ -3174,6 +2790,53 @@ export const getSkillBySlugInternal = internalQuery({
   handler: async (ctx, args) => {
     const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
     return resolved.skill;
+  },
+});
+
+// HTTP callers supply only the identity resolved from a validated API token.
+export const getPublicationStatusForUserInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+    slug: v.string(),
+    version: v.string(),
+    ownerHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ApiV1SkillPublicationResponse | null> => {
+    const user = await ctx.db.get(args.userId);
+    if (!user || user.deletedAt || user.deactivatedAt) return null;
+    const { skill } = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
+    if (!skill || skill.softDeletedAt) return null;
+
+    const publisher = skill.ownerPublisherId ? await ctx.db.get(skill.ownerPublisherId) : null;
+    const isOwner =
+      isDirectSkillOwner(skill, user._id) ||
+      (publisher &&
+        (await canAccessPublisherOwnerScope(ctx, {
+          publisher,
+          userId: user._id,
+          legacyOwnerUserId: skill.ownerUserId,
+        })));
+    if (!isOwner && user.role !== "admin" && user.role !== "moderator") return null;
+
+    const version = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", args.version))
+      .unique();
+    if (!version || version.softDeletedAt !== undefined || version.ownerDeletedAt !== undefined)
+      return null;
+    const publication = isPublishedSkillVersion(version)
+      ? {
+          version: version.version,
+          stage: "published" as const,
+          retrying: false,
+          updatedAt: version.createdAt,
+        }
+      : await readSkillVersionPublicationProgress(ctx, skill, version);
+    if (!publication) return null;
+    return {
+      skill: { slug: skill.slug, displayName: skill.displayName },
+      publication,
+    };
   },
 });
 
@@ -3272,6 +2935,7 @@ function compactSecurityVerdictVersion(version: Doc<"skillVersions">) {
     version: version.version,
     createdAt: version.createdAt,
     softDeletedAt: version.softDeletedAt,
+    publicationStatus: version.publicationStatus,
     ...(version.staticScan
       ? {
           staticScan: {
@@ -3357,10 +3021,16 @@ export const getSecurityVerdictTargetInternal = internalQuery({
     const owner = await getPublicSkillMetadataOwner(ctx, skill);
     if (!owner) return null;
 
-    const version = await ctx.db
+    const versionDoc = await ctx.db
       .query("skillVersions")
       .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", args.version))
       .unique();
+    const version =
+      versionDoc &&
+      isPublishedSkillVersion(versionDoc) &&
+      (versionDoc.softDeletedAt || isPublicSkillVersionAvailableForSkill(versionDoc, skill._id))
+        ? versionDoc
+        : null;
     const isPendingScan =
       skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
     const isHiddenByMod =
@@ -7735,28 +7405,11 @@ export const getVersionById = query({
   },
 });
 
-// Publication selection is separate from each route's parent authorization and
-// scan policy. These internal snapshots must never be serialized wholesale.
-export const getPublicVersionSelectionInternal = internalQuery({
-  args: {
-    skillId: v.id("skills"),
-    versionId: v.optional(v.id("skillVersions")),
-    version: v.optional(v.string()),
-    tag: v.optional(v.string()),
-  },
-  handler: readPublicSkillVersion,
-});
-
-export const getPublicVersionSelectionsInternal = internalQuery({
-  args: {
-    selections: v.array(v.object({ skillId: v.id("skills"), versionId: v.id("skillVersions") })),
-  },
-  handler: async (ctx, args) => {
-    if (args.selections.length > 250)
-      throw new ConvexError("At most 250 version selections are allowed.");
-    return readPublicSkillVersionSelections(ctx, args.selections);
-  },
-});
+// Preserve the existing internal paths while HTTP rechecks use the lightweight module.
+export {
+  getPublicVersionSelectionInternal,
+  getPublicVersionSelectionsInternal,
+} from "./publicSkillVersions";
 
 export const getVersionsByIdsInternal = internalQuery({
   args: { versionIds: v.array(v.id("skillVersions")) },
@@ -10225,7 +9878,7 @@ export const generateChangelogPreview = action({
       slug,
     });
     const previous: Doc<"skillVersions"> | null = skill?.latestVersionId
-      ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+      ? await ctx.runQuery(internal.skillFileReads.getVersionByIdInternal, {
           versionId: skill.latestVersionId,
         })
       : null;
@@ -10247,42 +9900,6 @@ export const generateChangelogPreview = action({
     return { changelog, source: "auto" as const };
   },
 });
-
-async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersions">) {
-  const skill = (await ctx.runQuery(internal.skills.getSkillByIdInternal, {
-    skillId: version.skillId,
-  })) as Doc<"skills"> | null;
-  if (!skill) return false;
-
-  const authUserId = await getOptionalActiveAuthUserIdFromAction(ctx);
-  if (authUserId) {
-    if (isDirectSkillOwner(skill, authUserId) && !skill.softDeletedAt && !version.softDeletedAt) {
-      return true;
-    }
-    if (skill.ownerPublisherId && !skill.softDeletedAt && !version.softDeletedAt) {
-      const canAccessOwnerScope = (await ctx.runQuery(
-        internal.publishers.canAccessOwnerScopeInternal,
-        {
-          publisherId: skill.ownerPublisherId,
-          userId: authUserId,
-          allowedPublisherRoles: ["publisher"],
-          legacyOwnerUserId: skill.ownerUserId,
-        },
-      )) as boolean;
-      if (canAccessOwnerScope) {
-        return true;
-      }
-    }
-    const actor = (await ctx.runQuery(internal.users.getByIdInternal, {
-      userId: authUserId,
-    })) as Doc<"users"> | null;
-    if (actor?.role === "admin" || actor?.role === "moderator") return true;
-  }
-
-  if (skill.softDeletedAt || version.softDeletedAt) return false;
-
-  return Boolean(toPublicSkill(skill)) && isPublicSkillVersionAvailableForSkill(version, skill._id);
-}
 
 async function canReadGitHubSkillContent(ctx: QueryCtx, skill: Doc<"skills">) {
   const authUserId = await getOptionalActiveAuthUserId(ctx);
@@ -10364,29 +9981,13 @@ function buildGitHubMarkdownSourceBaseUrl(repo: string, commit: string, githubPa
   return `https://github.com/${encodedRepo}/blob/${encodeURIComponent(commit)}${encodedPath}`;
 }
 
-export const getReadme: ReturnType<typeof action> = action({
-  args: { versionId: v.id("skillVersions") },
-  handler: async (ctx, args): Promise<ReadmeResult> => {
-    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
-      versionId: args.versionId,
-    })) as Doc<"skillVersions"> | null;
-    if (!version) throw new ConvexError("Version not found");
-    if (!(await canReadSkillVersionFiles(ctx, version))) {
-      throw new ConvexError("Version not available");
-    }
-    const readmeFile = version.files.find(
-      (file) => file.path.toLowerCase() === "skill.md" || file.path.toLowerCase() === "skills.md",
-    );
-    if (!readmeFile) throw new ConvexError("SKILL.md not found");
-    const text = await fetchText(ctx, readmeFile.storageId);
-    return { path: readmeFile.path, text };
-  },
-});
+// Retain the existing public RPC name for older clients.
+export { getReadme } from "./skillReadme";
 
 export const getSkillCard: ReturnType<typeof action> = action({
   args: { versionId: v.id("skillVersions") },
   handler: async (ctx, args): Promise<FileTextResult> => {
-    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+    const version = (await ctx.runQuery(internal.skillFileReads.getVersionByIdInternal, {
       versionId: args.versionId,
     })) as Doc<"skillVersions"> | null;
     if (!version) throw new ConvexError("Version not found");
@@ -10395,7 +9996,7 @@ export const getSkillCard: ReturnType<typeof action> = action({
     }
 
     const fingerprintEntries = (await ctx.runQuery(
-      internal.skills.listVersionFingerprintsInternal,
+      internal.skillFileReads.listVersionFingerprintsInternal,
       {
         skillVersionId: version._id,
       },
@@ -10419,7 +10020,7 @@ export const getSkillCard: ReturnType<typeof action> = action({
 export const getFileText: ReturnType<typeof action> = action({
   args: { versionId: v.id("skillVersions"), path: v.string() },
   handler: async (ctx, args): Promise<FileTextResult> => {
-    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+    const version = (await ctx.runQuery(internal.skillFileReads.getVersionByIdInternal, {
       versionId: args.versionId,
     })) as Doc<"skillVersions"> | null;
     if (!version) throw new ConvexError("Version not found");
@@ -10445,7 +10046,7 @@ export const getFileText: ReturnType<typeof action> = action({
 export const getFilePreview: ReturnType<typeof action> = action({
   args: { versionId: v.id("skillVersions"), path: v.string() },
   handler: async (ctx, args): Promise<FilePreviewResult> => {
-    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+    const version = (await ctx.runQuery(internal.skillFileReads.getVersionByIdInternal, {
       versionId: args.versionId,
     })) as Doc<"skillVersions"> | null;
     if (!version) throw new ConvexError("Version not found");
@@ -12500,6 +12101,7 @@ export const insertVersion = internalMutation({
       checkedAt: v.number(),
     }),
     llmAnalysis: v.optional(v.any()),
+    skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     embedding: v.array(v.number()),
     publicationStatus: v.optional(v.union(v.literal("pending"), v.literal("published"))),
     deferredAiEnrichment: v.optional(v.any()),
@@ -13026,6 +12628,7 @@ export const insertVersion = internalMutation({
       parsed: args.parsed,
       staticScan: args.staticScan,
       llmAnalysis: args.llmAnalysis,
+      skillSpectorAnalysis: args.skillSpectorAnalysis,
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,
@@ -13303,6 +12906,8 @@ export const publishPendingVersionInternal = internalMutation({
   args: {
     versionId: v.id("skillVersions"),
     publishArgs: v.any(),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
+    finalizationClaimId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
@@ -13332,6 +12937,10 @@ export const publishPendingVersionInternal = internalMutation({
     }
 
     const publishArgs = asSkillPendingPublishArgs(args.publishArgs);
+    await assertOperationalSkillRetryFinalization(ctx, skill, version, publishArgs, args);
+    if (isPendingSkillFinalizationBlocked(skill)) {
+      throw new ConvexError("Pending skill publication is held.");
+    }
     const user = await ctx.db.get(publishArgs.userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
 
@@ -13415,7 +13024,10 @@ export const publishPendingVersionInternal = internalMutation({
     const basePatch: SkillModerationPatch = {
       displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
-      icon: skill.icon,
+      icon: isNewLatest
+        ? (publishArgs.icon ??
+          (isHostedSkillPresentationIconPath(skill.icon) ? undefined : skill.icon))
+        : skill.icon,
       ownerPublisherId: skill.ownerPublisherId ?? publishArgs.ownerPublisherId,
       latestVersionId: isNewLatest ? version._id : skill.latestVersionId,
       latestVersionSummary: isNewLatest
@@ -13446,34 +13058,40 @@ export const publishPendingVersionInternal = internalMutation({
           }
         : {}),
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
-      softDeletedAt: undefined,
-      moderationStatus: initialModerationStatus,
-      moderationReason,
-      moderationNotes,
-      moderationVerdict: moderationSnapshot.verdict,
-      moderationReasonCodes: moderationSnapshot.reasonCodes.length
-        ? moderationSnapshot.reasonCodes
-        : undefined,
-      moderationEvidence: moderationSnapshot.evidence.length
-        ? moderationSnapshot.evidence
-        : undefined,
-      moderationSummary: moderationSnapshot.summary,
-      moderationEngineVersion: moderationSnapshot.engineVersion,
-      moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
-      moderationSourceVersionId: version._id,
-      quality: qualityRecord ?? skill.quality,
-      moderationFlags: nextFlags.length ? nextFlags : undefined,
-      isSuspicious: computeIsSuspicious({
-        moderationFlags: nextFlags.length ? nextFlags : undefined,
-        moderationReason,
-      }),
-      unpublishedSlugReservedUntil: undefined,
-      unpublishedSlugReleasedAt: undefined,
-      unpublishedOriginalSlug: undefined,
       updatedAt: now,
-      ...scannerModerationPatch,
     };
-    const patch = basePatch;
+    // An older staged version still publishes, but it must not replace the
+    // live card's moderation, hold, or icon.
+    const patch: SkillModerationPatch = isNewLatest
+      ? {
+          ...basePatch,
+          softDeletedAt: undefined,
+          moderationStatus: initialModerationStatus,
+          moderationReason,
+          moderationNotes,
+          moderationVerdict: moderationSnapshot.verdict,
+          moderationReasonCodes: moderationSnapshot.reasonCodes.length
+            ? moderationSnapshot.reasonCodes
+            : undefined,
+          moderationEvidence: moderationSnapshot.evidence.length
+            ? moderationSnapshot.evidence
+            : undefined,
+          moderationSummary: moderationSnapshot.summary,
+          moderationEngineVersion: moderationSnapshot.engineVersion,
+          moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
+          moderationSourceVersionId: version._id,
+          quality: qualityRecord ?? skill.quality,
+          moderationFlags: nextFlags.length ? nextFlags : undefined,
+          isSuspicious: computeIsSuspicious({
+            moderationFlags: nextFlags.length ? nextFlags : undefined,
+            moderationReason,
+          }),
+          unpublishedSlugReservedUntil: undefined,
+          unpublishedSlugReleasedAt: undefined,
+          unpublishedOriginalSlug: undefined,
+          ...scannerModerationPatch,
+        }
+      : basePatch;
     const nextSkill = { ...skill, ...patch };
 
     await ctx.db.patch(version._id, {

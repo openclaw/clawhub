@@ -114,9 +114,36 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   quarantined/revoked package downloads remain blocked. A pending package scan is
   not an unpublished release. Authorized owner/staff submission previews retain
   their separate access path.
+- Pending skill finalization must not lift `softDeletedAt`, `moderationStatus`
+  `removed`, or a hidden staff hold such as security redaction, a ban, publisher
+  deletion, or manual review. A first publish hidden only for
+  `pending.publication` still finalizes. A version that becomes latest may
+  replace scanner state, a quality quarantine, publisher moderation, or
+  `manual.version_revoked`, and it copies the staged icon the same way an
+  immediate publish does. An older version still becomes published, and it
+  leaves the live skill's moderation, hold, and icon alone.
+- Pending package finalization changes `channel` and `isOfficial` only when
+  that release becomes latest. An older release can still publish without
+  rolling the live package back to the channel it staged. A private release
+  that would not become latest is refused instead, because package privacy
+  is the parent channel and publishing it would expose the artifact.
 - Changes to version publication or owner-deletion state invalidate public browse
   projections. A pending replacement must preserve an older approved version where
   the existing latest-version policy selects it.
+
+## Owner withdrawal of unpublished package releases
+
+- Staging a package release stores requested `distTags` before publication; these
+  are publication intent, not authoritative public tag assignments. Multiple
+  unpublished candidates may carry `latest`, including after package restoration.
+- Owner withdrawal must not interpret an unpublished candidate's `latest` dist-tag
+  as the current latest release. Package `latestReleaseId`, `tags.latest`, and
+  `latestVersionSummary` remain protective, and a published (including legacy)
+  release's own `latest` tag remains a conservative fallback.
+- Ignoring an unpublished tag does not waive the existing available-survivor
+  check, ownership checks, moderation checks, or retained withdrawal provenance.
+  Withdrawing an abandoned candidate must preserve the replacement release and
+  the package's current latest metadata.
 
 ## Exact-version revocation
 
@@ -434,6 +461,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Unconsumed staged files are deleted when their tickets expire. Failed
   attachment attempts delete the just-created storage blob immediately.
 
+- A captured `CommitterFullError: Too many writes in a short period of time.`
+  rejection from `storage.store`, before it returns a storage id, is HTTP 503.
+  The shared CLI uses its existing bounded HTTP retry policy. This classification
+  is limited to that storage call: validation, ownership, expired/consumed-ticket,
+  attachment, and unclassified write failures keep their existing responses.
+  Upload limits, deadlines, ticket lifetime, and the post-store lifecycle are
+  unchanged. This does not guarantee recovery of a stored blob after an action
+  dies or loses its storage response.
+
 ## Package publish upload boundary
 
 - Package publish is multipart-only. `POST /api/v1/packages` must reject JSON
@@ -459,13 +495,20 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - For tarball uploads, ClawHub stores the uploaded tarball, derives its
   artifact hashes and npm metadata, and derives package file metadata from the
   tarball contents.
-- Experimental `family: claw` publication requires one already-built npm-pack
+- A captured `CommitterFullError: Too many writes in a short period of time.`
+  rejection from the first inline ClawPack tarball `storage.store` is HTTP 503
+  only before publication dispatch and while the request owns no storage IDs.
+  The shared CLI keeps its existing bounded retry policy. Later stores, loose-file
+  uploads, staged tarballs, validation and publication failures keep their existing
+  classification and cleanup ownership. This does not guarantee recovery of a
+  stored blob after a lost storage response or action termination.
+- Experimental `family: template` publication requires one already-built npm-pack
   `.tgz` plus the publisher-computed canonical lowercase SHA-256. It must not
   accept source directories, GitHub checkout sources, extracted-file
   publication, or the legacy public-action path. The HTTP boundary recomputes
   the digest from the accepted tarball bytes before creating or reusing any
   release state.
-- A Claw staged-attempt key binds actor, owner, normalized package name,
+- A Template staged-attempt key binds actor, owner, normalized package name,
   version, and verified tarball digest. Only that exact tuple may reuse an
   active pending attempt or active published release. Different artifacts or
   owners and terminal, soft-deleted, blocked, quarantined, revoked, or
@@ -474,7 +517,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   release rows but retains the publish attempt as audit history; an attempt
   whose referenced package or release no longer exists is audit-only and must
   neither reserve that package version nor be reused.
-- Claw pending and final publication responses expose the verified artifact
+- Template pending and final publication responses expose the verified artifact
   SHA-256. Polling must preserve the same digest, and the package artifact
   download must serve the exact stored tarball bytes whose SHA-256 matches that
   value. Trusted publish tokens accepted by an idempotent retry are revoked on
@@ -496,6 +539,42 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   against a live foreign lease returns no work. It preserves the existing claim
   ID and expiry without falling through to another claim path; the same claim
   may resume its own lease.
+- Internal operator recovery of terminal operational failures defaults to a dry
+  run and requires the observed attempt timestamp and artifact fingerprint.
+  Admission rechecks the original actor's current publisher permission without
+  a platform-admin bypass, the original owner/scope and staged target, every
+  retained immutable storage object, live leases and moderation holds. A retry
+  audits the prior checks/error/count and requeues the same attempt; it cannot
+  replace bytes, lift a hold, declare a clean verdict or reset failure history.
+- An audited operator retry may require an exact reviewed scanner source (40
+  lowercase Git hex characters). Omitting the option preserves an existing
+  requirement. Pending-check workers with an omitted or different source must
+  leave that attempt untouched and may claim unrelated work. Existing live
+  leases and finalization-only recovery keep their existing rules. The latest
+  accepted scan lease records its claim ID, worker-reported source and time;
+  this is attribution, not cryptographic attestation, and does not assert a
+  successful scan. A new unreported scan lease clears stale attribution.
+  Deploy backend support before enabling the repository Actions variable
+  `PREPUBLICATION_REPORT_SCANNER_SOURCE` (default `false`). When enabled, workers
+  verify the reviewed pin against a clean checkout and Go binary revision, use
+  that exact installed host binary, and report the source on scan claims.
+- An applied operational retry writes a typed binding on the retained version
+  or release: original attempt, actor, current validated owner and publisher
+  scope. The final publication transaction must validate that binding, original
+  target/inventory/fingerprint/archive, passing primary checks, live finalization
+  lease, current actor membership, active owner/publisher and current moderation.
+  Membership revocation, ownership changes, deletion, security redaction, manual
+  revocation/quarantine or a malicious verdict during scanning must prevent
+  promotion. Legacy attempts lacking an owner-user snapshot may bind the
+  validated organization owner once; later retries cannot change that binding.
+  Existing pending rows need no backfill: the binding is added atomically only
+  when an eligible retry is applied. Preserve original storage IDs, digests,
+  staged identity and all existing scanner and trusted-publisher boundaries.
+  A later authenticated package-recovery successor validates and atomically
+  retires its failed predecessor's operational binding, retaining that binding
+  in the recovery audit. Its existing fresh manual authority and final-publication
+  checks then govern the successor; it must not inherit a failed predecessor's
+  finalization claim or bypass revocation checks.
 - Authenticated package publishers can read only their own exact publish
   attempt, or the exact package and version authorized by a GitHub Actions
   publish token. The response exposes one normalized pending, published,
@@ -507,6 +586,14 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Skill moderation pipeline
 
+- Deploy optional backend receiving, schema, storage, and finalization support
+  before shipping workers that send `inspectionStatus` or prepublication
+  `skillSpectorAnalysis`; older Convex object validators reject unknown fields.
+  Keep existing workers and the native scanner pin unchanged for that first
+  deployment, and continue accepting requests that omit the new fields.
+  Inspection completeness (`completed` or `partial`) remains independent of
+  risk status and never bypasses existing judge, receipt, scanner, or publication
+  gates. Ship the worker policy layer only after the backend deployment.
 - New skill publishes now persist a deterministic static scan result on the version.
 - Static findings are internal evidence for Codex-backed ClawScan only. They do
   not hide, block, set public security status, affect installability, or trigger
@@ -538,6 +625,22 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   the normal retry lifecycle, but an A.I.G finding never independently blocks,
   hides, or changes installability. Package releases skip the skill-only A.I.G
   scanner.
+- SkillSpector coverage may remain partial when its execution produced usable
+  evidence. Both worker consumers accept only native `skillspector.status=partial`
+  with `reportPolicy=judge-gaps`, successful structured report evidence, and a
+  completed independent ClawScan judge with a valid v2 artifact-inspection
+  receipt matching the final native attempt. Preserve coverage gaps and findings;
+  no coverage percentage or exhaustive gap inspection is an admission gate.
+  Missing/malformed/unsuccessful scanner evidence, process failure, invalid
+  receipts, and failed judges still fail through the ordinary retry lifecycle.
+  Benign and suspicious judge verdicts retain their existing publication and
+  warning semantics; malicious verdicts block. Prepublication completion retains
+  the normalized SkillSpector findings on both skill versions and plugin releases
+  through finalization, alongside judge and A.I.G evidence. Optional
+  `inspectionStatus=completed|partial` preserves explicit raw completeness
+  separately from risk `status`; absent completeness stays unknown. A benign
+  judge does not erase partial inspection provenance. Secret and unsafe
+  bytecode rejection remain independent gates.
 - Published skill verification retains complete upstream A.I.G and SkillSpector
   JSON in a version-owned storage blob, separate from capped database summaries.
   `/verify` returns these reports under `security.scannerReports`, alongside the
@@ -608,6 +711,78 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   per-scanner outputs without per-file or aggregate-size truncation. Bounded
   metadata/error fields may remain capped. Artifact upload still requires the
   existing verified-secret scan to pass.
+- The separate fixed original038 diagnostic permits one fresh Ubuntu 22.04 X64
+  run against the exact merged source, production dependencies and normal full
+  profile. It verifies every retained original file from the anonymous download;
+  the generated ZIP is a transfer container, not the original immutable archive.
+  Synchronous scanner/judge captures preserve reports, streams, gaps and receipts
+  before native cleanup. Existing injected-credential redaction/withholding and
+  a final plaintext evidence check remain mandatory. Only checksum-pinned age
+  ciphertext and bounded metadata may enter Actions artifacts; the per-run private
+  identity stays with the consuming controller. Failed encryption, secret checks
+  or unconfirmed process cleanup prevent upload. Capture completeness and scanner
+  coverage remain separate. A fully captured operational failure still fails the
+  diagnostic job; normal accepted partial or suspicious results need not be benign
+  or claim complete scanner coverage. The fixed038 run name binds the public age
+  recipient even when no artifact is uploaded. This nonpublishing diagnostic adds
+  no recovery count or retry authority.
+- The native prepublication failure event preserves the existing SkillSpector
+  projection and adds only fixed scanner names, allowlisted status/error classes,
+  bounded exit/timing numbers, and presence/byte-count/SHA-256 metadata. Arbitrary
+  error text, command arguments, paths, raw reports, and subprocess streams must
+  not enter this event. Artifact hashes cover original bytes; scanner raw hashes
+  cover parsed JSON serialization. Missing, unreadable, malformed, and wrong-schema
+  artifacts remain failed and emit metadata without trusting their scanner fields.
+  This event does not provide private full-report retention or adapter command-boundary
+  capture; both remain separate unresolved work before temporary outputs are deleted.
+- SkillSpector starts from its upstream locked environment. Until that lock
+  includes the deferred-model serialization repair, replace only Pydantic and
+  pydantic-core and their required typing dependencies with the reviewed
+  hash-locked binary-wheel set. Do not resolve unrelated dependency upgrades.
+  Before scanning, the actual worker environment
+  must serialize a genuinely cold finding subtype with every finding field
+  preserved and still reject invalid findings and unresolved models. Run the
+  existing adapter checks and dependency-consistency check afterward. This
+  repairs serialization mechanics; it does not establish package recovery or
+  change scanner completeness, findings, retries, or publication gates.
+  Copied diagnostic installer bundles must include the compatibility requirements
+  and startup probe, record their hashes, and distinguish the compatibility set
+  from the unchanged upstream lock.
+- The fixed Solaris exception diagnostic is a separate, nonpublishing manual
+  workflow on `main`, admitted only on the qualified GitHub-hosted Ubuntu 22.04
+  runner with the fixed source, original-byte inventory, model policy and scan
+  budgets. It accepts no dispatch inputs or arbitrary targets. Original root 28
+  runs first; all 62 roots run only after that job succeeds with complete observer
+  evidence. It cannot claim queue work, invoke the judge, retry a publication or
+  write publication state, and it never executes publisher code.
+  The observer verifies the pinned analyzer source and invokes the installed CLI
+  and interpreter. It calls the original failure classifier first and preserves
+  its result, exceptions and retry behavior. Exported exception data is limited
+  to fixed module IDs, qualified line numbers, allowlisted classes, bounded HTTP
+  status codes, root indices, counts and lifecycle flags. One boolean may identify
+  the exact known Pydantic MockValSer/SchemaSerializer TypeError; matching must
+  inspect only its single string argument without stringifying arbitrary values
+  or exporting any message text. Only a qualified Pydantic `model_dump` frame may
+  provide fixed enums for response family and serializer kind, plus whether the
+  model is built. These come from class dictionaries without calling properties
+  or serializers.
+  TypeError argument metadata is capped at three primitive-type labels. Up to 23
+  fixed public error/type tokens may be recognized in a sole built-in string
+  argument of at most 2,048 characters; unknown text is always discarded. These
+  tokens classify known vocabulary rather than exporting message fragments.
+  Frame provenance must match the loaded module's globals and source filename.
+  Export limits are three
+  chained exceptions, eight frames per exception and eight failure records per
+  root; traversal is capped at 64 frames, line numbers at 1,000,000 and the private
+  event file at 2 MiB/1,024 records. Reaching a limit that loses observer records
+  cannot produce a successful diagnostic. Messages, provider bodies, raw paths,
+  source text, findings and credentials must never enter exported summaries or
+  logs. The reader reprojects allowed fields from a private regular file and
+  rejects symlinks, insecure permissions, malformed data and incomplete lifecycle
+  or count evidence. Private raw reports, events, scratch and source are removed
+  after readers settle; only the restricted summary may be uploaded. Diagnostic
+  success is neither publication acceptance nor proof of recovery or unblocking;
+  normal scanner, judge and package-specific live verification remain required.
 - Claimable queue work edge-triggers a coalesced GitHub Actions worker dispatch.
   Successful completion requests another dispatch while queued work remains; a
   five-minute Convex cron is only a recovery watchdog for lost dispatch signals.

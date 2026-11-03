@@ -35,6 +35,9 @@ describe("weekly design-system audit workflow", () => {
     expect(workflow.env.ARTIFACT_DIRECTORY).toBe("artifacts/design-audit");
     expect(source.toLowerCase()).not.toContain("linear");
     expect(source).not.toContain("gh pr merge");
+    expect(steps.find((step) => step.name === "Install Codex CLI")?.uses).toBe(
+      "./.github/actions/setup-codex",
+    );
 
     const createPr = steps.find((step) => step.name === "Open or update draft pull request");
     expect(createPr?.run).toContain("--draft");

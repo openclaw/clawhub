@@ -1,0 +1,882 @@
+{
+  "archiveSha256": "b514483b18c66cd5301ca776cf1b12af222efa3c2a19afa178beb10f8f3fa0b5",
+  "manifestSha256": "a306ba4c3f30e8c42cc247070245661ab6fb5032cba6e4b3ae0b62239d7c223f",
+  "manifestCanonicalization": "path,size,sha256",
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "size": 2487,
+      "sha256": "2229b4012ab270468d2323068787d68b9ab94b46753a20805afe7e04bc88b806"
+    },
+    {
+      "path": "SKILL.md",
+      "size": 21648,
+      "sha256": "c5c3aa82ee2c4a743f382d9abc158a0b1887ed7278c13c83936b68610d4d762a"
+    },
+    {
+      "path": "_meta.json",
+      "size": 83,
+      "sha256": "88b6667216ab5adf277d3479a841d1973fb0d2a8db00acf0ad74f8a6152e5d76"
+    },
+    {
+      "path": "assets/campaign-create-keyword-test.fixed.json",
+      "size": 5434,
+      "sha256": "8cdba764989caabf7e4fcb3c0b02e951da03e557299395e7427fd8bba376c9ad"
+    },
+    {
+      "path": "assets/campaign-create-keyword-test.json",
+      "size": 6051,
+      "sha256": "670fe5c9be49bbc995fc784f0a7abe43fb0dba0a3c403801ba055e9012593572"
+    },
+    {
+      "path": "assets/campaign-create-template.json",
+      "size": 7151,
+      "sha256": "571e6cb464dc893f1aefdd623523a01c77e044aa5a5531ec72efc496786c3317"
+    },
+    {
+      "path": "assets/campaign-create-template.md",
+      "size": 33006,
+      "sha256": "994bff94edc165e47f9c7d0234d96bb86389c3f7add1a1c5728c239bfebb69a1"
+    },
+    {
+      "path": "assets/google-period-report.schema.json",
+      "size": 10230,
+      "sha256": "11d6361860aca3c158e9faf23b3202be08eb74bf1e6516a0f8855e354bf7ecfe"
+    },
+    {
+      "path": "assets/google-quarterly-report.schema.json",
+      "size": 2351,
+      "sha256": "2cf5e419eba6b7aaecc893a6251708bf5f93e6ea7c8e0a50ada009ec8b0716c9"
+    },
+    {
+      "path": "assets/market-analysis-rules.md",
+      "size": 7272,
+      "sha256": "6fdc484a7bf9c9a0d42afbf3583eb14e4b9cf6f0ef873ed743dd74825f862886"
+    },
+    {
+      "path": "assets/meta-lead-create-template.json",
+      "size": 6046,
+      "sha256": "3194e11fee86c1983a516d68334ceda5bad0b1d90b7eaf9c74e5e85a8bdc0b15"
+    },
+    {
+      "path": "assets/meta-lead-create-template.md",
+      "size": 3537,
+      "sha256": "189278d19630787d45c9e784c852ed792b321cfdc5fcb0c3e946d0e13d6ee98b"
+    },
+    {
+      "path": "assets/meta-period-report-rules.md",
+      "size": 1261,
+      "sha256": "7562e743c2e61b2643e52cee85d76c6feae32810e2581481120f3f7b0ffd1875"
+    },
+    {
+      "path": "assets/meta-period-report.schema.json",
+      "size": 2901,
+      "sha256": "e5110eac8dc4df73251253880bbc4460cfb5a0cbc74f1c28f5cca00a20bdda8b"
+    },
+    {
+      "path": "assets/okki-weekly-report.schema.json",
+      "size": 2894,
+      "sha256": "8deb26cf646dc33d935c1f74df39bca5d48e889495a45d451e18a9f99ae7951b"
+    },
+    {
+      "path": "assets/plan-extract.example.json",
+      "size": 2267,
+      "sha256": "dac5fea3de1903750d3f09abe20b9ad13c02d9e1d60e8f80e1d58c0cbe400fb6"
+    },
+    {
+      "path": "assets/pmax-asset-group-template.json",
+      "size": 1024,
+      "sha256": "472c1104494cbbc03515084633af5daf6678a406e280a4865abbea52f2c07b94"
+    },
+    {
+      "path": "assets/pmax-asset-group-template.md",
+      "size": 1326,
+      "sha256": "3466578d73599e04e4a6ede9d6536eead4a43ff54c4a1670a5f231f66ba11c50"
+    },
+    {
+      "path": "assets/pmax-assets-update-template.json",
+      "size": 1256,
+      "sha256": "ceea32da53ab116fd23c54ecd318d57f5c5d7e184afb7e3b4e2885237df3e00d"
+    },
+    {
+      "path": "assets/pmax-brand-assets-template.json",
+      "size": 881,
+      "sha256": "3e3440f5ef79fa48d65a81c5622bb7d513c18c9fb96cee6b6471181a6b3f229a"
+    },
+    {
+      "path": "assets/pmax-brand-assets-template.md",
+      "size": 1376,
+      "sha256": "1d34b6e4b04037dda827481af64ebd7b0aedd48f2aa168b8fe9ac70751d512f8"
+    },
+    {
+      "path": "assets/pmax-brand-guidelines-enable-template.json",
+      "size": 820,
+      "sha256": "252ff8f1a32c56921aec3ae1102484c4e61d7928f91fcd7c1b8ca871b5e8c08e"
+    },
+    {
+      "path": "assets/pmax-brand-guidelines-enable-template.md",
+      "size": 1410,
+      "sha256": "a219cf772aee56a8a2cff8179609225de4205a0dbfe57dbc0fd98d9fbb999b7c"
+    },
+    {
+      "path": "assets/pmax-create-template.json",
+      "size": 3933,
+      "sha256": "bb32e49a207eb71dff6ac549aec1b0e019c95d75cf15ac0eeba01f4301b77c96"
+    },
+    {
+      "path": "assets/pmax-create-template.md",
+      "size": 14862,
+      "sha256": "5359f9331f958215b5c87a2255de9d8310e38f03e8694bd7479a30f2de0d3bbf"
+    },
+    {
+      "path": "assets/pmax-lead-form-template.json",
+      "size": 1529,
+      "sha256": "62ae7c4b0f02fb986abfcb0dd50005b9df391f9a0b1ff6e43d92182350227e8b"
+    },
+    {
+      "path": "assets/pmax-lead-form-template.md",
+      "size": 4891,
+      "sha256": "fd74e910d1656fd5054c5e182e7aaf697c5f177f0684b0aa93fd5a800111f263"
+    },
+    {
+      "path": "assets/pmax-patch-campaign-template.json",
+      "size": 171,
+      "sha256": "22e3507781e5a5f29dc80203019078b62e48ef616b49744cb708c29e3b9b5d64"
+    },
+    {
+      "path": "assets/pmax-signals-template.json",
+      "size": 264,
+      "sha256": "70d76ba73a53f9a17a182da505553482f5cb340cf8edf2a6d78aa823a2c97edc"
+    },
+    {
+      "path": "assets/pmax-whatsapp-template.json",
+      "size": 1061,
+      "sha256": "8aeabd5a459e5f33e0edd5072c99fd280bd3e0569f3b874cf735e9dff37af141"
+    },
+    {
+      "path": "assets/pmax-whatsapp-template.md",
+      "size": 2159,
+      "sha256": "233a37c357bd6dd23e40f97d35827a944b83cdcd0b19ad0d967aa2d59e016daf"
+    },
+    {
+      "path": "assets/scripts/assemble-campaign-from-plan.mjs",
+      "size": 8485,
+      "sha256": "73ea947a09ceca99672d8e6e4018158ff5ef3c1824d3f7c29d0501efa2fb022f"
+    },
+    {
+      "path": "assets/website-diagnosis-rules.md",
+      "size": 4487,
+      "sha256": "5d718cbcc2eda20651758d2ca83b0ee65116959e14136e8e909cc8a378bf6d6d"
+    },
+    {
+      "path": "references/README.md",
+      "size": 11073,
+      "sha256": "88808b79027fdf27b2977d4d2d94419dfe65488524962d97396e2c7b5c823511"
+    },
+    {
+      "path": "references/accounts/accounts-balance-stats.md",
+      "size": 18496,
+      "sha256": "f77902e53f438a9ceeb83dad2e35e2f6d8ebc01f4e201121ef2d7d1155deafd0"
+    },
+    {
+      "path": "references/accounts/accounts-list.md",
+      "size": 16680,
+      "sha256": "718978551b24a4935942f102cb43dbd2fbd3a7b56555b302d0e79253b48240e4"
+    },
+    {
+      "path": "references/accounts/accounts-permissions.md",
+      "size": 24215,
+      "sha256": "8a948cadd25a10f51b12c756f57da05d1320e0388cf0ee83c8316493af49cc7f"
+    },
+    {
+      "path": "references/accounts/accounts.md",
+      "size": 4396,
+      "sha256": "30a6e2e67a1eff7fa872bd667396715bb8f44e29e81f5307f717563142200c3c"
+    },
+    {
+      "path": "references/accounts/currency.md",
+      "size": 4644,
+      "sha256": "73e521c1e47f9619784e4ef52ce2d9b2caa749fcb61e3cc84d676cc860835ce4"
+    },
+    {
+      "path": "references/accounts/finance.md",
+      "size": 18361,
+      "sha256": "391e32787651adb2972cc596d87762bd1736ccdba1731c290c890f722e57b693"
+    },
+    {
+      "path": "references/accounts/open-account-by-media.md",
+      "size": 13242,
+      "sha256": "538ba19ce26e82696573ad89acada592f6ebdb4d6378aa1b1b13bf08973f4a3f"
+    },
+    {
+      "path": "references/accounts/open-account-google-ui.md",
+      "size": 5633,
+      "sha256": "431390bb34906bdb246f398ccd71ff1ca249b0927b4cbd7f5a287725687a89a0"
+    },
+    {
+      "path": "references/accounts/write-audit-restore.md",
+      "size": 7053,
+      "sha256": "c8703a67d887fb5a549b41bb143d58295f5da8a5b962720b1166b3f459faebc9"
+    },
+    {
+      "path": "references/analytics/account-analytics.md",
+      "size": 55982,
+      "sha256": "f07b0275c6b29cec2c9ee4446a9bbc76a03fdbb9fdcb75074815fab47d872578"
+    },
+    {
+      "path": "references/analytics/facebook-analysis-guide.md",
+      "size": 14975,
+      "sha256": "64a294fcef452258d4082ba7b4b6986efc8ca8ca39b5daa67537330f1d80ffcc"
+    },
+    {
+      "path": "references/analytics/geo-continents.json",
+      "size": 8019,
+      "sha256": "fbbf0d5a23d405e541195a5b0f6c5d8e686f2a0d7b8330b0a148ce2a198d405b"
+    },
+    {
+      "path": "references/analytics/google-analysis-batch.md",
+      "size": 14418,
+      "sha256": "c68588e72a3ed084977da412dd71e396b9668aa3f518982088c5143a85b66fe3"
+    },
+    {
+      "path": "references/analytics/keyword-planner-workflows.md",
+      "size": 18863,
+      "sha256": "0fc931fc9efa69e6c6a0308d82894eccf46cdf52f31f56f3ca3d5a3949fc4573"
+    },
+    {
+      "path": "references/analytics/market-analysis-guide.md",
+      "size": 5685,
+      "sha256": "0cc60160b5fff118d7ff1c16f3c05a02b6552dfa0fafe56a3433eecb1a78cab0"
+    },
+    {
+      "path": "references/analytics/rag.md",
+      "size": 6607,
+      "sha256": "ff5210eabc1c435f72cd16a017316f0d2aa9185a8bdf2803a23e25e9e78b3025"
+    },
+    {
+      "path": "references/analytics/reporting.md",
+      "size": 7852,
+      "sha256": "32ea29b9a35e8cbc90fcbc19e22d047f918b1285b4f603174ace279419efc096"
+    },
+    {
+      "path": "references/analytics/website-diagnosis-guide.md",
+      "size": 8674,
+      "sha256": "f45046067e6d794107f24c846dd3a48ac35e381a0871107c39b924701d7ed627"
+    },
+    {
+      "path": "references/core/agent-conventions.md",
+      "size": 45742,
+      "sha256": "d25db4d1bdb56f61942d5ebfdd5789df4aebf06ef90ace06f4e18bbc115ae3bc"
+    },
+    {
+      "path": "references/core/cli-enums.md",
+      "size": 9934,
+      "sha256": "d8ab085b7d050d7f8e76b8e9877e7a0c55b74520322fdac52ffbae7fc7cc5996"
+    },
+    {
+      "path": "references/core/intent-routing.md",
+      "size": 40084,
+      "sha256": "8b817e1c5a507b709e4fd4c5aca1a80181ddd88f098e9787f897e82e8c400e42"
+    },
+    {
+      "path": "references/core/playbooks.md",
+      "size": 22245,
+      "sha256": "ff5daabb6ce5e4fd8e74fcbd48520467e3651674d45194f629a0f0ff7827245a"
+    },
+    {
+      "path": "references/core/setup.md",
+      "size": 8870,
+      "sha256": "53a657ffdb5bb77c242ddd2fcc20e974e0ff8a14f99b05c6dcab6882ba49e1d3"
+    },
+    {
+      "path": "references/core/subagent-orchestration.md",
+      "size": 10172,
+      "sha256": "28a7928ad1848402f2e5afcd70e222e03b734a06815199bb192b6882ea18b939"
+    },
+    {
+      "path": "references/core/tips.md",
+      "size": 13556,
+      "sha256": "59dbbdf76c94e206ea19521f8cc027c8c77c7bf7840459475b30bc48114bbb50"
+    },
+    {
+      "path": "references/core/user-communication-guide.md",
+      "size": 98,
+      "sha256": "93af669d1af089c7d1375e09f6cd726a0316e3d7359fc34119b7fc951630f892"
+    },
+    {
+      "path": "references/core/workflows.md",
+      "size": 28182,
+      "sha256": "dafe5ab6902d35386098aaeb83211ca86ea9e779e4764cf8b3247945f8840b10"
+    },
+    {
+      "path": "references/google-ads/google-ads-batch.md",
+      "size": 2941,
+      "sha256": "1e078fc57cf7b61f5d9ffcb8ab458011ec2515165640bbd4427a39a9e5a78401"
+    },
+    {
+      "path": "references/google-ads/google-ads-campaign-plan.md",
+      "size": 26675,
+      "sha256": "36f3136c471fc52935b997825f2f3ea1e2ca22770522b371a207593e43006985"
+    },
+    {
+      "path": "references/google-ads/google-ads-read.md",
+      "size": 16763,
+      "sha256": "8fd408e4ae4f9581d08a5d98902103ad9cb5660e190e32f78b18374799b0bdd5"
+    },
+    {
+      "path": "references/google-ads/google-ads-write.md",
+      "size": 34088,
+      "sha256": "000279f97bc2b58b11f6e6f3b70587bd9564f72b32e5eac22f5704268f0d832a"
+    },
+    {
+      "path": "references/google-ads/google-ads.md",
+      "size": 6057,
+      "sha256": "370122c1d943732184a91cde9751481c0748fcca046485ad155947b8212d7038"
+    },
+    {
+      "path": "references/google-ads/pmax-api.md",
+      "size": 13825,
+      "sha256": "f52fb36cc73ba84b1b5c4b2ad490989524ac76f8cff704972ee60db064d9a990"
+    },
+    {
+      "path": "references/google-ads/rules/README.md",
+      "size": 2547,
+      "sha256": "db41e13a2f2ca5723bb29f9734b9ecc0396df5b2e0254acbd5945c20c693f0c8"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-account-audit-assets.md",
+      "size": 13570,
+      "sha256": "c8ec0fe52ee42affc8c96954d31bf5af0cd3c85f6149c12f01b9283ac47bf3ac"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-account-audit-quick.md",
+      "size": 12820,
+      "sha256": "a09b5471319c5877bb8908e6914ffdbb67d42928a69d75a2fcb187d28cd0ef93"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-account-audit-report.md",
+      "size": 2097,
+      "sha256": "9cbb11e01d580f4c1efa50171fbb700053aa648f0c2794c9c43348bf8c2dc6c5"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-account-audit-structure.md",
+      "size": 6459,
+      "sha256": "a5e4c8c5bcbc67ddde5b9c9495194023f38f2b51ffce6c59d1bf6e2683eee1dc"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-account-audit.md",
+      "size": 1641,
+      "sha256": "0f0fd44a3b47a52595e0c00042ffde420c91d9bb6012bd9244e2e7bea13475fe"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-audience-strategy.md",
+      "size": 19441,
+      "sha256": "5cb8f12e17fc150e0de70fc546f90f07cec1aa337cfa50c43f5849228b184fc9"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-campaign-optimization.md",
+      "size": 20882,
+      "sha256": "1cbc243e3c2061f46455ff9c8722ad6a6e8c8fed76d816b6b4edb18b82263618"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-compliance-copy.md",
+      "size": 14052,
+      "sha256": "4d8aa9d2eeba1b9d1452ecb0428d67a708a6157bb97de70e0b19e01112a76c69"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-compliance-forbid.md",
+      "size": 21111,
+      "sha256": "71151fad2b27cd189550f3c7d4663cd612554cc21d4cca768a9d597ee48cdd81"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-compliance-ops.md",
+      "size": 10047,
+      "sha256": "4879799e21f6cf19c7f48fc1c9cb9fdce5a77fd531080a7cbfdd80c5f166441a"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-compliance.md",
+      "size": 1941,
+      "sha256": "d7b7b2e97553025686597667612c522b26889128228e7dd28a96c744338935a0"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-conversion-architecture.md",
+      "size": 16060,
+      "sha256": "05412a027608d6c9950f28015a460f5a53c5975a20151401d23d4096f3543392"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-creative-optimization.md",
+      "size": 26285,
+      "sha256": "1588b619b6f5988fb7abdb7b2d968663852be68409da6e2a189ce0659fb990b2"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-keyword-optimization.md",
+      "size": 26439,
+      "sha256": "afb3be37e09d6f3702b2fe40b0b082bb298db821c776ed1f156b64d6490ff456"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-keyword-strategy.md",
+      "size": 30079,
+      "sha256": "cc5de8e2852e057ce981f9269e1537cc31229e2b68dace20532ee90f00d05045"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-keyword-taxonomy.md",
+      "size": 4876,
+      "sha256": "b4486930d23ce26c45a69a64d5e7e499c10e728bebf7eb1dce1d253cb6229055"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-landing-page-discovery-via-webfetch.md",
+      "size": 4589,
+      "sha256": "2012e144815e8413a009c438daed04a61aa4409c0273d5f5836275126e1f212e"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-launch-plan-template.md",
+      "size": 30864,
+      "sha256": "115acdc466e951723df6da5f08674e17e7d8476159e0c324213a67dde915ac60"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-plan-source-fidelity.md",
+      "size": 12241,
+      "sha256": "175ea0ad622231adec3b2308c8f0c3c80c4d26c526161fc480ad8caa15513644"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-pmax-guide.md",
+      "size": 27423,
+      "sha256": "0de99f04e6549c7a46d49240517f0d6515652e1ca380b08bad37763351c97a64"
+    },
+    {
+      "path": "references/google-ads/rules/google-ads-pmax-launch-plan-template.md",
+      "size": 5937,
+      "sha256": "7c3220ec5d3c5ea81230a2a491dc1587d498f0cd3090a6a85695b32de7f13715"
+    },
+    {
+      "path": "references/google-ads/rules/sensitive-industries.md",
+      "size": 13597,
+      "sha256": "f6185d8d4676e167a04178ed8eb5249a02a5a0c5aeb9043d15804ee62e1110c1"
+    },
+    {
+      "path": "references/meta-ads/meta-ads-read.md",
+      "size": 1662,
+      "sha256": "63b8b22e3d055c9f20c77419a589a6ff1607890bed50b81d3616553b06d308e0"
+    },
+    {
+      "path": "references/meta-ads/meta-ads-write.md",
+      "size": 6146,
+      "sha256": "b78b0b5c32ee9b5c705cbe63d1035ea1c9df2982765f0ffba2140eb1041936db"
+    },
+    {
+      "path": "references/meta-ads/meta-ads.md",
+      "size": 3608,
+      "sha256": "af043266ee6cc0662153e7f5eda8cacfd2945ce34e4e1c362294ffd15b0e520b"
+    },
+    {
+      "path": "references/meta-ads/meta-lead-launch-plan-template.md",
+      "size": 8780,
+      "sha256": "e1d61d68de8724faf67ce83147093849c10e5ec29d3c9a2d3af141658399c5a1"
+    },
+    {
+      "path": "references/misc/tso-home.md",
+      "size": 1896,
+      "sha256": "a316d075c1e6faef365db9795972d583a5f4e71fc77404853f690179e26bd8ce"
+    },
+    {
+      "path": "references/operations/clue.md",
+      "size": 3168,
+      "sha256": "7f1ae89c9515c0e7f409b418b370946e12fa919382fbbb293d813cc57f185433"
+    },
+    {
+      "path": "references/operations/forewarning.md",
+      "size": 9606,
+      "sha256": "150e15e133f4e0e84fddbd97a71d32783e06ee35e4a7fff99bc20424ed6aaf3d"
+    },
+    {
+      "path": "references/operations/guard.md",
+      "size": 4849,
+      "sha256": "86cd35d68451af995d78b959409ec02d806d5fb3dd12aafd559d0bac930f8afe"
+    },
+    {
+      "path": "references/operations/hosted-automation-bing.md",
+      "size": 5160,
+      "sha256": "ae4b83cc032115bee159cbdd852860021e59032b1450522cf8d252bcb762cf33"
+    },
+    {
+      "path": "references/operations/hosted-automation-facebook.md",
+      "size": 5537,
+      "sha256": "944b8152f8cc166a994257f77753db208cf3b6e90b697e32701097eaa521ad66"
+    },
+    {
+      "path": "references/operations/hosted-automation-monitoring-json.md",
+      "size": 8368,
+      "sha256": "fc7587748c4f1e44a66835305b03bc6104b39e4733f6d1f3517e312805fa2e78"
+    },
+    {
+      "path": "references/operations/hosted-automation-optimize-ab-winner.md",
+      "size": 2665,
+      "sha256": "705891d4181cc87177de7275bc43835560d197a324a89f7f818b16fd6fd54162"
+    },
+    {
+      "path": "references/operations/hosted-automation-optimize-index.md",
+      "size": 3004,
+      "sha256": "8d369d356580ad00ed666fb10cfef173815daa0760bce4b9cfd77d7d285ee009"
+    },
+    {
+      "path": "references/operations/hosted-automation-optimize-scale.md",
+      "size": 4964,
+      "sha256": "39438d6f1e579d58327f6428594f6a7d829f33dbfa3753eac3e7b346c85c553a"
+    },
+    {
+      "path": "references/operations/hosted-automation-optimize-weak-downbid.md",
+      "size": 4255,
+      "sha256": "564c8b45a8d680f74aa4ca032768e3e8192f3afed17455fa733c9ee05ccee260"
+    },
+    {
+      "path": "references/operations/hosted-automation-scenarios.md",
+      "size": 3861,
+      "sha256": "942f259f81b292c2bd79eaca90641908350ccd656d947d93e9899015fd27103d"
+    },
+    {
+      "path": "references/operations/hosted-automation-self-control.md",
+      "size": 15259,
+      "sha256": "9ea360a8fc3246983e109fd6959205411c42b9d38b6fc7a561f9c83162520ab0"
+    },
+    {
+      "path": "references/operations/hosted-automation-tiktok.md",
+      "size": 6183,
+      "sha256": "31311f55769ee1284f0142555186a405368bb0b3298035ea12379e1e4fb95d5d"
+    },
+    {
+      "path": "references/operations/hosted-automation-user-catalog.md",
+      "size": 9233,
+      "sha256": "eb6d817b7fcde4755f706e121ef148f82a6313df56c0c5ff769e3ce0d30c63f4"
+    },
+    {
+      "path": "references/operations/hosted-automation-yandex.md",
+      "size": 7068,
+      "sha256": "68815297a4fb1631ec67630f659fc9c1f8caa6b50c75919e87e1d86f10e5f34c"
+    },
+    {
+      "path": "references/operations/optimize.md",
+      "size": 3902,
+      "sha256": "0231d44267ff6de4896c54b3eaacc04fa936e069519a3a2f98afa7610678464e"
+    },
+    {
+      "path": "references/report-templates/README.md",
+      "size": 7112,
+      "sha256": "4d530fc641234cbe0cdda965b1f46de8747565c26c81c5bb3c33b649c21c4855"
+    },
+    {
+      "path": "references/report-templates/REPORT-WORKFLOW.md",
+      "size": 13666,
+      "sha256": "67195177e6830dab2440185a95d7e2e85807fac078eed1bbac45bd8c78b31414"
+    },
+    {
+      "path": "references/report-templates/bing-period-report.md",
+      "size": 21265,
+      "sha256": "4066668df28bf69ad2037bfe11d588f5fce62a97f450fb4b04d0fe8e086f5775"
+    },
+    {
+      "path": "references/report-templates/excel-style-guide.md",
+      "size": 5800,
+      "sha256": "4c8881618f4e23eba635c10d19d19babd64d8164f6d77a4707abbe1829ec30d3"
+    },
+    {
+      "path": "references/report-templates/google-account-diagnosis-report.md",
+      "size": 3541,
+      "sha256": "4053d1cedba92074b8883c95356d34df75c1ebff66d9115681492ca7122dca6c"
+    },
+    {
+      "path": "references/report-templates/google-ads-diagnosis.md",
+      "size": 37293,
+      "sha256": "e2ede2075fe5c1ba269cdcccaffbf86e1aa421792ba30b91ac7c9ae3156e264c"
+    },
+    {
+      "path": "references/report-templates/google-inquiry-analysis.md",
+      "size": 53490,
+      "sha256": "36dc5c1085f04d97fd63dd5994ef5d3b5085c9b5790796693176b89d33a1922d"
+    },
+    {
+      "path": "references/report-templates/google-period-report-excel.md",
+      "size": 8593,
+      "sha256": "27e255b92586b89d6487a61b7cd9678c7b3355234ed7ccc7f5d883e2ace8640a"
+    },
+    {
+      "path": "references/report-templates/google-period-report.md",
+      "size": 13024,
+      "sha256": "a7e563498ea1a2528dcc8b4eaa168e4f4ad3db9100814847020f640bff4e5416"
+    },
+    {
+      "path": "references/report-templates/google-quarterly-plan.md",
+      "size": 10452,
+      "sha256": "b8fe28fff1a5acc513b64b56acdb32d8b6affb41cb8636c5beb3aba9c07a4096"
+    },
+    {
+      "path": "references/report-templates/google-quarterly-report.md",
+      "size": 9216,
+      "sha256": "483ae13d2e12f479a88eaa28dd59b96a6df528be9848f77976b91796c3a0981f"
+    },
+    {
+      "path": "references/report-templates/market-analysis-report.md",
+      "size": 1406,
+      "sha256": "c521cd1e45dbc537a30f4118a3d585d2fa33e12eab22a0615785ce77ca75f097"
+    },
+    {
+      "path": "references/report-templates/meta-account-diagnosis-report.md",
+      "size": 10568,
+      "sha256": "f3bda1c7cb6934a37d1210946cf0814f414afa6b5b77f8647828d4b6f22fe67d"
+    },
+    {
+      "path": "references/report-templates/meta-period-report-excel.md",
+      "size": 4554,
+      "sha256": "08ea1cb69c369f5c7df5955ce612a6c4c226f82f2697f3a247478058ab304832"
+    },
+    {
+      "path": "references/report-templates/meta-period-report.md",
+      "size": 5893,
+      "sha256": "64ef4777815aa4520a1632bfd45273aced23a7132906073a396f08f5edc7f6db"
+    },
+    {
+      "path": "references/report-templates/okki-weekly-google-client.md",
+      "size": 33088,
+      "sha256": "e499722902972cb4cfe91743f781c0dd272f74ccb1578ac874e13c4cd76ab50c"
+    },
+    {
+      "path": "references/report-templates/stats-daily-excel.md",
+      "size": 824,
+      "sha256": "caae88f55345ee1e31bd3f449de7ca6d949bf65add5a5d1579ac810181c33781"
+    },
+    {
+      "path": "references/report-templates/tiktok-period-report.md",
+      "size": 11031,
+      "sha256": "2c15c38920b133347afe7a8cfa155361ca6adc13d134bea4aeb26c80d8bd6144"
+    },
+    {
+      "path": "references/report-templates/website-diagnosis-report.md",
+      "size": 4849,
+      "sha256": "359128dddb2cf8ca2d2991b41f0774b2b58c9717cfeaaa68611c3ddcf63e2fd0"
+    },
+    {
+      "path": "references/report-templates/yandex-period-report-excel.md",
+      "size": 7637,
+      "sha256": "708cee9ccad893703324cb0ce3858c6b0775c44aff46dcec1c2f112ff8fc97e1"
+    },
+    {
+      "path": "references/report-templates/yandex-period-report.md",
+      "size": 11115,
+      "sha256": "c25cd4dbe0dacc3c5a0262ff88042829c3f0dc1bf1d8058492576173b4357652"
+    },
+    {
+      "path": "report-templates/GoogleAdsDiagnosisReport.html",
+      "size": 220772,
+      "sha256": "7ad7b07197d55fa9f58bec59781624c081eeb40e592e8a82808fa4a4e5a39d36"
+    },
+    {
+      "path": "report-templates/README.md",
+      "size": 7112,
+      "sha256": "4d530fc641234cbe0cdda965b1f46de8747565c26c81c5bb3c33b649c21c4855"
+    },
+    {
+      "path": "report-templates/REPORT-WORKFLOW.md",
+      "size": 13666,
+      "sha256": "67195177e6830dab2440185a95d7e2e85807fac078eed1bbac45bd8c78b31414"
+    },
+    {
+      "path": "report-templates/bing-period-report.html",
+      "size": 45954,
+      "sha256": "265727bbb398109312b3d5d8794776acbd821c263d67ee5208188c89623668fd"
+    },
+    {
+      "path": "report-templates/bing-period-report.md",
+      "size": 21265,
+      "sha256": "4066668df28bf69ad2037bfe11d588f5fce62a97f450fb4b04d0fe8e086f5775"
+    },
+    {
+      "path": "report-templates/excel-style-guide.md",
+      "size": 5800,
+      "sha256": "4c8881618f4e23eba635c10d19d19babd64d8164f6d77a4707abbe1829ec30d3"
+    },
+    {
+      "path": "report-templates/excel-style-kit.mjs",
+      "size": 23967,
+      "sha256": "550188eb52a81f870fe24f2861ed6e6e746d4747705c9eb2ffd6044877b2da00"
+    },
+    {
+      "path": "report-templates/google-account-diagnosis-report.md",
+      "size": 3541,
+      "sha256": "4053d1cedba92074b8883c95356d34df75c1ebff66d9115681492ca7122dca6c"
+    },
+    {
+      "path": "report-templates/google-ads-diagnosis.md",
+      "size": 37293,
+      "sha256": "e2ede2075fe5c1ba269cdcccaffbf86e1aa421792ba30b91ac7c9ae3156e264c"
+    },
+    {
+      "path": "report-templates/google-inquiry-analysis.md",
+      "size": 53490,
+      "sha256": "36dc5c1085f04d97fd63dd5994ef5d3b5085c9b5790796693176b89d33a1922d"
+    },
+    {
+      "path": "report-templates/google-period-report-excel.md",
+      "size": 8593,
+      "sha256": "27e255b92586b89d6487a61b7cd9678c7b3355234ed7ccc7f5d883e2ace8640a"
+    },
+    {
+      "path": "report-templates/google-period-report.html",
+      "size": 47642,
+      "sha256": "3097431db206552a0daeb97b9d856bbcb0843ab1f5c0115d181cb8db8b002736"
+    },
+    {
+      "path": "report-templates/google-period-report.md",
+      "size": 13024,
+      "sha256": "a7e563498ea1a2528dcc8b4eaa168e4f4ad3db9100814847020f640bff4e5416"
+    },
+    {
+      "path": "report-templates/google-quarterly-plan.md",
+      "size": 10452,
+      "sha256": "b8fe28fff1a5acc513b64b56acdb32d8b6affb41cb8636c5beb3aba9c07a4096"
+    },
+    {
+      "path": "report-templates/google-quarterly-report.html",
+      "size": 98583,
+      "sha256": "8852b5b6b090a57c63bdfca59b9cf24075f00a080fe70d3b3f2b4bc576cb46f4"
+    },
+    {
+      "path": "report-templates/google-quarterly-report.md",
+      "size": 9216,
+      "sha256": "483ae13d2e12f479a88eaa28dd59b96a6df528be9848f77976b91796c3a0981f"
+    },
+    {
+      "path": "report-templates/market-analysis-report.md",
+      "size": 1406,
+      "sha256": "c521cd1e45dbc537a30f4118a3d585d2fa33e12eab22a0615785ce77ca75f097"
+    },
+    {
+      "path": "report-templates/meta-account-diagnosis-report.html",
+      "size": 35635,
+      "sha256": "27cfa3e44f6aec328c2e9046184f8d0a864fdfc74cd01bf37cc21b7bedc50e58"
+    },
+    {
+      "path": "report-templates/meta-account-diagnosis-report.md",
+      "size": 10568,
+      "sha256": "f3bda1c7cb6934a37d1210946cf0814f414afa6b5b77f8647828d4b6f22fe67d"
+    },
+    {
+      "path": "report-templates/meta-period-report-excel.md",
+      "size": 4554,
+      "sha256": "08ea1cb69c369f5c7df5955ce612a6c4c226f82f2697f3a247478058ab304832"
+    },
+    {
+      "path": "report-templates/meta-period-report.html",
+      "size": 24384,
+      "sha256": "8ab05f3f2a58618e0e89085478de3176ac7f8e45c38444eaabd27daab4688301"
+    },
+    {
+      "path": "report-templates/meta-period-report.md",
+      "size": 5893,
+      "sha256": "64ef4777815aa4520a1632bfd45273aced23a7132906073a396f08f5edc7f6db"
+    },
+    {
+      "path": "report-templates/okki-weekly-google-client.md",
+      "size": 33088,
+      "sha256": "e499722902972cb4cfe91743f781c0dd272f74ccb1578ac874e13c4cd76ab50c"
+    },
+    {
+      "path": "report-templates/report-template-academic.html",
+      "size": 22896,
+      "sha256": "86709f86b173a569c07d192c1ea66d8d3b687069026bfa738b0829b06f81f73a"
+    },
+    {
+      "path": "report-templates/report-template-dark.html",
+      "size": 20947,
+      "sha256": "254f797aa8da6d9b978e0f93d15b4c928bed457c6bda49a727cc62545b46a498"
+    },
+    {
+      "path": "report-templates/report-template-formal.html",
+      "size": 20871,
+      "sha256": "0112ae2649216740c5b735fa9d227fee54cb3d47e66c6525bbc3b123666ecab9"
+    },
+    {
+      "path": "report-templates/report-template-mobile.html",
+      "size": 21491,
+      "sha256": "484183b4f718707ec583e9fa1dcf1c3346ea9e60de09f0c0da21058e36bee39d"
+    },
+    {
+      "path": "report-templates/report-template-onepager.html",
+      "size": 20881,
+      "sha256": "dbcb97351f7309b436d8711e02206221de810c3c7511b0ab5eec45cc682f0523"
+    },
+    {
+      "path": "report-templates/report-template-print.html",
+      "size": 17051,
+      "sha256": "6d8b8d9b4aebb1fc09f8c1c0a28b62a756beb4b673c4b90faa55757ceda5f85d"
+    },
+    {
+      "path": "report-templates/report-template.html",
+      "size": 28137,
+      "sha256": "18fe7d36ad9ec26e836be734dbd7221c08061b410db1697ad802f04485ccc9b4"
+    },
+    {
+      "path": "report-templates/stats-daily-excel.md",
+      "size": 824,
+      "sha256": "caae88f55345ee1e31bd3f449de7ca6d949bf65add5a5d1579ac810181c33781"
+    },
+    {
+      "path": "report-templates/tiktok-period-report.html",
+      "size": 37838,
+      "sha256": "969ab291b16ba9204ac35bc2718db8d3c18e6f5162673750ae0d763448e784e3"
+    },
+    {
+      "path": "report-templates/tiktok-period-report.md",
+      "size": 11031,
+      "sha256": "2c15c38920b133347afe7a8cfa155361ca6adc13d134bea4aeb26c80d8bd6144"
+    },
+    {
+      "path": "report-templates/website-diagnosis-report.html",
+      "size": 66525,
+      "sha256": "91295ea087fe8f1b9374f3a3e0c737de729e7babb820471cc31349de8738abc9"
+    },
+    {
+      "path": "report-templates/website-diagnosis-report.md",
+      "size": 4849,
+      "sha256": "359128dddb2cf8ca2d2991b41f0774b2b58c9717cfeaaa68611c3ddcf63e2fd0"
+    },
+    {
+      "path": "report-templates/yandex-period-report-excel.md",
+      "size": 7637,
+      "sha256": "708cee9ccad893703324cb0ce3858c6b0775c44aff46dcec1c2f112ff8fc97e1"
+    },
+    {
+      "path": "report-templates/yandex-period-report.html",
+      "size": 51789,
+      "sha256": "300f634698cc3580e62157f377f4d0e7f736d6c2815ae3757402093384693826"
+    },
+    {
+      "path": "report-templates/yandex-period-report.md",
+      "size": 11115,
+      "sha256": "c25cd4dbe0dacc3c5a0262ff88042829c3f0dc1bf1d8058492576173b4357652"
+    },
+    {
+      "path": "scripts/install.ps1",
+      "size": 11187,
+      "sha256": "e2e9d8f469fe0fda129c9cc30cad35281b43449171413b70942bd28ded77b1c0"
+    },
+    {
+      "path": "scripts/install.sh",
+      "size": 6098,
+      "sha256": "13774c4bca92fc80dac0a4cff517145de68a7f94d7e66d97f6ce9b0449b93365"
+    },
+    {
+      "path": "snippets/handoff-p5-batch.md",
+      "size": 1544,
+      "sha256": "5bcd055162a8d12e9e3ef93b36e6e1664ad79d6ee3fb21fc4b3329c02a0894f5"
+    },
+    {
+      "path": "snippets/handoff-p6-okki.md",
+      "size": 2851,
+      "sha256": "b73f71e6c9f327b28e8a24e2ab040f28d9dd4ac2362a19ba6876eb51031a89ac"
+    },
+    {
+      "path": "snippets/handoff-p7-inquiry.md",
+      "size": 2025,
+      "sha256": "6f437e492d72640e22cc5ecfb2100187618f45640e820c880bc4e432dead4418"
+    }
+  ]
+}

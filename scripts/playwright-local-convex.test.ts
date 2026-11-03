@@ -3,11 +3,28 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { get } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
 import { z } from "zod";
 import type { LocalConvexBootstrapResult } from "./playwright-local-convex";
+
+// The fixture kills its listener between probes, so each request owns its socket.
+function probe(url: string): Promise<string> {
+  return new Promise((resolveBody, reject) => {
+    const request = get(url, { agent: false }, (response) => {
+      response.setEncoding("utf8");
+      let body = "";
+      response.on("data", (chunk) => {
+        body += chunk;
+      });
+      response.once("end", () => resolveBody(body));
+      response.once("error", reject);
+    });
+    request.once("error", reject);
+  });
+}
 
 it.skipIf(process.platform === "win32").each([
   { bootstrapExit: 0, disconnect: false },
@@ -65,7 +82,7 @@ backend.stdout.once('data', () => process.exit(Number(process.argv[2])));
       .parse(JSON.parse(await readFile(addressPath, "utf8")));
     const url = `http://127.0.0.1:${port}`;
     serverUrl = url;
-    expect(await (await fetch(url)).text()).toBe("alive");
+    expect(await probe(url)).toBe("alive");
     expect(owner.exitCode).toBeNull();
 
     if (disconnect) {
@@ -77,7 +94,7 @@ backend.stdout.once('data', () => process.exit(Number(process.argv[2])));
       process.kill(-owner.pid, "SIGTERM");
       await expect
         .poll(() =>
-          fetch(url).then(
+          probe(url).then(
             () => true,
             () => false,
           ),
@@ -91,14 +108,14 @@ backend.stdout.once('data', () => process.exit(Number(process.argv[2])));
     }
     await expect
       .poll(() =>
-        fetch(url).then(
+        probe(url).then(
           () => true,
           () => false,
         ),
       )
       .toBe(false);
   } finally {
-    if (serverUrl) await fetch(`${serverUrl}/stop`).catch(() => {});
+    if (serverUrl) await probe(`${serverUrl}/stop`).catch(() => {});
     if (owner?.pid && owner.exitCode === null && owner.signalCode === null) {
       const exited = once(owner, "exit");
       process.kill(-owner.pid, "SIGKILL");

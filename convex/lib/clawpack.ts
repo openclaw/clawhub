@@ -1,4 +1,4 @@
-import { findClawPackagePathHierarchyCollision } from "clawhub-schema";
+import { findTemplatePackagePathHierarchyCollision } from "clawhub-schema";
 import { Gunzip } from "fflate";
 
 type ClawPackEntry = {
@@ -151,7 +151,7 @@ function parseTarEntries(bytes: Uint8Array): ClawPackEntry[] {
   }
 
   if (entries.length === 0) throw new Error("ClawPack contains no files");
-  const hierarchyCollision = findClawPackagePathHierarchyCollision(
+  const hierarchyCollision = findTemplatePackagePathHierarchyCollision(
     entries.map((entry) => entry.path),
   );
   if (hierarchyCollision) {

@@ -1091,7 +1091,11 @@ describe("clawhub e2e", () => {
     expect(result.stdout).toMatch(/--dry-run/);
     expect(result.stdout).toMatch(/--json/);
     expect(result.stdout).toMatch(/--categories/);
-    expect(result.stdout).toMatch(/Deprecated for plugins/);
+    const help = result.stdout.replace(/\s+/g, " ");
+    expect(help).toContain(
+      "Template category overrides; deprecated and ignored for plugins (use openclaw.plugin.json)",
+    );
+    expect(help).not.toContain("plugins and Templates (ignored)");
   });
 
   it("skill verify help omits the redundant json flag", async () => {
@@ -1124,7 +1128,7 @@ describe("clawhub e2e", () => {
             displayName: "Fulcra Context",
             pageUrl: "https://clawhub.ai/arc-claw-bot/fulcra-context",
             publisherHandle: "arc-claw-bot",
-            publisherDisplayName: "Arc Claw Bot",
+            publisherDisplayName: "Arc Template Bot",
             publisherProfileUrl: "https://clawhub.ai/user/arc-claw-bot",
             version: "1.4.10",
             resolvedFrom: "version",

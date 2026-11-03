@@ -573,6 +573,41 @@ describe("plugins route", () => {
     await expect(pendingLoader).rejects.toMatchObject({ name: "AbortError" });
   });
 
+  it("accepts a healthy catalog response that takes longer than five seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const item = {
+        name: "healthy-slow-plugin",
+        displayName: "Healthy slow plugin",
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      fetchPluginCatalogMock.mockImplementation(
+        ({ signal }: { signal?: AbortSignal }) =>
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(() => resolve({ items: [item], nextCursor: null }), 6_000);
+            signal?.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timer);
+                reject(signal.reason);
+              },
+              { once: true },
+            );
+          }),
+      );
+      const { loadPluginsPageData } = await import("../routes/plugins/index");
+      const pendingLoader = loadPluginsPageData({});
+      await vi.advanceTimersByTimeAsync(6_000);
+      await expect(pendingLoader).resolves.toMatchObject({ items: [item], apiError: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("returns an API error when the catalog request exceeds the loader timeout", async () => {
     vi.useFakeTimers();
     try {
@@ -585,7 +620,7 @@ describe("plugins route", () => {
       const { loadPluginsPageData } = await import("../routes/plugins/index");
 
       const pendingLoader = loadPluginsPageData({});
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(10_000);
 
       await expect(pendingLoader).resolves.toEqual(
         expect.objectContaining({

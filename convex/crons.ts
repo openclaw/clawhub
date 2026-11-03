@@ -224,20 +224,6 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
-    "codex-scan-expired-lease-recovery",
-    { minutes: 5 },
-    internal.securityScan.requeueExpiredCodexScanJobsInternal,
-    {},
-  );
-
-  crons.interval(
-    "codex-scan-dispatch-watchdog",
-    { minutes: 5 },
-    internal.securityScanDispatch.requestSecurityScanDispatchInternal,
-    {},
-  );
-
-  crons.interval(
     "skill-evaluation-dispatch-watchdog",
     { minutes: 5 },
     internal.skillEvaluationDispatch.requestSkillEvaluationDispatchInternal,
@@ -298,6 +284,26 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
     { hours: 1 },
     internal.rateLimits.pruneHttpRateLimitKeysInternal,
     { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+}
+
+// Test pauses catalog schedules, but scan leases and dispatch still need recovery.
+if (
+  process.env.CLAWHUB_PREVIEW !== "1" &&
+  (process.env.CLAWHUB_DISABLE_CRONS !== "1" || process.env.CLAWHUB_ENV === "test")
+) {
+  crons.interval(
+    "codex-scan-expired-lease-recovery",
+    { minutes: 5 },
+    internal.securityScan.requeueExpiredCodexScanJobsInternal,
+    {},
+  );
+
+  crons.interval(
+    "codex-scan-dispatch-watchdog",
+    { minutes: 5 },
+    internal.securityScanDispatch.requestSecurityScanDispatchInternal,
+    {},
   );
 }
 

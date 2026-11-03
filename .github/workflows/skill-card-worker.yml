@@ -66,14 +66,10 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
-      - name: Install Codex CLI and renderer dependencies
-        run: |
-          set -euo pipefail
-          if ! command -v codex >/dev/null 2>&1; then
-            npm install -g @openai/codex@0.142.3
-          fi
-          python3 -m pip install --user --retries 5 --timeout 60 'jinja2==3.1.6'
-          codex --version
+      - name: Install Codex CLI
+        uses: ./.github/actions/setup-codex
+      - name: Install renderer dependencies
+        run: python3 -m pip install --user --retries 5 --timeout 60 'jinja2==3.1.6'
 
       - name: Authenticate Codex CLI
         env:
@@ -111,10 +107,11 @@ jobs:
           path: .artifacts/nvidia-trustworthy-ai
           persist-credentials: false
       - uses: ./.github/actions/setup-bun
-      - name: Install Codex CLI and renderer dependencies
-        run: |
-          npm install -g @openai/codex@0.142.3
-          python3 -m pip install --user --retries 5 --timeout 60 'jinja2==3.1.6'
+      - name: Install Codex CLI
+        uses: ./.github/actions/setup-codex
+      - name: Install renderer dependencies
+        run: python3 -m pip install --user --retries 5 --timeout 60 'jinja2==3.1.6'
+
       - name: Authenticate Codex CLI
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

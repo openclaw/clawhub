@@ -9,6 +9,10 @@
 - `specs/` — product specs, plans, regression notes, design history (see `specs/spec.md`).
 - `public/` — static assets.
 
+## Logo assets
+
+For OpenClaw and OpenClaw Foundation logos, see the [brand kit](https://github.com/openclaw/carapace/tree/main/brand-kit).
+
 ## Durable Intent & Specs
 
 - Use `specs/` to persist system/subsystem intent, invariants, and design rationale that future agents should preserve.

@@ -10,6 +10,7 @@ import {
   LOCAL_CODEX_WORKER_OPT_IN,
   resolveCodexWorkerHome,
 } from "../codex-worker-guard";
+import { summarizeClawScanExposure } from "./clawscan-exposure";
 import {
   assertAigFilePathsHaveNoCompiledPython,
   normalizeAigAnalysis,
@@ -53,6 +54,7 @@ describe("run-codex-scan-worker diagnostics", () => {
     try {
       await publishWorkerHealthSummary(diagnosticsRoot, {
         clawscan: {
+          exposure: summarizeClawScanExposure([undefined]),
           averageDurationMs: 30_000,
           completed: 1,
           failed: 0,
@@ -90,6 +92,7 @@ describe("run-codex-scan-worker diagnostics", () => {
     const markdown = await readFile(stepSummaryPath, "utf8");
     expect(markdown).toContain("## Security scan worker health");
     expect(markdown).toContain("| Completed | 1 |");
+    expect(markdown).toContain("| Unknown judge exposure runs | 1 |");
     const artifact = JSON.parse(
       await readFile(join(diagnosticsRoot, "worker-summary.json"), "utf8"),
     );
@@ -559,6 +562,33 @@ describe("run-codex-scan-worker diagnostics", () => {
       codeSnippet: "description: Harmless local demo",
     });
   });
+
+  it.each([
+    {
+      completeness: { is_complete: false, status: "partial" },
+      inspection: "partial",
+      risk: "suspicious",
+    },
+    {
+      completeness: { is_complete: true, status: "completed" },
+      inspection: "completed",
+      risk: "clean",
+    },
+    { completeness: undefined, inspection: undefined, risk: "clean" },
+  ])(
+    "retains inspection provenance separately from risk: $inspection",
+    ({ completeness, inspection, risk }) => {
+      const analysis = normalizeSkillSpectorAnalysis(
+        JSON.stringify({
+          status: "clean",
+          issues: [],
+          analysis_completeness: completeness,
+        }),
+      );
+      expect(analysis.status).toBe(risk);
+      expect(analysis.inspectionStatus).toBe(inspection);
+    },
+  );
 
   it("caps stored SkillSpector issues while preserving the full issue count", () => {
     const longSnippet = "sensitive artifact text ".repeat(200);

@@ -14,7 +14,7 @@ const modules = import.meta.glob("./**/*.ts");
 
 async function fixture(role: "user" | "admin") {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const userId = await t.run(async (ctx) => {
     const id = await ctx.db.insert("users", { handle: "managed-author", role });
     await ctx.db.insert("apiTokens", {

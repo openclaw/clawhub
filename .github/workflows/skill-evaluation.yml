@@ -99,7 +99,7 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -139,10 +139,7 @@ jobs:
           uv run --project "$SKILL_EVALUATOR_DIR" skillevaluator --version
 
       - name: Install pinned Codex CLI
-        run: |
-          set -euo pipefail
-          npm install -g @openai/codex@0.148.0
-          codex --version
+        uses: ./.github/actions/setup-codex
 
       - name: Verify Docker runtime
         run: docker info >/dev/null

@@ -1,9 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
+  isConvexWritePressureError,
   parseBooleanQueryParam,
   parseBooleanQueryParamOptional,
   resolveBooleanQueryParam,
 } from "./httpUtils";
+
+describe("isConvexWritePressureError", () => {
+  it("recognizes only the captured typed capacity signature", () => {
+    expect(
+      isConvexWritePressureError(
+        new Error("CommitterFullError: Too many writes in a short period of time."),
+      ),
+    ).toBe(true);
+    for (const error of [
+      new Error("Too many writes in a short period of time."),
+      new Error("Invalid upload SHA-256"),
+      new Error("CommitterFullError: Invalid argument"),
+      "CommitterFullError: Too many writes in a short period of time.",
+      null,
+    ])
+      expect(isConvexWritePressureError(error)).toBe(false);
+  });
+});
 
 describe("parseBooleanQueryParam", () => {
   it("returns true for true-like values", () => {

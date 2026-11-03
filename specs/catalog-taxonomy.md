@@ -100,6 +100,12 @@
   ascending. Pins resolve before the shelf limit. Missing, private, and blocked pins are skipped;
   homepage shelves also skip language-ineligible pins. Official status does not change tail order. The API carries `pinnedPackages`
   with category metadata so OpenClaw can apply the same policy to trusted bundled packages.
+- Successful anonymous curated category responses share the public discovery snapshot policy used
+  by the plugin overview: browser freshness 60 seconds, shared freshness 300 seconds, and
+  stale-while-revalidate 3600 seconds. These are public discovery metadata, not installation or
+  publication authorization. Exact release/detail and installation checks retain their current
+  visibility and security checks. Requests with a resolved viewer, Authorization/Cookie header,
+  or private channel filter remain uncached; non-curated reads and errors retain `no-store`.
 - Homepage plugin discovery uses English listing text, never publisher nationality. Complete
   category browse retains all listing languages while sharing the curated ordering. Discovery shares
   Trending's title-script and text classifier; reviewed short English false negatives match the

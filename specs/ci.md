@@ -20,21 +20,28 @@ times overlap and each required check reports its own failure:
   window fits the five-second CI budget. Longer rate limits and deterministic
   client errors such as a missing repository fail immediately.
 
-The CPU-heavy `unit` job uses one 32-vCPU Blacksmith registration and records
-the runner's actual CPU, memory, and cgroup allocation before coverage. The
-short `static`, `packages`, `types-build`, and `e2e-http` jobs run on GitHub-hosted
-Ubuntu runners, so this parallel layout keeps the same one-Blacksmith-registration
-budget as the former serial `pr-gates` job. Every non-browser gate has a
-five-minute timeout to enforce the pull-request feedback target.
+The `unit`, `templates-openclaw-contract`, and `playwright-smoke` jobs use
+GitHub-hosted Ubuntu 24.04 runners to avoid unavailable Blacksmith registrations.
+The CPU-heavy `unit` job records the runner's actual CPU, memory, and cgroup
+allocation before coverage and has a ten-minute timeout to accommodate hosted
+runner capacity. The short `static`, `packages`, `types-build`, and `e2e-http`
+jobs also run on GitHub-hosted Ubuntu runners. Other non-browser gates retain
+their five-minute timeout.
+
+The pinned OpenClaw contract job caches only the pnpm package store, keyed by
+OS, architecture, actual Node/pnpm versions, the pinned source commit and its
+lockfile/package manifest. It always performs the frozen install and full
+contract proof. Pull requests only restore; successful main pushes may save an
+exact-key miss. There are no fallback keys or cached installed workspaces.
 
 - `playwright-smoke` builds the app and runs a chromium browser smoke against the
   public read backend.
 - `playwright-local-auth` uses `test:pw:local-auth` to start a local anonymous
   Convex backend with dev auth, then runs the chromium specs under
   `e2e/local-auth/`. Related low-risk specs are grouped so the matrix spends
-  fewer Blacksmith runner registrations while keeping publish lifecycle checks
-  isolated for easier failure triage. Every shard requests the
-  `blacksmith-16vcpu-ubuntu-2404` runner label and records actual CPU count,
+  fewer runner starts while keeping publish lifecycle checks
+  isolated for easier failure triage. Every shard uses the
+  `ubuntu-24.04` runner image and records actual CPU count,
   load, cgroup CPU statistics, memory pressure, and free memory before and after
   the test. The matrix runs at most eight shards concurrently.
   The runner seeds the existing local skills.sh mirror fixture for the
@@ -42,8 +49,12 @@ five-minute timeout to enforce the pull-request feedback target.
   depend on the availability of a live public skill.
 
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
-matches the non-browser PR gates. `bun run ci:playwright-smoke` assumes the
-chromium Playwright browser has already been installed.
+covers the non-browser PR gates. Linux CI uses pinned tsrs for the root typecheck;
+local `ci:types-build` keeps native TypeScript for cross-platform support. Both
+use `ci:types:packages` for native package checks. To reproduce the Linux root
+check, run `bunx --no-install tsrs --noEmit` on a supported Linux host.
+`bun run ci:playwright-smoke` assumes the chromium Playwright browser has already
+been installed.
 
 Vercel preview builds retry the full Convex deploy-and-seed pipeline up to three
 times, waiting 20 seconds and then 40 seconds. Retries use fresh suffixed preview

@@ -9,6 +9,7 @@ import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { endorAnalysisValidator, type EndorAnalysis } from "./lib/endorAnalysis";
 import { Events, logEvent } from "./lib/observabilityEvents";
 import { normalizePackageName } from "./lib/packageRegistry";
+import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { normalizePackageScanStatus } from "./lib/packageSecurity";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 import {
@@ -131,6 +132,7 @@ type SkillSpectorIssueForStorage = {
 
 type SkillSpectorAnalysisForStorage = {
   status: string;
+  inspectionStatus?: "completed" | "partial";
   score?: number;
   severity?: string;
   recommendation?: string;
@@ -257,6 +259,7 @@ const skillSpectorIssueValidator = v.object({
 
 const skillSpectorAnalysisValidator = v.object({
   status: v.string(),
+  inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
   score: v.optional(v.number()),
   severity: v.optional(v.string()),
   recommendation: v.optional(v.string()),
@@ -467,6 +470,7 @@ function capSkillSpectorAnalysisForStorage(
     status:
       truncateSkillSpectorStorageText(analysis.status, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
       "error",
+    ...(analysis.inspectionStatus ? { inspectionStatus: analysis.inspectionStatus } : {}),
     score: analysis.score,
     severity: truncateSkillSpectorStorageText(
       analysis.severity,
@@ -3709,7 +3713,7 @@ export const getJobTargetInternal = internalQuery({
       const ownerPublisher = pkg?.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
       return {
         job,
-        package: pkg,
+        package: pkg ? { ...pkg, family: resolvePackageReleaseFamily(pkg.family, release) } : pkg,
         release,
         trustedOpenClawPlugin: isOpenClawPluginPackage(pkg, ownerPublisher),
       };
@@ -4170,11 +4174,17 @@ export const completeCodexScanJob = action({
           endorAnalysis: args.endorAnalysis,
         },
       );
-      await runMutationRef(
-        ctx,
-        internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
-        {},
-      );
+      // Completion has committed and cleared the lease. A refill failure must
+      // not send the worker down the scan-failure path for this finished job.
+      try {
+        await runMutationRef(
+          ctx,
+          internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
+          {},
+        );
+      } catch {
+        console.warn("security scan dispatch request failed after package completion");
+      }
       return result;
     } else if (target.job.targetKind === "skillScanRequest" && target.scanRequest) {
       let writtenBack = false;
@@ -4253,11 +4263,17 @@ export const completeCodexScanJob = action({
         runId: args.runId,
       },
     );
-    await runMutationRef(
-      ctx,
-      internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
-      {},
-    );
+    // Only the dispatch hint is best effort; all result writes and the terminal
+    // job mutation above must succeed before acknowledging completion.
+    try {
+      await runMutationRef(
+        ctx,
+        internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
+        {},
+      );
+    } catch {
+      console.warn("security scan dispatch request failed after completion");
+    }
     return result;
   },
 });

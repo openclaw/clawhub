@@ -25,7 +25,7 @@ export async function assertFeaturedCapacity(
     ).length;
     count += (await getExternalFeaturedSkills(ctx)).length;
   } else {
-    // Claws share the badge table but have their own catalog.
+    // Templates share the badge table but have their own catalog.
     for await (const badge of ctx.db
       .query("packageBadges")
       .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))) {

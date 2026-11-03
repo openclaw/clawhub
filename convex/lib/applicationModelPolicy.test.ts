@@ -1,11 +1,11 @@
-import type { ClawManifest } from "clawhub-schema";
+import type { TemplateManifest } from "clawhub-schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applicationReasoning } from "./applicationModelPolicy";
 import { __test as changelog } from "./changelog";
-import { classifyClawCategories } from "./clawCategoryClassification";
 import { classifyPluginCategories } from "./pluginCategoryClassification";
 import { classifySearchIntent } from "./searchIntentClassifier";
 import { generateSkillSummary } from "./skillSummary";
+import { classifyTemplateCategories } from "./templateCategoryClassification";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -48,17 +48,17 @@ const cases = [
       classifyPluginCategories({ name: "code-review", documentation: "Reviews source code." }),
   },
   {
-    name: "Claw category",
+    name: "Template category",
     effort: "none",
-    override: "OPENAI_CLAW_CATEGORY_MODEL",
+    override: "OPENAI_TEMPLATE_CATEGORY_MODEL",
     output: '{"categories":["travel"]}',
     run: () =>
-      classifyClawCategories({
+      classifyTemplateCategories({
         name: "trip-planner",
         manifest: {
           schemaVersion: 1,
           agent: { id: "trip-planner", name: "Trip planner", description: "Plan trips." },
-        } as ClawManifest,
+        } as TemplateManifest,
       }),
   },
   {

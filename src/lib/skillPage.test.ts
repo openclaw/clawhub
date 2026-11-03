@@ -15,7 +15,9 @@ vi.mock("../../convex/_generated/api", () => ({
   api: {
     skills: {
       getBySlug: "skills:getBySlug",
-      getReadme: "skills:getReadme",
+    },
+    skillReadme: {
+      getReadme: "skillReadme:getReadme",
     },
   },
 }));
@@ -65,7 +67,9 @@ describe("fetchSkillPageData", () => {
     });
     expect(queryMock).toHaveBeenCalledWith("skills:getBySlug", { slug: "weather" });
     expect(queryMock).toHaveBeenCalledTimes(1);
-    expect(actionMock).toHaveBeenCalledWith("skills:getReadme", { versionId: "skillVersions:1" });
+    expect(actionMock).toHaveBeenCalledWith("skillReadme:getReadme", {
+      versionId: "skillVersions:1",
+    });
   });
 
   it("threads owner handle into the skill lookup when provided", async () => {

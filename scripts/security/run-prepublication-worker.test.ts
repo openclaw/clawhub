@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
+import { summarizeClawScanExposure } from "./clawscan-exposure";
+import partialReport from "./fixtures/skillspector-usable-partial.json";
 import {
   DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS,
   claimBatchDrainedQueue,
@@ -17,8 +19,64 @@ import {
   resolveTruffleHogImage,
   runNativeTruffleHog,
 } from "./run-prepublication-worker";
+import { isAdjudicableSkillSpectorResult } from "./skillSpectorReportPolicy";
+
+const diagnosticLogs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+vi.mock("../lib/workerLogger", () => ({ createWorkerLogger: () => diagnosticLogs }));
 
 const tempDirs: string[] = [];
+const noNewExposure = {
+  scanExecution: "not_started",
+  eligibleScanAttempt: false,
+  judgeInvocations: 0,
+  judgeOperationalFailures: 0,
+  recoveredReceiptRetries: 0,
+};
+
+function legacyJudgeResult(verdict = "benign", summary = "Native ClawScan passed.") {
+  return {
+    verdict,
+    confidence: "high",
+    summary,
+    dimensions: Object.fromEntries(
+      [
+        "purpose_capability",
+        "instruction_scope",
+        "install_mechanism",
+        "environment_proportionality",
+        "persistence_privilege",
+      ].map((name) => [name, { status: "ok", detail: "Controlled test evidence." }]),
+    ),
+    scan_findings_in_context: [],
+    user_guidance: "Controlled test.",
+    artifact_inspection: {
+      status: "completed",
+      challenge: "legacy",
+      required_file_sha256: "c".repeat(64),
+      files_inspected: ["artifact/SKILL.md"],
+    },
+  };
+}
+
+function legacyArtifact(
+  aigRaw: unknown = {
+    version: "2.1.0",
+    runs: [{ tool: { driver: { name: "aig-skill-scan", version: "0.2.1" } }, results: [] }],
+  },
+  aigStatus = "completed",
+) {
+  return {
+    schemaVersion: "clawscan-run-v1",
+    profile: "clawhub",
+    completedAt: "2026-10-23T08:00:00Z",
+    scanners: {
+      aig: { status: aigStatus, raw: aigRaw },
+      "clawscan-static": { status: "completed" },
+      skillspector: { status: "completed", raw: { issues: [] } },
+    },
+    judge: { configuredModel: "gpt-6.1-sol", status: "completed", result: legacyJudgeResult() },
+  };
+}
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -30,6 +88,47 @@ async function tempDir() {
   const dir = await mkdtemp(join(tmpdir(), "clawhub-prepublication-worker-test-"));
   tempDirs.push(dir);
   return dir;
+}
+
+async function nativeDiagnosticCase(artifactText: string | null, exitCode = 1) {
+  const workspace = await tempDir();
+  await mkdir(join(workspace, "artifact"));
+  await writeFile(join(workspace, "artifact", "SKILL.md"), "# Synthetic diagnostic control\n");
+  const fakeClawScan = join(workspace, "fake-clawscan");
+  await writeFile(
+    fakeClawScan,
+    `#!/usr/bin/env node
+const fs = require('node:fs');
+const text = ${JSON.stringify(artifactText)};
+if (text !== null) fs.writeFileSync(process.argv[process.argv.indexOf('--output') + 1], text);
+if (${exitCode} !== 0) process.stderr.write('judge not started: scanner aig failed\\nscan incomplete: failed\\n');
+process.exit(${exitCode});
+`,
+  );
+  await chmod(fakeClawScan, 0o755);
+  vi.stubEnv("PREPUBLICATION_CLAWSCAN_COMMAND", fakeClawScan);
+  diagnosticLogs.info.mockClear();
+  const exposures: unknown[] = [];
+  const result = await runNativeClawScan(
+    {
+      job: {
+        _id: String(attempt.attemptId),
+        attempts: 1,
+        hasMaliciousSignal: false,
+        leaseToken: attempt.claimId,
+        source: "pre-publication",
+        targetKind: "skillVersion",
+        waitForVtUntil: 0,
+      },
+      target: {},
+    },
+    workspace,
+    (exposure) => exposures.push(exposure),
+  );
+  const event = diagnosticLogs.info.mock.calls.find(
+    ([row]) => row.event === "prepublication_clawscan_failure_diagnostic",
+  )?.[0];
+  return { result, event, exposures };
 }
 
 async function readStartedPid(path: string) {
@@ -160,6 +259,22 @@ describe("pre-publication worker", () => {
     expect(claimBatchDrainedQueue(0, 6, 6)).toBe(false);
   });
 
+  it("forwards the optional source on every batch claim without changing targeting filters", async () => {
+    const client = { action: vi.fn().mockResolvedValue(null) };
+    const scannerSource = "b08e2907eb60b33bf712b07673aff565c13d9ad7";
+    await claimPrePublicationBatch(client, "fixture", 2, {}, scannerSource);
+    expect(client.action.mock.calls.map((call) => call[1])).toEqual([
+      { token: "fixture", preferRetry: true, scannerSource },
+      { token: "fixture", scannerSource },
+    ]);
+    client.action.mockClear();
+    await claimPrePublicationBatch(client, "fixture", 2);
+    expect(client.action.mock.calls.map((call) => call[1])).toEqual([
+      { token: "fixture", preferRetry: true },
+      { token: "fixture" },
+    ]);
+  });
+
   it("requires the TruffleHog image to be pinned by digest", () => {
     expect(resolveTruffleHogImage()).toContain("@sha256:");
     expect(() => resolveTruffleHogImage("ghcr.io/trufflesecurity/trufflehog:3.95.6")).toThrow(
@@ -176,7 +291,15 @@ describe("pre-publication worker", () => {
       status: "clean",
       summary: "TruffleHog found no verified secrets.",
     });
+    const skillSpectorAnalysis = {
+      status: "suspicious",
+      inspectionStatus: "partial" as const,
+      issueCount: 1,
+      issues: [{ issueId: "gap", severity: "high", explanation: "Partial evidence." }],
+      checkedAt: 123,
+    };
     const runClawScan = vi.fn().mockResolvedValue({
+      skillSpectorAnalysis,
       aigAnalysis: {
         checkedAt: 123,
         findings: [],
@@ -218,10 +341,112 @@ describe("pre-publication worker", () => {
         trufflehog: { status: "clean", summary: "TruffleHog found no verified secrets." },
         clawscan: expect.objectContaining({ status: "clean" }),
         aigAnalysis: expect.objectContaining({ status: "clean", issueCount: 0 }),
+        skillSpectorAnalysis,
       }),
     );
     expect(client.action.mock.calls[0]?.[1].trufflehog).not.toHaveProperty("exitCode");
   });
+
+  it.each(["recovered receipt", "repeated failure", "malformed metadata", "missing artifact"])(
+    "reports native %s exposure without publishing metadata",
+    async (scenario) => {
+      const root = await tempDir();
+      const command = join(root, "fake-clawscan");
+      const result = legacyJudgeResult("malicious", "Security block, not clean.");
+      const first = {
+        status: "failed",
+        error: "Judge did not provide the required artifact inspection receipt.",
+        result: { private: "unpublished-body" },
+        durationMs: 100,
+        challenge: "a".repeat(64),
+        requiredFile: "artifact/package.json",
+        requiredFileSha256: "c".repeat(64),
+      };
+      const last = { ...first, status: "completed", error: "", challenge: "b".repeat(64), result };
+      const failed = scenario === "repeated failure";
+      const artifact = {
+        schemaVersion: "clawscan-run-v1",
+        profile: "clawhub",
+        completedAt: "2026-10-22T00:00:00Z",
+        scanners: {
+          "clawscan-static": { status: "completed" },
+          skillspector: { status: "completed", raw: { issues: [] } },
+        },
+        judge: {
+          status: failed ? "failed" : "completed",
+          error: failed ? first.error : "",
+          result: failed ? null : result,
+          attempts:
+            scenario === "malformed metadata"
+              ? []
+              : [
+                  first,
+                  failed ? { ...last, status: "failed", error: first.error, result: null } : last,
+                ],
+        },
+      };
+      await writeFile(
+        command,
+        `#!/bin/sh\nset -eu\ntest -z "\${CLAWSCAN_PROGRESS:-}"\ntest -z "\${CLAWSCAN_CHILD_PROGRESS:-}"\nwhile [ "$1" != --output ]; do shift; done\n${scenario === "missing artifact" ? ":" : `cat > "$2" <<'JSON'\n${JSON.stringify(artifact)}\nJSON`}\nprintf '%s\\n' '[clawscan-progress] {"private":"unpublished-progress"}' >&2\nexit ${failed ? 1 : 0}\n`,
+      );
+      await chmod(command, 0o755);
+      vi.stubEnv("PREPUBLICATION_CLAWSCAN_COMMAND", command);
+      vi.stubEnv("CLAWSCAN_PROGRESS", "1");
+      vi.stubEnv("CLAWSCAN_CHILD_PROGRESS", "1");
+      const onExposure = vi.fn();
+      const client = {
+        action: vi.fn().mockResolvedValue({
+          status: failed || scenario === "missing artifact" ? "failed" : "blocked",
+        }),
+      };
+      await processPrePublicationAttempt(
+        client,
+        "worker-token",
+        { ...attempt, kind: "package", scanContext: { package: { family: "code-plugin" } } },
+        {
+          onExposure,
+          writeWorkspace: async (_job, workspace) => {
+            await mkdir(join(workspace, "artifact"), { recursive: true });
+            await writeFile(
+              join(workspace, "artifact/openclaw.plugin.json"),
+              '{"id":"fixture-plugin"}',
+            );
+          },
+          runTruffleHog: vi.fn().mockResolvedValue({ status: "clean" }),
+        },
+      );
+      expect(onExposure).toHaveBeenCalledTimes(1);
+      expect(onExposure).toHaveBeenCalledWith({
+        scanExecution: "started",
+        eligibleScanAttempt: scenario === "missing artifact" ? null : true,
+        judgeInvocations:
+          scenario === "malformed metadata" || scenario === "missing artifact" ? null : 2,
+        judgeOperationalFailures:
+          scenario === "malformed metadata" || scenario === "missing artifact"
+            ? null
+            : failed
+              ? 2
+              : 1,
+        recoveredReceiptRetries:
+          scenario === "malformed metadata" || scenario === "missing artifact"
+            ? null
+            : failed
+              ? 0
+              : 1,
+      });
+      const payload = client.action.mock.calls[0]?.[1];
+      expect(payload.clawscan.status).toBe(
+        failed || scenario === "missing artifact" ? "failed" : "blocked",
+      );
+      expect(payload).not.toHaveProperty("exposure");
+      expect(payload.clawscan.summary).not.toContain("unpublished-progress");
+      expect(
+        JSON.stringify(
+          summarizeClawScanExposure(onExposure.mock.calls.map(([exposure]) => exposure)),
+        ),
+      ).not.toContain("unpublished-body");
+    },
+  );
 
   it("reuses a completed ClawScan verdict from the exact staged artifact", async () => {
     const client = {
@@ -233,6 +458,7 @@ describe("pre-publication worker", () => {
       summary: "TruffleHog found no verified secrets.",
     });
     const runClawScan = vi.fn();
+    const onExposure = vi.fn();
     const existingClawscanAnalysis = {
       checkedAt: 123,
       confidence: "high",
@@ -255,6 +481,7 @@ describe("pre-publication worker", () => {
         "worker-token",
         { ...attempt, existingAigAnalysis, existingClawscanAnalysis },
         {
+          onExposure,
           runClawScan,
           runTruffleHog,
           writeWorkspace: vi.fn().mockResolvedValue(undefined),
@@ -264,6 +491,7 @@ describe("pre-publication worker", () => {
 
     expect(runTruffleHog).toHaveBeenCalledTimes(1);
     expect(runClawScan).not.toHaveBeenCalled();
+    expect(onExposure).toHaveBeenCalledWith(noNewExposure);
     expect(client.action).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -553,6 +781,7 @@ describe("pre-publication worker", () => {
   });
 
   it("blocks secret-positive attempts without running ClawScan", async () => {
+    const onExposure = vi.fn();
     const client = {
       action: vi.fn().mockResolvedValue({ status: "blocked" }),
     };
@@ -565,6 +794,7 @@ describe("pre-publication worker", () => {
 
     await expect(
       processPrePublicationAttempt(client, "worker-token", attempt, {
+        onExposure,
         runClawScan,
         runTruffleHog,
         writeWorkspace: vi.fn().mockResolvedValue(undefined),
@@ -572,6 +802,7 @@ describe("pre-publication worker", () => {
     ).resolves.toMatchObject({ completed: true });
 
     expect(runClawScan).not.toHaveBeenCalled();
+    expect(onExposure).toHaveBeenCalledWith(noNewExposure);
     expect(client.action).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -619,6 +850,7 @@ describe("pre-publication worker", () => {
   });
 
   it("retries ready-to-finalize attempts without rerunning scanners", async () => {
+    const onExposure = vi.fn();
     const client = {
       action: vi.fn().mockResolvedValue({ status: "finalized" }),
     };
@@ -632,6 +864,7 @@ describe("pre-publication worker", () => {
         "worker-token",
         { ...attempt, status: "ready_to_finalize", files: [] },
         {
+          onExposure,
           runClawScan,
           runTruffleHog,
           writeWorkspace,
@@ -640,6 +873,7 @@ describe("pre-publication worker", () => {
     ).resolves.toMatchObject({ completed: true });
 
     expect(writeWorkspace).not.toHaveBeenCalled();
+    expect(onExposure).toHaveBeenCalledWith(noNewExposure);
     expect(runTruffleHog).not.toHaveBeenCalled();
     expect(runClawScan).not.toHaveBeenCalled();
     expect(client.action).toHaveBeenCalledWith(
@@ -815,7 +1049,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"configuredModel":"gpt-6.1-sol","status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+${JSON.stringify(legacyArtifact())}
 JSON
 `,
       );
@@ -937,7 +1171,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"skipped"},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+${JSON.stringify(legacyArtifact(undefined, "skipped"))}
 JSON
 `,
       );
@@ -958,7 +1192,7 @@ JSON
                 targetKind: "packageRelease",
                 waitForVtUntil: 0,
               },
-              target: {},
+              target: { package: { family: "code-plugin" } },
             },
             workspace,
           ),
@@ -968,6 +1202,11 @@ JSON
             verdict: "benign",
           }),
           aigAnalysis: undefined,
+          skillSpectorAnalysis: expect.objectContaining({
+            status: "clean",
+            issueCount: 0,
+            issues: [],
+          }),
           check: {
             status: "clean",
             summary: "Native ClawScan passed.",
@@ -979,6 +1218,326 @@ JSON
       }
     },
   );
+
+  it("distinguishes native A.I.G failures without changing failed checks or completeness", async () => {
+    const observations = [];
+    for (const [error, errorClass] of [
+      ["aig-skill-scan did not write SARIF output.", "missing_sarif"],
+      ["aig-skill-scan returned invalid SARIF 2.1.0 JSON", "invalid_sarif"],
+    ]) {
+      const report = {
+        ...legacyArtifact(),
+        scanners: {
+          ...legacyArtifact().scanners,
+          aig: { status: "failed", error, exitCode: 2, durationMs: 42, raw: null },
+          skillspector: {
+            status: "completed",
+            raw: {
+              execution_successful: true,
+              issues: [{ finding_id: "synthetic-finding", message: "Suspicious instruction" }],
+              analysis_completeness: {
+                status: "partial",
+                total_components: 2,
+                fully_inspected_files: 1,
+                partially_inspected_files: 1,
+                findings_before_filtering: 1,
+                findings_after_filtering: 1,
+                ledger_exceptions: [{ reason_code: "static_parse_limit", path: "reference.md" }],
+                limitations: ["synthetic gap"],
+              },
+            },
+          },
+        },
+        judge: { status: "not_started" },
+      };
+      const { result, event } = await nativeDiagnosticCase(JSON.stringify(report));
+      expect(result).toEqual({
+        check: {
+          status: "failed",
+          summary:
+            "ClawScan failed before returning a verdict: judge not started: scanner aig failed\nscan incomplete: failed\n",
+        },
+      });
+      expect(event).toMatchObject({
+        exitCode: 1,
+        artifact: {
+          presence: "present",
+          bytes: expect.any(Number),
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+        scanners: {
+          aig: {
+            status: "failed",
+            exitCode: 2,
+            durationMs: 42,
+            error: {
+              class: errorClass,
+              present: true,
+              bytes: expect.any(Number),
+              sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+            },
+            raw: { present: false, bytes: null, sha256: null },
+          },
+        },
+        skillSpector: {
+          reasonCounts: { static_parse_limit: 1 },
+          findings: { reported: 1, beforeFiltering: 1, afterFiltering: 1 },
+          completeness: { counts: { fully_inspected_files: 1, partially_inspected_files: 1 } },
+        },
+      });
+      expect(JSON.stringify(event)).not.toContain(error);
+      observations.push({ result, event });
+    }
+    expect(observations[0].result).toEqual(observations[1].result);
+    expect(observations[0].event.skillSpector).toEqual(observations[1].event.skillSpector);
+    expect(observations[0].event.scanners.aig.error.sha256).not.toBe(
+      observations[1].event.scanners.aig.error.sha256,
+    );
+  });
+
+  it("preserves partial SkillSpector diagnostics when A.I.G fails without changing the failed result", async () => {
+    const skillspector = {
+      status: "partial",
+      reportPolicy: "judge-gaps",
+      exitCode: 1,
+      raw: structuredClone(partialReport),
+    };
+    expect(isAdjudicableSkillSpectorResult(skillspector)).toBe(true);
+    const report = {
+      ...legacyArtifact(),
+      scanners: {
+        ...legacyArtifact().scanners,
+        aig: { status: "failed", error: "aig-skill-scan did not write SARIF output.", raw: null },
+        skillspector,
+      },
+      judge: { status: "not_started" },
+    };
+    const partial = await nativeDiagnosticCase(JSON.stringify(report));
+    const completedStatus = await nativeDiagnosticCase(
+      JSON.stringify({
+        ...report,
+        scanners: { ...report.scanners, skillspector: { ...skillspector, status: "completed" } },
+      }),
+    );
+    expect(partial.event.scanners.skillspector.status).toBe("partial");
+    expect(partial.result).toEqual({
+      check: {
+        status: "failed",
+        summary:
+          "ClawScan failed before returning a verdict: judge not started: scanner aig failed\nscan incomplete: failed\n",
+      },
+    });
+    expect(partial.result).toEqual(completedStatus.result);
+    expect(partial.exposures).toEqual(completedStatus.exposures);
+    expect(partial.event.skillSpector).toEqual(completedStatus.event.skillSpector);
+    expect(partial.event.skillSpector).toMatchObject({
+      executionSuccessful: true,
+      findings: { reported: 1 },
+      reasonCounts: {},
+      unknownReasons: 1,
+      completeness: {
+        status: "partial",
+        counts: {
+          total_components: 2,
+          fully_inspected_files: 0,
+          partially_inspected_files: 1,
+          entirely_uninspected_files: 1,
+        },
+        ledgerExceptionCount: 1,
+      },
+    });
+  });
+
+  it.each([0, 7])(
+    "diagnoses missing, malformed and invalid-schema artifacts at exit %s",
+    async (code) => {
+      for (const [text, presence] of [
+        [null, "missing"],
+        ["not JSON: PRIVATE-SOURCE-SECRET", "malformed"],
+        ["null", "invalid_schema"],
+        [
+          JSON.stringify({
+            schemaVersion: "private-schema",
+            profile: "private-profile",
+            scanners: {
+              aig: { status: "PRIVATE-SOURCE-SECRET", error: "PRIVATE-SOURCE-SECRET" },
+            },
+          }),
+          "invalid_schema",
+        ],
+      ]) {
+        const { result, event } = await nativeDiagnosticCase(text, code);
+        expect(result.check.status).toBe("failed");
+        expect(result.analysis).toBeUndefined();
+        expect(event).toMatchObject({
+          exitCode: code,
+          artifact: { presence, bytes: text === null ? null : Buffer.byteLength(text) },
+          scanners: { aig: { status: "missing", error: { class: "none" } } },
+        });
+        expect(event.skillSpector).toBeUndefined();
+        expect(JSON.stringify(event)).not.toMatch(
+          /PRIVATE|not JSON|private-schema|private-profile/,
+        );
+      }
+    },
+  );
+
+  it("bounds native diagnostics and excludes secrets, signed URLs, controls and arbitrary source text", async () => {
+    const privateText =
+      "PRIVATE-SOURCE-SECRET api_key=synthetic-credential Authorization: Bearer synthetic-bearer " +
+      "https://private.invalid/path?X-Amz-Signature=synthetic-signature \u001b[31m\r\n::error::injected";
+    const errors = [privateText, privateText + "x".repeat(100_000), { message: privateText }, ""];
+    for (const error of errors) {
+      const artifact = legacyArtifact();
+      Object.assign(artifact.scanners.aig, {
+        status: privateText,
+        error,
+        exitCode: privateText,
+        durationMs: -1,
+        command: [privateText],
+        startedAt: privateText,
+        completedAt: privateText,
+        raw: { privateText },
+      });
+      const { event, result } = await nativeDiagnosticCase(JSON.stringify(artifact));
+      expect(result.check.status).toBe("failed");
+      expect(event.scanners.aig).toMatchObject({
+        status: "unknown",
+        exitCode: null,
+        durationMs: null,
+        error: { class: typeof error === "object" ? "invalid" : error === "" ? "none" : "other" },
+        raw: {
+          present: true,
+          bytes: expect.any(Number),
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      });
+      const serialized = JSON.stringify(event);
+      expect(serialized.length).toBeLessThan(20_000);
+      expect(serialized).not.toMatch(
+        /PRIVATE|synthetic-credential|synthetic-bearer|synthetic-signature|private.invalid|injected|\\u001b|::error::/,
+      );
+      expect(serialized).not.toContain(privateText);
+    }
+  });
+
+  it("emits failure diagnostics for unusable zero-exit output without changing successful verdicts", async () => {
+    const failed = legacyArtifact({ version: "2.1.0", runs: [] });
+    const { result, event } = await nativeDiagnosticCase(JSON.stringify(failed), 0);
+    expect(result.check).toEqual({
+      status: "failed",
+      summary: "A.I.G SARIF output did not contain a run.",
+    });
+    expect(event).toMatchObject({
+      exitCode: 0,
+      artifact: { presence: "present" },
+      scanners: {
+        aig: { status: "completed", raw: { present: true } },
+      },
+    });
+    for (const [verdict, status] of [
+      ["benign", "clean"],
+      ["suspicious", "clean"],
+      ["malicious", "blocked"],
+    ]) {
+      const artifact = legacyArtifact();
+      artifact.judge.result = legacyJudgeResult(verdict);
+      const successful = await nativeDiagnosticCase(JSON.stringify(artifact), 0);
+      expect(successful.event).toBeUndefined();
+      expect(successful.result.check.status).toBe(status);
+      expect(successful.result.analysis?.verdict).toBe(verdict);
+      if (verdict !== "benign")
+        expect(successful.result.check.redactedFindings).toEqual([
+          `status=${verdict}; verdict=${verdict}`,
+        ]);
+    }
+  });
+
+  it("logs allowlisted completeness evidence for a failed scanner without artifact text", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const report = {
+      schemaVersion: "clawscan-run-v1",
+      profile: "clawhub",
+      scanners: {
+        skillspector: {
+          status: "failed",
+          error: "PRIVATE-SOURCE-SECRET",
+          raw: {
+            execution_successful: true,
+            skill: { source: "/PRIVATE-SOURCE-SECRET" },
+            analysis_completeness: {
+              is_complete: false,
+              status: "partial",
+              execution_successful: true,
+              total_components: 2,
+              fully_inspected_files: 1,
+              partially_inspected_files: 1,
+              ledger_exceptions: [
+                {
+                  reason_code: "static_parse_limit",
+                  path: "PRIVATE-SOURCE-SECRET",
+                  message: "PRIVATE-SOURCE-SECRET",
+                  phase: "static",
+                  analyzers: ["static_patterns_tool_misuse"],
+                },
+              ],
+              analyzer_statuses: [],
+              limitations: ["PRIVATE-SOURCE-SECRET"],
+            },
+          },
+        },
+      },
+    };
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env node
+const fs = require('node:fs');
+fs.writeFileSync(process.argv[process.argv.indexOf('--output') + 1], ${JSON.stringify(JSON.stringify(report))});
+process.exit(1);
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+    diagnosticLogs.info.mockClear();
+    try {
+      const result = await runNativeClawScan(
+        {
+          job: {
+            _id: String(attempt.attemptId),
+            attempts: 1,
+            hasMaliciousSignal: false,
+            leaseToken: attempt.claimId,
+            source: "pre-publication",
+            targetKind: "skillVersion",
+            waitForVtUntil: 0,
+          },
+          target: {},
+        },
+        workspace,
+      );
+      expect(result.check.status).toBe("failed");
+      const entry = diagnosticLogs.info.mock.calls.find(
+        ([row]) => row.event === "prepublication_clawscan_failure_diagnostic",
+      )?.[0];
+      expect(entry).toMatchObject({
+        attemptId: String(attempt.attemptId),
+        skillSpector: {
+          reasonCounts: { static_parse_limit: 1 },
+          completeness: {
+            counts: { total_components: 2, fully_inspected_files: 1, partially_inspected_files: 1 },
+          },
+        },
+      });
+      expect(JSON.stringify(entry)).not.toContain("PRIVATE-SOURCE-SECRET");
+    } finally {
+      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
 
   it("fails closed when a completed skill scan omits a required scanner", async () => {
     const workspace = await tempDir();
@@ -1109,7 +1668,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[]}},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+${JSON.stringify(legacyArtifact({ version: "2.1.0", runs: [] }))}
 JSON
 `,
     );

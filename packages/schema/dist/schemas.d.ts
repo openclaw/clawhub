@@ -862,6 +862,23 @@ export declare const ApiV1SkillVersionResponseSchema: import("arktype/internal/v
         displayName: string;
     } | null;
 }, {}>;
+export declare const ApiV1SkillPublicationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    skill: {
+        slug: string;
+        displayName: string;
+    };
+    publication: {
+        version: string;
+        stage: "blocked" | "checks_failed" | "checks_incomplete" | "expired" | "failed" | "finalizing" | "pending_checks" | "published" | "ready_to_finalize" | "unavailable";
+        retrying: boolean;
+        updatedAt: number;
+        checks?: {
+            trufflehog: "blocked" | "clean" | "failed" | "pending";
+            clawscan: "blocked" | "clean" | "failed" | "pending";
+        } | undefined;
+    };
+}, {}>;
+export type ApiV1SkillPublicationResponse = (typeof ApiV1SkillPublicationResponseSchema)[inferred];
 export declare const ApiV1SkillResolveResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     match: {
         version: string;

@@ -32,7 +32,7 @@ describe("CI workflow", () => {
     }
   });
 
-  it("runs required gates in parallel with one CPU-sized Blacksmith lane", async () => {
+  it("runs required gates in parallel on available hosted runners", async () => {
     const workflow = parseYaml(await readFile(".github/workflows/ci.yml", "utf8")) as {
       jobs: Record<string, WorkflowJob>;
     };
@@ -40,7 +40,8 @@ describe("CI workflow", () => {
       static: "bun run ci:static",
       unit: "bun run ci:unit",
       packages: "bun run ci:packages",
-      "types-build": "bun run ci:types-build",
+      "types-build":
+        "bunx --no-install tsrs --noEmit && bun run ci:types:packages && VITE_CONVEX_URL=https://example.invalid bun run build",
       "e2e-http": "bun run ci:e2e-http",
     };
 
@@ -48,11 +49,11 @@ describe("CI workflow", () => {
     for (const [name, command] of Object.entries(requiredGates)) {
       const job = workflow.jobs[name];
       expect(job.needs).toBeUndefined();
-      expect(job["timeout-minutes"]).toBe(5);
+      expect(job["timeout-minutes"]).toBe(name === "unit" ? 10 : 5);
       expect(job.steps).toContainEqual(expect.objectContaining({ run: command }));
     }
 
-    expect(workflow.jobs.unit["runs-on"]).toBe("blacksmith-32vcpu-ubuntu-2404");
+    expect(workflow.jobs.unit["runs-on"]).toBe("ubuntu-24.04");
     expect(workflow.jobs.unit.steps).toContainEqual(
       expect.objectContaining({
         uses: "actions/checkout@v7.0.1",

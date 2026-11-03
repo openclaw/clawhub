@@ -31,7 +31,7 @@ it("retains consumed quota and queued reports when component implementations cha
     let upgraded = false;
     const t = convexTest(schema, import.meta.glob("./**/*.ts"));
     const implementations: Record<string, Modules> = {
-      rateLimiter: switchingModules(
+      rateLimiterV2: switchingModules(
         previousRateLimiter.modules,
         rateLimiter.modules,
         () => upgraded,
@@ -46,7 +46,7 @@ it("retains consumed quota and queued reports when component implementations cha
       registerComponent: (name, componentSchema, modules) =>
         t.registerComponent(name, componentSchema, implementations[name] ?? modules),
     };
-    rateLimiter.register(registration);
+    rateLimiter.register(registration, "rateLimiterV2");
     workpool.register(registration, "searchReports");
 
     const quota = {

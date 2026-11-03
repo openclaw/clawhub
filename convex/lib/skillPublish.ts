@@ -1,10 +1,12 @@
+import { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
+export { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
 import {
-  decodeUtf8Text,
   normalizeCatalogTopics,
   normalizeContentType,
   normalizeSkillCategories,
   resolveSkillCategories,
 } from "clawhub-schema";
+import { decodeUtf8Text } from "clawhub-schema/textFiles";
 import { ConvexError } from "convex/values";
 import semver from "semver";
 import { api, internal } from "../_generated/api";
@@ -55,6 +57,7 @@ import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSkillSummary } from "./skillSummary";
 import { normalizeSkillTags } from "./skillTags";
 import { runStaticPublishScan } from "./staticPublishScan";
+import { fetchText } from "./storageText";
 import { getWebhookConfig, type WebhookSkillPayload } from "./webhooks";
 
 const MAX_FILES_FOR_EMBEDDING = 40;
@@ -62,7 +65,6 @@ const MAX_ANALYZED_FILE_BYTES = 256 * 1024;
 const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const QUALITY_ACTIVITY_LIMIT = 60;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
-const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
 const MAX_PUBLISH_SUMMARY_LENGTH = 300;
 
 type FingerprintFile = { path: string; sha256: string };
@@ -605,6 +607,8 @@ export async function finalizeSkillPublishAttempt(
       publishResult = (await ctx.runMutation(internal.skills.publishPendingVersionInternal, {
         versionId: claim.versionId,
         publishArgs: skillInsertArgs,
+        publishAttemptId: claim.attemptId,
+        finalizationClaimId: claimId,
       })) as PublishResult;
     } else {
       const skillInsertArgs = await prepareSkillInsertArgsForFinalization(
@@ -629,8 +633,6 @@ export async function finalizeSkillPublishAttempt(
   }
 
   try {
-    await scheduleSkillPublishFollowups(ctx, publishResult, claim.followup);
-
     await ctx.runMutation(internal.publishAttempts.recordSkillPublishAttemptFinalizedInternal, {
       attemptId: claim.attemptId,
       claimId,
@@ -641,6 +643,7 @@ export async function finalizeSkillPublishAttempt(
     throw error;
   }
 
+  await scheduleSkillPublishWebhook(ctx, claim.followup);
   return publishResult;
 }
 
@@ -775,36 +778,7 @@ async function releaseSkillPublishAttemptFinalizationClaim(
   );
 }
 
-async function scheduleSkillPublishFollowups(
-  ctx: ActionCtx,
-  publishResult: PublishResult,
-  followup: SkillPublishFollowup,
-) {
-  await ctx.scheduler.runAfter(0, internal.vt.scanWithVirusTotal, {
-    versionId: publishResult.versionId,
-  });
-
-  await ctx.scheduler.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
-    versionId: publishResult.versionId,
-    source: "publish",
-  });
-  await ctx.scheduler.runAfter(2_000, internal.securityScan.enqueueSkillVersionScanInternal, {
-    versionId: publishResult.versionId,
-    source: "publish",
-    preserveActiveJob: true,
-    preserveExistingJob: true,
-  });
-  await ctx.scheduler.runAfter(
-    SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS,
-    internal.securityScan.enqueueSkillVersionScanInternal,
-    {
-      versionId: publishResult.versionId,
-      source: "publish",
-      preserveActiveJob: true,
-      preserveExistingJob: true,
-    },
-  );
-
+async function scheduleSkillPublishWebhook(ctx: ActionCtx, followup: SkillPublishFollowup) {
   if (!followup.skipWebhook && getWebhookConfig().url) {
     try {
       await schedulePublishWebhook(ctx, {
@@ -854,19 +828,6 @@ function mergeSourceIntoMetadata(
   }
 
   return Object.keys(base).length ? base : undefined;
-}
-
-function buildSkillPublishAttemptIdempotencyKey(args: {
-  userId: Id<"users">;
-  ownerPublisherId?: Id<"publishers">;
-  slug: string;
-  version: string;
-  fingerprint: string;
-}) {
-  const ownerScope = args.ownerPublisherId
-    ? `publisher:${args.ownerPublisherId}`
-    : `user:${args.userId}`;
-  return ["skill", ownerScope, args.slug, args.version, args.fingerprint].join(":");
 }
 
 function stripUndefinedForStoredAttempt(value: unknown): unknown {
@@ -922,17 +883,6 @@ export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<"ski
     event: "skill.highlighted",
     skill: payload,
   });
-}
-
-export async function fetchText(
-  ctx: { storage: { get: (id: Id<"_storage">) => Promise<Blob | null> } },
-  storageId: Id<"_storage">,
-) {
-  const blob = await ctx.storage.get(storageId);
-  if (!blob) throw new Error("File missing in storage");
-  const text = decodeUtf8Text(new Uint8Array(await blob.arrayBuffer()));
-  if (text === null) throw new Error("File is not valid UTF-8 text");
-  return text;
 }
 
 async function hostDirectSkillPresentationIcon(

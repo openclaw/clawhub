@@ -5,7 +5,8 @@ import { defineApp } from "convex/server";
 
 const app = defineApp();
 app.use(migrations);
-app.use(rateLimiter);
+// v2: the original instance grew unbounded (~40M rows); a fresh instance lets the old one be dropped.
+app.use(rateLimiter, { name: "rateLimiterV2" });
 app.use(workpool, { name: "searchReports" });
 
 export default app;

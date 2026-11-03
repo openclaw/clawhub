@@ -1,37 +1,20 @@
 import { type inferred, type } from "arktype";
-import { ClawManifestSummarySchema } from "./claws.js";
-import { DocsLinks } from "./docsLinks.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
+import { TemplateManifestSummarySchema } from "./templates.js";
 
 export const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
 export const PACKAGE_CATEGORY_BATCH_LIMIT = 200;
 
-export function normalizePackageOwnerHandle(handle: string | null | undefined) {
-  const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
-  return normalized || undefined;
-}
+export {
+  normalizePackageOwnerHandle,
+  inferPackageNameScope,
+  getPackageScopeOwnerMismatch,
+} from "./packageNames.js";
 
-export function inferPackageNameScope(name: string) {
-  return /^@([^/]+)\//.exec(name.trim().toLowerCase())?.[1];
-}
-
-export function getPackageScopeOwnerMismatch(name: string, ownerHandle: string | null | undefined) {
-  const scope = inferPackageNameScope(name);
-  const selectedOwner = normalizePackageOwnerHandle(ownerHandle);
-  if (!scope || !selectedOwner || scope === selectedOwner) return null;
-  const packageSlug = name.split("/").pop()?.trim() || "plugin-name";
-  return {
-    scope,
-    selectedOwner,
-    suggestedName: `@${selectedOwner}/${packageSlug}`,
-    message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}". More info: ${DocsLinks.clawhub.packageScopeFaq}`,
-  };
-}
-
-export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
+export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"template"');
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
 
-export const PackagePublishFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
+export const PackagePublishFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"template"');
 export type PackagePublishFamily = (typeof PackagePublishFamilySchema)[inferred];
 
 export const PackageChannelSchema = type('"official"|"community"|"private"');
@@ -236,6 +219,7 @@ export type PackageSkillSpectorIssue = (typeof PackageSkillSpectorIssueSchema)[i
 
 export const PackageSkillSpectorAnalysisSchema = type({
   status: "string",
+  "inspectionStatus?": '"completed"|"partial"',
   score: "number?",
   severity: "string?",
   recommendation: "string?",
@@ -350,83 +334,16 @@ export const PackageTrustedPublisherSchema = type({
 });
 export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
 
-// The public registry API is served through Vercel functions, which reject request
-// bodies over 4.5 MB before ClawHub code runs. Inline multipart publishes stay under
-// that cap; larger ClawPacks stage through the upload-url flow straight into storage.
-const MAX_PACKAGE_MULTIPART_MB = 4;
-export const MAX_PACKAGE_MULTIPART_BYTES = MAX_PACKAGE_MULTIPART_MB * 1024 * 1024;
-export const MAX_PACKAGE_CLAWPACK_BYTES = 120 * 1024 * 1024;
-const PACKAGE_MULTIPART_FIXED_OVERHEAD_BYTES = 4096;
-const PACKAGE_MULTIPART_PART_OVERHEAD_BYTES = 1024;
-
-export type PackageMultipartUploadField = "files" | "clawpack";
-export type PackageMultipartUploadPart = {
-  name: string;
-  size: number;
-  type?: string;
-};
-export type PackageMultipartUploadSizeInput = {
-  payloadJson: string;
-  fileFieldName: PackageMultipartUploadField;
-  files: readonly PackageMultipartUploadPart[];
-};
-
-export function estimatePackageMultipartUploadBytes(
-  input: PackageMultipartUploadSizeInput,
-): number {
-  return (
-    PACKAGE_MULTIPART_FIXED_OVERHEAD_BYTES +
-    estimateMultipartStringPartBytes("payload", input.payloadJson) +
-    input.files.reduce(
-      (sum, file) => sum + estimateMultipartFilePartBytes(input.fileFieldName, file),
-      0,
-    )
-  );
-}
-
-export function isPackageMultipartUploadTooLarge(input: PackageMultipartUploadSizeInput): boolean {
-  return estimatePackageMultipartUploadBytes(input) > MAX_PACKAGE_MULTIPART_BYTES;
-}
-
-export function getPackageMultipartSizeError(): string {
-  return `Package upload exceeds ${MAX_PACKAGE_MULTIPART_MB}MB multipart upload limit`;
-}
-
-function estimateMultipartStringPartBytes(fieldName: string, value: string): number {
-  return PACKAGE_MULTIPART_PART_OVERHEAD_BYTES + utf8ByteLength(fieldName) + utf8ByteLength(value);
-}
-
-function estimateMultipartFilePartBytes(
-  fieldName: PackageMultipartUploadField,
-  file: PackageMultipartUploadPart,
-): number {
-  return (
-    file.size +
-    PACKAGE_MULTIPART_PART_OVERHEAD_BYTES +
-    utf8ByteLength(fieldName) +
-    utf8ByteLength(file.name) +
-    utf8ByteLength(file.type ?? "")
-  );
-}
-
-function utf8ByteLength(value: string): number {
-  let bytes = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    const codePoint = value.codePointAt(index);
-    if (codePoint === undefined) continue;
-    if (codePoint > 0xffff) index += 1;
-    if (codePoint <= 0x7f) {
-      bytes += 1;
-    } else if (codePoint <= 0x7ff) {
-      bytes += 2;
-    } else if (codePoint <= 0xffff) {
-      bytes += 3;
-    } else {
-      bytes += 4;
-    }
-  }
-  return bytes;
-}
+export {
+  MAX_PACKAGE_MULTIPART_BYTES,
+  MAX_PACKAGE_CLAWPACK_BYTES,
+  estimatePackageMultipartUploadBytes,
+  isPackageMultipartUploadTooLarge,
+  getPackageMultipartSizeError,
+  type PackageMultipartUploadField,
+  type PackageMultipartUploadPart,
+  type PackageMultipartUploadSizeInput,
+} from "./packageUploadLimits.js";
 
 const PackagePublishMetadataFields = {
   name: "string",
@@ -585,6 +502,7 @@ export const ApiV1PackageResponseSchema = type({
     name: "string",
     displayName: "string",
     family: PackageFamilySchema,
+    templateProfilePolicyVersion: "1?",
     runtimeId: "string|null?",
     channel: PackageChannelSchema,
     isOfficial: "boolean",
@@ -599,7 +517,7 @@ export const ApiV1PackageResponseSchema = type({
     tags: "unknown",
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
-    clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
+    templateManifestSummary: TemplateManifestSummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
     scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
@@ -642,7 +560,7 @@ export const ApiV1PackageVersionResponseSchema = type({
     files: "unknown",
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
-    clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
+    templateManifestSummary: TemplateManifestSummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
     // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.

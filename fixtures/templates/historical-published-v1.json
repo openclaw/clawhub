@@ -1,0 +1,55 @@
+{
+  "source": {
+    "url": "https://clawhub.ai/api/v1/feeds/claws",
+    "sequence": 59,
+    "generatedAt": "2026-10-28T00:46:01.333Z",
+    "publishedEntryCount": 150
+  },
+  "entry": {
+    "type": "claw",
+    "id": "@openclaw/access-entitlement-review-coordinator",
+    "title": "Access Entitlement Review Coordinator",
+    "icon": "https://clawhub.ai/api/v1/skill-icons/8bc6013939c6e615be72b6feb1f036892ce9fb1aff4cf423fb87ad5db29087ed",
+    "version": "0.1.1",
+    "state": "available",
+    "publisher": {
+      "id": "openclaw",
+      "trust": "official"
+    },
+    "clawManifestSummary": {
+      "schemaVersion": 1,
+      "agent": {
+        "id": "access-entitlement-review-coordinator",
+        "name": "Access Entitlement Review Coordinator",
+        "description": "Reconciles one exact owner-supplied access-assignment snapshot, bound to a locale-independent recomputed assignment-manifest digest, so that every in-scope principal, resource, entitlement, and assignment key carries exactly one fresh named-human retain or revoke recertification decision or one exact non-decision, with per-row reviewer authority, a content-bound owner authority roster, controlled evidence that content-addresses both its envelope and the exact semantic payload of the row it supports, a scoped non-subject handoff recipient, and a record that carries no free-text field at all, and without reaching identity systems, inferring effective access, carrying any prior decision forward, or changing access."
+      },
+      "workspace": {
+        "bootstrapFiles": ["AGENTS.md", "SOUL.md"],
+        "fileCount": 7
+      },
+      "packages": {
+        "skillCount": 0,
+        "pluginCount": 0
+      },
+      "profiles": {
+        "count": 0,
+        "hasOpenClaw": false
+      },
+      "extensions": {
+        "count": 0
+      },
+      "mcpServerCount": 0,
+      "cronJobCount": 0
+    },
+    "install": {
+      "candidates": [
+        {
+          "sourceRef": "public-clawhub",
+          "package": "@openclaw/access-entitlement-review-coordinator",
+          "version": "0.1.1",
+          "integrity": "sha256:6437db510453c96526e5b3e200b47f40157128a51a8bc3e86c0cb01013783918"
+        }
+      ]
+    }
+  }
+}

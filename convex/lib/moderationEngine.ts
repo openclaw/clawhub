@@ -1,3 +1,4 @@
+import { isScalar, isSeq, parseDocument } from "yaml";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   legacyFlagsFromVerdict,
@@ -1625,15 +1626,58 @@ function scanMarkdownFile(
   }
 }
 
+function manifestInstallSourceText(path: string, content: string) {
+  if (!/(^|\/)manifest\.json$/i.test(path)) return content;
+  try {
+    const manifest: unknown = JSON.parse(content);
+    if (
+      !manifest ||
+      typeof manifest !== "object" ||
+      Array.isArray(manifest) ||
+      (manifest as Record<string, unknown>).manifest_version !== 3
+    ) {
+      return content;
+    }
+    const document = parseDocument(content);
+    if (document.errors.length) return content;
+    const ranges: Array<[number, number]> = [];
+    for (const field of ["host_permissions", "optional_host_permissions"]) {
+      const permissions = document.get(field, true);
+      if (!isSeq(permissions)) continue;
+      for (const permission of permissions.items) {
+        if (
+          isScalar(permission) &&
+          typeof permission.value === "string" &&
+          /^https?:\/\/[^/\s]+\/[^\s]*$/.test(permission.value) &&
+          permission.range
+        ) {
+          ranges.push([permission.range[0], permission.range[1]]);
+        }
+      }
+    }
+    // Mask only connection-permission tokens, preserving offsets and install URLs
+    // elsewhere in the same manifest, even when their text is identical.
+    let text = content;
+    for (const [start, end] of ranges.sort((a, b) => b[0] - a[0])) {
+      text =
+        text.slice(0, start) + text.slice(start, end).replace(/[^\r\n]/g, " ") + text.slice(end);
+    }
+    return text;
+  } catch {
+    return content;
+  }
+}
+
 function scanManifestFile(path: string, content: string, findings: ModerationFinding[]) {
   if (!MANIFEST_EXTENSION.test(path)) return;
+  const installSourceText = manifestInstallSourceText(path, content);
 
   if (
-    /https?:\/\/(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd)\//i.test(content) ||
-    RAW_IP_URL_PATTERN.test(content)
+    /https?:\/\/(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd)\//i.test(installSourceText) ||
+    RAW_IP_URL_PATTERN.test(installSourceText)
   ) {
     const match = findFirstLine(
-      content,
+      installSourceText,
       /https?:\/\/(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd)\/|https?:\/\/\d{1,3}(?:\.\d{1,3}){3}/i,
     );
     addFinding(findings, {
@@ -1642,7 +1686,7 @@ function scanManifestFile(path: string, content: string, findings: ModerationFin
       file: path,
       line: match.line,
       message: "Install source points to URL shortener or raw IP.",
-      evidence: match.text,
+      evidence: content.split("\n")[match.line - 1] ?? match.text,
     });
   }
 }

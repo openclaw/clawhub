@@ -504,7 +504,7 @@ describe("skill evaluation runtime queue", () => {
     });
   });
 
-  it("publishes only a completed result for the current hash and current config", async () => {
+  it("publishes only a completed result for the current hash", async () => {
     const t = convexTest(schema, modules);
     const contentHash = "hash-v1";
     const skillId = await insertNvidiaSkill(t, { hash: contentHash, slug: "doca-dpa" });
@@ -549,6 +549,86 @@ describe("skill evaluation runtime queue", () => {
       async (ctx) => await ctx.db.patch(skillId, { githubCurrentContentHash: "hash-v2" }),
     );
     await expect(t.query(api.skillEvaluations.getCurrentForSkill, { skillId })).resolves.toBeNull();
+  });
+
+  it("keeps the latest successful result visible across model recipe changes", async () => {
+    const t = convexTest(schema, modules);
+    const skillId = await insertNvidiaSkill(t, { hash: "current", slug: "doca-dpa" });
+    const row = evaluationRow({
+      skillId,
+      contentHash: "current",
+      scanStatus: "clean",
+      source: "backfill",
+    });
+    const metrics = {
+      sampleCount: 8,
+      overall: { withSkill: 0.9, withoutSkill: 0.6, delta: 0.3 },
+      cases: { withSkillPassed: 4, withSkillTotal: 4, withoutSkillPassed: 2, withoutSkillTotal: 4 },
+      dimensions: [],
+    };
+    await t.run(async (ctx) => {
+      // Completion order can differ from insertion or configuration-key order.
+      await ctx.db.insert("skillEvaluationRuns", {
+        ...row,
+        configKey: "legacy-recipe",
+        agentModel: "gpt-5.4-mini",
+        judgeModel: "gpt-5.4",
+        status: "succeeded",
+        completedAt: 300,
+        metrics,
+      });
+    });
+    await expect(
+      t.query(api.skillEvaluations.getCurrentForSkill, { skillId }),
+    ).resolves.toMatchObject({
+      evaluator: { agentModel: "gpt-5.4-mini", judgeModel: "gpt-5.4" },
+      completedAt: 300,
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillEvaluationRuns", {
+        ...row,
+        status: "succeeded",
+        completedAt: 200,
+        metrics,
+      });
+      for (const status of ["queued", "running", "failed", "skipped"] as const) {
+        await ctx.db.insert("skillEvaluationRuns", {
+          ...row,
+          configKey: status,
+          status,
+          completedAt: 400,
+          metrics,
+        });
+      }
+      await ctx.db.insert("skillEvaluationRuns", {
+        ...row,
+        configKey: "incomplete-metrics",
+        status: "succeeded",
+        completedAt: 500,
+      });
+      await ctx.db.insert("skillEvaluationRuns", {
+        ...row,
+        configKey: "incomplete-timestamp",
+        status: "succeeded",
+        metrics,
+      });
+      await ctx.db.insert("skillEvaluationRuns", {
+        ...row,
+        contentHash: "previous-content",
+        status: "succeeded",
+        completedAt: 600,
+        metrics,
+      });
+    });
+
+    await expect(
+      t.query(api.skillEvaluations.getCurrentForSkill, { skillId }),
+    ).resolves.toMatchObject({
+      evaluator: { agentModel: "gpt-5.4-mini", judgeModel: "gpt-5.4" },
+      completedAt: 300,
+      metrics,
+    });
   });
 
   it("publishes current results for skills whose repo comes from the GitHub source row", async () => {

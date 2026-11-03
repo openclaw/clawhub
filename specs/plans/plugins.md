@@ -68,6 +68,18 @@ published release from the public version history, following filtered pages.
 Fetch its README by exact version. This display fallback does not promote a
 prerelease or change install defaults, package tags, or publication visibility.
 
+### Late pending-release finalization
+
+Finalizing a pending release only replaces the package display name and source
+repository when that release is promoted to `latest`, just like the summary and
+other release-derived catalog metadata. An older release that finishes scanning
+after a newer latest must become published without rolling back those fields or
+clearing the current repository when its own source is absent. The release keeps
+its own source repository; the owner dashboard uses the package repository to
+prefill the next publication. A first publication requesting `latest`, and later
+latest promotions, still apply their staged metadata. This does not change channel
+or official-publisher classification, or the direct (non-pending) publication path.
+
 ### Publication archive ownership
 
 Package publication allocates a generated legacy ZIP only when it reaches release
@@ -279,6 +291,58 @@ Suggested storage model:
   package/discovery layer
 
 ## Publishing Model
+
+### Family-aware plugin input contract
+
+New publication admission discriminates the existing `code-plugin` and
+`bundle-plugin` families before interpreting identity. Native manifests retain
+their required `id`, install-path grammar, config schema, entrypoint and source
+gates. Supported bundles have exactly one `.codex-plugin/plugin.json`,
+`.claude-plugin/plugin.json`, or `.cursor-plugin/plugin.json`; identity comes
+only from canonical name slugging. No missing-name directory fallback or
+upload-provided identity is permitted. Portable root Agent manifests are not
+part of this declared bundle support. Do not silently accept unknown formats.
+
+Family and optional format/id claims must agree with artifact metadata. Native
+entrypoints belong to the native family. Explicit family selection can choose
+native versus bundle manifests in a mixed artifact. Native selection may retain
+multiple companion host manifests without interpreting their names as native
+identity. Bundle selection still requires exactly one supported bundle marker. The worker passes the exact
+selected manifest to ClawScan, which resolves it back to the full artifact root.
+Legacy extracted artifacts are never relocated by a nested `package.json`.
+Bounded UTF-8 metadata reads must not escape the artifact. Never generate an id,
+inject a plugin manifest, rewrite archive bytes, or discard companion files to
+achieve admission. All scanner, judge, moderation and pending-publication gates
+remain mandatory. Historical release bytes and stored identities are unchanged.
+New pending attempts carry the admitted package family into worker metadata.
+Claims for older attempts recover that metadata from their existing registry
+record, never by guessing from filenames; contradictory stored claims fail.
+
+Plugin releases persist an optional admitted `pluginFamily` snapshot. A legacy
+release without one retains its parent-family fallback. Version-specific public,
+security, detail and scanner metadata use the snapshot for plugin parents;
+package-wide listing and admission keep the current registry family. Plugin
+snapshots cannot change Template or skill projection boundaries. A future guarded
+parent-family repair must snapshot historical releases before changing the
+parent, preserving genuine bundle history and all original artifacts.
+
+Already-admitted scan jobs are distinct from new publication admission. Retained
+legacy bundles may contain several supported harness manifests or only a native
+envelope. Workers preserve deterministic Codex/Claude/Cursor precedence for those
+bundle scans, falling back to a retained native envelope when none is present.
+Native-family scans continue selecting the native envelope. ClawScan validates
+the selected manifest's identity and inspects every file in the original root;
+the worker never synthesizes an identity or edits the artifact to fit new rules.
+Directory ambiguity remains an error unless an exact manifest is selected.
+
+For new admission, this is the discriminated-family parsing pattern:
+select one known parser, validate its own identity, and reject ambiguity or
+contradictory claims before staging. OpenClaw source revision
+`36bd762422b348173b951819eef29e7fb2d307c3`, `src/plugins/bundle-manifest.ts`
+(`slugifyPluginId`, `loadBundleManifest`, `detectBundleManifestFormat`) and
+`src/plugins/manifest.ts` (`loadPluginManifest`) anchor the separate contracts.
+ClawHub remains stricter about named bundles and unambiguous inventory, rather
+than relying on machine-dependent directory fallbacks or marker precedence.
 
 ClawHub should stay open to community publishing.
 
@@ -532,6 +596,12 @@ A publishable native plugin package must pass OpenClaw-specific validation.
   - declared host targets
   - source repository URL when available
   - artifact/content integrity hash
+
+Native code-plugin IDs must match the scan worker's install-path grammar before
+staging a release: a bare name or `@scope/name`, without backslashes, empty or
+reserved path segments, or control characters. Preserve trimming and reject an
+invalid ID before creating a pending release or publication attempt. This
+validation does not reinterpret bundle identities or change their fallback rules.
 
 ### Recommended package policy
 
@@ -909,6 +979,13 @@ or:
 ```bash
 openclaw plugins install clawhub:@scope/pkg
 ```
+
+The plugin detail Install card shows only the `Install` heading and one copyable
+command block. Code and bundle plugins use the explicit
+`openclaw plugins install clawhub:<package-name>` command, which works across
+released and updated OpenClaw versions without bundled-shortcut ambiguity. Do not
+add version labels, an alternate command, or explanatory subtext to this card.
+Keep CLI compatibility guidance in the public docs instead.
 
 Skills should also install directly from ClawHub:
 

@@ -1,4 +1,7 @@
-import { PLUGIN_CATEGORY_DEFINITIONS, type PluginCategorySlug } from "clawhub-schema";
+import {
+  PLUGIN_CATEGORY_DEFINITIONS,
+  type PluginCategorySlug,
+} from "clawhub-schema/pluginCategories";
 import reviewedEnglishListings from "./reviewedEnglishPluginListings.json";
 import { isEnglishTrendingText } from "./trendingLanguage";
 

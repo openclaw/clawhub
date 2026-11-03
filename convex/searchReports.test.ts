@@ -18,7 +18,7 @@ it("returns a durable staff report handle immediately and deduplicates the real 
   vi.useFakeTimers();
   vi.setSystemTime(Date.UTC(2026, 8, 16));
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   registerWorkpool(t, "searchReports");
   const staff = await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { role: "moderator" });
@@ -53,7 +53,7 @@ async function setup() {
   vi.useFakeTimers();
   vi.setSystemTime(Date.UTC(2026, 8, 16));
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   registerWorkpool(t, "searchReports");
   const staff = await t.run(async (ctx) => {
     const id = await ctx.db.insert("users", { role: "moderator", handle: "reviewer" });
