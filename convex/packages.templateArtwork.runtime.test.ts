@@ -71,6 +71,26 @@ function npmPackFixture(files: Record<string, string | Uint8Array>) {
   return gzipSync(tar);
 }
 
+function serializeFixtureBlobStores() {
+  // convex-test 0.0.62 shares transaction depth between concurrent blob
+  // stores. Serialize only its storage syscall, retaining real hashes/bytes.
+  const runtime = globalThis as typeof globalThis & {
+    Convex: { jsSyscall: (op: string, args: unknown) => Promise<unknown> };
+  };
+  const jsSyscall = runtime.Convex.jsSyscall;
+  const accessors: { jsSyscall: unknown } = runtime.Convex;
+  let pending = Promise.resolve();
+  vi.spyOn(accessors, "jsSyscall", "get").mockReturnValue((op: string, args: unknown) => {
+    if (op !== "storage/storeBlob") return jsSyscall(op, args);
+    const result = pending.then(() => jsSyscall(op, args));
+    pending = result.then(
+      () => {},
+      () => {},
+    );
+    return result;
+  });
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -90,23 +110,7 @@ it("publishes a Template's packaged PNG through the validated content-addressed 
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiterV2");
   await t.run(async (ctx) => {
-    // convex-test 0.0.62 shares transaction depth between concurrent blob
-    // stores. Serialize only its storage syscall, retaining real hashes/bytes.
-    const runtime = globalThis as typeof globalThis & {
-      Convex: { jsSyscall: (op: string, args: unknown) => Promise<unknown> };
-    };
-    const jsSyscall = runtime.Convex.jsSyscall;
-    const accessors: { jsSyscall: unknown } = runtime.Convex;
-    let pending = Promise.resolve();
-    vi.spyOn(accessors, "jsSyscall", "get").mockReturnValue((op: string, args: unknown) => {
-      if (op !== "storage/storeBlob") return jsSyscall(op, args);
-      const result = pending.then(() => jsSyscall(op, args));
-      pending = result.then(
-        () => {},
-        () => {},
-      );
-      return result;
-    });
+    serializeFixtureBlobStores();
     const userId = await ctx.db.insert("users", { handle: "maker", role: "admin" });
     const publisherId = await ctx.db.insert("publishers", {
       kind: "org",
@@ -203,3 +207,78 @@ it("publishes a Template's packaged PNG through the validated content-addressed 
   expect(image.headers.get("Content-Type")).toBe("image/png");
   expect(new Uint8Array(await image.arrayBuffer())).toEqual(png);
 });
+
+it.each(["legacy-only", "mixed", "json"])(
+  "rejects %s Template selectors at the public publish boundary",
+  async (mode) => {
+    const t = convexTest(schema, modules);
+    registerRateLimiter(t, "rateLimiterV2");
+    await t.run(async (ctx) => {
+      serializeFixtureBlobStores();
+      const userId = await ctx.db.insert("users", { handle: "strict-author", role: "admin" });
+      const publisherId = await ctx.db.insert("publishers", {
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("officialPublishers", { publisherId, createdAt: 1, updatedAt: 1 });
+      await ctx.db.insert("publisherMembers", {
+        publisherId,
+        userId,
+        role: "publisher",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("apiTokens", {
+        userId,
+        label: "strict-format-test",
+        prefix: "strict",
+        tokenHash: await hashToken("strict-format-test"),
+        createdAt: 1,
+      });
+    });
+    const openclaw =
+      mode === "mixed"
+        ? { template: "CLAW.md", claw: "CLAW.md" }
+        : mode === "json"
+          ? { template: "openclaw.template.json" }
+          : { claw: "CLAW.md" };
+    const archive = npmPackFixture({
+      "package/package.json": JSON.stringify({
+        name: "@openclaw/strict-format-test",
+        version: "1.0.0",
+        openclaw,
+      }),
+      "package/CLAW.md":
+        "---\nschemaVersion: 1\nagent: { id: strict-format-test }\n---\nSynthetic local contract fixture.\n",
+    });
+    const form = new FormData();
+    form.set(
+      "payload",
+      JSON.stringify({
+        name: "@openclaw/strict-format-test",
+        family: "template",
+        version: "1.0.0",
+        changelog: "Local format contract",
+        expectedArtifactSha256: await sha256Hex(archive),
+      }),
+    );
+    form.set(
+      "clawpack",
+      new Blob([new Uint8Array(archive)], { type: "application/gzip" }),
+      "strict-format-test.tgz",
+    );
+    const response = await t.fetch("/api/v1/packages", {
+      method: "POST",
+      headers: { Authorization: "Bearer strict-format-test" },
+      body: form,
+    });
+    const body = await response.text();
+    expect(response.status, body).toBe(400);
+    expect(body).toContain("package.json.openclaw.template");
+    expect(await t.run((ctx) => ctx.db.query("packages").take(1))).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query("packageReleases").take(1))).toEqual([]);
+  },
+);
