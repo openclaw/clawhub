@@ -410,7 +410,7 @@ it("executes the actual inline consumer guard against trusted and hostile dispat
     expect(legacy.output).toBe(`consumer-sha=${workflowCommit}\nworkflow-sha=${workflowCommit}\n`);
     expect(legacy.calls).toBe("");
     expect(legacy.provider).toBe("reached");
-    for (const overrides of [
+    const invalidInputs: Record<string, string>[] = [
       { CONSUMER_CHOICE: consumer },
       { CONSUMER_CHOICE: "main" },
       { GITHUB_REPOSITORY: "attacker/clawhub" },
@@ -431,7 +431,8 @@ it("executes the actual inline consumer guard against trusted and hostile dispat
       { GH_RESPONSE: `${"b".repeat(40)}\t${consumer}\ttrue` },
       { GH_RESPONSE: "" },
       { GH_EXIT_CODE: "1" },
-    ]) {
+    ];
+    for (const overrides of invalidInputs) {
       const result = await execute(overrides);
       expect(result.result, JSON.stringify(overrides)).toMatchObject({ code: 1 });
       expect(result.output, JSON.stringify(overrides)).toBe("");
