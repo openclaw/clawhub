@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Dependencies: patch Undici to 7.30.1 in the CLI, admin CLI, and development tools to address upstream transport advisories.
 - CI: escape Unicode line separators in security dataset JSONL so line readers preserve complete records during snapshot validation.
 - CI: reuse Playwright browser downloads across unrelated dependency updates by keying caches to the installed Playwright version and runner architecture.
 - CI: use a single-commit checkout for static checks instead of fetching full history.

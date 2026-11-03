@@ -100,7 +100,7 @@
         "skills": "1.7.2",
         "tsrs": "0.18.0-ts7.1.0-dev.20260929",
         "typescript": "6.0.3",
-        "undici": "7.30.0",
+        "undici": "7.30.1",
         "vite": "8.3.4",
         "vitest": "5.0.4",
         "workpool-previous": "npm:@convex-dev/workpool@0.4.12",
@@ -126,7 +126,7 @@
         "ora": "9.4.1",
         "p-retry": "8.0.1",
         "semver": "7.8.5",
-        "undici": "7.30.0",
+        "undici": "7.30.1",
         "unicode-case-folding": "1.1.2",
         "yaml": "2.9.1",
       },
@@ -153,7 +153,7 @@
         "ora": "9.4.1",
         "p-retry": "8.0.1",
         "semver": "7.8.5",
-        "undici": "7.30.0",
+        "undici": "7.30.1",
       },
       "devDependencies": {
         "@types/node": "26.6.5",
@@ -1953,7 +1953,7 @@
 
     "uint8array-extras": ["uint8array-extras@1.5.0", "", {}, "sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A=="],
 
-    "undici": ["undici@7.30.0", "", {}, "sha512-dkrQXeHSaoamnItlYbmzG0wFYrM0ZwDxCIg0A7aKjTyyhh9svRzCNFEzV+Vm05/yehjCzjDZ31KXfGEjYSztDQ=="],
+    "undici": ["undici@7.30.1", "", {}, "sha512-03KrMbjIFDWQR5RNPrSw3bd1r12JpyFQl9/yxjUbJtqkjmllqC5lFjZh6ujeuJCKr8EOQvRW872Oy/az+nLYxg=="],
 
     "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 
