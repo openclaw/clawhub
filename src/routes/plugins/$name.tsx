@@ -8,6 +8,14 @@ import {
 import { PLUGIN_UI_CAPABILITIES } from "clawhub-schema";
 import { useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import {
+  AppWindow,
+  BookOpenText,
+  Layers,
+  MessagesSquare,
+  Plug,
+  Puzzle,
+  SlidersHorizontal,
+  Wrench,
   AlertTriangle,
   Braces,
   ChevronRight,
@@ -50,6 +58,13 @@ import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
+import {
+  PLUGIN_CAPABILITY_FAMILIES,
+  PLUGIN_EXTENSION_LABELS,
+  PluginCapabilityRow,
+  PluginCapabilitySection,
+  PluginExtensionIcon,
+} from "../../components/PluginCapabilityRows";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
@@ -336,18 +351,6 @@ function pluginDetailTabFromHash(hashValue: string): PluginDetailTab {
 
 const PLUGIN_README_COLLAPSED_LINE_COUNT = 50;
 
-const PLUGIN_EXTENSION_LABELS = {
-  page: ["Pages", "Full pages in the Control UI."],
-  navigation: ["Navigation", "Entries in the Control UI navigation."],
-  panel: ["Panels", "Panels alongside the main workspace."],
-  action: ["Actions", "Contextual actions and commands."],
-  accessory: ["Accessories", "Supporting controls in existing views."],
-  widget: ["Widgets", "Compact, reusable UI surfaces."],
-  inline: ["Inline UI", "Embedded content within existing views."],
-  replacement: ["Replacements", "Replacements for host UI surfaces."],
-  "link-reader": ["Link readers", "Custom views for supported links."],
-} as const;
-
 function PluginDetailContent({
   activeTab,
   setActiveTab,
@@ -381,74 +384,111 @@ function PluginDetailContent({
   useEffect(() => {
     if (activeTab === "versions") setHasMountedVersions(true);
   }, [activeTab]);
-  const section = (id: string, title: string, content: ReactNode) =>
+  const section = (
+    id: string,
+    title: string,
+    content: ReactNode,
+    count?: number,
+    icon?: ReactNode,
+  ) =>
     content ? (
-      <section id={id} className="plugin-content-section" aria-labelledby={"plugin-heading-" + id}>
-        <h2 id={"plugin-heading-" + id}>{title}</h2>
+      <PluginCapabilitySection id={id} title={title} count={count} icon={icon}>
         {content}
-      </section>
+      </PluginCapabilitySection>
     ) : null;
-  const namedRows = (names: readonly string[] | undefined) =>
+  const namedRows = (names: readonly string[] | undefined, icon: ReactNode) =>
     names?.length ? (
-      <div className="plugin-manifest-list">
+      <div className="plugin-capability-list" role="list">
         {names.map((name) => (
-          <div key={name} className="plugin-manifest-row">
-            <div className="plugin-manifest-row-main">
-              <code>{name}</code>
-            </div>
-          </div>
+          <PluginCapabilityRow key={name} name={name} icon={icon} />
         ))}
       </div>
     ) : null;
+  const capabilityEntries = Object.entries(manifest?.contracts ?? {}).filter(
+    ([family, names]) => family !== "tools" && names.length > 0,
+  );
+  const extensions = PLUGIN_UI_CAPABILITIES.filter((kind) =>
+    manifest?.uiCapabilities?.includes(kind),
+  );
   return (
     <div className="plugin-detail-content">
       {section(
-        "extensions",
-        "Extensions",
-        manifest?.uiCapabilities?.length ? (
-          <div className="plugin-manifest-list">
-            {PLUGIN_UI_CAPABILITIES.filter((kind) => manifest.uiCapabilities?.includes(kind)).map(
-              (kind) => (
-                <div key={kind} className="plugin-manifest-row">
-                  <div className="plugin-manifest-row-main">
-                    <strong>{PLUGIN_EXTENSION_LABELS[kind][0]}</strong>
-                    <p>{PLUGIN_EXTENSION_LABELS[kind][1]}</p>
-                  </div>
-                </div>
-              ),
-            )}
+        "capabilities",
+        "Capabilities",
+        capabilityEntries.length ? (
+          <div className="plugin-capability-list" role="list">
+            {capabilityEntries.map(([family, names]) => {
+              const copy = Object.hasOwn(PLUGIN_CAPABILITY_FAMILIES, family)
+                ? PLUGIN_CAPABILITY_FAMILIES[family]
+                : undefined;
+              return (
+                <PluginCapabilityRow
+                  key={family}
+                  name={copy?.[0] ?? formatCompatibilityLabel(family)}
+                  description={copy?.[1]}
+                  metadata={<code>{names.join(", ")}</code>}
+                  icon={<Layers />}
+                />
+              );
+            })}
           </div>
         ) : null,
+        capabilityEntries.length,
+      )}
+      {section(
+        "extensions",
+        "Extensions",
+        extensions.length ? (
+          <div className="plugin-capability-list" role="list">
+            {extensions.map((kind) => (
+              <PluginCapabilityRow
+                key={kind}
+                name={PLUGIN_EXTENSION_LABELS[kind][0]}
+                description={PLUGIN_EXTENSION_LABELS[kind][1]}
+                icon={<PluginExtensionIcon kind={kind} />}
+              />
+            ))}
+          </div>
+        ) : null,
+        extensions.length,
+        <Puzzle />,
       )}
       {section(
         "custom-ui",
         "Custom UI",
         manifest?.controlUi ? (
-          <div className="plugin-manifest-row">
-            <div className="plugin-manifest-row-main">
-              <strong>Browser entry</strong>
-              <code>{manifest.controlUi.entry}</code>
-              <p>
-                Includes a custom browser interface. This does not declare which extension kinds it
-                provides.
-              </p>
-            </div>
+          <div className="plugin-capability-list" role="list">
+            <PluginCapabilityRow
+              name="Browser entry"
+              icon={<AppWindow />}
+              description="Packaged browser interface; extension kinds are declared separately."
+              metadata={<code>{manifest.controlUi.entry}</code>}
+            />
           </div>
         ) : null,
+        1,
       )}
-      {section("skills", "Skills", skillsPanel)}
-      {section("tools", "Tools", namedRows(manifest?.contracts?.tools))}
-      {Object.entries(manifest?.contracts ?? {})
-        .filter(([family, names]) => family !== "tools" && names.length > 0)
-        .map(([family, names]) => (
-          <div key={family}>
-            {section("contract-" + family, formatCompatibilityLabel(family), namedRows(names))}
-          </div>
-        ))}
-      {section("providers", "Providers", namedRows(manifest?.providers))}
-      {section("channels", "Channels", namedRows(manifest?.channels))}
-      {section("mcp-servers", "MCP Servers", mcpServersPanel)}
-      {section("configuration", "Configuration", configurationPanel)}
+      {section("skills", "Skills", skillsPanel, manifest?.bundledSkills.length)}
+      {section(
+        "tools",
+        "Tools",
+        namedRows(manifest?.contracts?.tools, <Wrench />),
+        manifest?.contracts?.tools?.length,
+      )}
+      {section(
+        "providers",
+        "Providers",
+        namedRows(manifest?.providers, <Server />),
+        manifest?.providers?.length,
+      )}
+      {section(
+        "channels",
+        "Channels",
+        namedRows(manifest?.channels, <MessagesSquare />),
+        manifest?.channels?.length,
+      )}
+      {section("mcp-servers", "MCP Servers", mcpServersPanel, manifest?.mcpServers.length)}
+      {section("configuration", "Configuration", configurationPanel, manifest?.configFields.length)}
       {section(
         "readme",
         "README.md",
@@ -576,44 +616,50 @@ function formatCompatibilityLabel(key: string): string {
 
 function PluginManifestConfigurationPanel({ fields }: { fields: PluginConfigField[] }) {
   return (
-    <div className="plugin-manifest-capabilities">
-      <section className="plugin-manifest-section">
-        <div className="plugin-manifest-list">
-          {fields.map((field) => (
-            <article key={field.name} className="plugin-manifest-row">
-              <div className="plugin-manifest-row-main">
-                <code>{field.name}</code>
-                {field.description ? <p>{field.description}</p> : null}
-              </div>
-              <div className="plugin-manifest-badges">
-                {field.required ? <Badge variant="warning">Required</Badge> : null}
-                {field.sensitive ? <Badge variant="review">Sensitive</Badge> : null}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+    <div className="plugin-capability-list" role="list">
+      {fields.map((field) => (
+        <PluginCapabilityRow
+          key={field.name}
+          name={field.name}
+          description={field.description}
+          icon={<SlidersHorizontal />}
+          trailing={
+            <>
+              {field.required ? <Badge variant="warning">Required</Badge> : null}
+              {field.sensitive ? <Badge variant="review">Sensitive</Badge> : null}
+            </>
+          }
+        />
+      ))}
     </div>
   );
 }
 
 function PluginManifestMcpServersPanel({ servers }: { servers: PluginMcpServer[] }) {
   return (
-    <div className="plugin-manifest-list">
+    <div className="plugin-capability-list" role="list">
       {servers.map((server) => (
-        <article key={server.name} className="plugin-manifest-row">
-          <div className="plugin-manifest-row-main">
-            <code>{server.name}</code>
-            {server.url ? <span>{server.url}</span> : null}
-            {server.scope ? <p>{server.scope}</p> : null}
-            {server.setup ? <p>{server.setup}</p> : null}
-            {server.endpointRedacted ? <span>Endpoint hidden for safety</span> : null}
-          </div>
-          <div className="plugin-manifest-badges">
-            {server.transport ? <Badge variant="compact">{server.transport}</Badge> : null}
-            {server.auth ? <Badge variant="compact">{server.auth}</Badge> : null}
-          </div>
-        </article>
+        <PluginCapabilityRow
+          key={server.name}
+          name={server.name}
+          icon={<Plug />}
+          description={server.endpointRedacted ? "Endpoint hidden for safety" : server.url}
+          metadata={
+            server.scope || server.setup ? (
+              <>
+                {server.scope}
+                {server.scope && server.setup ? " · " : ""}
+                {server.setup}
+              </>
+            ) : null
+          }
+          trailing={
+            <>
+              {server.transport ? <Badge variant="compact">{server.transport}</Badge> : null}
+              {server.auth ? <Badge variant="compact">{server.auth}</Badge> : null}
+            </>
+          }
+        />
       ))}
     </div>
   );
@@ -649,29 +695,20 @@ function PluginManifestSkillsPanel({
   }
 
   return (
-    <div className="plugin-manifest-capabilities">
-      <section className="plugin-manifest-section">
-        <div className="plugin-manifest-list">
-          {skills.map((skill) => (
-            <article key={skill.skillMdPath} className="plugin-manifest-row">
-              <div className="plugin-manifest-row-main">
-                <code>{skill.name}</code>
-                {skill.description ? <p>{skill.description}</p> : null}
-                <span>{skill.rootPath}</span>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void openSkillPreview(skill)}
-                aria-label={`Preview ${skill.name}`}
-              >
-                Preview
-              </Button>
-            </article>
-          ))}
-        </div>
-      </section>
+    <div>
+      <div className="plugin-capability-list" role="list">
+        {skills.map((skill) => (
+          <PluginCapabilityRow
+            key={skill.skillMdPath}
+            name={skill.name}
+            description={skill.description}
+            icon={<BookOpenText />}
+            onOpen={() => void openSkillPreview(skill)}
+            openLabel={`Preview ${skill.name}`}
+            trailing={<span className="plugin-capability-open-label">Preview</span>}
+          />
+        ))}
+      </div>
       <Dialog open={Boolean(previewSkill)} onOpenChange={(open) => !open && setPreviewSkill(null)}>
         <DialogContent className="max-h-[85vh] max-w-[min(920px,92vw)] overflow-auto">
           <DialogHeader>

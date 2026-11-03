@@ -25,3 +25,20 @@ proof of runtime availability, install authorization, or scanner success.
 Reusable local proof fixtures: `devSeedExtra:seedPluginDetailFixtures` creates dense,
 explicit-none, and legacy plugin releases with real stored README/skill files.
 These fixtures deliberately do not run scanners or external providers.
+
+## Visual anatomy
+
+Match the real Control UI plugin detail's capability anatomy: ruled 16px section
+headings with 24px count badges; 36px bordered icon tiles with 18px artwork;
+12px title/description hierarchy, 14px icon/copy gaps, 12px row insets, and 28px
+section spacing. Contribution kinds use the canonical per-kind artwork. Known
+contract families use their user-facing capability name and description, while
+the actual declared identifiers remain visible. Runtime-only tool descriptions
+are not fabricated when the catalog contains names alone.
+
+Keep the ClawHub site shell, compatible install command, security controls, and
+mobile About/Stats interaction owned by their existing surfaces. Align the
+content/sidebar ratio without transplanting the OpenClaw Settings navigation.
+Validate visual corrections against actual isolated OpenClaw and ClawHub
+captures before publication; source inspection or green tests alone do not prove
+visual alignment.

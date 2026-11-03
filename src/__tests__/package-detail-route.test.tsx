@@ -906,15 +906,15 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("tab", { name: "Versions" })).toBeNull();
     expect(
       Array.from(
-        document.querySelectorAll(".plugin-content-section > h2"),
+        document.querySelectorAll("[data-plugin-section-title]"),
         (heading) => heading.textContent,
       ),
     ).toEqual([
+      "Capabilities",
       "Extensions",
       "Custom UI",
       "Skills",
       "Tools",
-      "Image Generation Providers",
       "MCP Servers",
       "Configuration",
       "README.md",
@@ -922,8 +922,8 @@ describe("plugin detail route", () => {
     const extensions = screen.getByRole("region", { name: "Extensions" });
     expect(Array.from(extensions.querySelectorAll("strong"), (row) => row.textContent)).toEqual([
       "Pages",
-      "Widgets",
-      "Link readers",
+      "Dashboard widgets",
+      "Link previews",
     ]);
     expect(screen.getByText("workspace_search")).toBeTruthy();
     expect(screen.getByText("workspace-images")).toBeTruthy();
