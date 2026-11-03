@@ -3,12 +3,11 @@ import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { isDeepStrictEqual } from "node:util";
 import { PLUGIN_BUNDLE_MANIFESTS } from "clawhub-schema";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { endorAnalysisSchema, type EndorAnalysis } from "../../convex/lib/endorAnalysis";
+import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import { parseLlmEvalResponse, type LlmEvalDimension } from "../../convex/lib/securityPrompt";
 import { readWorkerAssignment } from "../../packages/clawhub-admin/src/scanAssignments";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
@@ -30,7 +29,6 @@ import {
   bundledSkillSpectorTerminalContext,
   type BundledSkillSpectorFailureContext,
 } from "./bundled-skillspector-diagnostic";
-import { writeClawHubEndorProfile } from "./clawHubEndorProfile";
 import {
   clawScanExposure,
   type ClawScanExposure,
@@ -43,7 +41,6 @@ import {
   type SafeClawScanProgress,
 } from "./clawscan-progress";
 import {
-  EndorContainerCleanupError,
   isEndorPluginScanEnabled,
   runEndorPluginScan,
   type EndorCommandDiagnostic,
@@ -722,7 +719,7 @@ function sanitizedJobForArtifactContext(job: ClaimedJob["job"]) {
 
 function sanitizedTargetForArtifactContext(target: ClaimedJob["target"]) {
   const { clawpackUrl, files, job: _job, release, ...safeTarget } = target;
-  // Use only this run's injected Endor result in the judge context.
+  // Endor is report-only; keep earlier results out of the judge's metadata.
   const { endorAnalysis: _storedEndorAnalysis, ...currentRelease } = release ?? {};
   return {
     ...safeTarget,
@@ -2060,7 +2057,6 @@ function clawScanDiagnosticMapping(
 export function validateClawScanArtifactForClawHubProfile(
   artifact: Record<string, unknown>,
   scannerSet = REQUIRED_CLAWHUB_SCANNERS,
-  endorAnalysis?: EndorAnalysis,
 ) {
   const schemaVersion = readString(artifact, ["schemaVersion"]);
   if (schemaVersion !== "clawscan-run-v1") {
@@ -2133,16 +2129,6 @@ export function validateClawScanArtifactForClawHubProfile(
   }
 
   const scanners = asRecord(artifact.scanners);
-  if (endorAnalysis) {
-    const endor = asRecord(scanners?.endor);
-    if (readString(endor ?? {}, ["status"]) !== "completed") {
-      throw new Error("ClawScan Endor evidence was not supplied to the judge");
-    }
-    const parsedEndor = endorAnalysisSchema.safeParse(endor?.raw);
-    if (!parsedEndor.success || !isDeepStrictEqual(parsedEndor.data, endorAnalysis)) {
-      throw new Error("ClawScan Endor evidence did not match the prepared analysis");
-    }
-  }
   const skillSpector = asRecord(scanners?.skillspector);
   if (!skillSpector || skillSpector.raw === undefined) {
     throw new Error("ClawScan skillspector scanner output was missing");
@@ -2182,7 +2168,6 @@ export async function runClawScan(
   job: ClaimedJob,
   workspace: string,
   onDiagnostic: (diagnostic: Partial<ClawScanCommandDiagnostic>) => void,
-  endorAnalysis?: EndorAnalysis,
   preparedSkillSpectorPath?: string,
 ) {
   const command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
@@ -2193,22 +2178,6 @@ export async function runClawScan(
     assertAigFilePathsHaveNoCompiledPython(job.target.files?.map((file) => file.path) ?? []);
   }
   const args = [target, "--profile", "clawhub"];
-  if (endorAnalysis) {
-    const configPath = await writeClawHubEndorProfile(workspace, schemaPath);
-    const endorResultPath = join(workspace, "endor-analysis.json");
-    const contextPath = join(workspace, "clawhub-endor-context.json");
-    await writeFile(endorResultPath, `${JSON.stringify(endorAnalysis)}\n`, "utf8");
-    // ClawScan writes only context.metadata into the judge's metadata.json.
-    await writeFile(contextPath, JSON.stringify({ metadata: artifactMetadata(job) }), "utf8");
-    args.push(
-      "--config",
-      configPath,
-      "--context",
-      contextPath,
-      "--scanner-result",
-      `endor=${endorResultPath}`,
-    );
-  }
   if (job.job.targetKind === "packageRelease") {
     // SkillSpector only understands skills. ClawHub owns the plugin manifest
     // boundary, so never let ClawScan fall back to scanning the whole package.
@@ -2291,7 +2260,7 @@ export async function runClawScan(
   const artifact = await captureArtifact();
   if (!artifact) throw new Error("ClawScan did not emit a valid JSON artifact");
 
-  const mapped = validateClawScanArtifactForClawHubProfile(artifact, scannerSet, endorAnalysis);
+  const mapped = validateClawScanArtifactForClawHubProfile(artifact, scannerSet);
   onDiagnostic({ mapping: mapped.mapping });
   return mapped;
 }
@@ -2412,18 +2381,14 @@ export async function processJob(
   let aigAnalysis: AigAnalysis | undefined;
   let skillSpectorAnalysis: SkillSpectorAnalysis | undefined;
   let endorAnalysis: EndorAnalysis | undefined;
-  let preserveWorkspaceForEndorCleanup = false;
   let status: JobDiagnosticInput["status"] = "failed";
   try {
     await writeArtifactWorkspace(job, workspace);
-    const plugin = asRecord(job.target.package) ?? {};
     const shouldRunEndor =
       job.job.targetKind === "packageRelease" &&
-      isEndorPluginScanEnabled({
-        name: readString(plugin, ["name"]),
-        family: readString(plugin, ["family"]),
-        trustedOpenClawPlugin: job.target.trustedOpenClawPlugin === true,
-      });
+      isEndorPluginScanEnabled(readString(asRecord(job.target.package) ?? {}, ["family"]));
+    // Endor is report-only: its result is saved on the release and never
+    // passed to the ClawScan judge, so it cannot change moderation.
     const [endorResult, skillSpectorResult] = await Promise.allSettled([
       shouldRunEndor
         ? runEndorPluginScan({
@@ -2447,10 +2412,6 @@ export async function processJob(
       endor.error = sanitizeWorkerErrorMessage(
         reason instanceof Error ? reason.message : String(reason),
       );
-      if (reason instanceof EndorContainerCleanupError) {
-        preserveWorkspaceForEndorCleanup = true;
-        throw reason;
-      }
       endorAnalysis = {
         status: "failed",
         checkedAt: Date.now(),
@@ -2464,7 +2425,6 @@ export async function processJob(
       (next) => {
         Object.assign(clawscan, next);
       },
-      process.env.CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED === "1" ? endorAnalysis : undefined,
       skillSpectorResult.value,
     );
     llmAnalysis = mapped.llmAnalysis;
@@ -2528,7 +2488,6 @@ export async function processJob(
     });
     return { completed: true, hardFailed: false, retryableFailed: false };
   } catch (error) {
-    const workerMustStop = error instanceof EndorContainerCleanupError;
     errorMessage = sanitizeWorkerErrorMessage(
       error instanceof Error ? error.message : String(error),
     );
@@ -2565,9 +2524,8 @@ export async function processJob(
     });
     return {
       completed: false,
-      hardFailed: workerMustStop || !failResult?.retry,
-      retryableFailed: !workerMustStop && Boolean(failResult?.retry),
-      ...(workerMustStop ? { workerMustStop: true } : {}),
+      hardFailed: !failResult?.retry,
+      retryableFailed: Boolean(failResult?.retry),
     };
   } finally {
     try {
@@ -2597,17 +2555,7 @@ export async function processJob(
         "security scan diagnostic write failed",
       );
     }
-    if (preserveWorkspaceForEndorCleanup) {
-      logger.error(
-        {
-          event: "security_scan_endor_workspace_preserved_after_cleanup_failure",
-          jobId: job.job._id,
-        },
-        "preserving Endor workspace because container removal was not confirmed",
-      );
-    } else {
-      await rm(workspace, { recursive: true, force: true });
-    }
+    await rm(workspace, { recursive: true, force: true });
   }
 }
 

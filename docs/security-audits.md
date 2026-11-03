@@ -308,7 +308,7 @@ additional inspected-file array, and binds the returned path, hash and challenge
 to the final native attempt's provenance. Unsupported versions, mixed fields and
 inconsistent or missing native provenance fail closed. Prepublication uses this
 same validator, strips both progress opt-ins, and keeps inspection diagnostics out
-of the stored public policy output. Legacy Endor profiles deliberately remain v1.
+of the stored public policy output.
 
 ## Risk analysis
 

@@ -1,11 +1,11 @@
 #!/bin/sh
 set -eu
-source_url=${2:-https://example.invalid/clawscan/scan-target.git}
-if [ "$#" -eq 3 ]; then
-  set -- "$1" --exit-on-policy-warning=false --project-tags "$3" --tags "$3"
-else
-  set -- "$1" --dry-run
+if [ "$#" -ne 3 ]; then
+  echo "Usage: clawhub-endor-scan TARGET SOURCE_URL TAGS" >&2
+  exit 2
 fi
+source_url=$2
+set -- "$1" --exit-on-policy-warning=false --project-tags "$3" --tags "$3"
 # The worker mounts the normalized package read-only. All writes stay in the container.
 if [ ! -f "$1/package.json" ]; then
   echo "Endor requires package.json at the target root" >&2
@@ -91,7 +91,7 @@ status_file=$(mktemp)
   printf '%s\n' "$status" >"$status_file"
 } 2>&1 | tee "$diagnostic" >&2
 status=$(cat "$status_file")
-# The worker requires JSON, including for a successful empty scan.
+# A successful scan with no findings can emit nothing; the worker requires JSON.
 # Endor's 128 means policy findings; analysis failures must still fail the scanner.
 node - "$status" "$report" "$diagnostic" <<'JS'
 const fs = require("node:fs");
@@ -105,16 +105,7 @@ if (status !== "0" && status !== "128") fail(`Endor exited ${status}`);
 if (diagnostic.includes("ERROR ") || /\b[1-9][0-9]* (scan failure|call graph error)\(s\)/.test(diagnostic)) {
   fail("Endor reported one or more analysis errors");
 }
-let raw = fs.readFileSync(reportPath, "utf8");
-if (raw === "" && status === "0") {
-  raw = '{"all_findings":[],"blocking_findings":[],"warning_findings":[]}';
-}
-let report;
-try { report = JSON.parse(raw); } catch { fail("Endor returned invalid findings JSON"); }
-for (const name of ["all_findings", "blocking_findings", "warning_findings"]) {
-  if (!Array.isArray(report?.[name]) || report[name].some(value => value === null || typeof value !== "object" || Array.isArray(value))) {
-    fail("Endor returned invalid findings JSON");
-  }
-}
-process.stdout.write(raw);
+const raw = fs.readFileSync(reportPath, "utf8");
+// The worker validates the report shape.
+process.stdout.write(raw === "" && status === "0" ? '{"all_findings":[]}' : raw);
 JS
