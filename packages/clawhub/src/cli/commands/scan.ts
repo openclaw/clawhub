@@ -9,6 +9,7 @@ import {
 } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
+import { parsePublishedSkillRef } from "../skillReference.js";
 import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError } from "../ui.js";
 
@@ -30,18 +31,6 @@ type ScanDownloadOptions = {
 };
 
 type ReportRecord = Record<string, unknown>;
-
-function parsePublishedSkillRef(raw: string) {
-  const value = raw.trim();
-  if (!value) fail("Skill required");
-  const slashIndex = value.indexOf("/");
-  if (slashIndex < 0) return { slug: value };
-  if (value.indexOf("/", slashIndex + 1) >= 0) fail(`Invalid skill: ${value}`);
-  const ownerHandle = value.slice(0, slashIndex).trim().replace(/^@+/, "");
-  const slug = value.slice(slashIndex + 1).trim();
-  if (!ownerHandle || !slug) fail(`Invalid skill: ${value}`);
-  return { slug, ownerHandle };
-}
 
 export async function cmdScan(opts: GlobalOpts, pathArg: string | undefined, options: ScanOptions) {
   validateScanOptions(pathArg, options);

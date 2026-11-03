@@ -15,6 +15,7 @@ import {
 import { getOptionalAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import {
+  parsePublishedSkillRef,
   parseSkillsShCliReference,
   SKILLS_SH_SCANNED_LABEL,
   SKILLS_SH_UNSCANNED_LABEL,
@@ -68,7 +69,7 @@ type ModerationDiagnostics = {
 } | null;
 
 export async function cmdInspect(opts: GlobalOpts, slug: string, options: InspectOptions = {}) {
-  const requested = parseSkillRef(slug);
+  const requested = parsePublishedSkillRef(slug);
   const trimmed = requested.slug;
   if (!trimmed) fail("Skill required");
   if (options.version && options.tag) fail("Use either --version or --tag");
@@ -300,7 +301,7 @@ export async function cmdVerifySkill(
   if (skillsShRef && (options.version || options.tag || options.card)) {
     fail("skills.sh verification does not support --version, --tag, or --card");
   }
-  const requested = skillsShRef ? { slug: skillsShRef.slug } : parseSkillRef(slug);
+  const requested = skillsShRef ? { slug: skillsShRef.slug } : parsePublishedSkillRef(slug);
   const trimmed = requested.slug;
   if (!trimmed) fail("Skill required");
   if (options.version && options.tag) fail("Use either --version or --tag");
@@ -392,7 +393,7 @@ function isCanonicalNativeSkillRef(value: unknown) {
   const canonicalRef = value.trim();
   if (!canonicalRef.startsWith("@")) return false;
   try {
-    const parsed = parseSkillRef(canonicalRef);
+    const parsed = parsePublishedSkillRef(canonicalRef);
     return Boolean(
       parsed.ownerHandle &&
       isSafeNativeSkillSegment(parsed.ownerHandle) &&
@@ -412,18 +413,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
-}
-
-function parseSkillRef(raw: string) {
-  const value = raw.trim();
-  if (!value) fail("Skill required");
-  const slashIndex = value.indexOf("/");
-  if (slashIndex < 0) return { slug: value };
-  if (value.indexOf("/", slashIndex + 1) >= 0) fail(`Invalid skill: ${value}`);
-  const ownerHandle = value.slice(0, slashIndex).trim().replace(/^@+/, "");
-  const slug = value.slice(slashIndex + 1).trim();
-  if (!ownerHandle || !slug) fail(`Invalid skill: ${value}`);
-  return { slug, ownerHandle };
 }
 
 function ownerScopedUrl(registry: string, path: string, ownerHandle: string | undefined) {
