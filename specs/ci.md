@@ -8,7 +8,8 @@ The `CI` workflow runs the non-browser gates as independent jobs so their wall
 times overlap and each required check reports its own failure:
 
 - `static` runs peer dependency validation, dependency audit, formatting, lint,
-  and dead-code checks.
+  and dead-code checks. It uses a single-commit checkout because these checks
+  inspect the current tree and installed packages, not Git history.
 - `unit` runs the Vitest coverage suite. This replaces a separate `test` run
   because coverage already executes the test suite.
 - `packages` builds `packages/schema` and verifies the ClawHub CLI package.
