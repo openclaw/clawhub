@@ -1,5 +1,5 @@
 import { isScalar, isSeq, parseDocument } from "yaml";
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Id } from "../_generated/dataModel";
 import {
   legacyFlagsFromVerdict,
   MODERATION_ENGINE_VERSION,
@@ -8,7 +8,6 @@ import {
   REASON_CODES,
   type ScannerModerationVerdict,
   summarizeReasonCodes,
-  type ModerationVerdict,
   verdictFromCodes,
 } from "./moderationReasonCodes";
 
@@ -1838,34 +1837,4 @@ export function buildModerationSnapshot(params: {
     sourceVersionId: params.sourceVersionId,
     legacyFlags: legacyFlagsFromVerdict(verdict),
   };
-}
-
-export function resolveSkillVerdict(
-  skill: Pick<
-    Doc<"skills">,
-    "moderationVerdict" | "moderationFlags" | "moderationReason" | "moderationReasonCodes"
-  >,
-): ModerationVerdict {
-  if (skill.moderationVerdict) return skill.moderationVerdict;
-  if (skill.moderationFlags?.includes("blocked.malware")) return "malicious";
-  if (skill.moderationFlags?.includes("flagged.suspicious")) return "suspicious";
-  if (
-    skill.moderationReason?.startsWith("scanner.") &&
-    skill.moderationReason.endsWith(".malicious")
-  ) {
-    return "malicious";
-  }
-  if (
-    skill.moderationReason?.startsWith("scanner.") &&
-    skill.moderationReason.endsWith(".suspicious")
-  ) {
-    return "suspicious";
-  }
-  if ((skill.moderationReasonCodes ?? []).some((code) => code.startsWith("malicious."))) {
-    return "malicious";
-  }
-  if ((skill.moderationReasonCodes ?? []).some((code) => code.startsWith("suspicious."))) {
-    return "suspicious";
-  }
-  return "clean";
 }
