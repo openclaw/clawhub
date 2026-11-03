@@ -31,11 +31,13 @@ export const INCIDENT_SOURCE_PIN = "e9d0e9e05506d9e9aa9725fe2f4da20e2870db9b";
 export const DIAGNOSTIC_PROCESS_BUDGET_MS = 900_000;
 const LABEL = "NONPRODUCTION_DIAGNOSTIC";
 
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 function diagnosticStages(artifact?: unknown) {
-  const record = (value: unknown): Record<string, unknown> | undefined =>
-    value !== null && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined;
   const candidate = record(artifact);
   const run =
     candidate?.schemaVersion === "clawscan-run-v1" && candidate.profile === "clawhub"
@@ -55,7 +57,11 @@ function diagnosticStages(artifact?: unknown) {
   };
 }
 
-export async function diagnosticArtifactMetadata(path: string, includeVerdict = false) {
+export async function diagnosticArtifactMetadata(
+  path: string,
+  includeVerdict = false,
+  contract?: "fixed-original079",
+) {
   let securityVerdict: "benign" | "suspicious" | "malicious" | null = null;
   let artifact: unknown;
   let state: "missing" | "malformed" | "present" = "missing";
@@ -78,7 +84,27 @@ export async function diagnosticArtifactMetadata(path: string, includeVerdict = 
   try {
     if (!artifact || typeof artifact !== "object" || Array.isArray(artifact))
       throw new Error("Invalid artifact");
-    validateClawScanArtifactForClawHubProfile(artifact as Record<string, unknown>);
+    const candidate = artifact as Record<string, unknown>;
+    if (contract !== undefined) {
+      const aig = record(record(candidate.scanners)?.aig);
+      const inspection = record(record(record(candidate.judge)?.result)?.artifact_inspection);
+      // Only the trusted fixed079 route may select normal plugin applicability.
+      if (
+        contract !== "fixed-original079" ||
+        candidate.schemaVersion !== "clawscan-run-v1" ||
+        candidate.profile !== "clawhub" ||
+        record(candidate.target)?.kind !== "plugin" ||
+        aig?.status !== "skipped" ||
+        aig.error !== "Scanner aig does not support plugin targets." ||
+        aig.command != null ||
+        aig.raw != null ||
+        aig.exitCode != null ||
+        (aig.commandStarted !== undefined && aig.commandStarted !== false) ||
+        inspection?.version !== 2
+      )
+        throw new Error("Fixed079 plugin applicability was not proven");
+      validateClawScanArtifactForClawHubProfile(candidate, ["clawscan-static", "skillspector"]);
+    } else validateClawScanArtifactForClawHubProfile(candidate);
     const verdict = (artifact as { judge?: { result?: { verdict?: unknown } } }).judge?.result
       ?.verdict;
     if (verdict === "benign" || verdict === "suspicious" || verdict === "malicious")
