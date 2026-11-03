@@ -1,6 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { PublishedCatalogSections, PublishedItemCard } from "../routes/user/$handle";
+import {
+  displaySectionsToCatalogGroups,
+  PublishedItemCard,
+  PublisherGroupedCatalog,
+} from "../routes/user/$handle";
 
 // PublishedItemCard uses <Link> from TanStack Router; stub it to a plain <a>.
 vi.mock("@tanstack/react-router", () => ({
@@ -163,50 +167,54 @@ describe("PublishedItemCard", () => {
   });
 });
 
-describe("PublishedCatalogSections", () => {
+describe("PublisherGroupedCatalog", () => {
   it("renders manifest groups without source-backed catalog chrome", () => {
-    render(
-      <PublishedCatalogSections
-        display={{
-          mode: "grouped",
-          sourceRepos: ["NVIDIA/skills"],
-          sections: [
+    const groups = displaySectionsToCatalogGroups({
+      mode: "grouped",
+      sourceRepos: ["NVIDIA/skills"],
+      sections: [
+        {
+          key: "agentic",
+          title: "Agentic AI",
+          description: "Agentic AI skills.",
+          sourceRepo: "NVIDIA/skills",
+          items: [
             {
-              key: "agentic",
-              title: "Agentic AI",
-              description: "Agentic AI skills.",
+              ...baseSkill,
+              _id: "skills:aiq-deploy",
+              displayName: "AIQ Deploy",
+              href: "/nvidia/aiq-deploy",
+              icon: null,
+              sourceBacked: true,
               sourceRepo: "NVIDIA/skills",
-              items: [
-                {
-                  ...baseSkill,
-                  _id: "skills:aiq-deploy",
-                  displayName: "AIQ Deploy",
-                  href: "/nvidia/aiq-deploy",
-                  icon: null,
-                  sourceBacked: true,
-                  sourceRepo: "NVIDIA/skills",
-                },
-              ],
-            },
-            {
-              key: "other",
-              title: "Other skills",
-              description: null,
-              sourceRepo: null,
-              items: [
-                {
-                  ...baseSkill,
-                  _id: "skills:other",
-                  displayName: "Other Skill",
-                  href: "/nvidia/other",
-                  icon: null,
-                  sourceBacked: true,
-                  sourceRepo: "NVIDIA/skills",
-                },
-              ],
             },
           ],
-        }}
+        },
+        {
+          key: "other",
+          title: "Other skills",
+          description: null,
+          sourceRepo: null,
+          items: [
+            {
+              ...baseSkill,
+              _id: "skills:other",
+              displayName: "Other Skill",
+              href: "/nvidia/other",
+              icon: null,
+              sourceBacked: true,
+              sourceRepo: "NVIDIA/skills",
+            },
+          ],
+        },
+      ],
+    });
+    const onSelectedGroupChange = vi.fn();
+    const { rerender } = render(
+      <PublisherGroupedCatalog
+        groups={groups}
+        selectedGroup="all"
+        onSelectedGroupChange={onSelectedGroupChange}
       />,
     );
 
@@ -220,6 +228,14 @@ describe("PublishedCatalogSections", () => {
     expect(screen.queryByText("NVIDIA/skills")).toBeNull();
 
     fireEvent.click(screen.getByRole("radio", { name: /agentic ai 1/i }));
+    expect(onSelectedGroupChange).toHaveBeenCalledWith("agentic");
+    rerender(
+      <PublisherGroupedCatalog
+        groups={groups}
+        selectedGroup="agentic"
+        onSelectedGroupChange={onSelectedGroupChange}
+      />,
+    );
 
     expect(screen.getByText("Agentic AI skills.")).toBeTruthy();
     expect(screen.getByText("AIQ Deploy")).toBeTruthy();

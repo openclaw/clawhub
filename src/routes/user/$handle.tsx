@@ -1,13 +1,6 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-router";
-import {
-  getCatalogTopicSlugs,
-  isPluginCategorySlug,
-  isSkillCategorySlug,
-  LEGACY_PLUGIN_CATEGORY_DEFINITIONS,
-  normalizeCatalogTopic,
-} from "clawhub-schema/catalogMetadata";
-import { resolveStoredPluginCategories } from "clawhub-schema/pluginCategories";
+import { normalizeCatalogTopic } from "clawhub-schema/catalogMetadata";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import {
   ArrowRight,
@@ -55,15 +48,6 @@ import {
 } from "../../components/ui/dropdown-menu";
 import { Skeleton } from "../../components/ui/skeleton";
 import { formatBrowseCount } from "../../lib/browseCount";
-import {
-  getSkillCategoriesForSkill,
-  getSkillCategoryForSkill,
-  PLUGIN_CATEGORIES,
-  resolvePluginBrowseCategorySlug,
-  resolveSkillBrowseCategorySlug,
-  SKILL_CATEGORIES,
-  type BrowseCategory,
-} from "../../lib/categories";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPublisherMeta } from "../../lib/og";
 import { buildPublisherProfileHref, isLegacyPublisherProfileHandle } from "../../lib/ownerRoute";
@@ -1009,65 +993,6 @@ export function PublisherProfilePage({
 const UNCATEGORIZED_GROUP_KEY = "other";
 const UNCATEGORIZED_GROUP_TITLE = "Uncategorized";
 
-export function getPublisherCatalogItemCategorySlugs(item: PublicPublisherCatalogItem): string[] {
-  const slugs = new Set<string>();
-  if (item.kind === "skill") {
-    for (const category of getSkillCategoriesForSkill({
-      slug: item.slug ?? parseCatalogItemSlug(item),
-      displayName: item.displayName,
-      summary: item.summary,
-      categories: item.categories,
-      inferredCategories: item.inferredCategories,
-      latestVersionId: item.latestVersionId,
-      inferredFromVersionId: item.inferredFromVersionId,
-    })) {
-      slugs.add(category.slug);
-    }
-  } else {
-    for (const slug of resolveStoredPluginCategories({
-      categories: item.categories,
-      inferredCategories: item.inferredCategories,
-      displayName: item.displayName,
-      summary: item.summary ?? undefined,
-    })) {
-      slugs.add(slug);
-    }
-    for (const raw of item.categories ?? []) {
-      const resolved = resolvePluginBrowseCategorySlug(raw);
-      if (resolved) slugs.add(resolved);
-    }
-  }
-  const isCategorySlug = item.kind === "skill" ? isSkillCategorySlug : isPluginCategorySlug;
-  for (const topicSlug of getCatalogTopicSlugs(item.topics)) {
-    if (isCategorySlug(topicSlug)) slugs.add(topicSlug);
-  }
-  return [...slugs];
-}
-
-export function publisherCatalogItemMatchesCategory(
-  item: PublicPublisherCatalogItem,
-  categorySlug: string,
-): boolean {
-  const resolved =
-    item.kind === "skill"
-      ? resolveSkillBrowseCategorySlug(categorySlug)
-      : resolvePluginBrowseCategorySlug(categorySlug);
-  if (!resolved) return false;
-  return getPublisherCatalogItemCategorySlugs(item).includes(resolved);
-}
-
-export function buildPublisherCatalogCategoryOptions(
-  items: readonly PublicPublisherCatalogItem[],
-  kind: "skill" | "plugin",
-): BrowseCategory[] {
-  const source =
-    kind === "plugin"
-      ? [...PLUGIN_CATEGORIES, ...LEGACY_PLUGIN_CATEGORY_DEFINITIONS]
-      : SKILL_CATEGORIES;
-  const presentSlugs = new Set(items.flatMap((item) => getPublisherCatalogItemCategorySlugs(item)));
-  return source.filter((category) => presentSlugs.has(category.slug));
-}
-
 export type PublisherCatalogGroup = {
   key: string;
   title: string;
@@ -1246,75 +1171,6 @@ export function formatRelativeUpdatedAt(timestampMs: number, now = Date.now()) {
   const months = Math.floor(days / 30);
   if (months < 12) return `${months}mo ago`;
   return `${Math.floor(months / 12)}y ago`;
-}
-
-// Exported for unit testing. The publisher profile route is the only
-// production consumer; tests assert that custom skill icons forwarded via
-// `item.icon` reach `MarketplaceIcon`.
-export function PublishedCatalogSections({
-  display,
-  selectedGroup = "all",
-  onSelectedGroupChange,
-  footer,
-}: {
-  display: PublicPublisherCatalogDisplay;
-  selectedGroup?: string;
-  onSelectedGroupChange?: (value: string) => void;
-  footer?: ReactNode;
-}) {
-  const groups = displaySectionsToCatalogGroups(display);
-  const [internalSelectedGroup, setInternalSelectedGroup] = useState("all");
-  const activeSelectedGroup = onSelectedGroupChange ? selectedGroup : internalSelectedGroup;
-  const handleSelectedGroupChange = onSelectedGroupChange ?? setInternalSelectedGroup;
-
-  if (groups.length <= 1) {
-    const items = groups[0]?.items ?? [];
-    return (
-      <>
-        <PublisherCatalogItems items={items} />
-        {footer}
-      </>
-    );
-  }
-
-  return (
-    <PublisherGroupedCatalog
-      groups={groups}
-      selectedGroup={activeSelectedGroup}
-      onSelectedGroupChange={handleSelectedGroupChange}
-      footer={footer}
-    />
-  );
-}
-
-export function getCatalogItemTypeLabel(item: PublicPublisherCatalogItem) {
-  if (item.kind === "plugin") return "Plugin";
-  const category = getSkillCategoryForSkill({
-    slug: item.slug ?? item._id,
-    displayName: item.displayName,
-    summary: item.summary,
-    categories: item.categories,
-    inferredCategories: item.inferredCategories,
-    latestVersionId: item.latestVersionId,
-    inferredFromVersionId: item.inferredFromVersionId,
-  });
-  const subtype = item.topics?.[0]?.trim() || category?.label || UNCATEGORIZED_GROUP_TITLE;
-  return `Skill · ${subtype}`;
-}
-
-export function getCatalogItemShortTypeLabel(item: PublicPublisherCatalogItem) {
-  if (item.kind === "plugin") return "plugin";
-  if (item.topics?.[0]?.trim()) return item.topics[0].trim().toLowerCase();
-  const category = getSkillCategoryForSkill({
-    slug: item.slug ?? item._id,
-    displayName: item.displayName,
-    summary: item.summary,
-    categories: item.categories,
-    inferredCategories: item.inferredCategories,
-    latestVersionId: item.latestVersionId,
-    inferredFromVersionId: item.inferredFromVersionId,
-  });
-  return (category?.label ?? UNCATEGORIZED_GROUP_TITLE).toLowerCase();
 }
 
 function parseCatalogItemSlug(item: PublicPublisherCatalogItem) {
