@@ -811,6 +811,21 @@ function getRequestedPackageOwnerKey(args: {
   return args.ownerPublisherId ? `publisher:${args.ownerPublisherId}` : `user:${args.ownerUserId}`;
 }
 
+const PRIVATE_NON_LATEST_PUBLISH_ERROR =
+  "A private package release cannot publish while a newer public release stays latest.";
+
+function privateReleaseWouldPublishUnderPublicPackage(args: {
+  shouldPromoteLatest: boolean;
+  packageChannel: string | undefined;
+  releaseChannel: string | undefined;
+}) {
+  return (
+    !args.shouldPromoteLatest &&
+    args.releaseChannel === "private" &&
+    args.packageChannel !== "private"
+  );
+}
+
 function derivePackagePublisherChannel(args: {
   requestedChannel?: PackageChannel;
   currentChannel?: PackageChannel;
@@ -11682,6 +11697,17 @@ export const publishPendingReleaseInternal = internalMutation({
       candidateVersion: release.version,
       requestedTags: stringArrayPendingField(metadata, "tags") ?? release.distTags ?? [],
     });
+    // Privacy is the parent channel. Publishing this release without
+    // promoting it would leave a private artifact on a public package.
+    if (
+      privateReleaseWouldPublishUnderPublicPackage({
+        shouldPromoteLatest,
+        packageChannel: pkg.channel,
+        releaseChannel: stringPendingField(metadata, "channel", pkg.channel),
+      })
+    ) {
+      throw new ConvexError(PRIVATE_NON_LATEST_PUBLISH_ERROR);
+    }
     // Staging does not freeze ownership or administrative identity repairs.
     // Recheck the effective claim in the transaction that makes it public.
     if (packageFamily === "code-plugin") {
@@ -11754,8 +11780,12 @@ export const publishPendingReleaseInternal = internalMutation({
         ? stringPendingField(metadata, "sourceRepo", release.sourceRepo)
         : pkg.sourceRepo,
       runtimeId: shouldPromoteLatest ? release.runtimeId : pkg.runtimeId,
-      channel: stringPendingField(metadata, "channel", pkg.channel) as Doc<"packages">["channel"],
-      isOfficial: booleanPendingField(metadata, "isOfficial", pkg.isOfficial),
+      channel: (shouldPromoteLatest
+        ? stringPendingField(metadata, "channel", pkg.channel)
+        : pkg.channel) as Doc<"packages">["channel"],
+      isOfficial: shouldPromoteLatest
+        ? booleanPendingField(metadata, "isOfficial", pkg.isOfficial)
+        : pkg.isOfficial,
       latestReleaseId: shouldPromoteLatest ? release._id : pkg.latestReleaseId,
       latestVersionSummary: shouldPromoteLatest
         ? packageLatestSummaryFromRelease(publishedRelease)
@@ -12120,6 +12150,16 @@ export const insertReleaseInternal = internalMutation({
       candidateVersion: args.version,
       requestedTags: args.tags,
     });
+    if (
+      !pendingPublication &&
+      privateReleaseWouldPublishUnderPublicPackage({
+        shouldPromoteLatest,
+        packageChannel: existing?.channel,
+        releaseChannel: nextChannel,
+      })
+    ) {
+      throw new ConvexError(PRIVATE_NON_LATEST_PUBLISH_ERROR);
+    }
 
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId: pkgId,
@@ -12235,8 +12275,8 @@ export const insertReleaseInternal = internalMutation({
         : {}),
       sourceRepo: args.sourceRepo,
       runtimeId: shouldPromoteLatest ? args.runtimeId : pkg.runtimeId,
-      channel: nextChannel,
-      isOfficial: nextIsOfficial,
+      channel: shouldPromoteLatest ? nextChannel : pkg.channel,
+      isOfficial: shouldPromoteLatest ? nextIsOfficial : pkg.isOfficial,
       latestReleaseId: shouldPromoteLatest ? releaseId : pkg.latestReleaseId,
       latestVersionSummary: shouldPromoteLatest
         ? {
