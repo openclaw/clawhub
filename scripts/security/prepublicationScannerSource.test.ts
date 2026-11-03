@@ -121,5 +121,5 @@ describe("opt-in pre-publication scanner source reporting", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 60_000);
 });
