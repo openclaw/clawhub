@@ -78,7 +78,7 @@ names, deleted filenames, and CSS formatting.
 
 Retained coverage:
 
-- `header.test.tsx`: navigation, theme controls, and responsive header CSS.
+- `header.test.tsx`: navigation and theme controls; local-auth covers responsive behavior.
 - `Footer.test.tsx`: rendered links and mobile section toggles.
 - `theme.test.tsx`: legacy preference and cookie cleanup.
 - `-settings.test.tsx`: supported appearance settings.
@@ -87,6 +87,25 @@ Retained coverage:
 Validation: Crabbox passed all 90 focused tests, `ci:static`, `ci:unit` coverage,
 and `ci:types:packages` at baseline `16135e6b` plus this patch. Independent P0-P3
 diff review: scoped-clean. Landed: https://github.com/openclaw/clawhub/pull/4250.
+
+### Responsive header proof
+
+Remove the two header CSS-string tests and their source readers. They searched
+an obsolete media block, allowed unrelated declarations to satisfy visibility
+assertions, and described a retired inline-search layout.
+
+Extend the existing local-auth header test with explicit mobile and desktop
+viewports. Check the actual navigation/search visibility, avatar content, control
+bounds and non-overlap, mobile menu links, and avatar-to-profile navigation.
+Keep the useful rendered Header unit tests. Browser fixture: local owner persona.
+
+Validation: 26 retained header unit cases and both real local-auth viewport cases
+passed. Dismiss the persona fixture menu before querying header roles. `ci:static`,
+Linux tsrs, and `ci:types-build` (including native package types/build) passed.
+`ci:unit` passed 8,825 tests in 653 files, with coverage thresholds met. Independent
+P0-P3 diff review: scoped-clean; the fixture-menu dismissal was checked directly
+and verified by both browser cases. Local URL: `http://127.0.0.1:4173`; owner persona
+`local`. Base: `046e3c4d`.
 
 ### Old CLI compatibility e2e
 
