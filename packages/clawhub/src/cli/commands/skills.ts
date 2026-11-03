@@ -40,6 +40,7 @@ import {
   SKILLS_SH_UNSCANNED_LABEL,
   type SkillsShReference,
 } from "../skillReference.js";
+import { normalizeOwnerHandle } from "../slug.js";
 import type { GlobalOpts, ResolveResult } from "../types.js";
 import {
   createCrabLoader,
@@ -87,15 +88,6 @@ type SkillRef = {
   sourceRef?: string;
   skillsSh?: SkillsShReference;
 };
-
-function normalizeOwnerHandle(raw: string | null | undefined) {
-  const handle = raw?.trim().replace(/^@+/, "").toLowerCase();
-  if (!handle) return undefined;
-  if (handle.includes("/") || handle.includes("\\") || handle.includes("..")) {
-    fail(`Invalid owner handle: ${raw}`);
-  }
-  return handle;
-}
 
 type GitHubInstallResolution = Extract<
   ApiV1SkillInstallResolveResponse,
