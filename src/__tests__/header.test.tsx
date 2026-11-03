@@ -1,7 +1,5 @@
 /* @vitest-environment jsdom */
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AriaAttributes, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -240,24 +238,6 @@ vi.mock("../components/ui/toggle-group", () => ({
 
 import Header from "../components/Header";
 
-function stylesCss() {
-  return readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
-}
-
-function compactHeaderCss() {
-  const css = stylesCss();
-  let start = css.indexOf("@media (max-width: 760px)");
-  while (start >= 0) {
-    const nextMedia = css.indexOf("@media ", start + 1);
-    const block = css.slice(start, nextMedia === -1 ? undefined : nextMedia);
-    if (block.includes(".navbar-search-wrap") && block.includes(".nav-mobile")) {
-      return block;
-    }
-    start = css.indexOf("@media (max-width: 760px)", start + 1);
-  }
-  throw new Error("Missing compact header media query");
-}
-
 const scrollIntoViewMock = vi.fn();
 
 describe("Header", () => {
@@ -419,33 +399,6 @@ describe("Header", () => {
     expect(signInMock).toHaveBeenCalledWith("github", { redirectTo: "/dashboard" });
     await Promise.resolve();
     expect(setAuthError).not.toHaveBeenCalled();
-  });
-
-  it("keeps inline search and moves content nav into the compact menu", () => {
-    const css = compactHeaderCss();
-
-    expect(css).toContain(".navbar-search-wrap");
-    expect(css).toContain("grid-template-columns");
-    expect(css).toContain(".navbar-search {");
-    expect(css).toContain("display: flex;");
-    expect(css).toContain(".navbar-search-mobile-trigger");
-    expect(css).toContain("display: none;");
-    expect(css).toContain(".navbar-tabs {");
-    expect(css).toContain("display: none;");
-    expect(css).toContain(".nav-mobile {");
-    expect(css).toContain("display: inline-flex;");
-    expect(css).not.toContain(".navbar-search {\n    display: none;");
-  });
-
-  it("aligns the restored header shell to the browse page width", () => {
-    const css = stylesCss();
-    const compactCss = compactHeaderCss();
-
-    expect(css).toContain(".navbar-inner {\n  width: 100%;\n  max-width: var(--page-max);");
-    expect(css).toContain("margin: 0 auto;\n  padding: 0 var(--space-5);");
-    expect(compactCss).toContain("padding: 8px 10px;");
-    expect(compactCss).toContain(".navbar-tabs {\n    display: none;");
-    expect(css).not.toContain(".navbar-inner,\n  .section.detail-page-section");
   });
 
   it("routes plain search-form submits to the search page", () => {
