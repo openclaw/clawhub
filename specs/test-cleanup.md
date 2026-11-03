@@ -19,6 +19,29 @@ fresh validation proof.
 
 ## Changes
 
+### CLI package coverage
+
+Replace the trusted-publisher case that read its own test file and split on a
+retired admin-package import. The built CLI artifact test now executes public
+`package trusted-publisher set` and `delete` against a local registry stub and
+checks authenticated requests, encoded package paths, option payloads, and JSON
+output. This proves command registration and dispatch, not backend authorization.
+Keep the existing command-function tests for set/delete behavior.
+
+Remove the duplicate standalone-template-validator parity case from
+`templateContracts.test.ts`. Retain the two source-copy checks in
+`templateConformance.test.ts`, which resolve files from the repository root.
+
+Validation: Crabbox passed both schema suites, `ci:packages` (including the built
+CLI artifact suite), `ci:static`, and `ci:types:packages`. Independent P0-P3 diff
+review: scoped-clean. `ci:unit` passed 8,806 tests in 653 files, with coverage
+thresholds met. Base: `d677ce37`. Landing: pending PR.
+
+Queued CI audit: publish lifecycle greps omit three security cases. Check matrix
+coverage for `exact-template-artifact`, `template-official-boundary`,
+`publisher-create-owner`, `skill-presentation-metadata`, and `featured-lineup`.
+Also review the retired mobile grid assertion and public-plugin API-failure skips.
+
 ### Header/footer/theme source contracts
 
 Removed three cases and six unused source readers from

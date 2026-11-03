@@ -4405,23 +4405,6 @@ describe("package commands", () => {
     expect(mockLog).not.toHaveBeenCalledWith(expect.stringContaining("Environment:"));
   });
 
-  it("owns trusted publisher set and delete commands in the public package CLI", async () => {
-    const testSource = await readFile(new URL("./packages.test.ts", import.meta.url), "utf8");
-    const cliSource = await readFile(new URL("../../cli.ts", import.meta.url), "utf8");
-    const modImportPrefix = testSource.split(
-      '} = await import("../../../../clawhub-mod/src/commands/packages");',
-    )[0];
-    const modImportBlock = modImportPrefix ? (modImportPrefix.split("const {").at(-1) ?? "") : "";
-
-    expect(modImportBlock).not.toEqual("");
-    expect(modImportBlock).not.toContain("cmdSetPackageTrustedPublisher");
-    expect(modImportBlock).not.toContain("cmdDeletePackageTrustedPublisher");
-    expect(cliSource).toContain('["package", "trusted-publisher", "set"]');
-    expect(cliSource).toContain('["package", "trusted-publisher", "delete"]');
-    expect(cliSource).toContain("cmdSetPackageTrustedPublisher(opts, name, options)");
-    expect(cliSource).toContain("cmdDeletePackageTrustedPublisher(opts, name, options)");
-  });
-
   it("sets trusted publisher config for a package", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       trustedPublisher: {
