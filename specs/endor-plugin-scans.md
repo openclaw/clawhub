@@ -60,9 +60,7 @@ Endor runs with `docker run --rm` from a digest-pinned image built by the manual
   user (it uses public DNS resolvers because the firewall blocks private ones);
 - runs npm and Yarn through shims that strip Endor credentials and disable
   dependency scripts. The image pins an npm version that also suppresses Git
-  dependency `prepare` scripts. Before upgrading npm in the image, confirm that
-  installing a Git dependency whose `prepare` script writes a marker file leaves
-  no marker under `NPM_CONFIG_IGNORE_SCRIPTS=true`.
+  dependency `prepare` scripts; the isolation proof below checks this.
 
 The wrapper accepts Endor's exit 128 (policy findings), treats empty output from
 a successful scan as no findings, and fails when Endor logs analysis or
@@ -70,9 +68,18 @@ call-graph errors even if it exits zero.
 
 If the scan fails or times out, the worker force-removes the container, because
 killing the Docker CLI does not stop it. Removal is best effort: a failed removal
-is added to the recorded error, and a container that outlives it (for example
-one the daemon finishes creating after the CLI was killed) is reaped by `--rm`
-when it exits and by the disposable runner at job end.
+is added to the recorded error. If the timeout lands while Docker is still
+creating the container, the daemon can finish creating it after the removal.
+That container is never started, so it runs nothing; the disposable runner
+discards it at job end.
+
+`scripts/security/endor/fixtures/run.sh` is the manual isolation proof. It runs
+inside the real image, behind the real entrypoint and with the worker's
+container flags, and fails if the scan runs as root, if a private-network
+listener accepts a connection, or if the real npm or Yarn sends a synthetic
+secret to a registry or runs a dependency script. Run it before changing the
+image, npm, Yarn, `scan.sh` or the egress guard. The script header has the
+command.
 
 Endor credentials reach only the Docker CLI and the container. The ClawScan
 judge and other scanners never receive them.
