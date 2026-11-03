@@ -8,6 +8,7 @@ import { cmdUnhideSkill } from "../../clawhub/src/cli/commands/delete.js";
 import {
   cmdGetPackageTrustedPublisher,
   cmdPackageModerationStatus,
+  cmdSetPackageTrustedPublisher,
 } from "../../clawhub/src/cli/commands/packages.js";
 import {
   cmdListSkillReports,
@@ -68,7 +69,6 @@ import {
   cmdPackageModerationQueue,
   cmdRepairPackageName,
   cmdRepairPackageRuntimeId,
-  cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdTransferPackageOwner,
   cmdUpsertPackageMigration,
