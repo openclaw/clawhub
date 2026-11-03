@@ -150,6 +150,13 @@ search workers and ranking remain shared; report generation does not implement a
 second search algorithm, reduce the 100-query recommendation cohort, or extend the
 generic HTTP deadline.
 
+Workpool 0.4.15 accepts existing queued work without a migration and records an
+optional `pendingStartId` on work documents as they are enqueued or started. Once
+these fields are stored, the previous component schema cannot accept them: do not
+roll back to 0.4.14. The upstream `backfillPendingStartIds` migration is a prerequisite
+for a future 0.5 upgrade, not for 0.4.15; any production backfill requires a separate
+reviewed migration plan. See the [upstream upgrade notes](https://github.com/convex/workpool/blob/v0.4.15/CHANGELOG.md).
+
 - Staff `POST /api/v1/search-insights/reports` returns a small status envelope and
   generation handle promptly, including when it reuses an already ready generation.
   `GET /api/v1/search-insights/reports/:reportId` returns its lifecycle status and,
