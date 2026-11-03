@@ -28,6 +28,7 @@ import {
   getPublishTotalSizeError,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./publishLimits";
+import { stripUndefinedForStoredPublish } from "./publishStorage";
 import { isSkillCardPath } from "./skillCards";
 import {
   MAX_SKILL_PRESENTATION_YAML_BYTES,
@@ -749,7 +750,7 @@ function buildSkillPublishAttemptScanContext(insertArgs: unknown) {
     record.parsed && typeof record.parsed === "object"
       ? (record.parsed as Record<string, unknown>)
       : {};
-  return stripUndefinedForStoredAttempt({
+  return stripUndefinedForStoredPublish({
     version: {
       staticScan: record.staticScan,
       parsed: {
@@ -829,17 +830,6 @@ function mergeSourceIntoMetadata(
   }
 
   return Object.keys(base).length ? base : undefined;
-}
-
-function stripUndefinedForStoredAttempt(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripUndefinedForStoredAttempt);
-  if (!value || typeof value !== "object") return value;
-
-  const result: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value)) {
-    if (nested !== undefined) result[key] = stripUndefinedForStoredAttempt(nested);
-  }
-  return result;
 }
 
 function buildFinalizationClaimId() {

@@ -103,6 +103,7 @@ import {
   normalizePublisherHandle,
   requirePublisherRole,
 } from "./lib/publishers";
+import { stripUndefinedForStoredPublish } from "./lib/publishStorage";
 import { RECOMMENDATION_SCORE_VERSION } from "./lib/recommendationScore";
 import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
 import {
@@ -11894,17 +11895,6 @@ function asSkillPendingPublishArgs(value: unknown): SkillPendingPublishArgs {
   return value as SkillPendingPublishArgs;
 }
 
-function stripUndefinedForStoredPublication(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripUndefinedForStoredPublication);
-  if (!value || typeof value !== "object") return value;
-
-  const result: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value)) {
-    if (nested !== undefined) result[key] = stripUndefinedForStoredPublication(nested);
-  }
-  return result;
-}
-
 export const insertVersion = internalMutation({
   args: {
     userId: v.id("users"),
@@ -12523,7 +12513,7 @@ export const insertVersion = internalMutation({
       version: args.version,
       publicationStatus: args.publicationStatus ?? "published",
       pendingPublication: isPendingPublication
-        ? stripUndefinedForStoredPublication({ skillInsertArgs: args })
+        ? stripUndefinedForStoredPublish({ skillInsertArgs: args })
         : undefined,
       fingerprint: args.fingerprint,
       sourceProvenance: args.sourceProvenance,
