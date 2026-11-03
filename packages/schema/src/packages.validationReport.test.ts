@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { ApiV1PackageValidationReportPageSchema as cliReportPage } from "../../clawhub/src/schema/packages.js";
 import { parseArk } from "./ark.js";
 import { ApiV1PackageValidationReportPageSchema } from "./packages.js";
 
-describe("ApiV1PackageValidationReportPageSchema", () => {
+describe.each([
+  { name: "registry", schema: ApiV1PackageValidationReportPageSchema },
+  { name: "CLI", schema: cliReportPage },
+])("$name package validation report", ({ schema }) => {
   it("accepts a paginated plugin validation report page", () => {
     const page = {
       items: [
@@ -29,15 +33,13 @@ describe("ApiV1PackageValidationReportPageSchema", () => {
       done: false,
     };
 
-    expect(parseArk(ApiV1PackageValidationReportPageSchema, page, "validation report")).toEqual(
-      page,
-    );
+    expect(parseArk(schema, page, "validation report")).toEqual(page);
   });
 
   it("rejects unknown scan statuses", () => {
     expect(() =>
       parseArk(
-        ApiV1PackageValidationReportPageSchema,
+        schema,
         {
           items: [
             {

@@ -8,6 +8,7 @@ const schemaDist = resolve(schemaRoot, "dist");
 const sharedSchemaModules = [
   "ark",
   "openclawContract",
+  "packageShared",
   "pluginInput",
   "templatePackage",
   "templates",
