@@ -26,10 +26,11 @@ clawhub package validate <path-to-plugin>
 
 ## Author-facing findings
 
-Plugin pages show an informational API update notice when a deprecated OpenClaw
-API has a scheduled retirement date. Open **API details** to see each API and its
-replacement. The date is the final compatibility day; these notices do not block
-installation. Publishers also see an **API update** item in their dashboard.
+The manager dashboard shows an informational API update notice when a deprecated
+OpenClaw API has a scheduled retirement date and the selected OpenClaw release
+exports the replacement. Open **API details** to see each API and its replacement.
+The date is the final compatibility day. These notices do not block installation.
+Publishers also see an **API update** item in their dashboard.
 Plugin managers can inspect compatibility errors in their validation details.
 
 After updating to the replacement APIs, validate and publish a new version to

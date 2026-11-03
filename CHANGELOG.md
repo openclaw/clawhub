@@ -7,6 +7,7 @@
 - Publishing: bound stored-file metadata verification to 16 concurrent reads and drain started work before cleanup, preserving server-computed hashes and archive bytes.
 
 - Tooling: preserve the component example correction and canonical AGENTS.md when refreshing Convex AI guidance.
+- Docs: clarify that API retirement notices require replacement APIs available in the selected OpenClaw release and appear in the manager dashboard.
 - Tests: refresh development dependencies and anchor frozen-clock fixtures to Convex transaction timestamps and stored expiration boundaries.
 - Dependencies: patch Undici to 7.30.1 in the CLI, admin CLI, and development tools to address upstream transport advisories.
 - Dependencies: refresh production packages, including Convex 1.49 and Workpool 0.4.15. Convex now requires Node.js 22 or newer; do not downgrade Workpool after its new queue pointers are stored, and complete its upstream backfill before a future 0.5 upgrade.
