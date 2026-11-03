@@ -44,6 +44,13 @@
 
 - CI: batch main CodeQL scans every six hours while preserving PR and manual scans; include local composite actions and attribute-only PR changes.
 
+## 0.25.1 - 2026-11-03
+
+### Fixes
+
+- CLI: update Plugin Inspector to 0.4.5 so API retirement notices require replacement APIs available in the selected OpenClaw release.
+- Dependencies: patch Undici to 7.30.1 and update ArkType, ignore, and mime to their latest patch releases.
+
 ## 0.25.0 - 2026-11-01
 
 ### Compatibility
