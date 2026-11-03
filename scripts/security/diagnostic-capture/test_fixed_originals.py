@@ -19,9 +19,9 @@ def config_for(entry,root):
 class FixedSkills(unittest.TestCase):
     def test_registry_is_exact_and_rejects_changed_or_added_entries(self):
         registry=load_registry()
-        self.assertEqual([row['fixture']for row in registry['originals']],['004','016','017','026','027','074','008','011','036','033','065','073','042','055','039'])
-        self.assertEqual(sum(len(row['files'])for row in registry['originals']),41)
-        self.assertEqual(sum(file['size']for row in registry['originals']for file in row['files']),665215)
+        self.assertEqual([row['fixture']for row in registry['originals']],['004','016','017','026','027','074','008','011','036','033','065','073','042','055','039','010','019','005','006','015'])
+        self.assertEqual(sum(len(row['files'])for row in registry['originals']),84)
+        self.assertEqual(sum(file['size']for row in registry['originals']for file in row['files']),1093507)
         for mutation in ('source','identity','duplicate','unknown'):
             with self.subTest(mutation=mutation),tempfile.TemporaryDirectory()as name:
                 root=Path(name);value=copy.deepcopy(registry)

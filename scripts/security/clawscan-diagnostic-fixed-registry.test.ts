@@ -22,7 +22,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-it("binds exactly fifteen skill identities, their retained manifests and source records", () => {
+it("binds exactly twenty skill identities, their retained manifests and source records", () => {
   expect(validateFixedSkillRegistry(registry)).toEqual(registry);
   expect(FIXED_ORIGINAL_SELECTORS).toEqual([
     "original-038-encrypted",
@@ -42,11 +42,16 @@ it("binds exactly fifteen skill identities, their retained manifests and source 
     "original-042-encrypted",
     "original-055-encrypted",
     "original-039-encrypted",
+    "original-010-encrypted",
+    "original-019-encrypted",
+    "original-005-encrypted",
+    "original-006-encrypted",
+    "original-015-encrypted",
   ]);
-  expect(registry.originals.flatMap((row) => row.files)).toHaveLength(41);
+  expect(registry.originals.flatMap((row) => row.files)).toHaveLength(84);
   expect(
     registry.originals.flatMap((row) => row.files).reduce((sum, file) => sum + file.size, 0),
-  ).toBe(665215);
+  ).toBe(1093507);
   for (const row of registry.originals) {
     const selected = selectFixedSkill(row.fixture);
     expect(selected.identity).toEqual(row);
@@ -382,4 +387,118 @@ it("preserves separate version obligations even when their payload hashes match"
   expect(earlier.identity.attemptId).not.toBe(following.identity.attemptId);
   expect(earlier.identity.versionId).not.toBe(following.identity.versionId);
   expect(selectFixedSkill("027").id).not.toBe(selectFixedSkill("065").id);
+});
+
+const subsequentFive = [
+  {
+    fixture: "010",
+    package: "brewpage-publish",
+    version: "1.0.8",
+    owner: "kochetkov-ma",
+    kind: "skill",
+    attemptId: "zx72qjk2b7adfc3xfketc55d7h8h2ct3",
+    versionId: "k974szd30ckskwfma437qapfd58h34gv",
+    fingerprint: "0584354479d17011f38eb4122c8693e0d56ba3289c46caa4dc3226ad55266a3d",
+    manifestSha256: "a37695ad0434ec3579f70705e2f5f10b73ff97317d02305c6bb7eac1dfd09160",
+    sourceManifestSha256: "57f66ee901dd7ae2fbcf23954f055cc9ddff2a3ef79be8f9146a3cd342c210e3",
+    fileCount: 7,
+  },
+  {
+    fixture: "019",
+    package: "hookaido",
+    version: "2.15.3",
+    owner: "7schmiede",
+    kind: "skill",
+    attemptId: "zx78v8whzmepebrr7t8489tqa58h877q",
+    versionId: "k971asg1bx11v8efjtdn554d8n8h9r4b",
+    fingerprint: "aefe9b9deb288ad20fc5213557a142b059cacb9856bd97f9d5f32b5ab40f643e",
+    manifestSha256: "ec0a413aa333045b23a4d0e2acb195bb27b5bc110db123fccdde6c9e5380eb12",
+    sourceManifestSha256: "b2039d335eebacfecd986a9f27f50899b6109bd7f427f6d2774ae6fdb16f52e6",
+    fileCount: 9,
+  },
+  {
+    fixture: "005",
+    package: "xiapan-music",
+    version: "0.1.0",
+    owner: "dongsheng123132",
+    kind: "skill",
+    attemptId: "zx7b487av1k20f0ctys5n9t8h58h4v9g",
+    versionId: "k972v7hrpjv0ds1zwperc1yx858h43pp",
+    fingerprint: "92f5b51d896a15584a90034cf91a88d7108f0b727a009a5833b64230c40cedea",
+    manifestSha256: "83fa9eabb8ce424d2b2ac0daed1a671486e5740abb2e7a71da01224dc62aba59",
+    sourceManifestSha256: "d22cacf3c276970c945b94509a3ba883c035863a3e05d698247a6a8a807acb55",
+    fileCount: 9,
+  },
+  {
+    fixture: "006",
+    package: "xiapan-music",
+    version: "0.1.1",
+    owner: "dongsheng123132",
+    kind: "skill",
+    attemptId: "zx7284aer96fg31dge0bs406rs8h53dc",
+    versionId: "k97b1ptq47bs8sjewf8xx73v898h4p75",
+    fingerprint: "a8ce606b7131c63e7f92fb77b631096a6bf50defd75fbd73462f601af12fc27f",
+    manifestSha256: "121ce0a19ac22e8fbea4fed9025127429a8464fed8e82ff684d376ab961e199c",
+    sourceManifestSha256: "1cc155fc44227ecc4a4b3eba36321dc1f9aa959260ccb13d8b1e381f50e7f13b",
+    fileCount: 9,
+  },
+  {
+    fixture: "015",
+    package: "agentlifeboat",
+    version: "1.0.2",
+    owner: "king-perb",
+    kind: "skill",
+    attemptId: "zx7f16v03prv0500fdvb092wxn8h2ejy",
+    versionId: "k977873s0ct949cbq3p9etee1s8h2k4p",
+    fingerprint: "b4a6891269bc096cc7679fcd4e44f2641b4f78867af5ffb090c52f4dd5f8cf2b",
+    manifestSha256: "1cf20d0e01a3a87af35e77e21e79ee094fdd5dedbe8ad5dc5f82800461ab4021",
+    sourceManifestSha256: "dce8d0e7904374cb81ad51ed2cba4c23dd2f49671f74620abb6eed8c6730817c",
+    fileCount: 9,
+  },
+] as const;
+
+it.each(subsequentFive)(
+  "binds subsequent original $fixture to its exact reported owner/version and retained files",
+  (expected) => {
+    const { fileCount, ...identity } = expected;
+    const selected = selectFixedSkill(expected.fixture);
+    expect(selected.identity).toMatchObject(identity);
+    expect(selected.id).toBe(`${expected.package}-${expected.version}`);
+    expect(selected.manifest.files).toHaveLength(fileCount);
+    expect(hash(JSON.stringify(selected.manifest.files))).toBe(expected.manifestSha256);
+  },
+);
+
+it.each(subsequentFive)(
+  "rejects every custody substitution for subsequent original $fixture",
+  (expected) => {
+    const index = registry.originals.findIndex((row) => row.fixture === expected.fixture);
+    expect(index).toBeGreaterThanOrEqual(0);
+    for (const key of Object.keys(registry.originals[index])) {
+      const changed = structuredClone(registry);
+      Object.assign(changed.originals[index], { [key]: "substituted" });
+      expect(() => validateFixedSkillRegistry(changed)).toThrow("registry identity");
+    }
+  },
+);
+
+it("keeps both Xiapan versions bound to their own instructions and publication attempts", () => {
+  const earlier = selectFixedSkill("005");
+  const later = selectFixedSkill("006");
+  expect(earlier.version).toBe("0.1.0");
+  expect(later.version).toBe("0.1.1");
+  const instructionHash = (selected: typeof earlier) =>
+    selected.manifest.files.find((file) => file.path === "SKILL.md")!.sha256;
+  expect(instructionHash(earlier)).toBe(
+    "f089686b20d3689b05b6efe52692438f71884b5eb3e1788ba56b1bf59ead3250",
+  );
+  expect(instructionHash(later)).toBe(
+    "9b83e364cbd201b9d9dbfbc900479f57c4475dd20d7c6087e2cdda6c9790ef85",
+  );
+  expect(earlier.manifest.files.filter((file) => file.path !== "SKILL.md")).toEqual(
+    later.manifest.files.filter((file) => file.path !== "SKILL.md"),
+  );
+  expect(earlier.identity.attemptId).not.toBe(later.identity.attemptId);
+  expect(earlier.identity.versionId).not.toBe(later.identity.versionId);
+  expect(earlier.identity.fingerprint).not.toBe(later.identity.fingerprint);
 });

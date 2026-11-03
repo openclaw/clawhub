@@ -1,7 +1,7 @@
 """Sealed skill-original custody registry; no caller-selected identity or policy."""
 import hashlib,json
 from pathlib import Path
-REGISTRY_SHA256="e31b555a0c81675fdae811b1f0a491eee9b7334f2b2a374ab49e4a9f78a6788f"
+REGISTRY_SHA256="c5cb17197c164c8b341f8180aa046210864f7c43032b9f57fdab68fa6ed769ca"
 
 
 def load_registry():
