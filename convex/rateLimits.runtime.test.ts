@@ -42,9 +42,14 @@ it("does not reset an active quota when expired metadata is pruned", async () =>
     deleted: 1,
     hasMore: false,
   });
-  expect(await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, request)).toEqual({
+  const denied = await t.run(async (ctx) => ({
+    now: Date.now(),
+    status: await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, request),
+  }));
+  const windowEnd = (Math.floor(now / request.config.period) + 1) * request.config.period;
+  expect(denied.status).toEqual({
     ok: false,
-    retryAfter: 20_000,
+    retryAfter: windowEnd - denied.now,
   });
 });
 

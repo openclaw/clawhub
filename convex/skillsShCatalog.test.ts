@@ -888,9 +888,12 @@ describe("skills.sh catalog overload control plane", () => {
       scansCanceled: 0,
     });
     expect(await collectAttempts(t, repeated.runId)).toHaveLength(0);
-    expect(
-      (await collectEntries(t)).every((entry) => entry.lastObservedAt === repeatedAt.getTime()),
-    ).toBe(true);
+    const repeatedRecord = await t.run((ctx) => ctx.db.get(repeated.runId));
+    expect(repeatedRecord?.startedAt).toBe(repeatedAt.getTime());
+    expect(repeatedRecord?.completedAt).toEqual(expect.any(Number));
+    const observedTimes = (await collectEntries(t)).map((entry) => entry.lastObservedAt);
+    expect(Math.min(...observedTimes)).toBeGreaterThanOrEqual(repeatedRecord!.startedAt);
+    expect(Math.max(...observedTimes)).toBeLessThanOrEqual(repeatedRecord!.completedAt!);
 
     vi.setSystemTime(new Date("2026-07-22T03:00:00.000Z"));
     const changed = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {

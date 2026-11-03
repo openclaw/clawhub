@@ -545,7 +545,11 @@ describe("publish attempt runtime recovery", () => {
           release: await ctx.db.get(fixture.result.releaseId),
           pkg: await ctx.db.get(fixture.result.packageId),
         }));
-        expect(state.attempt).toMatchObject({ status: "finalized", result: fixture.result });
+        expect(state.attempt).toMatchObject({
+          status: "finalized",
+          result: fixture.result,
+          finalizedAt: expect.any(Number),
+        });
         expect(state.attempt?.checkClaimId).toBeUndefined();
         expect(state.attempt?.checkClaimedAt).toBeUndefined();
         expect(state.attempt?.checkClaimExpiresAt).toBeUndefined();
@@ -553,7 +557,7 @@ describe("publish attempt runtime recovery", () => {
           {
             name: "vt:scanPackageReleaseWithVirusTotal",
             args: [{ releaseId: fixture.result.releaseId }],
-            scheduledTime: Date.now() + 30_000,
+            scheduledTime: state.attempt!.finalizedAt! + 30_000,
           },
         ]);
         expect(state.scans).toHaveLength(1);
