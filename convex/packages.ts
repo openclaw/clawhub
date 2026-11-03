@@ -200,6 +200,10 @@ import {
 } from "./lib/searchRanking";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
+import {
+  skillSpectorInspectionCaveatsValidator,
+  skillSpectorReviewFields,
+} from "./lib/skillSpectorEvidence";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { classifyTemplateCategories } from "./lib/templateCategoryClassification";
 import {
@@ -299,6 +303,7 @@ const vtAnalysisValidator = v.object({
 });
 
 const skillSpectorIssueValidator = v.object({
+  ...skillSpectorReviewFields,
   issueId: v.string(),
   category: v.optional(v.string()),
   pattern: v.optional(v.string()),
@@ -314,6 +319,7 @@ const skillSpectorIssueValidator = v.object({
 });
 
 const skillSpectorAnalysisValidator = v.object({
+  inspectionCaveats: v.optional(skillSpectorInspectionCaveatsValidator),
   status: v.string(),
   inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
   score: v.optional(v.number()),

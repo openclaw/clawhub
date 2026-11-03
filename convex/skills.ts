@@ -173,6 +173,10 @@ import {
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
+import {
+  skillSpectorInspectionCaveatsValidator,
+  skillSpectorReviewFields,
+} from "./lib/skillSpectorEvidence";
 import { readCanonicalStat, readPublicDownloads, readSkillMetricSources } from "./lib/skillStats";
 import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
@@ -250,6 +254,7 @@ const vtAnalysisValidator = v.object({
 });
 
 const skillSpectorIssueValidator = v.object({
+  ...skillSpectorReviewFields,
   issueId: v.string(),
   category: v.optional(v.string()),
   pattern: v.optional(v.string()),
@@ -265,6 +270,7 @@ const skillSpectorIssueValidator = v.object({
 });
 
 const skillSpectorAnalysisValidator = v.object({
+  inspectionCaveats: v.optional(skillSpectorInspectionCaveatsValidator),
   status: v.string(),
   inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
   score: v.optional(v.number()),
