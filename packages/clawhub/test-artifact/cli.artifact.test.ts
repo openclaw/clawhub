@@ -316,6 +316,7 @@ describe("built CLI artifact", () => {
     const modules = [
       "ark",
       "openclawContract",
+      "packageShared",
       "pluginInput",
       "templatePackage",
       "templates",
