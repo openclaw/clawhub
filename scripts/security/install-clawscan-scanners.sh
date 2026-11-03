@@ -1,6 +1,10 @@
 #!/bin/sh
 # Install the exact scanner sources and Responses adapters tested with ClawScan.
 set -eu
+# Startup checks must not add generated Python code or pytest state to the
+# reviewed ClawScan checkout before the worker verifies its source identity.
+export PYTHONDONTWRITEBYTECODE=1
+export PYTEST_ADDOPTS='-p no:cacheprovider'
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${CLAWSCAN_SOURCE_DIR:?Run install-clawscan.sh first}"
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"

@@ -4,6 +4,7 @@ import type { MutationCtx } from "../_generated/server";
 import { requestPublishAttemptDispatch } from "../publishAttemptDispatch";
 import { resolvePackageReleaseScanStatus } from "./packageSecurity";
 import { assertCanManageOwnedResource, isPublisherActive } from "./publishers";
+import { assertScannerSource } from "./scannerSource";
 import { normalizeSecurityScanStatus } from "./securityScanPolicy";
 import { matchesStorageSha256 } from "./storageDigests";
 
@@ -37,9 +38,11 @@ export async function retryFailedPublishAttemptChecks(
     expectedArtifactFingerprint: string;
     expectedUpdatedAt: number;
     reason: string;
+    requiredScannerSource?: string;
     dryRun?: boolean;
   },
 ) {
+  assertScannerSource(args.requiredScannerSource);
   const reason = args.reason.trim();
   if (!reason || reason.length > 500 || !Number.isFinite(args.expectedUpdatedAt)) {
     throw new ConvexError("Supply a 1–500 character reason and the observed update time");
@@ -241,6 +244,9 @@ export async function retryFailedPublishAttemptChecks(
     version: attempt.version,
     artifactFingerprint: attempt.artifactFingerprint,
     previousFailureCount: attempt.checkFailureCount,
+    ...((args.requiredScannerSource ?? attempt.requiredScannerSource) !== undefined
+      ? { requiredScannerSource: args.requiredScannerSource ?? attempt.requiredScannerSource }
+      : {}),
   };
   if (args.dryRun !== false) return result;
   await ctx.db.insert("auditLogs", {
@@ -255,6 +261,8 @@ export async function retryFailedPublishAttemptChecks(
       previousFailureCount: attempt.checkFailureCount,
       previousFailure: attempt.checkClaimLastError ?? null,
       previousFailedAt: attempt.failedAt ?? null,
+      previousRequiredScannerSource: attempt.requiredScannerSource ?? null,
+      requiredScannerSource: args.requiredScannerSource ?? attempt.requiredScannerSource ?? null,
     },
     createdAt: now,
   });
@@ -274,6 +282,7 @@ export async function retryFailedPublishAttemptChecks(
   // retry, not a fresh automatic retry budget or a passing scanner verdict.
   await ctx.db.patch(attempt._id, {
     status: "pending_checks",
+    requiredScannerSource: args.requiredScannerSource ?? attempt.requiredScannerSource,
     checkClaimId: undefined,
     checkClaimedAt: undefined,
     checkClaimExpiresAt: now,

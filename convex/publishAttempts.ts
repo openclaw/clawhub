@@ -7,6 +7,7 @@ import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { manualPackageRecovery } from "./lib/packagePublishRecovery";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
+import { assertScannerSource } from "./lib/scannerSource";
 import { isPublishedSkillVersion } from "./lib/skillFileAccess";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
@@ -1000,6 +1001,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
 export const claimPendingPublishAttemptChecksInternal = internalMutation({
   args: {
     claimId: v.string(),
+    scannerSource: v.optional(v.string()),
     attemptId: v.optional(v.id("publishAttempts")),
     kind: v.optional(v.union(v.literal("skill"), v.literal("package"))),
     retryOnly: v.optional(v.boolean()),
@@ -1007,6 +1009,7 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
     version: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    assertScannerSource(args.scannerSource);
     const now = Date.now();
     const targetedAttempt = args.attemptId ? await ctx.db.get(args.attemptId) : null;
     let candidates: Doc<"publishAttempts">[];
@@ -1061,6 +1064,14 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
         if (args.attemptId) return ACTIVE_CLAIM_OUTCOME;
         continue;
       }
+      // A reviewed retry must not be consumed by an older queued worker.
+      // Source is worker-reported identity, not a cryptographic attestation.
+      if (
+        attempt.requiredScannerSource !== undefined &&
+        attempt.requiredScannerSource !== args.scannerSource
+      ) {
+        continue;
+      }
       if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) continue;
 
       const checkClaimExpiresAt = now + CHECK_CLAIM_LEASE_MS;
@@ -1068,6 +1079,9 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
         checkClaimId: args.claimId,
         checkClaimedAt: now,
         checkClaimExpiresAt,
+        lastScannerSourceClaim: args.scannerSource
+          ? { claimId: args.claimId, source: args.scannerSource, claimedAt: now }
+          : undefined,
         checkClaimLastError: undefined,
         updatedAt: now,
       });
@@ -1635,6 +1649,7 @@ export const backoffFailedPrePublicationHandoffInternal = internalMutation({
 export const claimPrePublicationChecks: ReturnType<typeof action> = action({
   args: {
     token: v.string(),
+    scannerSource: v.optional(v.string()),
     attemptId: v.optional(v.id("publishAttempts")),
     kind: v.optional(v.union(v.literal("skill"), v.literal("package"))),
     preferRetry: v.optional(v.boolean()),
@@ -1643,6 +1658,7 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
   },
   handler: async (ctx, args): Promise<unknown> => {
     assertWorkerToken(args.token);
+    assertScannerSource(args.scannerSource);
     const claimId = buildCheckClaimId();
     const claimArgs = {
       claimId,
@@ -1655,6 +1671,7 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
       args.preferRetry && !args.attemptId
         ? await ctx.runMutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
             ...claimArgs,
+            scannerSource: args.scannerSource,
             retryOnly: true,
           })
         : null;
@@ -1663,10 +1680,10 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
         internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal,
         claimArgs,
       )) ??
-      (await ctx.runMutation(
-        internal.publishAttempts.claimPendingPublishAttemptChecksInternal,
-        claimArgs,
-      ))) as
+      (await ctx.runMutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+        ...claimArgs,
+        scannerSource: args.scannerSource,
+      }))) as
       | null
       | typeof ACTIVE_CLAIM_OUTCOME
       | {

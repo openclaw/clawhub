@@ -546,6 +546,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   retained immutable storage object, live leases and moderation holds. A retry
   audits the prior checks/error/count and requeues the same attempt; it cannot
   replace bytes, lift a hold, declare a clean verdict or reset failure history.
+- An audited operator retry may require an exact reviewed scanner source (40
+  lowercase Git hex characters). Omitting the option preserves an existing
+  requirement. Pending-check workers with an omitted or different source must
+  leave that attempt untouched and may claim unrelated work. Existing live
+  leases and finalization-only recovery keep their existing rules. The latest
+  accepted scan lease records its claim ID, worker-reported source and time;
+  this is attribution, not cryptographic attestation, and does not assert a
+  successful scan. A new unreported scan lease clears stale attribution.
+  Deploy backend support before enabling the repository Actions variable
+  `PREPUBLICATION_REPORT_SCANNER_SOURCE` (default `false`). When enabled, workers
+  verify the reviewed pin against a clean checkout and Go binary revision, use
+  that exact installed host binary, and report the source on scan claims.
 - An applied operational retry writes a typed binding on the retained version
   or release: original attempt, actor, current validated owner and publisher
   scope. The final publication transaction must validate that binding, original
