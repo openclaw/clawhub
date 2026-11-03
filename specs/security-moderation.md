@@ -765,6 +765,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   retains the original hashes, encrypted capture, scanner/judge settings,
   inspection receipts and nonpublishing boundary. This mode grants no publication,
   retry, security bypass or issue-closeout authority.
+  New fixed-original registry admissions do not extend the older pinned consumer's
+  closed selector set. Until a new merged consumer is qualified, those selectors
+  may use only `consumer: workflow`. Keep active recovery workflows and their
+  approved bytes stable; finish those runs before deploying admission changes.
+  Then qualify the merged admission revision and update the fixed pin, closed
+  selectors and controller/auditor bindings in a separate reviewed change.
+  Never send a new selector to an older pin or fall back to an arbitrary commit.
 - The native prepublication failure event preserves the existing SkillSpector
   projection and adds only fixed scanner names, allowlisted status/error classes,
   bounded exit/timing numbers, and presence/byte-count/SHA-256 metadata. Arbitrary

@@ -220,6 +220,16 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "original-005-encrypted",
     "original-006-encrypted",
     "original-015-encrypted",
+    "original-071-encrypted",
+    "original-007-encrypted",
+    "original-009-encrypted",
+    "original-014-encrypted",
+    "original-013-encrypted",
+    "original-029-encrypted",
+    "original-030-encrypted",
+    "original-002-encrypted",
+    "original-003-encrypted",
+    "original-067-encrypted",
   ]);
   expect(workflow.on.workflow_dispatch.inputs.source.options).toEqual(["reviewed", "incident"]);
   const job = workflow.jobs.diagnostic;
@@ -237,10 +247,10 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
   expect(job.env.CLAWSCAN_DIAGNOSTIC_RUNNER).toBe(job["runs-on"]);
   expect(job.if).toContain("inputs.source == 'reviewed'");
   expect(job.if).toContain(
-    'inputs.fixture == \'tiny\' || contains(fromJSON(\'["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted","original-010-encrypted","original-019-encrypted","original-005-encrypted","original-006-encrypted","original-015-encrypted"]\'), inputs.fixture)',
+    'inputs.fixture == \'tiny\' || contains(fromJSON(\'["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted","original-010-encrypted","original-019-encrypted","original-005-encrypted","original-006-encrypted","original-015-encrypted","original-071-encrypted","original-007-encrypted","original-009-encrypted","original-014-encrypted","original-013-encrypted","original-029-encrypted","original-030-encrypted","original-002-encrypted","original-003-encrypted","original-067-encrypted"]\'), inputs.fixture)',
   );
   expect(job.if).toContain(
-    '!contains(fromJSON(\'["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted","original-010-encrypted","original-019-encrypted","original-005-encrypted","original-006-encrypted","original-015-encrypted"]\'), inputs.fixture)',
+    '!contains(fromJSON(\'["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted","original-010-encrypted","original-019-encrypted","original-005-encrypted","original-006-encrypted","original-015-encrypted","original-071-encrypted","original-007-encrypted","original-009-encrypted","original-014-encrypted","original-013-encrypted","original-029-encrypted","original-030-encrypted","original-002-encrypted","original-003-encrypted","original-067-encrypted"]\'), inputs.fixture)',
   );
   expect(job.if).toContain("inputs.runner == 'ubuntu-22.04'");
   expect(job.if).toContain("github.run_attempt == 1");
@@ -256,7 +266,7 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "Install matched reviewed scanner sources and Responses adapters",
   ]) {
     expect(job.steps.find((step: { name?: string }) => step.name === name).if).toBe(
-      '${{ inputs.fixture != \'original-scanner-only\' && inputs.fixture != \'original-candidate-full\' && inputs.fixture != \'original-candidate-290-full\' && !contains(fromJSON(\'["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted","original-010-encrypted","original-019-encrypted","original-005-encrypted","original-006-encrypted","original-015-encrypted"]\'), inputs.fixture) }}',
+      '${{ inputs.fixture != \'original-scanner-only\' && inputs.fixture != \'original-candidate-full\' && inputs.fixture != \'original-candidate-290-full\' && !contains(fromJSON(\'["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted","original-010-encrypted","original-019-encrypted","original-005-encrypted","original-006-encrypted","original-015-encrypted","original-071-encrypted","original-007-encrypted","original-009-encrypted","original-014-encrypted","original-013-encrypted","original-029-encrypted","original-030-encrypted","original-002-encrypted","original-003-encrypted","original-067-encrypted"]\'), inputs.fixture) }}',
     );
   }
   const probe = job.steps.find((step: { id?: string }) => step.id === "probe");
@@ -275,7 +285,7 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     (step: { name?: string }) => step.name === "Upload encrypted fixed original evidence only",
   );
   expect(encryptedUpload.with.name).toBe(
-    "ENCRYPTED_ORIGINAL${{ inputs.fixture == 'original-079-encrypted' && '079' || inputs.fixture == 'original-004-encrypted' && '004' || inputs.fixture == 'original-016-encrypted' && '016' || inputs.fixture == 'original-017-encrypted' && '017' || inputs.fixture == 'original-026-encrypted' && '026' || inputs.fixture == 'original-027-encrypted' && '027' || inputs.fixture == 'original-074-encrypted' && '074' || inputs.fixture == 'original-008-encrypted' && '008' || inputs.fixture == 'original-011-encrypted' && '011' || inputs.fixture == 'original-036-encrypted' && '036' || inputs.fixture == 'original-033-encrypted' && '033' || inputs.fixture == 'original-065-encrypted' && '065' || inputs.fixture == 'original-073-encrypted' && '073' || inputs.fixture == 'original-042-encrypted' && '042' || inputs.fixture == 'original-055-encrypted' && '055' || inputs.fixture == 'original-039-encrypted' && '039' || inputs.fixture == 'original-010-encrypted' && '010' || inputs.fixture == 'original-019-encrypted' && '019' || inputs.fixture == 'original-005-encrypted' && '005' || inputs.fixture == 'original-006-encrypted' && '006' || inputs.fixture == 'original-015-encrypted' && '015' || '038' }}-${{ github.run_id }}",
+    "ENCRYPTED_ORIGINAL${{ inputs.fixture == 'original-079-encrypted' && '079' || inputs.fixture == 'original-004-encrypted' && '004' || inputs.fixture == 'original-016-encrypted' && '016' || inputs.fixture == 'original-017-encrypted' && '017' || inputs.fixture == 'original-026-encrypted' && '026' || inputs.fixture == 'original-027-encrypted' && '027' || inputs.fixture == 'original-074-encrypted' && '074' || inputs.fixture == 'original-008-encrypted' && '008' || inputs.fixture == 'original-011-encrypted' && '011' || inputs.fixture == 'original-036-encrypted' && '036' || inputs.fixture == 'original-033-encrypted' && '033' || inputs.fixture == 'original-065-encrypted' && '065' || inputs.fixture == 'original-073-encrypted' && '073' || inputs.fixture == 'original-042-encrypted' && '042' || inputs.fixture == 'original-055-encrypted' && '055' || inputs.fixture == 'original-039-encrypted' && '039' || inputs.fixture == 'original-010-encrypted' && '010' || inputs.fixture == 'original-019-encrypted' && '019' || inputs.fixture == 'original-005-encrypted' && '005' || inputs.fixture == 'original-006-encrypted' && '006' || inputs.fixture == 'original-015-encrypted' && '015' || inputs.fixture == 'original-071-encrypted' && '071' || inputs.fixture == 'original-007-encrypted' && '007' || inputs.fixture == 'original-009-encrypted' && '009' || inputs.fixture == 'original-014-encrypted' && '014' || inputs.fixture == 'original-013-encrypted' && '013' || inputs.fixture == 'original-029-encrypted' && '029' || inputs.fixture == 'original-030-encrypted' && '030' || inputs.fixture == 'original-002-encrypted' && '002' || inputs.fixture == 'original-003-encrypted' && '003' || inputs.fixture == 'original-067-encrypted' && '067' || '038' }}-${{ github.run_id }}",
   );
   expect(
     encryptedUpload.with.path
@@ -401,10 +411,59 @@ it("executes the actual inline consumer guard against trusted and hostile dispat
       );
       expect(result.provider).toBe("reached");
     }
-    for (const fixture of workflow.on.workflow_dispatch.inputs.fixture.options.filter(
-      (value: string) => value.endsWith("-encrypted"),
-    )) {
+    // The old C39 consumer cannot select later registry admissions.
+    const pinnedFixtures = [
+      "original-038-encrypted",
+      "original-079-encrypted",
+      "original-004-encrypted",
+      "original-016-encrypted",
+      "original-017-encrypted",
+      "original-026-encrypted",
+      "original-027-encrypted",
+      "original-074-encrypted",
+      "original-008-encrypted",
+      "original-011-encrypted",
+      "original-036-encrypted",
+      "original-033-encrypted",
+      "original-065-encrypted",
+      "original-073-encrypted",
+      "original-042-encrypted",
+      "original-055-encrypted",
+      "original-039-encrypted",
+      "original-010-encrypted",
+      "original-019-encrypted",
+      "original-005-encrypted",
+      "original-006-encrypted",
+      "original-015-encrypted",
+    ];
+    for (const fixture of pinnedFixtures) {
       expect((await execute({ FIXTURE_CHOICE: fixture })).provider, fixture).toBe("reached");
+    }
+    const nextFixtures = [
+      "original-071-encrypted",
+      "original-007-encrypted",
+      "original-009-encrypted",
+      "original-014-encrypted",
+      "original-013-encrypted",
+      "original-029-encrypted",
+      "original-030-encrypted",
+      "original-002-encrypted",
+      "original-003-encrypted",
+      "original-067-encrypted",
+    ];
+    for (const fixture of nextFixtures) {
+      expect(workflow.on.workflow_dispatch.inputs.fixture.options).toContain(fixture);
+      const pinned = await execute({ FIXTURE_CHOICE: fixture });
+      expect(pinned.result, fixture).toMatchObject({ code: 1 });
+      expect(pinned.output, fixture).toBe("");
+      expect(pinned.calls, fixture).toBe("");
+      expect(pinned.provider, fixture).toBe("");
+      const normal = await execute({ CONSUMER_CHOICE: "workflow", FIXTURE_CHOICE: fixture });
+      expect(normal.output).toBe(
+        `consumer-sha=${workflowCommit}\nworkflow-sha=${workflowCommit}\n`,
+      );
+      expect(normal.calls, fixture).toBe("");
+      expect(normal.provider, fixture).toBe("reached");
     }
     const legacy = await execute({ CONSUMER_CHOICE: "workflow", FIXTURE_CHOICE: "tiny" });
     expect(legacy.output).toBe(`consumer-sha=${workflowCommit}\nworkflow-sha=${workflowCommit}\n`);
@@ -572,6 +631,6 @@ it("binds only fixed original run names to their public recipient, including whe
     await readFile(".github/workflows/clawscan-judge-diagnostic.yml", "utf8"),
   );
   expect(workflow["run-name"]).toBe(
-    '${{ contains(fromJSON(\'["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted","original-010-encrypted","original-019-encrypted","original-005-encrypted","original-006-encrypted","original-015-encrypted"]\'), inputs.fixture) && format(\'{0} {1}\', inputs.fixture, inputs.age_recipient) || \'Nonproduction ClawScan judge diagnostic\' }}',
+    '${{ contains(fromJSON(\'["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted","original-010-encrypted","original-019-encrypted","original-005-encrypted","original-006-encrypted","original-015-encrypted","original-071-encrypted","original-007-encrypted","original-009-encrypted","original-014-encrypted","original-013-encrypted","original-029-encrypted","original-030-encrypted","original-002-encrypted","original-003-encrypted","original-067-encrypted"]\'), inputs.fixture) && format(\'{0} {1}\', inputs.fixture, inputs.age_recipient) || \'Nonproduction ClawScan judge diagnostic\' }}',
   );
 });
