@@ -1722,12 +1722,24 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
         ? await ctx.storage.getUrl(claimed.clawpackStorageId)
         : undefined;
       phase = "response";
+      let prepublicationReportUploadUrl: string | null = null;
+      try {
+        if (claimed.status === "pending_checks" && process.env.CONVEX_SITE_URL) {
+          prepublicationReportUploadUrl = new URL(
+            "/api/internal/prepublication-reports",
+            process.env.CONVEX_SITE_URL,
+          ).toString();
+        }
+      } catch {
+        /* Evidence retention never changes the claim handoff outcome. */
+      }
       return withoutUndefined({
         ...claimed,
         files,
         clawpackStorageId: undefined,
         previousCheckClaimLastError: undefined,
         clawpackUrl,
+        prepublicationReportUploadUrl,
       });
     } catch (error) {
       // This cannot detect a successful response lost after return. Never release

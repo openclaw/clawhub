@@ -89,6 +89,7 @@ import type * as lib_contentTypes from "../lib/contentTypes.js";
 import type * as lib_devAuth from "../lib/devAuth.js";
 import type * as lib_devSeed from "../lib/devSeed.js";
 import type * as lib_discoveryWindows from "../lib/discoveryWindows.js";
+import type * as lib_downloadMetricsSwitch from "../lib/downloadMetricsSwitch.js";
 import type * as lib_downloadTrend from "../lib/downloadTrend.js";
 import type * as lib_emailRendering from "../lib/emailRendering.js";
 import type * as lib_emails from "../lib/emails.js";
@@ -155,6 +156,7 @@ import type * as lib_pluginCategoryClassificationContract from "../lib/pluginCat
 import type * as lib_pluginCategoryReview from "../lib/pluginCategoryReview.js";
 import type * as lib_pluginDiscovery from "../lib/pluginDiscovery.js";
 import type * as lib_pluginDiscoveryQueries from "../lib/pluginDiscoveryQueries.js";
+import type * as lib_prepublicationReports from "../lib/prepublicationReports.js";
 import type * as lib_public from "../lib/public.js";
 import type * as lib_publicBrowse from "../lib/publicBrowse.js";
 import type * as lib_publicPluginArtwork from "../lib/publicPluginArtwork.js";
@@ -167,6 +169,7 @@ import type * as lib_publisherCatalogDisplay from "../lib/publisherCatalogDispla
 import type * as lib_publisherStats from "../lib/publisherStats.js";
 import type * as lib_publishers from "../lib/publishers.js";
 import type * as lib_rankingMetricsImportLock from "../lib/rankingMetricsImportLock.js";
+import type * as lib_rateLimiterSwitch from "../lib/rateLimiterSwitch.js";
 import type * as lib_recommendationScore from "../lib/recommendationScore.js";
 import type * as lib_reporting from "../lib/reporting.js";
 import type * as lib_reservedHandles from "../lib/reservedHandles.js";
@@ -253,6 +256,7 @@ import type * as packages from "../packages.js";
 import type * as pluginCategoryRefresh from "../pluginCategoryRefresh.js";
 import type * as pluginSearchObservations from "../pluginSearchObservations.js";
 import type * as prepublicationObservability from "../prepublicationObservability.js";
+import type * as prepublicationReports from "../prepublicationReports.js";
 import type * as promotions from "../promotions.js";
 import type * as promotionsFeed from "../promotionsFeed.js";
 import type * as publicPluginBrowse from "../publicPluginBrowse.js";
@@ -402,6 +406,7 @@ declare const fullApi: ApiFromModules<{
   "lib/devAuth": typeof lib_devAuth;
   "lib/devSeed": typeof lib_devSeed;
   "lib/discoveryWindows": typeof lib_discoveryWindows;
+  "lib/downloadMetricsSwitch": typeof lib_downloadMetricsSwitch;
   "lib/downloadTrend": typeof lib_downloadTrend;
   "lib/emailRendering": typeof lib_emailRendering;
   "lib/emails": typeof lib_emails;
@@ -468,6 +473,7 @@ declare const fullApi: ApiFromModules<{
   "lib/pluginCategoryReview": typeof lib_pluginCategoryReview;
   "lib/pluginDiscovery": typeof lib_pluginDiscovery;
   "lib/pluginDiscoveryQueries": typeof lib_pluginDiscoveryQueries;
+  "lib/prepublicationReports": typeof lib_prepublicationReports;
   "lib/public": typeof lib_public;
   "lib/publicBrowse": typeof lib_publicBrowse;
   "lib/publicPluginArtwork": typeof lib_publicPluginArtwork;
@@ -480,6 +486,7 @@ declare const fullApi: ApiFromModules<{
   "lib/publisherStats": typeof lib_publisherStats;
   "lib/publishers": typeof lib_publishers;
   "lib/rankingMetricsImportLock": typeof lib_rankingMetricsImportLock;
+  "lib/rateLimiterSwitch": typeof lib_rateLimiterSwitch;
   "lib/recommendationScore": typeof lib_recommendationScore;
   "lib/reporting": typeof lib_reporting;
   "lib/reservedHandles": typeof lib_reservedHandles;
@@ -566,6 +573,7 @@ declare const fullApi: ApiFromModules<{
   pluginCategoryRefresh: typeof pluginCategoryRefresh;
   pluginSearchObservations: typeof pluginSearchObservations;
   prepublicationObservability: typeof prepublicationObservability;
+  prepublicationReports: typeof prepublicationReports;
   promotions: typeof promotions;
   promotionsFeed: typeof promotionsFeed;
   publicPluginBrowse: typeof publicPluginBrowse;
