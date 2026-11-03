@@ -157,8 +157,9 @@ describe("recovery scanner source claims", () => {
       expect(after.lastScannerSourceClaim).toEqual({
         claimId: claimed.claimId,
         source: reviewedScannerSource,
-        claimedAt: Date.now(),
+        claimedAt: after.checkClaimedAt,
       });
+      expect(after.checkClaimedAt).toBe(after.updatedAt);
       expect(after.files).toEqual(before.files);
       expect(after.checks).toEqual(before.checks);
       expect(after.checkFailureCount).toBe(2);
@@ -329,7 +330,7 @@ describe("bounded pre-publication URL hydration", () => {
       const after = (await state(t, fixture.attemptId))!;
       expect(after.files).toEqual(fixture.files);
       expect(after.checkFailureCount).toBe(2);
-      expect(after.checkClaimExpiresAt).toBe(Date.now() + 30 * 60_000);
+      expect(after.checkClaimExpiresAt).toBe(after.checkClaimedAt! + 30 * 60_000);
       expect(await bytes(t, fixture.storageId)).toBe("synthetic retained original");
     },
   );
@@ -411,7 +412,7 @@ describe("bounded pre-publication URL hydration", () => {
     expect(after.checks).toEqual(before.checks);
     expect(after.checkFailureCount).toBe(before.checkFailureCount);
     expect(after.checkClaimLastError).toBe(before.checkClaimLastError);
-    expect(after.checkClaimExpiresAt).toBe(Date.now() + 300_000);
+    expect(after.checkClaimExpiresAt).toBe(after.updatedAt + 300_000);
     expect(await bytes(t, fixture.storageId)).toBe("synthetic retained original");
   });
 });
@@ -426,9 +427,11 @@ describe("pre-publication failed handoff backoff", () => {
     const before = (await state(t, fixture.attemptId))!;
     const originalBytes = await bytes(t, fixture.storageId);
     const failure = new Error("synthetic URL failure");
+    let originalClaim: Doc<"publishAttempts"> | null = null;
     await expect(
       handler(
         actionContext(t, async () => {
+          originalClaim = await state(t, fixture.attemptId);
           throw failure;
         }),
         {
@@ -438,9 +441,9 @@ describe("pre-publication failed handoff backoff", () => {
       ),
     ).rejects.toBe(failure);
     const after = (await state(t, fixture.attemptId))!;
-    expect(after.checkClaimExpiresAt).toBe(Date.now() + 300_000);
+    expect(after.checkClaimExpiresAt).toBe(after.updatedAt + 300_000);
     expect(after.checkClaimId).toEqual(expect.any(String));
-    expect(after.checkClaimedAt).toBe(Date.now());
+    expect(after.checkClaimedAt).toBe(originalClaim!.checkClaimedAt);
     expect(after.checkClaimLastError).toBe("Previous scanner failure");
     for (const key of [
       "kind",
@@ -461,17 +464,21 @@ describe("pre-publication failed handoff backoff", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const t = convexTest(schema, modules);
     const fixture = await seed(t);
-    const startedAt = Date.now();
+    let originalClaim: Doc<"publishAttempts"> | null = null;
     await expect(
       handler(
         actionContext(t, async () => {
-          vi.setSystemTime(startedAt + 29 * 60_000);
+          originalClaim = await state(t, fixture.attemptId);
+          vi.setSystemTime(originalClaim!.checkClaimedAt! + 29 * 60_000);
           throw new Error("late URL failure");
         }),
         { token, attemptId: fixture.attemptId },
       ),
     ).rejects.toThrow("late URL failure");
-    expect((await state(t, fixture.attemptId))?.checkClaimExpiresAt).toBe(startedAt + 30 * 60_000);
+    expect(originalClaim!.checkClaimExpiresAt).toBe(originalClaim!.checkClaimedAt! + 30 * 60_000);
+    expect((await state(t, fixture.attemptId))?.checkClaimExpiresAt).toBe(
+      originalClaim!.checkClaimExpiresAt,
+    );
   });
 
   it.each(["file", "clawpack"] as const)(
@@ -493,7 +500,7 @@ describe("pre-publication failed handoff backoff", () => {
         ),
       ).rejects.toThrow("package URL failure");
       const after = (await state(t, fixture.attemptId))!;
-      expect(after.checkClaimExpiresAt).toBe(Date.now() + 300_000);
+      expect(after.checkClaimExpiresAt).toBe(after.updatedAt + 300_000);
       expect(after.checkClaimLastError).toBe("Previous scanner failure");
       for (const key of [
         "files",
@@ -619,7 +626,7 @@ describe("pre-publication failed handoff backoff", () => {
         });
         if (cycle === 0) await expect(failClaim()).rejects.toThrow("persistent head URL failure");
         const backedOff = (await state(t, bad.attemptId))!;
-        expect(backedOff.checkClaimExpiresAt).toBe(Date.now() + 300_000);
+        expect(backedOff.checkClaimExpiresAt).toBe(backedOff.updatedAt + 300_000);
         expect(backedOff.checkFailureCount).toBe(2);
         expect(backedOff.checkClaimLastError).toBe("Previous scanner failure");
         for (const key of ["files", "checks", "artifactFingerprint", "status"] as const)
@@ -630,7 +637,7 @@ describe("pre-publication failed handoff backoff", () => {
         await expect(
           handler(ctx, { token, kind: kind as "skill" | "package", preferRetry: true }),
         ).resolves.toBeNull();
-        vi.setSystemTime(Date.now() + 300_001);
+        vi.setSystemTime(backedOff.checkClaimExpiresAt! + 1);
       }
     },
   );
