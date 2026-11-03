@@ -19430,48 +19430,13 @@ a.search-empty-action {
 }
 
 @media (max-width: 860px) {
-  .publisher-profile-hero {
-    grid-template-columns: 1fr;
-    gap: 24px;
-  }
-
-  .publisher-profile-hero-stats {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-
   .publisher-profile-stat + .publisher-profile-stat {
     padding-left: 0;
     border-left: 0;
   }
-
-  .publisher-profile-layout {
-    grid-template-columns: 1fr;
-    gap: 24px;
-  }
-
-  .publisher-profile-section-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
-  }
 }
 
 @media (max-width: 640px) {
-  .publisher-profile-hero,
-  .publisher-profile-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .publisher-profile-hero {
-    align-items: start;
-    padding: 26px var(--space-4);
-  }
-
-  .publisher-profile-hero-main {
-    align-items: start;
-  }
-
   .publisher-profile-avatar .marketplace-icon-md {
     width: 64px;
     height: 64px;
@@ -19488,16 +19453,6 @@ a.search-empty-action {
 
   .publisher-profile-title-text {
     white-space: normal;
-  }
-
-  .publisher-profile-hero-stats {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .publisher-profile-section-header {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .publisher-published-row {
@@ -21578,55 +21533,13 @@ a.search-empty-action {
 }
 
 @media (max-width: 860px) {
-  .publisher-profile-hero {
-    grid-template-columns: 1fr;
-    gap: 24px;
-  }
-
-  .publisher-profile-hero-stats {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-
   .publisher-profile-stat + .publisher-profile-stat {
     padding-left: 0;
     border-left: 0;
   }
-
-  .publisher-profile-layout {
-    grid-template-columns: 1fr;
-    gap: 24px;
-  }
-
-  .publisher-profile-section-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .publisher-profile-section-controls {
-    width: 100%;
-    align-items: flex-start;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
 }
 
 @media (max-width: 640px) {
-  .publisher-profile-hero,
-  .publisher-profile-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .publisher-profile-hero {
-    align-items: start;
-    padding: 26px var(--space-4);
-  }
-
-  .publisher-profile-hero-main {
-    align-items: start;
-  }
-
   .publisher-profile-avatar .marketplace-icon-md {
     width: 64px;
     height: 64px;
@@ -21643,23 +21556,6 @@ a.search-empty-action {
 
   .publisher-profile-title-text {
     white-space: normal;
-  }
-
-  .publisher-profile-hero-stats {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .publisher-profile-section-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .publisher-profile-section-controls {
-    width: 100%;
-    align-items: flex-start;
-    justify-content: flex-start;
-    flex-wrap: wrap;
   }
 
   .publisher-published-row {
