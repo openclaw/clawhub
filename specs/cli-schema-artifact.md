@@ -8,8 +8,8 @@ read_when:
 # CLI schema artifact boundary
 
 The registry owns the canonical implementations in `packages/schema/src`.
-The CLI reuses seven canonical modules: `ark`, `openclawContract`, `packageShared`,
-`pluginInput`, `templatePackage`, `templates`, and `textFiles`. Their CLI source modules
+The CLI reuses eight canonical modules: `ark`, `openclawContract`, `packageShared`,
+`pluginInput`, `schemaShared`, `templatePackage`, `templates`, and `textFiles`. Their CLI source modules
 forward to the canonical committed `dist` modules so source tests and typechecks do not
 require a second implementation or a wider TypeScript source root.
 
@@ -20,7 +20,7 @@ existing `dist/clawhub/src/schema/*` paths. The published artifact must contain 
 workspace-relative forwarders or dependency on the private `clawhub-schema`
 package. The CLI bin path and `dist/cli.js` remain unchanged.
 
-Only the seven modules above are copied. The registry and CLI have distinct
+Only the eight modules above are copied. The registry and CLI have distinct
 `packages`, `schemas`, and other contracts; do not copy the entire schema
 package to remove those differences.
 
@@ -29,6 +29,11 @@ dependencies are identical in both package contracts. Both `packages` modules re
 names and retain their different validators, including private publish metadata fields.
 The shared leaf must not import either `packages` or `schemas`, which would create a
 cycle or couple the distinct wire contracts.
+
+`schemaShared` applies the same closed-declaration rule to the core API contracts.
+Its only dependency is ArkType. Each `schemas` parent retains its different lockfile,
+license, scan-batch response, and skill metadata validators. Do not replace either
+parent with the other or widen a distinct contract merely to share its implementation.
 
 The shared runtime closure uses only the CLI's declared external dependencies and `templatePackage`'s relative import
 of `templates`. The `openclawContract` declaration's type-only `packages`
@@ -41,6 +46,6 @@ workspace checkout. Do not embed absolute build-machine paths.
 Validate changes with registry and CLI conformance cases, schema/CLI typechecks,
 and the packed-artifact test. The latter extracts a real local npm pack into a
 temporary directory, supplies only declared runtime dependencies, and loads the
-CLI plus all seven schema modules without a sibling schema package. Retain the
+CLI plus all eight schema modules without a sibling schema package. Retain the
 admin CLI's existing packed-artifact test too. This is
 artifact validation, not an npm publication.

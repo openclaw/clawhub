@@ -10,6 +10,7 @@ const sharedSchemaModules = [
   "openclawContract",
   "packageShared",
   "pluginInput",
+  "schemaShared",
   "templatePackage",
   "templates",
   "textFiles",

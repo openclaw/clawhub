@@ -318,6 +318,7 @@ describe("built CLI artifact", () => {
       "openclawContract",
       "packageShared",
       "pluginInput",
+      "schemaShared",
       "templatePackage",
       "templates",
       "textFiles",
