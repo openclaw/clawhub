@@ -55,6 +55,13 @@ exact-key miss. There are no fallback keys or cached installed workspaces.
   profile-context shard's metadata layout checks, so those assertions do not
   depend on the availability of a live public skill.
 
+Every local-auth spec must appear in the PR matrix. When several shards split a
+spec with `grep`, their combined patterns must cover every test title, including
+the pre-publication security checks. The selection guard uses Playwright discovery
+to compare unfiltered tests with the combined filters, including parameterized
+titles and describe groups, without starting a backend. Keep the exact-artifact and official-feed
+boundary cases in the isolated template shard.
+
 Browser jobs cache downloads by the installed `playwright-core` version, runner
 OS, and architecture. Unrelated Bun lockfile updates reuse those downloads.
 There is no fallback across Playwright versions; `playwright install chromium`
