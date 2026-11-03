@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runStaticModerationScan } from "./moderationEngine";
 import { planStorageReadBatches, runStaticPublishScan } from "./staticPublishScan";

@@ -84,14 +84,6 @@ describe("Template naming contracts", () => {
     },
   );
 
-  it("keeps the CLI's standalone manifest validators identical to their owning schema source", () => {
-    for (const file of ["templates.ts", "templatePackage.ts"]) {
-      expect(readFileSync(`packages/clawhub/src/schema/${file}`, "utf8")).toBe(
-        readFileSync(`packages/schema/src/${file}`, "utf8"),
-      );
-    }
-  });
-
   it("documents the current family and feed discriminator across public references", () => {
     const feedSpec = readFileSync("specs/experimental-template-feed.md", "utf8");
     const cliDocs = readFileSync("docs/cli.md", "utf8");

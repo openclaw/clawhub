@@ -17,7 +17,7 @@ const modules = import.meta.glob("./**/*.ts");
 const icon = `/api/v1/skill-icons/${"a".repeat(64)}`;
 async function fixture() {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const ids = await t.run(async (ctx) => {
     const ownerUserId = await ctx.db.insert("users", { handle: "maintainer" });
     const ownerPublisherId = await ctx.db.insert("publishers", {

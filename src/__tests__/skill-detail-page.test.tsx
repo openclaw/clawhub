@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
@@ -47,6 +47,15 @@ const useMutationMock = vi.fn();
 const convexQueryMock = vi.fn();
 const convexClientMock = { query: convexQueryMock };
 const getReadmeMock = vi.fn();
+const getSkillCardMock = vi.fn();
+
+function createPendingTextRead() {
+  let resolve!: (value: { text: string }) => void;
+  const promise = new Promise<{ text: string }>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 function getDesktopSkillTabs() {
   return within(screen.getByRole("tablist", { name: "Skill detail tabs", hidden: true }));
@@ -64,7 +73,8 @@ vi.mock("convex/react", () => ({
     status: "Exhausted",
     loadMore: vi.fn(),
   }),
-  useAction: () => getReadmeMock,
+  useAction: (fn: never) =>
+    getFunctionName(fn) === "skills:getSkillCard" ? getSkillCardMock : getReadmeMock,
 }));
 
 vi.mock("sonner", () => ({
@@ -140,6 +150,8 @@ describe("SkillDetailPage", () => {
     useMutationMock.mockReset();
     convexQueryMock.mockReset();
     getReadmeMock.mockReset();
+    getSkillCardMock.mockReset();
+    getSkillCardMock.mockImplementation((args) => getReadmeMock(args));
     navigateMock.mockReset();
     routerInvalidateMock.mockReset();
     useAuthStatusMock.mockReset();
@@ -1269,6 +1281,78 @@ describe("SkillDetailPage", () => {
       );
     });
     expect(await screen.findByText("Generated from worker.")).toBeTruthy();
+  });
+
+  it("keeps one generated card request pending across loading-state and parent renders", async () => {
+    const data = makeInitialData();
+    if (!data.result?.latestVersion) throw new Error("Missing version fixture");
+    const card = {
+      path: "skill-card.md",
+      size: 32,
+      storageId,
+      sha256: "generated-card",
+      contentType: "text/markdown",
+    };
+    data.result.latestVersion.files = [card];
+    data.result.latestVersion.generatedSkillCard = card;
+    const pending = createPendingTextRead();
+    getSkillCardMock.mockReturnValue(pending.promise);
+
+    const { rerender } = render(<SkillDetailPage slug="weather" initialData={data} />);
+    rerender(<SkillDetailPage slug="weather" initialData={{ ...data }} />);
+    expect(getSkillCardMock).toHaveBeenCalledExactlyOnceWith({ versionId });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Skill Card" }));
+    await act(async () => {
+      pending.resolve({ text: "# Skill Card\n\nOnly one completed request." });
+      await pending.promise;
+    });
+    expect(await screen.findByText("Only one completed request.")).toBeTruthy();
+    expect(getSkillCardMock).toHaveBeenCalledOnce();
+  });
+
+  it("retires a pending generated card when the selected version changes", async () => {
+    const data = makeInitialData();
+    if (!data.result?.latestVersion) throw new Error("Missing version fixture");
+    const card = {
+      path: "skill-card.md",
+      size: 32,
+      storageId,
+      sha256: "generated-card",
+      contentType: "text/markdown",
+    };
+    data.result.latestVersion.files = [card];
+    data.result.latestVersion.generatedSkillCard = card;
+    const oldRead = createPendingTextRead();
+    const newRead = createPendingTextRead();
+    getSkillCardMock.mockReturnValueOnce(oldRead.promise).mockReturnValueOnce(newRead.promise);
+    const { rerender } = render(<SkillDetailPage slug="weather" initialData={data} />);
+    const nextVersionId = "skillVersions:2" as Id<"skillVersions">;
+    rerender(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          ...data,
+          result: {
+            ...data.result,
+            latestVersion: { ...data.result.latestVersion, _id: nextVersionId, version: "3.0.0" },
+          },
+        }}
+      />,
+    );
+    expect(getSkillCardMock.mock.calls).toEqual([[{ versionId }], [{ versionId: nextVersionId }]]);
+    fireEvent.click(screen.getByRole("tab", { name: "Skill Card" }));
+    await act(async () => {
+      oldRead.resolve({ text: "# Skill Card\n\nStale card content." });
+      await oldRead.promise;
+    });
+    expect(screen.queryByText("Stale card content.")).toBeNull();
+    await act(async () => {
+      newRead.resolve({ text: "# Skill Card\n\nCurrent card content." });
+      await newRead.promise;
+    });
+    expect(await screen.findByText("Current card content.")).toBeTruthy();
+    expect(getSkillCardMock).toHaveBeenCalledTimes(2);
   });
 
   it("renders related skills from the stored category with a browse link", async () => {

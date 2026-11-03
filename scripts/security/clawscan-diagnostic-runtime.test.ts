@@ -1,10 +1,39 @@
 /* @vitest-environment node */
-import { readFile } from "node:fs/promises";
-import { expect, it } from "vitest";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, it, vi } from "vitest";
+import { runWorkerCommand } from "../lib/runWorkerCommand";
 import {
+  installOriginalRuntime,
   validateOriginalProfile,
   validateOriginalScannerBounds,
 } from "./clawscan-diagnostic-runtime";
+
+vi.mock("../lib/runWorkerCommand", () => ({ runWorkerCommand: vi.fn() }));
+
+it("stages the complete compatibility installer bundle before executing it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clawscan-diagnostic-bundle-"));
+  try {
+    vi.mocked(runWorkerCommand).mockImplementationOnce(async () => {
+      for (const file of [
+        "skillspector-pydantic-requirements.txt",
+        "test_skillspector_serialization.py",
+      ]) {
+        expect(await readFile(join(root, "installer", file), "utf8")).toBe(
+          await readFile(new URL(file, import.meta.url), "utf8"),
+        );
+      }
+      throw new Error("Verified private installer bundle; stop before installation");
+    });
+    await expect(installOriginalRuntime(root, "e".repeat(40), false, {})).rejects.toThrow(
+      "Verified private installer bundle; stop before installation",
+    );
+  } finally {
+    vi.clearAllMocks();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 const state = "DEFAULT_MAX_WORKFLOW_SECONDS = 600.0\n";
 const mcp = "TP4_MAX_FILES = 128\n";
@@ -55,6 +84,7 @@ it("binds dependency locks to exact sources while retaining both incident diagno
   const validatorSource = "aff544dc623c9b2d420bbd13a2c8aab46a90738c";
   const pcmSource = "cafdd8a5766fa82874a805a4af369cfd0a038018";
   const inlineJsonSource = "e14f9960cc290d47f99fd3416b0589bbc0080f24";
+  const diagnosticSource = "c0b813f1001062257758f079795cdd176b7e31a4";
   const javascriptLock = "f4bfc4c3d226c4be309e01b7c5043ca34c53a40975a1ba39cae4c0463c98fb7f";
   const originalCandidate = "fd5f18ad3365f623d4165740b124cd7f142d0556";
   for (const [source, expectedLock] of [
@@ -65,6 +95,7 @@ it("binds dependency locks to exact sources while retaining both incident diagno
     [validatorSource, javascriptLock],
     [pcmSource, javascriptLock],
     [inlineJsonSource, javascriptLock],
+    [diagnosticSource, javascriptLock],
   ]) {
     expect(() => validateOriginalScannerBounds(state, mcp, expectedLock!, source!)).not.toThrow();
     for (const otherLock of [lock, modernLock, javascriptLock]) {

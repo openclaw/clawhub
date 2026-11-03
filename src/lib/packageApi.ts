@@ -8,8 +8,15 @@ import type {
   PackageVerificationSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
+import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { publicApiUrl } from "./publicApiUrl";
+import {
+  fetchInitialPublicPluginCatalog,
+  fetchInitialPublicPluginCategory,
+} from "./publicPluginBrowse";
+import { getRuntimeEnv } from "./runtimeEnv";
+import { getPublicClawHubSiteUrl } from "./site";
 
 export type PackageListItem = {
   name: string;
@@ -20,6 +27,7 @@ export type PackageListItem = {
   isOfficial: boolean;
   summary?: string | null;
   icon?: string | null;
+  iconAssetUrl?: string;
   ownerHandle?: string | null;
   ownerImage?: string | null;
   ownerOfficial?: boolean;
@@ -84,6 +92,7 @@ export type PackageVersionDetail = {
     } | null;
     skillSpectorAnalysis?: {
       status: string;
+      inspectionStatus?: "completed" | "partial";
       score?: number;
       severity?: string;
       recommendation?: string;
@@ -290,13 +299,26 @@ const getForwardedHeaders = createIsomorphicFn()
   .client(async (_viewerMode: PackageApiViewerMode): Promise<Record<string, string>> => ({}));
 
 const fetchPackageResponse = createIsomorphicFn()
-  .server(async (url: string, init: RequestInit) => {
+  .server(async (url: string, init: RequestInit, viewerMode: PackageApiViewerMode) => {
+    const requestUrl = new URL(url);
+    if (
+      viewerMode === "anonymous" &&
+      getRuntimeEnv("VITE_CLAWHUB_DEPLOY_ENV") === "production" &&
+      getPluginBrowseSnapshotKind(requestUrl)
+    ) {
+      // A native fetch reaches the CDN; Nitro's internal dispatch bypasses it.
+      const edgeUrl = new URL(
+        `${requestUrl.pathname}${requestUrl.search}`,
+        getPublicClawHubSiteUrl(),
+      );
+      return fetch(edgeUrl.toString(), init);
+    }
     const { serverFetch } = await import("nitro/app");
     // Nitro routes locally by path, even for absolute URLs. Our API proxy adds
     // edge identity instead of following Convex redirects through Vercel protection.
     return serverFetch(url, init);
   })
-  .client((url: string, init: RequestInit) => fetch(url, init));
+  .client((url: string, init: RequestInit, _viewerMode: PackageApiViewerMode) => fetch(url, init));
 
 async function packageFetch(
   url: URL,
@@ -306,19 +328,23 @@ async function packageFetch(
 ) {
   const forwarded = await getForwardedHeaders(viewerMode);
   const isSameOrigin = typeof window !== "undefined" && url.origin === window.location.origin;
-  return await fetchPackageResponse(url.toString(), {
-    method: "GET",
-    // Only send credentials for same-origin requests (production Vercel
-    // rewrite). Cross-origin requests to the Convex site URL don't need
-    // cookies, and `credentials: "include"` is rejected when the server
-    // responds with `Access-Control-Allow-Origin: *`.
-    credentials: viewerMode === "request" && isSameOrigin ? "include" : "omit",
-    headers: {
-      Accept: accept,
-      ...forwarded,
+  return await fetchPackageResponse(
+    url.toString(),
+    {
+      method: "GET",
+      // Only send credentials for same-origin requests (production Vercel
+      // rewrite). Cross-origin requests to the Convex site URL don't need
+      // cookies, and `credentials: "include"` is rejected when the server
+      // responds with `Access-Control-Allow-Origin: *`.
+      credentials: viewerMode === "request" && isSameOrigin ? "include" : "omit",
+      headers: {
+        Accept: accept,
+        ...forwarded,
+      },
+      signal,
     },
-    signal,
-  });
+    viewerMode,
+  );
 }
 
 function parseRetryAfterSeconds(value: string | null): number | null {
@@ -368,6 +394,23 @@ async function fetchJson<T>(
   const response = await packageFetch(url, "application/json", signal, viewerMode);
   if (!response.ok) throw await createPackageApiError(response);
   return (await response.json()) as T;
+}
+
+async function fetchFastCategorySnapshot(url: URL, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const controller = new AbortController();
+  const abortFromNavigation = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abortFromNavigation, { once: true });
+  // Preserve fast CDN hits without waiting seconds for a cold HTTP origin.
+  const timer = setTimeout(() => {
+    controller.abort(new DOMException("Category cache request timed out", "TimeoutError"));
+  }, 250);
+  try {
+    return await fetchJson<PluginCatalogResult>(url, controller.signal, "anonymous");
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abortFromNavigation);
+  }
 }
 
 export async function fetchPackages(params: {
@@ -535,6 +578,35 @@ export async function fetchPluginCatalog(params: {
     url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
   }
   if (params.sort) url.searchParams.set("sort", params.sort);
+  const snapshotKind = params.viewerMode === "anonymous" ? getPluginBrowseSnapshotKind(url) : null;
+  if (snapshotKind === "category") {
+    try {
+      const result = await fetchFastCategorySnapshot(url, params.signal);
+      return {
+        items: result?.items ?? [],
+        nextCursor: result?.nextCursor ?? null,
+        totalCount: result?.totalCount ?? null,
+      };
+    } catch (error) {
+      if (params.signal?.aborted || isRateLimitedPackageApiError(error)) throw error;
+    }
+  }
+  if (snapshotKind) {
+    try {
+      const result =
+        snapshotKind === "category"
+          ? await fetchInitialPublicPluginCategory(url.searchParams.get("category")!, params.signal)
+          : await fetchInitialPublicPluginCatalog(params.signal);
+      return {
+        items: result.items,
+        nextCursor: result.nextCursor,
+        totalCount: result.totalCount ?? null,
+      };
+    } catch (error) {
+      if (params.signal?.aborted) throw error;
+      // Retain the HTTP path during deployment skew or a failed public read.
+    }
+  }
   const result = await fetchJson<PluginCatalogResult>(url, params.signal, params.viewerMode);
   return {
     items: result?.items ?? [],

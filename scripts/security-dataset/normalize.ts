@@ -1,4 +1,13 @@
 import { createHash } from "node:crypto";
+import {
+  redactBundleContent,
+  redactSecretValues,
+} from "../../convex/lib/securityDatasetRedaction.ts";
+
+export {
+  hasSecretLikeValue,
+  redactBundleContent,
+} from "../../convex/lib/securityDatasetRedaction.ts";
 import { AGENTIC_RISK_CATEGORIES } from "../../convex/lib/securityPrompt.ts";
 
 export type SourceKind = "skill" | "package";
@@ -268,18 +277,6 @@ const AGENTIC_RISK_CATEGORY_LABEL_BY_ID: ReadonlyMap<string, string> = new Map(
   AGENTIC_RISK_CATEGORIES.map((category) => [category.id, category.label] as const),
 );
 
-const SECRET_PATTERNS: RegExp[] = [
-  /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
-  /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
-  /\bsk-[A-Za-z0-9_-]{20,}\b/g,
-  /\bAKIA[0-9A-Z]{16}\b/g,
-  /\b(?:api[_-]?key|token|secret|password|passwd|pwd|authorization code|auth code)\s*[:=]\s*["']?[^"',\s;)`]{6,}/gi,
-  /\b(?:authorization|x-api-key)\s*[:=]\s*["']?(?:bearer|basic)?\s+[A-Za-z0-9._~+/=-]{12,}/gi,
-  /-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----[\s\S]*?-----END [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----/g,
-  /\bhttps?:\/\/[^/\s:@]+:[^/\s@]+@[^\s)'"`]+/gi,
-  /(["'`])(?=[A-Za-z0-9+/=_-]{32,}\1)(?=.*[A-Z])(?=.*[a-z])(?=.*\d)[A-Za-z0-9+/=_-]+\1/g,
-];
-
 export function hashString(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -291,19 +288,10 @@ export function redactText(value: string | null | undefined, maxLength = MAX_RED
     const code = value.charCodeAt(index);
     redacted += code < 32 || code === 127 ? " " : value.charAt(index);
   }
-  for (const pattern of SECRET_PATTERNS) {
-    redacted = redacted.replace(pattern, "[REDACTED_SECRET]");
-  }
+  redacted = redactSecretValues(redacted);
   redacted = redacted.replace(/\s+/g, " ").trim();
   if (redacted.length <= maxLength) return redacted;
   return `${redacted.slice(0, maxLength - 1)}...`;
-}
-
-export function hasSecretLikeValue(value: string) {
-  return SECRET_PATTERNS.some((pattern) => {
-    pattern.lastIndex = 0;
-    return pattern.test(value);
-  });
 }
 
 export function redactSkillContent(value: string | null | undefined) {
@@ -413,18 +401,6 @@ function redactMetadata(value: string | null | undefined) {
 
 function redactBundlePath(value: string) {
   return redactText(value.trim(), 2048) ?? "";
-}
-
-export function redactBundleContent(value: string) {
-  let redacted = "";
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    redacted += code < 32 && code !== 9 && code !== 10 && code !== 13 ? " " : value.charAt(index);
-  }
-  for (const pattern of SECRET_PATTERNS) {
-    redacted = redacted.replace(pattern, "[REDACTED_SECRET]");
-  }
-  return redacted;
 }
 
 function qualifiedPublicSlug(

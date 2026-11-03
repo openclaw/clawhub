@@ -23,7 +23,7 @@ describe("experimental Template feed runtime", () => {
 
   it("stores and serves the exact publication by default", async () => {
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     const publisherId = await t.run(async (ctx) => {
       const createdPublisherId = await ctx.db.insert("publishers", {
         kind: "org",
@@ -103,7 +103,7 @@ describe("experimental Template feed runtime", () => {
 
   it("rejects retired wire snapshots while retaining the physical row and normal publication sequence", async () => {
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     const payload = JSON.stringify({
       schemaVersion: 1,
       id: "clawhub-official-claws",
@@ -150,7 +150,7 @@ describe("experimental Template feed runtime", () => {
 
   it("does not serve a pre-policy snapshot before publishing a restricted replacement", async () => {
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     await t.run(async (ctx) => {
       await ctx.db.insert("catalogFeedPublications", {
         feedId: "clawhub-official-claws",
@@ -184,7 +184,7 @@ describe("experimental Template feed runtime", () => {
 describe("catalog feed pagination runtime", () => {
   it("publishes every official plugin when the catalog spans multiple pages", async () => {
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     const packageNames: string[] = [];
     await t.run(async (ctx) => {
       const ownerUserId = await ctx.db.insert("users", { handle: "feed-publisher" });

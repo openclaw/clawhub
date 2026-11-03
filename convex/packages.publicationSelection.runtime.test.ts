@@ -21,7 +21,7 @@ const name = "visibility-plugin";
 
 async function fixture() {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const ids = await t.run(async (ctx) => {
     await ctx.db.insert("globalStats", {
       key: "default",

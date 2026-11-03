@@ -133,6 +133,13 @@ type TypeaheadItem =
       label: string;
     };
 
+type TypeaheadSnapshot = {
+  query: string;
+  skills: TypeaheadItem[];
+  plugins: TypeaheadItem[];
+  creators: TypeaheadItem[];
+};
+
 export default function Header() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
   const { signIn, signOut } = useAuthActions();
@@ -152,7 +159,8 @@ export default function Header() {
   const [navSearchQuery, setNavSearchQuery] = useState("");
   const manualCatalogSearchRef = useRef<ManualCatalogSearch | null>(null);
   const [typeaheadOpen, setTypeaheadOpen] = useState(false);
-  const [typeaheadActiveIndex, setTypeaheadActiveIndex] = useState(0);
+  const [typeaheadActiveKey, setTypeaheadActiveKey] = useState<string | null>(null);
+  const [hoveredTypeahead, setHoveredTypeahead] = useState<TypeaheadSnapshot | null>(null);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
@@ -175,6 +183,7 @@ export default function Header() {
   } = useUnifiedSearch(navSearchQuery, "all", {
     manualCatalogSearch: manualCatalogSearchRef.current,
     detectPluginHasMore: false,
+    publishPartialResults: true,
     debounceMs: 180,
     enabled: typeaheadOpen && hasNavSearchQuery,
     limits: { skills: 4, plugins: 4, creators: 4 },
@@ -233,22 +242,66 @@ export default function Header() {
     return items;
   }, [creatorResults, hasNavSearchQuery, trimmedNavSearchQuery]);
 
-  const typeaheadItems = useMemo(
+  const availableTypeaheadItems = useMemo(
     () => [...typeaheadPluginItems, ...typeaheadSkillItems, ...typeaheadCreatorItems],
     [typeaheadCreatorItems, typeaheadPluginItems, typeaheadSkillItems],
   );
+  const hoveredSnapshot =
+    hoveredTypeahead?.query === trimmedNavSearchQuery ? hoveredTypeahead : null;
+  const visibleSkillItems = hoveredSnapshot?.skills ?? typeaheadSkillItems;
+  const visiblePluginItems = hoveredSnapshot?.plugins ?? typeaheadPluginItems;
+  const visibleCreatorItems = hoveredSnapshot?.creators ?? typeaheadCreatorItems;
+  const typeaheadItems = useMemo(
+    () => [...visiblePluginItems, ...visibleSkillItems, ...visibleCreatorItems],
+    [visibleCreatorItems, visiblePluginItems, visibleSkillItems],
+  );
+  const hasTypeaheadUpdates = Boolean(
+    hoveredSnapshot &&
+    (availableTypeaheadItems.length !== typeaheadItems.length ||
+      availableTypeaheadItems.some((item, index) => item.key !== typeaheadItems[index]?.key) ||
+      pluginSearchError ||
+      skillSearchError),
+  );
+  // Later result groups can be inserted before a suggestion being used. Track
+  // its identity so keyboard and pointer selection cannot jump to another row.
+  const typeaheadActiveIndex = Math.max(
+    0,
+    typeaheadItems.findIndex((item) => item.key === typeaheadActiveKey),
+  );
+  const selectTypeaheadIndex = (index: number) => {
+    setTypeaheadActiveKey(typeaheadItems[index]?.key ?? null);
+  };
+  const holdHoveredTypeahead = (index: number) => {
+    selectTypeaheadIndex(index);
+    // Keep click targets still beneath the pointer. New groups are applied on
+    // mouse leave or an explicit update, rather than moving a different link under it.
+    if (typeaheadSearching && !hoveredSnapshot) {
+      setHoveredTypeahead({
+        query: trimmedNavSearchQuery,
+        skills: visibleSkillItems,
+        plugins: visiblePluginItems,
+        creators: visibleCreatorItems,
+      });
+    }
+  };
+  const releaseHoveredTypeahead = () => setHoveredTypeahead(null);
+  const updateTypeaheadResults = () => {
+    releaseHoveredTypeahead();
+    (mobileSearchOpen ? mobileSearchInputRef.current : navSearchInputRef.current)?.focus();
+  };
   const activeTypeaheadItem = showTypeahead ? typeaheadItems[typeaheadActiveIndex] : undefined;
   const activeTypeaheadId = activeTypeaheadItem
     ? getTypeaheadOptionId(activeTypeaheadItem)
     : undefined;
 
   useEffect(() => {
-    setTypeaheadActiveIndex(0);
+    setTypeaheadActiveKey(null);
+    setHoveredTypeahead(null);
   }, [trimmedNavSearchQuery]);
 
   useEffect(() => {
-    setTypeaheadActiveIndex((index) => Math.min(index, Math.max(typeaheadItems.length - 1, 0)));
-  }, [typeaheadItems.length]);
+    if (!typeaheadOpen) setHoveredTypeahead(null);
+  }, [typeaheadOpen]);
 
   useEffect(() => {
     if (!typeaheadOpen && !mobileSearchOpen) return () => {};
@@ -400,11 +453,11 @@ export default function Header() {
     if (typeaheadItems.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setTypeaheadActiveIndex((index) => (index + 1) % typeaheadItems.length);
+      selectTypeaheadIndex((typeaheadActiveIndex + 1) % typeaheadItems.length);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setTypeaheadActiveIndex(
-        (index) => (index - 1 + typeaheadItems.length) % typeaheadItems.length,
+      selectTypeaheadIndex(
+        (typeaheadActiveIndex - 1 + typeaheadItems.length) % typeaheadItems.length,
       );
     } else if (event.key === "Enter") {
       const activeItem = typeaheadItems[typeaheadActiveIndex];
@@ -586,14 +639,17 @@ export default function Header() {
                 <SearchTypeahead
                   activeIndex={typeaheadActiveIndex}
                   loading={typeaheadSearching}
-                  pluginSearchError={pluginSearchError}
-                  skillSearchError={skillSearchError}
-                  onHoverItem={setTypeaheadActiveIndex}
+                  hasUpdates={hasTypeaheadUpdates}
+                  onLeave={releaseHoveredTypeahead}
+                  onUpdate={updateTypeaheadResults}
+                  pluginSearchError={hoveredSnapshot ? false : pluginSearchError}
+                  skillSearchError={hoveredSnapshot ? false : skillSearchError}
+                  onHoverItem={holdHoveredTypeahead}
                   onSelectItem={navigateToTypeaheadItem}
-                  creatorItems={typeaheadCreatorItems}
-                  pluginItems={typeaheadPluginItems}
+                  creatorItems={visibleCreatorItems}
+                  pluginItems={visiblePluginItems}
                   query={trimmedNavSearchQuery}
-                  skillItems={typeaheadSkillItems}
+                  skillItems={visibleSkillItems}
                 />
               ) : null}
             </div>
@@ -798,14 +854,17 @@ export default function Header() {
               <SearchTypeahead
                 activeIndex={typeaheadActiveIndex}
                 loading={typeaheadSearching}
-                pluginSearchError={pluginSearchError}
-                skillSearchError={skillSearchError}
-                onHoverItem={setTypeaheadActiveIndex}
+                hasUpdates={hasTypeaheadUpdates}
+                onLeave={releaseHoveredTypeahead}
+                onUpdate={updateTypeaheadResults}
+                pluginSearchError={hoveredSnapshot ? false : pluginSearchError}
+                skillSearchError={hoveredSnapshot ? false : skillSearchError}
+                onHoverItem={holdHoveredTypeahead}
                 onSelectItem={navigateToTypeaheadItem}
-                creatorItems={typeaheadCreatorItems}
-                pluginItems={typeaheadPluginItems}
+                creatorItems={visibleCreatorItems}
+                pluginItems={visiblePluginItems}
                 query={trimmedNavSearchQuery}
-                skillItems={typeaheadSkillItems}
+                skillItems={visibleSkillItems}
               />
             ) : null}
           </div>
@@ -856,6 +915,9 @@ function SearchTypeahead({
   activeIndex,
   creatorItems,
   loading,
+  hasUpdates,
+  onLeave,
+  onUpdate,
   pluginSearchError,
   skillSearchError,
   onHoverItem,
@@ -867,6 +929,9 @@ function SearchTypeahead({
   activeIndex: number;
   creatorItems: TypeaheadItem[];
   loading: boolean;
+  hasUpdates: boolean;
+  onLeave: () => void;
+  onUpdate: () => void;
   pluginSearchError?: boolean;
   skillSearchError?: boolean;
   onHoverItem: (index: number) => void;
@@ -884,7 +949,7 @@ function SearchTypeahead({
   const creatorStartIndex = skillItems.length + pluginItems.length;
 
   return (
-    <div className="navbar-search-typeahead" id="navbar-search-typeahead">
+    <div className="navbar-search-typeahead" id="navbar-search-typeahead" onMouseLeave={onLeave}>
       <div className="navbar-search-typeahead-panel">
         {!hasQuery ? (
           <div className="navbar-search-typeahead-status is-empty">
@@ -995,6 +1060,32 @@ function SearchTypeahead({
             ) : null}
           </div>
         ) : null}
+        {hasQuery && hasUpdates ? (
+          <div className="navbar-search-typeahead-status">
+            <Button
+              variant="ghost"
+              size="sm"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={onUpdate}
+            >
+              Update results
+            </Button>
+          </div>
+        ) : null}
+        {hasQuery && loading && hasMatches ? (
+          <div
+            className="navbar-search-typeahead-status is-loading"
+            role="status"
+            aria-label="Searching"
+          >
+            <Loader2
+              className="navbar-search-typeahead-status-spinner"
+              size={17}
+              aria-hidden="true"
+            />
+            <span>Searching…</span>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1019,7 +1110,7 @@ function TypeaheadRow({
   useEffect(() => {
     if (!active) return;
     rowRef.current?.scrollIntoView({ block: "nearest" });
-  }, [active]);
+  }, [active, index]);
 
   return (
     <button

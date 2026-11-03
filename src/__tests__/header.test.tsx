@@ -1,7 +1,5 @@
 /* @vitest-environment jsdom */
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AriaAttributes, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -240,24 +238,6 @@ vi.mock("../components/ui/toggle-group", () => ({
 
 import Header from "../components/Header";
 
-function stylesCss() {
-  return readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
-}
-
-function compactHeaderCss() {
-  const css = stylesCss();
-  let start = css.indexOf("@media (max-width: 760px)");
-  while (start >= 0) {
-    const nextMedia = css.indexOf("@media ", start + 1);
-    const block = css.slice(start, nextMedia === -1 ? undefined : nextMedia);
-    if (block.includes(".navbar-search-wrap") && block.includes(".nav-mobile")) {
-      return block;
-    }
-    start = css.indexOf("@media (max-width: 760px)", start + 1);
-  }
-  throw new Error("Missing compact header media query");
-}
-
 const scrollIntoViewMock = vi.fn();
 
 describe("Header", () => {
@@ -421,33 +401,6 @@ describe("Header", () => {
     expect(setAuthError).not.toHaveBeenCalled();
   });
 
-  it("keeps inline search and moves content nav into the compact menu", () => {
-    const css = compactHeaderCss();
-
-    expect(css).toContain(".navbar-search-wrap");
-    expect(css).toContain("grid-template-columns");
-    expect(css).toContain(".navbar-search {");
-    expect(css).toContain("display: flex;");
-    expect(css).toContain(".navbar-search-mobile-trigger");
-    expect(css).toContain("display: none;");
-    expect(css).toContain(".navbar-tabs {");
-    expect(css).toContain("display: none;");
-    expect(css).toContain(".nav-mobile {");
-    expect(css).toContain("display: inline-flex;");
-    expect(css).not.toContain(".navbar-search {\n    display: none;");
-  });
-
-  it("aligns the restored header shell to the browse page width", () => {
-    const css = stylesCss();
-    const compactCss = compactHeaderCss();
-
-    expect(css).toContain(".navbar-inner {\n  width: 100%;\n  max-width: var(--page-max);");
-    expect(css).toContain("margin: 0 auto;\n  padding: 0 var(--space-5);");
-    expect(compactCss).toContain("padding: 8px 10px;");
-    expect(compactCss).toContain(".navbar-tabs {\n    display: none;");
-    expect(css).not.toContain(".navbar-inner,\n  .section.detail-page-section");
-  });
-
   it("routes plain search-form submits to the search page", () => {
     navigateMock.mockReset();
 
@@ -552,6 +505,105 @@ describe("Header", () => {
       to: "/search",
       search: { q: "weather", type: "plugins" },
     });
+  });
+
+  it("indicates that more suggestions are pending beside ready matches", () => {
+    useUnifiedSearchMock.mockReturnValue({ ...defaultUnifiedSearchResult, isSearching: true });
+    const { rerender } = render(<Header />);
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+    expect(screen.getByRole("option", { name: /Weather Skill/i })).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Searching" })).toBeTruthy();
+    useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
+    rerender(<Header />);
+    expect(screen.queryByRole("status", { name: "Searching" })).toBeNull();
+  });
+
+  it.each(["keyboard", "pointer"])(
+    "preserves the selected suggestion when other groups arrive (%s)",
+    (method) => {
+      useUnifiedSearchMock.mockReturnValue({
+        ...defaultUnifiedSearchResult,
+        pluginResults: [],
+        creatorResults: [],
+        isSearching: true,
+      });
+      const { rerender } = render(<Header />);
+      const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "weather" } });
+      if (method === "keyboard") {
+        fireEvent.keyDown(input, { key: "ArrowDown" });
+      } else {
+        fireEvent.mouseEnter(screen.getByRole("option", { name: /Weather Skill/i }));
+      }
+      const selected = input.getAttribute("aria-activedescendant");
+      expect(selected).toBeTruthy();
+      scrollIntoViewMock.mockClear();
+      useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
+      rerender(<Header />);
+      expect(input.getAttribute("aria-activedescendant")).toBe(selected);
+      if (method === "pointer") {
+        expect(screen.queryByRole("option", { name: /Weather Plugin/i })).toBeNull();
+        expect(screen.getByRole("button", { name: "Update results" })).toBeTruthy();
+        fireEvent.mouseLeave(document.querySelector(".navbar-search-typeahead")!);
+      }
+      expect(scrollIntoViewMock).toHaveBeenCalledWith({ block: "nearest" });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(navigateMock).toHaveBeenCalledWith(
+        method === "keyboard"
+          ? { to: "/search", search: { q: "weather", type: "skills" } }
+          : { to: "/local/skills/weather" },
+      );
+    },
+  );
+
+  it("can explicitly apply buffered matches without losing search focus", () => {
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      pluginResults: [],
+      skillResults: [],
+      isSearching: true,
+    });
+    const { rerender } = render(<Header />);
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+    fireEvent.mouseEnter(screen.getByRole("option", { name: /Local Creator/i }));
+    const selected = input.getAttribute("aria-activedescendant");
+    useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
+    rerender(<Header />);
+    expect(input.getAttribute("aria-activedescendant")).toBe(selected);
+    expect(screen.queryByRole("option", { name: /Weather Plugin/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Update results" }));
+    expect(screen.getByRole("option", { name: /Weather Plugin/i })).toBeTruthy();
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("does not insert a late error above a hovered suggestion", () => {
+    const partial = {
+      ...defaultUnifiedSearchResult,
+      pluginResults: [],
+      skillResults: [],
+      isSearching: true,
+    };
+    useUnifiedSearchMock.mockReturnValue(partial);
+    const { rerender } = render(<Header />);
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+    fireEvent.mouseEnter(screen.getByRole("option", { name: /Local Creator/i }));
+    useUnifiedSearchMock.mockReturnValue({
+      ...partial,
+      isSearching: false,
+      pluginSearchError: true,
+    });
+    rerender(<Header />);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("option", { name: /Local Creator/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Update results" }));
+    expect(screen.getByRole("alert").textContent).toContain("Unable to search plugins");
   });
 
   it("opens external skill typeahead results on their stored catalog route", () => {

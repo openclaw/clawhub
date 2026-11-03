@@ -151,15 +151,6 @@ export function normalizeSkillSlug(raw: string | undefined | null): string {
 }
 
 /**
- * Variant that returns null when the input normalizes to an empty string.
- * Useful at read-path call sites that want to short-circuit lookup.
- */
-export function normalizeSkillSlugOrNull(raw: string | undefined | null): string | null {
-  const normalized = normalizeSkillSlug(raw);
-  return normalized.length ? normalized : null;
-}
-
-/**
  * Check whether a string already matches the full slug shape rules.
  * Returns true only when the value is a plausible slug (length, pattern).
  *

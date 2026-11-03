@@ -8,7 +8,6 @@ import {
   ApiV1SearchResponseSchema,
   ApiV1SkillListResponseSchema,
   ApiV1SkillReportListResponseSchema,
-  ApiV1SkillReportResponseSchema,
   ApiV1SkillReportTriageResponseSchema,
   ApiV1SkillResolveResponseSchema,
   ApiV1SkillResponseSchema,
@@ -40,6 +39,7 @@ import {
   SKILLS_SH_UNSCANNED_LABEL,
   type SkillsShReference,
 } from "../skillReference.js";
+import { normalizeOwnerHandle } from "../slug.js";
 import type { GlobalOpts, ResolveResult } from "../types.js";
 import {
   createCrabLoader,
@@ -51,12 +51,6 @@ import {
 } from "../ui.js";
 import { reportInstalledSkillsTelemetryIfEnabled } from "./installTelemetry.js";
 import { presentModerationPlan, reportModerationPlan } from "./moderationPlan.js";
-
-type SkillReportOptions = {
-  version?: string;
-  reason?: string;
-  json?: boolean;
-};
 
 type SkillReportListOptions = {
   status?: SkillReportListStatus;
@@ -87,15 +81,6 @@ type SkillRef = {
   sourceRef?: string;
   skillsSh?: SkillsShReference;
 };
-
-function normalizeOwnerHandle(raw: string | null | undefined) {
-  const handle = raw?.trim().replace(/^@+/, "").toLowerCase();
-  if (!handle) return undefined;
-  if (handle.includes("/") || handle.includes("\\") || handle.includes("..")) {
-    fail(`Invalid owner handle: ${raw}`);
-  }
-  return handle;
-}
 
 type GitHubInstallResolution = Extract<
   ApiV1SkillInstallResolveResponse,
@@ -709,6 +694,21 @@ export async function cmdUpdate(
     const entryLock = lock.skills[entry];
     const entryRef = parseStoredSkillRefOrFail(entryLock?.sourceRef ?? entry);
     const spinner = createCrabLoader(`Checking ${entry}`);
+    const confirmOverwrite = async (version: string) => {
+      spinner.stop();
+      if (!allowPrompt) {
+        console.log(`${entry}: local changes (no match). Use --force to overwrite.`);
+        return false;
+      }
+      if (
+        !(await promptConfirm(`${entry}: local changes (no match). Overwrite with ${version}?`))
+      ) {
+        console.log(`${entry}: skipped`);
+        return false;
+      }
+      spinner.start(`Updating ${entry} -> ${version}`);
+      return true;
+    };
     try {
       const target = skillTarget(opts.dir, entryRef);
       const exists = await fileExists(target);
@@ -753,21 +753,7 @@ export async function cmdUpdate(
             : null;
 
         if (hasLocalChanges && !options.force) {
-          spinner.stop();
-          if (!allowPrompt) {
-            console.log(`${entry}: local changes (no match). Use --force to overwrite.`);
-            continue;
-          }
-          const confirm = await promptConfirm(
-            `${entry}: local changes (no match). Overwrite with ${formatInstallResolutionVersion(
-              latestInstall,
-            )}?`,
-          );
-          if (!confirm) {
-            console.log(`${entry}: skipped`);
-            continue;
-          }
-          spinner.start(`Updating ${entry} -> ${formatInstallResolutionVersion(latestInstall)}`);
+          if (!(await confirmOverwrite(formatInstallResolutionVersion(latestInstall)))) continue;
         }
 
         if (
@@ -958,19 +944,7 @@ export async function cmdUpdate(
               : null;
 
           if (hasLocalChanges && !options.force) {
-            spinner.stop();
-            if (!allowPrompt) {
-              console.log(`${entry}: local changes (no match). Use --force to overwrite.`);
-              continue;
-            }
-            const confirm = await promptConfirm(
-              `${entry}: local changes (no match). Overwrite with ${formatGitHubVersion(targetVersion)}?`,
-            );
-            if (!confirm) {
-              console.log(`${entry}: skipped`);
-              continue;
-            }
-            spinner.start(`Updating ${entry} -> ${formatGitHubVersion(targetVersion)}`);
+            if (!(await confirmOverwrite(formatGitHubVersion(targetVersion)))) continue;
           }
 
           if (matched === targetVersion && !options.force && !hasLocalChanges) {
@@ -1078,19 +1052,7 @@ export async function cmdUpdate(
       }
 
       if (!matched && localFingerprint && !options.force) {
-        spinner.stop();
-        if (!allowPrompt) {
-          console.log(`${entry}: local changes (no match). Use --force to overwrite.`);
-          continue;
-        }
-        const confirm = await promptConfirm(
-          `${entry}: local changes (no match). Overwrite with ${options.version ?? latest}?`,
-        );
-        if (!confirm) {
-          console.log(`${entry}: skipped`);
-          continue;
-        }
-        spinner.start(`Updating ${entry} -> ${options.version ?? latest}`);
+        if (!(await confirmOverwrite(options.version ?? latest))) continue;
       }
 
       const targetVersion = options.version ?? latest;
@@ -1345,42 +1307,6 @@ export function formatExploreLine(item: {
 export function clampLimit(limit: number, fallback = 25) {
   if (!Number.isFinite(limit)) return fallback;
   return Math.min(Math.max(1, limit), 200);
-}
-
-export async function cmdReportSkill(
-  opts: GlobalOpts,
-  slug: string,
-  options: SkillReportOptions = {},
-) {
-  const trimmed = normalizeSkillSlugOrFail(slug);
-  const reason = options.reason?.trim();
-  if (!reason) fail("--reason required");
-
-  const token = await requireAuthToken();
-  const registry = await getRegistry(opts, { cache: true });
-  const result = await apiRequest(
-    registry,
-    {
-      method: "POST",
-      path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/report`,
-      token,
-      body: {
-        reason,
-        ...(options.version?.trim() ? { version: options.version.trim() } : {}),
-      },
-    },
-    ApiV1SkillReportResponseSchema,
-  );
-
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
-  if (result.alreadyReported) {
-    console.log(`Already reported ${trimmed}.`);
-  } else {
-    console.log(`OK. Reported ${trimmed} (${result.reportId}).`);
-  }
 }
 
 export async function cmdListSkillReports(opts: GlobalOpts, options: SkillReportListOptions = {}) {

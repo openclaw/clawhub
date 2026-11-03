@@ -29,6 +29,8 @@
  *     to a real absolute URL, or to make them package-relative.
  */
 
+import { parseSrcset } from "./srcset";
+
 const MARKDOWN_IMAGE = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g;
 const HTML_IMG_SRC = /<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)')[^>]*?>/gi;
 const HTML_SOURCE_SRCSET = /<source\b[^>]*?\bsrcset\s*=\s*(?:"([^"]+)"|'([^']+)')[^>]*?>/gi;
@@ -37,10 +39,6 @@ const ABSOLUTE_URL = /^[a-z][a-z0-9+\-.]*:/i;
 const PROTOCOL_RELATIVE = /^\/\//;
 
 const MAX_REPORTED = 5;
-
-function isAsciiWhitespace(char: string): boolean {
-  return char === " " || char === "\n" || char === "\t" || char === "\r" || char === "\f";
-}
 
 function classifyRelativeAsset(rawSrc: string): "package-relative" | "root-absolute" | null {
   const src = rawSrc.trim();
@@ -102,41 +100,7 @@ export function detectRelativeReadmeAssets(readmeText: string): RelativeReadmeAs
 
   const recordSrcset = (srcset: string | undefined) => {
     if (!srcset) return;
-    let index = 0;
-    while (index < srcset.length) {
-      while (index < srcset.length) {
-        const char = srcset[index];
-        if (isAsciiWhitespace(char) || char === ",") {
-          index += 1;
-          continue;
-        }
-        break;
-      }
-      if (index >= srcset.length) break;
-
-      const urlStart = index;
-      while (index < srcset.length && !isAsciiWhitespace(srcset[index])) {
-        index += 1;
-      }
-      let url = srcset.slice(urlStart, index);
-      const endedWithComma = url.endsWith(",");
-      if (endedWithComma) {
-        url = url.slice(0, -1);
-      }
-      record(url);
-
-      if (!endedWithComma) {
-        while (index < srcset.length && isAsciiWhitespace(srcset[index])) {
-          index += 1;
-        }
-        while (index < srcset.length && srcset[index] !== ",") {
-          index += 1;
-        }
-      }
-      if (srcset[index] === ",") {
-        index += 1;
-      }
-    }
+    for (const { url } of parseSrcset(srcset)) record(url);
   };
 
   MARKDOWN_IMAGE.lastIndex = 0;

@@ -4,7 +4,7 @@ import {
   INTERNAL_UNCATEGORIZED_CATEGORY,
   PLUGIN_CATEGORY_DEFINITIONS,
   SKILL_CATEGORY_DEFINITIONS,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 import { ChevronDown, Lightbulb, Sparkles } from "lucide-react";
 import { getCategoryIconComponent } from "../lib/categoryIcons";
 import { CatalogTopicInput, parseCatalogTopicsInput } from "./CatalogTopicInput";

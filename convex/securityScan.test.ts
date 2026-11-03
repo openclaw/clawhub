@@ -5650,6 +5650,96 @@ describe("securityScan", () => {
     expect(runMutation).toHaveBeenNthCalledWith(2, expect.anything(), {});
   });
 
+  it.each(["skillVersion", "packageRelease", "skillScanRequest"] as const)(
+    "acknowledges committed %s completion when only queue refill fails",
+    async (targetKind) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "placeholder");
+      const runQuery = vi.fn(async () => ({
+        job: {
+          _id: "securityScanJobs:1",
+          targetKind,
+          leaseToken: "lease-token",
+        },
+        ...(targetKind === "skillVersion" ? { version: { _id: "skillVersions:1" } } : {}),
+        ...(targetKind === "packageRelease" ? { release: { _id: "packageReleases:1" } } : {}),
+        ...(targetKind === "skillScanRequest"
+          ? { scanRequest: { _id: "skillScanRequests:1", sourceKind: "upload" } }
+          : {}),
+      }));
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if (Object.keys(args).length === 0) throw new Error("dispatch unavailable");
+        return { ok: true };
+      });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      await expect(
+        completeCodexScanJobHandler(
+          { runMutation, runQuery },
+          {
+            token: "placeholder",
+            jobId: "securityScanJobs:1",
+            leaseToken: "lease-token",
+            llmAnalysis: { status: "suspicious", checkedAt: 123 },
+            aigAnalysis: cleanAigAnalysis,
+          },
+        ),
+      ).resolves.toEqual({ ok: true });
+
+      const calls = runMutation.mock.calls.map(([, args]) => args);
+      const expectedCalls =
+        targetKind === "skillVersion" ? 4 : targetKind === "packageRelease" ? 2 : 3;
+      expect(calls).toHaveLength(expectedCalls);
+      expect(calls.at(-1)).toEqual({});
+      expect(calls.at(-2)).toMatchObject({
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+      });
+      expect(calls.some((args) => "error" in args)).toBe(false);
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    },
+  );
+
+  it.each([
+    ["skillVersion", 1],
+    ["skillVersion", 2],
+    ["skillVersion", 3],
+    ["packageRelease", 1],
+  ] as const)(
+    "propagates %s completion write failure at mutation %i",
+    async (targetKind, failAt) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "placeholder");
+      const runQuery = vi.fn(async () => ({
+        job: { _id: "securityScanJobs:1", targetKind, leaseToken: "lease-token" },
+        ...(targetKind === "skillVersion"
+          ? { version: { _id: "skillVersions:1" } }
+          : { release: { _id: "packageReleases:1" } }),
+      }));
+      const failure = new Error("completion write unavailable");
+      let mutations = 0;
+      const runMutation = vi.fn(async (_ref: unknown, _args: Record<string, unknown>) => {
+        mutations += 1;
+        if (mutations === failAt) throw failure;
+        return { ok: true };
+      });
+
+      await expect(
+        completeCodexScanJobHandler(
+          { runMutation, runQuery },
+          {
+            token: "placeholder",
+            jobId: "securityScanJobs:1",
+            leaseToken: "lease-token",
+            llmAnalysis: { status: "suspicious", checkedAt: 123 },
+            aigAnalysis: cleanAigAnalysis,
+          },
+        ),
+      ).rejects.toBe(failure);
+      expect(runMutation).toHaveBeenCalledTimes(failAt);
+      expect(runMutation.mock.calls.some(([, args]) => Object.keys(args).length === 0)).toBe(false);
+    },
+  );
+
   it("acknowledges a committed catalog completion when queue refill fails", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "placeholder");
     const runQuery = vi.fn(async () => ({

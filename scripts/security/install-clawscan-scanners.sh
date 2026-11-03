@@ -1,6 +1,10 @@
 #!/bin/sh
 # Install the exact scanner sources and Responses adapters tested with ClawScan.
 set -eu
+# Startup checks must not add generated Python code or pytest state to the
+# reviewed ClawScan checkout before the worker verifies its source identity.
+export PYTHONDONTWRITEBYTECODE=1
+export PYTEST_ADDOPTS='-p no:cacheprovider'
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${CLAWSCAN_SOURCE_DIR:?Run install-clawscan.sh first}"
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
@@ -64,6 +68,9 @@ if [ "$scanner" = skillspector ]; then
   python_executable=$(python -c 'import sys; print(sys.executable)')
   uv sync --locked --no-dev --python "$python_executable" --project "$source_dir"
   venv="$source_dir/.venv"
+  # The upstream lock predates the deferred-serializer repair. Replace only the
+  # reviewed Pydantic/core pair and required typing dependencies; keep the rest.
+  uv pip install --python "$venv/bin/python" --no-deps --require-hashes -r "$script_dir/skillspector-pydantic-requirements.txt"
 else
   venv="$RUNNER_TEMP/aig-venv"
   python -m venv "$venv"
@@ -72,9 +79,21 @@ else
   uv pip install --python "$venv/bin/python" --no-deps "$source_dir/skill-scan"
 fi
 uv pip install --python "$venv/bin/python" "pytest==9.0.2"
+if [ "$scanner" = skillspector ]; then
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$script_dir/test_skillspector_serialization.py"
+fi
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_${scanner}_responses.py"
 if [ "$needs_bash_parser" = 1 ]; then
   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_skillspector_shell_source.py"
+fi
+# Historical incident pins predate these controls. Current source includes both;
+# verify them in the installed scanner environment before exposing its entrypoint.
+if [ "$scanner" = skillspector ] && [ -f "$runtime_dir/tests/test_skillspector_destructive_quoted_operand_boundaries.py" ]; then
+  test -f "$runtime_dir/tests/test_skillspector_fragment_quote_ownership.py"
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_skillspector_destructive_quoted_operand_boundaries.py" "$runtime_dir/tests/test_skillspector_fragment_quote_ownership.py"
+fi
+if [ "$scanner" = skillspector ] && [ -f "$runtime_dir/tests/test_skillspector_javascript_parenthesized_capabilities.py" ]; then
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_skillspector_javascript_parenthesized_capabilities.py"
 fi
 uv pip check --python "$venv/bin/python"
 if [ "$scanner" = aig ]; then command_name=aig-skill-scan; else command_name=skillspector; fi

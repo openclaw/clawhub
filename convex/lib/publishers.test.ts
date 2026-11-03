@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { describe, expect, it } from "vitest";
 import type { Doc } from "../_generated/dataModel";
 import { derivePersonalPublisherHandle } from "./publishers";

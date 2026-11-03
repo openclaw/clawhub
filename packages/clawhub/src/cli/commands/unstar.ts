@@ -2,20 +2,9 @@ import { apiRequest, registryUrl } from "../../http.js";
 import { ApiRoutes, ApiV1UnstarResponseSchema } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
+import { parseSkillRef } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
-
-function parseSkillRef(skillArg: string) {
-  const value = skillArg.trim().toLowerCase();
-  if (!value) fail("Skill required");
-  const slashIndex = value.indexOf("/");
-  if (slashIndex < 0) return { slug: value, ownerHandle: undefined };
-  if (value.indexOf("/", slashIndex + 1) >= 0) fail(`Invalid skill ref: ${skillArg}`);
-  const ownerHandle = value.slice(0, slashIndex).replace(/^@+/, "");
-  const slug = value.slice(slashIndex + 1);
-  if (!ownerHandle || !slug) fail(`Invalid skill ref: ${skillArg}`);
-  return { slug, ownerHandle };
-}
 
 function unstarRequestArgs(
   registry: string,

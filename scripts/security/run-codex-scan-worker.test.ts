@@ -4,12 +4,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  assertCodexWorkerExecutionAllowed,
-  isCodexWorkerExecutionAllowed,
-  LOCAL_CODEX_WORKER_OPT_IN,
-  resolveCodexWorkerHome,
-} from "../codex-worker-guard";
 import { summarizeClawScanExposure } from "./clawscan-exposure";
 import {
   assertAigFilePathsHaveNoCompiledPython,
@@ -466,54 +460,6 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(sleep).not.toHaveBeenCalled();
   });
 
-  it("blocks direct local Codex security worker runs without opt-in", () => {
-    expect(isCodexWorkerExecutionAllowed({})).toBe(false);
-    expect(() => assertCodexWorkerExecutionAllowed({})).toThrow(
-      `Refusing to run local Codex workers without ${LOCAL_CODEX_WORKER_OPT_IN}=1`,
-    );
-  });
-
-  it("does not treat a bare GITHUB_ACTIONS flag as CI authorization", () => {
-    expect(isCodexWorkerExecutionAllowed({ GITHUB_ACTIONS: "true" })).toBe(false);
-    expect(() => assertCodexWorkerExecutionAllowed({ GITHUB_ACTIONS: "true" })).toThrow(
-      `Refusing to run local Codex workers without ${LOCAL_CODEX_WORKER_OPT_IN}=1`,
-    );
-  });
-
-  it("allows direct Codex security worker runs in GitHub Actions", () => {
-    const env = {
-      CI: "true",
-      GITHUB_ACTIONS: "true",
-      GITHUB_REPOSITORY: "openclaw/clawhub",
-      GITHUB_RUN_ID: "123",
-    };
-
-    expect(isCodexWorkerExecutionAllowed(env)).toBe(true);
-    expect(() => assertCodexWorkerExecutionAllowed(env)).not.toThrow();
-  });
-
-  it("allows direct local Codex security worker runs with explicit opt-in", () => {
-    expect(isCodexWorkerExecutionAllowed({ [LOCAL_CODEX_WORKER_OPT_IN]: "1" })).toBe(true);
-    expect(() =>
-      assertCodexWorkerExecutionAllowed({ [LOCAL_CODEX_WORKER_OPT_IN]: "1" }),
-    ).not.toThrow();
-  });
-
-  it("uses an isolated local Codex home for opted-in local workers by default", () => {
-    expect(
-      resolveCodexWorkerHome(
-        { [LOCAL_CODEX_WORKER_OPT_IN]: "1" },
-        "/repo/.codex/runtime/codex-workers/security-scan",
-      ),
-    ).toBe("/repo/.codex/runtime/codex-workers/security-scan");
-    expect(
-      resolveCodexWorkerHome(
-        { [LOCAL_CODEX_WORKER_OPT_IN]: "1", CODEX_HOME: "/tmp/custom-codex-home" },
-        "/repo/.codex/runtime/codex-workers/security-scan",
-      ),
-    ).toBe("/tmp/custom-codex-home");
-  });
-
   it("normalizes real SkillSpector JSON risk assessment fields", () => {
     const analysis = normalizeSkillSpectorAnalysis(
       JSON.stringify({
@@ -562,6 +508,33 @@ describe("run-codex-scan-worker diagnostics", () => {
       codeSnippet: "description: Harmless local demo",
     });
   });
+
+  it.each([
+    {
+      completeness: { is_complete: false, status: "partial" },
+      inspection: "partial",
+      risk: "suspicious",
+    },
+    {
+      completeness: { is_complete: true, status: "completed" },
+      inspection: "completed",
+      risk: "clean",
+    },
+    { completeness: undefined, inspection: undefined, risk: "clean" },
+  ])(
+    "retains inspection provenance separately from risk: $inspection",
+    ({ completeness, inspection, risk }) => {
+      const analysis = normalizeSkillSpectorAnalysis(
+        JSON.stringify({
+          status: "clean",
+          issues: [],
+          analysis_completeness: completeness,
+        }),
+      );
+      expect(analysis.status).toBe(risk);
+      expect(analysis.inspectionStatus).toBe(inspection);
+    },
+  );
 
   it("caps stored SkillSpector issues while preserving the full issue count", () => {
     const longSnippet = "sensitive artifact text ".repeat(200);

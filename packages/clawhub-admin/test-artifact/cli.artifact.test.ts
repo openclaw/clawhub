@@ -1,15 +1,18 @@
 /* @vitest-environment node */
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
 const packageRoot = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(packageRoot, "..", "..");
 const distDir = join(packageRoot, "dist");
 const tempDirs: string[] = [];
+const execFileAsync = promisify(execFile);
 
 afterEach(async () => {
   while (tempDirs.length > 0) {
@@ -136,6 +139,102 @@ describe("packed admin CLI", () => {
     expect(authFailure.status).not.toBe(0);
     expect(authFailure.stdout).toBe("");
     expect(authFailure.stderr).toMatch(/not logged in|login/i);
+
+    const requests: Array<{
+      method: string | undefined;
+      url: string | undefined;
+      authorization: string | undefined;
+      body: unknown;
+    }> = [];
+    const trustedPublisher = {
+      provider: "github-actions",
+      repository: "openclaw/example",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "publish.yml",
+    };
+    const server = createServer(async (request, response) => {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      const parsed = JSON.parse(body) as { environment?: string };
+      requests.push({
+        method: request.method,
+        url: request.url,
+        authorization: request.headers.authorization,
+        body: parsed,
+      });
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ trustedPublisher: { ...trustedPublisher, ...parsed } }));
+    });
+    try {
+      await new Promise<void>((resolveListening) =>
+        server.listen(0, "127.0.0.1", resolveListening),
+      );
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Missing test server address");
+      const registry = `http://127.0.0.1:${address.port}`;
+      const configPath = join(tempDir, "trusted-publisher-auth.json");
+      await writeFile(configPath, JSON.stringify({ registry, token: "artifact-test-token" }));
+      const setArgs = [
+        join(installDir, "package", "bin", "clawhub-admin.js"),
+        "--registry",
+        registry,
+        "packages",
+        "trusted-publisher",
+        "set",
+        " @openclaw/example ",
+        "--repository",
+        " openclaw/example ",
+        "--workflow-filename",
+        " publish.yml ",
+      ];
+      const run = (args: string[], config = configPath) =>
+        execFileAsync(process.execPath, args, {
+          cwd: tempDir,
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: config, FORCE_COLOR: "0" },
+        });
+      const json = await run([...setArgs, "--environment", " release ", "--json"]);
+      expect(JSON.parse(json.stdout)).toEqual({
+        trustedPublisher: { ...trustedPublisher, environment: "release" },
+      });
+      const text = await run(setArgs);
+      expect(text.stdout).toContain("Trusted publisher saved for @openclaw/example.");
+      expect(text.stdout).toContain("Provider: github-actions");
+      expect(text.stdout).toContain("Repository: openclaw/example");
+      expect(text.stdout).toContain("Workflow: publish.yml");
+      expect(text.stdout).not.toContain("Environment:");
+      await expect(
+        run([...setArgs, "--json"], join(tempDir, "missing-auth.json")),
+      ).rejects.toMatchObject({
+        code: 1,
+        stdout: "",
+        stderr: expect.stringMatching(/not logged in|login/i),
+      });
+      expect(requests).toEqual([
+        {
+          method: "POST",
+          url: "/api/v1/packages/%40openclaw%2Fexample/trusted-publisher",
+          authorization: "Bearer artifact-test-token",
+          body: {
+            repository: "openclaw/example",
+            workflowFilename: "publish.yml",
+            environment: "release",
+          },
+        },
+        {
+          method: "POST",
+          url: "/api/v1/packages/%40openclaw%2Fexample/trusted-publisher",
+          authorization: "Bearer artifact-test-token",
+          body: { repository: "openclaw/example", workflowFilename: "publish.yml" },
+        },
+      ]);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolveClosed, reject) =>
+        server.close((error) => (error ? reject(error) : resolveClosed())),
+      );
+    }
     await expect(
       readFile(join(installDir, "package", "dist", "clawhub-admin", "src", "cli.js")),
     ).resolves.toBeTruthy();

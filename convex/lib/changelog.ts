@@ -120,13 +120,10 @@ async function generateWithOpenAI(args: {
   return extractResponseText(payload);
 }
 
-function generateFallback(args: {
-  slug: string;
-  version: string;
-  oldReadme: string | null;
-  nextReadme: string;
-  fileDiff: FileDiffSummary | null;
-}) {
+function generateFallback(
+  args: { oldReadme: string | null; fileDiff: FileDiffSummary | null },
+  updatedContents = "SKILL.md and bundle contents",
+) {
   const lines: string[] = [];
   if (!args.oldReadme) {
     lines.push(`- Initial release.`);
@@ -142,33 +139,7 @@ function generateFallback(args: {
     if (parts.length) lines.push(`- ${parts.join(", ")} file(s).`);
   }
 
-  lines.push(`- Updated SKILL.md and bundle contents.`);
-  return lines.join("\n");
-}
-
-function generatePackageFallback(args: {
-  name: string;
-  version: string;
-  oldReadme: string | null;
-  nextReadme: string;
-  fileDiff: FileDiffSummary | null;
-}) {
-  const lines: string[] = [];
-  if (!args.oldReadme) {
-    lines.push(`- Initial release.`);
-    return lines.join("\n");
-  }
-
-  const diff = args.fileDiff;
-  if (diff) {
-    const parts: string[] = [];
-    if (diff.added.length) parts.push(`added ${diff.added.length}`);
-    if (diff.changed.length) parts.push(`updated ${diff.changed.length}`);
-    if (diff.removed.length) parts.push(`removed ${diff.removed.length}`);
-    if (parts.length) lines.push(`- ${parts.join(", ")} file(s).`);
-  }
-
-  lines.push(`- Updated README and package contents.`);
+  lines.push(`- Updated ${updatedContents}.`);
   return lines.join("\n");
 }
 
@@ -203,16 +174,7 @@ export async function generateChangelogForPublish(
       fileDiff,
     }).catch(() => null);
 
-    return (
-      ai ??
-      generateFallback({
-        slug: args.slug,
-        version: args.version,
-        oldReadme: oldReadmeText,
-        nextReadme: args.readmeText,
-        fileDiff,
-      })
-    );
+    return ai ?? generateFallback({ oldReadme: oldReadmeText, fileDiff });
   } catch {
     return "- Updated skill.";
   }
@@ -257,14 +219,7 @@ export async function generatePackageChangelogPreview(
     }).catch(() => null);
 
     return (
-      ai ??
-      generatePackageFallback({
-        name: args.name,
-        version: args.version,
-        oldReadme: oldReadmeText,
-        nextReadme: args.readmeText,
-        fileDiff,
-      })
+      ai ?? generateFallback({ oldReadme: oldReadmeText, fileDiff }, "README and package contents")
     );
   } catch {
     return "- Updated package.";
@@ -304,16 +259,7 @@ export async function generateChangelogPreview(
       fileDiff,
     }).catch(() => null);
 
-    return (
-      ai ??
-      generateFallback({
-        slug: args.slug,
-        version: args.version,
-        oldReadme: oldReadmeText,
-        nextReadme: args.readmeText,
-        fileDiff,
-      })
-    );
+    return ai ?? generateFallback({ oldReadme: oldReadmeText, fileDiff });
   } catch {
     return "- Updated skill.";
   }
@@ -346,7 +292,6 @@ export const __test = {
   clampText,
   extractResponseText,
   formatDiffSummary,
-  generatePackageFallback,
   generateWithOpenAI,
   summarizeFileDiff,
   generateFallback,

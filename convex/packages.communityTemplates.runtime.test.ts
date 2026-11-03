@@ -17,7 +17,7 @@ const expectedNames = ["@maker/research-claw", "@openclaw/research-claw"];
 
 async function fixture() {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const ids = await t.run(async (ctx) => {
     const ownerUserId = await ctx.db.insert("users", { handle: "maker", role: "user" });
     const outsiderUserId = await ctx.db.insert("users", { handle: "reader", role: "user" });

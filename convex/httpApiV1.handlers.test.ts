@@ -6,6 +6,7 @@ import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArk } from "../packages/schema/src/ark";
 import { ApiV1SkillListResponseSchema } from "../packages/schema/src/schemas";
+import { prepareClawPackInternal } from "./packageClawpackNode";
 
 // Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
 vi.mock("./lib/verifiedClientIp", () => ({
@@ -13198,6 +13199,52 @@ describe("httpApiV1 handlers", () => {
     expect(codePluginCursors).toEqual([null, "code-downloads-cursor"]);
   });
 
+  it.each(["", "?limit=25&sort=recommended"])(
+    "shares the anonymous default plugin browse snapshot: %s",
+    async (search) => {
+      const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+        if (Object.keys(args).length === 0) return 0;
+        if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+        return { page: [], isDone: true, continueCursor: "" };
+      });
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const response = await __handlers.listPluginsV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(`https://example.com/api/v1/plugins${search}`),
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, s-maxage=30");
+      expect(runMutation).toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { search: "?limit=25&sort=recommended", cookie: "session=private" },
+    { search: "?limit=12" },
+    { search: "?limit=25&sort=downloads" },
+    { search: "?limit=25&isOfficial=true" },
+    { search: "?limit=25&channel=private" },
+    { search: "?limit=25&limit=25" },
+    { search: "?limit=25&unused=parameter" },
+  ])("keeps other default catalog responses uncacheable: %j", async ({ search, cookie }) => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 0;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+      return { page: [], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(`https://example.com/api/v1/plugins${search}`, {
+        headers: cookie ? { cookie } : {},
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).not.toContain("s-maxage");
+  });
+
   it("plugins list recommended sort uses weighted scores across plugin families", async () => {
     const codePlugin = makeCatalogItem("code-starred", {
       family: "code-plugin",
@@ -17965,6 +18012,100 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it.each([
+    { stage: "first-store", typed: true, status: 503 },
+    { stage: "first-store", typed: false, status: 400 },
+    { stage: "extracted-store", typed: true, status: 400 },
+    { stage: "publish", typed: true, status: 400 },
+    { stage: "loose-file-store", typed: true, status: 400 },
+    { stage: "none", typed: true, status: 200 },
+  ])(
+    "inline package storage classification preserves $stage (typed=$typed)",
+    async ({ stage, typed, status }) => {
+      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+        kind: "user",
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const message = `${typed ? "CommitterFullError: " : ""}Too many writes in a short period of time. Reduce your writes, spread your writes out over time or remove unused indexes to reduce load and avoid errors. (reset in 43s)`;
+      const runAction = vi.fn().mockImplementation(async () => {
+        if (stage === "publish") throw new Error(message);
+        return { ok: true, packageId: "pkg:1", releaseId: "rel:1" };
+      });
+      const storedIds: string[] = [];
+      let calls = 0;
+      const storageStore = vi.fn(async (_blob: Blob) => {
+        calls += 1;
+        if (
+          (["first-store", "loose-file-store"].includes(stage) && calls === 1) ||
+          (stage === "extracted-store" && calls === 2)
+        )
+          throw new Error(message);
+        const id = `storage:${calls}`;
+        storedIds.push(id);
+        return id;
+      });
+      const storageDelete = vi.fn().mockResolvedValue(undefined);
+      const form = packagePublishForm(packagePublishMetadata({ family: "code-plugin" }));
+      if (stage === "loose-file-store") {
+        form.append(
+          "files",
+          new File(["{}"], "openclaw.plugin.json", { type: "application/json" }),
+        );
+      } else {
+        const pack = npmPackFixture({
+          "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+          "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+          "package/dist/index.js": "export const demo = true;\n",
+        });
+        form.append(
+          "clawpack",
+          new File([bytesToArrayBuffer(pack)], "demo-plugin-1.0.0.tgz", {
+            type: "application/octet-stream",
+          }),
+        );
+      }
+      const response = await __handlers.publishPackageV1Handler(
+        makeCtx({
+          runAction,
+          runMutation: vi.fn().mockResolvedValue(okRate()),
+          storage: { store: storageStore, delete: storageDelete },
+        }),
+        new Request("https://example.com/api/v1/packages", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: form,
+        }),
+      );
+      expect(response.status).toBe(status);
+      if (stage === "first-store" || stage === "loose-file-store") {
+        expect(storageStore).toHaveBeenCalledTimes(1);
+        expect(runAction).not.toHaveBeenCalled();
+        expect(storageDelete).not.toHaveBeenCalled();
+      } else if (stage === "extracted-store") {
+        expect(runAction).not.toHaveBeenCalled();
+        expect(storedIds.length).toBeGreaterThan(0);
+        expect(
+          storageDelete.mock.calls
+            .map(([id]) => id)
+            .sort((left, right) => String(left).localeCompare(String(right))),
+        ).toEqual(storedIds.sort((left, right) => left.localeCompare(right)));
+      } else {
+        expect(runAction).toHaveBeenCalledTimes(1);
+        expect(storageDelete).not.toHaveBeenCalled();
+        if (stage === "none") {
+          expect(runAction.mock.calls[0]?.[1]).toMatchObject({
+            actorUserId: "users:1",
+            payload: { family: "code-plugin", artifact: { kind: "npm-pack", format: "tgz" } },
+            requestStorageIds: storedIds,
+          });
+        }
+      }
+      if (stage !== "none") expect(await response.text()).toContain(message);
+    },
+  );
+
   it("package publish returns retryable status for transient Convex contention", async () => {
     vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
       userId: "users:1",
@@ -18171,7 +18312,19 @@ describe("httpApiV1 handlers", () => {
         .mockImplementationOnce(() => lateStore)
         .mockResolvedValueOnce("storage:early");
       const remove = vi.fn().mockResolvedValue(undefined);
-      const runAction = vi.fn();
+      const storage = {
+        store,
+        delete: remove,
+        get: vi.fn().mockResolvedValue(new Blob([bytesToArrayBuffer(pack)])),
+      };
+      const runAction = vi.fn(
+        async (_ref: unknown, args: unknown) =>
+          await (
+            prepareClawPackInternal as unknown as {
+              _handler: (ctx: ActionCtx, args: unknown) => Promise<unknown>;
+            }
+          )._handler(makeCtx({ storage }), args),
+      );
       const form = packagePublishForm(packagePublishMetadata());
       if (staged) {
         form.set("clawpack", "storage:retained-tarball");
@@ -18181,11 +18334,7 @@ describe("httpApiV1 handlers", () => {
         makeCtx({
           runMutation: vi.fn().mockResolvedValue(okRate()),
           runAction,
-          storage: {
-            store,
-            delete: remove,
-            get: vi.fn().mockResolvedValue(new Blob([bytesToArrayBuffer(pack)])),
-          },
+          storage,
         }),
         new Request("https://example.com/api/v1/packages", { method: "POST", body: form }),
       );
@@ -18198,7 +18347,7 @@ describe("httpApiV1 handlers", () => {
           a.localeCompare(b),
         ),
       );
-      expect(runAction).not.toHaveBeenCalled();
+      expect(runAction).toHaveBeenCalledTimes(staged ? 1 : 0);
     },
   );
 
@@ -18604,6 +18753,43 @@ describe("httpApiV1 handlers", () => {
     expect(runAction).not.toHaveBeenCalled();
   });
 
+  it("prepares staged archives outside the HTTP runtime", async () => {
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const payload = { ...packagePublishMetadata({ family: "code-plugin" }), files: [] };
+    const runAction = vi
+      .fn()
+      .mockResolvedValueOnce({ payloadJson: JSON.stringify(payload), requestStorageIds: [] })
+      .mockResolvedValueOnce({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const storageGet = vi.fn(() => {
+      throw new Error("archive must stay out of HTTP");
+    });
+    const form = packagePublishForm(packagePublishMetadata({ family: "code-plugin" }));
+    form.set("clawpack", "storage:clawpack");
+    form.set("clawpackUploadTicket", "packagePublishUploadTickets:1");
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({
+        runAction,
+        runMutation: vi.fn().mockResolvedValue(okRate()),
+        storage: { get: storageGet },
+      }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(storageGet).not.toHaveBeenCalled();
+    expect(runAction).toHaveBeenNthCalledWith(1, expect.anything(), {
+      artifactStorageId: "storage:clawpack",
+      metadataJson: JSON.stringify(packagePublishMetadata({ family: "code-plugin" })),
+    });
+  });
+
   it("staged ClawPack publish derives artifact metadata from stored bytes", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requirePackagePublishAuth).mockResolvedValue({
@@ -18612,9 +18798,6 @@ describe("httpApiV1 handlers", () => {
       user: { _id: "users:1", handle: "p" },
     } as never);
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runAction = vi
-      .fn()
-      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
     const pack = npmPackFixture({
       "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
       "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
@@ -18626,6 +18809,16 @@ describe("httpApiV1 handlers", () => {
         : null,
     );
     const storageStore = vi.fn(async (_entry: Blob) => `storage:${storageStore.mock.calls.length}`);
+    const runAction = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("artifactStorageId" in args) {
+        return await (
+          prepareClawPackInternal as unknown as {
+            _handler: (ctx: ActionCtx, args: unknown) => Promise<unknown>;
+          }
+        )._handler(makeCtx({ storage: { get: storageGet, store: storageStore } }), args);
+      }
+      return { ok: true, packageId: "pkg:1", releaseId: "rel:1" };
+    });
     const form = packagePublishForm(
       packagePublishMetadata({
         family: "code-plugin",

@@ -6,6 +6,7 @@ import {
   buildDeterministicPackageZip,
   buildLegacyPackageScanZip,
   buildDeterministicZip,
+  buildDeterministicZipStream,
   buildSkillMeta,
   type SkillZipMeta,
   validateExportArchivePath,
@@ -152,6 +153,47 @@ describe("skillZip", () => {
       const unzipped = unzipSync(zip);
 
       expect(Object.keys(unzipped).sort()).toEqual(["SKILL.md", "docs/readme.md", "src/index.ts"]);
+    });
+  });
+
+  describe("generated skill metadata collisions", () => {
+    it.each([
+      { kind: "buffered", path: "_meta.json" },
+      { kind: "streamed", path: "_meta.json" },
+      { kind: "buffered", path: "_meta.json/permissions.json" },
+      { kind: "streamed", path: "_meta.json/permissions.json" },
+    ])("preserves the original $path in a $kind archive", async ({ kind, path }) => {
+      const originalMetadata = new TextEncoder().encode(
+        '{\r\n  "publisher": "original",\r\n  "permissions": ["network"]\r\n}\r\n',
+      );
+      const entries = [
+        { path: "SKILL.md", bytes: new TextEncoder().encode("# Original skill") },
+        { path, bytes: originalMetadata },
+      ];
+      const meta: SkillZipMeta = {
+        ownerId: "user456",
+        slug: "test-skill",
+        version: "2.0.0",
+        publishedAt: 1700000000000,
+      };
+      const zip =
+        kind === "buffered"
+          ? buildDeterministicZip(entries, meta)
+          : new Uint8Array(
+              await new Response(
+                buildDeterministicZipStream(
+                  entries.map((entry) => ({
+                    path: entry.path,
+                    openStream: async () => new Blob([entry.bytes]).stream(),
+                  })),
+                  meta,
+                ),
+              ).arrayBuffer(),
+            );
+      const unzipped = unzipSync(zip);
+
+      expect(Object.keys(unzipped).sort()).toEqual(entries.map((entry) => entry.path).sort());
+      for (const entry of entries) expect(unzipped[entry.path]).toEqual(entry.bytes);
     });
   });
 

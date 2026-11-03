@@ -24,6 +24,7 @@ import {
   type ClawHubVercelEnvironment,
   verifyClawHubVercelOidcToken,
 } from "./lib/clawhubVercelOidc";
+import { areDownloadMetricsPaused } from "./lib/downloadMetricsSwitch";
 import {
   buildGitHubSkillHandoffDescriptor,
   getGitHubHandoffBlock,
@@ -313,6 +314,9 @@ export async function recordArchiveDownloadMetricHandler(ctx: DownloadCtx, reque
     });
   }
 
+  if (areDownloadMetricsPaused()) {
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  }
   try {
     await ctx.scheduler.runAfter(
       Math.floor(Math.random() * DOWNLOAD_STAT_JITTER_MS),
@@ -383,6 +387,7 @@ export async function scheduleSkillDownloadMetric(
   request: Request,
   skillId: Id<"skills">,
 ) {
+  if (areDownloadMetricsPaused()) return;
   try {
     const userId = await getOptionalDownloadUserId(ctx, request);
     const identity = getDownloadIdentity(request, userId ? String(userId) : null);

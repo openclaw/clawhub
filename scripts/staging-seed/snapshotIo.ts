@@ -31,24 +31,6 @@ export async function* readSnapshotTable(
   }
 }
 
-export async function readSnapshotEntry(snapshotPath: string, entry: string) {
-  const child = spawn("unzip", ["-p", snapshotPath, entry], {
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const chunks: Buffer[] = [];
-  const errors: Buffer[] = [];
-  const completion = childCompletion(child);
-  child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-  child.stderr.on("data", (chunk: Buffer) => errors.push(chunk));
-  const status = await completion;
-  if (status !== 0) {
-    throw new Error(
-      `Failed to read ${entry} from snapshot: ${Buffer.concat(errors).toString("utf8").trim()}`,
-    );
-  }
-  return Buffer.concat(chunks);
-}
-
 export async function* readSelectedSnapshotEntries(
   snapshotPath: string,
   selectedEntries: ReadonlySet<string>,

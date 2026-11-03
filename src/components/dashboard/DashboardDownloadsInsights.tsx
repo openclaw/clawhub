@@ -236,11 +236,6 @@ function ChartAxis({ labels }: { labels: string[] }) {
   );
 }
 
-function formatBucketValue(value: number) {
-  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k`;
-  return Math.round(value).toLocaleString();
-}
-
 function Sparkline({
   series,
   labels,
@@ -351,7 +346,7 @@ function Sparkline({
         >
           <span className="dashboard-downloads-chart-tooltip-label">{activeLabel}</span>
           <span className="dashboard-downloads-chart-tooltip-value">
-            {formatBucketValue(activeValue)}
+            {formatRangeTotal(activeValue)}
           </span>
         </div>
       ) : null}

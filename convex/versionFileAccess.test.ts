@@ -6,10 +6,6 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-vi.mock("./lib/skillPublish", () => ({
-  fetchText: vi.fn().mockResolvedValue("# skill"),
-}));
-
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 const {
   getReadme: getSkillReadme,

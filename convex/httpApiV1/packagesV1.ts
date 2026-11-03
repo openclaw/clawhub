@@ -49,16 +49,47 @@ import type { ActionCtx } from "../_generated/server";
 import { buildDownloadMetricArgs, getDownloadIdentity } from "../downloadMetrics";
 import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
+import {
+  PLUGIN_CATALOG_CURSOR_PREFIX,
+  compareCatalogItems,
+  compareCatalogItemsForSort,
+  encodePluginCatalogCursor,
+  ensureCatalogSourcePage,
+  finalizeCatalogSource,
+  initCatalogSource,
+  type CatalogSourceCursorState,
+  type PackagePageCursorState,
+  type PluginCatalogCursorState,
+  type RecommendedFallbackSort,
+  type UnifiedCatalogCursorState,
+} from "../lib/catalogPage";
 import { recordCatalogSearchObservation } from "../lib/catalogSearchObservations";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
+import { areDownloadMetricsPaused } from "../lib/downloadMetricsSwitch";
 import {
   fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
 } from "../lib/githubActionsOidc";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import { isConvexWritePressureError } from "../lib/httpUtils";
 import { verifyOpenClawPublishAuthorization } from "../lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "../lib/packageArtifacts";
+import {
+  assertClawPackPublicationIdentity,
+  buildPackagePublishRequestFromClawPack,
+  bytesToArrayBuffer,
+  defaultStoredPackageContentType,
+  settlePackageFileStores,
+  storeRequestPackageBlob,
+} from "../lib/packageClawpackPublish";
+import {
+  toPackageMetadataResponse,
+  toPackageVersionResponse,
+  toReleaseArtifact,
+  type PublicPackageDocLike,
+  type ReleaseLike,
+} from "../lib/packageReadProjection";
 import { tryNormalizePackageName } from "../lib/packageRegistry";
 import {
   getPackageDownloadSecurityBlock,
@@ -66,19 +97,18 @@ import {
   getPackageTrustReasons,
   resolvePackageReleaseScanStatus,
 } from "../lib/packageSecurity";
+import { readInitialPublicPluginPage } from "../lib/pluginBrowseRead";
+import { getPluginBrowseSnapshotKind } from "../lib/pluginBrowseSnapshot";
 import { getPluginDiscoveryCategories } from "../lib/pluginDiscovery";
 import type { PublicPublisher } from "../lib/public";
 import {
   getClawPackSizeError,
   getPackageMultipartSizeError,
   getPublishFileSizeError,
-  getPublishTotalSizeError,
   isPackageMultipartUploadTooLarge,
   MAX_CLAWPACK_BYTES,
   MAX_PUBLISH_FILE_BYTES,
-  MAX_PUBLISH_TOTAL_BYTES,
 } from "../lib/publishLimits";
-import { compareRecommendationStats } from "../lib/recommendationScore";
 import { isCuratedSearchResult } from "../lib/searchRanking";
 import {
   getPublicSkillVersionAccessBlock,
@@ -97,6 +127,12 @@ import { toPublicPackageFamily } from "../lib/templateStorage";
 import { generateToken, hashToken } from "../lib/tokens";
 import { managedMcpV1Handler } from "./managedMcpV1";
 import {
+  readOptionalJson,
+  optionalStringField,
+  resolveVersionPathTarget,
+  hasVersionDeleteSelector,
+  versionDeleteRouteGuidance,
+  chunkedParallel,
   MAX_RAW_FILE_BYTES,
   getPathSegments,
   json,
@@ -131,13 +167,17 @@ const apiRefs = api as unknown as {
   };
 };
 const internalRefs = internal as unknown as {
+  publicPluginDiscovery: {
+    listPluginOverviewCategoryInternal: unknown;
+    listPluginDiscoveryCategoryInternal: unknown;
+  };
   packages: {
+    listPluginOverviewCategoryInternal: unknown;
+    listPluginDiscoveryCategoryInternal: unknown;
     countPublicPluginsInternal: unknown;
     getByNameForViewerInternal: unknown;
     hasMissingRecommendationScoresInternal: unknown;
     listPluginExportPageInternal: unknown;
-    listPluginOverviewCategoryInternal: unknown;
-    listPluginDiscoveryCategoryInternal: unknown;
     listPluginValidationReportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
@@ -187,11 +227,14 @@ const internalRefs = internal as unknown as {
   uploads: {
     consumePackagePublishUploadTicketInternal: unknown;
   };
+  publicSkillVersions: {
+    getPublicVersionSelectionInternal: unknown;
+  };
   skills: {
+    getPublicVersionSelectionInternal: unknown;
     getSkillBySlugInternal: unknown;
     hasMissingPackageCatalogRecommendationScoresInternal: unknown;
     searchPackageCatalogForHttpInternal: unknown;
-    getPublicVersionSelectionInternal: unknown;
   };
   publishers: {
     getByHandleInternal: unknown;
@@ -219,69 +262,6 @@ function packageOperationErrorToResponse(
     return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
   if (lower.includes("not found")) return text(message, 404, headers);
   return text(message, 400, headers);
-}
-
-async function readOptionalJson(request: Request): Promise<unknown> {
-  const raw = await request.text();
-  if (!raw.trim()) return undefined;
-  return JSON.parse(raw) as unknown;
-}
-
-function optionalStringField(value: unknown, key: string): string | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === "string" ? field : undefined;
-}
-
-function hasOwnField(value: unknown, key: string) {
-  return Boolean(
-    value &&
-    typeof value === "object" &&
-    Object.prototype.hasOwnProperty.call(value as Record<string, unknown>, key),
-  );
-}
-
-function resolveVersionPathTarget(
-  pathVersion: string | undefined,
-  request: Request,
-  body: unknown,
-): { version?: string; error?: string } {
-  const rawBodyVersion = optionalStringField(body, "version");
-  if (hasOwnField(body, "version") && rawBodyVersion === undefined) {
-    return { error: "Version must be a non-empty string" };
-  }
-  const version = pathVersion?.trim();
-  const bodyVersion = rawBodyVersion?.trim();
-  const queryVersions = new URL(request.url).searchParams
-    .getAll("version")
-    .map((queryVersion) => queryVersion.trim());
-  if (
-    !version ||
-    (rawBodyVersion !== undefined && !bodyVersion) ||
-    queryVersions.some((queryVersion) => !queryVersion)
-  ) {
-    return { error: "Version cannot be empty" };
-  }
-  if (
-    (bodyVersion && bodyVersion !== version) ||
-    queryVersions.some((queryVersion) => queryVersion !== version)
-  ) {
-    return { error: "Version does not match request target" };
-  }
-  return { version };
-}
-
-function hasVersionDeleteSelector(request: Request, body: unknown) {
-  return hasOwnField(body, "version") || new URL(request.url).searchParams.has("version");
-}
-
-function versionDeleteRouteGuidance(basePath: string, request: Request, body: unknown) {
-  const version =
-    optionalStringField(body, "version")?.trim() ??
-    new URL(request.url).searchParams.get("version")?.trim();
-  return `Version deletion requires DELETE ${basePath}/versions/${
-    version ? encodeURIComponent(version) : "<version>"
-  }.`;
 }
 
 function isTransientConvexContentionMessage(message: string) {
@@ -318,20 +298,6 @@ async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): P
   return (await ctx.runMutation(ref as never, args as never)) as T;
 }
 
-async function chunkedParallel<T, R>(
-  items: T[],
-  chunkSize: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  for (let i = 0; i < items.length; i += chunkSize) {
-    const chunk = items.slice(i, i + chunkSize);
-    const chunkResults = await Promise.all(chunk.map(fn));
-    results.push(...chunkResults);
-  }
-  return results;
-}
-
 async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Request) {
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
   if (apiTokenUserId) return apiTokenUserId;
@@ -348,6 +314,8 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin", "template"] as const;
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
+const PLUGIN_DISCOVERY_CACHE_CONTROL =
+  "public, max-age=60, s-maxage=300, stale-while-revalidate=3600";
 const PACKAGE_LIST_SORT_VALUES = [
   "updated",
   "recommended",
@@ -547,50 +515,6 @@ type SkillVersionLike = {
   publicationStatus?: "pending" | "published" | "blocked";
 };
 
-type ReleaseLike = {
-  _id: Id<"packageReleases">;
-  packageId: Id<"packages">;
-  version: string;
-  createdAt: number;
-  changelog: string;
-  icon?: Doc<"packageReleases">["icon"];
-  distTags?: string[];
-  files: Array<{
-    path: string;
-    size: number;
-    sha256: string;
-    storageId: Id<"_storage">;
-    contentType?: string;
-  }>;
-  compatibility?: Doc<"packageReleases">["compatibility"];
-  pluginManifestSummary?: Doc<"packageReleases">["pluginManifestSummary"];
-  templateManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
-  clawManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
-  verification?: Doc<"packageReleases">["verification"];
-  extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
-  sha256hash?: string;
-  vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
-  skillSpectorAnalysis?: Doc<"packageReleases">["skillSpectorAnalysis"];
-  endorAnalysis?: Doc<"packageReleases">["endorAnalysis"];
-  llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
-  staticScan?: Doc<"packageReleases">["staticScan"];
-  manualModeration?: Doc<"packageReleases">["manualModeration"];
-  integritySha256?: string;
-  artifactKind?: Doc<"packageReleases">["artifactKind"];
-  clawpackStorageId?: Doc<"packageReleases">["clawpackStorageId"];
-  clawpackSha256?: string;
-  clawpackSize?: number;
-  clawpackFormat?: "tgz";
-  npmIntegrity?: string;
-  npmShasum?: string;
-  npmTarballName?: string;
-  npmUnpackedSize?: number;
-  npmFileCount?: number;
-  softDeletedAt?: number;
-  ownerDeletedAt?: number;
-  publicationStatus?: "pending" | "published" | "blocked";
-};
-
 type PluginExportFamily = (typeof PLUGIN_EXPORT_FAMILY_VALUES)[number];
 
 type PluginExportDigest = {
@@ -673,63 +597,6 @@ function normalizePublisherHandleInput(value: string | undefined) {
 
 function getReleaseSecurityBlock(release: ReleaseLike) {
   return getPackageDownloadSecurityBlock(release);
-}
-
-function toReleaseArtifact(release: ReleaseLike, packageName?: string) {
-  if (release.artifactKind === "npm-pack") {
-    return {
-      kind: "npm-pack" as const,
-      sha256: release.clawpackSha256,
-      size: release.clawpackSize,
-      format: release.clawpackFormat ?? "tgz",
-      npmIntegrity: release.npmIntegrity,
-      npmShasum: release.npmShasum,
-      npmTarballName: release.npmTarballName,
-      npmUnpackedSize: release.npmUnpackedSize,
-      npmFileCount: release.npmFileCount,
-    };
-  }
-  const sha256 = release.sha256hash;
-  return {
-    kind: "legacy-zip" as const,
-    ...(sha256 ? { sha256 } : {}),
-    ...(release.clawpackSize !== undefined ? { size: release.clawpackSize } : {}),
-    format: "zip",
-    source: "clawhub" as const,
-    artifactKind: "legacy-zip" as const,
-    ...(sha256 ? { artifactSha256: sha256 } : {}),
-    packageName,
-    version: release.version,
-  };
-}
-
-function toPackageVersionResponse(release: ReleaseLike, packageName: string) {
-  const scanStatus = resolvePackageReleaseScanStatus(release);
-  const verification = release.verification ? { ...release.verification, scanStatus } : null;
-  return {
-    version: release.version,
-    createdAt: release.createdAt,
-    changelog: release.changelog,
-    icon: release.icon ?? null,
-    distTags: release.distTags ?? [],
-    files: release.files.map((file) => ({
-      path: file.path,
-      size: file.size,
-      sha256: file.sha256,
-      contentType: file.contentType,
-    })),
-    compatibility: release.compatibility ?? null,
-    pluginManifestSummary: release.pluginManifestSummary ?? null,
-    templateManifestSummary: release.templateManifestSummary ?? release.clawManifestSummary ?? null,
-    verification,
-    artifact: toReleaseArtifact(release, packageName),
-    sha256hash: release.sha256hash ?? null,
-    vtAnalysis: release.vtAnalysis ?? null,
-    skillSpectorAnalysis: release.skillSpectorAnalysis ?? null,
-    ...(release.endorAnalysis ? { endorAnalysis: release.endorAnalysis } : {}),
-    llmAnalysis: release.llmAnalysis ?? null,
-    staticScan: release.staticScan ?? null,
-  };
 }
 
 function toPackageReleaseSecurityResponse(params: {
@@ -869,7 +736,7 @@ async function streamClawPackRelease(
       });
     }
 
-    if (metricArgs) {
+    if (metricArgs && !areDownloadMetricsPaused()) {
       await runMutationRef(
         ctx,
         internalRefs.downloadMetrics.recordDownloadMetricInternal,
@@ -925,50 +792,7 @@ type CatalogSearchEntry = {
   package: CatalogListItem;
 };
 
-type CatalogSourceCursorState = {
-  cursor: string | null;
-  offset: number;
-  pageSize: number | null;
-  done: boolean;
-};
-
-type UnifiedCatalogCursorState = {
-  packages: CatalogSourceCursorState;
-  skills: CatalogSourceCursorState;
-  recommendedFallback?: RecommendedFallbackSort;
-  legacyInstallSort?: LegacyInstallSortMarker;
-};
-
-type PluginCatalogCursorState = {
-  codePlugins: CatalogSourceCursorState;
-  bundlePlugins: CatalogSourceCursorState;
-  recommendedFallback?: RecommendedFallbackSort;
-  legacyInstallSort?: LegacyInstallSortMarker;
-};
-
-type RecommendedFallbackSort = "updated" | "downloads";
-type LegacyInstallSortMarker = "downloads";
-
-type PackagePageCursorState = {
-  cursor: string | null;
-  legacyInstallSort?: LegacyInstallSortMarker;
-};
-
-type CatalogPageResult<T> = {
-  page: T[];
-  isDone: boolean;
-  continueCursor: string;
-};
-
-type CatalogSourceState<T> = {
-  state: CatalogSourceCursorState;
-  page: CatalogPageResult<T> | null;
-  pageCursor: string | null;
-  index: number;
-};
-
 const UNIFIED_CATALOG_CURSOR_PREFIX = "pkgcatalog:";
-const PLUGIN_CATALOG_CURSOR_PREFIX = "pkgplugins:";
 const LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 const PACKAGE_PAGE_CURSOR_PREFIX = "pkgpage:";
@@ -1047,10 +871,6 @@ function decodeUnifiedCatalogCursor(raw: string | null | undefined): UnifiedCata
   }
 }
 
-function encodePluginCatalogCursor(state: PluginCatalogCursorState) {
-  return `${PLUGIN_CATALOG_CURSOR_PREFIX}${JSON.stringify(state)}`;
-}
-
 function encodePackagePageCursor(state: PackagePageCursorState) {
   return `${PACKAGE_PAGE_CURSOR_PREFIX}${JSON.stringify(state)}`;
 }
@@ -1123,99 +943,8 @@ function decodePluginCatalogCursor(raw: string | null | undefined): PluginCatalo
   return decodeMultiPluginCursor(raw, PLUGIN_CATALOG_CURSOR_PREFIX);
 }
 
-function initCatalogSource<T>(state: CatalogSourceCursorState): CatalogSourceState<T> {
-  return {
-    state: { ...state },
-    page: null,
-    pageCursor: state.cursor,
-    index: state.offset,
-  };
-}
-
-function finalizeCatalogSource<T>(source: CatalogSourceState<T>): CatalogSourceCursorState {
-  if (!source.page) return source.state;
-  if (source.index < source.page.page.length) {
-    return {
-      cursor: source.pageCursor,
-      offset: source.index,
-      pageSize: source.state.pageSize,
-      done: false,
-    };
-  }
-  return {
-    cursor: source.page.continueCursor,
-    offset: 0,
-    pageSize: source.state.pageSize,
-    done: source.page.isDone,
-  };
-}
-
-async function ensureCatalogSourcePage<T>(
-  source: CatalogSourceState<T>,
-  pageSize: number,
-  fetchPage: (cursor: string | null, pageSize: number) => Promise<CatalogPageResult<T>>,
-) {
-  while (true) {
-    if (!source.page) {
-      if (source.state.done && source.state.offset === 0) return null;
-      const effectivePageSize = source.state.pageSize ?? pageSize;
-      source.pageCursor = source.state.cursor;
-      source.page = await fetchPage(source.pageCursor, effectivePageSize);
-      source.state.pageSize = effectivePageSize;
-      source.index = source.state.offset;
-    }
-
-    if (source.index < source.page.page.length) {
-      return source.page.page[source.index];
-    }
-
-    if (source.page.isDone) return null;
-
-    source.state.cursor = source.page.continueCursor;
-    source.state.offset = 0;
-    source.state.done = source.page.isDone;
-    source.page = null;
-    source.pageCursor = source.state.cursor;
-    source.index = 0;
-  }
-}
-
-function compareCatalogItems(a: CatalogListItem, b: CatalogListItem) {
-  if (a.updatedAt !== b.updatedAt) return b.updatedAt - a.updatedAt;
-  if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
-  if (a.family !== b.family) return a.family.localeCompare(b.family);
-  return a.name.localeCompare(b.name);
-}
-
 function normalizePublicPackageSort(sort: (typeof PACKAGE_LIST_SORT_VALUES)[number] | undefined) {
   return sort === "installs" ? "downloads" : sort;
-}
-
-function compareCatalogItemsForSort(
-  a: CatalogListItem,
-  b: CatalogListItem,
-  sort: (typeof PACKAGE_LIST_SORT_VALUES)[number] | undefined,
-) {
-  if (sort === "recommended") {
-    const score = compareRecommendationStats(
-      {
-        downloads: a.stats?.downloads ?? 0,
-        installs: a.stats?.installs ?? 0,
-        stars: a.stats?.stars ?? 0,
-      },
-      {
-        downloads: b.stats?.downloads ?? 0,
-        installs: b.stats?.installs ?? 0,
-        stars: b.stats?.stars ?? 0,
-      },
-    );
-    if (score !== 0) return score;
-  }
-  if (sort === "downloads" || sort === "installs") {
-    const downloads = (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0);
-    if (downloads !== 0) return downloads;
-  }
-  return compareCatalogItems(a, b);
 }
 
 export function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntry) {
@@ -1328,47 +1057,12 @@ function toSkillPackageDetail(
   };
 }
 
-function toPackageMetadataResponse(
-  pkg: PublicPackageDocLike,
-  owner: PublicPublisher | null,
-  tags: Record<string, string>,
-) {
-  return {
-    package: { ...toPackageDetailResponsePackage(pkg), tags },
-    owner: owner
-      ? {
-          handle: owner.handle ?? null,
-          displayName: owner.displayName ?? null,
-          image: owner.image ?? null,
-          official: owner.official === true,
-        }
-      : null,
-  };
-}
-
-function toPackageDetailResponsePackage(pkg: PublicPackageDocLike) {
-  const {
-    capabilityTags: _capabilityTags,
-    capabilities: _capabilities,
-    executesCode: _executesCode,
-    ...publicPackage
-  } = pkg as PublicPackageDocLike & {
-    capabilityTags?: unknown;
-    capabilities?: unknown;
-    executesCode?: unknown;
-  };
-  return publicPackage;
-}
-
 function skillVersionTags(tags: Record<string, string>, version: string) {
   return Object.entries(tags)
     .filter(([, taggedVersion]) => taggedVersion === version)
     .map(([tag]) => tag);
 }
 
-type StoredPackagePublishFile = ServerPackagePublishRequest["files"][number];
-type PackagePublishTarballArtifact = NonNullable<ServerPackagePublishRequest["artifact"]>;
-type ParsedPackageClawPack = Awaited<ReturnType<typeof parseClawPack>>;
 type PackagePublishAuth =
   | { kind: "user"; userId: Id<"users"> }
   | { kind: "github-actions"; publishToken: Doc<"packagePublishTokens"> };
@@ -1380,89 +1074,9 @@ type PackagePublishTarballPart =
       uploadTicket: Id<"packagePublishUploadTickets">;
     };
 
-function defaultStoredPackageContentType() {
-  return "application/octet-stream";
-}
+type StoredPackagePublishFile = ServerPackagePublishRequest["files"][number];
 
-function bytesToArrayBuffer(bytes: Uint8Array) {
-  const copy = new Uint8Array(bytes.byteLength);
-  copy.set(bytes);
-  return copy.buffer;
-}
-
-async function storeRequestPackageBlob(
-  ctx: ActionCtx,
-  requestStorageIds: Set<Id<"_storage">>,
-  blob: Blob,
-) {
-  const storageId = await ctx.storage.store(blob);
-  requestStorageIds.add(storageId);
-  return storageId;
-}
-
-async function settlePackageFileStores(stores: Array<Promise<StoredPackagePublishFile>>) {
-  // A rejected store does not cancel its siblings. Wait before reclaiming their blobs.
-  const results = await Promise.allSettled(stores);
-  return results.map((result) => {
-    if (result.status === "rejected") throw result.reason;
-    return result.value;
-  });
-}
-
-async function storeClawPackFile(
-  ctx: ActionCtx,
-  entry: { path: string; bytes: Uint8Array },
-  requestStorageIds: Set<Id<"_storage">>,
-): Promise<StoredPackagePublishFile> {
-  const contentType = defaultStoredPackageContentType();
-  const storageId = await storeRequestPackageBlob(
-    ctx,
-    requestStorageIds,
-    new Blob([bytesToArrayBuffer(entry.bytes)], { type: contentType }),
-  );
-  return {
-    path: entry.path,
-    size: entry.bytes.byteLength,
-    storageId,
-    sha256: await sha256Hex(entry.bytes),
-    contentType,
-  };
-}
-
-// Convex actions have a tight memory ceiling, so bound in-flight Blob copies by
-// bytes as well as count. Storing thousands of small files one at a time
-// otherwise pushes large ClawPacks past clients' publish request timeouts.
-const CLAWPACK_STORE_BATCH_BYTES = 8 * 1024 * 1024;
-const CLAWPACK_STORE_BATCH_FILES = 16;
-
-async function storeClawPackFiles(
-  ctx: ActionCtx,
-  entries: Array<{ path: string; bytes: Uint8Array }>,
-  requestStorageIds: Set<Id<"_storage">>,
-) {
-  const files: StoredPackagePublishFile[] = [];
-  let batch: Array<{ path: string; bytes: Uint8Array }> = [];
-  let batchBytes = 0;
-  const flush = async () => {
-    files.push(
-      ...(await settlePackageFileStores(
-        batch.map((entry) => storeClawPackFile(ctx, entry, requestStorageIds)),
-      )),
-    );
-    batch = [];
-    batchBytes = 0;
-  };
-  for (const entry of entries) {
-    const overflows =
-      batch.length >= CLAWPACK_STORE_BATCH_FILES ||
-      batchBytes + entry.bytes.byteLength > CLAWPACK_STORE_BATCH_BYTES;
-    if (batch.length > 0 && overflows) await flush();
-    batch.push(entry);
-    batchBytes += entry.bytes.byteLength;
-  }
-  if (batch.length > 0) await flush();
-  return files;
-}
+class InlinePackagePreBlobWritePressureError extends Error {}
 
 async function storeUploadedPackageFile(
   ctx: ActionCtx,
@@ -1544,68 +1158,6 @@ async function consumePackageTarballUploadTicket(
   );
 }
 
-async function readStoredPackageTarball(ctx: ActionCtx, storageId: Id<"_storage">) {
-  const blob = await ctx.storage.get(storageId);
-  if (!blob) throw new Error("Package tarball upload no longer exists");
-  if (blob.size > MAX_CLAWPACK_BYTES) {
-    throw new Error(getClawPackSizeError("uploaded ClawPack"));
-  }
-  return new Uint8Array(await blob.arrayBuffer());
-}
-
-async function buildPackagePublishRequestFromClawPack(
-  ctx: ActionCtx,
-  metadata: PackagePublishMetadata,
-  parsed: ParsedPackageClawPack,
-  artifactBytes: Uint8Array,
-  artifactStorageId: Id<"_storage">,
-  requestStorageIds: Set<Id<"_storage">>,
-): Promise<ServerPackagePublishRequest> {
-  if (parsed.unpackedSize > MAX_PUBLISH_TOTAL_BYTES) {
-    throw new Error(getPublishTotalSizeError("package"));
-  }
-  const artifact: PackagePublishTarballArtifact = {
-    kind: "npm-pack",
-    storageId: artifactStorageId,
-    sha256: parsed.artifactSha256,
-    size: artifactBytes.byteLength,
-    format: "tgz",
-    npmIntegrity: parsed.npmIntegrity,
-    npmShasum: parsed.npmShasum,
-    npmTarballName: parsed.npmTarballName,
-    npmUnpackedSize: parsed.unpackedSize,
-    npmFileCount: parsed.fileCount,
-  };
-  const files = await storeClawPackFiles(ctx, parsed.entries, requestStorageIds);
-  return { ...metadata, files, artifact };
-}
-
-function assertClawPackPublicationIdentity(
-  metadata: PackagePublishMetadata,
-  parsed: ParsedPackageClawPack,
-) {
-  if (metadata.family !== "template") return;
-  const expectedName = tryNormalizePackageName(metadata.name);
-  if (!expectedName || parsed.packageName !== expectedName) {
-    throw new Error(
-      `Template package name mismatch: expected ${expectedName ?? metadata.name}, got ${parsed.packageName}`,
-    );
-  }
-  const expectedVersion = metadata.version.trim();
-  if (parsed.packageVersion !== expectedVersion) {
-    throw new Error(
-      `Template package version mismatch: expected ${expectedVersion}, got ${parsed.packageVersion}`,
-    );
-  }
-  const expectedDigest = metadata.expectedArtifactSha256?.trim().toLowerCase();
-  if (!expectedDigest) throw new Error("Template publication requires expectedArtifactSha256");
-  if (expectedDigest !== parsed.artifactSha256) {
-    throw new Error(
-      `Template artifact SHA-256 mismatch: expected ${expectedDigest}, got ${parsed.artifactSha256}`,
-    );
-  }
-}
-
 const PACKAGE_PUBLISH_FILE_FIELDS = ["files"] as const;
 const PACKAGE_PUBLISH_TARBALL_FIELDS = ["clawpack"] as const;
 const PACKAGE_PUBLISH_FORM_FIELDS = new Set([
@@ -1663,17 +1215,14 @@ async function parseMultipartPackagePublish(
     }
     if (tarballPart.kind === "storage") {
       await consumePackageTarballUploadTicket(ctx, auth, tarballPart);
-      const artifactBytes = await readStoredPackageTarball(ctx, tarballPart.storageId);
-      const parsed = await parseClawPack(artifactBytes);
-      assertClawPackPublicationIdentity(metadata, parsed);
-      return await buildPackagePublishRequestFromClawPack(
-        ctx,
-        metadata,
-        parsed,
-        artifactBytes,
-        tarballPart.storageId,
-        requestStorageIds,
-      );
+      // Keep the compressed archive and its expanded files out of the 64 MiB
+      // HTTP action. The ticket has already authorized this exact storage id.
+      const prepared = await ctx.runAction(internal.packageClawpackNode.prepareClawPackInternal, {
+        artifactStorageId: tarballPart.storageId,
+        metadataJson: JSON.stringify(metadata),
+      });
+      for (const storageId of prepared.requestStorageIds) requestStorageIds.add(storageId);
+      return JSON.parse(prepared.payloadJson) as ServerPackagePublishRequest;
     }
 
     const tarballEntry = tarballPart.file;
@@ -1692,11 +1241,20 @@ async function parseMultipartPackagePublish(
     const artifactBytes = new Uint8Array(await tarballEntry.arrayBuffer());
     const parsed = await parseClawPack(artifactBytes);
     assertClawPackPublicationIdentity(metadata, parsed);
-    const artifactStorageId = await storeRequestPackageBlob(
-      ctx,
-      requestStorageIds,
-      new Blob([bytesToArrayBuffer(artifactBytes)], { type: "application/octet-stream" }),
-    );
+    let artifactStorageId: Id<"_storage">;
+    try {
+      artifactStorageId = await storeRequestPackageBlob(
+        ctx,
+        requestStorageIds,
+        new Blob([bytesToArrayBuffer(artifactBytes)], { type: "application/octet-stream" }),
+      );
+    } catch (error) {
+      // Only this first inline store can reject before any request blob exists.
+      if (isConvexWritePressureError(error)) {
+        throw new InlinePackagePreBlobWritePressureError(error.message);
+      }
+      throw error;
+    }
     return await buildPackagePublishRequestFromClawPack(
       ctx,
       metadata,
@@ -1836,7 +1394,14 @@ async function listPackages(
         categories: getPluginDiscoveryCategories().filter((entry) => entry.slug === category),
       },
       200,
-      rate.headers,
+      // Curated discovery always uses public visibility. Only anonymous reads
+      // share its snapshot; credentials and private filters keep fresh responses.
+      !viewerUserId &&
+        !request.headers.has("authorization") &&
+        !request.headers.has("cookie") &&
+        channelParam.value !== "private"
+        ? mergeHeaders(rate.headers, { "Cache-Control": PLUGIN_DISCOVERY_CACHE_CONTROL })
+        : rate.headers,
     );
   }
 
@@ -2042,6 +1607,32 @@ async function listPackages(
   }
 
   if (!effectiveFamily && options?.pluginFamilies?.length) {
+    if (!viewerUserId && getPluginBrowseSnapshotKind(url) === "default") {
+      const result = await readInitialPublicPluginPage({
+        readMetadata: async () => {
+          const totalCount = await runQueryRef<number | null>(
+            ctx,
+            internalRefs.packages.countPublicPluginsInternal,
+            {},
+          );
+          const missingScores = await runQueryRef<boolean>(
+            ctx,
+            internalRefs.packages.hasMissingRecommendationScoresInternal,
+            { families: options.pluginFamilies },
+          );
+          return { totalCount, recommendedFallback: missingScores ? "downloads" : null };
+        },
+        fetchPage: async (args) =>
+          await runQueryRef(ctx, internalRefs.packages.listPageForViewerInternal, args),
+      });
+      return json(
+        result,
+        200,
+        !request.headers.has("authorization") && !request.headers.has("cookie")
+          ? mergeHeaders(rate.headers, { "Cache-Control": "public, max-age=0, s-maxage=30" })
+          : rate.headers,
+      );
+    }
     const shouldMarkDefaultDownloadCursor =
       !sortParam.value && pluginDefaultSort === RECOMMENDED_FALLBACK_SORT;
     const cursor =
@@ -2166,7 +1757,12 @@ async function listPackages(
         ...(totalCount !== null ? { totalCount } : {}),
       },
       200,
-      rate.headers,
+      !viewerUserId &&
+        !request.headers.has("authorization") &&
+        !request.headers.has("cookie") &&
+        getPluginBrowseSnapshotKind(url) === "default"
+        ? mergeHeaders(rate.headers, { "Cache-Control": "public, max-age=0, s-maxage=30" })
+        : rate.headers,
     );
   }
 
@@ -2711,7 +2307,7 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
     response,
     200,
     mergeHeaders(rate.headers, {
-      "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=3600",
+      "Cache-Control": PLUGIN_DISCOVERY_CACHE_CONTROL,
     }),
   );
 }
@@ -2719,7 +2315,7 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
 export async function listPluginCategoriesV1Handler(_ctx: ActionCtx, _request: Request) {
   // This taxonomy is static and identical for every viewer.
   return json({ categories: getPluginDiscoveryCategories() }, 200, {
-    "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=3600",
+    "Cache-Control": PLUGIN_DISCOVERY_CACHE_CONTROL,
   });
 }
 
@@ -2763,6 +2359,13 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
           });
     return json(result, 200, rate.headers);
   } catch (error) {
+    if (
+      !publicationOwnsCleanup &&
+      requestStorageIds.size === 0 &&
+      error instanceof InlinePackagePreBlobWritePressureError
+    ) {
+      return text(error.message, 503, rate.headers);
+    }
     if (!publicationOwnsCleanup) {
       await Promise.allSettled([...requestStorageIds].map((id) => ctx.storage.delete(id)));
     }
@@ -4920,7 +4523,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const [zipSha256, zipSha256Base64] = await Promise.all([sha256Hex(zip), sha256Base64(zip)]);
     try {
       const identity = getDownloadIdentity(request, viewerUserId ? String(viewerUserId) : null);
-      if (identity) {
+      if (identity && !areDownloadMetricsPaused()) {
         await runMutationRef(
           ctx,
           internalRefs.downloadMetrics.recordDownloadMetricInternal,
@@ -5099,39 +4702,6 @@ export async function pluginsGetRouterV1Handler(ctx: ActionCtx, request: Request
   }
   return text("Not found", 404);
 }
-
-type PublicPackageDocLike = {
-  _id: Id<"packages">;
-  name: string;
-  displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin" | "template";
-  tags: Record<string, Id<"packageReleases">>;
-  latestReleaseId?: Id<"packageReleases">;
-  channel: "official" | "community" | "private";
-  isOfficial: boolean;
-  scanStatus?: Doc<"packages">["scanStatus"];
-  publicDownloadBlocked?: boolean;
-  runtimeId?: string;
-  summary?: string;
-  latestVersion?: string | null;
-  compatibility?: Doc<"packages">["compatibility"];
-  verification?: Doc<"packages">["verification"];
-  artifact?: {
-    kind: "legacy-zip" | "npm-pack";
-    sha256?: string;
-    size?: number;
-    format?: string;
-    npmIntegrity?: string;
-    npmShasum?: string;
-    npmTarballName?: string;
-    npmUnpackedSize?: number;
-    npmFileCount?: number;
-  };
-  templateManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
-  stats?: { downloads: number; installs: number; stars: number; versions: number };
-  createdAt: number;
-  updatedAt: number;
-};
 
 type PackageReadinessCheck = {
   id: string;

@@ -16,6 +16,11 @@ import {
   getRuntimeRolloutCapabilities,
   isLegacyNvidiaSkillSource,
 } from "./lib/rolloutCapabilities";
+import {
+  aigAnalysisValidator,
+  skillSpectorAnalysisValidator,
+  staticScanValidator,
+} from "./lib/securityAnalysisValidators";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
 import {
   getSkillBySlugForPublisher,
@@ -28,6 +33,12 @@ import {
   MAX_SKILL_SCAN_REQUEST_MANIFEST_BYTES,
   serializedSkillScanRequestFilesBytes,
 } from "./lib/skillScanRequestFiles";
+import {
+  capSkillSpectorInspectionCaveats,
+  normalizeSkillSpectorReviewContext,
+  type SkillSpectorInspectionCaveats,
+  type SkillSpectorReviewContext,
+} from "./lib/skillSpectorEvidence";
 import { getSkillsShFixtureEnvironmentPolicy } from "./lib/skillsShCatalogEnvironment";
 import {
   isExactSkillsShCatalogAttempt,
@@ -115,7 +126,7 @@ type ExistingLlmAnalysis = {
   verdict?: string;
 };
 
-type SkillSpectorIssueForStorage = {
+type SkillSpectorIssueForStorage = SkillSpectorReviewContext & {
   issueId: string;
   category?: string;
   pattern?: string;
@@ -131,7 +142,9 @@ type SkillSpectorIssueForStorage = {
 };
 
 type SkillSpectorAnalysisForStorage = {
+  inspectionCaveats?: SkillSpectorInspectionCaveats;
   status: string;
+  inspectionStatus?: "completed" | "partial";
   score?: number;
   severity?: string;
   recommendation?: string;
@@ -241,81 +254,12 @@ type EnqueuePackageReleaseScanArgs = {
   waitForVtMs?: number;
 };
 
-const skillSpectorIssueValidator = v.object({
-  issueId: v.string(),
-  category: v.optional(v.string()),
-  pattern: v.optional(v.string()),
-  severity: v.string(),
-  confidence: v.optional(v.number()),
-  file: v.optional(v.string()),
-  startLine: v.optional(v.number()),
-  endLine: v.optional(v.number()),
-  explanation: v.string(),
-  remediation: v.optional(v.string()),
-  finding: v.optional(v.string()),
-  codeSnippet: v.optional(v.string()),
-});
-
-const skillSpectorAnalysisValidator = v.object({
-  status: v.string(),
-  score: v.optional(v.number()),
-  severity: v.optional(v.string()),
-  recommendation: v.optional(v.string()),
-  issueCount: v.number(),
-  // Scanner/action boundaries cap this array before storage; Convex validators cannot express max length.
-  issues: v.array(skillSpectorIssueValidator),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const aigAnalysisValidator = v.object({
-  status: v.string(),
-  issueCount: v.number(),
-  findings: v.array(
-    v.object({
-      ruleId: v.string(),
-      level: v.string(),
-      message: v.string(),
-      title: v.optional(v.string()),
-      description: v.optional(v.string()),
-      file: v.optional(v.string()),
-      startLine: v.optional(v.number()),
-      endLine: v.optional(v.number()),
-      remediation: v.optional(v.string()),
-    }),
-  ),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
 const scanRequestFileValidator = v.object({
   path: v.string(),
   size: v.number(),
   storageId: v.id("_storage"),
   sha256: v.string(),
   contentType: v.optional(v.string()),
-});
-
-const staticScanResultValidator = v.object({
-  status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-  reasonCodes: v.array(v.string()),
-  findings: v.array(
-    v.object({
-      code: v.string(),
-      severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-      file: v.string(),
-      line: v.number(),
-      message: v.string(),
-      evidence: v.string(),
-    }),
-  ),
-  summary: v.string(),
-  engineVersion: v.string(),
-  checkedAt: v.number(),
 });
 
 const githubSkillScanStatusValidator = v.union(
@@ -458,6 +402,7 @@ function capSkillSpectorIssueForStorage(
     remediation: truncateSkillSpectorStorageText(issue.remediation),
     finding: truncateSkillSpectorStorageText(issue.finding),
     codeSnippet: truncateSkillSpectorStorageText(issue.codeSnippet),
+    ...normalizeSkillSpectorReviewContext(issue),
   };
 }
 
@@ -468,6 +413,10 @@ function capSkillSpectorAnalysisForStorage(
     status:
       truncateSkillSpectorStorageText(analysis.status, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
       "error",
+    ...(analysis.inspectionStatus ? { inspectionStatus: analysis.inspectionStatus } : {}),
+    ...(analysis.inspectionCaveats
+      ? { inspectionCaveats: capSkillSpectorInspectionCaveats(analysis.inspectionCaveats) }
+      : {}),
     score: analysis.score,
     severity: truncateSkillSpectorStorageText(
       analysis.severity,
@@ -1631,7 +1580,7 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
         }),
       ),
     }),
-    staticScan: staticScanResultValidator,
+    staticScan: staticScanValidator,
   },
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);
@@ -4171,11 +4120,17 @@ export const completeCodexScanJob = action({
           endorAnalysis: args.endorAnalysis,
         },
       );
-      await runMutationRef(
-        ctx,
-        internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
-        {},
-      );
+      // Completion has committed and cleared the lease. A refill failure must
+      // not send the worker down the scan-failure path for this finished job.
+      try {
+        await runMutationRef(
+          ctx,
+          internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
+          {},
+        );
+      } catch {
+        console.warn("security scan dispatch request failed after package completion");
+      }
       return result;
     } else if (target.job.targetKind === "skillScanRequest" && target.scanRequest) {
       let writtenBack = false;
@@ -4254,11 +4209,17 @@ export const completeCodexScanJob = action({
         runId: args.runId,
       },
     );
-    await runMutationRef(
-      ctx,
-      internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
-      {},
-    );
+    // Only the dispatch hint is best effort; all result writes and the terminal
+    // job mutation above must succeed before acknowledging completion.
+    try {
+      await runMutationRef(
+        ctx,
+        internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
+        {},
+      );
+    } catch {
+      console.warn("security scan dispatch request failed after completion");
+    }
     return result;
   },
 });

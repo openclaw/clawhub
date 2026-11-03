@@ -22,6 +22,14 @@ import {
   searchScope,
 } from "./lib/searchInsights";
 import { reportRequest } from "./lib/searchReportContract";
+import {
+  aigAnalysisValidator,
+  skillSpectorAnalysisValidator,
+  staticScanValidator,
+  vtAnalysisValidator,
+} from "./lib/securityAnalysisValidators";
+
+export { skillSpectorAnalysisValidator } from "./lib/securityAnalysisValidators";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -30,74 +38,6 @@ const manualModerationOverride = v.object({
   note: v.string(),
   reviewerUserId: v.id("users"),
   updatedAt: v.number(),
-});
-
-const vtEngineStatsValidator = v.object({
-  malicious: v.optional(v.number()),
-  suspicious: v.optional(v.number()),
-  undetected: v.optional(v.number()),
-  harmless: v.optional(v.number()),
-});
-
-const vtAnalysisValidator = v.object({
-  status: v.string(),
-  verdict: v.optional(v.string()),
-  analysis: v.optional(v.string()),
-  source: v.optional(v.string()),
-  scanner: v.optional(v.string()),
-  engineStats: v.optional(vtEngineStatsValidator),
-  checkedAt: v.number(),
-});
-
-const skillSpectorIssueValidator = v.object({
-  issueId: v.string(),
-  category: v.optional(v.string()),
-  pattern: v.optional(v.string()),
-  severity: v.string(),
-  confidence: v.optional(v.number()),
-  file: v.optional(v.string()),
-  startLine: v.optional(v.number()),
-  endLine: v.optional(v.number()),
-  explanation: v.string(),
-  remediation: v.optional(v.string()),
-  finding: v.optional(v.string()),
-  codeSnippet: v.optional(v.string()),
-});
-
-const skillSpectorAnalysisValidator = v.object({
-  status: v.string(),
-  score: v.optional(v.number()),
-  severity: v.optional(v.string()),
-  recommendation: v.optional(v.string()),
-  issueCount: v.number(),
-  // Scanner/action boundaries cap this array before storage; Convex validators cannot express max length.
-  issues: v.array(skillSpectorIssueValidator),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const aigAnalysisValidator = v.object({
-  status: v.string(),
-  issueCount: v.number(),
-  findings: v.array(
-    v.object({
-      ruleId: v.string(),
-      level: v.string(),
-      message: v.string(),
-      title: v.optional(v.string()),
-      description: v.optional(v.string()),
-      file: v.optional(v.string()),
-      startLine: v.optional(v.number()),
-      endLine: v.optional(v.number()),
-      remediation: v.optional(v.string()),
-    }),
-  ),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
 });
 
 const depRegistryStatusValidator = v.union(
@@ -179,24 +119,6 @@ export const llmAnalysisValidator = v.object({
     }),
   ),
   model: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const staticScanValidator = v.object({
-  status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-  reasonCodes: v.array(v.string()),
-  findings: v.array(
-    v.object({
-      code: v.string(),
-      severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-      file: v.string(),
-      line: v.number(),
-      message: v.string(),
-      evidence: v.string(),
-    }),
-  ),
-  summary: v.string(),
-  engineVersion: v.string(),
   checkedAt: v.number(),
 });
 
@@ -1291,25 +1213,7 @@ const skillVersions = defineTable({
   ),
   depRegistryAnalysis: v.optional(depRegistryAnalysisValidator),
   depRegistryScanStatus: v.optional(depRegistryStatusValidator),
-  staticScan: v.optional(
-    v.object({
-      status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-      reasonCodes: v.array(v.string()),
-      findings: v.array(
-        v.object({
-          code: v.string(),
-          severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-          file: v.string(),
-          line: v.number(),
-          message: v.string(),
-          evidence: v.string(),
-        }),
-      ),
-      summary: v.string(),
-      engineVersion: v.string(),
-      checkedAt: v.number(),
-    }),
-  ),
+  staticScan: v.optional(staticScanValidator),
 })
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
@@ -1393,6 +1297,11 @@ const publishAttempts = defineTable({
   checkClaimExpiresAt: v.optional(v.number()),
   checkClaimLastError: v.optional(v.string()),
   checkFailureCount: v.optional(v.number()),
+  requiredScannerSource: v.optional(v.string()),
+  // Latest scan lease's reported source; retained after completion for attribution.
+  lastScannerSourceClaim: v.optional(
+    v.object({ claimId: v.string(), source: v.string(), claimedAt: v.number() }),
+  ),
   finalizationClaimId: v.optional(v.string()),
   finalizationClaimedAt: v.optional(v.number()),
   finalizationClaimExpiresAt: v.optional(v.number()),
@@ -1961,25 +1870,7 @@ const packageReleases = defineTable({
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   endorAnalysis: v.optional(endorAnalysisValidator),
   llmAnalysis: v.optional(llmAnalysisValidator),
-  staticScan: v.optional(
-    v.object({
-      status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-      reasonCodes: v.array(v.string()),
-      findings: v.array(
-        v.object({
-          code: v.string(),
-          severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-          file: v.string(),
-          line: v.number(),
-          message: v.string(),
-          evidence: v.string(),
-        }),
-      ),
-      summary: v.string(),
-      engineVersion: v.string(),
-      checkedAt: v.number(),
-    }),
-  ),
+  staticScan: v.optional(staticScanValidator),
   manualModeration: v.optional(packageReleaseModerationOverrideValidator),
   source: v.optional(v.any()),
   createdBy: v.id("users"),
@@ -4817,7 +4708,7 @@ export default defineSchema({
   vtScanLogs,
   apiTokens,
   cliDeviceCodes,
-  httpRateLimitKeys,
+  httpRateLimitKeysV2: httpRateLimitKeys,
   downloadMetricDedupes,
   packageInstallMetricDedupes,
   installTelemetryDedupes,

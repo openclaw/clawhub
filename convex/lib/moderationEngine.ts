@@ -1,4 +1,5 @@
-import type { Doc, Id } from "../_generated/dataModel";
+import { isScalar, isSeq, parseDocument } from "yaml";
+import type { Id } from "../_generated/dataModel";
 import {
   legacyFlagsFromVerdict,
   MODERATION_ENGINE_VERSION,
@@ -7,7 +8,6 @@ import {
   REASON_CODES,
   type ScannerModerationVerdict,
   summarizeReasonCodes,
-  type ModerationVerdict,
   verdictFromCodes,
 } from "./moderationReasonCodes";
 
@@ -509,12 +509,17 @@ function findLineAtIndex(content: string, index: number) {
   return { line, text: content.slice(lineStart, lineEnd) };
 }
 
-function findCallEnd(content: string, openParenIndex: number) {
+function findDelimitedEnd(
+  content: string,
+  openIndex: number,
+  openDelimiter: string,
+  closeDelimiter: string,
+) {
   let depth = 0;
   let quote: '"' | "'" | "`" | undefined;
   let escaped = false;
 
-  for (let i = openParenIndex; i < content.length; i += 1) {
+  for (let i = openIndex; i < content.length; i += 1) {
     const char = content[i];
     if (quote) {
       if (escaped) {
@@ -533,8 +538,8 @@ function findCallEnd(content: string, openParenIndex: number) {
       quote = char;
       continue;
     }
-    if (char === "(") depth += 1;
-    if (char === ")") {
+    if (char === openDelimiter) depth += 1;
+    if (char === closeDelimiter) {
       depth -= 1;
       if (depth === 0) return i + 1;
     }
@@ -737,40 +742,6 @@ function hasRuntimeReExportOfRunFixedCommandHelper(files: TextFile[], helperFile
   return false;
 }
 
-function findBlockEnd(content: string, openBraceIndex: number) {
-  let depth = 0;
-  let quote: '"' | "'" | "`" | undefined;
-  let escaped = false;
-
-  for (let i = openBraceIndex; i < content.length; i += 1) {
-    const char = content[i];
-    if (quote) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (char === "\\") {
-        escaped = true;
-        continue;
-      }
-      if (char === quote) quote = undefined;
-      continue;
-    }
-
-    if (char === '"' || char === "'" || char === "`") {
-      quote = char;
-      continue;
-    }
-    if (char === "{") depth += 1;
-    if (char === "}") {
-      depth -= 1;
-      if (depth === 0) return i + 1;
-    }
-  }
-
-  return content.length;
-}
-
 function findInnermostBlockStart(content: string, targetIndex: number) {
   const stack: number[] = [];
   let quote: '"' | "'" | "`" | undefined;
@@ -809,10 +780,10 @@ function findNamedFunctionContextAtIndex(content: string, callIndex: number, fun
     if (start === undefined) continue;
     const openParenIndex = content.indexOf("(", start);
     if (openParenIndex === -1) continue;
-    const closeParenIndex = findCallEnd(content, openParenIndex);
+    const closeParenIndex = findDelimitedEnd(content, openParenIndex, "(", ")");
     const openBraceIndex = content.indexOf("{", closeParenIndex);
     if (openBraceIndex === -1) continue;
-    const end = findBlockEnd(content, openBraceIndex);
+    const end = findDelimitedEnd(content, openBraceIndex, "{", "}");
     if (callIndex >= openBraceIndex && callIndex < end) {
       return { start, text: content.slice(start, end) };
     }
@@ -857,7 +828,7 @@ function countFixedRunCommandArgvCallSites(context: string) {
     if (/\bfunction\s+$/.test(before)) continue;
 
     const openParenIndex = context.indexOf("(", callIndex);
-    const callEnd = findCallEnd(context, openParenIndex);
+    const callEnd = findDelimitedEnd(context, openParenIndex, "(", ")");
     const callText = context.slice(callIndex, callEnd);
     const callScope = context.slice(findInnermostBlockStart(context, callIndex), callIndex);
     if (!hasFixedArgvArrayProperty(callText, callScope)) return null;
@@ -987,7 +958,7 @@ function findDangerousChildProcessCall(path: string, content: string, runtimeFil
       callName === "spawnSync"
     ) {
       const openParenIndex = content.indexOf("(", callIndex);
-      const callEnd = findCallEnd(content, openParenIndex);
+      const callEnd = findDelimitedEnd(content, openParenIndex, "(", ")");
       const callText = content.slice(callIndex, callEnd);
       if (isSafeLiteralChildProcessCall(callName, callText)) continue;
       const helperContext = findNamedFunctionContextAtIndex(
@@ -1625,15 +1596,58 @@ function scanMarkdownFile(
   }
 }
 
+function manifestInstallSourceText(path: string, content: string) {
+  if (!/(^|\/)manifest\.json$/i.test(path)) return content;
+  try {
+    const manifest: unknown = JSON.parse(content);
+    if (
+      !manifest ||
+      typeof manifest !== "object" ||
+      Array.isArray(manifest) ||
+      (manifest as Record<string, unknown>).manifest_version !== 3
+    ) {
+      return content;
+    }
+    const document = parseDocument(content);
+    if (document.errors.length) return content;
+    const ranges: Array<[number, number]> = [];
+    for (const field of ["host_permissions", "optional_host_permissions"]) {
+      const permissions = document.get(field, true);
+      if (!isSeq(permissions)) continue;
+      for (const permission of permissions.items) {
+        if (
+          isScalar(permission) &&
+          typeof permission.value === "string" &&
+          /^https?:\/\/[^/\s]+\/[^\s]*$/.test(permission.value) &&
+          permission.range
+        ) {
+          ranges.push([permission.range[0], permission.range[1]]);
+        }
+      }
+    }
+    // Mask only connection-permission tokens, preserving offsets and install URLs
+    // elsewhere in the same manifest, even when their text is identical.
+    let text = content;
+    for (const [start, end] of ranges.sort((a, b) => b[0] - a[0])) {
+      text =
+        text.slice(0, start) + text.slice(start, end).replace(/[^\r\n]/g, " ") + text.slice(end);
+    }
+    return text;
+  } catch {
+    return content;
+  }
+}
+
 function scanManifestFile(path: string, content: string, findings: ModerationFinding[]) {
   if (!MANIFEST_EXTENSION.test(path)) return;
+  const installSourceText = manifestInstallSourceText(path, content);
 
   if (
-    /https?:\/\/(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd)\//i.test(content) ||
-    RAW_IP_URL_PATTERN.test(content)
+    /https?:\/\/(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd)\//i.test(installSourceText) ||
+    RAW_IP_URL_PATTERN.test(installSourceText)
   ) {
     const match = findFirstLine(
-      content,
+      installSourceText,
       /https?:\/\/(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd)\/|https?:\/\/\d{1,3}(?:\.\d{1,3}){3}/i,
     );
     addFinding(findings, {
@@ -1642,7 +1656,7 @@ function scanManifestFile(path: string, content: string, findings: ModerationFin
       file: path,
       line: match.line,
       message: "Install source points to URL shortener or raw IP.",
-      evidence: match.text,
+      evidence: content.split("\n")[match.line - 1] ?? match.text,
     });
   }
 }
@@ -1823,34 +1837,4 @@ export function buildModerationSnapshot(params: {
     sourceVersionId: params.sourceVersionId,
     legacyFlags: legacyFlagsFromVerdict(verdict),
   };
-}
-
-export function resolveSkillVerdict(
-  skill: Pick<
-    Doc<"skills">,
-    "moderationVerdict" | "moderationFlags" | "moderationReason" | "moderationReasonCodes"
-  >,
-): ModerationVerdict {
-  if (skill.moderationVerdict) return skill.moderationVerdict;
-  if (skill.moderationFlags?.includes("blocked.malware")) return "malicious";
-  if (skill.moderationFlags?.includes("flagged.suspicious")) return "suspicious";
-  if (
-    skill.moderationReason?.startsWith("scanner.") &&
-    skill.moderationReason.endsWith(".malicious")
-  ) {
-    return "malicious";
-  }
-  if (
-    skill.moderationReason?.startsWith("scanner.") &&
-    skill.moderationReason.endsWith(".suspicious")
-  ) {
-    return "suspicious";
-  }
-  if ((skill.moderationReasonCodes ?? []).some((code) => code.startsWith("malicious."))) {
-    return "malicious";
-  }
-  if ((skill.moderationReasonCodes ?? []).some((code) => code.startsWith("suspicious."))) {
-    return "suspicious";
-  }
-  return "clean";
 }

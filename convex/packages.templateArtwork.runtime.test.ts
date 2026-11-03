@@ -108,7 +108,7 @@ it("publishes a Template's packaged PNG through the validated content-addressed 
     return arrayBuffer.call(this);
   });
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   await t.run(async (ctx) => {
     serializeFixtureBlobStores();
     const userId = await ctx.db.insert("users", { handle: "maker", role: "admin" });
@@ -212,7 +212,7 @@ it.each(["legacy-only", "mixed", "json"])(
   "rejects %s Template selectors at the public publish boundary",
   async (mode) => {
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     await t.run(async (ctx) => {
       serializeFixtureBlobStores();
       const userId = await ctx.db.insert("users", { handle: "strict-author", role: "admin" });

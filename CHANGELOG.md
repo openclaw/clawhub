@@ -2,7 +2,31 @@
 
 ## Unreleased
 
+- CLI: reuse canonical schema implementations during builds while retaining standalone npm artifacts and embedding their debug sources.
+
+- Catalog: keep skill and plugin browsing available when optional heading counts fail.
+
+- Search: propagate cancelled initial requests without logging expected navigation changes as search failures.
+
+- Publishing: bound stored-file metadata verification to 16 concurrent reads and drain started work before cleanup, preserving server-computed hashes and archive bytes.
+
+- Tooling: preserve the component example correction and canonical AGENTS.md when refreshing Convex AI guidance.
+- Docs: clarify that API retirement notices require replacement APIs available in the selected OpenClaw release and appear in the manager dashboard.
+- Tests: refresh development dependencies and anchor frozen-clock fixtures to Convex transaction timestamps and stored expiration boundaries.
+- Dependencies: patch Undici to 7.30.1 in the CLI, admin CLI, and development tools to address upstream transport advisories.
+- Dependencies: refresh production packages, including Convex 1.49 and Workpool 0.4.15. Convex now requires Node.js 22 or newer; do not downgrade Workpool after its new queue pointers are stored, and complete its upstream backfill before a future 0.5 upgrade.
+- CI: escape Unicode line separators in security dataset JSONL so line readers preserve complete records during snapshot validation.
+- CI: reuse Playwright browser downloads across unrelated dependency updates by keying caches to the installed Playwright version and runner architecture.
+- CI: use a single-commit checkout for static checks instead of fetching full history.
+- CI: cache the pinned OpenClaw contract package store while retaining frozen installs and full contract proof on every run.
+- Tooling: use the existing pinned Bun formatter for format commands while preserving Oxfmt configuration and exclusions.
+
+- Publishing: prepare staged ClawPacks in the Node runtime so large archives can reach package validation without exhausting the HTTP action memory limit.
+- Scanning: stop classifying Manifest V3 browser host permissions as installation sources while retaining checks for install URLs elsewhere in the manifest.
+
 - CI: speed up the Linux root typecheck with pinned tsrs while retaining native TypeScript for local checks and package builds.
+- CI: run native package typechecks in the packages job only, retaining full package checks in local `ci:types-build`.
+- CI: run command-script tests in Node instead of starting jsdom for each suite.
 - skills.sh: sync once a day at 03:00 Pacific and mirror the top 4,000 rows of the all-time and trending views, so the sync completes again after skills.sh expanded its default feed to ~93k rows; Trending keeps the last skills.sh run for up to 50 hours.
 - Workers: include bounded, redacted skill evaluation failure reasons in CI logs so operators can diagnose failed runs.
 - Tooling: accept Bun's environment-file loading diagnostic in local dependency audits while preserving tool-error and malware failures.
@@ -21,6 +45,26 @@
 - Dependencies: refresh production packages and synchronize the Sharp pin; let each package resolve its supported Undici transport and use the unpatched upstream Workpool release. Retain the old Workpool typecheck patch only for the previous-version test fixture.
 
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
+
+- CI: batch main CodeQL scans every six hours while preserving PR and manual scans; include local composite actions and attribute-only PR changes.
+
+## 0.25.1 - 2026-11-03
+
+### Fixes
+
+- CLI: update Plugin Inspector to 0.4.5 so API retirement notices require replacement APIs available in the selected OpenClaw release.
+- Dependencies: patch Undici to 7.30.1 and update ArkType, ignore, and mime to their latest patch releases.
+
+## 0.25.0 - 2026-11-01
+
+### Compatibility
+
+- Experimental Claw packages are now Templates. Use `clawhub package explore --family template` and `clawhub package publish <artifact.tgz> --family template`; `--family claw` is rejected. Public scoped routes use `/<owner>/templates/<slug>` instead of `/<owner>/claws/<slug>`.
+- New packages use `openclaw.template` in `package.json`. `CLAW.md`, existing package/version identities and published artifact bytes remain unchanged.
+
+### Fixes
+
+- CLI: show the publishing step, file position, HTTP status and safe request ID when an upload fails, while preserving retry timing and existing error messages.
 
 ## 0.24.1 - 2026-10-28
 

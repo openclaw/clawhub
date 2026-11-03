@@ -123,13 +123,22 @@ type HttpClient = {
 class HttpStatusError extends Error {
   readonly status: number;
   readonly rateLimit: RateLimitInfo;
+  readonly requestId?: string;
+  readonly diagnostic: string;
 
-  constructor(status: number, message: string, rateLimit: RateLimitInfo) {
+  constructor(status: number, message: string, rateLimit: RateLimitInfo, requestId?: string) {
     super(message);
     this.name = "HttpStatusError";
     this.status = status;
     this.rateLimit = rateLimit;
+    this.requestId = requestId;
+    this.diagnostic = buildHttpErrorDiagnostic(status, requestId);
   }
+}
+
+// Upload diagnostics must not echo response bodies, signed URLs, or transport traces.
+export function getHttpErrorDiagnostic(error: unknown): string | undefined {
+  return error instanceof HttpStatusError ? error.diagnostic : undefined;
 }
 
 export function getHttpErrorStatus(error: unknown) {
@@ -218,14 +227,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         headers,
         body,
       });
-      if (!response.ok && !isAcceptedStatus(response.status, args.acceptedStatuses)) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now, args.acceptedStatuses);
       return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
@@ -255,14 +257,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         },
         args.timeoutMs ?? UPLOAD_TIMEOUT_MS,
       );
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now);
       return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
@@ -297,14 +292,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
       const headers: Record<string, string> = {};
       if (args.token) headers.Authorization = `Bearer ${args.token}`;
       const response = await fetchWithTimeout(deps, url, { method: "GET", headers });
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now);
       return new Uint8Array(await response.arrayBuffer());
     });
   }
@@ -331,14 +319,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         },
         UPLOAD_TIMEOUT_MS,
       );
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now);
       return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
@@ -350,24 +331,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     url.searchParams.set("slug", args.slug);
     if (args.ownerHandle) url.searchParams.set("ownerHandle", args.ownerHandle);
     if (args.version) url.searchParams.set("version", args.version);
-    return await runWithRetries(async () => {
-      if (deps.runtime === "bun") {
-        return await fetchBinaryViaCurl(deps, url.toString(), args.token);
-      }
-
-      const headers: Record<string, string> = {};
-      if (args.token) headers.Authorization = `Bearer ${args.token}`;
-      const response = await fetchWithTimeout(deps, url.toString(), { method: "GET", headers });
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
-      return new Uint8Array(await response.arrayBuffer());
-    });
+    return await fetchBinaryRequest(registry, { url: url.toString(), token: args.token });
   }
 
   return {
@@ -510,6 +474,20 @@ async function readResponseTextSafe(response: Response): Promise<string> {
   return await response.text().catch(() => "");
 }
 
+async function ensureResponseOk(
+  response: Response,
+  now: () => number,
+  acceptedStatuses?: number[],
+) {
+  if (response.ok || isAcceptedStatus(response.status, acceptedStatuses)) return;
+  throwHttpStatusError(
+    response.status,
+    await readResponseTextSafe(response),
+    response.headers,
+    now,
+  );
+}
+
 function getRetryDelayMs(attemptError: unknown, random: () => number): number {
   const failed = attemptError as {
     attemptNumber?: number;
@@ -544,11 +522,14 @@ function throwHttpStatusError(
 ): never {
   const rateLimit = parseRateLimitInfo(headers, now);
   const retryableTransientContention = isTransientConvexContention(text);
+  // Convex request IDs are 16 lowercase hex digits. Capture before wrapper cleanup.
+  const requestId = /\[Request ID: ([0-9a-f]{16})\]/.exec(text)?.[1];
   const message = buildHttpErrorMessage(status, text, rateLimit);
+  const error = new HttpStatusError(status, message, rateLimit, requestId);
   if (status === 429 || status >= 500 || retryableTransientContention) {
-    throw new HttpStatusError(status, message, rateLimit);
+    throw error;
   }
-  throw new AbortError(new HttpStatusError(status, message, rateLimit));
+  throw new AbortError(error);
 }
 
 function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimitInfo): string {
@@ -564,6 +545,10 @@ function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimi
     details.push(`reset in ${rateLimit.resetDelaySeconds}s`);
   }
   return details.length === 0 ? base : `${base} (${details.join(", ")})`;
+}
+
+function buildHttpErrorDiagnostic(status: number, requestId?: string): string {
+  return requestId ? `HTTP ${status} (Request ID: ${requestId})` : `HTTP ${status}`;
 }
 
 function normalizeHttpErrorBody(status: number, text: string): string {

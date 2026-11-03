@@ -8,12 +8,24 @@ The `CI` workflow runs the non-browser gates as independent jobs so their wall
 times overlap and each required check reports its own failure:
 
 - `static` runs peer dependency validation, dependency audit, formatting, lint,
-  and dead-code checks.
+  and dead-code checks. It uses a single-commit checkout because these checks
+  inspect the current tree and installed packages, not Git history.
 - `unit` runs the Vitest coverage suite. This replaces a separate `test` run
   because coverage already executes the test suite.
-- `packages` builds `packages/schema` and verifies the ClawHub CLI package.
-- `types-build` typechecks the app, schema package, and CLI package, then builds
-  the app.
+  Script suites explicitly use the Node environment used by the commands they
+  exercise, avoiding a jsdom startup for filesystem and data-processing tests.
+  Backend helper suites without browser dependencies also use Node. Keep the
+  environment explicit per file so browser and Convex runtime suites retain
+  their own environment requirements.
+  Suites exercising Convex through `convex-test` use `edge-runtime`, matching
+  the generated Convex testing guidelines instead of inheriting jsdom.
+- `packages` builds `packages/schema` and verifies both CLI packages, including
+  their native TypeScript checks.
+- CLI source and artifact tests belong to `ci:packages`. Root unit coverage
+  excludes both CLI workspaces so their source tests run once, using each
+  package's Node environment instead of also running under root jsdom.
+- `types-build` typechecks and builds the app. Package typechecks belong to
+  `packages` so CI runs them once.
 - `e2e-http` runs the secretless HTTP and CLI end-to-end subset.
   GitHub-backed package publish fixtures use bounded retries for network errors,
   HTTP 408/5xx responses, and server-declared 403/429 rate limits whose retry
@@ -27,6 +39,12 @@ allocation before coverage and has a ten-minute timeout to accommodate hosted
 runner capacity. The short `static`, `packages`, `types-build`, and `e2e-http`
 jobs also run on GitHub-hosted Ubuntu runners. Other non-browser gates retain
 their five-minute timeout.
+
+The pinned OpenClaw contract job caches only the pnpm package store, keyed by
+OS, architecture, actual Node/pnpm versions, the pinned source commit and its
+lockfile/package manifest. It always performs the frozen install and full
+contract proof. Pull requests only restore; successful main pushes may save an
+exact-key miss. There are no fallback keys or cached installed workspaces.
 
 - `playwright-smoke` builds the app and runs a chromium browser smoke against the
   public read backend.
@@ -42,10 +60,23 @@ their five-minute timeout.
   profile-context shard's metadata layout checks, so those assertions do not
   depend on the availability of a live public skill.
 
+Every local-auth spec must appear in the PR matrix. When several shards split a
+spec with `grep`, their combined patterns must cover every test title, including
+the pre-publication security checks. The selection guard uses Playwright discovery
+to compare unfiltered tests with the combined filters, including parameterized
+titles and describe groups, without starting a backend. Keep the exact-artifact
+and official-feed boundary cases in the isolated template shard.
+
+Browser jobs cache downloads by the installed `playwright-core` version, runner
+OS, and architecture. Unrelated Bun lockfile updates reuse those downloads.
+There is no fallback across Playwright versions; `playwright install chromium`
+still runs on every job to validate and install the requested browser revision.
+
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 covers the non-browser PR gates. Linux CI uses pinned tsrs for the root typecheck;
-local `ci:types-build` keeps native TypeScript for cross-platform support. Both
-use `ci:types:packages` for native package checks. To reproduce the Linux root
+local `ci:types-build` keeps native TypeScript for cross-platform support. The local
+aggregate also uses `ci:types:packages` for native package checks; CI delegates
+those checks to the required `packages` job. To reproduce the Linux root
 check, run `bunx --no-install tsrs --noEmit` on a supported Linux host.
 `bun run ci:playwright-smoke` assumes the chromium Playwright browser has already
 been installed.

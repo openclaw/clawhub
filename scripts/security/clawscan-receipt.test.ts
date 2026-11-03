@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { clawScanExposure, summarizeClawScanExposure } from "./clawscan-exposure";
+import completeReport from "./fixtures/skillspector-completed.json";
+import partialReport from "./fixtures/skillspector-usable-partial.json";
 import {
-  type ClaimedJob,
   scanHealthClassification,
   validateClawScanArtifactForClawHubProfile,
 } from "./run-codex-scan-worker";
@@ -56,6 +57,8 @@ function artifactFixture(verdict = "benign", additional: unknown[] = []) {
   return {
     schemaVersion: "clawscan-run-v1",
     profile: "clawhub",
+    status: "completed",
+    complete: true,
     completedAt: "2026-10-23T08:00:00Z",
     scanners: {
       "clawscan-static": { status: "completed" },
@@ -76,6 +79,15 @@ function artifactFixture(verdict = "benign", additional: unknown[] = []) {
       attempts: [last],
     },
   };
+}
+
+function usePartialEvidence(artifact: ReturnType<typeof artifactFixture>) {
+  Object.assign(artifact.scanners.skillspector, {
+    status: "partial",
+    reportPolicy: "judge-gaps",
+    raw: structuredClone(partialReport),
+  });
+  return artifact;
 }
 
 const receiptErrors = [
@@ -106,6 +118,197 @@ describe("versioned ClawScan receipt consumer", () => {
     expect(mapped.skillSpectorAnalysis.recommendation).toBe("CAUTION");
     expect(JSON.parse(mapped.scannerReportsJson).skillspector).toEqual(raw);
     expect(mapped.llmAnalysis.verdict).toBe("suspicious");
+  });
+
+  it("accepts explicitly adjudicated partial evidence without erasing gaps or findings", () => {
+    const artifact = usePartialEvidence(artifactFixture("suspicious"));
+    const raw = artifact.scanners.skillspector.raw;
+    const before = structuredClone(artifact);
+    const mapped = validateClawScanArtifactForClawHubProfile(artifact);
+    expect(mapped.mapping.scanners.skillspectorStatus).toBe("partial");
+    expect(
+      scanHealthClassification({ status: "completed", clawscan: { mapping: mapped.mapping } }),
+    ).toMatchObject({ scannerStageFailed: false, judgeStageFailed: false });
+    expect(mapped.skillSpectorAnalysis).toMatchObject({
+      status: "suspicious",
+      inspectionStatus: "partial",
+      issueCount: 1,
+    });
+    expect(mapped.llmAnalysis.verdict).toBe("suspicious");
+    expect(JSON.parse(mapped.scannerReportsJson).skillspector).toEqual(raw);
+    expect(artifact).toEqual(before);
+  });
+
+  it.each([null, [], {}, { execution_successful: false }, "not-json"])(
+    "rejects malformed partial raw output %j even with the policy marker",
+    (raw) => {
+      const artifact = usePartialEvidence(artifactFixture());
+      Object.assign(artifact.scanners.skillspector, { raw });
+      expect(() => validateClawScanArtifactForClawHubProfile(artifact)).toThrow();
+    },
+  );
+
+  it.each([
+    "missing-policy",
+    "wrong-policy",
+    "failed",
+    "static-partial",
+    "aig-partial",
+    "judge-failed",
+    "receipt-mismatch",
+    "scanner-crash",
+    "scanner-error",
+    "legacy-receipt",
+    "run-incomplete",
+    "run-missing",
+  ])("keeps the partial evidence gate closed for %s", (mode) => {
+    const artifact = usePartialEvidence(artifactFixture());
+    if (mode === "missing-policy")
+      Object.assign(artifact.scanners.skillspector, { reportPolicy: undefined });
+    if (mode === "wrong-policy")
+      Object.assign(artifact.scanners.skillspector, { reportPolicy: "other" });
+    if (mode === "failed") artifact.scanners.skillspector.status = "failed";
+    if (mode === "static-partial")
+      Object.assign(artifact.scanners["clawscan-static"], {
+        status: "partial",
+        reportPolicy: "judge-gaps",
+      });
+    if (mode === "aig-partial")
+      Object.assign(artifact.scanners.aig, { status: "partial", reportPolicy: "judge-gaps" });
+    if (mode === "run-incomplete") Object.assign(artifact, { status: "failed", complete: false });
+    if (mode === "run-missing") Object.assign(artifact, { status: undefined, complete: undefined });
+    if (mode === "scanner-crash") Object.assign(artifact.scanners.skillspector, { exitCode: 2 });
+    if (mode === "scanner-error")
+      Object.assign(artifact.scanners.skillspector, { error: "scanner crashed" });
+    if (mode === "legacy-receipt") {
+      artifact.judge.result.artifact_inspection = {
+        status: "completed",
+        challenge: "legacy",
+        required_file_sha256: "c".repeat(64),
+        files_inspected: ["artifact/SKILL.md"],
+      };
+      artifact.judge.attempts = [];
+    }
+    if (mode === "judge-failed") artifact.judge.status = "failed";
+    if (mode === "receipt-mismatch")
+      artifact.judge.result.artifact_inspection.required_file_sha256 = "a".repeat(64);
+    expect(() => validateClawScanArtifactForClawHubProfile(artifact)).toThrow();
+  });
+
+  it.each([
+    ["root", "Execution_successful", false],
+    ["root", "Status", "failed"],
+    ["accounting", "Status", "failed"],
+    ["accounting", "findings_before_filtering", "many"],
+    ["accounting", "scanned_components", "all"],
+    ["accounting", "limitations", false],
+    ["accounting", "analyzer_statuses", [{ analyzer_id: "static", status: false }]],
+    ["accounting", "ledger_exceptions", [{ fatal: false, Fatal: true }]],
+  ])("rejects ambiguous partial %s.%s", (section, field, value) => {
+    const artifact = usePartialEvidence(artifactFixture());
+    const raw = artifact.scanners.skillspector.raw as unknown as Record<string, unknown>;
+    const target =
+      section === "root" ? raw : (raw.analysis_completeness as Record<string, unknown>);
+    target[field as string] = value;
+    expect(() => validateClawScanArtifactForClawHubProfile(artifact)).toThrow();
+  });
+
+  it("accepts bundled gaps only when every original root report is usable", () => {
+    const artifact = usePartialEvidence(artifactFixture());
+    const raw = {
+      execution_successful: true,
+      analysis_completeness: { execution_successful: true, is_complete: false, status: "partial" },
+      status: "suspicious",
+      filtered_findings: [],
+      bundled_reports: [
+        { rootPath: "skills/alpha", report: structuredClone(partialReport) },
+        { rootPath: "skills/beta", report: structuredClone(completeReport) },
+      ],
+    };
+    Object.assign(artifact.scanners.skillspector, { raw });
+    expect(() => validateClawScanArtifactForClawHubProfile(artifact)).not.toThrow();
+    expect(
+      JSON.parse(validateClawScanArtifactForClawHubProfile(artifact).scannerReportsJson)
+        .skillspector,
+    ).toEqual(raw);
+    expect(
+      validateClawScanArtifactForClawHubProfile(artifact).skillSpectorAnalysis.inspectionStatus,
+    ).toBe("partial");
+    raw.bundled_reports[1]!.report = {
+      execution_successful: false,
+    } as unknown as typeof partialReport;
+    expect(() => validateClawScanArtifactForClawHubProfile(artifact)).toThrow();
+  });
+
+  it.each([
+    {},
+    { issues: [] },
+    { status: "clean", issues: [] },
+    { status: "clean", issues: [], execution_successful: true },
+    {
+      status: "clean",
+      issues: [],
+      analysis_completeness: { execution_successful: true, is_complete: true },
+    },
+    {
+      status: "clean",
+      issues: [],
+      execution_successful: true,
+      analysis_completeness: { is_complete: true },
+    },
+    {
+      status: "clean",
+      issues: [],
+      execution_successful: true,
+      analysis_completeness: { execution_successful: true },
+    },
+    {
+      status: "clean",
+      issues: [],
+      execution_successful: "true",
+      analysis_completeness: { execution_successful: true, is_complete: true },
+    },
+    {
+      status: "clean",
+      issues: [],
+      execution_successful: true,
+      analysis_completeness: { execution_successful: "true", is_complete: true },
+    },
+    {
+      status: "clean",
+      issues: [],
+      execution_successful: true,
+      analysis_completeness: { execution_successful: true, is_complete: "true" },
+    },
+    { ...completeReport, issues: false },
+    { ...completeReport, Status: "failed" },
+    { ...completeReport, metadata: false },
+    {
+      ...completeReport,
+      analysis_completeness: {
+        ...completeReport.analysis_completeness,
+        ledger_exceptions: [{ fatal: true }],
+      },
+    },
+  ])("rejects malformed complete child %j in a partial bundle", (child) => {
+    const artifact = usePartialEvidence(artifactFixture());
+    Object.assign(artifact.scanners.skillspector, {
+      raw: {
+        execution_successful: true,
+        analysis_completeness: {
+          execution_successful: true,
+          is_complete: false,
+          status: "partial",
+        },
+        status: "suspicious",
+        filtered_findings: [],
+        bundled_reports: [
+          { rootPath: "skills/alpha", report: structuredClone(partialReport) },
+          { rootPath: "skills/beta", report: child },
+        ],
+      },
+    });
+    expect(() => validateClawScanArtifactForClawHubProfile(artifact)).toThrow();
   });
 
   it.each(["benign", "suspicious", "malicious"])(
@@ -258,16 +461,41 @@ describe("versioned ClawScan receipt consumer", () => {
     expect(() => validateClawScanArtifactForClawHubProfile(artifact)).toThrow();
   });
 
-  it.each(["benign", "suspicious", "malicious", "invalid-receipt", "progress-only"])(
-    "uses the shared mapper at prepublication for %s",
-    async (mode) => {
+  it.each(
+    (["skillVersion", "packageRelease"] as const).flatMap((targetKind) =>
+      [
+        "benign",
+        "suspicious",
+        "malicious",
+        "partial-benign",
+        "partial-suspicious",
+        "partial-malicious",
+        "invalid-receipt",
+        "progress-only",
+      ].map((mode) => ({ targetKind, mode })),
+    ),
+  )(
+    "uses the shared mapper at prepublication for $targetKind $mode",
+    async ({ targetKind, mode }) => {
       const workspace = await mkdtemp(join(tmpdir(), "clawhub-receipt-boundary-"));
       tempDirectories.push(workspace);
       await mkdir(join(workspace, "artifact"));
       await writeFile(join(workspace, "artifact/SKILL.md"), "# Inert\n");
+      await writeFile(
+        join(workspace, "artifact/openclaw.plugin.json"),
+        '{"id":"controlled-plugin"}',
+      );
       const artifact = artifactFixture(mode === "invalid-receipt" ? "benign" : mode, [
         "artifact/README.md",
       ]);
+      if (targetKind === "packageRelease") {
+        artifact.judge.result.artifact_inspection.required_file = "artifact/openclaw.plugin.json";
+        artifact.judge.attempts[0]!.requiredFile = "artifact/openclaw.plugin.json";
+      }
+      if (mode.startsWith("partial-")) {
+        usePartialEvidence(artifact);
+        artifact.judge.result.verdict = mode.slice("partial-".length);
+      }
       if (mode === "invalid-receipt")
         artifact.judge.result.artifact_inspection.required_file = "artifact/other.md";
       const returned =
@@ -278,7 +506,15 @@ describe("versioned ClawScan receipt consumer", () => {
               phase: "judge",
               elapsedMs: 10,
             }
-          : artifact;
+          : targetKind === "packageRelease"
+            ? {
+                ...artifact,
+                scanners: {
+                  "clawscan-static": artifact.scanners["clawscan-static"],
+                  skillspector: artifact.scanners.skillspector,
+                },
+              }
+            : artifact;
       const command = join(workspace, "fixture-command");
       await writeFile(
         command,
@@ -290,7 +526,17 @@ describe("versioned ClawScan receipt consumer", () => {
       vi.stubEnv("CLAWSCAN_CHILD_PROGRESS", "1");
       const exposures: ReturnType<typeof clawScanExposure>[] = [];
       const mapped = await runNativeClawScan(
-        { job: { targetKind: "skillVersion" }, target: {} } as ClaimedJob,
+        {
+          job: {
+            _id: "receipt-boundary",
+            leaseToken: "fixture-lease",
+            source: "test",
+            hasMaliciousSignal: false,
+            waitForVtUntil: 0,
+            targetKind,
+          },
+          target: { package: { family: "code-plugin" } },
+        },
         workspace,
         (value) => exposures.push(value),
       );
@@ -298,13 +544,26 @@ describe("versioned ClawScan receipt consumer", () => {
       expect(mapped.check.status).toBe(
         mode === "invalid-receipt" || mode === "progress-only"
           ? "failed"
-          : mode === "malicious"
+          : mode.endsWith("malicious")
             ? "blocked"
             : "clean",
       );
-      if (mode === "benign" || mode === "suspicious" || mode === "malicious")
-        expect(mapped.analysis?.verdict).toBe(mode);
+      if (
+        mode === "benign" ||
+        mode === "suspicious" ||
+        mode === "malicious" ||
+        mode.startsWith("partial-")
+      )
+        expect(mapped.analysis?.verdict).toBe(mode.replace("partial-", ""));
       else expect(mapped.analysis).toBeUndefined();
+      if (mode.startsWith("partial-")) {
+        expect(mapped).toHaveProperty("skillSpectorAnalysis.status", "suspicious");
+        expect(mapped).toHaveProperty("skillSpectorAnalysis.inspectionStatus", "partial");
+        expect(mapped).toHaveProperty("skillSpectorAnalysis.issueCount", 1);
+        if (mode === "partial-suspicious")
+          expect(mapped.check.redactedFindings).toEqual(["status=suspicious; verdict=suspicious"]);
+        if (targetKind === "packageRelease") expect(mapped.aigAnalysis).toBeUndefined();
+      }
       if (mapped.analysis) expect(mapped.analysis).not.toHaveProperty("artifact_inspection");
       expect(JSON.stringify(mapped)).not.toContain("clawscan-progress-v1");
       if (mode === "invalid-receipt") expect(exposures.at(-1)?.judgeInvocations).toBe(1);

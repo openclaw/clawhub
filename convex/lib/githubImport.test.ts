@@ -6,12 +6,10 @@ import {
   buildGitHubZipForTests,
   computeDefaultSelectedPaths,
   detectGitHubImportCandidates,
-  extractMarkdownRelativeTargets,
   fetchGitHubZipBytes,
   listFilesUnderCandidate,
   parseGitHubImportUrl,
   resolveGitHubCommit,
-  resolveMarkdownTarget,
   stripGitHubZipRoot,
 } from "./githubImport";
 
@@ -209,21 +207,6 @@ describe("github import", () => {
     expect(selected).toContain("skill/SKILL.md");
     expect(selected).toContain("skill/docs/usage.md");
     expect(selected).not.toContain("outside.md");
-  });
-
-  it("extracts markdown targets with titles and angle brackets", () => {
-    const targets = extractMarkdownRelativeTargets(
-      `See [a](docs/usage.md "Title") and [b](<docs/my file.md>) and ![c](img/logo.svg)`,
-    );
-    expect(targets).toEqual(["docs/usage.md", "docs/my file.md", "img/logo.svg"]);
-  });
-
-  it("resolves markdown targets safely", () => {
-    expect(resolveMarkdownTarget("a/SKILL.md", "docs/usage.md")).toBe("a/docs/usage.md");
-    expect(resolveMarkdownTarget("a/SKILL.md", "../oops.md")).toBeNull();
-    expect(resolveMarkdownTarget("a/SKILL.md", "/abs.md")).toBeNull();
-    expect(resolveMarkdownTarget("a/SKILL.md", "docs/usage.md#section")).toBe("a/docs/usage.md");
-    expect(resolveMarkdownTarget("a/SKILL.md", "docs/usage.md?x=1")).toBe("a/docs/usage.md");
   });
 
   it("resolves HEAD commit via redirect chain and refuses unexpected redirect hosts", async () => {

@@ -27,6 +27,7 @@ vi.mock("nitro/app", () => ({
 vi.mock("convex/react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("convex/react")>()),
   useQuery: () => undefined,
+  useQueries: () => ({}),
   useAction: () => searchSkills,
   useConvexAuth: () => ({ isAuthenticated: false, isLoading: false }),
 }));
