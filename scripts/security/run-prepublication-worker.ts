@@ -25,6 +25,7 @@ import {
   noClawScanExposure,
   summarizeClawScanExposure,
 } from "./clawscan-exposure";
+import { resolvePrepublicationScannerRuntime } from "./prepublicationScannerSource";
 import {
   type AigAnalysis,
   assertAigFilePathsHaveNoCompiledPython,
@@ -1219,11 +1220,13 @@ export async function claimPrePublicationAttempt(
   token: string,
   filters: PrePublicationClaimFilters = {},
   preferRetry = false,
+  scannerSource?: string,
 ) {
   return (await client.action(api.publishAttempts.claimPrePublicationChecks, {
     token,
     ...filters,
     ...(preferRetry ? { preferRetry: true } : {}),
+    ...(scannerSource ? { scannerSource } : {}),
   })) as ClaimedPrePublicationAttempt | null;
 }
 
@@ -1232,10 +1235,11 @@ export async function claimPrePublicationBatch(
   token: string,
   limit: number,
   filters: PrePublicationClaimFilters = {},
+  scannerSource?: string,
 ) {
   const claims = await Promise.allSettled(
     Array.from({ length: limit }, (_, index) =>
-      claimPrePublicationAttempt(client, token, filters, index === 0),
+      claimPrePublicationAttempt(client, token, filters, index === 0, scannerSource),
     ),
   );
   const attempts: ClaimedPrePublicationAttempt[] = [];
@@ -1272,6 +1276,8 @@ async function main() {
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
   const token = requireEnv("SECURITY_SCAN_WORKER_TOKEN");
   const client = new ConvexHttpClient(convexUrl);
+  const scannerRuntime = await resolvePrepublicationScannerRuntime();
+  if (scannerRuntime) process.env.PREPUBLICATION_CLAWSCAN_COMMAND = scannerRuntime.command;
   const startedAt = Date.now();
   const claimDeadline = startedAt + maxRuntimeMs;
   let totalClaimed = 0;
@@ -1281,6 +1287,7 @@ async function main() {
   logger.info(
     {
       event: "prepublication_worker_started",
+      ...(scannerRuntime ? { scannerSource: scannerRuntime.source } : {}),
       workerId:
         process.env.PREPUBLICATION_WORKER_ID ??
         `github-actions:${process.env.GITHUB_RUN_ID ?? process.pid}`,
@@ -1299,6 +1306,7 @@ async function main() {
       token,
       claimLimit,
       claimFilters,
+      scannerRuntime?.source,
     );
     if (attempts.length === 0) break;
     totalClaimed += attempts.length;

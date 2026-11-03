@@ -177,6 +177,7 @@ import type * as lib_reservedSlugs from "../lib/reservedSlugs.js";
 import type * as lib_retentionPolicy from "../lib/retentionPolicy.js";
 import type * as lib_rolloutCapabilities from "../lib/rolloutCapabilities.js";
 import type * as lib_scannerReports from "../lib/scannerReports.js";
+import type * as lib_scannerSource from "../lib/scannerSource.js";
 import type * as lib_searchDigest from "../lib/searchDigest.js";
 import type * as lib_searchDigestContract from "../lib/searchDigestContract.js";
 import type * as lib_searchDigestDelivery from "../lib/searchDigestDelivery.js";
@@ -494,6 +495,7 @@ declare const fullApi: ApiFromModules<{
   "lib/retentionPolicy": typeof lib_retentionPolicy;
   "lib/rolloutCapabilities": typeof lib_rolloutCapabilities;
   "lib/scannerReports": typeof lib_scannerReports;
+  "lib/scannerSource": typeof lib_scannerSource;
   "lib/searchDigest": typeof lib_searchDigest;
   "lib/searchDigestContract": typeof lib_searchDigestContract;
   "lib/searchDigestDelivery": typeof lib_searchDigestDelivery;

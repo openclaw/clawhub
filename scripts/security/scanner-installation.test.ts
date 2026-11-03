@@ -11,6 +11,14 @@ const run = promisify(execFile);
 const scripts = resolve("scripts/security");
 
 describe("reviewed ClawScan installation", () => {
+  it("keeps source reporting disabled until the backend rollout is explicitly enabled", async () => {
+    const workflow = parseYaml(
+      await readFile(".github/workflows/prepublication-publish-checks.yml", "utf8"),
+    );
+    expect(
+      workflow.jobs["prepublication-publish-checks"].env.PREPUBLICATION_REPORT_SCANNER_SOURCE,
+    ).toBe("${{ vars.PREPUBLICATION_REPORT_SCANNER_SOURCE || 'false' }}");
+  });
   it("ships a full immutable source lock for the workflow installers", async () => {
     expect(await readFile(join(scripts, "clawscan-source-commit.txt"), "utf8")).toMatch(
       /^[a-f0-9]{40}\n$/,
@@ -118,6 +126,7 @@ describe("reviewed ClawScan installation", () => {
         }
         const fake = [
           "#!/bin/sh",
+          'case "$*" in *"-m pytest "*) [ "${PYTHONDONTWRITEBYTECODE:-}" = 1 ] && [ "${PYTEST_ADDOPTS:-}" = "-p no:cacheprovider" ] || exit 80;; esac',
           'echo "$(basename "$0") $*" >> "$COMMAND_LOG"',
           'case "$(basename "$0")" in',
           ' git) if [ "${3:-}" = rev-parse ]; then case "$2" in */clawscan) echo "$CLAWSCAN_PIN";; *) echo "$SCANNER_PIN";; esac; elif [ "${3:-}" = apply ] && [ "${4:-}" != --check ] && [ "$HAS_SHELL_PARSER" = 1 ]; then case "$2" in */skillspector-source.*) mkdir -p "$2/src/skillspector"; : > "$2/src/skillspector/shell_source.py";; esac; fi;;',

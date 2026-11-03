@@ -119,6 +119,73 @@ async function fixture(kind: "skill" | "package" = "skill") {
 }
 
 describe("operator retry of retained publication checks", () => {
+  it.each(["skill", "package"] as const)(
+    "audits an optional %s scanner source fence and preserves it on omission",
+    async (kind) => {
+      const { t, ids, args } = await fixture(kind);
+      const requiredScannerSource = "b08e2907eb60b33bf712b07673aff565c13d9ad7";
+      const before = (await t.run((ctx) => ctx.db.get(ids.attemptId)))!;
+      const original = await t.run(async (ctx) => (await ctx.storage.get(ids.storageId))!.text());
+      expect(
+        await t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+          ...args,
+          requiredScannerSource,
+        }),
+      ).toMatchObject({ eligible: true, requeued: false, requiredScannerSource });
+      expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toEqual(before);
+      expect(await t.run((ctx) => ctx.db.query("auditLogs").collect())).toEqual([]);
+      expect(
+        await t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+          ...args,
+          requiredScannerSource,
+          dryRun: false,
+        }),
+      ).toMatchObject({ eligible: true, requeued: true, requiredScannerSource });
+      const after = (await t.run((ctx) => ctx.db.get(ids.attemptId)))!;
+      expect(after.requiredScannerSource).toBe(requiredScannerSource);
+      expect(after.files).toEqual(before.files);
+      expect(after.checks).toEqual(before.checks);
+      expect(after.checkFailureCount).toBe(before.checkFailureCount);
+      expect(await t.run((ctx) => ctx.db.query("auditLogs").collect())).toMatchObject([
+        {
+          action: "publish_attempt.operational_retry",
+          metadata: { previousRequiredScannerSource: null, requiredScannerSource },
+        },
+      ]);
+      await t.run((ctx) => ctx.db.patch(ids.attemptId, { status: "failed" }));
+      expect(
+        await t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+          ...args,
+          expectedUpdatedAt: after.updatedAt,
+          dryRun: false,
+        }),
+      ).toMatchObject({ eligible: true, requeued: true, requiredScannerSource });
+      expect((await t.run((ctx) => ctx.db.get(ids.attemptId)))!.requiredScannerSource).toBe(
+        requiredScannerSource,
+      );
+      expect(await t.run(async (ctx) => (await ctx.storage.get(ids.storageId))!.text())).toBe(
+        original,
+      );
+    },
+  );
+
+  it.each(["", "A".repeat(40), "a".repeat(39), "g".repeat(40)])(
+    "rejects malformed retry fence %j without writes",
+    async (requiredScannerSource) => {
+      const { t, ids, args } = await fixture();
+      const before = await t.run((ctx) => ctx.db.get(ids.attemptId));
+      await expect(
+        t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+          ...args,
+          requiredScannerSource,
+          dryRun: false,
+        }),
+      ).rejects.toThrow("40-character lowercase Git revision");
+      expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toEqual(before);
+      expect(await t.run((ctx) => ctx.db.query("auditLogs").collect())).toEqual([]);
+    },
+  );
+
   it.each([
     ["skill", "legacy"],
     ["skill", "canonical"],

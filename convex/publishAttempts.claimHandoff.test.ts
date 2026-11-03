@@ -12,6 +12,7 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 const token = "synthetic-claim-worker";
+const reviewedScannerSource = "b08e2907eb60b33bf712b07673aff565c13d9ad7";
 const handler = (
   claimPrePublicationChecks as unknown as {
     _handler: (
@@ -105,6 +106,177 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
   vi.useRealTimers();
+});
+
+describe("recovery scanner source claims", () => {
+  it("leaves a protected original untouched when an old worker omits its source", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+    const t = convexTest(schema, modules);
+    const fixture = await seed(t);
+    await t.run(
+      async (ctx) =>
+        await ctx.db.patch(fixture.attemptId, { requiredScannerSource: reviewedScannerSource }),
+    );
+    const before = await state(t, fixture.attemptId);
+    expect(
+      await t.action(api.publishAttempts.claimPrePublicationChecks, {
+        token,
+        attemptId: fixture.attemptId,
+      }),
+    ).toBeNull();
+    expect(await state(t, fixture.attemptId)).toEqual(before);
+    expect(await bytes(t, fixture.storageId)).toBe("synthetic retained original");
+    expect(await t.run((ctx) => ctx.db.query("auditLogs").collect())).toEqual([]);
+  });
+
+  it.each(["skill", "package"] as const)(
+    "accepts only the required source for a protected %s and binds its scan lease",
+    async (kind) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+      const t = convexTest(schema, modules);
+      const fixture = await seed(t, kind);
+      await t.run((ctx) =>
+        ctx.db.patch(fixture.attemptId, { requiredScannerSource: reviewedScannerSource }),
+      );
+      const before = (await state(t, fixture.attemptId))!;
+      expect(
+        await t.action(api.publishAttempts.claimPrePublicationChecks, {
+          token,
+          attemptId: fixture.attemptId,
+          scannerSource: "7".repeat(40),
+        }),
+      ).toBeNull();
+      expect(await state(t, fixture.attemptId)).toEqual(before);
+      const claimed = (await t.action(api.publishAttempts.claimPrePublicationChecks, {
+        token,
+        attemptId: fixture.attemptId,
+        scannerSource: reviewedScannerSource,
+      })) as { claimId: string; attemptId: Id<"publishAttempts"> };
+      expect(claimed.attemptId).toBe(fixture.attemptId);
+      const after = (await state(t, fixture.attemptId))!;
+      expect(after.lastScannerSourceClaim).toEqual({
+        claimId: claimed.claimId,
+        source: reviewedScannerSource,
+        claimedAt: Date.now(),
+      });
+      expect(after.files).toEqual(before.files);
+      expect(after.checks).toEqual(before.checks);
+      expect(after.checkFailureCount).toBe(2);
+      expect(await bytes(t, fixture.storageId)).toBe("synthetic retained original");
+      expect(await bytes(t, fixture.archiveStorageId)).toBe("synthetic original archive");
+      // A matching-source worker still cannot steal an unexpired lease.
+      expect(
+        await t.action(api.publishAttempts.claimPrePublicationChecks, {
+          token,
+          attemptId: fixture.attemptId,
+          scannerSource: reviewedScannerSource,
+        }),
+      ).toBeNull();
+      expect(await state(t, fixture.attemptId)).toEqual(after);
+      expect(
+        await t.action(api.publishAttempts.completePrePublicationChecks, {
+          token,
+          attemptId: fixture.attemptId,
+          claimId: claimed.claimId,
+          artifactFingerprint: before.artifactFingerprint,
+          trufflehog: { status: "clean" },
+          clawscan: { status: "failed", summary: "Synthetic operational failure" },
+        }),
+      ).toMatchObject({ status: "failed" });
+      expect((await state(t, fixture.attemptId))!.lastScannerSourceClaim).toEqual(
+        after.lastScannerSourceClaim,
+      );
+      expect((await state(t, fixture.attemptId))!.checkFailureCount).toBe(3);
+    },
+  );
+
+  it.each([false, true])(
+    "lets an older generic worker claim unrelated work (retry=%s)",
+    async (retry) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+      const t = convexTest(schema, modules);
+      const protectedFixture = await seed(t);
+      const ordinary = await seed(t);
+      await t.run(async (ctx) => {
+        await ctx.db.patch(protectedFixture.attemptId, {
+          requiredScannerSource: reviewedScannerSource,
+          checkClaimExpiresAt: Date.now() - 2,
+        });
+        await ctx.db.patch(ordinary.attemptId, { checkClaimExpiresAt: Date.now() - 1 });
+      });
+      const before = await state(t, protectedFixture.attemptId);
+      expect(
+        await t.action(api.publishAttempts.claimPrePublicationChecks, {
+          token,
+          preferRetry: retry,
+        }),
+      ).toMatchObject({ attemptId: ordinary.attemptId });
+      expect(await state(t, protectedFixture.attemptId)).toEqual(before);
+    },
+  );
+
+  it("does not apply scan-source restrictions to finalization-only claims", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+    const t = convexTest(schema, modules);
+    const fixture = await seed(t, "skill", true);
+    const previous = { claimId: "previous-scan", source: reviewedScannerSource, claimedAt: 2 };
+    await t.run((ctx) =>
+      ctx.db.patch(fixture.attemptId, {
+        requiredScannerSource: reviewedScannerSource,
+        lastScannerSourceClaim: previous,
+      }),
+    );
+    expect(
+      await t.action(api.publishAttempts.claimPrePublicationChecks, {
+        token,
+        attemptId: fixture.attemptId,
+      }),
+    ).toMatchObject({ attemptId: fixture.attemptId, status: "ready_to_finalize" });
+    expect((await state(t, fixture.attemptId))!.lastScannerSourceClaim).toEqual(previous);
+  });
+
+  it("clears stale attribution when a new unreported scan lease replaces an expired one", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+    const t = convexTest(schema, modules);
+    const fixture = await seed(t);
+    await t.run((ctx) =>
+      ctx.db.patch(fixture.attemptId, {
+        lastScannerSourceClaim: { claimId: "expired", source: reviewedScannerSource, claimedAt: 1 },
+      }),
+    );
+    expect(
+      await t.action(api.publishAttempts.claimPrePublicationChecks, {
+        token,
+        attemptId: fixture.attemptId,
+      }),
+    ).toMatchObject({ attemptId: fixture.attemptId });
+    expect((await state(t, fixture.attemptId))!.lastScannerSourceClaim).toBeUndefined();
+  });
+
+  it.each(["", "ABCDEF".repeat(7), "a".repeat(39), "g".repeat(40)])(
+    "rejects malformed reported source %j at both claim boundaries without writes",
+    async (scannerSource) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+      const t = convexTest(schema, modules);
+      const fixture = await seed(t);
+      const before = await state(t, fixture.attemptId);
+      await expect(
+        t.action(api.publishAttempts.claimPrePublicationChecks, {
+          token,
+          attemptId: fixture.attemptId,
+          scannerSource,
+        }),
+      ).rejects.toThrow("40-character lowercase Git revision");
+      await expect(
+        t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+          claimId: "invalid-source",
+          attemptId: fixture.attemptId,
+          scannerSource,
+        }),
+      ).rejects.toThrow("40-character lowercase Git revision");
+      expect(await state(t, fixture.attemptId)).toEqual(before);
+    },
+  );
 });
 
 describe("bounded pre-publication URL hydration", () => {

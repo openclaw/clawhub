@@ -1394,6 +1394,11 @@ const publishAttempts = defineTable({
   checkClaimExpiresAt: v.optional(v.number()),
   checkClaimLastError: v.optional(v.string()),
   checkFailureCount: v.optional(v.number()),
+  requiredScannerSource: v.optional(v.string()),
+  // Latest scan lease's reported source; retained after completion for attribution.
+  lastScannerSourceClaim: v.optional(
+    v.object({ claimId: v.string(), source: v.string(), claimedAt: v.number() }),
+  ),
   finalizationClaimId: v.optional(v.string()),
   finalizationClaimedAt: v.optional(v.number()),
   finalizationClaimExpiresAt: v.optional(v.number()),
