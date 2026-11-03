@@ -200,11 +200,12 @@ import {
   type SearchTrustSignals,
 } from "./lib/searchRanking";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
-import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
 import {
-  skillSpectorInspectionCaveatsValidator,
-  skillSpectorReviewFields,
-} from "./lib/skillSpectorEvidence";
+  aigAnalysisValidator,
+  skillSpectorAnalysisValidator,
+  vtAnalysisValidator,
+} from "./lib/securityAnalysisValidators";
+import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { classifyTemplateCategories } from "./lib/templateCategoryClassification";
 import {
@@ -287,74 +288,6 @@ const packageOfficialMigrationPhaseValidator = v.union(
   v.literal("blocked"),
   v.literal("ready-for-openclaw"),
 );
-const vtEngineStatsValidator = v.object({
-  malicious: v.optional(v.number()),
-  suspicious: v.optional(v.number()),
-  undetected: v.optional(v.number()),
-  harmless: v.optional(v.number()),
-});
-const vtAnalysisValidator = v.object({
-  status: v.string(),
-  verdict: v.optional(v.string()),
-  analysis: v.optional(v.string()),
-  source: v.optional(v.string()),
-  scanner: v.optional(v.string()),
-  engineStats: v.optional(vtEngineStatsValidator),
-  checkedAt: v.number(),
-});
-
-const skillSpectorIssueValidator = v.object({
-  ...skillSpectorReviewFields,
-  issueId: v.string(),
-  category: v.optional(v.string()),
-  pattern: v.optional(v.string()),
-  severity: v.string(),
-  confidence: v.optional(v.number()),
-  file: v.optional(v.string()),
-  startLine: v.optional(v.number()),
-  endLine: v.optional(v.number()),
-  explanation: v.string(),
-  remediation: v.optional(v.string()),
-  finding: v.optional(v.string()),
-  codeSnippet: v.optional(v.string()),
-});
-
-const skillSpectorAnalysisValidator = v.object({
-  inspectionCaveats: v.optional(skillSpectorInspectionCaveatsValidator),
-  status: v.string(),
-  inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
-  score: v.optional(v.number()),
-  severity: v.optional(v.string()),
-  recommendation: v.optional(v.string()),
-  issueCount: v.number(),
-  issues: v.array(skillSpectorIssueValidator),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const aigAnalysisValidator = v.object({
-  status: v.string(),
-  issueCount: v.number(),
-  findings: v.array(
-    v.object({
-      ruleId: v.string(),
-      level: v.string(),
-      message: v.string(),
-      title: v.optional(v.string()),
-      description: v.optional(v.string()),
-      file: v.optional(v.string()),
-      startLine: v.optional(v.number()),
-      endLine: v.optional(v.number()),
-      remediation: v.optional(v.string()),
-    }),
-  ),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
 
 const PACKAGE_STAT_EVENT_BATCH_SIZE = 100;
 export const PROCESSED_PACKAGE_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN =

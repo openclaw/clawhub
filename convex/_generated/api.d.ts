@@ -190,6 +190,7 @@ import type * as lib_searchRanking from "../lib/searchRanking.js";
 import type * as lib_searchReportContract from "../lib/searchReportContract.js";
 import type * as lib_searchReportEvidence from "../lib/searchReportEvidence.js";
 import type * as lib_searchText from "../lib/searchText.js";
+import type * as lib_securityAnalysisValidators from "../lib/securityAnalysisValidators.js";
 import type * as lib_securityDatasetRedaction from "../lib/securityDatasetRedaction.js";
 import type * as lib_securityPrompt from "../lib/securityPrompt.js";
 import type * as lib_securityScanPolicy from "../lib/securityScanPolicy.js";
@@ -512,6 +513,7 @@ declare const fullApi: ApiFromModules<{
   "lib/searchReportContract": typeof lib_searchReportContract;
   "lib/searchReportEvidence": typeof lib_searchReportEvidence;
   "lib/searchText": typeof lib_searchText;
+  "lib/securityAnalysisValidators": typeof lib_securityAnalysisValidators;
   "lib/securityDatasetRedaction": typeof lib_securityDatasetRedaction;
   "lib/securityPrompt": typeof lib_securityPrompt;
   "lib/securityScanPolicy": typeof lib_securityScanPolicy;

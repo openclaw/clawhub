@@ -123,6 +123,11 @@ import {
   type SearchTrustSignals,
 } from "./lib/searchRanking";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
+import {
+  aigAnalysisValidator,
+  skillSpectorAnalysisValidator,
+  vtAnalysisValidator,
+} from "./lib/securityAnalysisValidators";
 import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "./lib/skillCards";
 import {
   isPublishedSkillVersion,
@@ -173,10 +178,6 @@ import {
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
-import {
-  skillSpectorInspectionCaveatsValidator,
-  skillSpectorReviewFields,
-} from "./lib/skillSpectorEvidence";
 import { readCanonicalStat, readPublicDownloads, readSkillMetricSources } from "./lib/skillStats";
 import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
@@ -235,76 +236,6 @@ const DEFAULT_STAFF_AUDIT_LOG_LIMIT = 10;
 const MAX_STAFF_AUDIT_LOG_LIMIT = 50;
 const USER_MODERATION_REASON = "user.moderation";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
-
-const vtEngineStatsValidator = v.object({
-  malicious: v.optional(v.number()),
-  suspicious: v.optional(v.number()),
-  undetected: v.optional(v.number()),
-  harmless: v.optional(v.number()),
-});
-
-const vtAnalysisValidator = v.object({
-  status: v.string(),
-  verdict: v.optional(v.string()),
-  analysis: v.optional(v.string()),
-  source: v.optional(v.string()),
-  scanner: v.optional(v.string()),
-  engineStats: v.optional(vtEngineStatsValidator),
-  checkedAt: v.number(),
-});
-
-const skillSpectorIssueValidator = v.object({
-  ...skillSpectorReviewFields,
-  issueId: v.string(),
-  category: v.optional(v.string()),
-  pattern: v.optional(v.string()),
-  severity: v.string(),
-  confidence: v.optional(v.number()),
-  file: v.optional(v.string()),
-  startLine: v.optional(v.number()),
-  endLine: v.optional(v.number()),
-  explanation: v.string(),
-  remediation: v.optional(v.string()),
-  finding: v.optional(v.string()),
-  codeSnippet: v.optional(v.string()),
-});
-
-const skillSpectorAnalysisValidator = v.object({
-  inspectionCaveats: v.optional(skillSpectorInspectionCaveatsValidator),
-  status: v.string(),
-  inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
-  score: v.optional(v.number()),
-  severity: v.optional(v.string()),
-  recommendation: v.optional(v.string()),
-  issueCount: v.number(),
-  issues: v.array(skillSpectorIssueValidator),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const aigAnalysisValidator = v.object({
-  status: v.string(),
-  issueCount: v.number(),
-  findings: v.array(
-    v.object({
-      ruleId: v.string(),
-      level: v.string(),
-      message: v.string(),
-      title: v.optional(v.string()),
-      description: v.optional(v.string()),
-      file: v.optional(v.string()),
-      startLine: v.optional(v.number()),
-      endLine: v.optional(v.number()),
-      remediation: v.optional(v.string()),
-    }),
-  ),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
 
 function buildStructuredModerationPatch(params: {
   staticScan?: Doc<"skillVersions">["staticScan"];
