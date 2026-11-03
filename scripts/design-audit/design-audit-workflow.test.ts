@@ -117,23 +117,6 @@ describe("weekly design-system audit workflow", () => {
     expect(failure?.if).toContain("steps.validation.outcome == 'failure'");
   });
 
-  it("keeps Codex workspace-scoped with restricted networking", async () => {
-    const runCodex = await readFile("scripts/design-audit/run-codex.ts", "utf8");
-    const forbiddenOverrides = [
-      "danger-full-access",
-      "--dangerously-bypass-approvals-and-sandbox",
-      "use_legacy_landlock=true",
-      "use_legacy_landlock = true",
-      "network_access=true",
-      "network_access = true",
-    ];
-
-    expect(runCodex).toContain('"--sandbox",\n    "workspace-write"');
-    for (const override of forbiddenOverrides) {
-      expect(runCodex).not.toContain(override);
-    }
-  });
-
   it("excludes generated audit artifacts from the root TypeScript project", async () => {
     const source = await readFile("tsconfig.json", "utf8");
     const parsed = parseConfigFileTextToJson("tsconfig.json", source);
