@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Publishing: pin the server Plugin Inspector to 0.4.3 so large plugin publishes (such as `@openclaw/matrix` and `@openclaw/whatsapp`) stay under the 512 MiB Node action limit; 0.4.4+ type-checks the whole OpenClaw declaration surface while preparing the publish target. Until a bounded Inspector release, retirement notices may name replacements the selected OpenClaw release does not export yet.
+
 - CLI: reuse canonical schema implementations during builds while retaining standalone npm artifacts and embedding their debug sources.
 
 - Catalog: keep skill and plugin browsing available when optional heading counts fail.
