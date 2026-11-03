@@ -545,14 +545,7 @@ async function handleSkillScanBatchSubmit(ctx: ActionCtx, request: Request, head
       ApiV1SkillScanBatchRequestSchema,
       await request.json(),
       "Skill scan batch payload",
-    ) as {
-      mode?: "all-active-latest";
-      cursor?: string | null;
-      batchSize?: number;
-      dryRun?: boolean;
-      requestId?: string;
-      expectedVersionIds?: string[];
-    };
+    );
     const result = await runMutationRef(
       ctx,
       internalRefs.securityScan.enqueueBulkSkillRescanBatchForAdminInternal,
@@ -585,7 +578,7 @@ async function handleSkillScanBatchStatus(ctx: ActionCtx, request: Request, head
       ApiV1SkillScanBatchStatusRequestSchema,
       await request.json(),
       "Skill scan batch status payload",
-    ) as { jobIds: string[] };
+    );
     const result = await runQueryRef(
       ctx,
       internalRefs.securityScan.getBulkSkillRescanBatchStatusForAdminInternal,
@@ -1272,12 +1265,7 @@ export async function skillScanSubmitV1Handler(ctx: ActionCtx, request: Request)
       ApiV1SkillScanSubmitRequestSchema,
       await request.json(),
       "Skill scan payload",
-    ) as {
-      source:
-        | { kind: "upload" }
-        | { kind: "published"; slug: string; ownerHandle?: string; version?: string };
-      update?: boolean;
-    };
+    );
     if (body.source.kind === "upload") {
       return text(
         "Local upload scans are no longer supported. Upload a version, then use `clawhub scan download <slug> --version <version>` to retrieve stored scan results.",
@@ -3152,7 +3140,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         SkillVersionRevokeRequestSchema,
         await request.json(),
         "Skill version moderation payload",
-      ) as { state: "revoked"; reason: string; ownerHandle?: string };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.skills.revokeSkillVersionForUserInternal,
@@ -3181,12 +3169,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         ApiV1SkillRepairVtPendingRequestSchema,
         await request.json(),
         "Skill VT pending repair payload",
-      ) as {
-        cursor?: string | null;
-        batchSize?: number;
-        concurrency?: number;
-        dryRun?: boolean;
-      };
+      );
       const result = await runActionRef<
         | {
             dryRun: boolean;
@@ -3230,14 +3213,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         ApiV1SkillBulkRescanBatchRequestSchema,
         await request.json(),
         "Skill bulk rescan batch payload",
-      ) as {
-        mode?: "all-active-latest";
-        cursor?: string | null;
-        batchSize?: number;
-        dryRun?: boolean;
-        requestId?: string;
-        expectedVersionIds?: string[];
-      };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.securityScan.enqueueBulkSkillRescanBatchForAdminInternal,
@@ -3279,7 +3255,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         ApiV1SkillBulkRescanStatusRequestSchema,
         await request.json(),
         "Skill bulk rescan status payload",
-      ) as { jobIds: string[] };
+      );
       const result = await runQueryRef(
         ctx,
         internalRefs.securityScan.getBulkSkillRescanBatchStatusForAdminInternal,
@@ -3310,12 +3286,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         ApiV1SkillHardDeleteRequestSchema,
         await request.json(),
         "Skill hard-delete payload",
-      ) as {
-        ownerHandle: string;
-        reason: string;
-        dryRun?: boolean;
-        confirmationToken?: string;
-      };
+      );
       const result = await runMutationRef(ctx, internalRefs.skills.hardDeleteForAdminInternal, {
         actorUserId: auth.userId,
         slug,
@@ -3345,11 +3316,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         SkillReportTriageRequestSchema,
         await request.json(),
         "Skill report triage payload",
-      ) as {
-        status: "open" | "confirmed" | "dismissed";
-        note?: string;
-        finalAction?: "none" | "hide";
-      };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.skills.triageSkillReportForUserInternal,
@@ -3385,11 +3352,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         SkillAppealResolveRequestSchema,
         await request.json(),
         "Skill appeal resolve payload",
-      ) as {
-        status: "open" | "accepted" | "rejected";
-        note?: string;
-        finalAction?: "none" | "restore";
-      };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.skills.resolveSkillAppealForUserInternal,
@@ -3480,14 +3443,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
     try {
-      const body = parseArk(
-        SkillAppealRequestSchema,
-        await request.json(),
-        "Skill appeal payload",
-      ) as {
-        version?: string;
-        message: string;
-      };
+      const body = parseArk(SkillAppealRequestSchema, await request.json(), "Skill appeal payload");
       const result = await runMutationRef(
         ctx,
         internalRefs.skills.submitSkillAppealForUserInternal,
