@@ -1447,51 +1447,6 @@ code {
   }
 }
 
-/* @deprecated — use <Button> from components/ui/button.tsx */
-.btn {
-  border: 1px solid var(--border-ui);
-  padding: 10px 16px;
-  border-radius: var(--r-md);
-  background: var(--surface);
-  font-family: var(--font-body);
-  font-weight: 500;
-  font-size: var(--fs-sm);
-  color: var(--ink);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  white-space: nowrap;
-  cursor: pointer;
-  min-height: 36px;
-  transition: all 0.15s ease;
-}
-
-.btn:hover {
-  border-color: var(--border-ui-hover);
-  background: var(--hover-bg);
-  transform: translateY(-1px);
-}
-
-.btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-  transform: none;
-}
-
-.btn-primary {
-  background: var(--accent);
-  color: var(--accent-fg);
-  border: 1px solid var(--accent);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-.btn-primary:hover {
-  background: var(--accent-deep);
-  border-color: var(--accent-deep);
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
-}
-
 .hero {
   position: relative;
   overflow: hidden;
@@ -2266,46 +2221,6 @@ code {
   }
 }
 
-/* @deprecated — use <Label> from components/ui/label.tsx */
-.form-label {
-  font-size: 0.74rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgba(70, 95, 113, 0.9);
-  font-weight: 700;
-}
-
-/* @deprecated — use <Input> from components/ui/input.tsx */
-.form-input {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid rgba(29, 59, 78, 0.22);
-  border-radius: var(--r-sm);
-  padding: 13px 14px;
-  min-height: 44px;
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.94);
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    background 0.18s ease;
-}
-
-.form-input::placeholder {
-  color: rgba(88, 115, 133, 0.72);
-}
-
-.form-input:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--accent) 70%, white);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
-}
-
-.form-input#changelog {
-  min-height: 146px;
-  resize: vertical;
-}
-
 .publish-empty-main {
   min-height: clamp(660px, 62vh, 1090px);
   padding-top: 34px;
@@ -2572,101 +2487,9 @@ code {
   padding-inline: 4px;
 }
 
-.validation-list {
-  margin: 0;
-  padding-left: 18px;
-  display: grid;
-  gap: 5px;
-  color: var(--ink-soft);
-  line-height: 1.45;
-}
-
 .error {
   color: #999999;
   font-weight: 600;
-}
-
-.upload-input {
-  border: 1px solid rgba(30, 57, 74, 0.2);
-  border-radius: var(--r-md);
-  padding: 12px 14px;
-  background: #141414;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.85),
-    inset 0 1px 6px rgba(255, 255, 255, 0.08);
-}
-
-.upload-input:focus {
-  border-color: rgba(255, 255, 255, 0.6);
-  box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.2),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.8);
-}
-
-.dropzone {
-  border: 2px dashed rgba(255, 255, 255, 0.5);
-  border-radius: 16px;
-  padding: 20px;
-  background: var(--surface);
-  display: grid;
-  gap: 12px;
-  text-align: center;
-  cursor: pointer;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.dropzone:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 18px 30px rgba(255, 255, 255, 0.15);
-}
-
-.dropzone.is-dragging {
-  border-color: var(--accent);
-  box-shadow: 0 20px 40px rgba(255, 255, 255, 0.25);
-  background: var(--surface-muted);
-}
-
-.dropzone-icon {
-  width: 54px;
-  height: 54px;
-  border-radius: 16px;
-  margin: 0 auto;
-  display: grid;
-  place-items: center;
-  font-size: 1.4rem;
-  background: var(--ink-soft);
-  color: white;
-  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.4);
-}
-
-.dropzone-input {
-  display: none;
-}
-
-.dropzone-button {
-  all: unset;
-  display: grid;
-  gap: 12px;
-  text-align: center;
-  cursor: pointer;
-  width: 100%;
-  height: 100%;
-}
-
-.dropzone-button:focus-visible {
-  outline: 3px solid rgba(255, 255, 255, 0.35);
-  outline-offset: 6px;
-  border-radius: 18px;
-}
-
-.upload-file span:first-child {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .section-title {
@@ -2930,11 +2753,6 @@ code {
 
 .plugins-toolbar-top .skills-search {
   flex: 1;
-}
-
-.plugins-toolbar-top .btn {
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .skills-sort {
@@ -4008,11 +3826,6 @@ code {
 
 .detail-sidebar {
   align-self: start;
-}
-
-.detail-sidebar .detail-meta-bar {
-  flex-direction: column;
-  align-items: stretch;
 }
 
 @media (min-width: 1080px) {
@@ -7233,15 +7046,6 @@ a.skills-sh-security-audit-row:focus-visible {
   color: var(--status-error-fg);
 }
 
-.skill-install-command-label {
-  margin: 0;
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-
 .skill-install-command {
   margin: 0;
   min-width: 0;
@@ -7280,12 +7084,6 @@ a.skills-sh-security-audit-row:focus-visible {
 
 [data-theme-resolved="light"] .skill-install-command-card {
   background: transparent;
-}
-
-.skill-install-command-copy {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
 }
 
 .skill-install-command-wrap {
@@ -7470,29 +7268,6 @@ a.skills-sh-security-audit-row:focus-visible {
   border: 0 !important;
   background: transparent !important;
   color: var(--status-error-fg);
-}
-
-.skill-install-command-caption {
-  margin: 0;
-  font-size: 0.84rem;
-  line-height: 1.45;
-  color: var(--ink-soft);
-}
-
-.skill-install-command-tooltip {
-  max-width: min(720px, calc(100vw - 32px));
-  padding: 10px 12px;
-}
-
-.skill-install-command-tooltip code {
-  display: block;
-  max-height: 320px;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  line-height: 1.45;
 }
 
 /* Skill/plugin install card — flat CLI | Prompt text toggle */
@@ -11165,15 +10940,6 @@ a.skills-sh-security-audit-row:focus-visible {
     gap: 0;
   }
 
-  .nav-actions .btn {
-    width: 36px;
-    min-width: 36px;
-    height: 36px;
-    min-height: 36px;
-    padding: 0;
-    border-radius: var(--r-pill);
-  }
-
   .sign-in-label,
   .sign-in-provider {
     display: none;
@@ -11384,13 +11150,6 @@ a.skills-sh-security-audit-row:focus-visible {
     gap: 0;
   }
 
-  .navbar .btn {
-    padding: 10px 12px;
-    font-size: 0.95rem;
-    min-height: 44px;
-  }
-
-  .nav-actions .btn,
   .user-trigger {
     width: 36px;
     min-width: 36px;
@@ -11645,12 +11404,6 @@ a.skills-sh-security-audit-row:focus-visible {
 .danger-title {
   margin: 0 0 6px;
   font-size: 1.2rem;
-}
-
-.btn-danger {
-  background: linear-gradient(135deg, #ff4444, #cc0000);
-  border: none;
-  color: #fff;
 }
 
 .mono {
@@ -12495,24 +12248,6 @@ a.skills-sh-security-audit-row:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
-}
-
-.btn-sm {
-  padding: 6px 12px;
-  font-size: 0.85rem;
-  gap: 4px;
-  min-height: unset;
-}
-
-.btn-ghost {
-  background: transparent;
-  border-color: var(--border-ui);
-  color: var(--ink);
-}
-
-.btn-ghost:hover {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  border-color: var(--border-ui-hover);
 }
 
 @media (min-width: 1024px) {
@@ -14220,7 +13955,6 @@ a.agentic-risk-finding-title:focus-visible {
     justify-content: flex-start;
   }
 
-  .skill-title-actions .btn,
   .skill-title-actions [data-slot="button"] {
     flex: 1 1 0;
     justify-content: center;
@@ -14320,10 +14054,6 @@ a.agentic-risk-finding-title:focus-visible {
 
   .skill-card {
     padding: 16px;
-  }
-
-  .detail-meta-bar {
-    padding: var(--space-3);
   }
 
   .file-viewer-body {
@@ -17373,68 +17103,12 @@ body:has(.browse-page-borderless-header) .navbar {
   word-wrap: break-word;
 }
 
-/* Horizontal Metadata Bar */
-.detail-meta-bar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  overflow: hidden;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-}
-
-.meta-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ink-soft);
-  font-size: var(--fs-sm);
-}
-
-.meta-stat-value {
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.meta-stat-label {
-  color: var(--ink-soft);
-}
-
-.meta-detail {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--fs-xs);
-  color: var(--ink-soft);
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 .plugin-detail-code-block {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
   overflow-x: hidden;
-}
-
-@media (min-width: 640px) {
-  .detail-meta-bar {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-4);
-  }
-}
-
-@media (min-width: 900px) {
-  .detail-meta-bar {
-    flex-wrap: nowrap;
-  }
 }
 
 /* ===== Unified Search Page ===== */
@@ -22167,24 +21841,11 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   --r-btn: var(--r-sm);
 }
 
-/* Core buttons */
-.btn {
-  border-radius: var(--r-btn) !important;
-}
-
 /* Sign-in / auth buttons (often inline-flex with rounded-xl or pill) */
 .sign-in-button,
 .auth-button,
 .auth-btn,
-[class*="sign-in"],
-.navbar .btn,
-.nav-actions .btn {
-  border-radius: var(--r-btn) !important;
-}
-
-/* Skill/plugin action buttons */
-.skill-install-button,
-.install-button {
+[class*="sign-in"] {
   border-radius: var(--r-btn) !important;
 }
 
@@ -22204,11 +21865,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
 /* Bundle includes badges */
 .bundle-includes span {
   border-radius: var(--oc-radius-inset) !important;
-}
-
-/* Dropzone — was 16px */
-.dropzone {
-  border-radius: var(--r-md) !important;
 }
 
 /* File viewer — was 16px */
