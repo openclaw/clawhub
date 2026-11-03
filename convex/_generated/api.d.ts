@@ -134,6 +134,7 @@ import type * as lib_openaiResponse from "../lib/openaiResponse.js";
 import type * as lib_packageArtifacts from "../lib/packageArtifacts.js";
 import type * as lib_packageCatalogRead from "../lib/packageCatalogRead.js";
 import type * as lib_packageClawpackPublish from "../lib/packageClawpackPublish.js";
+import type * as lib_packageFileVerification from "../lib/packageFileVerification.js";
 import type * as lib_packageIcons from "../lib/packageIcons.js";
 import type * as lib_packagePageCursor from "../lib/packagePageCursor.js";
 import type * as lib_packagePublishRecovery from "../lib/packagePublishRecovery.js";
@@ -455,6 +456,7 @@ declare const fullApi: ApiFromModules<{
   "lib/packageArtifacts": typeof lib_packageArtifacts;
   "lib/packageCatalogRead": typeof lib_packageCatalogRead;
   "lib/packageClawpackPublish": typeof lib_packageClawpackPublish;
+  "lib/packageFileVerification": typeof lib_packageFileVerification;
   "lib/packageIcons": typeof lib_packageIcons;
   "lib/packagePageCursor": typeof lib_packagePageCursor;
   "lib/packagePublishRecovery": typeof lib_packagePublishRecovery;
