@@ -118,7 +118,7 @@ function makeCtx() {
     storage: {
       get: vi.fn(async (id: string) => {
         if (id === "storage:skill") {
-          return new Blob(["Use this skill. token=supersecret123"]);
+          return new Blob([" \t\nUse this skill. token=supersecret123\r\n "]);
         }
         if (id === "storage:script") {
           return new Blob(["echo password=scriptsecret123\n"]);
