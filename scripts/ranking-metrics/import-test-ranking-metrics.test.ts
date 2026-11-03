@@ -8,7 +8,6 @@ import { parse as parseYaml } from "yaml";
 import { CLAWHUB_TEST_DEPLOYMENT } from "../seed-test";
 import {
   assertRankingTablesUnchanged,
-  assertRankingTablesMatchDigests,
   assertRankingTablesMatchLogicalDigests,
   assertTestDeployment,
   buildConvexImportArchiveCommand,
@@ -17,7 +16,6 @@ import {
   mergeRankingMetricImportRows,
   parseArgs,
   readCurrentTestMetadata,
-  rankingTableDigests,
   rankingTableLogicalDigests,
   resolveTargets,
   type ResolvedRankingMetricTarget,
@@ -442,15 +440,10 @@ describe("Test ranking metric command guard", () => {
       "skills changed after the backup snapshot",
     );
 
-    const rollbackDigests = await rankingTableDigests(baseline);
-    await expect(
-      assertRankingTablesMatchDigests(unchanged, rollbackDigests),
-    ).resolves.toBeUndefined();
-    await expect(assertRankingTablesMatchDigests(changed, rollbackDigests)).rejects.toThrow(
-      "skillDailyStats no longer matches the rollback source state",
-    );
-
     const logicalDigests = await rankingTableLogicalDigests(baseline);
+    await expect(
+      assertRankingTablesMatchLogicalDigests(unchanged, logicalDigests),
+    ).resolves.toBeUndefined();
     await expect(
       assertRankingTablesMatchLogicalDigests(rekeyed, logicalDigests),
     ).resolves.toBeUndefined();

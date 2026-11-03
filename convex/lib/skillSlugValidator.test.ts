@@ -7,29 +7,19 @@ import {
   isSearchableSkillSlugShape,
   isValidSkillSlugShape,
   normalizeSkillSlug,
-  normalizeSkillSlugOrNull,
   SKILL_SLUG_CONSTRAINTS,
 } from "./skillSlugValidator";
 
 describe("normalizeSkillSlug", () => {
   it("trims and lowercases", () => {
     expect(normalizeSkillSlug("  Hello-World  ")).toBe("hello-world");
+    expect(normalizeSkillSlug("  MySkill  ")).toBe("myskill");
   });
 
-  it("returns empty string for nullish", () => {
+  it("returns empty string for blank or nullish input", () => {
+    expect(normalizeSkillSlug("   ")).toBe("");
     expect(normalizeSkillSlug(undefined)).toBe("");
     expect(normalizeSkillSlug(null)).toBe("");
-  });
-});
-
-describe("normalizeSkillSlugOrNull", () => {
-  it("returns null for empty input", () => {
-    expect(normalizeSkillSlugOrNull("   ")).toBeNull();
-    expect(normalizeSkillSlugOrNull(null)).toBeNull();
-  });
-
-  it("returns normalized slug for non-empty input", () => {
-    expect(normalizeSkillSlugOrNull("  MySkill  ")).toBe("myskill");
   });
 });
 
