@@ -60,15 +60,19 @@ Endor runs with `docker run --rm` from a digest-pinned image built by the manual
   user (it uses public DNS resolvers because the firewall blocks private ones);
 - runs npm and Yarn through shims that strip Endor credentials and disable
   dependency scripts. The image pins an npm version that also suppresses Git
-  dependency `prepare` scripts; re-verify that if npm is upgraded.
+  dependency `prepare` scripts. Before upgrading npm in the image, confirm that
+  installing a Git dependency whose `prepare` script writes a marker file leaves
+  no marker under `NPM_CONFIG_IGNORE_SCRIPTS=true`.
 
 The wrapper accepts Endor's exit 128 (policy findings), treats empty output from
 a successful scan as no findings, and fails when Endor logs analysis or
 call-graph errors even if it exits zero.
 
-If the scan fails or times out, the worker force-removes the container. Killing
-the Docker CLI does not stop the container, and `--rm` plus the disposable runner
-cover the rare case where removal fails.
+If the scan fails or times out, the worker force-removes the container, because
+killing the Docker CLI does not stop it. Removal is best effort: a failed removal
+is added to the recorded error, and a container that outlives it (for example
+one the daemon finishes creating after the CLI was killed) is reaped by `--rm`
+when it exits and by the disposable runner at job end.
 
 Endor credentials reach only the Docker CLI and the container. The ClawScan
 judge and other scanners never receive them.

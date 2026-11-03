@@ -279,14 +279,29 @@ export async function runEndorPluginScan(input: {
         timedOut: error.timedOut,
       });
     }
-    // Killing the Docker CLI leaves the container running. Remove it now;
-    // --rm and the disposable runner cover the case where this fails.
-    await runWorkerCommand("docker", ["rm", "--force", containerName], {
+    // Killing the Docker CLI leaves the container running, so remove it now.
+    // Removal is best effort: --rm and the disposable runner cover a failure,
+    // which is recorded with the scan error rather than failing the job.
+    const removalError = await runWorkerCommand("docker", ["rm", "--force", containerName], {
       commandLabel: "Endor container removal",
       cwd: input.workspace,
       env: dockerEnv(input.workspace, env, []),
       timeoutMs: DOCKER_REMOVE_TIMEOUT_MS,
-    }).catch(() => undefined);
+    }).then(
+      () => undefined,
+      (reason: unknown) => reason,
+    );
+    // After a normal nonzero exit, --rm has already removed the container.
+    const alreadyRemoved =
+      removalError instanceof CommandFailure && /no such container/i.test(removalError.stderr);
+    if (removalError !== undefined && !alreadyRemoved) {
+      const scanMessage = error instanceof Error ? error.message : String(error);
+      const removalMessage =
+        removalError instanceof Error ? removalError.message : String(removalError);
+      throw new Error(`${scanMessage}; Endor container removal also failed: ${removalMessage}`, {
+        cause: error,
+      });
+    }
     throw error;
   }
   input.onDiagnostic?.({

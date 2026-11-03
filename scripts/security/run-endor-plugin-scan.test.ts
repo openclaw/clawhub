@@ -35,7 +35,10 @@ case "$1" in
     if [[ -f "$root/docker-run-stderr" ]]; then cat "$root/docker-run-stderr" >&2; fi
     if [[ -f "$root/docker-run-exit" ]]; then exit "$(cat "$root/docker-run-exit")"; fi
     ;;
-  rm) printf '%s\\n' "$@" > "$root/docker-rm-args" ;;
+  rm)
+    printf '%s\\n' "$@" > "$root/docker-rm-args"
+    if [[ -f "$root/docker-rm-stderr" ]]; then cat "$root/docker-rm-stderr" >&2; exit 1; fi
+    ;;
   *) echo "unexpected docker command: $*" >&2; exit 99 ;;
 esac
 `,
@@ -235,6 +238,29 @@ describe("runEndorPluginScan", () => {
       ),
     ).rejects.toMatchObject({ timedOut: true });
     await expectContainerForceRemoved(workspace, diagnostics);
+  });
+
+  it.each([
+    {
+      removal: "already removed by --rm",
+      stderr: "Error response from daemon: No such container: x\n",
+      recorded: false,
+    },
+    {
+      removal: "failing",
+      stderr: "Error response from daemon: cannot remove container: daemon busy\n",
+      recorded: true,
+    },
+  ])("records only real removal failures when the container is $removal", async (scenario) => {
+    const workspace = await tempDir();
+    await packageRoot(workspace);
+    await writeFile(join(workspace, "docker-run-exit"), "17");
+    await writeFile(join(workspace, "docker-rm-stderr"), scenario.stderr);
+    const error = await runScan(workspace).catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    expect(message).toContain("Endor scan exited 17");
+    expect(message.includes("Endor container removal also failed")).toBe(scenario.recorded);
   });
 
   it("skips artifacts without a package manifest instead of reporting a clean scan", async () => {
