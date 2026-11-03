@@ -13238,38 +13238,6 @@ a.skills-sh-security-audit-row:focus-visible {
   text-underline-offset: 2px;
 }
 
-.dashboard-status-chip {
-  gap: 6px;
-  min-width: 0;
-  width: fit-content;
-  white-space: nowrap;
-}
-
-.dashboard-status-info {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: currentColor;
-  cursor: default;
-  opacity: 0.78;
-}
-
-.dashboard-status-info:hover,
-.dashboard-status-info:focus-visible {
-  opacity: 1;
-  background: color-mix(in srgb, currentColor 10%, transparent);
-}
-
-.dashboard-status-info:focus-visible {
-  outline: 2px solid var(--oc-focus-ring);
-  outline-offset: 2px;
-}
-
 .btn-sm {
   padding: 6px 12px;
   font-size: 0.85rem;
@@ -24280,26 +24248,6 @@ a[class*="rounded-full"] {
   min-width: 0;
 }
 
-.dashboard-header-publisher {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-}
-
-.dashboard-header-avatar {
-  display: inline-flex;
-  flex-shrink: 0;
-}
-
-.dashboard-header-avatar .marketplace-icon,
-.dashboard-header-avatar .marketplace-icon:hover {
-  transform: none;
-  box-shadow: none;
-  pointer-events: none;
-  transition: none;
-}
-
 .dashboard-header-publisher-trigger {
   width: auto;
   min-width: 0;
@@ -24339,44 +24287,6 @@ a[class*="rounded-full"] {
   flex-shrink: 0;
 }
 
-.dashboard-header-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: var(--fs-sm);
-  line-height: 1.4;
-}
-
-.dashboard-header-name {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.dashboard-header-meta-sep {
-  opacity: 0.45;
-}
-
-.dashboard-header-role {
-  color: var(--ink-muted);
-  text-transform: capitalize;
-}
-
-.dashboard-header-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  color: var(--ink-soft);
-  font-size: var(--fs-sm);
-}
-
-.dashboard-header-summary > span[aria-hidden] {
-  opacity: 0.4;
-}
-
 .dashboard-header-handle {
   color: var(--ink-muted);
   font-weight: 500;
@@ -24409,50 +24319,6 @@ a[class*="rounded-full"] {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--surface-muted);
-}
-
-.dashboard-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  border: 0;
-  border-radius: calc(var(--r-md) - 4px);
-  background: transparent;
-  color: var(--ink-soft);
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  line-height: 1;
-  padding: 8px 12px;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.dashboard-tab:hover {
-  color: var(--ink);
-}
-
-.dashboard-tab.is-active {
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
-}
-
-.dashboard-tab-count {
-  min-width: 20px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
-  color: var(--ink-soft);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  text-align: center;
-}
-
-.dashboard-tab.is-active .dashboard-tab-count {
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
-  color: var(--ink);
 }
 
 .dashboard-toolbar-controls {
@@ -24923,82 +24789,8 @@ a[class*="rounded-full"] {
   }
 }
 
-.dashboard-summary-cards {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin: 16px 0 18px;
-}
-
-.dashboard-summary-card {
-  display: grid;
-  gap: 4px;
-  padding: 14px 16px;
-  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-}
-
-.dashboard-summary-card.is-alert {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-}
-
-.dashboard-summary-card-label {
-  color: var(--ink-soft);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.dashboard-summary-card-value {
-  color: var(--ink);
-  font-size: 1.35rem;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
 .dashboard-workspace-panels {
   margin-bottom: 18px;
-}
-
-.dashboard-status-chips {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.dashboard-status-chip {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.4;
-  border: 1px solid var(--line);
-  background: var(--surface-muted);
-  color: var(--ink-soft);
-}
-
-.dashboard-status-chip.is-success {
-  border-color: color-mix(in srgb, #22c55e 30%, var(--line));
-  color: #15803d;
-}
-
-.dashboard-status-chip.is-warning {
-  border-color: color-mix(in srgb, #f59e0b 30%, var(--line));
-  color: #b45309;
-}
-
-.dashboard-status-chip.is-destructive {
-  border-color: color-mix(in srgb, #ef4444 30%, var(--line));
-  color: #b91c1c;
-}
-
-.dashboard-status-chip.is-pending {
-  border-color: color-mix(in srgb, var(--ink-soft) 25%, var(--line));
 }
 
 .dashboard-welcome-primary {
@@ -25009,10 +24801,6 @@ a[class*="rounded-full"] {
 }
 
 @media (max-width: 900px) {
-  .dashboard-summary-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .dashboard-header-publisher-center {
     position: static;
     order: 3;
@@ -25785,23 +25573,6 @@ a[class*="rounded-full"] {
   }
 }
 
-.dashboard-review-sheet-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 0;
-  color: var(--ink-soft);
-  font-size: 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-}
-
-.dashboard-review-sheet-section {
-  display: grid;
-  gap: 10px;
-  padding: 14px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-}
-
 .dashboard-review-sheet .security-report-panel-body-findings {
   gap: 18px;
 }
@@ -25812,100 +25583,6 @@ a[class*="rounded-full"] {
 
 .dashboard-review-skillspector .skillspector-checks {
   margin-top: 6px;
-}
-
-.dashboard-review-sheet-section p {
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.dashboard-review-findings-list {
-  display: grid;
-  gap: 8px;
-}
-
-.dashboard-review-finding {
-  display: grid;
-  gap: 4px;
-  padding: 10px 11px;
-  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--ink) 3%, transparent);
-}
-
-.dashboard-review-finding span {
-  color: var(--ink-soft);
-  font-size: 11px;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.dashboard-review-finding code {
-  color: var(--ink-soft);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-.dashboard-review-finding pre {
-  max-height: 160px;
-  overflow: auto;
-  margin: 2px 0 0;
-  padding: 9px 10px;
-  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  border-radius: 9px;
-  background: color-mix(in srgb, #000 18%, transparent);
-  color: color-mix(in srgb, var(--ink) 86%, transparent);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-}
-
-.dashboard-review-analysis-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.dashboard-review-analysis-grid div {
-  display: grid;
-  gap: 6px;
-  padding: 11px;
-  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--ink) 3%, transparent);
-}
-
-.dashboard-review-analysis-grid span {
-  color: var(--ink-soft);
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.dashboard-review-analysis-grid strong {
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.dashboard-review-sheet-action {
-  display: flex;
-  justify-content: center;
-  margin-top: 14px;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
-  border-radius: 11px;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.dashboard-review-sheet-action:hover {
-  background: color-mix(in srgb, var(--ink) 5%, transparent);
-  text-decoration: none;
 }
 
 .dashboard-review-skillspector {
