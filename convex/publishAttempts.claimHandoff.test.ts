@@ -107,6 +107,143 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("bounded pre-publication URL hydration", () => {
+  async function manyFiles(t: TestBackend, count: number) {
+    const fixture = await seed(t);
+    const files = Array.from({ length: count }, (_, index) => ({
+      path: `files/${index}.txt`,
+      size: 27,
+      sha256: `original-file-hash-${index}`,
+      storageId: fixture.storageId,
+    }));
+    await t.run(async (ctx) => await ctx.db.patch(fixture.attemptId, { files }));
+    return { ...fixture, files };
+  }
+
+  it.each([0, 1, 8, 9, 237])(
+    "hydrates %i files within storage capacity and preserves their order and originals",
+    async (count) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+      const t = convexTest(schema, modules);
+      const fixture = await manyFiles(t, count);
+      let active = 0;
+      let peak = 0;
+      let calls = 0;
+      const result = (await handler(
+        actionContext(t, async () => {
+          const index = calls++;
+          active += 1;
+          peak = Math.max(peak, active);
+          try {
+            if (active > 8) throw new Error("synthetic concurrent storage capacity exceeded");
+            // Complete peers out of order; output must retain manifest order.
+            for (let step = 0; step < 8 - (index % 8); step += 1) await Promise.resolve();
+            return `https://synthetic.invalid/file-${index}`;
+          } finally {
+            active -= 1;
+          }
+        }),
+        { token, attemptId: fixture.attemptId },
+      )) as { files: Array<(typeof fixture.files)[number] & { url: string }> };
+      expect(result.files).toEqual(
+        fixture.files.map((file, index) => ({
+          ...file,
+          url: `https://synthetic.invalid/file-${index}`,
+        })),
+      );
+      expect(calls).toBe(count);
+      expect(peak).toBeLessThanOrEqual(8);
+      expect(active).toBe(0);
+      const after = (await state(t, fixture.attemptId))!;
+      expect(after.files).toEqual(fixture.files);
+      expect(after.checkFailureCount).toBe(2);
+      expect(after.checkClaimExpiresAt).toBe(Date.now() + 30 * 60_000);
+      expect(await bytes(t, fixture.storageId)).toBe("synthetic retained original");
+    },
+  );
+
+  it("preserves a null file URL without dropping or replacing any file", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+    const t = convexTest(schema, modules);
+    const fixture = await manyFiles(t, 237);
+    let calls = 0;
+    const result = (await handler(
+      actionContext(t, async () => {
+        const index = calls++;
+        return index === 91 ? null : `https://synthetic.invalid/file-${index}`;
+      }),
+      { token, attemptId: fixture.attemptId },
+    )) as { files: Array<(typeof fixture.files)[number] & { url: string | null }> };
+    expect(result.files).toEqual(
+      fixture.files.map((file, index) => ({
+        ...file,
+        url: index === 91 ? null : `https://synthetic.invalid/file-${index}`,
+      })),
+    );
+    expect((await state(t, fixture.attemptId))?.files).toEqual(fixture.files);
+  });
+
+  it("drains the failed batch, rethrows the first rejection and never starts later batches", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const t = convexTest(schema, modules);
+    const fixture = await manyFiles(t, 237);
+    const before = (await state(t, fixture.attemptId))!;
+    const firstFailure = new Error("synthetic first storage rejection");
+    const laterFailure = new Error("synthetic later storage rejection");
+    let calls = 0;
+    let active = 0;
+    let releasePeers!: () => void;
+    const peers = new Promise<void>((resolve) => {
+      releasePeers = resolve;
+    });
+    let batchStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      batchStarted = resolve;
+    });
+    const pending = handler(
+      actionContext(t, async () => {
+        const index = calls++;
+        active += 1;
+        if (calls === 8) batchStarted();
+        try {
+          if (index === 4) throw firstFailure;
+          await peers;
+          if (index === 0) throw laterFailure;
+          return "https://synthetic.invalid/peer";
+        } finally {
+          active -= 1;
+        }
+      }),
+      { token, attemptId: fixture.attemptId },
+    );
+    let finished = false;
+    void pending.then(
+      () => {
+        finished = true;
+      },
+      () => {
+        finished = true;
+      },
+    );
+    await started;
+    for (let index = 0; index < 10; index += 1) await Promise.resolve();
+    const finishedBeforePeers = finished;
+    releasePeers();
+    await expect(pending).rejects.toBe(firstFailure);
+    expect(finishedBeforePeers).toBe(false);
+    expect(calls).toBe(8);
+    expect(active).toBe(0);
+    const after = (await state(t, fixture.attemptId))!;
+    expect(after.files).toEqual(before.files);
+    expect(after.checks).toEqual(before.checks);
+    expect(after.checkFailureCount).toBe(before.checkFailureCount);
+    expect(after.checkClaimLastError).toBe(before.checkClaimLastError);
+    expect(after.checkClaimExpiresAt).toBe(Date.now() + 300_000);
+    expect(await bytes(t, fixture.storageId)).toBe("synthetic retained original");
+  });
+});
+
 describe("pre-publication failed handoff backoff", () => {
   it("backs off a committed claim after URL hydration fails without losing scanner history", async () => {
     vi.useFakeTimers({ now: new Date("2026-11-03T00:00:00Z") });
