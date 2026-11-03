@@ -4,14 +4,15 @@ if [ "$#" -ne 3 ]; then
   echo "Usage: clawhub-endor-scan TARGET SOURCE_URL TAGS" >&2
   exit 2
 fi
+target=$1
 source_url=$2
-set -- "$1" --exit-on-policy-warning=false --project-tags "$3" --tags "$3"
+tags=$3
 # The worker mounts the normalized package read-only. All writes stay in the container.
-if [ ! -f "$1/package.json" ]; then
+if [ ! -f "$target/package.json" ]; then
   echo "Endor requires package.json at the target root" >&2
   exit 1
 fi
-if [ -n "$(find "$1" -name .npmrc -print -quit)" ]; then
+if [ -n "$(find "$target" -name .npmrc -print -quit)" ]; then
   echo "Endor cannot safely scan targets containing .npmrc" >&2
   exit 1
 fi
@@ -64,7 +65,7 @@ write_resolver_shim yarn "$yarn_executable"
 "$resolver_bin/yarn" --version >/dev/null
 export PATH="$resolver_bin:$PATH"
 scan_root=$(mktemp -d)
-cp -R "$1"/. "$scan_root"/
+cp -R "$target"/. "$scan_root"/
 # Never reuse submitted Git hooks/config or installed dependencies.
 find "$scan_root" \( -name .git -o -name node_modules \) -prune -exec rm -rf {} +
 export GIT_CONFIG_COUNT=1
@@ -79,7 +80,6 @@ git -C "$scan_root" add --all --force
 git -C "$scan_root" commit -q --allow-empty -m "ClawScan scan snapshot"
 git -C "$scan_root" remote add origin "$source_url"
 cd "$scan_root"
-shift
 report=$(mktemp)
 diagnostic=$(mktemp)
 status_file=$(mktemp)
@@ -87,7 +87,7 @@ status_file=$(mktemp)
 # Keep the scanner's status separately: POSIX pipelines return tee's status.
 {
   status=0
-  endorctl scan "$@" --dependencies --languages=javascript,typescript --call-graph-languages=javascript,typescript --build=false --output-type=json --path "$scan_root" >"$report" || status=$?
+  endorctl scan --exit-on-policy-warning=false --project-tags "$tags" --tags "$tags" --dependencies --languages=javascript,typescript --call-graph-languages=javascript,typescript --build=false --output-type=json --path "$scan_root" >"$report" || status=$?
   printf '%s\n' "$status" >"$status_file"
 } 2>&1 | tee "$diagnostic" >&2
 status=$(cat "$status_file")

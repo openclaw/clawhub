@@ -6,18 +6,12 @@ import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import { CommandFailure, runWorkerCommand } from "../lib/runWorkerCommand";
 import { redactWorkerPublicText } from "../lib/workerRedaction";
 
-const ENDOR_ENV_KEYS = [
-  "ENDOR_API",
-  "ENDOR_NAMESPACE",
-  "ENDOR_TOKEN",
-  "ENDOR_API_CREDENTIALS_KEY",
-  "ENDOR_API_CREDENTIALS_SECRET",
-] as const;
 const ENDOR_SECRET_ENV_KEYS = [
   "ENDOR_TOKEN",
   "ENDOR_API_CREDENTIALS_KEY",
   "ENDOR_API_CREDENTIALS_SECRET",
 ] as const;
+const ENDOR_ENV_KEYS = ["ENDOR_API", "ENDOR_NAMESPACE", ...ENDOR_SECRET_ENV_KEYS] as const;
 const CHILD_RUNTIME_ENV_KEYS = [
   "PATH",
   "LANG",
@@ -71,12 +65,9 @@ export type EndorCommandDiagnostic = {
   timedOut?: boolean;
 };
 
-export function isEndorPluginScanEnabled(
-  family: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
+export function isEndorPluginScanEnabled(family: string | undefined): boolean {
   // Endor resolves npm dependencies, so only code plugins are eligible.
-  return env.CODEX_SECURITY_SCAN_ENDOR_ENABLED === "1" && family === "code-plugin";
+  return process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED === "1" && family === "code-plugin";
 }
 
 async function isRegularFile(path: string) {
@@ -199,10 +190,14 @@ export async function runEndorPluginScan(input: {
   // Only claimed release metadata identifies the saved Endor project; artifact
   // manifests and signed download URLs are untrusted or contain credentials.
   const release = packageReleaseSchema.parse(input.packageRelease);
-  const sourceUrl = `https://clawhub.ai/api/v1/packages/${release.package.name.split("/").map(encodeURIComponent).join("/")}/versions/${encodeURIComponent(release.release.version)}/artifact/download`;
+  const name = release.package.name;
+  const version = release.release.version;
+  const encodedName = name.split("/").map(encodeURIComponent).join("/");
+  const sourceUrl = `https://clawhub.ai/api/v1/packages/${encodedName}/versions/${encodeURIComponent(version)}/artifact/download`;
   // Bundle versions can contain commas; escape tag delimiters without changing
   // ordinary package/version labels or colliding with a literal %.
-  const tags = `plugin:${release.package.name},version:${release.release.version.replace(/[%,]/g, (character) => encodeURIComponent(character))}`;
+  const tagVersion = version.replace(/[%,]/g, (character) => encodeURIComponent(character));
+  const tags = `plugin:${name},version:${tagVersion}`;
 
   const sourceRoot = await resolvePackageArtifactRoot(input.workspace);
   if (!sourceRoot) {
@@ -300,15 +295,13 @@ export async function runEndorPluginScan(input: {
     stdout: redactEndorDiagnosticText(output.stdout, env),
   });
 
-  let parsedOutput: unknown;
+  let report: z.infer<typeof endorRawReportSchema>;
   try {
-    parsedOutput = JSON.parse(output.stdout);
+    report = endorRawReportSchema.parse(JSON.parse(output.stdout));
   } catch {
     throw new Error("Endor scanner did not emit valid findings JSON");
   }
-  const report = endorRawReportSchema.safeParse(parsedOutput);
-  if (!report.success) throw new Error("Endor scanner did not emit valid findings JSON");
-  const reachableFindings = report.data.all_findings.filter((finding) =>
+  const reachableFindings = report.all_findings.filter((finding) =>
     finding.spec.finding_tags?.includes(REACHABLE_FUNCTION_TAG),
   );
   return {

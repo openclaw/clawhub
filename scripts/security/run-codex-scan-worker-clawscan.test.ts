@@ -381,10 +381,11 @@ function endorArtifactJson() {
 
 // A ClawScan stand-in that runs only after Endor finishes and proves the judge
 // never receives Endor credentials or Endor evidence.
-async function writeCombinedFakeClawScan(input: {
+async function writeFakeClawScanAfterEndor(input: {
   artifactJson: string;
   callLog: string;
   endorDoneMarker: string;
+  metadataLog?: string;
   path: string;
   skillReadyMarker?: string;
 }) {
@@ -394,6 +395,7 @@ async function writeCombinedFakeClawScan(input: {
     input.path,
     `test -f ${JSON.stringify(input.endorDoneMarker)}
 ${input.skillReadyMarker ? `test -f ${JSON.stringify(input.skillReadyMarker)}` : ""}
+${input.metadataLog ? `cp metadata.json ${JSON.stringify(input.metadataLog)}` : ""}
 test -z "\${ENDOR_TOKEN:-}"
 test -z "\${ENDOR_API_CREDENTIALS_KEY:-}"
 test -z "\${ENDOR_API_CREDENTIALS_SECRET:-}"
@@ -468,15 +470,15 @@ function pluginPackageJobWithBundledSkill(jobId: string): ClaimedJob {
 function fakeEndorDockerBody(input: {
   endorDoneMarker: string;
   exitCode: number;
-  onStart?: string;
-  startOutput: string;
+  onRun?: string;
+  stdout: string;
 }) {
   return `case "$1" in
   run)
     printf '%s\\n' "$@" > ${JSON.stringify(join(dirname(input.endorDoneMarker), "endor-run-args"))}
-    ${input.onStart ?? ""}
+    ${input.onRun ?? ""}
     cat <<'JSON'
-${input.startOutput}
+${input.stdout}
 JSON
     touch ${JSON.stringify(input.endorDoneMarker)}
     exit ${input.exitCode}
@@ -1570,30 +1572,19 @@ JSON`,
       const fakeClawScan = join(workspace, "fake-clawscan");
       const endorDoneMarker = join(workspace, "endor-done");
       const metadataLog = join(workspace, "judge-metadata.json");
-      await writeFakeClawScanCommand(
-        fakeClawScan,
-        `test -f ${JSON.stringify(endorDoneMarker)}
-test ! -f endor-analysis.json
-cp metadata.json ${JSON.stringify(metadataLog)}
-out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --config|--context) exit 98 ;;
-    --scanner-result) [[ "$2" != endor=* ]] || exit 99; shift 2 ;;
-    --output) out="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-cat > "$out" <<'JSON'
-${clawScanArtifactJson({ verdict: "benign" })}
-JSON`,
-      );
+      await writeFakeClawScanAfterEndor({
+        artifactJson: clawScanArtifactJson({ verdict: "benign" }),
+        callLog: join(workspace, "clawscan-calls.log"),
+        endorDoneMarker,
+        metadataLog,
+        path: fakeClawScan,
+      });
       await configureEndorFakeCommands({
         clawScan: fakeClawScan,
         dockerBody: fakeEndorDockerBody({
           endorDoneMarker,
           exitCode: scan.exitCode,
-          startOutput: scan.output,
+          stdout: scan.output,
         }),
         workspace,
       });
@@ -1686,7 +1677,7 @@ JSON`,
     const endorStarted = join(workspace, "endor-started");
     const skillReady = join(workspace, "skill-ready");
     const endorDoneMarker = join(workspace, "endor-done");
-    await writeCombinedFakeClawScan({
+    await writeFakeClawScanAfterEndor({
       artifactJson: clawScanArtifactJson({ verdict: "benign" }),
       callLog,
       endorDoneMarker,
@@ -1698,13 +1689,13 @@ JSON`,
       dockerBody: fakeEndorDockerBody({
         endorDoneMarker,
         exitCode: 0,
-        onStart: `touch ${JSON.stringify(endorStarted)}
+        onRun: `touch ${JSON.stringify(endorStarted)}
 for attempt in {1..100}; do
   [[ -f ${JSON.stringify(skillReady)} ]] && break
   sleep 0.05
 done
 test -f ${JSON.stringify(skillReady)}`,
-        startOutput: endorArtifactJson(),
+        stdout: endorArtifactJson(),
       }),
       skillSpectorBody: `for attempt in {1..100}; do
   [[ -f ${JSON.stringify(endorStarted)} ]] && break
@@ -1753,12 +1744,12 @@ exit 99`,
       dockerBody: fakeEndorDockerBody({
         endorDoneMarker,
         exitCode: 0,
-        onStart: `for attempt in {1..100}; do
+        onRun: `for attempt in {1..100}; do
   [[ -f ${JSON.stringify(releaseEndor)} ]] && break
   sleep 0.05
 done
 test -f ${JSON.stringify(releaseEndor)}`,
-        startOutput: endorArtifactJson(),
+        stdout: endorArtifactJson(),
       }),
       skillSpectorBody: `touch ${JSON.stringify(skillFailed)}
 echo "SkillSpector fixture failure" >&2
@@ -2048,8 +2039,8 @@ exit 19`,
       dockerBody: fakeEndorDockerBody({
         endorDoneMarker,
         exitCode: 17,
-        onStart: "echo 'Endor fixture-token failure' >&2",
-        startOutput: "{}",
+        onRun: "echo 'Endor fixture-token failure' >&2",
+        stdout: "{}",
       }),
       workspace,
     });
@@ -2098,7 +2089,7 @@ exit 19`,
     const fakeClawScan = join(workspace, "fake-clawscan");
     const callLog = join(workspace, "clawscan-calls.log");
     const endorDoneMarker = join(workspace, "endor-done");
-    await writeCombinedFakeClawScan({
+    await writeFakeClawScanAfterEndor({
       artifactJson: clawScanArtifactJson({ verdict: "benign" }),
       callLog,
       endorDoneMarker,
@@ -2109,8 +2100,8 @@ exit 19`,
       dockerBody: fakeEndorDockerBody({
         endorDoneMarker,
         exitCode: 0,
-        onStart: "sleep 1",
-        startOutput: endorArtifactJson(),
+        onRun: "sleep 1",
+        stdout: endorArtifactJson(),
       }),
       workspace,
     });

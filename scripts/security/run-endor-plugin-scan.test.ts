@@ -81,6 +81,21 @@ async function dockerRunArgs(workspace: string) {
   return (await readFile(join(workspace, "docker-run-args"), "utf8")).trim().split("\n");
 }
 
+// Read the name from the reported command: a timed-out fake may not have run yet.
+async function expectContainerForceRemoved(
+  workspace: string,
+  diagnostics: Array<Partial<EndorCommandDiagnostic>>,
+) {
+  const runArgs = diagnostics[0]?.args ?? [];
+  const containerName = runArgs[runArgs.indexOf("--name") + 1];
+  expect(containerName).toMatch(/^clawhub-endor-/);
+  expect((await readFile(join(workspace, "docker-rm-args"), "utf8")).trim().split("\n")).toEqual([
+    "rm",
+    "--force",
+    containerName,
+  ]);
+}
+
 describe("runEndorPluginScan", () => {
   it("scans a normalized disposable package and retains only exact reachable functions", async () => {
     const workspace = await tempDir();
@@ -206,13 +221,7 @@ describe("runEndorPluginScan", () => {
       timedOut: false,
     });
     expect(JSON.stringify(diagnostics)).not.toContain("fixture-token");
-    const containerName = (await dockerRunArgs(workspace))[3];
-    expect(containerName).toMatch(/^clawhub-endor-/);
-    expect((await readFile(join(workspace, "docker-rm-args"), "utf8")).trim().split("\n")).toEqual([
-      "rm",
-      "--force",
-      containerName,
-    ]);
+    await expectContainerForceRemoved(workspace, diagnostics);
   });
 
   it("removes the still-running container when the scan times out", async () => {
@@ -225,13 +234,7 @@ describe("runEndorPluginScan", () => {
         diagnostics.push(next),
       ),
     ).rejects.toMatchObject({ timedOut: true });
-    const containerName = diagnostics[0]?.args?.[4];
-    expect(containerName).toMatch(/^clawhub-endor-/);
-    expect((await readFile(join(workspace, "docker-rm-args"), "utf8")).trim().split("\n")).toEqual([
-      "rm",
-      "--force",
-      containerName,
-    ]);
+    await expectContainerForceRemoved(workspace, diagnostics);
   });
 
   it("skips artifacts without a package manifest instead of reporting a clean scan", async () => {

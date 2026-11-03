@@ -1344,8 +1344,8 @@ describe("run-codex-scan-worker diagnostics", () => {
       completedAt: 2000,
       diagnosticsRoot,
       endor: {
-        args: ["docker", "container", "create", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
-        error: "Endor Docker start timed out; see redacted stdout/stderr diagnostics",
+        args: ["docker", "run", "--rm", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
+        error: "Endor scan timed out; see redacted stdout/stderr diagnostics",
         exitCode: null,
         stderr: `ENDOR_TOKEN=fixture-token\ndependency resolution failed ${"x".repeat(21_000)}\n`,
         stdout: "",
@@ -1373,8 +1373,8 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(stderr).toContain("...[truncated ");
     expect(stderr).not.toContain("fixture-token");
     expect(diagnostic.endorResult).toEqual({
-      args: ["docker", "container", "create", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
-      error: "Endor Docker start timed out; see redacted stdout/stderr diagnostics",
+      args: ["docker", "run", "--rm", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
+      error: "Endor scan timed out; see redacted stdout/stderr diagnostics",
       exitCode: null,
       stderrPath: "endor.stderr.redacted.log",
       stdoutPath: "endor.stdout.redacted.log",
