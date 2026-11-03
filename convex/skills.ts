@@ -126,6 +126,7 @@ import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./l
 import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
+  staticScanValidator,
   vtAnalysisValidator,
 } from "./lib/securityAnalysisValidators";
 import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "./lib/skillCards";
@@ -7928,23 +7929,7 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
   args: {
     skillId: v.id("skills"),
     versionId: v.id("skillVersions"),
-    staticScan: v.object({
-      status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-      reasonCodes: v.array(v.string()),
-      findings: v.array(
-        v.object({
-          code: v.string(),
-          severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-          file: v.string(),
-          line: v.number(),
-          message: v.string(),
-          evidence: v.string(),
-        }),
-      ),
-      summary: v.string(),
-      engineVersion: v.string(),
-      checkedAt: v.number(),
-    }),
+    staticScan: staticScanValidator,
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
@@ -12020,23 +12005,7 @@ export const insertVersion = internalMutation({
         }),
       }),
     ),
-    staticScan: v.object({
-      status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-      reasonCodes: v.array(v.string()),
-      findings: v.array(
-        v.object({
-          code: v.string(),
-          severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-          file: v.string(),
-          line: v.number(),
-          message: v.string(),
-          evidence: v.string(),
-        }),
-      ),
-      summary: v.string(),
-      engineVersion: v.string(),
-      checkedAt: v.number(),
-    }),
+    staticScan: staticScanValidator,
     llmAnalysis: v.optional(v.any()),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     embedding: v.array(v.number()),

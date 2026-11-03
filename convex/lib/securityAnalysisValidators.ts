@@ -74,3 +74,21 @@ export const aigAnalysisValidator = v.object({
   error: v.optional(v.string()),
   checkedAt: v.number(),
 });
+
+export const staticScanValidator = v.object({
+  status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
+  reasonCodes: v.array(v.string()),
+  findings: v.array(
+    v.object({
+      code: v.string(),
+      severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
+      file: v.string(),
+      line: v.number(),
+      message: v.string(),
+      evidence: v.string(),
+    }),
+  ),
+  summary: v.string(),
+  engineVersion: v.string(),
+  checkedAt: v.number(),
+});
