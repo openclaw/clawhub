@@ -20,6 +20,7 @@ import {
   encryptDiagnosticEvidence,
   requireDiagnosticRecipient,
 } from "./clawscan-diagnostic-encryption";
+import { selectFixedSkill } from "./clawscan-diagnostic-fixed-registry";
 import {
   downloadOriginal038,
   materializeOriginal038,
@@ -46,6 +47,8 @@ const modules = [
   "validation.py",
   "proxy.py",
   "original038.py",
+  "fixed_originals.py",
+  "fixed-originals.json",
   "provenance.json",
 ];
 
@@ -66,8 +69,7 @@ export function original038DiagnosticPassed(input: {
   );
 }
 
-export async function mainFixedOriginalDiagnostic(fixture: "038" | "079" = "038") {
-  if (fixture !== "038" && fixture !== "079") throw new Error("Only fixed originals are supported");
+export async function mainFixedOriginalDiagnostic(fixture = "038") {
   const selected =
     fixture === "038"
       ? {
@@ -78,14 +80,16 @@ export async function mainFixedOriginalDiagnostic(fixture: "038" | "079" = "038"
           download: downloadOriginal038,
           materialize: materializeOriginal038,
         }
-      : {
-          id: "mcpherson-governance-openclaw-0.8.0",
-          package: "@mcphersonai/mcpherson-governance-openclaw",
-          version: "0.8.0",
-          manifest: original079Manifest,
-          download: downloadOriginal079,
-          materialize: materializeOriginal079,
-        };
+      : fixture === "079"
+        ? {
+            id: "mcpherson-governance-openclaw-0.8.0",
+            package: "@mcphersonai/mcpherson-governance-openclaw",
+            version: "0.8.0",
+            manifest: original079Manifest,
+            download: downloadOriginal079,
+            materialize: materializeOriginal079,
+          }
+        : selectFixedSkill(fixture);
   const recipient = requireDiagnosticRecipient(process.env.DIAGNOSTIC_AGE_RECIPIENT);
   assertDisposableDiagnosticEnvironment(true);
   if (
@@ -131,6 +135,9 @@ export async function mainFixedOriginalDiagnostic(fixture: "038" | "079" = "038"
     automaticRetries: 0,
     maximumScans: 1,
     acceptedPublication: false,
+    ...("identity" in selected
+      ? { identity: selected.identity, registrySha256: selected.registrySha256 }
+      : {}),
   };
   await writeFile(join(evidence, "envelope.json"), JSON.stringify(envelope, null, 2), {
     mode: 0o600,
@@ -167,6 +174,9 @@ export async function mainFixedOriginalDiagnostic(fixture: "038" | "079" = "038"
           files: selected.manifest.files,
           package: envelope.package,
           version: envelope.version,
+          ...("identity" in selected
+            ? { identity: selected.identity, registrySha256: selected.registrySha256 }
+            : {}),
         },
         null,
         2,
@@ -217,8 +227,13 @@ export async function mainFixedOriginalDiagnostic(fixture: "038" | "079" = "038"
         tools,
         childPath: `${installed.scannerBin}:${setupEnv.PATH}`,
         readyForReview: true,
+        ...("identity" in selected ? { registrySha256: selected.registrySha256 } : {}),
         cases: {
-          [selected.id]: { path: target, files: selected.manifest.files },
+          [selected.id]: {
+            path: target,
+            files: selected.manifest.files,
+            ...("identity" in selected ? { identity: selected.identity } : {}),
+          },
         },
       }),
       { mode: 0o400, flag: "wx" },

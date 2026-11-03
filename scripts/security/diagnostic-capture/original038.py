@@ -10,6 +10,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 from capture import capture,credential_ranges
 from workspace_capture import WorkspaceCapture
 from validation import capture_gaps,tool_capture_gaps
+from fixed_originals import skill_originals,validate_skill_case
 
 
 def save(path,value):
@@ -31,7 +32,7 @@ def hashes(case):
 
 def tool_capture_requirements(case_id,report):
     required=['skillspector','aig-skill-scan','codex']
-    if case_id=='sn-ppt-workbench-2026.10.29':
+    if case_id=='sn-ppt-workbench-2026.10.29'or case_id in skill_originals():
         return {'required':required,'normallySkipped':{},'gaps':[]}
     if case_id!='mcpherson-governance-openclaw-0.8.0':
         raise ValueError('unknown fixed original')
@@ -121,11 +122,15 @@ def run(root):
     config=json.loads((root/'harness/runtime.json').read_text())
     originals={'sn-ppt-workbench-2026.10.29':(26,3862533,'ea3f5eb2634dffda246aacd1798f9d4915b0cd223feeb2cd7de35e9d3856c6c8'),
         'mcpherson-governance-openclaw-0.8.0':(106,762020,'3c28e5bc78b2dc13fa817b7faa3b14a0f1810fd22a7faf1055d2cde7fe3a44c0')}
-    if (len(config['cases'])!=1 or next(iter(config['cases']))not in originals
+    skills=skill_originals()
+    if (len(config['cases'])!=1 or next(iter(config['cases']))not in {*originals,*skills}
         or config.get('source')!='b08e2907eb60b33bf712b07673aff565c13d9ad7'):
         raise ValueError('fixed original/source scope differs')
     case_id=next(iter(config['cases']));case=config['cases'][case_id]
-    count,size,manifest_hash=originals[case_id]
+    if case_id in skills:
+        entry=validate_skill_case(config,case_id)
+        count=len(entry['files']);size=sum(row['size']for row in entry['files']);manifest_hash=entry['manifestSha256']
+    else:count,size,manifest_hash=originals[case_id]
     files=sorted(case['files'],key=lambda row:row['path'])
     if (len(files)!=count or sum(row['size']for row in files)!=size
         or hashlib.sha256(json.dumps(files,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -143,7 +148,7 @@ def run(root):
         'REASONING_EFFORT':'medium','SKILLSPECTOR_PROVIDER':'openai',
         'SKILLSPECTOR_MODEL':'gpt-6.1-sol','SKILLSPECTOR_REASONING_EFFORT':'medium',
         'CLAWSCAN_PROGRESS':'1','CLAWSCAN_CHILD_PROGRESS':'1'}
-    context_path=root/('contexts/original079.json'if case_id=='mcpherson-governance-openclaw-0.8.0'else'contexts/original038.json')
+    context_path=root/('contexts/original'+(skills[case_id]['fixture']if case_id in skills else'079'if case_id=='mcpherson-governance-openclaw-0.8.0'else'038')+'.json')
     context={'captureRunId':uuid.uuid4().hex,'mode':'live','original':case['path'],
         'work':str(work),'output':str(output),'environment':child}
     save(context_path,context)

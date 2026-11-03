@@ -68,7 +68,7 @@ class Applicability(unittest.TestCase):
             with self.subTest(change=change),tempfile.TemporaryDirectory()as name:
                 root=Path(name).resolve();harness=root/'harness';harness.mkdir();(harness/'bin').mkdir()
                 work=root/'work';work.mkdir();output=root/'evidence';output.mkdir();(root/'contexts').mkdir()
-                for module in ('capture.py','proxy.py'):shutil.copyfile(Path(__file__).parent/module,harness/module)
+                for module in ('capture.py','proxy.py','fixed_originals.py','fixed-originals.json'):shutil.copyfile(Path(__file__).parent/module,harness/module)
                 tool=root/'tool.py';marker=root/'tool-invoked'
                 tool.write_text('#!'+sys.executable+'\nimport json,sys\nfrom pathlib import Path\n'
                     f'Path({str(marker)!r}).write_text("trusted control only")\n'

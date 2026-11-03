@@ -8,6 +8,7 @@ import {
   runWorkerCommand,
   type WorkerCommandTermination,
 } from "../lib/runWorkerCommand";
+import { FIXED_ORIGINAL_SELECTORS } from "./clawscan-diagnostic-fixed-registry";
 import {
   downloadIncidentArchive,
   extractDiagnosticArchive,
@@ -334,12 +335,12 @@ export async function main(args = process.argv.slice(2)) {
   if (
     args.length === 4 &&
     args[0] === "--fixture" &&
-    ["original-038-encrypted", "original-079-encrypted"].includes(args[1]) &&
+    FIXED_ORIGINAL_SELECTORS.includes(args[1]) &&
     args[2] === "--source" &&
     args[3] === "reviewed"
   ) {
     const { mainFixedOriginalDiagnostic } = await import("./run-clawscan-original038-diagnostic");
-    return mainFixedOriginalDiagnostic(args[1] === "original-079-encrypted" ? "079" : "038");
+    return mainFixedOriginalDiagnostic(args[1].split("-")[1]);
   }
   const hostedTiny =
     args.length === 4 &&
