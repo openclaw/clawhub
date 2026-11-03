@@ -1141,6 +1141,7 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
         ...(existingClawscanAnalysis ? { existingClawscanAnalysis } : {}),
         ...(existingAigAnalysis ? { existingAigAnalysis } : {}),
         checkClaimExpiresAt,
+        previousCheckClaimLastError: attempt.checkClaimLastError,
         createdAt: attempt.createdAt,
       };
     }
@@ -1225,6 +1226,7 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
         artifactFingerprint: attempt.artifactFingerprint,
         files: [],
         checkClaimExpiresAt: now + CHECK_CLAIM_LEASE_MS,
+        previousCheckClaimLastError: attempt.checkClaimLastError,
         createdAt: attempt.createdAt,
       };
     }
@@ -1589,6 +1591,46 @@ export const finalizeSkillPublishAttemptInternal = internalAction({
   },
 });
 
+export const backoffFailedPrePublicationHandoffInternal = internalMutation({
+  args: {
+    attemptId: v.id("publishAttempts"),
+    claimId: v.string(),
+    artifactFingerprint: v.string(),
+    kind: v.union(v.literal("skill"), v.literal("package")),
+    status: v.union(v.literal("pending_checks"), v.literal("ready_to_finalize")),
+    checkClaimExpiresAt: v.number(),
+    previousCheckClaimLastError: v.optional(v.string()),
+    phase: v.union(v.literal("files"), v.literal("clawpack"), v.literal("response")),
+  },
+  handler: async (ctx, args) => {
+    const attempt = await ctx.db.get(args.attemptId);
+    const now = Date.now();
+    if (
+      !attempt ||
+      attempt.checkClaimId !== args.claimId ||
+      attempt.artifactFingerprint !== args.artifactFingerprint ||
+      attempt.kind !== args.kind ||
+      attempt.status !== args.status ||
+      attempt.checkClaimExpiresAt !== args.checkClaimExpiresAt ||
+      attempt.checkClaimExpiresAt <= now
+    ) {
+      return { backedOff: false };
+    }
+
+    // Only failed response preparation is known to be undelivered. Back off the
+    // exact lease so persistent storage faults cannot monopolize retry selection.
+    await ctx.db.patch(attempt._id, {
+      checkClaimExpiresAt: Math.min(args.checkClaimExpiresAt, now + CHECK_RETRY_BACKOFF_MS),
+      checkClaimLastError:
+        attempt.checkClaimLastError ??
+        args.previousCheckClaimLastError ??
+        `Pre-publication claim handoff failed during ${args.phase}.`,
+      updatedAt: now,
+    });
+    return { backedOff: true };
+  },
+});
+
 export const claimPrePublicationChecks: ReturnType<typeof action> = action({
   args: {
     token: v.string(),
@@ -1653,25 +1695,63 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
           clawpackStorageId?: Id<"_storage">;
           scanContext?: Record<string, unknown>;
           checkClaimExpiresAt: number;
+          previousCheckClaimLastError?: string;
           createdAt: number;
         };
     if (!claimed || "outcome" in claimed) return null;
 
-    const files = await Promise.all(
-      claimed.files.map(async (file) => ({
-        ...file,
-        url: await ctx.storage.getUrl(file.storageId),
-      })),
-    );
-    const clawpackUrl = claimed.clawpackStorageId
-      ? await ctx.storage.getUrl(claimed.clawpackStorageId)
-      : undefined;
-    return withoutUndefined({
-      ...claimed,
-      files,
-      clawpackStorageId: undefined,
-      clawpackUrl,
-    });
+    let phase: "files" | "clawpack" | "response" = "files";
+    try {
+      const files = await Promise.all(
+        claimed.files.map(async (file) => {
+          const url = await ctx.storage.getUrl(file.storageId);
+          return { ...file, url };
+        }),
+      );
+      phase = "clawpack";
+      const clawpackUrl = claimed.clawpackStorageId
+        ? await ctx.storage.getUrl(claimed.clawpackStorageId)
+        : undefined;
+      phase = "response";
+      return withoutUndefined({
+        ...claimed,
+        files,
+        clawpackStorageId: undefined,
+        previousCheckClaimLastError: undefined,
+        clawpackUrl,
+      });
+    } catch (error) {
+      // This cannot detect a successful response lost after return. Never release
+      // claims for worker silence or an unknown delivery outcome.
+      try {
+        const result: { backedOff: boolean } = await ctx.runMutation(
+          internal.publishAttempts.backoffFailedPrePublicationHandoffInternal,
+          {
+            attemptId: claimed.attemptId,
+            claimId: claimed.claimId,
+            artifactFingerprint: claimed.artifactFingerprint,
+            kind: claimed.kind,
+            status: claimed.status,
+            checkClaimExpiresAt: claimed.checkClaimExpiresAt,
+            previousCheckClaimLastError: claimed.previousCheckClaimLastError,
+            phase,
+          },
+        );
+        console.error("[publish-attempt-claim-handoff]", {
+          attemptId: claimed.attemptId,
+          phase,
+          backedOff: result.backedOff,
+        });
+      } catch {
+        console.error("[publish-attempt-claim-handoff]", {
+          attemptId: claimed.attemptId,
+          phase,
+          backedOff: false,
+          compensationFailed: true,
+        });
+      }
+      throw error;
+    }
   },
 });
 
