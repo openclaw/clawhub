@@ -911,6 +911,32 @@ export async function cmdUpdate(
         }
       }
 
+      const recordUpdatedSkill = async (targetVersion: string) => {
+        const installedFiles = await listSkillFiles(target);
+        const installedFingerprint =
+          installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
+
+        const installedAt = existingOrigin?.installedAt ?? Date.now();
+        await writeSkillOrigin(target, {
+          version: 1,
+          registry: existingOrigin?.registry ?? registry,
+          slug: remoteSlug,
+          ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
+          installedVersion: targetVersion,
+          installedAt,
+          fingerprint: installedFingerprint,
+        });
+
+        lock.skills[entry] = withOwnerMetadata(
+          targetVersion,
+          installedAt,
+          resolvedOwnerHandle,
+          lock.skills[entry],
+        );
+        markLockDirty();
+        await flushLockfile();
+      };
+
       let latestInstall: ApiV1SkillInstallResolveResponse | null = null;
       if (!skillMeta.latestVersion && !options.version) {
         latestInstall = await resolveLatestSkillInstall(
@@ -970,29 +996,7 @@ export async function cmdUpdate(
           await installSkillWithOptionalStaging(target, exists, (installTarget) =>
             installGitHubSkill(registry, githubResolution, installTarget),
           );
-          const installedFiles = await listSkillFiles(target);
-          const installedFingerprint =
-            installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
-
-          const installedAt = existingOrigin?.installedAt ?? Date.now();
-          await writeSkillOrigin(target, {
-            version: 1,
-            registry: existingOrigin?.registry ?? registry,
-            slug: remoteSlug,
-            ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
-            installedVersion: targetVersion,
-            installedAt,
-            fingerprint: installedFingerprint,
-          });
-
-          lock.skills[entry] = withOwnerMetadata(
-            targetVersion,
-            installedAt,
-            resolvedOwnerHandle,
-            lock.skills[entry],
-          );
-          markLockDirty();
-          await flushLockfile();
+          await recordUpdatedSkill(targetVersion);
           spinner.succeed(`${entry}: updated -> ${formatGitHubVersion(targetVersion)}`);
           continue;
         }
@@ -1090,29 +1094,7 @@ export async function cmdUpdate(
         });
         await extractZipToDir(zip, installTarget);
       });
-      const installedFiles = await listSkillFiles(target);
-      const installedFingerprint =
-        installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
-
-      const installedAt = existingOrigin?.installedAt ?? Date.now();
-      await writeSkillOrigin(target, {
-        version: 1,
-        registry: existingOrigin?.registry ?? registry,
-        slug: remoteSlug,
-        ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
-        installedVersion: targetVersion,
-        installedAt,
-        fingerprint: installedFingerprint,
-      });
-
-      lock.skills[entry] = withOwnerMetadata(
-        targetVersion,
-        installedAt,
-        resolvedOwnerHandle,
-        lock.skills[entry],
-      );
-      markLockDirty();
-      await flushLockfile();
+      await recordUpdatedSkill(targetVersion);
       spinner.succeed(
         `${styleText("Updated", "brand")} ${styleText(entry, "strong")} -> ${styleText(
           `v${targetVersion}`,
