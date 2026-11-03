@@ -10,6 +10,18 @@ read_when:
 
 See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace policy on prohibited skill categories.
 
+## Security dataset redaction
+
+- `convex/lib/securityDatasetRedaction.ts` owns the shared secret patterns for
+  Convex exports and offline dataset normalization. Keep it runtime-neutral.
+- Bundle content preserves tabs, line breaks, DEL, and outer whitespace; other
+  ASCII controls become spaces. Stored skill Markdown also trims outer whitespace.
+- Offline metadata replaces all ASCII controls and DEL, collapses whitespace,
+  trims, and applies its own length limit. Offline Markdown preserves bundle
+  whitespace and applies its existing nullable-input and truncation rules.
+- Keep export authentication, storage access, file exclusions, and byte budgets
+  at their existing caller boundaries.
+
 ## Anonymous API ingress
 
 - Hosted anonymous HTTP requests must enter through the ClawHub Vercel edge.
@@ -114,6 +126,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   quarantined/revoked package downloads remain blocked. A pending package scan is
   not an unpublished release. Authorized owner/staff submission previews retain
   their separate access path.
+- Pending skill finalization must not lift `softDeletedAt`, `moderationStatus`
+  `removed`, or a hidden staff hold such as security redaction, a ban, publisher
+  deletion, or manual review. A first publish hidden only for
+  `pending.publication` still finalizes. A version that becomes latest may
+  replace scanner state, a quality quarantine, publisher moderation, or
+  `manual.version_revoked`, and it copies the staged icon the same way an
+  immediate publish does. An older version still becomes published, and it
+  leaves the live skill's moderation, hold, and icon alone.
+- Pending package finalization changes `channel` and `isOfficial` only when
+  that release becomes latest. An older release can still publish without
+  rolling the live package back to the channel it staged. A private release
+  that would not become latest is refused instead, because package privacy
+  is the parent channel and publishing it would expose the artifact.
 - Changes to version publication or owner-deletion state invalidate public browse
   projections. A pending replacement must preserve an older approved version where
   the existing latest-version policy selects it.
@@ -533,6 +558,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   retained immutable storage object, live leases and moderation holds. A retry
   audits the prior checks/error/count and requeues the same attempt; it cannot
   replace bytes, lift a hold, declare a clean verdict or reset failure history.
+- An audited operator retry may require an exact reviewed scanner source (40
+  lowercase Git hex characters). Omitting the option preserves an existing
+  requirement. Pending-check workers with an omitted or different source must
+  leave that attempt untouched and may claim unrelated work. Existing live
+  leases and finalization-only recovery keep their existing rules. The latest
+  accepted scan lease records its claim ID, worker-reported source and time;
+  this is attribution, not cryptographic attestation, and does not assert a
+  successful scan. A new unreported scan lease clears stale attribution.
+  Deploy backend support before enabling the repository Actions variable
+  `PREPUBLICATION_REPORT_SCANNER_SOURCE` (default `false`). When enabled, workers
+  verify the reviewed pin against a clean checkout and Go binary revision, use
+  that exact installed host binary, and report the source on scan claims.
 - An applied operational retry writes a typed binding on the retained version
   or release: original attempt, actor, current validated owner and publisher
   scope. The final publication transaction must validate that binding, original
@@ -686,6 +723,21 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   per-scanner outputs without per-file or aggregate-size truncation. Bounded
   metadata/error fields may remain capped. Artifact upload still requires the
   existing verified-secret scan to pass.
+- The separate fixed original038 diagnostic permits one fresh Ubuntu 22.04 X64
+  run against the exact merged source, production dependencies and normal full
+  profile. It verifies every retained original file from the anonymous download;
+  the generated ZIP is a transfer container, not the original immutable archive.
+  Synchronous scanner/judge captures preserve reports, streams, gaps and receipts
+  before native cleanup. Existing injected-credential redaction/withholding and
+  a final plaintext evidence check remain mandatory. Only checksum-pinned age
+  ciphertext and bounded metadata may enter Actions artifacts; the per-run private
+  identity stays with the consuming controller. Failed encryption, secret checks
+  or unconfirmed process cleanup prevent upload. Capture completeness and scanner
+  coverage remain separate. A fully captured operational failure still fails the
+  diagnostic job; normal accepted partial or suspicious results need not be benign
+  or claim complete scanner coverage. The fixed038 run name binds the public age
+  recipient even when no artifact is uploaded. This nonpublishing diagnostic adds
+  no recovery count or retry authority.
 - The native prepublication failure event preserves the existing SkillSpector
   projection and adds only fixed scanner names, allowlisted status/error classes,
   bounded exit/timing numbers, and presence/byte-count/SHA-256 metadata. Arbitrary

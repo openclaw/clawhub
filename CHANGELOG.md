@@ -3,10 +3,20 @@
 ## Unreleased
 
 - Tooling: preserve the component example correction and canonical AGENTS.md when refreshing Convex AI guidance.
+- Tests: refresh development dependencies and anchor frozen-clock fixtures to Convex transaction timestamps and stored expiration boundaries.
+- Dependencies: patch Undici to 7.30.1 in the CLI, admin CLI, and development tools to address upstream transport advisories.
+- CI: escape Unicode line separators in security dataset JSONL so line readers preserve complete records during snapshot validation.
+- CI: reuse Playwright browser downloads across unrelated dependency updates by keying caches to the installed Playwright version and runner architecture.
+- CI: use a single-commit checkout for static checks instead of fetching full history.
+- CI: cache the pinned OpenClaw contract package store while retaining frozen installs and full contract proof on every run.
+- Tooling: use the existing pinned Bun formatter for format commands while preserving Oxfmt configuration and exclusions.
+
 - Publishing: prepare staged ClawPacks in the Node runtime so large archives can reach package validation without exhausting the HTTP action memory limit.
 - Scanning: stop classifying Manifest V3 browser host permissions as installation sources while retaining checks for install URLs elsewhere in the manifest.
 
 - CI: speed up the Linux root typecheck with pinned tsrs while retaining native TypeScript for local checks and package builds.
+- CI: run native package typechecks in the packages job only, retaining full package checks in local `ci:types-build`.
+- CI: run command-script tests in Node instead of starting jsdom for each suite.
 - skills.sh: sync once a day at 03:00 Pacific and mirror the top 4,000 rows of the all-time and trending views, so the sync completes again after skills.sh expanded its default feed to ~93k rows; Trending keeps the last skills.sh run for up to 50 hours.
 - Workers: include bounded, redacted skill evaluation failure reasons in CI logs so operators can diagnose failed runs.
 - Tooling: accept Bun's environment-file loading diagnostic in local dependency audits while preserving tool-error and malware failures.

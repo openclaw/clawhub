@@ -204,14 +204,6 @@ export function getStoredThemeSelection(): ThemeSelection {
   };
 }
 
-export function getStoredTheme(): ThemeMode {
-  return getStoredThemeSelection().mode;
-}
-
-export function getStoredThemeName(): ThemeName {
-  return getStoredThemeSelection().theme;
-}
-
 function resolveMode(mode: ThemeMode): ResolvedTheme {
   mode = normalizeThemeMode(mode);
   if (mode !== "system") return mode;

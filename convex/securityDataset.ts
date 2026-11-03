@@ -6,6 +6,7 @@ import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalQuery } from "./functions";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { getOwnerPublisher } from "./lib/publishers";
+import { redactBundleContent } from "./lib/securityDatasetRedaction";
 
 const MAX_EXPORT_PAGE_SIZE = 50;
 const MAX_EXPORT_BATCH_PAGES = 20;
@@ -33,18 +34,6 @@ type ArtifactExportPage = {
   continueCursor: string;
   exportMode: "public";
 };
-
-const SECRET_PATTERNS: RegExp[] = [
-  /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
-  /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
-  /\bsk-[A-Za-z0-9_-]{20,}\b/g,
-  /\bAKIA[0-9A-Z]{16}\b/g,
-  /\b(?:api[_-]?key|token|secret|password|passwd|pwd|authorization code|auth code)\s*[:=]\s*["']?[^"',\s;)`]{6,}/gi,
-  /\b(?:authorization|x-api-key)\s*[:=]\s*["']?(?:bearer|basic)?\s+[A-Za-z0-9._~+/=-]{12,}/gi,
-  /-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----[\s\S]*?-----END [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----/g,
-  /\bhttps?:\/\/[^/\s:@]+:[^/\s@]+@[^\s)'"`]+/gi,
-  /(["'`])(?=[A-Za-z0-9+/=_-]{32,}\1)(?=.*[A-Z])(?=.*[a-z])(?=.*\d)[A-Za-z0-9+/=_-]+\1/g,
-];
 
 export const listArtifactExportPageInternal = internalQuery({
   args: {
@@ -386,31 +375,7 @@ async function readRedactedSkillMdContent(
   if (!skillFile || typeof skillFile.storageId !== "string") return null;
   const blob = await ctx.storage.get(skillFile.storageId as never);
   if (!blob) return null;
-  return redactSkillContent(await blob.text());
-}
-
-function redactSkillContent(value: string) {
-  let redacted = "";
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    redacted += code < 32 && code !== 9 && code !== 10 && code !== 13 ? " " : value.charAt(index);
-  }
-  for (const pattern of SECRET_PATTERNS) {
-    redacted = redacted.replace(pattern, "[REDACTED_SECRET]");
-  }
-  return redacted.trim();
-}
-
-function redactBundleContent(value: string) {
-  let redacted = "";
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    redacted += code < 32 && code !== 9 && code !== 10 && code !== 13 ? " " : value.charAt(index);
-  }
-  for (const pattern of SECRET_PATTERNS) {
-    redacted = redacted.replace(pattern, "[REDACTED_SECRET]");
-  }
-  return redacted;
+  return redactBundleContent(await blob.text()).trim();
 }
 
 function normalizeVtAnalysis(analysis: StoredVtAnalysis) {

@@ -1,3 +1,4 @@
+/* @vitest-environment node */
 import { describe, expect, it } from "vitest";
 import { CLAWHUB_TEST_DEPLOYMENT } from "../seed-test";
 import {

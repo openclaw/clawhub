@@ -16,6 +16,7 @@ import {
 } from "./lib/githubImport";
 import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
 import {
+  normalizeRepoPath,
   buildGitHubSkillSourceSnapshot,
   buildGitHubSkillSyncPlan,
   type DiscoveredGitHubSkill,
@@ -26,6 +27,7 @@ import {
   type GitHubSkillSourceSnapshot,
 } from "./lib/githubSkillSync";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
+import { sha256Hex } from "./lib/hash";
 import { runStaticModerationScan } from "./lib/moderationEngine";
 import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
 import { requirePublisherRole } from "./lib/publishers";
@@ -3144,13 +3146,6 @@ async function deleteStoredGitHubSkillScanFiles(
   await Promise.allSettled(files.map((file) => ctx.storage.delete(file.storageId)));
 }
 
-async function sha256Hex(bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 function buildGitHubSourceImport(repo: string, defaultBranch: string): GitHubImportUrl {
   const normalizedRepo = normalizeRepo(repo);
   const [owner, repoName] = normalizedRepo.split("/") as [string, string];
@@ -3365,19 +3360,6 @@ function normalizeRepo(value: string) {
   const parts = trimmed.split("/").filter(Boolean);
   if (parts.length !== 2) throw new ConvexError("GitHub repo must be owner/repo");
   return `${parts[0]}/${parts[1]}`;
-}
-
-function normalizeRepoPath(path: string) {
-  if (path.includes("\u0000")) return "";
-  const normalized = path
-    .replaceAll("\\", "/")
-    .trim()
-    .replace(/^\.\/+/, "")
-    .replace(/^\/+/, "");
-  if (!normalized) return "";
-  const segments = normalized.split("/").filter(Boolean);
-  if (segments.some((segment) => segment === "." || segment === "..")) return "";
-  return segments.join("/");
 }
 
 function assertExactSkillsShSourceSelection(

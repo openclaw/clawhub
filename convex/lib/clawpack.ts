@@ -1,3 +1,5 @@
+import { toHex } from "./hash";
+export { sha256Hex } from "./hash";
 import { findTemplatePackagePathHierarchyCollision } from "clawhub-schema";
 import { Gunzip } from "fflate";
 
@@ -171,10 +173,6 @@ async function digestBytes(algorithm: "SHA-1" | "SHA-256" | "SHA-512", bytes: Ui
   return new Uint8Array(digest);
 }
 
-function toHex(bytes: Uint8Array) {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 function toBase64(bytes: Uint8Array) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -184,10 +182,6 @@ function toBase64(bytes: Uint8Array) {
 export function npmTarballName(packageName: string, version: string) {
   const normalizedName = packageName.replace(/^@/, "").replace("/", "-");
   return `${normalizedName}-${version}.tgz`;
-}
-
-export async function sha256Hex(bytes: Uint8Array) {
-  return toHex(await digestBytes("SHA-256", bytes));
 }
 
 export async function sha256Base64(bytes: Uint8Array) {

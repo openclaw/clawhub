@@ -2416,9 +2416,14 @@ export async function processJob(
   let status: JobDiagnosticInput["status"] = "failed";
   try {
     await writeArtifactWorkspace(job, workspace);
+    const plugin = asRecord(job.target.package) ?? {};
     const shouldRunEndor =
       job.job.targetKind === "packageRelease" &&
-      isEndorPluginScanEnabled(readString(asRecord(job.target.package) ?? {}, ["name"]));
+      isEndorPluginScanEnabled({
+        name: readString(plugin, ["name"]),
+        family: readString(plugin, ["family"]),
+        trustedOpenClawPlugin: job.target.trustedOpenClawPlugin === true,
+      });
     const [endorResult, skillSpectorResult] = await Promise.allSettled([
       shouldRunEndor
         ? runEndorPluginScan({

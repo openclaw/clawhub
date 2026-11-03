@@ -1012,6 +1012,28 @@ function shouldPreserveExistingModerationLock(
   return !isScannerManagedReason(skill.moderationReason);
 }
 
+// Delete, removal, and staff holds must survive a staged publish. The
+// operational retry helper is stricter: it also stops scanner and
+// quality hides, because a retry must not resume a skill held after
+// staging. A normal finalizer still has to publish a corrected version.
+function isPendingSkillFinalizationBlocked(
+  skill: Pick<Doc<"skills">, "softDeletedAt" | "moderationStatus" | "moderationReason">,
+) {
+  if (skill.softDeletedAt || skill.moderationStatus === "removed") return true;
+  if (skill.moderationStatus !== "hidden") return false;
+  const reason = skill.moderationReason;
+  if (
+    reason === "pending.publication" ||
+    reason === "quality.low" ||
+    reason === USER_MODERATION_REASON ||
+    reason === "manual.version_revoked" ||
+    isScannerManagedReason(reason)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function shouldSyncModerationFromLatestVersion(
   skill: Pick<Doc<"skills">, "moderationStatus" | "moderationReason" | "softDeletedAt">,
 ) {
@@ -12916,6 +12938,9 @@ export const publishPendingVersionInternal = internalMutation({
 
     const publishArgs = asSkillPendingPublishArgs(args.publishArgs);
     await assertOperationalSkillRetryFinalization(ctx, skill, version, publishArgs, args);
+    if (isPendingSkillFinalizationBlocked(skill)) {
+      throw new ConvexError("Pending skill publication is held.");
+    }
     const user = await ctx.db.get(publishArgs.userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
 
@@ -12999,7 +13024,10 @@ export const publishPendingVersionInternal = internalMutation({
     const basePatch: SkillModerationPatch = {
       displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
-      icon: skill.icon,
+      icon: isNewLatest
+        ? (publishArgs.icon ??
+          (isHostedSkillPresentationIconPath(skill.icon) ? undefined : skill.icon))
+        : skill.icon,
       ownerPublisherId: skill.ownerPublisherId ?? publishArgs.ownerPublisherId,
       latestVersionId: isNewLatest ? version._id : skill.latestVersionId,
       latestVersionSummary: isNewLatest
@@ -13030,34 +13058,40 @@ export const publishPendingVersionInternal = internalMutation({
           }
         : {}),
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
-      softDeletedAt: undefined,
-      moderationStatus: initialModerationStatus,
-      moderationReason,
-      moderationNotes,
-      moderationVerdict: moderationSnapshot.verdict,
-      moderationReasonCodes: moderationSnapshot.reasonCodes.length
-        ? moderationSnapshot.reasonCodes
-        : undefined,
-      moderationEvidence: moderationSnapshot.evidence.length
-        ? moderationSnapshot.evidence
-        : undefined,
-      moderationSummary: moderationSnapshot.summary,
-      moderationEngineVersion: moderationSnapshot.engineVersion,
-      moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
-      moderationSourceVersionId: version._id,
-      quality: qualityRecord ?? skill.quality,
-      moderationFlags: nextFlags.length ? nextFlags : undefined,
-      isSuspicious: computeIsSuspicious({
-        moderationFlags: nextFlags.length ? nextFlags : undefined,
-        moderationReason,
-      }),
-      unpublishedSlugReservedUntil: undefined,
-      unpublishedSlugReleasedAt: undefined,
-      unpublishedOriginalSlug: undefined,
       updatedAt: now,
-      ...scannerModerationPatch,
     };
-    const patch = basePatch;
+    // An older staged version still publishes, but it must not replace the
+    // live card's moderation, hold, or icon.
+    const patch: SkillModerationPatch = isNewLatest
+      ? {
+          ...basePatch,
+          softDeletedAt: undefined,
+          moderationStatus: initialModerationStatus,
+          moderationReason,
+          moderationNotes,
+          moderationVerdict: moderationSnapshot.verdict,
+          moderationReasonCodes: moderationSnapshot.reasonCodes.length
+            ? moderationSnapshot.reasonCodes
+            : undefined,
+          moderationEvidence: moderationSnapshot.evidence.length
+            ? moderationSnapshot.evidence
+            : undefined,
+          moderationSummary: moderationSnapshot.summary,
+          moderationEngineVersion: moderationSnapshot.engineVersion,
+          moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
+          moderationSourceVersionId: version._id,
+          quality: qualityRecord ?? skill.quality,
+          moderationFlags: nextFlags.length ? nextFlags : undefined,
+          isSuspicious: computeIsSuspicious({
+            moderationFlags: nextFlags.length ? nextFlags : undefined,
+            moderationReason,
+          }),
+          unpublishedSlugReservedUntil: undefined,
+          unpublishedSlugReleasedAt: undefined,
+          unpublishedOriginalSlug: undefined,
+          ...scannerModerationPatch,
+        }
+      : basePatch;
     const nextSkill = { ...skill, ...patch };
 
     await ctx.db.patch(version._id, {

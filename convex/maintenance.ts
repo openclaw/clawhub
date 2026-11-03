@@ -156,6 +156,7 @@ export const retryFailedPublishAttemptChecksInternal = internalMutation({
     expectedArtifactFingerprint: v.string(),
     expectedUpdatedAt: v.number(),
     reason: v.string(),
+    requiredScannerSource: v.optional(v.string()),
     dryRun: v.optional(v.boolean()),
   },
   handler: retryFailedPublishAttemptChecks,

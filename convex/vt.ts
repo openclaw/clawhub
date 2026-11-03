@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation } from "./functions";
+import { sha256Hex } from "./lib/hash";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
 import { buildDeterministicPackageZip, buildDeterministicZip } from "./lib/skillZip";
@@ -379,13 +380,6 @@ function statusFromAvStats(
   // it is resolved no-detections telemetry, not an in-progress scan.
   if (stats.harmless > 0 || stats.undetected > 0) return "clean";
   return null;
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const hashBuffer = await crypto.subtle.digest("SHA-256", bytesToArrayBuffer(bytes));
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 async function getVirusTotalUploadUrl(apiKey: string) {

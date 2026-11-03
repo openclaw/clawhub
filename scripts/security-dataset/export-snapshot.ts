@@ -14,6 +14,7 @@ import {
   buildHuggingFaceSecuritySignalRows,
   type HuggingFaceSecuritySignalRow,
 } from "./huggingFaceExport";
+import { stringifyJsonlRow } from "./jsonl";
 import { buildSecurityDatasetManifest } from "./manifest";
 import {
   normalizeArtifactExport,
@@ -698,7 +699,7 @@ async function writeNormalizedRows(writers: SnapshotWriters, rows: NormalizedDat
 
 async function writeJsonlRows(stream: WriteStream, rows: unknown[]) {
   if (rows.length === 0) return;
-  const chunk = `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`;
+  const chunk = `${rows.map(stringifyJsonlRow).join("\n")}\n`;
   if (!stream.write(chunk)) await once(stream, "drain");
 }
 

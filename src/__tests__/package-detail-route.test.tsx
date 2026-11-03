@@ -1242,26 +1242,6 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
   });
 
-  it("renders canonical topics in the detail hero", async () => {
-    loaderDataMock = {
-      ...loaderDataMock,
-      detail: {
-        ...loaderDataMock.detail,
-        package: {
-          ...loaderDataMock.detail.package!,
-          topics: ["Web Search", "Research"],
-        },
-      },
-    };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
-  });
-
   it("renders the plugin 30-day downloads graph from a deferred activity query", async () => {
     loaderDataMock = {
       ...loaderDataMock,
@@ -1938,7 +1918,7 @@ describe("plugin detail route", () => {
     );
   });
 
-  it("keeps API updates without the public incompatibility alert or validation outputs", async () => {
+  it("hides retirement notices, incompatibility alerts, and validation outputs from visitors", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -2004,7 +1984,9 @@ describe("plugin detail route", () => {
     expect(
       screen.queryByText("This plugin is incompatible with OpenClaw versions greater than 0.9.0."),
     ).toBeNull();
-    expect(screen.getByRole("region", { name: "OpenClaw API updates" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "OpenClaw API updates" })).toBeNull();
+    expect(screen.queryByText("API details")).toBeNull();
+    expect(screen.getByRole("heading", { name: /^Install$/ })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
   });

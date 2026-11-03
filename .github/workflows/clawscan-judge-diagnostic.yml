@@ -1,4 +1,5 @@
 name: Nonproduction ClawScan judge diagnostic
+run-name: ${{ contains(fromJSON('["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted"]'), inputs.fixture) && format('{0} {1}', inputs.fixture, inputs.age_recipient) || 'Nonproduction ClawScan judge diagnostic' }}
 
 on:
   workflow_dispatch:
@@ -16,6 +17,23 @@ on:
             original-scanner-only,
             original-candidate-full,
             original-candidate-290-full,
+            original-038-encrypted,
+            original-079-encrypted,
+            original-004-encrypted,
+            original-016-encrypted,
+            original-017-encrypted,
+            original-026-encrypted,
+            original-027-encrypted,
+            original-074-encrypted,
+            original-008-encrypted,
+            original-011-encrypted,
+            original-036-encrypted,
+            original-033-encrypted,
+            original-065-encrypted,
+            original-073-encrypted,
+            original-042-encrypted,
+            original-055-encrypted,
+            original-039-encrypted,
           ]
         default: tiny
       source:
@@ -25,11 +43,16 @@ on:
         options: [reviewed, incident]
         default: reviewed
       runner:
-        description: "Disposable runner; Ubuntu recovery is limited to tiny reviewed-source controls"
+        description: "Disposable runner; Ubuntu22 permits tiny controls or fixed original encrypted full capture"
         type: choice
         required: true
         default: blacksmith-16vcpu-ubuntu-2404
         options: [blacksmith-16vcpu-ubuntu-2404, ubuntu-22.04]
+      age_recipient:
+        description: "Per-run public age1 X25519 recipient; required only for fixed originals, never an identity"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -43,7 +66,10 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
       (inputs.runner == '' || inputs.runner == 'blacksmith-16vcpu-ubuntu-2404' ||
-      (inputs.runner == 'ubuntu-22.04' && inputs.fixture == 'tiny' && inputs.source == 'reviewed'))
+      (inputs.runner == 'ubuntu-22.04' && inputs.source == 'reviewed' &&
+      (inputs.fixture == 'tiny' || contains(fromJSON('["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted"]'), inputs.fixture)))) &&
+      ((!contains(fromJSON('["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted"]'), inputs.fixture)) ||
+      (inputs.runner == 'ubuntu-22.04' && inputs.source == 'reviewed' && github.run_attempt == 1))
     runs-on: ${{ inputs.runner == 'ubuntu-22.04' && 'ubuntu-22.04' || 'blacksmith-16vcpu-ubuntu-2404' }}
     environment: Production
     timeout-minutes: ${{ inputs.fixture == 'original-scanner-only' && 120 || 80 }}
@@ -63,8 +89,16 @@ jobs:
           python-version: "3.12.16"
       - name: Install pinned Codex without login
         uses: ./.github/actions/setup-codex
+      - name: Install fixed diagnostic encryption and sandbox tools
+        if: ${{ contains(fromJSON('["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted"]'), inputs.fixture) }}
+        id: encryption
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          sh scripts/security/install-diagnostic-age.sh
       - name: Select bounded installer source
-        if: ${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' }}
+        if: ${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' && !contains(fromJSON('["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted"]'), inputs.fixture) }}
         env:
           SOURCE_CHOICE: ${{ inputs.source }}
           FIXTURE_CHOICE: ${{ inputs.fixture }}
@@ -81,7 +115,7 @@ jobs:
           printf 'DIAGNOSTIC_INSTALLER=%s\n' "$installer" >> "$GITHUB_ENV"
           sh "$installer/install-clawscan.sh"
       - name: Install matched reviewed scanner sources and Responses adapters
-        if: ${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' }}
+        if: ${{ inputs.fixture != 'original-scanner-only' && inputs.fixture != 'original-candidate-full' && inputs.fixture != 'original-candidate-290-full' && !contains(fromJSON('["original-038-encrypted","original-079-encrypted","original-004-encrypted","original-016-encrypted","original-017-encrypted","original-026-encrypted","original-027-encrypted","original-074-encrypted","original-008-encrypted","original-011-encrypted","original-036-encrypted","original-033-encrypted","original-065-encrypted","original-073-encrypted","original-042-encrypted","original-055-encrypted","original-039-encrypted"]'), inputs.fixture) }}
         run: |
           set -euo pipefail
           sh "$DIAGNOSTIC_INSTALLER/install-clawscan-scanners.sh" aig
@@ -93,6 +127,8 @@ jobs:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           FIXTURE_CHOICE: ${{ inputs.fixture }}
           SOURCE_CHOICE: ${{ inputs.source }}
+          DIAGNOSTIC_AGE_RECIPIENT: ${{ inputs.age_recipient }}
+          DIAGNOSTIC_AGE_BINARY: ${{ steps.encryption.outputs.age-binary }}
           DEFAULT_MODEL: ${{ vars.DEFAULT_MODEL || 'gpt-6.1-sol' }}
           REASONING_EFFORT: ${{ vars.REASONING_EFFORT || 'medium' }}
           SKILLSPECTOR_MODEL: ${{ vars.SKILLSPECTOR_MODEL || 'gpt-6.1-sol' }}
@@ -107,5 +143,15 @@ jobs:
             ${{ steps.probe.outputs.safe-output }}/summary.json
             ${{ steps.probe.outputs.safe-output }}/events.jsonl
             ${{ steps.probe.outputs.safe-output }}/attestation.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload encrypted fixed original evidence only
+        if: ${{ !cancelled() && steps.probe.outputs.encrypted-output != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ENCRYPTED_ORIGINAL${{ inputs.fixture == 'original-079-encrypted' && '079' || inputs.fixture == 'original-004-encrypted' && '004' || inputs.fixture == 'original-016-encrypted' && '016' || inputs.fixture == 'original-017-encrypted' && '017' || inputs.fixture == 'original-026-encrypted' && '026' || inputs.fixture == 'original-027-encrypted' && '027' || inputs.fixture == 'original-074-encrypted' && '074' || inputs.fixture == 'original-008-encrypted' && '008' || inputs.fixture == 'original-011-encrypted' && '011' || inputs.fixture == 'original-036-encrypted' && '036' || inputs.fixture == 'original-033-encrypted' && '033' || inputs.fixture == 'original-065-encrypted' && '065' || inputs.fixture == 'original-073-encrypted' && '073' || inputs.fixture == 'original-042-encrypted' && '042' || inputs.fixture == 'original-055-encrypted' && '055' || inputs.fixture == 'original-039-encrypted' && '039' || '038' }}-${{ github.run_id }}
+          path: |
+            ${{ steps.probe.outputs.encrypted-output }}/capture.tar.gz.age
+            ${{ steps.probe.outputs.encrypted-output }}/receipt.json
           if-no-files-found: error
           retention-days: 7
