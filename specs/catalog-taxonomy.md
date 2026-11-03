@@ -239,6 +239,9 @@ Corpus classification was a one-time operator-run phase:
   phase uses the migrations component.
 - High- and medium-confidence rollout apply was a one-time production migration. The temporary
   apply migrations and operator wrappers were removed after the verified rollout completed.
+- The remaining classifier helper only bounds preview evidence; it does not select metadata
+  application. The retired confidence-lane selector is outside the preview contract. Historical
+  apply statuses and inferred-field compatibility remain until their separate cleanup is verified.
 - Remove the temporary catalog metadata canonicalization migration and the remaining inferred
   category/topic read/schema compatibility only after its production apply and migration-component
   status are verified.
