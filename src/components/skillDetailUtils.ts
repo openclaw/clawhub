@@ -4,12 +4,6 @@ import { buildSkillDetailHref } from "../lib/ownerRoute";
 import { getClawHubSiteUrl } from "../lib/site";
 
 export type SkillPromptMode = "install-only" | "install-and-setup";
-type SkillPackageManager = "npm" | "pnpm" | "bun";
-
-function assertNever(value: never): never {
-  throw new Error(`Unsupported package manager: ${String(value)}`);
-}
-
 type SkillOwnerId = Id<"users"> | Id<"publishers">;
 
 type SkillPromptContext = {
@@ -185,19 +179,6 @@ export function formatOpenClawInstallCommand(slug: string) {
 
 export function formatSkillsCliInstallCommand(skillPageUrl: string) {
   return `npx skills add ${skillPageUrl}`;
-}
-
-export function formatClawHubInstallCommand(slug: string, pm: SkillPackageManager) {
-  switch (pm) {
-    case "npm":
-      return `npx clawhub@latest install ${slug}`;
-    case "pnpm":
-      return `pnpm dlx clawhub@latest install ${slug}`;
-    case "bun":
-      return `bunx clawhub@latest install ${slug}`;
-  }
-
-  return assertNever(pm);
 }
 
 export function formatOpenClawPrompt({
