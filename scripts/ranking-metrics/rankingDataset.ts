@@ -246,7 +246,7 @@ function checksumValue(value: unknown) {
   return createHash("sha256").update(stableStringify(value)).digest("hex");
 }
 
-function stableStringify(value: unknown): string {
+export function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   if (isRecord(value)) {
     return `{${Object.keys(value)
