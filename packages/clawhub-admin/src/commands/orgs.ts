@@ -414,44 +414,7 @@ export async function cmdAddOfficialOrg(
   options: OrgOfficialWriteOptions = {},
   inputAllowed: boolean,
 ) {
-  const orgHandle = normalizeHandleOrFail(handle, "Publisher handle");
-  const reason = normalizeReasonOrFail(options.reason);
-  await confirmOfficialOrgUpdate(
-    `Mark @${orgHandle} official? (admin only; affects official badge and GitHub sync eligibility)`,
-    options,
-    inputAllowed,
-  );
-
-  const token = await requireAuthToken();
-  const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createCrabLoader(`Marking @${orgHandle} official`);
-  try {
-    const result = await apiRequest(
-      registry,
-      {
-        method: "POST",
-        path: `${ApiRoutes.users}/publisher-official`,
-        token,
-        body: {
-          action: "add",
-          handle: orgHandle,
-          reason,
-        },
-      },
-      ApiV1OfficialPublisherUpdateResponseSchema,
-    );
-
-    spinner?.succeed(
-      result.added ? `Marked @${result.handle} official` : `@${result.handle} is already official`,
-    );
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    }
-    return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  return updateOfficialOrg(opts, handle, "add", options, inputAllowed);
 }
 
 export async function cmdRemoveOfficialOrg(
@@ -460,10 +423,22 @@ export async function cmdRemoveOfficialOrg(
   options: OrgOfficialWriteOptions = {},
   inputAllowed: boolean,
 ) {
+  return updateOfficialOrg(opts, handle, "remove", options, inputAllowed);
+}
+
+async function updateOfficialOrg(
+  opts: GlobalOpts,
+  handle: string,
+  action: "add" | "remove",
+  options: OrgOfficialWriteOptions,
+  inputAllowed: boolean,
+) {
   const orgHandle = normalizeHandleOrFail(handle, "Publisher handle");
   const reason = normalizeReasonOrFail(options.reason);
   await confirmOfficialOrgUpdate(
-    `Remove @${orgHandle} from official publishers? (admin only)`,
+    action === "add"
+      ? `Mark @${orgHandle} official? (admin only; affects official badge and GitHub sync eligibility)`
+      : `Remove @${orgHandle} from official publishers? (admin only)`,
     options,
     inputAllowed,
   );
@@ -472,7 +447,11 @@ export async function cmdRemoveOfficialOrg(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json
     ? null
-    : createCrabLoader(`Removing @${orgHandle} from official publishers`);
+    : createCrabLoader(
+        action === "add"
+          ? `Marking @${orgHandle} official`
+          : `Removing @${orgHandle} from official publishers`,
+      );
   try {
     const result = await apiRequest(
       registry,
@@ -480,19 +459,19 @@ export async function cmdRemoveOfficialOrg(
         method: "POST",
         path: `${ApiRoutes.users}/publisher-official`,
         token,
-        body: {
-          action: "remove",
-          handle: orgHandle,
-          reason,
-        },
+        body: { action, handle: orgHandle, reason },
       },
       ApiV1OfficialPublisherUpdateResponseSchema,
     );
 
     spinner?.succeed(
-      result.removed
-        ? `Removed @${result.handle} from official publishers`
-        : `@${result.handle} was not official`,
+      action === "add"
+        ? result.added
+          ? `Marked @${result.handle} official`
+          : `@${result.handle} is already official`
+        : result.removed
+          ? `Removed @${result.handle} from official publishers`
+          : `@${result.handle} was not official`,
     );
     if (options.json) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

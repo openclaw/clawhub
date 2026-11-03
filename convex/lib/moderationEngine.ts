@@ -510,12 +510,17 @@ function findLineAtIndex(content: string, index: number) {
   return { line, text: content.slice(lineStart, lineEnd) };
 }
 
-function findCallEnd(content: string, openParenIndex: number) {
+function findDelimitedEnd(
+  content: string,
+  openIndex: number,
+  openDelimiter: string,
+  closeDelimiter: string,
+) {
   let depth = 0;
   let quote: '"' | "'" | "`" | undefined;
   let escaped = false;
 
-  for (let i = openParenIndex; i < content.length; i += 1) {
+  for (let i = openIndex; i < content.length; i += 1) {
     const char = content[i];
     if (quote) {
       if (escaped) {
@@ -534,8 +539,8 @@ function findCallEnd(content: string, openParenIndex: number) {
       quote = char;
       continue;
     }
-    if (char === "(") depth += 1;
-    if (char === ")") {
+    if (char === openDelimiter) depth += 1;
+    if (char === closeDelimiter) {
       depth -= 1;
       if (depth === 0) return i + 1;
     }
@@ -738,40 +743,6 @@ function hasRuntimeReExportOfRunFixedCommandHelper(files: TextFile[], helperFile
   return false;
 }
 
-function findBlockEnd(content: string, openBraceIndex: number) {
-  let depth = 0;
-  let quote: '"' | "'" | "`" | undefined;
-  let escaped = false;
-
-  for (let i = openBraceIndex; i < content.length; i += 1) {
-    const char = content[i];
-    if (quote) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (char === "\\") {
-        escaped = true;
-        continue;
-      }
-      if (char === quote) quote = undefined;
-      continue;
-    }
-
-    if (char === '"' || char === "'" || char === "`") {
-      quote = char;
-      continue;
-    }
-    if (char === "{") depth += 1;
-    if (char === "}") {
-      depth -= 1;
-      if (depth === 0) return i + 1;
-    }
-  }
-
-  return content.length;
-}
-
 function findInnermostBlockStart(content: string, targetIndex: number) {
   const stack: number[] = [];
   let quote: '"' | "'" | "`" | undefined;
@@ -810,10 +781,10 @@ function findNamedFunctionContextAtIndex(content: string, callIndex: number, fun
     if (start === undefined) continue;
     const openParenIndex = content.indexOf("(", start);
     if (openParenIndex === -1) continue;
-    const closeParenIndex = findCallEnd(content, openParenIndex);
+    const closeParenIndex = findDelimitedEnd(content, openParenIndex, "(", ")");
     const openBraceIndex = content.indexOf("{", closeParenIndex);
     if (openBraceIndex === -1) continue;
-    const end = findBlockEnd(content, openBraceIndex);
+    const end = findDelimitedEnd(content, openBraceIndex, "{", "}");
     if (callIndex >= openBraceIndex && callIndex < end) {
       return { start, text: content.slice(start, end) };
     }
@@ -858,7 +829,7 @@ function countFixedRunCommandArgvCallSites(context: string) {
     if (/\bfunction\s+$/.test(before)) continue;
 
     const openParenIndex = context.indexOf("(", callIndex);
-    const callEnd = findCallEnd(context, openParenIndex);
+    const callEnd = findDelimitedEnd(context, openParenIndex, "(", ")");
     const callText = context.slice(callIndex, callEnd);
     const callScope = context.slice(findInnermostBlockStart(context, callIndex), callIndex);
     if (!hasFixedArgvArrayProperty(callText, callScope)) return null;
@@ -988,7 +959,7 @@ function findDangerousChildProcessCall(path: string, content: string, runtimeFil
       callName === "spawnSync"
     ) {
       const openParenIndex = content.indexOf("(", callIndex);
-      const callEnd = findCallEnd(content, openParenIndex);
+      const callEnd = findDelimitedEnd(content, openParenIndex, "(", ")");
       const callText = content.slice(callIndex, callEnd);
       if (isSafeLiteralChildProcessCall(callName, callText)) continue;
       const helperContext = findNamedFunctionContextAtIndex(

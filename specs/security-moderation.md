@@ -607,6 +607,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   risk status and never bypasses existing judge, receipt, scanner, or publication
   gates. Ship the worker policy layer only after the backend deployment.
 - New skill publishes now persist a deterministic static scan result on the version.
+- Static delimiter scanning is a quote/escape-aware heuristic. It tracks the
+  requested parentheses or braces, returns an exclusive closing offset, and
+  treats unclosed groups as extending to the end of the source. Refactors must
+  preserve existing rule matches; expanding the parser is separate behavior work.
 - Static findings are internal evidence for Codex-backed ClawScan only. They do
   not hide, block, set public security status, affect installability, or trigger
   user autobans.
