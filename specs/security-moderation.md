@@ -939,6 +939,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   stored artifact entries instead of metadata-only `package.json` / `openclaw.plugin.json` rows.
   VirusTotal still scans the exact uploaded `.tgz`; ClawHub also retains the stored ClawPack artifact
   so scanner workers can download/extract it for artifact-backed review.
+- Package publication verifies every stored file's bytes, size and SHA-256 before admission.
+  Verification reads and hashing run in batches of at most 16, preserving manifest order and
+  legacy ZIP input bytes. If a file is missing or a read/hash fails, drain the already-started
+  batch and reject before starting another batch; never accept caller-supplied hashes as a
+  fallback. This bounds verification I/O, not total retained archive memory, and does not
+  retry publication or bypass ownership, inventory authorization or security scans.
 - Packages cache VirusTotal undetected-only engine results as clean VT telemetry.
   ClawHub does not request or consume VirusTotal AI/code-insight results; VT is
   engine/vendor telemetry only.
