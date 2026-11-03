@@ -227,14 +227,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         headers,
         body,
       });
-      if (!response.ok && !isAcceptedStatus(response.status, args.acceptedStatuses)) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now, args.acceptedStatuses);
       return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
@@ -264,14 +257,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         },
         args.timeoutMs ?? UPLOAD_TIMEOUT_MS,
       );
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now);
       return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
@@ -306,14 +292,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
       const headers: Record<string, string> = {};
       if (args.token) headers.Authorization = `Bearer ${args.token}`;
       const response = await fetchWithTimeout(deps, url, { method: "GET", headers });
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now);
       return new Uint8Array(await response.arrayBuffer());
     });
   }
@@ -340,14 +319,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         },
         UPLOAD_TIMEOUT_MS,
       );
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now);
       return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
@@ -359,24 +331,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     url.searchParams.set("slug", args.slug);
     if (args.ownerHandle) url.searchParams.set("ownerHandle", args.ownerHandle);
     if (args.version) url.searchParams.set("version", args.version);
-    return await runWithRetries(async () => {
-      if (deps.runtime === "bun") {
-        return await fetchBinaryViaCurl(deps, url.toString(), args.token);
-      }
-
-      const headers: Record<string, string> = {};
-      if (args.token) headers.Authorization = `Bearer ${args.token}`;
-      const response = await fetchWithTimeout(deps, url.toString(), { method: "GET", headers });
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
-      return new Uint8Array(await response.arrayBuffer());
-    });
+    return await fetchBinaryRequest(registry, { url: url.toString(), token: args.token });
   }
 
   return {
@@ -517,6 +472,20 @@ async function fetchWithTimeout(
 
 async function readResponseTextSafe(response: Response): Promise<string> {
   return await response.text().catch(() => "");
+}
+
+async function ensureResponseOk(
+  response: Response,
+  now: () => number,
+  acceptedStatuses?: number[],
+) {
+  if (response.ok || isAcceptedStatus(response.status, acceptedStatuses)) return;
+  throwHttpStatusError(
+    response.status,
+    await readResponseTextSafe(response),
+    response.headers,
+    now,
+  );
 }
 
 function getRetryDelayMs(attemptError: unknown, random: () => number): number {
