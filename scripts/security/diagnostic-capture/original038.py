@@ -29,15 +29,47 @@ def hashes(case):
     return observed
 
 
+def tool_capture_requirements(case_id,report):
+    required=['skillspector','aig-skill-scan','codex']
+    if case_id=='sn-ppt-workbench-2026.10.29':
+        return {'required':required,'normallySkipped':{},'gaps':[]}
+    if case_id!='mcpherson-governance-openclaw-0.8.0':
+        raise ValueError('unknown fixed original')
+    valid=False
+    if isinstance(report,dict):
+        target=report.get('target');scanners=report.get('scanners')
+        aig=scanners.get('aig')if isinstance(scanners,dict)else None
+        valid=(report.get('schemaVersion')=='clawscan-run-v1'and report.get('profile')=='clawhub'
+            and isinstance(target,dict)and target.get('kind')=='plugin'
+            and isinstance(aig,dict)and aig.get('status')=='skipped'
+            and aig.get('error')=='Scanner aig does not support plugin targets.'
+            and aig.get('command')is None and aig.get('raw')is None
+            and aig.get('exitCode')is None and aig.get('commandStarted',False)is False)
+    if not valid:
+        return {'required':required,'normallySkipped':{},
+            'gaps':['fixed079 normal plugin AIG non-applicability not proven']}
+    return {'required':['skillspector','codex'],
+        'normallySkipped':{'aig':'reviewed scanner does not support plugin targets'},'gaps':[]}
+
+
+def missing_tool_capture_gaps(output,requirements):
+    return [name+' tool capture absent or unreached'for name in requirements['required']
+        if not any((output/'tool-captures').glob(name+'-*'))]
+
+
 def run(root):
     config=json.loads((root/'harness/runtime.json').read_text())
-    if set(config['cases'])!={'sn-ppt-workbench-2026.10.29'} or config.get('source')!='b08e2907eb60b33bf712b07673aff565c13d9ad7':
+    originals={'sn-ppt-workbench-2026.10.29':(26,3862533,'ea3f5eb2634dffda246aacd1798f9d4915b0cd223feeb2cd7de35e9d3856c6c8'),
+        'mcpherson-governance-openclaw-0.8.0':(106,762020,'3c28e5bc78b2dc13fa817b7faa3b14a0f1810fd22a7faf1055d2cde7fe3a44c0')}
+    if (len(config['cases'])!=1 or next(iter(config['cases']))not in originals
+        or config.get('source')!='b08e2907eb60b33bf712b07673aff565c13d9ad7'):
         raise ValueError('fixed original/source scope differs')
-    case=config['cases']['sn-ppt-workbench-2026.10.29']
+    case_id=next(iter(config['cases']));case=config['cases'][case_id]
+    count,size,manifest_hash=originals[case_id]
     files=sorted(case['files'],key=lambda row:row['path'])
-    if (len(files)!=26 or sum(row['size']for row in files)!=3862533
+    if (len(files)!=count or sum(row['size']for row in files)!=size
         or hashlib.sha256(json.dumps(files,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-            !='ea3f5eb2634dffda246aacd1798f9d4915b0cd223feeb2cd7de35e9d3856c6c8'):
+            !=manifest_hash):
         raise ValueError('fixed original manifest differs')
     output=root/'evidence';work=root/'work';home=root/'home'
     # Exclusive reservation: this controller never retries or reuses a namespace.
@@ -51,7 +83,7 @@ def run(root):
         'REASONING_EFFORT':'medium','SKILLSPECTOR_PROVIDER':'openai',
         'SKILLSPECTOR_MODEL':'gpt-6.1-sol','SKILLSPECTOR_REASONING_EFFORT':'medium',
         'CLAWSCAN_PROGRESS':'1','CLAWSCAN_CHILD_PROGRESS':'1'}
-    context_path=root/'contexts/original038.json'
+    context_path=root/('contexts/original079.json'if case_id=='mcpherson-governance-openclaw-0.8.0'else'contexts/original038.json')
     context={'captureRunId':uuid.uuid4().hex,'mode':'live','original':case['path'],
         'work':str(work),'output':str(output),'environment':child}
     save(context_path,context)
@@ -72,7 +104,7 @@ def run(root):
     save(output/'bounded-plan.json',{'nativeArgv':native,'outerTimeoutSeconds':900,
         'automaticTopLevelRetries':0,'nativePolicyUnchanged':True,'expectedVerdict':None})
     watcher=WorkspaceCapture(work,output/'workspace-capture',secrets);watcher.start()
-    result=None;gaps=[]
+    result=None;gaps=[];native_report=None
     try:
         # Parent runWorkerCommand owns this process group and confirms its cleanup.
         result=capture(argv,work,env,output/'native-capture',
@@ -96,10 +128,13 @@ def run(root):
                 save(output/'native-result-withheld.json',{'sourceBytes':len(raw),
                     'sourceSha256':hashlib.sha256(raw).hexdigest(),'withheldInjectedCredential':True})
                 gaps.append('native report contains injected credential; bytes withheld')
-            else:(output/'clawscan-result.json').write_bytes(raw)
-        for name in ('skillspector','aig-skill-scan','codex'):
-            if not any((output/'tool-captures').glob(name+'-*')):
-                gaps.append(name+' tool capture absent or unreached')
+            else:
+                (output/'clawscan-result.json').write_bytes(raw)
+                try:native_report=json.loads(raw)
+                except (ValueError,UnicodeError):pass
+        applicability=tool_capture_requirements(case_id,native_report)
+        gaps.extend(applicability['gaps'])
+        gaps.extend(missing_tool_capture_gaps(output,applicability))
         for folder in sorted((output/'tool-captures').glob('*')):
             gaps.extend(tool_capture_gaps(folder,output,work,config,context_path,context))
         if result is None:gaps.append('native capture result absent')
@@ -110,6 +145,7 @@ def run(root):
                 'bytes':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()})
         save(output/'capture-inventory.json',{'files':inventory,'nativeResult':result,
             'captureComplete':not gaps,'captureGaps':gaps,'scannerCoverageClaimed':False,
+            'toolApplicability':applicability,
             'acceptanceReviewed':False,'automaticRetryPermitted':False})
     return 0 if not gaps and result is not None and result['exitCode'] in (0,1) else 78
 

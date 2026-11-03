@@ -35,9 +35,11 @@ def main():
     context_path=Path(os.environ.get('CLAWSCAN_CAPTURE_CONTEXT','')).resolve()
     if Q/'contexts' not in context_path.parents:raise RuntimeError('context boundary')
     context=json.loads(context_path.read_text())
-    if (set(config.get('cases',{}))!={'sn-ppt-workbench-2026.10.29'}
-        or context.get('original')!=config['cases']['sn-ppt-workbench-2026.10.29'].get('path')):
-        raise RuntimeError('SN PPT Workbench original scope differs')
+    cases=config.get('cases',{})
+    if (len(cases)!=1 or next(iter(cases)) not in
+        ('sn-ppt-workbench-2026.10.29','mcpherson-governance-openclaw-0.8.0')
+        or context.get('original')!=next(iter(cases.values())).get('path')):
+        raise RuntimeError('Fixed original scope differs')
     cwd=Path.cwd().resolve();work=Path(context['work'])
     if cwd!=work and work not in cwd.parents:raise RuntimeError('workspace boundary')
     tool=config['tools'][name];path=Path(tool['path'])
