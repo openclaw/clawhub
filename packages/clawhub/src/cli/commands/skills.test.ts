@@ -80,7 +80,6 @@ const {
   cmdList,
   cmdListSkillReports,
   cmdPin,
-  cmdReportSkill,
   cmdSearch,
   cmdTriageSkillReport,
   cmdUninstall,
@@ -464,31 +463,6 @@ describe("cmdSearch", () => {
 });
 
 describe("skill moderation commands", () => {
-  it("submits skill reports", async () => {
-    mockApiRequest.mockResolvedValueOnce({
-      ok: true,
-      reported: true,
-      alreadyReported: false,
-      reportId: "skillReports:1",
-      skillId: "skills:1",
-      reportCount: 1,
-    });
-
-    await cmdReportSkill(makeOpts(), "demo", { version: "1.0.0", reason: "suspicious files" });
-
-    expect(mockApiRequest).toHaveBeenCalledWith(
-      "https://clawhub.ai",
-      {
-        method: "POST",
-        path: "/api/v1/skills/demo/report",
-        token: "tkn",
-        body: { reason: "suspicious files", version: "1.0.0" },
-      },
-      expect.anything(),
-    );
-    expect(mockLog).toHaveBeenCalledWith("OK. Reported demo (skillReports:1).");
-  });
-
   it("lists skill reports", async () => {
     mockApiRequest.mockResolvedValueOnce({
       items: [

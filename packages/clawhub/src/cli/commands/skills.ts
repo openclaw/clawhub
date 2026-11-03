@@ -8,7 +8,6 @@ import {
   ApiV1SearchResponseSchema,
   ApiV1SkillListResponseSchema,
   ApiV1SkillReportListResponseSchema,
-  ApiV1SkillReportResponseSchema,
   ApiV1SkillReportTriageResponseSchema,
   ApiV1SkillResolveResponseSchema,
   ApiV1SkillResponseSchema,
@@ -52,12 +51,6 @@ import {
 } from "../ui.js";
 import { reportInstalledSkillsTelemetryIfEnabled } from "./installTelemetry.js";
 import { presentModerationPlan, reportModerationPlan } from "./moderationPlan.js";
-
-type SkillReportOptions = {
-  version?: string;
-  reason?: string;
-  json?: boolean;
-};
 
 type SkillReportListOptions = {
   status?: SkillReportListStatus;
@@ -1314,42 +1307,6 @@ export function formatExploreLine(item: {
 export function clampLimit(limit: number, fallback = 25) {
   if (!Number.isFinite(limit)) return fallback;
   return Math.min(Math.max(1, limit), 200);
-}
-
-export async function cmdReportSkill(
-  opts: GlobalOpts,
-  slug: string,
-  options: SkillReportOptions = {},
-) {
-  const trimmed = normalizeSkillSlugOrFail(slug);
-  const reason = options.reason?.trim();
-  if (!reason) fail("--reason required");
-
-  const token = await requireAuthToken();
-  const registry = await getRegistry(opts, { cache: true });
-  const result = await apiRequest(
-    registry,
-    {
-      method: "POST",
-      path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/report`,
-      token,
-      body: {
-        reason,
-        ...(options.version?.trim() ? { version: options.version.trim() } : {}),
-      },
-    },
-    ApiV1SkillReportResponseSchema,
-  );
-
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
-  if (result.alreadyReported) {
-    console.log(`Already reported ${trimmed}.`);
-  } else {
-    console.log(`OK. Reported ${trimmed} (${result.reportId}).`);
-  }
 }
 
 export async function cmdListSkillReports(opts: GlobalOpts, options: SkillReportListOptions = {}) {
