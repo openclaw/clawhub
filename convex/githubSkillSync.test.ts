@@ -257,23 +257,31 @@ describe("unzipToEntries", () => {
     expect(Object.keys(__test.unzipToEntries(zipSync(files)))).toHaveLength(5_000);
   });
 
-  it("does not count directory entries toward the file cap", () => {
-    const files: Record<string, Uint8Array> = {};
-    for (let index = 0; index < 20_000; index += 1) {
-      files[`repo-main/skills/skill-${index}/SKILL.md`] = new Uint8Array();
-    }
-    files["repo-main/skills/extra/"] = new Uint8Array();
+  it("allows an order of magnitude more files than the old 7,500 cap", () => {
+    expect(__test.MAX_FILE_COUNT).toBe(75_000);
+  });
 
-    expect(Object.keys(__test.unzipToEntries(zipSync(files)))).toHaveLength(20_000);
+  it("does not count directory entries toward the file cap", () => {
+    const zip = zipSync({
+      "repo-main/": new Uint8Array(),
+      "repo-main/skills/": new Uint8Array(),
+      "repo-main/skills/a/": new Uint8Array(),
+      "repo-main/skills/a/SKILL.md": new Uint8Array([35]),
+      "repo-main/skills/b/": new Uint8Array(),
+      "repo-main/skills/b/SKILL.md": new Uint8Array([35]),
+    });
+
+    expect(Object.keys(__test.unzipToEntries(zip, 2))).toHaveLength(2);
   });
 
   it("rejects archives with more files than the source sync cap", () => {
-    const files: Record<string, Uint8Array> = {};
-    for (let index = 0; index <= 20_000; index += 1) {
-      files[`repo-main/skills/skill-${index}/SKILL.md`] = new Uint8Array();
-    }
+    const zip = zipSync({
+      "repo-main/skills/a/SKILL.md": new Uint8Array([35]),
+      "repo-main/skills/b/SKILL.md": new Uint8Array([35]),
+      "repo-main/skills/c/SKILL.md": new Uint8Array([35]),
+    });
 
-    expect(() => __test.unzipToEntries(zipSync(files))).toThrow("Repo archive has too many files");
+    expect(() => __test.unzipToEntries(zip, 2)).toThrow("Repo archive has too many files");
   });
 
   it("keeps valid filenames containing dot-dot text", () => {
