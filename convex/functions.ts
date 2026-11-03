@@ -26,11 +26,7 @@ import {
   adjustPublisherStatsForSkillChange,
 } from "./lib/publisherStats";
 import { assertRankingMetricWritesAllowed } from "./lib/rankingMetricsImportLock";
-import {
-  deleteSkillSearchDigests,
-  extractValidatedDigestFields,
-  upsertSkillSearchDigest,
-} from "./lib/skillSearchDigest";
+import { deleteSkillSearchDigests, syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 
 const triggers = new Triggers<DataModel>();
 
@@ -214,26 +210,6 @@ export async function syncPackageSearchDigestsForOwnerPublisherId(
     if (isMissingTableError(error, "packages")) return;
     throw error;
   }
-}
-
-async function syncSkillSearchDigestForSkill(
-  ctx: PackageDigestSyncCtx,
-  skill: Doc<"skills"> | null | undefined,
-) {
-  if (!skill) return;
-  const fields = await extractValidatedDigestFields(ctx, skill);
-  const owner = await getOwnerPublisher(ctx, {
-    ownerPublisherId: skill.ownerPublisherId,
-    ownerUserId: skill.ownerUserId,
-  });
-  await upsertSkillSearchDigest(ctx, {
-    ...fields,
-    ownerHandle: owner?.handle ?? "",
-    ownerKind: owner?.kind,
-    ownerName: owner?.linkedUserId ? owner.handle : undefined,
-    ownerDisplayName: owner?.displayName,
-    ownerImage: owner?.image,
-  });
 }
 
 export async function syncSkillSearchDigestsForOwnerPublisherId(

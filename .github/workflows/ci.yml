@@ -24,8 +24,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
 
       - uses: ./.github/actions/setup-bun
 
@@ -141,7 +139,7 @@ jobs:
       - uses: ./.github/actions/setup-bun
 
       - name: Typecheck and build
-        run: bunx --no-install tsrs --noEmit && bun run ci:types:packages && VITE_CONVEX_URL=https://example.invalid bun run build
+        run: bunx --no-install tsrs --noEmit && VITE_CONVEX_URL=https://example.invalid bun run build
 
   e2e-http:
     name: e2e-http
@@ -171,13 +169,15 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(bun -e 'console.log(require("playwright-core/package.json").version)')" >> "$GITHUB_OUTPUT"
+
       - name: Cache Playwright browsers
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}
 
       - name: Install Playwright browsers
         run: bunx playwright install chromium
@@ -237,13 +237,15 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(bun -e 'console.log(require("playwright-core/package.json").version)')" >> "$GITHUB_OUTPUT"
+
       - name: Cache Playwright browsers
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}
 
       - name: Cache npm packages for local Convex external dependencies
         uses: actions/cache@v6

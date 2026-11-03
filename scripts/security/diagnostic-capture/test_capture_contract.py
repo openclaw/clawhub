@@ -4,7 +4,9 @@ from pathlib import Path
 sys.dont_write_bytecode=True
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from validation import tool_capture_gaps
-from original038 import hashes
+from original038 import hashes,sandbox_preflight
+from unittest.mock import patch
+import original038
 
 
 class OriginalFileIdentity(unittest.TestCase):
@@ -33,13 +35,51 @@ class OriginalFileIdentity(unittest.TestCase):
                 with self.assertRaises(ValueError):hashes(case)
 
 
+class PrivateTemporarySandbox(unittest.TestCase):
+    @unittest.skipUnless(sys.platform=='linux'and os.environ.get('CLAWSCAN_TEST_CODEX'),
+        'actual pinned Linux Codex is supplied by runtime qualification')
+    def test_actual_codex_rejects_absent_readonly_tmp_and_passes_private_tmp(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd())as name:
+            root=Path(name).resolve()
+            for folder in ('work','home','evidence','empty-tmp'):(root/folder).mkdir()
+            (root/'home/.codex').mkdir()
+            codex=Path(os.environ['CLAWSCAN_TEST_CODEX'])
+            config={'tools':{'codex':{'path':str(codex),
+                'sha256':hashlib.sha256(codex.read_bytes()).hexdigest()}}}
+            child={'PATH':os.environ['PATH'],'HOME':str(root/'home'),
+                'CODEX_HOME':str(root/'home/.codex'),'TMPDIR':str(root/'work'),
+                'TMP':str(root/'work'),'TEMP':str(root/'work'),'LANG':'C.UTF-8',
+                'OPENAI_API_KEY':'PUBLIC_INERT_CANARY_MUST_NOT_REACH_PREFLIGHT',
+                'CODEX_API_KEY':'PUBLIC_INERT_CANARY_MUST_NOT_REACH_PREFLIGHT',
+                'LLM_API_KEY':'PUBLIC_INERT_CANARY_MUST_NOT_REACH_PREFLIGHT'}
+            actual=original038.sandbox_arguments
+            def readonly_tmp(*args):
+                argv=actual(*args);at=argv.index('--tmpfs')
+                argv[at:at+2]=['--ro-bind',str(root/'empty-tmp'),'/tmp']
+                return argv
+            with patch.object(original038,'sandbox_arguments',readonly_tmp):
+                with self.assertRaisesRegex(ValueError,'preflight failed'):
+                    sandbox_preflight(root,config,child)
+            before=(root/'evidence/sandbox-preflight/stderr.log').read_text()
+            self.assertIn('Read-only file system',before)
+            (root/'evidence').rename(root/'failed-evidence');(root/'evidence').mkdir()
+            sandbox_preflight(root,config,child)
+            self.assertTrue(json.loads((root/'evidence/sandbox-preflight.json').read_text())['passed'])
+            after=(root/'evidence/sandbox-preflight/stdout.log').read_text()
+            self.assertIn('OUTER_WORKSPACE_WRITABLE_FRESH_PRIVATE_TMP',after)
+            self.assertIn('INNER_READ_OK_FOUR_WRITES_DENIED',after)
+            self.assertIn('PREFLIGHT_PASSED',after)
+            self.assertFalse((root/'preflight-readonly.txt').exists())
+            self.assertFalse((root/'work/preflight-workspace.txt').exists())
+
+
 class CaptureContract(unittest.TestCase):
     def test_real_proxy_preserves_findings_exit_and_context_while_excluding_canary(self):
         with tempfile.TemporaryDirectory()as name:
             root=Path(name).resolve();harness=root/'harness';harness.mkdir()
             (harness/'bin').mkdir();work=root/'work';work.mkdir();output=root/'evidence';output.mkdir()
             (root/'contexts').mkdir();home=root/'fresh-home';home.mkdir()
-            for filename in ('capture.py','proxy.py','workspace_capture.py'):
+            for filename in ('capture.py','proxy.py','workspace_capture.py','fixed_originals.py','fixed-originals.json'):
                 shutil.copyfile(Path(__file__).parent/filename,harness/filename)
             tool=root/'synthetic-tool.py'
             tool.write_text('#!'+sys.executable+'\nimport json,os,sys\nfrom pathlib import Path\n'

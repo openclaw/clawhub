@@ -1,3 +1,4 @@
+/* @vitest-environment node */
 import type { Route } from "@playwright/test";
 import { describe, expect, it, vi } from "vitest";
 import {

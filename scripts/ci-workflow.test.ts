@@ -41,7 +41,7 @@ describe("CI workflow", () => {
       unit: "bun run ci:unit",
       packages: "bun run ci:packages",
       "types-build":
-        "bunx --no-install tsrs --noEmit && bun run ci:types:packages && VITE_CONVEX_URL=https://example.invalid bun run build",
+        "bunx --no-install tsrs --noEmit && VITE_CONVEX_URL=https://example.invalid bun run build",
       "e2e-http": "bun run ci:e2e-http",
     };
 

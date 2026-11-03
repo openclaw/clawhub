@@ -8,6 +8,7 @@ import {
 } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
+import { normalizeOwnerHandle } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
 
@@ -17,15 +18,6 @@ type SkillRef = {
   slug: string;
   ownerHandle?: string;
 };
-
-function normalizeOwnerHandle(raw: string | null | undefined) {
-  const handle = raw?.trim().replace(/^@+/, "").toLowerCase();
-  if (!handle) return undefined;
-  if (handle.includes("/") || handle.includes("\\") || handle.includes("..")) {
-    fail(`Invalid owner handle: ${raw}`);
-  }
-  return handle;
-}
 
 function normalizeSlug(slugArg: string, label = "Skill") {
   const slug = slugArg.trim().toLowerCase();

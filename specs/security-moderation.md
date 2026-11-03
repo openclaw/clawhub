@@ -10,6 +10,18 @@ read_when:
 
 See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace policy on prohibited skill categories.
 
+## Security dataset redaction
+
+- `convex/lib/securityDatasetRedaction.ts` owns the shared secret patterns for
+  Convex exports and offline dataset normalization. Keep it runtime-neutral.
+- Bundle content preserves tabs, line breaks, DEL, and outer whitespace; other
+  ASCII controls become spaces. Stored skill Markdown also trims outer whitespace.
+- Offline metadata replaces all ASCII controls and DEL, collapses whitespace,
+  trims, and applies its own length limit. Offline Markdown preserves bundle
+  whitespace and applies its existing nullable-input and truncation rules.
+- Keep export authentication, storage access, file exclusions, and byte budgets
+  at their existing caller boundaries.
+
 ## Anonymous API ingress
 
 - Hosted anonymous HTTP requests must enter through the ClawHub Vercel edge.

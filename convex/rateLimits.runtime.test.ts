@@ -42,9 +42,14 @@ it("does not reset an active quota when expired metadata is pruned", async () =>
     deleted: 1,
     hasMore: false,
   });
-  expect(await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, request)).toEqual({
+  const denied = await t.run(async (ctx) => ({
+    now: Date.now(),
+    status: await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, request),
+  }));
+  const windowEnd = (Math.floor(now / request.config.period) + 1) * request.config.period;
+  expect(denied.status).toEqual({
     ok: false,
-    retryAfter: 20_000,
+    retryAfter: windowEnd - denied.now,
   });
 });
 
@@ -94,13 +99,11 @@ it("consumes batched counts in one write and exposes exhaustion to read-only che
   expect(
     await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, { ...request, count: 4 }),
   ).toMatchObject({ ok: false });
-  const peek = await t.run(async (ctx) =>
-    ctx.runQuery(components.rateLimiterV2.lib.checkRateLimit, {
-      name: request.name,
-      key: request.key,
-      config: request.config,
-    }),
-  );
+  const peek = await t.query(components.rateLimiterV2.lib.checkRateLimit, {
+    name: request.name,
+    key: request.key,
+    config: request.config,
+  });
   expect(peek).toMatchObject({ ok: false });
 });
 
@@ -129,9 +132,11 @@ it.each(["readIp", "downloadIp", "readKey", "downloadKey"] as const)(
           consumed += 4;
         }
       } else {
-        const status = await t.run(async (ctx) =>
-          ctx.runQuery(components.rateLimiterV2.lib.checkRateLimit, { ...request, count: 4 }),
-        );
+        // Read the component directly instead of creating an unused parent mutation.
+        const status = await t.query(components.rateLimiterV2.lib.checkRateLimit, {
+          ...request,
+          count: 4,
+        });
         if (status.ok) admitted++;
       }
     }
