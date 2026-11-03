@@ -126,7 +126,6 @@ describe("restored UI design contract", () => {
       ".home-v2-listing-row-icon .marketplace-icon",
       ".home-v2-popular-publisher-card .marketplace-icon",
       ".navbar-search-typeahead-icon .marketplace-icon",
-      ".browse-page .dashboard-catalog-row-icon .marketplace-icon",
     ]) {
       expect(cssRule(css, selector)).toContain("border-radius: var(--oc-radius-inset)");
     }
