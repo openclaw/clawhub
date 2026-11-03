@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- CI: escape Unicode line separators in security dataset JSONL so line readers preserve complete records during snapshot validation.
 - CI: reuse Playwright browser downloads across unrelated dependency updates by keying caches to the installed Playwright version and runner architecture.
 - CI: use a single-commit checkout for static checks instead of fetching full history.
 - CI: cache the pinned OpenClaw contract package store while retaining frozen installs and full contract proof on every run.
