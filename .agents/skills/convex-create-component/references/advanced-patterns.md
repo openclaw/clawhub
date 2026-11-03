@@ -41,27 +41,34 @@ export const enqueue = mutation({
 ## Deriving validators from schema
 
 Instead of manually repeating field types in return validators, extend the
-schema validator:
+schema validator. This example renames the notification's opaque parent-app
+user ID without reading any parent-app tables:
+
+<!-- Local correction for https://github.com/openclaw/clawhub/pull/3516, based on
+get-convex/agent-skills@0aa10576821c6928f6a0f498c087af4ee231536e. The installed
+upstream SHA remains recorded in ai-files.state.json. `convex ai-files update`
+reinstalls skills even when that SHA is unchanged; recheck this correction after
+updating until upstream incorporates it. -->
 
 ```ts
 import { v } from "convex/values";
+import { internalQuery } from "./_generated/server.js";
 import schema from "./schema.js";
 
 const vNotification = schema.doc("notifications").omit("userId").extend({
-  user: v.string(),
+  recipientId: v.string(),
 });
 
 export const getNotification = internalQuery({
   args: { id: schema.id("notifications") },
   returns: v.nullable(vNotification),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     const notification = await ctx.db.get("notifications", args.id);
     if (!notification) return null;
     const { userId, ...rest } = notification;
-    const user = await ctx.db.get("users", userId);
     return {
       ...rest,
-      user: user?.name ?? "Unknown",
+      recipientId: userId,
     };
   },
 });
