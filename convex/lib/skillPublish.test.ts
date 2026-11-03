@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { createHash } from "node:crypto";
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";

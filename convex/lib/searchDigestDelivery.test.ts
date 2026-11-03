@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import type { Infer } from "convex/values";
 import { afterEach, expect, it, vi } from "vitest";
 import legacyFixture from "../fixtures/search-weekly-legacy.json";
