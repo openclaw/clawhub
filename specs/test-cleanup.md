@@ -45,13 +45,34 @@ become unused.
 Validation: Crabbox passed `ci:static`, `ci:e2e-http`, `ci:types:packages`, and
 `ci:unit` (652 files, 8,787 tests) on base `24341db1` plus this patch. Discovery
 confirms the deleted suite is absent. Independent P0-P3 diff review: scoped-clean.
+Landed: https://github.com/openclaw/clawhub/pull/4256.
+
+### Route assertion coverage
+
+Await the canonical skill route's guard for all five accepted owner formats and
+require the handler to exist. The old synchronous `not.toThrow()` assertions only
+observed promise creation. Keep both invalid-scope rejection cases.
+
+Remove the obsolete default-sort suite: its helper discarded the hook result and
+accepted a missing hook, while inputs bypassed search validation. Retain current
+browse/search ordering tests and category-browse cases covering retired filter URLs.
+Remove the second identical package-topic hero test; keep the first with the same
+fixture reset and assertions.
+
+Validation: all 141 focused tests passed in Crabbox. Removing the guard made all
+four old positive cases pass and all five corrected cases fail; the route was
+restored before validation. `ci:static` and `ci:types:packages` passed. Independent
+P0-P3 diff review: scoped-clean. `ci:unit` passed 8,796 tests in 651 files
+(plus one skipped file and five skipped cases), with coverage thresholds met.
+Base: `0c83d0e7`. Landing: pending PR.
 
 ## Next slices
 
 - Remove the undiscovered `scripts/security/run-codex-scan-worker.source-test.mjs`: direct Node execution fails both obsolete shared-deadline
   assertions. Retain real subprocess budget tests in `run-codex-scan-worker-skillspector.test.ts`.
-- Deduplicate template validator parity checks, inspect CLI test self-inspection, and separate admin package tests from duplicate root/package
-  runner execution.
+- Deduplicate template validator parity checks and inspect CLI test self-inspection.
+  Admin CLI duplicate runner execution was already fixed in
+  https://github.com/openclaw/clawhub/pull/4244.
 - Remove exact duplicate bodies in `moderationEngine.test.ts` (VT suspicious
   authority) and `promotions.test.ts` (ended before launch). Keep the first case
   and the distinct promotion-after-scheduled-start case.
