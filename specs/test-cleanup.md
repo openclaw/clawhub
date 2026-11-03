@@ -30,18 +30,27 @@ Retained coverage:
 
 Validation: Crabbox passed all 90 focused tests, `ci:static`, `ci:unit` coverage,
 and `ci:types:packages` at baseline `16135e6b` plus this patch. Independent P0-P3
-diff review: scoped-clean. Landing: pending PR.
+diff review: scoped-clean. Landed: https://github.com/openclaw/clawhub/pull/4250.
+
+### Old CLI compatibility e2e
+
+Removed `e2e/cli-publish-compat.e2e.test.ts` and its generated fetch shim. It ran
+the released CLI against a fabricated HTTP 200, so it could not verify server
+compatibility. The retained local-auth old-CLI test publishes through real local
+Convex, checks that uploads stay private, and requires both security checks before
+public visibility. It runs in the dedicated `old-cli-publish` CI shard, which
+passed on PR #4250 before this deletion. No runner references or shared helpers
+become unused.
+
+Validation: Crabbox passed `ci:static`, `ci:e2e-http`, `ci:types:packages`, and
+`ci:unit` (652 files, 8,787 tests) on base `24341db1` plus this patch. Discovery
+confirms the deleted suite is absent. Independent P0-P3 diff review: scoped-clean.
 
 ## Next slices
 
-- Remove the undiscovered `scripts/security/run-codex-scan-worker.source-
-  test.mjs`: direct Node execution fails both obsolete shared-deadline
-  assertions. Retain real subprocess budget tests in `run-codex-scan-worker-
-  skillspector.test.ts`.
-- Verify the real local-auth old-CLI publish flow, then remove `e2e/cli-publish-
-  compat.e2e.test.ts`, which fabricates endpoint success through a fetch shim.
-- Deduplicate template validator parity checks, inspect CLI test self-
-  inspection, and separate admin package tests from duplicate root/package
+- Remove the undiscovered `scripts/security/run-codex-scan-worker.source-test.mjs`: direct Node execution fails both obsolete shared-deadline
+  assertions. Retain real subprocess budget tests in `run-codex-scan-worker-skillspector.test.ts`.
+- Deduplicate template validator parity checks, inspect CLI test self-inspection, and separate admin package tests from duplicate root/package
   runner execution.
 - Remove exact duplicate bodies in `moderationEngine.test.ts` (VT suspicious
   authority) and `promotions.test.ts` (ended before launch). Keep the first case
