@@ -189,6 +189,7 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
     "runner",
     "age_recipient",
     "consumer",
+    "lane",
   ]);
   expect(workflow.on.workflow_dispatch.inputs.fixture.options).toEqual([
     "tiny",
@@ -257,7 +258,7 @@ it("uses only manual bounded inputs, existing CI ENV keys and explicit safe meta
   expect(job.environment).toBe("Production");
   expect(workflow.permissions).toEqual({ contents: "read" });
   expect(workflow.concurrency).toEqual({
-    group: "nonproduction-clawscan-judge-diagnostic",
+    group: "nonproduction-clawscan-judge-diagnostic-${{ inputs.lane == '1' && '1' || '0' }}",
     "cancel-in-progress": false,
   });
   expect(Object.keys(workflow.jobs)).toEqual(["diagnostic"]);
@@ -313,12 +314,23 @@ it("pins recovery consumer code separately from the main workflow before local a
     options: ["workflow", "recovery-approved"],
     default: "workflow",
   });
+  expect(workflow.on.workflow_dispatch.inputs.lane).toEqual({
+    description: "Root-coordinated diagnostic lane; a lane must be idle before dispatch",
+    type: "choice",
+    required: true,
+    options: ["0", "1"],
+    default: "0",
+  });
   const steps = workflow.jobs.diagnostic.steps;
   expect(steps[0]).toMatchObject({
     name: "Validate diagnostic consumer selection",
     id: "consumer",
     shell: "bash",
-    env: { GH_TOKEN: "${{ github.token }}", CONSUMER_CHOICE: "${{ inputs.consumer }}" },
+    env: {
+      GH_TOKEN: "${{ github.token }}",
+      CONSUMER_CHOICE: "${{ inputs.consumer }}",
+      LANE_CHOICE: "${{ inputs.lane }}",
+    },
   });
   expect(steps[1]).toMatchObject({
     uses: "actions/checkout@v7.0.1",
@@ -467,6 +479,24 @@ it("executes the actual inline consumer guard against trusted and hostile dispat
     expect(legacy.output).toBe(`consumer-sha=${workflowCommit}\nworkflow-sha=${workflowCommit}\n`);
     expect(legacy.calls).toBe("");
     expect(legacy.provider).toBe("reached");
+    for (const lane of ["", "0", "1"]) {
+      const result = await execute({ LANE_CHOICE: lane });
+      expect(result.output, lane).toBe(
+        `consumer-sha=${consumer}\nworkflow-sha=${workflowCommit}\n`,
+      );
+      expect(result.provider, lane).toBe("reached");
+    }
+    for (const lane of ["2", "-1", "00", "true", "other", "0\n1", "${{ github.run_id }}"]) {
+      const result = await execute({ LANE_CHOICE: lane });
+      expect(result.result, lane).toMatchObject({ code: 1 });
+      expect(result.output, lane).toBe("");
+      expect(result.calls, lane).toBe("");
+      expect(result.provider, lane).toBe("");
+    }
+    const unownedSecondLane = await execute({ CONSUMER_CHOICE: "workflow", LANE_CHOICE: "1" });
+    expect(unownedSecondLane.result).toMatchObject({ code: 1 });
+    expect(unownedSecondLane.calls).toBe("");
+    expect(unownedSecondLane.provider).toBe("");
     const invalidInputs: Record<string, string>[] = [
       { CONSUMER_CHOICE: consumer },
       { CONSUMER_CHOICE: "39c955143f13aa4ddb4c47272262e7e82e3e5340" },
