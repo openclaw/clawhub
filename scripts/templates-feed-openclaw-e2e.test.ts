@@ -1,3 +1,4 @@
+/* @vitest-environment node */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
