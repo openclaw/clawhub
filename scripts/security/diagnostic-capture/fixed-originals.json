@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "clawscan-fixed-skill-originals-v1",
+  "source": "b08e2907eb60b33bf712b07673aff565c13d9ad7",
+  "originals": [
+    {
+      "fixture": "004",
+      "id": "saferoute-base-swap-1.0.0",
+      "selector": "original-004-encrypted",
+      "package": "saferoute-base-swap",
+      "version": "1.0.0",
+      "owner": "crystalsignal",
+      "kind": "skill",
+      "attemptId": "zx7b9zzjgycq1gvzwk3arzc7eh8h7xn5",
+      "fingerprint": "b0a4d1502a3afa6bee9c3f40e3865c0b3af9daa99222dfee9f944d48247f6707",
+      "versionId": "k977vq181sezbrr4p2d86earn98h673s",
+      "sourceManifestSha256": "b44fedc66ac53627cca7616e3968115adf481111f6764a7a8668bc58c5f1b567",
+      "historicalOriginalManifestSha256": "d553959566d17f1a26af84658e479f04f36661e393adaee174958fc7e6a6a4bf",
+      "download": "https://clawhub.ai/api/v1/download?slug=saferoute-base-swap&version=1.0.0",
+      "manifestSha256": "0d7ed865eded9815f8ff02213b260e8a234a8a5ee2b579302ef47c6f245eb93e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "e252fe34b91b5785f1f665e2fe80542d4496a39a74dfdd777b60e5f2c42d3e33",
+          "size": 3043
+        },
+        {
+          "path": "scripts/inspect.mjs",
+          "sha256": "eee14a95422edf1ba49d9531ae6d6d1b09e9ff16c12c55b185c00ab6c85bb481",
+          "size": 3843
+        }
+      ]
+    },
+    {
+      "fixture": "016",
+      "id": "wirecat-tg-1.0.1",
+      "selector": "original-016-encrypted",
+      "package": "wirecat-tg",
+      "version": "1.0.1",
+      "owner": "wirecat",
+      "kind": "skill",
+      "attemptId": "zx7ddst6ec5gvr9cwt6b3k081d8h8ksp",
+      "fingerprint": "274d6fdc399bda26b8d481f4b42ecbbe676fe8a4e04fbbfbfa3bea36c410ee29",
+      "versionId": "k978pm3zsqzv8gbwr34s33d13d8h8hw4",
+      "sourceManifestSha256": "458c9ef24aa7c9bafac0cb7836c1dfb05f6ff68447ef6b0a221c1abcccd4aaf5",
+      "historicalOriginalManifestSha256": "9b41a7d9f8af542b904cf0a5e9868fdbf2da0e94b2d262e8bbd1f243bcd28496",
+      "download": "https://clawhub.ai/api/v1/download?slug=wirecat-tg&version=1.0.1",
+      "manifestSha256": "9cea9eb009cef61c5b45bd7066ffdc35dff59c8225a6a3cc54d11cc3088ceb59",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "274e564cdc5b415dbd7180e2ff58618894d510afab36a153ced1875be7fab657",
+          "size": 47740
+        }
+      ]
+    },
+    {
+      "fixture": "017",
+      "id": "wirecat-whatsapp-1.0.1",
+      "selector": "original-017-encrypted",
+      "package": "wirecat-whatsapp",
+      "version": "1.0.1",
+      "owner": "wirecat",
+      "kind": "skill",
+      "attemptId": "zx7es32jtpktywxzxsp5q5pd758h8aqm",
+      "fingerprint": "f1a6d78c59b17c09e13c533a235ea305d2585847541a7b7796c08f82b40541b2",
+      "versionId": "k97de87w8r06xyyqfkq6xqbbn98h9436",
+      "sourceManifestSha256": "8d4938828a4209a5d464002d940a2a844b4e67f2d0df9379b4fceac29a9097c5",
+      "historicalOriginalManifestSha256": "c5ef8ba9657d21aa34d0f31ca9dba6354ed5029036f86667a5c99a51d1914122",
+      "download": "https://clawhub.ai/api/v1/download?slug=wirecat-whatsapp&version=1.0.1",
+      "manifestSha256": "b8bbef23a384d06113710d68816b1c6a8a1a897f4f121ab4867a2f29bf75f2b9",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "4381c2c7f0e93d3ac0030cc6a6cb211c5282101382c096cba8fb3c00192bcefc",
+          "size": 27895
+        }
+      ]
+    },
+    {
+      "fixture": "026",
+      "id": "taasky-0.3.15",
+      "selector": "original-026-encrypted",
+      "package": "taasky",
+      "version": "0.3.15",
+      "owner": "marina-aronchik",
+      "kind": "skill",
+      "attemptId": "zx72f2x9k7mbs5dv89anadrh0h8gxk41",
+      "fingerprint": "bc888a0c7ae4d86ab996bd53a85cdedbfced0964a8b474803523a77f0557e581",
+      "versionId": "k979fn266rs2hhfb7r44mbcqb58gxsah",
+      "sourceManifestSha256": "dcf3ca41221682feed87f106d924ff05f4e3a2bf20833f03bdf167ba814da883",
+      "historicalOriginalManifestSha256": "53812ee854d0479a108813feb77961ae79ce3b7296209942ced401cb0d348df4",
+      "download": "https://clawhub.ai/api/v1/download?slug=taasky&version=0.3.15",
+      "manifestSha256": "6a606dbf451e96a9dc67c4907abf1714cb08f3e73a55532194ad5b9c178874a2",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "78867827a52d58e2b7ab740a0174c140696c78355efb49cc4667a3b17ec86928",
+          "size": 23105
+        }
+      ]
+    },
+    {
+      "fixture": "027",
+      "id": "betap-1.1.2",
+      "selector": "original-027-encrypted",
+      "package": "betap",
+      "version": "1.1.2",
+      "owner": "xavierabraham",
+      "kind": "skill",
+      "attemptId": "zx7by0mc7g284n7te5b20grdwx8gw9t0",
+      "fingerprint": "475ce40cd84e3d19dae201f180a9695db23bc1682c9168aaf38525b39fb96552",
+      "versionId": "k978v8xgkcet21rnnxctcxb6358gwfpf",
+      "sourceManifestSha256": "7572e9e025edba61af6a57d7c52ef6487aab2e69848ab40e658b220c6fa1923f",
+      "historicalOriginalManifestSha256": "e71361bbd238c648cba22b76c79d289e1c5083ce99282d363f093ec63926ad4f",
+      "download": "https://clawhub.ai/api/v1/download?slug=betap&version=1.1.2",
+      "manifestSha256": "c0a923bfb39e9435f28aac77d9a028d645de93665a6770bdcedf332d8927d7b1",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "11f46c75d5fc3dc200945659c1c0b29e130cbdc72066c4fe7fd5f47cca95d209",
+          "size": 8757
+        }
+      ]
+    }
+  ]
+}

@@ -5,6 +5,7 @@ from pathlib import Path
 sys.dont_write_bytecode=True
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from capture import capture
+from fixed_originals import skill_originals,validate_skill_case
 Q = Path(__file__).resolve().parent.parent
 def native_arguments(name,cwd,original):
     if name=='codex':
@@ -36,10 +37,13 @@ def main():
     if Q/'contexts' not in context_path.parents:raise RuntimeError('context boundary')
     context=json.loads(context_path.read_text())
     cases=config.get('cases',{})
+    skills=skill_originals()
     if (len(cases)!=1 or next(iter(cases)) not in
-        ('sn-ppt-workbench-2026.10.29','mcpherson-governance-openclaw-0.8.0')
+        {'sn-ppt-workbench-2026.10.29','mcpherson-governance-openclaw-0.8.0',*skills}
         or context.get('original')!=next(iter(cases.values())).get('path')):
         raise RuntimeError('Fixed original scope differs')
+    case_id=next(iter(cases))
+    if case_id in skills:validate_skill_case(config,case_id)
     cwd=Path.cwd().resolve();work=Path(context['work'])
     if cwd!=work and work not in cwd.parents:raise RuntimeError('workspace boundary')
     tool=config['tools'][name];path=Path(tool['path'])

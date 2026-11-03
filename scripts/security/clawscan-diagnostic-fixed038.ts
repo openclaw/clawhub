@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { fromBufferPromise } from "yauzl";
-import { extractDiagnosticArchive } from "./clawscan-diagnostic-input";
+import { extractDiagnosticArchive, type DiagnosticManifest } from "./clawscan-diagnostic-input";
 import runtime from "./fixtures/judge-original-038-runtime.json";
 import original from "./fixtures/judge-original-038.json";
 
@@ -31,8 +31,16 @@ export function validateOriginal038Packages(kind: "skillspector" | "aig", value:
 }
 
 export async function materializeOriginal038(archive: Buffer, target: string) {
+  return materializeFixedSkill(archive, target, original038Manifest);
+}
+
+export async function materializeFixedSkill(
+  archive: Buffer,
+  target: string,
+  manifest: DiagnosticManifest,
+) {
   const transferSha256 = createHash("sha256").update(archive).digest("hex");
-  // The public ZIP is a transfer container. Identity belongs to all 26 retained files.
+  // The generated ZIP is a transfer container; retained file hashes establish identity.
   const zip = await fromBufferPromise(archive, {
     lazyEntries: true,
     strictFileNames: true,
@@ -40,7 +48,7 @@ export async function materializeOriginal038(archive: Buffer, target: string) {
   });
   const extras: string[] = [];
   try {
-    if (zip.entryCount < 26 || zip.entryCount > 28)
+    if (zip.entryCount < manifest.files.length || zip.entryCount > manifest.files.length + 2)
       throw new Error("Fixed original archive inventory mismatch");
     for await (const entry of zip.eachEntry()) {
       if (["_meta.json", "skill-card.md"].includes(entry.fileName)) {
@@ -55,14 +63,18 @@ export async function materializeOriginal038(archive: Buffer, target: string) {
   const identity = await extractDiagnosticArchive(
     archive,
     target,
-    { ...original038Manifest, archiveSha256: transferSha256 },
+    { ...manifest, archiveSha256: transferSha256 },
     { maximumBytes: 16 * 1024 * 1024, excludedEntries: extras },
   );
   return { ...identity, transferSha256, originalCompressedArchiveIdentityProven: false };
 }
 
 export async function downloadOriginal038() {
-  const response = await fetch(ORIGINAL038_DOWNLOAD, {
+  return downloadFixedSkill(ORIGINAL038_DOWNLOAD);
+}
+
+export async function downloadFixedSkill(url: string) {
+  const response = await fetch(url, {
     signal: AbortSignal.timeout(60_000),
     redirect: "error",
   });

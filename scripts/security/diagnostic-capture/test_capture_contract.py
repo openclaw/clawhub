@@ -79,7 +79,7 @@ class CaptureContract(unittest.TestCase):
             root=Path(name).resolve();harness=root/'harness';harness.mkdir()
             (harness/'bin').mkdir();work=root/'work';work.mkdir();output=root/'evidence';output.mkdir()
             (root/'contexts').mkdir();home=root/'fresh-home';home.mkdir()
-            for filename in ('capture.py','proxy.py','workspace_capture.py'):
+            for filename in ('capture.py','proxy.py','workspace_capture.py','fixed_originals.py','fixed-originals.json'):
                 shutil.copyfile(Path(__file__).parent/filename,harness/filename)
             tool=root/'synthetic-tool.py'
             tool.write_text('#!'+sys.executable+'\nimport json,os,sys\nfrom pathlib import Path\n'
