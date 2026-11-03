@@ -13,4 +13,5 @@ query-filters:
       tags contain: security
 
 paths:
+  - .github/actions
   - .github/workflows

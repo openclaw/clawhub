@@ -35,6 +35,8 @@
 
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
+- CI: batch main CodeQL scans every six hours while preserving PR and manual scans; include local composite actions and attribute-only PR changes.
+
 ## 0.25.0 - 2026-11-01
 
 ### Compatibility
