@@ -23,26 +23,31 @@ describe("changelog utils", () => {
 
   it("generates a fallback initial release note", () => {
     const text = __test.generateFallback({
-      slug: "demo",
-      version: "1.0.0",
       oldReadme: null,
-      nextReadme: "hi",
       fileDiff: null,
     });
-    expect(text).toMatch(/Initial release/i);
+    expect(text).toBe("- Initial release.");
   });
 
   it("generates a package-specific fallback update note", () => {
-    const text = __test.generatePackageFallback({
-      name: "demo-plugin",
-      version: "1.2.0",
-      oldReadme: "old",
-      nextReadme: "new",
-      fileDiff: { added: ["src/index.ts"], changed: [], removed: [] },
-    });
+    const text = __test.generateFallback(
+      { oldReadme: "old", fileDiff: { added: ["src/index.ts"], changed: [], removed: [] } },
+      "README and package contents",
+    );
     expect(text).toContain("Updated README and package contents");
     expect(text).not.toContain("SKILL.md");
   });
+
+  it.each(["SKILL.md and bundle contents", "README and package contents"])(
+    "preserves file-count ordering and wording for %s",
+    (updatedContents) => {
+      const text = __test.generateFallback(
+        { oldReadme: " ", fileDiff: { added: ["a", "b"], changed: ["c"], removed: ["d"] } },
+        updatedContents,
+      );
+      expect(text).toBe(`- added 2, updated 1, removed 1 file(s).\n- Updated ${updatedContents}.`);
+    },
+  );
 
   describe("OpenAI changelog fetch deadline", () => {
     afterEach(() => {
