@@ -15,6 +15,7 @@ import { skillSpectorAnalysisValidator } from "./schema";
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 const CHECK_RETRY_BACKOFF_MS = 5 * 60 * 1000;
+const CLAIM_STORAGE_URL_CONCURRENCY = 8;
 const MAX_CONSECUTIVE_SCANNER_FAILURES = 3;
 const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
 const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
@@ -1702,12 +1703,20 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
 
     let phase: "files" | "clawpack" | "response" = "files";
     try {
-      const files = await Promise.all(
-        claimed.files.map(async (file) => {
-          const url = await ctx.storage.getUrl(file.storageId);
-          return { ...file, url };
-        }),
-      );
+      const files: Array<(typeof claimed.files)[number] & { url: string | null }> = [];
+      for (let index = 0; index < claimed.files.length; index += CLAIM_STORAGE_URL_CONCURRENCY) {
+        const pending = claimed.files
+          .slice(index, index + CLAIM_STORAGE_URL_CONCURRENCY)
+          .map(async (file) => ({ ...file, url: await ctx.storage.getUrl(file.storageId) }));
+        try {
+          files.push(...(await Promise.all(pending)));
+        } catch (error) {
+          // Finish already-started storage calls before compensation and return;
+          // preserve the first rejection and never start the remaining batches.
+          await Promise.allSettled(pending);
+          throw error;
+        }
+      }
       phase = "clawpack";
       const clawpackUrl = claimed.clawpackStorageId
         ? await ctx.storage.getUrl(claimed.clawpackStorageId)
