@@ -286,6 +286,196 @@
           "size": 10604
         }
       ]
+    },
+    {
+      "fixture": "065",
+      "id": "agent-betap-1.0.0",
+      "selector": "original-065-encrypted",
+      "package": "agent-betap",
+      "version": "1.0.0",
+      "owner": "xavierabraham",
+      "kind": "skill",
+      "attemptId": "zx739kkrb6530st41qjdzyj0498gy4ac",
+      "fingerprint": "f5dcf76230e987f39f1da5be27da41459e22e383307af2ebb3a3a2eecd4acfc2",
+      "versionId": "k974s4hvs82pcm87xq4kvcd6hh8gzh4a",
+      "sourceManifestSha256": "077a78803f16befe1561a9e387e1368676850464c6bfb1006334343238955f0e",
+      "historicalOriginalManifestSha256": "f5dcf76230e987f39f1da5be27da41459e22e383307af2ebb3a3a2eecd4acfc2",
+      "download": "https://clawhub.ai/api/v1/download?slug=agent-betap&version=1.0.0",
+      "manifestSha256": "0df22e4c5e1e6ca5d1ca56d376a2a003b81b1ac392271329e3550d5beb5bb428",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "1139c5101858e49ba489543ebf22a7e3b9a04c17e3b2f5c3d58d924bf9d5b961",
+          "size": 2056
+        }
+      ]
+    },
+    {
+      "fixture": "073",
+      "id": "smartgate-1.0.0",
+      "selector": "original-073-encrypted",
+      "package": "smartgate",
+      "version": "1.0.0",
+      "owner": "smartgate.network",
+      "kind": "skill",
+      "attemptId": "zx72gtz9rezd1kcsc8q3n7e6w18h5w7c",
+      "fingerprint": "67120c9027ff61682adfde1110807d26653764c8cd0de8a04b5a0a06a2724436",
+      "versionId": "k9768gzc3ab096hhv1p435xksh8h5y3b",
+      "sourceManifestSha256": "c92e03ebe0ea942d34d794abea3ea2ab1817307f9c8a84273bff62a4bc1ae55b",
+      "historicalOriginalManifestSha256": "67120c9027ff61682adfde1110807d26653764c8cd0de8a04b5a0a06a2724436",
+      "download": "https://clawhub.ai/api/v1/download?slug=smartgate&version=1.0.0",
+      "manifestSha256": "05a9cab246f922b8dda4e3c3647df42a82e00809b7baed32a697f2b93d3d0602",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "c7ad76ce6d2f2f9eadfc97a78b86464c19b8ab6a858b46fbc4fd35dd790f7660",
+          "size": 2917
+        }
+      ]
+    },
+    {
+      "fixture": "042",
+      "id": "mochilab-skills-1.1.1",
+      "selector": "original-042-encrypted",
+      "package": "mochilab-skills",
+      "version": "1.1.1",
+      "owner": "hznetnewpower",
+      "kind": "skill",
+      "attemptId": "zx78bax1x9pyt6qg30y28xx9918h1bcx",
+      "fingerprint": "0bfcee19b731b75413a92b08b5598546267ee2801f4734a2873927fcb0b655b3",
+      "versionId": "k975k2cff6d99s8b7dng06wy9x8h1zyw",
+      "sourceManifestSha256": "e6f21d270eb1e48657459b8b5ec76d7bd02487b8354da723e89bb5fa972cf3a2",
+      "historicalOriginalManifestSha256": "0bfcee19b731b75413a92b08b5598546267ee2801f4734a2873927fcb0b655b3",
+      "download": "https://clawhub.ai/api/v1/download?slug=mochilab-skills&version=1.1.1",
+      "manifestSha256": "61573b29a052d0adbbbc06c9f5e4ac49c1d24e18e50262177a665783f29a32ee",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "b3e1655cfc75a8b798596ea4468b8119d8250c8f1b1b5e75397887d1aca93027",
+          "size": 903
+        },
+        {
+          "path": "README.md",
+          "sha256": "b8758f0eeece8452ad4f4dc1813a63448002d5d48b484a22539bbbc800c7d68a",
+          "size": 2594
+        },
+        {
+          "path": "README.zh-CN.md",
+          "sha256": "71bd70609ec2f7507099b3e1fb9f2972422437ad30df2985e443202388953a40",
+          "size": 2362
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "d06b681dc6fa75e62aefe0d453b40acd8de9bcb4b6365159bb69f6b8a7a06176",
+          "size": 4494
+        },
+        {
+          "path": "scripts/mochilab.mjs",
+          "sha256": "7ef41da8523e9b5a764d71d4eea863fd1f4d1a687f4ea63f937bd455dce705ce",
+          "size": 24366
+        }
+      ]
+    },
+    {
+      "fixture": "055",
+      "id": "gtrk-cover-1.3.10",
+      "selector": "original-055-encrypted",
+      "package": "gtrk-cover",
+      "version": "1.3.10",
+      "owner": "gitruck",
+      "kind": "skill",
+      "attemptId": "zx72jbarp0t1p4gqfx1hwq01xd8h7bzj",
+      "fingerprint": "97b77c7947a69a6e6fa14ac19fb9aa1b0352118153e30ff7a3c07c08328e501b",
+      "versionId": "k97fpbaas23y9j1gdmhzrezs6n8h7qpd",
+      "sourceManifestSha256": "f0b29790043cb4b159c162a2ee541b59fd32beaf4008d130186f44afc33c6a25",
+      "historicalOriginalManifestSha256": "b497cf1b721d3a337e652ac491cabe3edfcd2f5f20cd7f61370cdbcb57f96b1f",
+      "download": "https://clawhub.ai/api/v1/download?slug=gtrk-cover&version=1.3.10",
+      "manifestSha256": "b497cf1b721d3a337e652ac491cabe3edfcd2f5f20cd7f61370cdbcb57f96b1f",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "6c0247b9266eeba434ec7cbd752998c619cbf5981d4ff43d982267e4da44020b",
+          "size": 13288
+        },
+        {
+          "path": "assets/workbench-template.html",
+          "sha256": "d2a88df0f85000d1149db063ee3679fcdcef1abcfe32625a0a6f72138c8acdb6",
+          "size": 50025
+        },
+        {
+          "path": "references/checklist.md",
+          "sha256": "758d60053e2b04a6935c877a3beba84300b7ec2c16bab6ebe1e8c610d193e99e",
+          "size": 4531
+        },
+        {
+          "path": "references/layout-recipes.md",
+          "sha256": "7b5d64c06c847116292ced4b7e576017253216b9a07cd6ef04aed862cb417d4f",
+          "size": 15319
+        },
+        {
+          "path": "references/prompt-templates.md",
+          "sha256": "3342ee7869eed84bdb78305613ff8514da73bee703b4d74e21fbd06af8045fbb",
+          "size": 6738
+        },
+        {
+          "path": "references/workbench-guide.md",
+          "sha256": "1c66b77bfc8cae44a527f2c4b474bc3ccc17f06cedb4a10e56b09b248d42ebf8",
+          "size": 10604
+        }
+      ]
+    },
+    {
+      "fixture": "039",
+      "id": "mochi-daily-brief-1.0.1",
+      "selector": "original-039-encrypted",
+      "package": "mochi-daily-brief",
+      "version": "1.0.1",
+      "owner": "hznetnewpower",
+      "kind": "skill",
+      "attemptId": "zx76t425vw81kfrq7vvwjx3m3s8h0mmm",
+      "fingerprint": "350b3b296e59cc0c8d1fdfe6f6029347234fbfe08044fcfef2ba7b1d96256e65",
+      "versionId": "k971cbssee2wcpn7yrtd77ecf58h0sd5",
+      "sourceManifestSha256": "6a4f91be65d710522d68a7bef35cbf0de63dd87a83d1cc0b0753f0e57942ca9e",
+      "historicalOriginalManifestSha256": "350b3b296e59cc0c8d1fdfe6f6029347234fbfe08044fcfef2ba7b1d96256e65",
+      "download": "https://clawhub.ai/api/v1/download?slug=mochi-daily-brief&version=1.0.1",
+      "manifestSha256": "f11b6cb2c09eee75006e571c82b327859728b9d9ec52b770de905cd0516253f0",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "b3e1655cfc75a8b798596ea4468b8119d8250c8f1b1b5e75397887d1aca93027",
+          "size": 903
+        },
+        {
+          "path": "README.md",
+          "sha256": "1f8aac2f3ffcb2b99704afd844677056b8607f608e17fc3b602fab61ee3cbd8f",
+          "size": 2183
+        },
+        {
+          "path": "README.zh-CN.md",
+          "sha256": "bc3d22981e3a356b5e389195f7f573cf5587a1aed647903322c24975dede8c0f",
+          "size": 2547
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "68fc843c6a6457c3a39ab07767b655494718663d96190bc9e5bc50e931f70bc2",
+          "size": 6148
+        },
+        {
+          "path": "references/options.md",
+          "sha256": "dc03677ec3d7c7427beb1fca499b6beb580d6933f81f085d3f07d00296c672ae",
+          "size": 5816
+        },
+        {
+          "path": "scripts/brief.mjs",
+          "sha256": "503340a3d89cce2fee4a9d48372f618ad70d272b52eaae2a6e6eb6c966940d4c",
+          "size": 20363
+        },
+        {
+          "path": "tests/brief.test.mjs",
+          "sha256": "70337dfdc38db0e5a82ca7d02138be2fb59c6ee27f43b00dd0fdf1a2e0a6d991",
+          "size": 16311
+        }
+      ]
     }
   ]
 }
