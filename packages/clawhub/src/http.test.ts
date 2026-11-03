@@ -109,6 +109,60 @@ describe("registryUrl", () => {
 });
 
 describe("node http client", () => {
+  const binaryArgs = { path: "/artifact", token: "clh_token" };
+  const requestCases: {
+    label: string;
+    run: (client: ReturnType<typeof createHttpClient>) => Promise<unknown>;
+  }[] = [
+    {
+      label: "JSON",
+      run: (client) => client.apiRequest("https://example.com", { method: "GET", ...binaryArgs }),
+    },
+    {
+      label: "multipart",
+      run: (client) =>
+        client.apiRequestForm("https://example.com", {
+          method: "POST",
+          form: new FormData(),
+          ...binaryArgs,
+        }),
+    },
+    {
+      label: "upload",
+      run: (client) =>
+        client.uploadBinary({ url: "https://example.com/upload", bytes: new Uint8Array([1]) }),
+    },
+    { label: "binary", run: (client) => client.fetchBinary("https://example.com", binaryArgs) },
+    { label: "ZIP", run: (client) => client.downloadZip("https://example.com", { slug: "demo" }) },
+  ];
+
+  describe.each(requestCases)("$label errors", ({ run }) => {
+    it.each([
+      { status: 404, attempts: 1 },
+      { status: 503, attempts: 3 },
+      { status: 429, attempts: 3 },
+    ])(
+      "preserves HTTP $status when the error body cannot be read",
+      async ({ status, attempts }) => {
+        const text = vi.fn().mockRejectedValue(new Error("body unavailable"));
+        const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status, text });
+        const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
+        const client = createNodeClient({
+          fetchImpl: fetchImpl as unknown as typeof fetch,
+          setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+          clearTimeoutImpl,
+        });
+
+        const error = await run(client).catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(Error);
+        expect(error).toHaveProperty("message", `HTTP ${status}`);
+        expect(getHttpErrorStatus(error)).toBe(status);
+        expect(fetchImpl).toHaveBeenCalledTimes(attempts);
+        expect(text).toHaveBeenCalledTimes(attempts);
+      },
+    );
+  });
+
   it("adds bearer token and parses json", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
@@ -453,18 +507,21 @@ describe("node http client", () => {
     });
     const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
 
-    await client.downloadZip("https://example.com", {
-      slug: "demo",
+    await client.downloadZip("https://example.com/custom/path", {
+      slug: "demo+skill",
       ownerHandle: "openclaw",
-      version: "1.0.0",
+      version: "1.0.0+build",
+      token: "clh_token",
     });
 
-    const [url] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
     const parsed = new URL(url);
-    expect(parsed.pathname).toBe("/api/v1/download");
-    expect(parsed.searchParams.get("slug")).toBe("demo");
+    expect(parsed.pathname).toBe("/custom/path/api/v1/download");
+    expect(parsed.searchParams.get("slug")).toBe("demo+skill");
     expect(parsed.searchParams.get("ownerHandle")).toBe("openclaw");
-    expect(parsed.searchParams.get("version")).toBe("1.0.0");
+    expect(parsed.searchParams.get("version")).toBe("1.0.0+build");
+    expect(init.method).toBe("GET");
+    expect(init.headers).toEqual({ Authorization: "Bearer clh_token" });
   });
 
   it("retries request and text timeouts using injected timeout helpers", async () => {
