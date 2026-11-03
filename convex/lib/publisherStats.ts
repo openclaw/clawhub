@@ -225,17 +225,18 @@ function diffPublisherStats(
   };
 }
 
-export async function adjustPublisherStatsForSkillChange(
+async function adjustPublisherStats<T extends { ownerPublisherId?: Id<"publishers"> }>(
   ctx: Pick<MutationCtx, "db">,
-  previousSkill: Doc<"skills"> | null | undefined,
-  nextSkill: Doc<"skills"> | null | undefined,
+  previous: T | null | undefined,
+  next: T | null | undefined,
+  getContribution: (value: T) => PublisherStatsContribution,
 ) {
-  if (!previousSkill && !nextSkill) return;
+  if (!previous && !next) return;
 
-  const previousPublisherId = previousSkill?.ownerPublisherId ?? null;
-  const nextPublisherId = nextSkill?.ownerPublisherId ?? null;
-  const previousContribution = previousSkill ? getSkillPublisherContribution(previousSkill) : null;
-  const nextContribution = nextSkill ? getSkillPublisherContribution(nextSkill) : null;
+  const previousPublisherId = previous?.ownerPublisherId ?? null;
+  const nextPublisherId = next?.ownerPublisherId ?? null;
+  const previousContribution = previous ? getContribution(previous) : null;
+  const nextContribution = next ? getContribution(next) : null;
 
   if (previousPublisherId && previousPublisherId === nextPublisherId) {
     await patchPublisherStats(ctx, previousPublisherId, {
@@ -271,6 +272,14 @@ async function recomputeAndPatchPublisherStats(
   await ctx.db.patch(publisherId, await recomputePublisherStats(ctx, publisherId));
 }
 
+export async function adjustPublisherStatsForSkillChange(
+  ctx: Pick<MutationCtx, "db">,
+  previousSkill: Doc<"skills"> | null | undefined,
+  nextSkill: Doc<"skills"> | null | undefined,
+) {
+  return await adjustPublisherStats(ctx, previousSkill, nextSkill, getSkillPublisherContribution);
+}
+
 export async function adjustPublisherStatsForPackageChange(
   ctx: Pick<MutationCtx, "db">,
   previousPackage: Doc<"packages"> | null | undefined,
@@ -280,40 +289,26 @@ export async function adjustPublisherStatsForPackageChange(
 
   const previousPublisherId = previousPackage?.ownerPublisherId ?? null;
   const nextPublisherId = nextPackage?.ownerPublisherId ?? null;
-  const previousContribution = previousPackage
-    ? getPackagePublisherContribution(previousPackage)
-    : null;
-  const nextContribution = nextPackage ? getPackagePublisherContribution(nextPackage) : null;
-  const previousCount = publishedPackageCount(previousContribution);
-  const nextCount = publishedPackageCount(nextContribution);
+  const previousCount = publishedPackageCount(
+    previousPackage ? getPackagePublisherContribution(previousPackage) : null,
+  );
+  const nextCount = publishedPackageCount(
+    nextPackage ? getPackagePublisherContribution(nextPackage) : null,
+  );
 
-  if (previousPublisherId && previousPublisherId === nextPublisherId) {
-    if (previousCount !== nextCount) {
-      await recomputeAndPatchPublisherStats(ctx, previousPublisherId);
-      return;
-    }
-    await patchPublisherStats(ctx, previousPublisherId, {
-      ...diffPublisherStats(nextContribution, previousContribution),
-    });
+  if (
+    previousPublisherId &&
+    previousPublisherId === nextPublisherId &&
+    previousCount !== nextCount
+  ) {
+    await recomputeAndPatchPublisherStats(ctx, previousPublisherId);
     return;
   }
 
-  if (previousPublisherId) {
-    if (previousCount > 0) {
-      await recomputeAndPatchPublisherStats(ctx, previousPublisherId);
-    } else {
-      await patchPublisherStats(
-        ctx,
-        previousPublisherId,
-        diffPublisherStats(null, previousContribution),
-      );
-    }
-  }
-  if (nextPublisherId) {
-    if (nextCount > 0) {
-      await recomputeAndPatchPublisherStats(ctx, nextPublisherId);
-    } else {
-      await patchPublisherStats(ctx, nextPublisherId, diffPublisherStats(nextContribution, null));
-    }
-  }
+  return await adjustPublisherStats(
+    ctx,
+    previousPackage,
+    nextPackage,
+    getPackagePublisherContribution,
+  );
 }

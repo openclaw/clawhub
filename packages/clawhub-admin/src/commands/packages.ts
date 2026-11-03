@@ -25,24 +25,15 @@ import {
   ApiV1PackageReleaseModerationResponseSchema,
   ApiV1PackageReportListResponseSchema,
   ApiV1PackageReportTriageResponseSchema,
-  ApiV1PackageTrustedPublisherResponseSchema,
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
   type PackageReportFinalAction,
   type PackageReportListStatus,
   type PackageReportStatus,
   type PackageReleaseModerationState,
-  type PackageTrustedPublisher,
   type ApiV1PackageValidationReportPage,
   type PackageValidationReportItem,
 } from "../../../clawhub/src/schema/index.js";
-
-type PackageTrustedPublisherSetOptions = {
-  repository?: string;
-  workflowFilename?: string;
-  environment?: string;
-  json?: boolean;
-};
 
 type PackageTrustedPublisherDeleteOptions = {
   json?: boolean;
@@ -263,51 +254,6 @@ export async function cmdHardDeletePackage(
     return result;
   } catch (error) {
     spinner?.fail(formatError(error));
-    throw error;
-  }
-}
-
-export async function cmdSetPackageTrustedPublisher(
-  opts: GlobalOpts,
-  packageName: string,
-  options: PackageTrustedPublisherSetOptions,
-) {
-  const trimmed = normalizePackageNameOrFail(packageName);
-  const repository = options.repository?.trim();
-  const workflowFilename = options.workflowFilename?.trim();
-  const environment = options.environment?.trim() || undefined;
-  if (!repository) fail("--repository required");
-  if (!workflowFilename) fail("--workflow-filename required");
-
-  const token = await requireAuthToken();
-  const registry = await getRegistry(opts, { cache: true });
-  const spinner = createCrabLoader("Saving trusted publisher");
-  try {
-    const result = await apiRequest(
-      registry,
-      {
-        method: "POST",
-        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/trusted-publisher`,
-        token,
-        body: {
-          repository,
-          workflowFilename,
-          ...(environment ? { environment } : {}),
-        },
-      },
-      ApiV1PackageTrustedPublisherResponseSchema,
-    );
-    spinner.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
-    console.log(`Trusted publisher saved for ${trimmed}.`);
-    if (result.trustedPublisher) {
-      printTrustedPublisher(result.trustedPublisher);
-    }
-  } catch (error) {
-    spinner.fail(formatError(error));
     throw error;
   }
 }
@@ -849,11 +795,4 @@ function parseCsv(value: string | undefined) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function printTrustedPublisher(config: PackageTrustedPublisher) {
-  console.log(`Provider: ${config.provider}`);
-  console.log(`Repository: ${config.repository}`);
-  console.log(`Workflow: ${config.workflowFilename}`);
-  if (config.environment) console.log(`Environment: ${config.environment}`);
 }
