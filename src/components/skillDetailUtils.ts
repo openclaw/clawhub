@@ -3,7 +3,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { buildSkillDetailHref } from "../lib/ownerRoute";
 import { getClawHubSiteUrl } from "../lib/site";
 
-export type SkillPromptMode = "install-only" | "install-and-setup";
+type SkillPromptMode = "install-only" | "install-and-setup";
 type SkillOwnerId = Id<"users"> | Id<"publishers">;
 
 type SkillPromptContext = {
