@@ -4,7 +4,7 @@ function normalizeApiPath(path: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
-function resolveAbsoluteBaseUrl(...candidates: Array<string | undefined>) {
+export function resolveAbsoluteBaseUrl(...candidates: Array<string | undefined>) {
   for (const candidate of candidates) {
     const value = candidate?.trim();
     if (!value) continue;
