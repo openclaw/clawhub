@@ -3,6 +3,7 @@ import { getSecurityAuditOverviewCopy } from "clawhub-schema/securityAudit";
 import { ArrowLeft, Check, Clock, Download, Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
+import { resolveAbsoluteBaseUrl } from "../lib/publicApiUrl";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import {
   buildSecurityAuditExportFilename,
@@ -908,19 +909,6 @@ function AigAttribution() {
       href="https://github.com/Tencent/AI-Infra-Guard"
     />
   );
-}
-
-function resolveAbsoluteBaseUrl(...candidates: Array<string | undefined>) {
-  for (const candidate of candidates) {
-    const value = candidate?.trim();
-    if (!value) continue;
-    try {
-      return new URL(value).toString();
-    } catch {
-      continue;
-    }
-  }
-  return null;
 }
 
 function buildArtifactFileUrl(entity: EntityRef, path: string) {
