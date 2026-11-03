@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { describe, expect, it } from "vitest";
 import {
   CATALOG_CATEGORY_CANDIDATE_STORAGE_LIMIT,

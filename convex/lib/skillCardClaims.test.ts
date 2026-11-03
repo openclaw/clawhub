@@ -1,3 +1,5 @@
+/* @vitest-environment edge-runtime */
+
 import { convexTest } from "convex-test";
 import { defineSchema, defineTable } from "convex/server";
 import { describe, expect, it, vi } from "vitest";

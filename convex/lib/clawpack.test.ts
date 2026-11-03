@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { gzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { npmTarballName, parseClawPack } from "./clawpack";

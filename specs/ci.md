@@ -17,6 +17,8 @@ times overlap and each required check reports its own failure:
   Backend helper suites without browser dependencies also use Node. Keep the
   environment explicit per file so browser and Convex runtime suites retain
   their own environment requirements.
+  Suites exercising Convex through `convex-test` use `edge-runtime`, matching
+  the generated Convex testing guidelines instead of inheriting jsdom.
 - `packages` builds `packages/schema` and verifies both CLI packages, including
   their native TypeScript checks.
 - CLI source and artifact tests belong to `ci:packages`. Root unit coverage
