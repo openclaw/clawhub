@@ -22,6 +22,10 @@ import {
   searchScope,
 } from "./lib/searchInsights";
 import { reportRequest } from "./lib/searchReportContract";
+import {
+  skillSpectorInspectionCaveatsValidator,
+  skillSpectorReviewFields,
+} from "./lib/skillSpectorEvidence";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -50,6 +54,7 @@ const vtAnalysisValidator = v.object({
 });
 
 const skillSpectorIssueValidator = v.object({
+  ...skillSpectorReviewFields,
   issueId: v.string(),
   category: v.optional(v.string()),
   pattern: v.optional(v.string()),
@@ -65,6 +70,7 @@ const skillSpectorIssueValidator = v.object({
 });
 
 export const skillSpectorAnalysisValidator = v.object({
+  inspectionCaveats: v.optional(skillSpectorInspectionCaveatsValidator),
   status: v.string(),
   inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
   score: v.optional(v.number()),

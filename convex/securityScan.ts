@@ -28,6 +28,14 @@ import {
   MAX_SKILL_SCAN_REQUEST_MANIFEST_BYTES,
   serializedSkillScanRequestFilesBytes,
 } from "./lib/skillScanRequestFiles";
+import {
+  capSkillSpectorInspectionCaveats,
+  normalizeSkillSpectorReviewContext,
+  skillSpectorInspectionCaveatsValidator,
+  skillSpectorReviewFields,
+  type SkillSpectorInspectionCaveats,
+  type SkillSpectorReviewContext,
+} from "./lib/skillSpectorEvidence";
 import { getSkillsShFixtureEnvironmentPolicy } from "./lib/skillsShCatalogEnvironment";
 import {
   isExactSkillsShCatalogAttempt,
@@ -115,7 +123,7 @@ type ExistingLlmAnalysis = {
   verdict?: string;
 };
 
-type SkillSpectorIssueForStorage = {
+type SkillSpectorIssueForStorage = SkillSpectorReviewContext & {
   issueId: string;
   category?: string;
   pattern?: string;
@@ -131,6 +139,7 @@ type SkillSpectorIssueForStorage = {
 };
 
 type SkillSpectorAnalysisForStorage = {
+  inspectionCaveats?: SkillSpectorInspectionCaveats;
   status: string;
   inspectionStatus?: "completed" | "partial";
   score?: number;
@@ -243,6 +252,7 @@ type EnqueuePackageReleaseScanArgs = {
 };
 
 const skillSpectorIssueValidator = v.object({
+  ...skillSpectorReviewFields,
   issueId: v.string(),
   category: v.optional(v.string()),
   pattern: v.optional(v.string()),
@@ -258,6 +268,7 @@ const skillSpectorIssueValidator = v.object({
 });
 
 const skillSpectorAnalysisValidator = v.object({
+  inspectionCaveats: v.optional(skillSpectorInspectionCaveatsValidator),
   status: v.string(),
   inspectionStatus: v.optional(v.union(v.literal("completed"), v.literal("partial"))),
   score: v.optional(v.number()),
@@ -460,6 +471,7 @@ function capSkillSpectorIssueForStorage(
     remediation: truncateSkillSpectorStorageText(issue.remediation),
     finding: truncateSkillSpectorStorageText(issue.finding),
     codeSnippet: truncateSkillSpectorStorageText(issue.codeSnippet),
+    ...normalizeSkillSpectorReviewContext(issue),
   };
 }
 
@@ -471,6 +483,9 @@ function capSkillSpectorAnalysisForStorage(
       truncateSkillSpectorStorageText(analysis.status, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
       "error",
     ...(analysis.inspectionStatus ? { inspectionStatus: analysis.inspectionStatus } : {}),
+    ...(analysis.inspectionCaveats
+      ? { inspectionCaveats: capSkillSpectorInspectionCaveats(analysis.inspectionCaveats) }
+      : {}),
     score: analysis.score,
     severity: truncateSkillSpectorStorageText(
       analysis.severity,
