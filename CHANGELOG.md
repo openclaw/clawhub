@@ -2,8 +2,10 @@
 
 ## Unreleased
 
+- Tooling: preserve the component example correction and canonical AGENTS.md when refreshing Convex AI guidance.
 - Tests: refresh development dependencies and anchor frozen-clock fixtures to Convex transaction timestamps and stored expiration boundaries.
 - Dependencies: patch Undici to 7.30.1 in the CLI, admin CLI, and development tools to address upstream transport advisories.
+- Dependencies: refresh production packages, including Convex 1.49 and Workpool 0.4.15. Convex now requires Node.js 22 or newer; do not downgrade Workpool after its new queue pointers are stored, and complete its upstream backfill before a future 0.5 upgrade.
 - CI: escape Unicode line separators in security dataset JSONL so line readers preserve complete records during snapshot validation.
 - CI: reuse Playwright browser downloads across unrelated dependency updates by keying caches to the installed Playwright version and runner architecture.
 - CI: use a single-commit checkout for static checks instead of fetching full history.
@@ -34,6 +36,8 @@
 - Dependencies: refresh production packages and synchronize the Sharp pin; let each package resolve its supported Undici transport and use the unpatched upstream Workpool release. Retain the old Workpool typecheck patch only for the previous-version test fixture.
 
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
+
+- CI: batch main CodeQL scans every six hours while preserving PR and manual scans; include local composite actions and attribute-only PR changes.
 
 ## 0.25.0 - 2026-11-01
 

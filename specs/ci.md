@@ -14,6 +14,9 @@ times overlap and each required check reports its own failure:
   because coverage already executes the test suite.
   Script suites explicitly use the Node environment used by the commands they
   exercise, avoiding a jsdom startup for filesystem and data-processing tests.
+  Backend helper suites without browser dependencies also use Node. Keep the
+  environment explicit per file so browser and Convex runtime suites retain
+  their own environment requirements.
 - `packages` builds `packages/schema` and verifies both CLI packages, including
   their native TypeScript checks.
 - CLI source and artifact tests belong to `ci:packages`. Root unit coverage
