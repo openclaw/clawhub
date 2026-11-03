@@ -2066,74 +2066,57 @@ function buildPackagePluginCategoryDigestQuery(
         q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
       );
   }
-  if (args.sort === "installs") {
+  if (args.sort === "installs" || args.sort === "recommended") {
     if (family && typeof isOfficial === "boolean") {
       return ctx.db
         .query("packagePluginCategorySearchDigest")
-        .withIndex("by_active_family_official_category_installs", (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("family", family)
-            .eq("isOfficial", isOfficial)
-            .eq("pluginCategory", args.category),
+        .withIndex(
+          args.sort === "installs"
+            ? "by_active_family_official_category_installs"
+            : "by_active_family_official_category_recommended_score",
+          (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .eq("family", family)
+              .eq("isOfficial", isOfficial)
+              .eq("pluginCategory", args.category),
         );
     }
     if (family) {
       return ctx.db
         .query("packagePluginCategorySearchDigest")
-        .withIndex("by_active_family_category_installs", (q) =>
-          q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
+        .withIndex(
+          args.sort === "installs"
+            ? "by_active_family_category_installs"
+            : "by_active_family_category_recommended_score",
+          (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .eq("family", family)
+              .eq("pluginCategory", args.category),
         );
     }
     if (typeof isOfficial === "boolean") {
       return ctx.db
         .query("packagePluginCategorySearchDigest")
-        .withIndex("by_active_official_category_installs", (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("isOfficial", isOfficial)
-            .eq("pluginCategory", args.category),
+        .withIndex(
+          args.sort === "installs"
+            ? "by_active_official_category_installs"
+            : "by_active_official_category_recommended_score",
+          (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .eq("isOfficial", isOfficial)
+              .eq("pluginCategory", args.category),
         );
     }
     return ctx.db
       .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_category_installs", (q) =>
-        q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
-      );
-  }
-  if (args.sort === "recommended") {
-    if (family && typeof isOfficial === "boolean") {
-      return ctx.db
-        .query("packagePluginCategorySearchDigest")
-        .withIndex("by_active_family_official_category_recommended_score", (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("family", family)
-            .eq("isOfficial", isOfficial)
-            .eq("pluginCategory", args.category),
-        );
-    }
-    if (family) {
-      return ctx.db
-        .query("packagePluginCategorySearchDigest")
-        .withIndex("by_active_family_category_recommended_score", (q) =>
-          q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
-        );
-    }
-    if (typeof isOfficial === "boolean") {
-      return ctx.db
-        .query("packagePluginCategorySearchDigest")
-        .withIndex("by_active_official_category_recommended_score", (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("isOfficial", isOfficial)
-            .eq("pluginCategory", args.category),
-        );
-    }
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_category_recommended_score", (q) =>
-        q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
+      .withIndex(
+        args.sort === "installs"
+          ? "by_active_category_installs"
+          : "by_active_category_recommended_score",
+        (q) => q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
       );
   }
   if (family && channel) {

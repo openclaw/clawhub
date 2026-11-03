@@ -27,3 +27,9 @@ Navigation cancellation still aborts immediately. Requests that exceed the full
 budget still stop and render the existing API-error state; real API failures and
 rate limits retain their existing behavior. Do not add retry traffic, weaken auth,
 or convert failed requests into an empty successful catalog to hide latency.
+
+Category digest installs and recommended sorts share the same indexed equality
+prefixes, including explicit `isOfficial: false`. Keep channel filtering and
+cursor continuation in their existing callers. Category and topic digest rows
+share one field projection; only their facet keys differ. Preserve both projections
+when package metadata changes.
