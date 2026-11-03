@@ -1,6 +1,9 @@
 /* @vitest-environment node */
 
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { reports } from "@openclaw/plugin-inspector";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildPublishInspectorRunCheckOptions,
@@ -139,6 +142,39 @@ describe("package inspector publish normalization", () => {
         authorFacing: true,
       }),
     );
+  });
+
+  it("reads the packed OpenClaw target without type-checking its declarations", async () => {
+    // Inspector 0.4.4+ filters retirement records through a TypeScript program
+    // over every OpenClaw dist declaration while reading the target. Against
+    // openclaw@2026.10.10 that adds ~250 MB, pushing @openclaw/matrix and
+    // @openclaw/whatsapp 2026.10.10 publishes past the 512 MiB Node action limit.
+    // An unfiltered record list proves the publish gate's reader skipped that pass.
+    const root = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-target-"));
+    try {
+      await mkdir(path.join(root, "dist/plugin-sdk"), { recursive: true });
+      await writeFile(
+        path.join(root, "package.json"),
+        JSON.stringify({
+          name: "openclaw",
+          version: "2026.10.10",
+          exports: { "./plugin-sdk": { types: "./dist/plugin-sdk/index.d.ts" } },
+        }),
+      );
+      await writeFile(
+        path.join(root, "dist/plugin-sdk/index.d.ts"),
+        "export type OpenClawPluginApi = { registerTool(): void };\n",
+      );
+      const surface = await reports.readOpenClawTargetSurface({
+        rootDir: root,
+        configuredPath: ".",
+      });
+      expect(surface.status).toBe("ok");
+      expect(surface.compatRecordCount).toBeGreaterThan(0);
+      expect(surface.compatDeprecations).toHaveLength(surface.compatRecordCount as number);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("does not request an artifact SDK inventory inside the publish action", () => {
