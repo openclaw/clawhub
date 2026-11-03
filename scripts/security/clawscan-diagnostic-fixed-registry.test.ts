@@ -22,7 +22,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-it("binds exactly five skill identities, their retained manifests and source records", () => {
+it("binds exactly ten skill identities, their retained manifests and source records", () => {
   expect(validateFixedSkillRegistry(registry)).toEqual(registry);
   expect(FIXED_ORIGINAL_SELECTORS).toEqual([
     "original-038-encrypted",
@@ -32,11 +32,16 @@ it("binds exactly five skill identities, their retained manifests and source rec
     "original-017-encrypted",
     "original-026-encrypted",
     "original-027-encrypted",
+    "original-074-encrypted",
+    "original-008-encrypted",
+    "original-011-encrypted",
+    "original-036-encrypted",
+    "original-033-encrypted",
   ]);
-  expect(registry.originals.flatMap((row) => row.files)).toHaveLength(6);
+  expect(registry.originals.flatMap((row) => row.files)).toHaveLength(21);
   expect(
     registry.originals.flatMap((row) => row.files).reduce((sum, file) => sum + file.size, 0),
-  ).toBe(114383);
+  ).toBe(470747);
   for (const row of registry.originals) {
     const selected = selectFixedSkill(row.fixture);
     expect(selected.identity).toEqual(row);
@@ -48,6 +53,62 @@ it("binds exactly five skill identities, their retained manifests and source rec
     );
     selected.identity.owner = "cannot-mutate-the-registry";
     expect(selectFixedSkill(row.fixture).identity.owner).toBe(row.owner);
+  }
+});
+
+it("selects the five approved next-frontier originals with their independently retained identities", () => {
+  const expected = [
+    [
+      "074",
+      "council-network",
+      "0.1.0",
+      "docrohit",
+      1,
+      "b46c8b89bd049fc0f17eddc97b9fc0a40d4ccf152eb3ec4d37b47d84d22fdce2",
+    ],
+    [
+      "008",
+      "kritik-participate",
+      "1.0.0",
+      "icerain-cmd",
+      2,
+      "58a0517c0b6875eaf3785b85edc86aa32ea802c89aa273cc4f023d343983e00f",
+    ],
+    [
+      "011",
+      "webly",
+      "0.14.6",
+      "tokifyi",
+      2,
+      "e26d48305b05b66fdd111e59c1a909a0ac0fa8d50e30f133e633eebe5d7f2189",
+    ],
+    [
+      "036",
+      "sn-ppt-dazzle",
+      "2026.10.29",
+      "sensenova-skills",
+      4,
+      "035f167a29afb5e3b6c75119c1f0872e0c034c0469d7779138d6c4a4cca1d857",
+    ],
+    [
+      "033",
+      "gtrk-cover",
+      "1.3.9",
+      "gitruck",
+      6,
+      "b497cf1b721d3a337e652ac491cabe3edfcd2f5f20cd7f61370cdbcb57f96b1f",
+    ],
+  ] as const;
+  for (const [fixture, packageName, version, owner, fileCount, manifestSha256] of expected) {
+    const selected = selectFixedSkill(fixture);
+    expect(selected).toMatchObject({
+      id: `${packageName}-${version}`,
+      package: packageName,
+      version,
+      identity: { fixture, package: packageName, version, owner, kind: "skill" },
+      manifest: { manifestSha256 },
+    });
+    expect(selected.manifest.files).toHaveLength(fileCount);
   }
 });
 
@@ -193,7 +254,7 @@ it("reuses exact ZIP validation with honest generated-container identity", async
   }
 });
 
-it("verifies Python custody and real proxy boundaries for all five skills without models or credentials", () => {
+it("verifies Python custody and real proxy boundaries for all approved skills without models or credentials", () => {
   expect(() =>
     execFileSync("python3", ["-B", "scripts/security/diagnostic-capture/test_fixed_originals.py"], {
       env: { PATH: process.env.PATH },

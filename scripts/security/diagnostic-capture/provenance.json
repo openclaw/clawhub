@@ -7,8 +7,8 @@
   "captureValidatorSourceSHA256": "1d6316e15cf316f164062e9fd36f36b67790fda965ce8b0b0fca086eb4e8cc95",
   "scope": "No models or originals are invoked by the capture modules themselves.",
   "scopeAdaptations": {
-    "proxy.py": "Shebang/private root binding and exactly one fixed038, fixed079 or sealed five-skill registry case; exact native argv/report/context/stream behavior retained.",
+    "proxy.py": "Shebang/private root binding and exactly one fixed038, fixed079 or sealed skill-original registry case; exact native argv/report/context/stream behavior retained.",
     "validation.py": "Existing anchored receipt validators extracted unchanged, with imports for the reused proxy contract.",
-    "original038.py": "Fresh single-case native Ubuntu22 controller; exactly one immutable038,079 or sealed five-skill registry manifest at b08e source, existing outer bwrap/capture modules.079 records native proven plugin AIG non-applicability; all applicable tool captures remain required. No retry or publication authority."
+    "original038.py": "Fresh single-case native Ubuntu22 controller; exactly one immutable038,079 or sealed skill-original registry manifest at b08e source, existing outer bwrap/capture modules.079 records native proven plugin AIG non-applicability; all applicable tool captures remain required. No retry or publication authority."
   }
 }
