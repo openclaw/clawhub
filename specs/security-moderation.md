@@ -745,13 +745,17 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - The manual diagnostic workflow always dispatches from `main`. Its default
   `consumer: workflow` executes that workflow revision. The bounded
   `consumer: recovery-approved` mode instead checks out the reviewed immutable
-  consumer `39c955143f13aa4ddb4c47272262e7e82e3e5340`; it accepts no caller-supplied
+  consumer `2db6eef5df3229741d22aa659d60057d17c8a2a2`; it accepts no caller-supplied
   commit. In `recovery-approved` mode, both the original and triggering actors
   must be `Patrick-Erichsen`,
-  the run must be its first attempt, and inputs must select a fixed encrypted
-  original, reviewed scanner source and Ubuntu 22.04. Before checkout, inline
-  trusted workflow code verifies the repository, main workflow identity and
-  consumer ancestry. The actual checkout must then equal the approved consumer
+  the run must be its first attempt, and inputs must select one of the 32 explicit
+  encrypted selectors: separate originals `038` and `079`, plus the 30 admitted
+  skill originals `004`, `016`, `017`, `026`, `027`, `074`, `008`, `011`, `036`,
+  `033`, `065`, `073`, `042`, `055`, `039`, `010`, `019`, `005`, `006`, `015`,
+  `071`, `007`, `009`, `014`, `013`, `029`, `030`, `002`, `003` and `067`.
+  Inputs must also select reviewed scanner source and Ubuntu 22.04. Before
+  checkout, inline trusted workflow code verifies the repository, main workflow
+  identity and consumer ancestry. The actual checkout must then equal the approved consumer
   before local actions or any provider credential is exposed. A failed guard
   must prevent the credentialed diagnostic command from running.
   Record workflow revision W and executable consumer C separately. Controllers
