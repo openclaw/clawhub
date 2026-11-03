@@ -21,6 +21,7 @@ import {
   suggestDisplayName,
   suggestVersion,
 } from "./lib/githubImport";
+import { sha256Hex } from "./lib/hash";
 import { publishVersionForUser } from "./lib/skillPublish";
 import { isMacJunkPath, sanitizePath } from "./lib/skills";
 
@@ -969,18 +970,6 @@ async function suggestAvailableSlug(ctx: ActionCtx, userId: Id<"users">, base: s
     if (existing.ownerUserId === userId) return candidate;
   }
   throw new ConvexError("Could not find an available slug");
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const normalized = new Uint8Array(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", normalized.buffer);
-  return toHex(new Uint8Array(digest));
-}
-
-function toHex(bytes: Uint8Array) {
-  let out = "";
-  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
-  return out;
 }
 
 function normalizeZipPath(path: string) {

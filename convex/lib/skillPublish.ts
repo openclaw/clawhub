@@ -1,3 +1,4 @@
+import { sha256Hex } from "./hash";
 import { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
 export { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
 import {
@@ -993,18 +994,6 @@ async function hashStoredPublishFiles(filesWithBlobs: PublishFileBlob[]) {
     });
   }
   return publishFiles;
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const data = new Uint8Array(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return toHex(new Uint8Array(digest));
-}
-
-function toHex(bytes: Uint8Array) {
-  let out = "";
-  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
-  return out;
 }
 
 function formatEmbeddingError(error: unknown) {
