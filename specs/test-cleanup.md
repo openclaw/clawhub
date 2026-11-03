@@ -138,13 +138,33 @@ cases; the source was restored and both design-audit suites passed again.
 `ci:static` and `ci:types:packages` passed. Independent P0-P3 diff review:
 scoped-clean. After the byte-identical patch was restacked onto `ef634eac`, Crabbox
 passed all 18 focused tests, `ci:static`, `ci:types:packages`, and `ci:unit`
-(652 files, 8,800 tests; coverage thresholds met). Landing: pending PR.
+(652 files, 8,800 tests; coverage thresholds met).
+Landed: https://github.com/openclaw/clawhub/pull/4269.
+
+### Local-auth CI selection
+
+Map all retained local-auth specs into PR CI, including exact template artifacts,
+official-feed boundaries, publisher ownership, presentation metadata, and Featured
+lineup behavior. Add a publish-security shard for the three cases omitted by the
+existing lifecycle grep filters. Keep the eight-shard concurrency limit.
+
+A selection guard compares the matrix with discovered spec files and checks each
+discovered test in grep-split files, including parameterized titles. Future tests
+must not silently fall out of CI. Preserve the intentionally gated production/external-service checks.
+
+Validation: all 28 focused config/selection checks passed. Against the original
+workflow, the guard rejected both the five missing files (15/20 mapped) and three
+missing lifecycle cases (6/9 selected). Real local-auth profile-context (13 cases),
+template-artifact, and publish-security groups passed in Crabbox. `ci:static`,
+`ci:types:packages`, and `ci:unit` passed (654 files, 8,830 tests; coverage thresholds
+met). Independent P0-P3 diff review: scoped-clean. Base: `46c2e763`.
+Follow-up: explicit UTF-8 directory encoding fixes string/Buffer type inference
+with the existing runtime default. Both guard cases, Linux tsrs, native TypeScript,
+package types, build, and static checks passed.
+CLI/schema cleanup landed: https://github.com/openclaw/clawhub/pull/4276.
 
 ## Next slices
 
-- Deduplicate template validator parity checks and inspect CLI test self-inspection.
-  Admin CLI duplicate runner execution was already fixed in
-  https://github.com/openclaw/clawhub/pull/4244.
 - Remove exact duplicate bodies in `moderationEngine.test.ts` (VT suspicious
   authority) and `promotions.test.ts` (ended before launch). Keep the first case
   and the distinct promotion-after-scheduled-start case.

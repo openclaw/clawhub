@@ -103,6 +103,7 @@ import {
   toPublicPackageListItem,
   getPackageByNormalizedName,
 } from "./lib/packageCatalogRead";
+import { verifyPublishFileStorageMetadata } from "./lib/packageFileVerification";
 import { resolvePackageIcon } from "./lib/packageIcons";
 import { decodePublicPageCursor, encodePublicPageCursor } from "./lib/packagePageCursor";
 import {
@@ -8634,32 +8635,6 @@ function packageInspectorWarningDedupeKey(
     warning.inspectorVersion ?? "",
     warning.targetOpenClawVersion ?? "",
   ]);
-}
-
-async function verifyPublishFileStorageMetadata(
-  ctx: Pick<ActionCtx, "storage">,
-  files: ReturnType<typeof normalizePublishFiles>,
-) {
-  const verified = await Promise.all(
-    files.map(async (file) => {
-      const blob = await ctx.storage.get(file.storageId as Id<"_storage">);
-      if (!blob) throw new ConvexError(`Uploaded file no longer exists: ${file.path}`);
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      return {
-        file: {
-          ...file,
-          size: blob.size,
-          sha256: await sha256Hex(bytes),
-          contentType: file.contentType?.trim() || blob.type || undefined,
-        },
-        zipEntry: { path: file.path, bytes },
-      };
-    }),
-  );
-  return {
-    files: verified.map(({ file }) => file),
-    legacyZipEntries: verified.map(({ zipEntry }) => zipEntry),
-  };
 }
 
 function normalizeStoredPluginCategoryOverride(categories: readonly string[] | undefined) {

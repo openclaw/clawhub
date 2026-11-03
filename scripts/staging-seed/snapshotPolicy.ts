@@ -342,7 +342,7 @@ function asSnapshotFiles(value: unknown): SnapshotFile[] {
   });
 }
 
-function isAllowedPackageArtifact(path: string) {
+export function isAllowedPackageArtifact(path: string) {
   const normalized = path.toLowerCase().replace(/^\.\//, "");
   return (
     normalized === "readme.md" ||

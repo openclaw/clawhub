@@ -2,13 +2,9 @@
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { assertSeedTargetAllowed } from "../seed";
+import { assertSeedTargetAllowed, parseSeedArgs } from "../seed";
 import { buildDummyOwnerPool, ownerForCorpusKey } from "./dummyOwners";
 import { DEFAULT_PUBLIC_CORPUS_FIXTURE, parseCorpusJsonl, type PublicCorpusRow } from "./validate";
-
-type Options = {
-  previewName: string | null;
-};
 
 const ORG_IDENTITIES = [
   ["catalog-atlas", "Atlas Automation"],
@@ -69,29 +65,8 @@ export function buildCatalogPresentationFixtures(rows: PublicCorpusRow[]) {
   });
 }
 
-function parseArgs(args: string[]): Options {
-  const options: Options = { previewName: null };
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--preview-name") {
-      options.previewName = readValue(args, ++index, arg);
-    } else if (arg.startsWith("--preview-name=")) {
-      options.previewName = arg.slice("--preview-name=".length);
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-  return options;
-}
-
-function readValue(args: string[], index: number, flag: string) {
-  const value = args[index]?.trim();
-  if (!value) throw new Error(`Missing value for ${flag}`);
-  return value;
-}
-
 function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseSeedArgs(process.argv.slice(2));
   assertSeedTargetAllowed(options);
 
   const rows = parseCorpusJsonl(readFileSync(DEFAULT_PUBLIC_CORPUS_FIXTURE, "utf8"));
