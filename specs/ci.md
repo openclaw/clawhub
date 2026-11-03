@@ -12,6 +12,8 @@ times overlap and each required check reports its own failure:
   inspect the current tree and installed packages, not Git history.
 - `unit` runs the Vitest coverage suite. This replaces a separate `test` run
   because coverage already executes the test suite.
+  Script suites explicitly use the Node environment used by the commands they
+  exercise, avoiding a jsdom startup for filesystem and data-processing tests.
 - `packages` builds `packages/schema` and verifies both CLI packages, including
   their native TypeScript checks.
 - CLI source and artifact tests belong to `ci:packages`. Root unit coverage
