@@ -12,6 +12,9 @@ times overlap and each required check reports its own failure:
 - `unit` runs the Vitest coverage suite. This replaces a separate `test` run
   because coverage already executes the test suite.
 - `packages` builds `packages/schema` and verifies the ClawHub CLI package.
+- CLI source and artifact tests belong to `ci:packages`. Root unit coverage
+  excludes both CLI workspaces so their source tests run once, using each
+  package's Node environment instead of also running under root jsdom.
 - `types-build` typechecks the app, schema package, and CLI package, then builds
   the app.
 - `e2e-http` runs the secretless HTTP and CLI end-to-end subset.
