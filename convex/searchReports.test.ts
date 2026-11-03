@@ -326,6 +326,7 @@ it("returns actionable staff errors for missing/mismatched refresh and null stat
 it("bounds cleanup by bytes for maximum-size reports, including queued work and late callbacks", async () => {
   const { t, signed } = await setup();
   const ids = [];
+  const expirationTimes = [];
   for (let index = 0; index < 4; index++) {
     const queued = await signed.mutation(api.searchReports.start, {
       view: "demand",
@@ -343,8 +344,9 @@ it("bounds cleanup by bytes for maximum-size reports, including queued work and 
       sourceRevision: "fixture",
     });
     ids.push(saved.row._id);
+    expirationTimes.push(saved.row.expirationTime);
   }
-  vi.setSystemTime(Date.now() + REPORT_TTL_MS);
+  vi.setSystemTime(Math.max(...expirationTimes));
   expect(await t.mutation(internal.searchReports.pruneExpiredInternal, {})).toBe(3);
   expect(await t.run((ctx) => ctx.db.query("searchReportChunks").collect())).toHaveLength(8);
   expect(await t.run((ctx) => ctx.db.query("searchReportRuns").collect())).toHaveLength(1);
