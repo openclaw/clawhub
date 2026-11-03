@@ -4,6 +4,7 @@ import {
   assignSplit,
   hashString,
   normalizeArtifactExport,
+  redactSkillContent,
   redactText,
   type ArtifactExportInput,
 } from "./normalize";
@@ -228,6 +229,16 @@ describe("security dataset normalizer", () => {
 
     expect(redacted).toContain("[REDACTED_SECRET]");
     expect(redacted?.length).toBeLessThanOrEqual(82);
+  });
+
+  it("keeps metadata and Markdown whitespace and length policies separate", () => {
+    expect(redactText(" \tline\r\nnext\0\u007f ")).toBe("line next");
+    expect(redactSkillContent(" \tline\r\nnext\0\u007f ")).toBe(" \tline\r\nnext \u007f ");
+    expect(redactSkillContent(null)).toBeNull();
+    expect(redactSkillContent(undefined)).toBeNull();
+    expect(redactSkillContent("")).toBeNull();
+    expect(redactSkillContent("x".repeat(120_000))).toHaveLength(120_000);
+    expect(redactSkillContent("x".repeat(120_001))).toBe(`${"x".repeat(119_999)}...`);
   });
 
   it("preserves useful skill text while redacting sensitive content", () => {
