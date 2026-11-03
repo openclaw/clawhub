@@ -186,6 +186,7 @@ import {
   getPublishTotalSizeError,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./lib/publishLimits";
+import { stripUndefinedForStoredPublish } from "./lib/publishStorage";
 import { assertRankingMetricWritesAllowed } from "./lib/rankingMetricsImportLock";
 import {
   computeRecommendationScore,
@@ -884,7 +885,7 @@ async function runStaticPublishScanInNode(
   return await runActionRef<StaticScanResult>(
     ctx,
     internalRefs.staticPublishScanNode.runStaticPublishScanInternal,
-    stripUndefinedForStoredAttempt({
+    stripUndefinedForStoredPublish({
       slug: input.slug,
       displayName: input.displayName,
       summary: input.summary,
@@ -9214,7 +9215,7 @@ async function publishPackageImpl(
     files,
     clawpackStorageId: packageInsertArgs.clawpackStorageId,
     scanContext: buildPackagePublishAttemptScanContext(packageInsertArgs),
-    packageFollowup: stripUndefinedForStoredAttempt({
+    packageFollowup: stripUndefinedForStoredPublish({
       ownerUserId,
       ownerPublisherId,
       packageName: name,
@@ -9719,17 +9720,6 @@ function buildPackagePublishAttemptIdempotencyKey(args: {
   ].join(":");
 }
 
-function stripUndefinedForStoredAttempt(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripUndefinedForStoredAttempt);
-  if (!value || typeof value !== "object") return value;
-
-  const result: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value)) {
-    if (nested !== undefined) result[key] = stripUndefinedForStoredAttempt(nested);
-  }
-  return result;
-}
-
 function buildPackagePublishAttemptScanContext(insertArgs: Record<string, unknown>) {
   const verification =
     insertArgs.verification &&
@@ -9737,7 +9727,7 @@ function buildPackagePublishAttemptScanContext(insertArgs: Record<string, unknow
     !Array.isArray(insertArgs.verification)
       ? (insertArgs.verification as Record<string, unknown>)
       : {};
-  return stripUndefinedForStoredAttempt({
+  return stripUndefinedForStoredPublish({
     trustedOpenClawPlugin: verification.trustedOpenClawPlugin === true ? true : undefined,
     package: { family: insertArgs.family },
     release: {
