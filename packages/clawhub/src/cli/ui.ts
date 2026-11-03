@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { stdin } from "node:process";
 import { confirm, isCancel } from "@clack/prompts";
 import ora from "ora";
@@ -41,32 +40,6 @@ export async function promptConfirm(prompt: string) {
   const answer = await confirm({ message: prompt });
   if (isCancel(answer)) return false;
   return answer;
-}
-
-export function openInBrowser(url: string) {
-  const args =
-    process.platform === "darwin"
-      ? ["open", url]
-      : process.platform === "win32"
-        ? ["explorer", url]
-        : ["xdg-open", url];
-  const [command, ...commandArgs] = args;
-  if (!command) return;
-
-  const child = spawn(command, commandArgs, { stdio: "ignore", detached: true });
-
-  child.on("error", (err) => {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      console.log("");
-      console.log("Could not open browser automatically.");
-      console.log("Please open this URL manually:");
-      console.log("");
-      console.log(`  ${url}`);
-      console.log("");
-    }
-  });
-
-  child.unref();
 }
 
 export function isInteractive() {
