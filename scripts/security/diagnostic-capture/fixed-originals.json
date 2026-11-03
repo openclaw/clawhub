@@ -1,0 +1,786 @@
+{
+  "schemaVersion": "clawscan-fixed-skill-originals-v1",
+  "source": "b08e2907eb60b33bf712b07673aff565c13d9ad7",
+  "originals": [
+    {
+      "fixture": "004",
+      "id": "saferoute-base-swap-1.0.0",
+      "selector": "original-004-encrypted",
+      "package": "saferoute-base-swap",
+      "version": "1.0.0",
+      "owner": "crystalsignal",
+      "kind": "skill",
+      "attemptId": "zx7b9zzjgycq1gvzwk3arzc7eh8h7xn5",
+      "fingerprint": "b0a4d1502a3afa6bee9c3f40e3865c0b3af9daa99222dfee9f944d48247f6707",
+      "versionId": "k977vq181sezbrr4p2d86earn98h673s",
+      "sourceManifestSha256": "b44fedc66ac53627cca7616e3968115adf481111f6764a7a8668bc58c5f1b567",
+      "historicalOriginalManifestSha256": "d553959566d17f1a26af84658e479f04f36661e393adaee174958fc7e6a6a4bf",
+      "download": "https://clawhub.ai/api/v1/download?slug=saferoute-base-swap&version=1.0.0",
+      "manifestSha256": "0d7ed865eded9815f8ff02213b260e8a234a8a5ee2b579302ef47c6f245eb93e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "e252fe34b91b5785f1f665e2fe80542d4496a39a74dfdd777b60e5f2c42d3e33",
+          "size": 3043
+        },
+        {
+          "path": "scripts/inspect.mjs",
+          "sha256": "eee14a95422edf1ba49d9531ae6d6d1b09e9ff16c12c55b185c00ab6c85bb481",
+          "size": 3843
+        }
+      ]
+    },
+    {
+      "fixture": "016",
+      "id": "wirecat-tg-1.0.1",
+      "selector": "original-016-encrypted",
+      "package": "wirecat-tg",
+      "version": "1.0.1",
+      "owner": "wirecat",
+      "kind": "skill",
+      "attemptId": "zx7ddst6ec5gvr9cwt6b3k081d8h8ksp",
+      "fingerprint": "274d6fdc399bda26b8d481f4b42ecbbe676fe8a4e04fbbfbfa3bea36c410ee29",
+      "versionId": "k978pm3zsqzv8gbwr34s33d13d8h8hw4",
+      "sourceManifestSha256": "458c9ef24aa7c9bafac0cb7836c1dfb05f6ff68447ef6b0a221c1abcccd4aaf5",
+      "historicalOriginalManifestSha256": "9b41a7d9f8af542b904cf0a5e9868fdbf2da0e94b2d262e8bbd1f243bcd28496",
+      "download": "https://clawhub.ai/api/v1/download?slug=wirecat-tg&version=1.0.1",
+      "manifestSha256": "9cea9eb009cef61c5b45bd7066ffdc35dff59c8225a6a3cc54d11cc3088ceb59",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "274e564cdc5b415dbd7180e2ff58618894d510afab36a153ced1875be7fab657",
+          "size": 47740
+        }
+      ]
+    },
+    {
+      "fixture": "017",
+      "id": "wirecat-whatsapp-1.0.1",
+      "selector": "original-017-encrypted",
+      "package": "wirecat-whatsapp",
+      "version": "1.0.1",
+      "owner": "wirecat",
+      "kind": "skill",
+      "attemptId": "zx7es32jtpktywxzxsp5q5pd758h8aqm",
+      "fingerprint": "f1a6d78c59b17c09e13c533a235ea305d2585847541a7b7796c08f82b40541b2",
+      "versionId": "k97de87w8r06xyyqfkq6xqbbn98h9436",
+      "sourceManifestSha256": "8d4938828a4209a5d464002d940a2a844b4e67f2d0df9379b4fceac29a9097c5",
+      "historicalOriginalManifestSha256": "c5ef8ba9657d21aa34d0f31ca9dba6354ed5029036f86667a5c99a51d1914122",
+      "download": "https://clawhub.ai/api/v1/download?slug=wirecat-whatsapp&version=1.0.1",
+      "manifestSha256": "b8bbef23a384d06113710d68816b1c6a8a1a897f4f121ab4867a2f29bf75f2b9",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "4381c2c7f0e93d3ac0030cc6a6cb211c5282101382c096cba8fb3c00192bcefc",
+          "size": 27895
+        }
+      ]
+    },
+    {
+      "fixture": "026",
+      "id": "taasky-0.3.15",
+      "selector": "original-026-encrypted",
+      "package": "taasky",
+      "version": "0.3.15",
+      "owner": "marina-aronchik",
+      "kind": "skill",
+      "attemptId": "zx72f2x9k7mbs5dv89anadrh0h8gxk41",
+      "fingerprint": "bc888a0c7ae4d86ab996bd53a85cdedbfced0964a8b474803523a77f0557e581",
+      "versionId": "k979fn266rs2hhfb7r44mbcqb58gxsah",
+      "sourceManifestSha256": "dcf3ca41221682feed87f106d924ff05f4e3a2bf20833f03bdf167ba814da883",
+      "historicalOriginalManifestSha256": "53812ee854d0479a108813feb77961ae79ce3b7296209942ced401cb0d348df4",
+      "download": "https://clawhub.ai/api/v1/download?slug=taasky&version=0.3.15",
+      "manifestSha256": "6a606dbf451e96a9dc67c4907abf1714cb08f3e73a55532194ad5b9c178874a2",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "78867827a52d58e2b7ab740a0174c140696c78355efb49cc4667a3b17ec86928",
+          "size": 23105
+        }
+      ]
+    },
+    {
+      "fixture": "027",
+      "id": "betap-1.1.2",
+      "selector": "original-027-encrypted",
+      "package": "betap",
+      "version": "1.1.2",
+      "owner": "xavierabraham",
+      "kind": "skill",
+      "attemptId": "zx7by0mc7g284n7te5b20grdwx8gw9t0",
+      "fingerprint": "475ce40cd84e3d19dae201f180a9695db23bc1682c9168aaf38525b39fb96552",
+      "versionId": "k978v8xgkcet21rnnxctcxb6358gwfpf",
+      "sourceManifestSha256": "7572e9e025edba61af6a57d7c52ef6487aab2e69848ab40e658b220c6fa1923f",
+      "historicalOriginalManifestSha256": "e71361bbd238c648cba22b76c79d289e1c5083ce99282d363f093ec63926ad4f",
+      "download": "https://clawhub.ai/api/v1/download?slug=betap&version=1.1.2",
+      "manifestSha256": "c0a923bfb39e9435f28aac77d9a028d645de93665a6770bdcedf332d8927d7b1",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "11f46c75d5fc3dc200945659c1c0b29e130cbdc72066c4fe7fd5f47cca95d209",
+          "size": 8757
+        }
+      ]
+    },
+    {
+      "fixture": "074",
+      "id": "council-network-0.1.0",
+      "selector": "original-074-encrypted",
+      "package": "council-network",
+      "version": "0.1.0",
+      "owner": "docrohit",
+      "kind": "skill",
+      "attemptId": "zx7a9c1swzt9radn66b8t99vh58h1kc2",
+      "fingerprint": "113c4b22b02309fdd152ea0d8f5f58ecbfa43e3b21e1ff7ef202d58d9a6a553a",
+      "versionId": "k973t8mcx02bykzcybq6w3cjeh8h0yt4",
+      "sourceManifestSha256": "c92e03ebe0ea942d34d794abea3ea2ab1817307f9c8a84273bff62a4bc1ae55b",
+      "historicalOriginalManifestSha256": "113c4b22b02309fdd152ea0d8f5f58ecbfa43e3b21e1ff7ef202d58d9a6a553a",
+      "download": "https://clawhub.ai/api/v1/download?slug=council-network&version=0.1.0",
+      "manifestSha256": "b46c8b89bd049fc0f17eddc97b9fc0a40d4ccf152eb3ec4d37b47d84d22fdce2",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "755ae5b451fe97d8d6338c033233d6722dc640e3c9654c8662aac635b57cffc0",
+          "size": 5362
+        }
+      ]
+    },
+    {
+      "fixture": "008",
+      "id": "kritik-participate-1.0.0",
+      "selector": "original-008-encrypted",
+      "package": "kritik-participate",
+      "version": "1.0.0",
+      "owner": "icerain-cmd",
+      "kind": "skill",
+      "attemptId": "zx77x546j91dng9e1zkpwsne4h8h0zsn",
+      "fingerprint": "27b7899112a113981439b356b797411118e72c7ca2b4295ca669d4768acd0a8d",
+      "versionId": "k97ctphzh0y9shjxnazgpshfg58h1f5h",
+      "sourceManifestSha256": "76787a15f90b1cfe0b51f8056ff783bc6fa5c70779b46e3e45fccb4579e282b6",
+      "historicalOriginalManifestSha256": "31075b410cb563b04214c1e7c8b829b715f744845a1c120ac04d566f9ee4c667",
+      "download": "https://clawhub.ai/api/v1/download?slug=kritik-participate&version=1.0.0",
+      "manifestSha256": "58a0517c0b6875eaf3785b85edc86aa32ea802c89aa273cc4f023d343983e00f",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "67fcb3b5da0611a6a70f5fd463ecbb23a6bd1ceb757d666a9d00196749f066aa",
+          "size": 6131
+        },
+        {
+          "path": "scripts/kritik.mjs",
+          "sha256": "aba9f801f848cf9d12aba45f059c874e202597b51d0f227777b5d0ba0d2520e6",
+          "size": 9775
+        }
+      ]
+    },
+    {
+      "fixture": "011",
+      "id": "webly-0.14.6",
+      "selector": "original-011-encrypted",
+      "package": "webly",
+      "version": "0.14.6",
+      "owner": "tokifyi",
+      "kind": "skill",
+      "attemptId": "zx73dz082nae8mxn2jqf761qz58gxe4v",
+      "fingerprint": "c08c3b379da36c4a74a52a4fe21c8fef20b95d001c281a165af4e9cb46835722",
+      "versionId": "k97fpdxq7fxeara2cb9bza43hn8gx64a",
+      "sourceManifestSha256": "e83973fecc333861c74150ad5f186faa230cdb91185af6e81b9be323016fd42c",
+      "historicalOriginalManifestSha256": "e107456e9c0347f8342da655efd721982d75f2a56d672d25aeb84ba9873eff54",
+      "download": "https://clawhub.ai/api/v1/download?slug=webly&version=0.14.6",
+      "manifestSha256": "e26d48305b05b66fdd111e59c1a909a0ac0fa8d50e30f133e633eebe5d7f2189",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "1a184164aa4879d460bde492a6d405c25eaefd8464273c4d0bb5c062b3036ff9",
+          "size": 37905
+        },
+        {
+          "path": "scripts/webly.mjs",
+          "sha256": "3f8cccb0c807dcf862922c737a40fa6a77c488b183dca07098edd23c74f33b79",
+          "size": 79937
+        }
+      ]
+    },
+    {
+      "fixture": "036",
+      "id": "sn-ppt-dazzle-2026.10.29",
+      "selector": "original-036-encrypted",
+      "package": "sn-ppt-dazzle",
+      "version": "2026.10.29",
+      "owner": "sensenova-skills",
+      "kind": "skill",
+      "attemptId": "zx74xbck855f9hawwmrkwbvbvs8h7ash",
+      "fingerprint": "fe8e42d75bd8aebe55103ba718fbab12a4b88caf58da61083f89ecd8882dee41",
+      "versionId": "k979vrwbwc2c35qaw5z8dm2y618h7ghw",
+      "sourceManifestSha256": "8f5a649d8f609c2fd07d8151afba6c39644bbce11ff9910a875ebb948e553ed9",
+      "historicalOriginalManifestSha256": "7072889a8905c240e3b1343aeb5f381b82ca4a4837d48df91245783342035d82",
+      "download": "https://clawhub.ai/api/v1/download?slug=sn-ppt-dazzle&version=2026.10.29",
+      "manifestSha256": "035f167a29afb5e3b6c75119c1f0872e0c034c0469d7779138d6c4a4cca1d857",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "680f8c4eb578190e2ed4beffe415d7d94ce7d3bd50f160904b214c90de3fe147",
+          "size": 40820
+        },
+        {
+          "path": "references/fancy-cookbook.md",
+          "sha256": "f0e4d893898a9134db8cd817060176c1cb78cf7afd3d3dc3f0a36e01491700bc",
+          "size": 39260
+        },
+        {
+          "path": "references/style-families.md",
+          "sha256": "61723cf249ce70e93df2ea23da926194af9df86b9b622ca6604337f494a747fb",
+          "size": 10015
+        },
+        {
+          "path": "scripts/render_deck.py",
+          "sha256": "a9da9f17d15dc067724b64677ace0f9cd7bf0073954a820735c31b99667cea60",
+          "size": 26654
+        }
+      ]
+    },
+    {
+      "fixture": "033",
+      "id": "gtrk-cover-1.3.9",
+      "selector": "original-033-encrypted",
+      "package": "gtrk-cover",
+      "version": "1.3.9",
+      "owner": "gitruck",
+      "kind": "skill",
+      "attemptId": "zx79n9pnh0be24vs0jsxabcjah8h2vmh",
+      "fingerprint": "97b77c7947a69a6e6fa14ac19fb9aa1b0352118153e30ff7a3c07c08328e501b",
+      "versionId": "k9746rh4s8smhwfwbn5np2kscn8h2c7v",
+      "sourceManifestSha256": "6a0ae2d2ae7b9ece3dd8bd13289a3fd924a989ce475dea5ce903343cdb0eadb2",
+      "historicalOriginalManifestSha256": "e04dbe121a9525782d1644cd395bd63bfcf76ef667ec637203735f2994c9af5c",
+      "download": "https://clawhub.ai/api/v1/download?slug=gtrk-cover&version=1.3.9",
+      "manifestSha256": "b497cf1b721d3a337e652ac491cabe3edfcd2f5f20cd7f61370cdbcb57f96b1f",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "6c0247b9266eeba434ec7cbd752998c619cbf5981d4ff43d982267e4da44020b",
+          "size": 13288
+        },
+        {
+          "path": "assets/workbench-template.html",
+          "sha256": "d2a88df0f85000d1149db063ee3679fcdcef1abcfe32625a0a6f72138c8acdb6",
+          "size": 50025
+        },
+        {
+          "path": "references/checklist.md",
+          "sha256": "758d60053e2b04a6935c877a3beba84300b7ec2c16bab6ebe1e8c610d193e99e",
+          "size": 4531
+        },
+        {
+          "path": "references/layout-recipes.md",
+          "sha256": "7b5d64c06c847116292ced4b7e576017253216b9a07cd6ef04aed862cb417d4f",
+          "size": 15319
+        },
+        {
+          "path": "references/prompt-templates.md",
+          "sha256": "3342ee7869eed84bdb78305613ff8514da73bee703b4d74e21fbd06af8045fbb",
+          "size": 6738
+        },
+        {
+          "path": "references/workbench-guide.md",
+          "sha256": "1c66b77bfc8cae44a527f2c4b474bc3ccc17f06cedb4a10e56b09b248d42ebf8",
+          "size": 10604
+        }
+      ]
+    },
+    {
+      "fixture": "065",
+      "id": "agent-betap-1.0.0",
+      "selector": "original-065-encrypted",
+      "package": "agent-betap",
+      "version": "1.0.0",
+      "owner": "xavierabraham",
+      "kind": "skill",
+      "attemptId": "zx739kkrb6530st41qjdzyj0498gy4ac",
+      "fingerprint": "f5dcf76230e987f39f1da5be27da41459e22e383307af2ebb3a3a2eecd4acfc2",
+      "versionId": "k974s4hvs82pcm87xq4kvcd6hh8gzh4a",
+      "sourceManifestSha256": "077a78803f16befe1561a9e387e1368676850464c6bfb1006334343238955f0e",
+      "historicalOriginalManifestSha256": "f5dcf76230e987f39f1da5be27da41459e22e383307af2ebb3a3a2eecd4acfc2",
+      "download": "https://clawhub.ai/api/v1/download?slug=agent-betap&version=1.0.0",
+      "manifestSha256": "0df22e4c5e1e6ca5d1ca56d376a2a003b81b1ac392271329e3550d5beb5bb428",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "1139c5101858e49ba489543ebf22a7e3b9a04c17e3b2f5c3d58d924bf9d5b961",
+          "size": 2056
+        }
+      ]
+    },
+    {
+      "fixture": "073",
+      "id": "smartgate-1.0.0",
+      "selector": "original-073-encrypted",
+      "package": "smartgate",
+      "version": "1.0.0",
+      "owner": "smartgate.network",
+      "kind": "skill",
+      "attemptId": "zx72gtz9rezd1kcsc8q3n7e6w18h5w7c",
+      "fingerprint": "67120c9027ff61682adfde1110807d26653764c8cd0de8a04b5a0a06a2724436",
+      "versionId": "k9768gzc3ab096hhv1p435xksh8h5y3b",
+      "sourceManifestSha256": "c92e03ebe0ea942d34d794abea3ea2ab1817307f9c8a84273bff62a4bc1ae55b",
+      "historicalOriginalManifestSha256": "67120c9027ff61682adfde1110807d26653764c8cd0de8a04b5a0a06a2724436",
+      "download": "https://clawhub.ai/api/v1/download?slug=smartgate&version=1.0.0",
+      "manifestSha256": "05a9cab246f922b8dda4e3c3647df42a82e00809b7baed32a697f2b93d3d0602",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "c7ad76ce6d2f2f9eadfc97a78b86464c19b8ab6a858b46fbc4fd35dd790f7660",
+          "size": 2917
+        }
+      ]
+    },
+    {
+      "fixture": "042",
+      "id": "mochilab-skills-1.1.1",
+      "selector": "original-042-encrypted",
+      "package": "mochilab-skills",
+      "version": "1.1.1",
+      "owner": "hznetnewpower",
+      "kind": "skill",
+      "attemptId": "zx78bax1x9pyt6qg30y28xx9918h1bcx",
+      "fingerprint": "0bfcee19b731b75413a92b08b5598546267ee2801f4734a2873927fcb0b655b3",
+      "versionId": "k975k2cff6d99s8b7dng06wy9x8h1zyw",
+      "sourceManifestSha256": "e6f21d270eb1e48657459b8b5ec76d7bd02487b8354da723e89bb5fa972cf3a2",
+      "historicalOriginalManifestSha256": "0bfcee19b731b75413a92b08b5598546267ee2801f4734a2873927fcb0b655b3",
+      "download": "https://clawhub.ai/api/v1/download?slug=mochilab-skills&version=1.1.1",
+      "manifestSha256": "61573b29a052d0adbbbc06c9f5e4ac49c1d24e18e50262177a665783f29a32ee",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "b3e1655cfc75a8b798596ea4468b8119d8250c8f1b1b5e75397887d1aca93027",
+          "size": 903
+        },
+        {
+          "path": "README.md",
+          "sha256": "b8758f0eeece8452ad4f4dc1813a63448002d5d48b484a22539bbbc800c7d68a",
+          "size": 2594
+        },
+        {
+          "path": "README.zh-CN.md",
+          "sha256": "71bd70609ec2f7507099b3e1fb9f2972422437ad30df2985e443202388953a40",
+          "size": 2362
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "d06b681dc6fa75e62aefe0d453b40acd8de9bcb4b6365159bb69f6b8a7a06176",
+          "size": 4494
+        },
+        {
+          "path": "scripts/mochilab.mjs",
+          "sha256": "7ef41da8523e9b5a764d71d4eea863fd1f4d1a687f4ea63f937bd455dce705ce",
+          "size": 24366
+        }
+      ]
+    },
+    {
+      "fixture": "055",
+      "id": "gtrk-cover-1.3.10",
+      "selector": "original-055-encrypted",
+      "package": "gtrk-cover",
+      "version": "1.3.10",
+      "owner": "gitruck",
+      "kind": "skill",
+      "attemptId": "zx72jbarp0t1p4gqfx1hwq01xd8h7bzj",
+      "fingerprint": "97b77c7947a69a6e6fa14ac19fb9aa1b0352118153e30ff7a3c07c08328e501b",
+      "versionId": "k97fpbaas23y9j1gdmhzrezs6n8h7qpd",
+      "sourceManifestSha256": "f0b29790043cb4b159c162a2ee541b59fd32beaf4008d130186f44afc33c6a25",
+      "historicalOriginalManifestSha256": "b497cf1b721d3a337e652ac491cabe3edfcd2f5f20cd7f61370cdbcb57f96b1f",
+      "download": "https://clawhub.ai/api/v1/download?slug=gtrk-cover&version=1.3.10",
+      "manifestSha256": "b497cf1b721d3a337e652ac491cabe3edfcd2f5f20cd7f61370cdbcb57f96b1f",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "6c0247b9266eeba434ec7cbd752998c619cbf5981d4ff43d982267e4da44020b",
+          "size": 13288
+        },
+        {
+          "path": "assets/workbench-template.html",
+          "sha256": "d2a88df0f85000d1149db063ee3679fcdcef1abcfe32625a0a6f72138c8acdb6",
+          "size": 50025
+        },
+        {
+          "path": "references/checklist.md",
+          "sha256": "758d60053e2b04a6935c877a3beba84300b7ec2c16bab6ebe1e8c610d193e99e",
+          "size": 4531
+        },
+        {
+          "path": "references/layout-recipes.md",
+          "sha256": "7b5d64c06c847116292ced4b7e576017253216b9a07cd6ef04aed862cb417d4f",
+          "size": 15319
+        },
+        {
+          "path": "references/prompt-templates.md",
+          "sha256": "3342ee7869eed84bdb78305613ff8514da73bee703b4d74e21fbd06af8045fbb",
+          "size": 6738
+        },
+        {
+          "path": "references/workbench-guide.md",
+          "sha256": "1c66b77bfc8cae44a527f2c4b474bc3ccc17f06cedb4a10e56b09b248d42ebf8",
+          "size": 10604
+        }
+      ]
+    },
+    {
+      "fixture": "039",
+      "id": "mochi-daily-brief-1.0.1",
+      "selector": "original-039-encrypted",
+      "package": "mochi-daily-brief",
+      "version": "1.0.1",
+      "owner": "hznetnewpower",
+      "kind": "skill",
+      "attemptId": "zx76t425vw81kfrq7vvwjx3m3s8h0mmm",
+      "fingerprint": "350b3b296e59cc0c8d1fdfe6f6029347234fbfe08044fcfef2ba7b1d96256e65",
+      "versionId": "k971cbssee2wcpn7yrtd77ecf58h0sd5",
+      "sourceManifestSha256": "6a4f91be65d710522d68a7bef35cbf0de63dd87a83d1cc0b0753f0e57942ca9e",
+      "historicalOriginalManifestSha256": "350b3b296e59cc0c8d1fdfe6f6029347234fbfe08044fcfef2ba7b1d96256e65",
+      "download": "https://clawhub.ai/api/v1/download?slug=mochi-daily-brief&version=1.0.1",
+      "manifestSha256": "f11b6cb2c09eee75006e571c82b327859728b9d9ec52b770de905cd0516253f0",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "b3e1655cfc75a8b798596ea4468b8119d8250c8f1b1b5e75397887d1aca93027",
+          "size": 903
+        },
+        {
+          "path": "README.md",
+          "sha256": "1f8aac2f3ffcb2b99704afd844677056b8607f608e17fc3b602fab61ee3cbd8f",
+          "size": 2183
+        },
+        {
+          "path": "README.zh-CN.md",
+          "sha256": "bc3d22981e3a356b5e389195f7f573cf5587a1aed647903322c24975dede8c0f",
+          "size": 2547
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "68fc843c6a6457c3a39ab07767b655494718663d96190bc9e5bc50e931f70bc2",
+          "size": 6148
+        },
+        {
+          "path": "references/options.md",
+          "sha256": "dc03677ec3d7c7427beb1fca499b6beb580d6933f81f085d3f07d00296c672ae",
+          "size": 5816
+        },
+        {
+          "path": "scripts/brief.mjs",
+          "sha256": "503340a3d89cce2fee4a9d48372f618ad70d272b52eaae2a6e6eb6c966940d4c",
+          "size": 20363
+        },
+        {
+          "path": "tests/brief.test.mjs",
+          "sha256": "70337dfdc38db0e5a82ca7d02138be2fb59c6ee27f43b00dd0fdf1a2e0a6d991",
+          "size": 16311
+        }
+      ]
+    },
+    {
+      "fixture": "010",
+      "id": "brewpage-publish-1.0.8",
+      "selector": "original-010-encrypted",
+      "package": "brewpage-publish",
+      "version": "1.0.8",
+      "owner": "kochetkov-ma",
+      "kind": "skill",
+      "attemptId": "zx72qjk2b7adfc3xfketc55d7h8h2ct3",
+      "fingerprint": "0584354479d17011f38eb4122c8693e0d56ba3289c46caa4dc3226ad55266a3d",
+      "versionId": "k974szd30ckskwfma437qapfd58h34gv",
+      "sourceManifestSha256": "57f66ee901dd7ae2fbcf23954f055cc9ddff2a3ef79be8f9146a3cd342c210e3",
+      "historicalOriginalManifestSha256": "3292602370dc45f70d2d2cf815e6530f3844c6f4f12b77d83e1590d6b6c70891",
+      "download": "https://clawhub.ai/api/v1/download?slug=brewpage-publish&version=1.0.8",
+      "manifestSha256": "a37695ad0434ec3579f70705e2f5f10b73ff97317d02305c6bb7eac1dfd09160",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "4513bfc94a4eae4fe4d49f0b5727992266aa003bcfea7437d25bbf0869f04a84",
+          "size": 1142
+        },
+        {
+          "path": "README.md",
+          "sha256": "bad807de787f2b4bd4da1c2614a227c26e5f9faf7a870b46aa7a79109c8b7d98",
+          "size": 11377
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "77e0281e2fe8e4a3dcca2a4a4a975a67b317db1574f97f4a9291bdb16cef2904",
+          "size": 17656
+        },
+        {
+          "path": "scripts/brewpage-lib.sh",
+          "sha256": "904ed7bf7631a597476a493849e5ddc97b755b40a28cddeac60a264614dec655",
+          "size": 11761
+        },
+        {
+          "path": "scripts/brewpage-run.sh",
+          "sha256": "356cc62dc912ef01b46986c4cd3c170ef7543d6484e9d3ed0e123e460f61738a",
+          "size": 10356
+        },
+        {
+          "path": "scripts/history.py",
+          "sha256": "24d68381f27b13a727a5f342ae7396948a6e80123a926a627ecf956992906e61",
+          "size": 6048
+        },
+        {
+          "path": "scripts/publish.mjs",
+          "sha256": "23d15a831a4ae654b21c9ff469a17fbf3db96528a41969641ef105c2d3cf4f81",
+          "size": 17445
+        }
+      ]
+    },
+    {
+      "fixture": "019",
+      "id": "hookaido-2.15.3",
+      "selector": "original-019-encrypted",
+      "package": "hookaido",
+      "version": "2.15.3",
+      "owner": "7schmiede",
+      "kind": "skill",
+      "attemptId": "zx78v8whzmepebrr7t8489tqa58h877q",
+      "fingerprint": "aefe9b9deb288ad20fc5213557a142b059cacb9856bd97f9d5f32b5ab40f643e",
+      "versionId": "k971asg1bx11v8efjtdn554d8n8h9r4b",
+      "sourceManifestSha256": "b2039d335eebacfecd986a9f27f50899b6109bd7f427f6d2774ae6fdb16f52e6",
+      "historicalOriginalManifestSha256": "f010299b146e1943d39879aaeac28c85c57a12c539f542573c36db5ca2be7f2f",
+      "download": "https://clawhub.ai/api/v1/download?slug=hookaido&version=2.15.3",
+      "manifestSha256": "ec0a413aa333045b23a4d0e2acb195bb27b5bc110db123fccdde6c9e5380eb12",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "de9ec9fb41d0078e9ca541b57f310d57ceef1ebcd9a85b1febd03623b8365496",
+          "size": 904
+        },
+        {
+          "path": "README.md",
+          "sha256": "d874af717b76779fdc87aeb0260eed4c720656bc4d490b99ee18573e7ea0eba8",
+          "size": 2446
+        },
+        {
+          "path": "RELEASE_NOTES.md",
+          "sha256": "ff21458f172cbb239ce0a8fe366fa437ebdb4a042bfec4575af1348c5ca1fab2",
+          "size": 8826
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "c1f330191c12a3126594e720450167a3a148af3293d7b6c06ddfa0e5b15bc9c3",
+          "size": 15884
+        },
+        {
+          "path": "agents/openai.yaml",
+          "sha256": "5b6b4966f51d71c491c4e99556013d12c25acd6de68d2cca3dbabec7522f5f14",
+          "size": 353
+        },
+        {
+          "path": "references/openclaw.md",
+          "sha256": "38a2fc7276dd7057405f915c92c9ae25bf1132523349045768fc8bbeabcc600b",
+          "size": 9880
+        },
+        {
+          "path": "references/operations.md",
+          "sha256": "2217aad85e272f969fc30bee079d23583d5d8e844bcb09d47730a7973ce2f74b",
+          "size": 17287
+        },
+        {
+          "path": "scripts/install_hookaido.sh",
+          "sha256": "7efc3098434d67c9563a370f43d9dbe9364e2267fde5929ee7b4fb916b2cf0e7",
+          "size": 4712
+        },
+        {
+          "path": "scripts/openclaw_pull_relay.sh",
+          "sha256": "13348d30a5d1ab83c9b6bb64aeac74a932c5710fbc31f283a8afdbaf9cba4f26",
+          "size": 2673
+        }
+      ]
+    },
+    {
+      "fixture": "005",
+      "id": "xiapan-music-0.1.0",
+      "selector": "original-005-encrypted",
+      "package": "xiapan-music",
+      "version": "0.1.0",
+      "owner": "dongsheng123132",
+      "kind": "skill",
+      "attemptId": "zx7b487av1k20f0ctys5n9t8h58h4v9g",
+      "fingerprint": "92f5b51d896a15584a90034cf91a88d7108f0b727a009a5833b64230c40cedea",
+      "versionId": "k972v7hrpjv0ds1zwperc1yx858h43pp",
+      "sourceManifestSha256": "d22cacf3c276970c945b94509a3ba883c035863a3e05d698247a6a8a807acb55",
+      "historicalOriginalManifestSha256": "c2f30fe6f44e094e84b3aa0471635457976eaa68358fccfea2c9f6e65cd34895",
+      "download": "https://clawhub.ai/api/v1/download?slug=xiapan-music&version=0.1.0",
+      "manifestSha256": "83fa9eabb8ce424d2b2ac0daed1a671486e5740abb2e7a71da01224dc62aba59",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "479d5020bb2ac56b1dfeab33e1408bec4aa5730478fa8e19f208e1932a453b59",
+          "size": 3769
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "f089686b20d3689b05b6efe52692438f71884b5eb3e1788ba56b1bf59ead3250",
+          "size": 12484
+        },
+        {
+          "path": "references/music.md",
+          "sha256": "d14cddbba6ddca6337c9695c96586337aaf1bef754bf90257239f31ab15439a6",
+          "size": 4932
+        },
+        {
+          "path": "scripts/balance.mjs",
+          "sha256": "7e93d2243bafb2440413cc511365db45c7c18494be5d585425db929e2c033e6c",
+          "size": 1951
+        },
+        {
+          "path": "scripts/bgm.mjs",
+          "sha256": "a6f1ae8c4c89163e2e84862b5b8c1b2765990e161a4d7c9b9dd0c5677bd75eb1",
+          "size": 5182
+        },
+        {
+          "path": "scripts/lib/cli.mjs",
+          "sha256": "21fe4f514d0039d0ad6364ffb62a5e4e1dd78fb851a6ab2b36c561cf51fdf22f",
+          "size": 7897
+        },
+        {
+          "path": "scripts/lib/xiapan-music.mjs",
+          "sha256": "3984155a944a40ed2a01d859cd2228c0d158de070b3cdde759938ed4e7917ce5",
+          "size": 39151
+        },
+        {
+          "path": "scripts/lyrics.mjs",
+          "sha256": "eaadd78d7939003b0d9fc1e4119b445537bab6e48b886aab04837bc3ec429017",
+          "size": 3538
+        },
+        {
+          "path": "scripts/song.mjs",
+          "sha256": "2824181d53d69482708ea00be992d025bdecfb65e1bb9181741b6cf547e40793",
+          "size": 12536
+        }
+      ]
+    },
+    {
+      "fixture": "006",
+      "id": "xiapan-music-0.1.1",
+      "selector": "original-006-encrypted",
+      "package": "xiapan-music",
+      "version": "0.1.1",
+      "owner": "dongsheng123132",
+      "kind": "skill",
+      "attemptId": "zx7284aer96fg31dge0bs406rs8h53dc",
+      "fingerprint": "a8ce606b7131c63e7f92fb77b631096a6bf50defd75fbd73462f601af12fc27f",
+      "versionId": "k97b1ptq47bs8sjewf8xx73v898h4p75",
+      "sourceManifestSha256": "1cc155fc44227ecc4a4b3eba36321dc1f9aa959260ccb13d8b1e381f50e7f13b",
+      "historicalOriginalManifestSha256": "ab98be3bcec10ac3f83c2cb8bbdb90781f838ba126201c270e90b9dbfe26ca3e",
+      "download": "https://clawhub.ai/api/v1/download?slug=xiapan-music&version=0.1.1",
+      "manifestSha256": "121ce0a19ac22e8fbea4fed9025127429a8464fed8e82ff684d376ab961e199c",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "479d5020bb2ac56b1dfeab33e1408bec4aa5730478fa8e19f208e1932a453b59",
+          "size": 3769
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "9b83e364cbd201b9d9dbfbc900479f57c4475dd20d7c6087e2cdda6c9790ef85",
+          "size": 12484
+        },
+        {
+          "path": "references/music.md",
+          "sha256": "d14cddbba6ddca6337c9695c96586337aaf1bef754bf90257239f31ab15439a6",
+          "size": 4932
+        },
+        {
+          "path": "scripts/balance.mjs",
+          "sha256": "7e93d2243bafb2440413cc511365db45c7c18494be5d585425db929e2c033e6c",
+          "size": 1951
+        },
+        {
+          "path": "scripts/bgm.mjs",
+          "sha256": "a6f1ae8c4c89163e2e84862b5b8c1b2765990e161a4d7c9b9dd0c5677bd75eb1",
+          "size": 5182
+        },
+        {
+          "path": "scripts/lib/cli.mjs",
+          "sha256": "21fe4f514d0039d0ad6364ffb62a5e4e1dd78fb851a6ab2b36c561cf51fdf22f",
+          "size": 7897
+        },
+        {
+          "path": "scripts/lib/xiapan-music.mjs",
+          "sha256": "3984155a944a40ed2a01d859cd2228c0d158de070b3cdde759938ed4e7917ce5",
+          "size": 39151
+        },
+        {
+          "path": "scripts/lyrics.mjs",
+          "sha256": "eaadd78d7939003b0d9fc1e4119b445537bab6e48b886aab04837bc3ec429017",
+          "size": 3538
+        },
+        {
+          "path": "scripts/song.mjs",
+          "sha256": "2824181d53d69482708ea00be992d025bdecfb65e1bb9181741b6cf547e40793",
+          "size": 12536
+        }
+      ]
+    },
+    {
+      "fixture": "015",
+      "id": "agentlifeboat-1.0.2",
+      "selector": "original-015-encrypted",
+      "package": "agentlifeboat",
+      "version": "1.0.2",
+      "owner": "king-perb",
+      "kind": "skill",
+      "attemptId": "zx7f16v03prv0500fdvb092wxn8h2ejy",
+      "fingerprint": "b4a6891269bc096cc7679fcd4e44f2641b4f78867af5ffb090c52f4dd5f8cf2b",
+      "versionId": "k977873s0ct949cbq3p9etee1s8h2k4p",
+      "sourceManifestSha256": "dce8d0e7904374cb81ad51ed2cba4c23dd2f49671f74620abb6eed8c6730817c",
+      "historicalOriginalManifestSha256": "6adb03ab79fe36b34c0101b07441073133eacc1d71be5f14c315d73e0987e971",
+      "download": "https://clawhub.ai/api/v1/download?slug=agentlifeboat&version=1.0.2",
+      "manifestSha256": "1cf20d0e01a3a87af35e77e21e79ee094fdd5dedbe8ad5dc5f82800461ab4021",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "741d972ff6dfc5894edc5a7f95968002cbc5982c92e487a7f434cf1e273c9704",
+          "size": 5144
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "a7e1086bb2438aea352d0c09c4cce6a727c33d31c26cd6c41fe3058eb76b0464",
+          "size": 18393
+        },
+        {
+          "path": "package-lock.json",
+          "sha256": "722960307c7ff5fdd88c18d361cd4b87bba8358b397ceeb3555b5a467e8f8b5a",
+          "size": 15194
+        },
+        {
+          "path": "package.json",
+          "sha256": "305858f09d09d0910fb83a2f1a2ff62be3eacf9a10f5ddd7912115ec9c184068",
+          "size": 552
+        },
+        {
+          "path": "scripts/bundle.mjs",
+          "sha256": "7a1d9295ee62d045426928564ced15131fe33070b78318633708b509464c8161",
+          "size": 4297
+        },
+        {
+          "path": "scripts/check.mjs",
+          "sha256": "fdbfc5e51a53d2d38e2a8048edd90057f49da477e2598227fd97ea668993489b",
+          "size": 16131
+        },
+        {
+          "path": "scripts/environment.mjs",
+          "sha256": "ea178bd534e5418e4b41fd246aedb353fc508c67b9e43adad40d911af0808156",
+          "size": 10165
+        },
+        {
+          "path": "scripts/lib.mjs",
+          "sha256": "d57a4ff1d295e36181c8e8e29e3e4ef253ef3040fedcce9aba54ab65e6edf9f5",
+          "size": 18077
+        },
+        {
+          "path": "scripts/lifeboat.mjs",
+          "sha256": "4e27e78a6aeb07113cefcb742e8e96d742698cbccdff8dc009e0c2d9dffe525c",
+          "size": 18709
+        }
+      ]
+    }
+  ]
+}

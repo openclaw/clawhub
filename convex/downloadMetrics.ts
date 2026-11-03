@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation } from "./functions";
+import { areDownloadMetricsPaused } from "./lib/downloadMetricsSwitch";
 import { getClientIp } from "./lib/httpRateLimit";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 import { hashToken } from "./lib/tokens";
@@ -60,6 +61,8 @@ export const recordDownloadMetricInternal = internalMutation({
     occurredAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Queued jobs become no-ops while metrics are paused for write pressure.
+    if (areDownloadMetricsPaused()) return;
     const targetId = args.target.id;
     const existing = await ctx.db
       .query("downloadMetricDedupes")

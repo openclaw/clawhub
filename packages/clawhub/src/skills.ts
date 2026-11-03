@@ -132,8 +132,6 @@ export async function listSkillFiles(root: string, limits?: SkillFileLimits): Pr
   );
 }
 
-type SkillFileHash = { path: string; sha256: string; size: number };
-
 export function sha256Hex(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -164,20 +162,6 @@ export function buildGitHubFolderContentHash(
     .map((file) => `${file.path}\0${file.size}\0${file.sha256.toLowerCase()}`)
     .join("\n");
   return createHash("sha256").update(payload).digest("hex");
-}
-
-export function hashSkillZip(zipBytes: Uint8Array) {
-  const entries = unzipSync(zipBytes);
-  const hashed = Object.entries(entries)
-    .map(([rawPath, bytes]) => {
-      const safePath = sanitizeZipPath(rawPath);
-      if (!safePath) return null;
-      if (hasDotPathSegment(safePath)) return null;
-      return { path: safePath, sha256: sha256Hex(bytes), size: bytes.byteLength };
-    })
-    .filter(Boolean) as SkillFileHash[];
-
-  return { files: hashed, fingerprint: buildSkillFingerprint(hashed) };
 }
 
 export async function readLockfile(workdir: string): Promise<Lockfile> {
@@ -274,10 +258,6 @@ function sanitizeRelPath(path: string) {
   const segments = normalized.split("/");
   if (segments.some((segment) => !segment || segment === "." || segment === "..")) return null;
   return normalized;
-}
-
-function sanitizeZipPath(path: string) {
-  return sanitizeRelPath(path);
 }
 
 function normalizeGitHubSourcePath(path: string) {

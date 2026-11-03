@@ -1,4 +1,4 @@
-import { normalizeCatalogTopic } from "clawhub-schema";
+import { normalizeCatalogTopic } from "clawhub-schema/catalogMetadata";
 
 type CatalogTopicListProps = {
   topics?: string[] | null;

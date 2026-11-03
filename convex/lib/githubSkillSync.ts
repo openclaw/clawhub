@@ -1,4 +1,5 @@
 import { ConvexError } from "convex/values";
+import { sha256Hex } from "./hash";
 import {
   shouldPreserveSecurityScanStateForUnchangedContent,
   type SourceBackedSkillScanStatus,
@@ -696,7 +697,7 @@ function findSkillRelativeFilePath(
   return Object.hasOwn(entries, expected) ? expected : undefined;
 }
 
-function normalizeRepoPath(path: string) {
+export function normalizeRepoPath(path: string) {
   if (path.includes("\u0000")) return "";
   const normalized = path
     .replaceAll("\\", "/")
@@ -715,18 +716,6 @@ function parentPath(path: string) {
 
 function decodeUtf8(bytes: Uint8Array) {
   return new TextDecoder().decode(bytes);
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const safe = new Uint8Array(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", safe);
-  return toHex(new Uint8Array(digest));
-}
-
-function toHex(bytes: Uint8Array) {
-  let out = "";
-  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
-  return out;
 }
 
 function slugFromPathSegment(value: string) {

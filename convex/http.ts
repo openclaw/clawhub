@@ -62,7 +62,7 @@ import {
   promotionsPostRouterV1Http,
   catalogFeedV1Http,
   catalogSkillsFeedV1Http,
-  catalogClawsFeedV1Http,
+  catalogTemplatesFeedV1Http,
   promotionsFeedV1Http,
   usersGetRouterV1Http,
   usersListV1Http,
@@ -87,11 +87,17 @@ import {
   packageSdkUsageCoverageHttp,
   packageSdkUsagePluginHttp,
 } from "./packageSdkUsageHttp";
+import { retainHttp as retainPrepublicationReportHttp } from "./prepublicationReports";
 import { skillPresentationAssetHttp } from "./skillPresentationAssetsHttp";
 
 const http = installRateLimitedRoutes(httpRouter());
 
 auth.addHttpRoutes(http);
+http.route({
+  path: "/api/internal/prepublication-reports",
+  method: "POST",
+  handler: retainPrepublicationReportHttp,
+});
 http.route({
   path: "/api/v1/search-insights/reports",
   method: "POST",
@@ -247,9 +253,9 @@ http.route({
 });
 
 http.route({
-  path: ApiRoutes.catalogClawsFeed,
+  path: ApiRoutes.catalogTemplatesFeed,
   method: "GET",
-  handler: catalogClawsFeedV1Http,
+  handler: catalogTemplatesFeedV1Http,
 });
 
 http.route({

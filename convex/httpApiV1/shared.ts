@@ -10,13 +10,14 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { assertAdmin, assertModerator } from "../lib/access";
 import { requireApiTokenUser, requirePackagePublishAuth } from "../lib/apiTokenAuth";
+import { sha256Hex } from "../lib/hash";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { isMacJunkPath } from "../lib/skills";
 import type { PublicSkillVersionSelection } from "../lib/skills/publicVersions";
 export { getPathSegments, parsePackagePathSegments } from "../lib/httpPathSegments";
 
-export const MAX_RAW_FILE_BYTES = 200 * 1024;
+export { MAX_RAW_FILE_BYTES } from "../lib/storageText";
 const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 
 const SAFE_TEXT_FILE_CSP =
@@ -355,18 +356,6 @@ export async function resolvePublicSkillVersions(
   });
 }
 
-async function sha256Hex(bytes: Uint8Array) {
-  const data = new Uint8Array(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return toHex(new Uint8Array(digest));
-}
-
-function toHex(bytes: Uint8Array) {
-  let out = "";
-  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
-  return out;
-}
-
 type FileLike = {
   name: string;
   size: number;
@@ -648,4 +637,93 @@ export function formatAuthzMessage(error: unknown, fallback: "Unauthorized" | "F
   const stripped = cleanUserFacingErrorMessage(message);
   if (!stripped || stripped.toLowerCase() === fallback.toLowerCase()) return fallback;
   return stripped;
+}
+
+/**
+ * Lets the public edge cache anonymous catalog reads briefly. Cached responses
+ * skip the batched public-version checks that dominate database reads.
+ * Requests with credentials are never marked cacheable.
+ */
+export function anonymousCatalogCacheHeaders(request: Request, headers: HeadersInit): HeadersInit {
+  if (request.headers.has("authorization") || request.headers.has("cookie")) return headers;
+  return mergeHeaders(headers, {
+    "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+  });
+}
+
+export async function readOptionalJson(request: Request): Promise<unknown> {
+  const raw = await request.text();
+  if (!raw.trim()) return undefined;
+  return JSON.parse(raw) as unknown;
+}
+
+export function optionalStringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" ? field : undefined;
+}
+
+function hasOwnField(value: unknown, key: string) {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    Object.prototype.hasOwnProperty.call(value as Record<string, unknown>, key),
+  );
+}
+
+export function resolveVersionPathTarget(
+  pathVersion: string | undefined,
+  request: Request,
+  body: unknown,
+): { version?: string; error?: string } {
+  const rawBodyVersion = optionalStringField(body, "version");
+  if (hasOwnField(body, "version") && rawBodyVersion === undefined) {
+    return { error: "Version must be a non-empty string" };
+  }
+  const version = pathVersion?.trim();
+  const bodyVersion = rawBodyVersion?.trim();
+  const queryVersions = new URL(request.url).searchParams
+    .getAll("version")
+    .map((queryVersion) => queryVersion.trim());
+  if (
+    !version ||
+    (rawBodyVersion !== undefined && !bodyVersion) ||
+    queryVersions.some((queryVersion) => !queryVersion)
+  ) {
+    return { error: "Version cannot be empty" };
+  }
+  if (
+    (bodyVersion && bodyVersion !== version) ||
+    queryVersions.some((queryVersion) => queryVersion !== version)
+  ) {
+    return { error: "Version does not match request target" };
+  }
+  return { version };
+}
+
+export function hasVersionDeleteSelector(request: Request, body: unknown) {
+  return hasOwnField(body, "version") || new URL(request.url).searchParams.has("version");
+}
+
+export function versionDeleteRouteGuidance(basePath: string, request: Request, body: unknown) {
+  const version =
+    optionalStringField(body, "version")?.trim() ??
+    new URL(request.url).searchParams.get("version")?.trim();
+  return `Version deletion requires DELETE ${basePath}/versions/${
+    version ? encodeURIComponent(version) : "<version>"
+  }.`;
+}
+
+export async function chunkedParallel<T, R>(
+  items: T[],
+  chunkSize: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
 }

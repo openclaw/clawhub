@@ -3,7 +3,7 @@ node_modules
 .bun-build
 *.bun-build
 .artifacts/
-artifacts/
+/artifacts/
 .proof/
 .cache/
 .vite-temp/

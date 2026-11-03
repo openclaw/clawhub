@@ -123,13 +123,22 @@ type HttpClient = {
 class HttpStatusError extends Error {
   readonly status: number;
   readonly rateLimit: RateLimitInfo;
+  readonly requestId?: string;
+  readonly diagnostic: string;
 
-  constructor(status: number, message: string, rateLimit: RateLimitInfo) {
+  constructor(status: number, message: string, rateLimit: RateLimitInfo, requestId?: string) {
     super(message);
     this.name = "HttpStatusError";
     this.status = status;
     this.rateLimit = rateLimit;
+    this.requestId = requestId;
+    this.diagnostic = buildHttpErrorDiagnostic(status, requestId);
   }
+}
+
+// Upload diagnostics must not echo response bodies, signed URLs, or transport traces.
+export function getHttpErrorDiagnostic(error: unknown): string | undefined {
+  return error instanceof HttpStatusError ? error.diagnostic : undefined;
 }
 
 export function getHttpErrorStatus(error: unknown) {
@@ -544,11 +553,14 @@ function throwHttpStatusError(
 ): never {
   const rateLimit = parseRateLimitInfo(headers, now);
   const retryableTransientContention = isTransientConvexContention(text);
+  // Convex request IDs are 16 lowercase hex digits. Capture before wrapper cleanup.
+  const requestId = /\[Request ID: ([0-9a-f]{16})\]/.exec(text)?.[1];
   const message = buildHttpErrorMessage(status, text, rateLimit);
+  const error = new HttpStatusError(status, message, rateLimit, requestId);
   if (status === 429 || status >= 500 || retryableTransientContention) {
-    throw new HttpStatusError(status, message, rateLimit);
+    throw error;
   }
-  throw new AbortError(new HttpStatusError(status, message, rateLimit));
+  throw new AbortError(error);
 }
 
 function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimitInfo): string {
@@ -564,6 +576,10 @@ function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimi
     details.push(`reset in ${rateLimit.resetDelaySeconds}s`);
   }
   return details.length === 0 ? base : `${base} (${details.join(", ")})`;
+}
+
+function buildHttpErrorDiagnostic(status: number, requestId?: string): string {
+  return requestId ? `HTTP ${status} (Request ID: ${requestId})` : `HTTP ${status}`;
 }
 
 function normalizeHttpErrorBody(status: number, text: string): string {

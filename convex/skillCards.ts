@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./functions";
+import { sha256Hex as sha256BytesHex } from "./lib/hash";
 import {
   admitSkillCardClaims,
   MAX_PARALLEL_SKILL_CARD_JOBS,
@@ -634,10 +635,7 @@ export const attachCardAndSucceedJobInternal = internalMutation({
 });
 
 async function sha256Hex(text: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return sha256BytesHex(new TextEncoder().encode(text));
 }
 
 export const completeSkillCardJob = action({

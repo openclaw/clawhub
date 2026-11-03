@@ -1,5 +1,6 @@
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import type { SkillPublicationProgress } from "../../convex/lib/skillPublicationProgress";
 import { convexHttp } from "../convex/client";
 import type { PublicPublisher, PublicSkill } from "./publicUser";
 
@@ -19,6 +20,7 @@ export type SkillBySlugResult = {
     | null;
   owner: PublicPublisher | null;
   pendingReview?: boolean;
+  publicationProgress?: SkillPublicationProgress | null;
   moderationInfo?: {
     isPendingScan: boolean;
     isMalwareBlocked: boolean;
@@ -130,7 +132,7 @@ export async function fetchSkillPageData(
 
     if (result.latestVersion?._id) {
       try {
-        const response = await convexHttp.action(api.skills.getReadme, {
+        const response = await convexHttp.action(api.skillReadme.getReadme, {
           versionId: result.latestVersion._id,
         });
         readme = readActionText(response);

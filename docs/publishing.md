@@ -234,7 +234,7 @@ The package CLI's `--categories` flag and reusable workflow's `categories` and
 `clear_categories` inputs are deprecated for plugins. They remain accepted but
 are ignored, with a warning on stderr. Move a chosen category into the manifest;
 remove the field to return to automatic classification. This also applies to
-`--categories ""`, which no longer clears plugin categories. Experimental Claw
+`--categories ""`, which no longer clears plugin categories. Experimental Template
 publishes and skill publishing retain their existing category behavior.
 
 Topics remain separate: use `--topics` or the workflow's `topics` input to set

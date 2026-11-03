@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { describe, expect, it } from "vitest";
 import {
   NVIDIA_SKILL_EVALUATION_CONFIG as config,

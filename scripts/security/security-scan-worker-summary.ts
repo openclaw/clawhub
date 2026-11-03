@@ -1,3 +1,5 @@
+import { type ClawScanExposure, summarizeClawScanExposure } from "./clawscan-exposure";
+
 export type SecurityScanQueueHealth = {
   snapshotAt: number;
   queueDepth: number;
@@ -9,6 +11,7 @@ export type SecurityScanQueueHealth = {
 };
 
 export type SecurityScanJobHealth = {
+  exposure?: ClawScanExposure;
   completed: boolean;
   durationMs: number;
   failureStage?: "scanner" | "judge" | "unclassified";
@@ -35,6 +38,7 @@ type VerdictTotals = {
 
 export type SecurityScanWorkerHealthSummary = {
   clawscan: {
+    exposure: ReturnType<typeof summarizeClawScanExposure>;
     averageDurationMs: number;
     completed: number;
     failed: number;
@@ -90,6 +94,7 @@ export function calculateSecurityScanWorkerHealthSummary(input: {
 
   return {
     clawscan: {
+      exposure: summarizeClawScanExposure(input.outcomes.map((outcome) => outcome.exposure)),
       averageDurationMs:
         input.outcomes.length > 0 ? Math.round(durationTotal / input.outcomes.length) : 0,
       completed,
@@ -142,6 +147,20 @@ export function renderSecurityScanWorkerSummaryMarkdown(summary: SecurityScanWor
     `| Unclassified failures | ${summary.clawscan.unclassifiedFailures} |`,
     `| Average duration | ${formatDuration(summary.clawscan.averageDurationMs)} |`,
     `| Claim failures | ${summary.claimFailures} |`,
+    "",
+    "| Exposure (separate from raw worker outcomes) | Count |",
+    "| --- | ---: |",
+    `| New scan executions | ${summary.clawscan.exposure.scanExecutions} |`,
+    `| No new scan | ${summary.clawscan.exposure.scanNotStarted} |`,
+    `| Unknown scan execution | ${summary.clawscan.exposure.unknownScanExecutions} |`,
+    `| Eligible scan attempts (evidenced) | ${summary.clawscan.exposure.eligibleScanAttempts} |`,
+    `| Unknown scan eligibility | ${summary.clawscan.exposure.unknownScanEligibility} |`,
+    `| Judge invocations (known) | ${summary.clawscan.exposure.judgeInvocations} |`,
+    `| Judge operationally failed invocations (known) | ${summary.clawscan.exposure.judgeOperationalFailures} |`,
+    `| Recovered receipt retries (known) | ${summary.clawscan.exposure.recoveredReceiptRetries} |`,
+    `| Unknown judge exposure runs | ${summary.clawscan.exposure.unknownJudgeRuns} |`,
+    "",
+    "Known counts are partial when exposure is unknown; completion is not a clean verdict or recovery proof.",
     "",
     "| ClawScan verdict | Count |",
     "| --- | ---: |",

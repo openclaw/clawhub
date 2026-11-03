@@ -11,7 +11,7 @@ describe("packageLabels", () => {
     expect(familyLabel("bundle-plugin")).toBe("Bundle Plugin");
   });
 
-  it("labels experimental Claw packages", () => {
-    expect(familyLabel("claw")).toBe("Claw");
+  it("labels experimental Template packages", () => {
+    expect(familyLabel("template")).toBe("Template");
   });
 });

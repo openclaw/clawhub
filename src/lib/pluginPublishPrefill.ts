@@ -1,9 +1,9 @@
 import type { PackageCompatibility } from "clawhub-schema";
 import {
-  derivePluginCategoryTags,
   normalizeOpenClawExternalPluginCompatibility,
   validateOpenClawExternalCodePluginPackageJson,
-} from "clawhub-schema";
+} from "clawhub-schema/openclawContract";
+import { derivePluginCategoryTags } from "clawhub-schema/pluginCategories";
 
 type JsonRecord = Record<string, unknown>;
 

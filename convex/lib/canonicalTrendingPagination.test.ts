@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { describe, expect, it, vi } from "vitest";
 import type { ActionCtx } from "../_generated/server";
 import { forEachCanonicalTrendingSourcePage } from "./canonicalTrendingPagination";

@@ -513,16 +513,40 @@ describe("official publisher commands", () => {
     log.mockRestore();
   });
 
-  it("requires --yes to add an official publisher when input is disabled", async () => {
-    await expect(
-      cmdAddOfficialOrg(
-        makeGlobalOpts(),
-        "nvidia",
-        { reason: "NVIDIA source-backed catalog" },
-        false,
-      ),
-    ).rejects.toThrow(/--yes/i);
-    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  it.each([
+    ["add", cmdAddOfficialOrg],
+    ["remove", cmdRemoveOfficialOrg],
+  ])(
+    "requires --yes to %s an official publisher when input is disabled",
+    async (_action, command) => {
+      await expect(
+        command(makeGlobalOpts(), "nvidia", { reason: "NVIDIA source-backed catalog" }, false),
+      ).rejects.toThrow(/--yes/i);
+      expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
+      expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    [cmdAddOfficialOrg, "added", true, "Marked @nvidia official"],
+    [cmdAddOfficialOrg, "added", false, "@nvidia is already official"],
+    [cmdRemoveOfficialOrg, "removed", true, "Removed @nvidia from official publishers"],
+    [cmdRemoveOfficialOrg, "removed", false, "@nvidia was not official"],
+  ])("preserves action-specific success messages %#", async (command, field, changed, message) => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      publisherId: "publishers:nvidia",
+      handle: "nvidia",
+      [field]: changed,
+      officialPublisherId: "officialPublishers:nvidia",
+    });
+    await command(
+      makeGlobalOpts(),
+      "nvidia",
+      { reason: "Publisher verification", yes: true },
+      false,
+    );
+    expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(message);
   });
 
   it("marks a publisher official", async () => {

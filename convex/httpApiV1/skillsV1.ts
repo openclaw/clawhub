@@ -48,7 +48,11 @@ import {
 } from "../lib/githubHandoff";
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
+import {
+  isConvexWritePressureError,
+  parseBooleanQueryParam,
+  resolveBooleanQueryParam,
+} from "../lib/httpUtils";
 import {
   buildSkillInstallResolution,
   type InstallResolverSkill,
@@ -83,6 +87,12 @@ import {
 } from "../lib/skillZip";
 import { publishVersionForUser } from "../skills";
 import {
+  readOptionalJson,
+  optionalStringField,
+  resolveVersionPathTarget,
+  hasVersionDeleteSelector,
+  versionDeleteRouteGuidance,
+  chunkedParallel,
   MAX_RAW_FILE_BYTES,
   type AmbiguousSkillSlugChoice,
   ambiguousSkillSlugResponse,
@@ -97,6 +107,7 @@ import {
   publicApiOrigin,
   requireAdminOrResponse,
   requireApiTokenUserOrResponse,
+  anonymousCatalogCacheHeaders,
   resolvePublicSkillVersions,
   readPublicSkillVersionSelections,
   safeStoredFilePreviewResponse,
@@ -791,7 +802,10 @@ type SecurityVerdictTargetResult = {
   } | null;
   version:
     | (VerifySecurityVersion &
-        Pick<Doc<"skillVersions">, "_id" | "version" | "createdAt" | "softDeletedAt">)
+        Pick<
+          Doc<"skillVersions">,
+          "_id" | "version" | "createdAt" | "softDeletedAt" | "publicationStatus"
+        >)
     | null;
 } | null;
 
@@ -1165,6 +1179,15 @@ async function buildSecurityVerdictItem(
 
   const version = result.version;
   if (!version) {
+    return buildSecurityVerdictError(
+      item,
+      "version_not_found",
+      "Version not found",
+      "version.not_found",
+    );
+  }
+  // Withheld versions stay undiscoverable even when also soft-deleted.
+  if (version.publicationStatus && version.publicationStatus !== "published") {
     return buildSecurityVerdictError(
       item,
       "version_not_found",
@@ -1632,7 +1655,11 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
           Link: `<${ApiRoutes.trending}?kind=skills>; rel="successor-version"`,
         })
       : rate.headers;
-  return json({ items, nextCursor: result.nextCursor ?? null }, 200, responseHeaders);
+  return json(
+    { items, nextCursor: result.nextCursor ?? null },
+    200,
+    anonymousCatalogCacheHeaders(request, responseHeaders),
+  );
 }
 
 async function isCurrentSkillHttpOwner(
@@ -2063,7 +2090,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           : null,
       },
       200,
-      rate.headers,
+      anonymousCatalogCacheHeaders(request, rate.headers),
     );
   }
 
@@ -2153,6 +2180,21 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       200,
       rate.headers,
     );
+  }
+
+  if (second === "versions" && third && segments[3] === "publication" && segments.length === 4) {
+    const headers = mergeHeaders(rate.headers, {
+      "Cache-Control": "private, no-store",
+      Vary: "Authorization",
+    });
+    const auth = await requireApiTokenUserOrResponse(ctx, request, headers);
+    if (!auth.ok) return auth.response;
+    const result = await ctx.runQuery(internal.skills.getPublicationStatusForUserInternal, {
+      ...skillLookupArgs,
+      version: third,
+      userId: auth.userId,
+    });
+    return result ? json(result, 200, headers) : text("Publication status not found", 404, headers);
   }
 
   if (second === "versions" && segments.length === 2) {
@@ -3049,9 +3091,16 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       if (sha256 !== expected.sha256) {
         return text("Uploaded file SHA-256 does not match its upload ticket", 400, rate.headers);
       }
-      storageId = await ctx.storage.store(
-        new Blob([bytes], expected.contentType ? { type: expected.contentType } : undefined),
-      );
+      try {
+        storageId = await ctx.storage.store(
+          new Blob([bytes], expected.contentType ? { type: expected.contentType } : undefined),
+        );
+      } catch (error) {
+        // Retry only a typed rejection before this action has a blob ID.
+        // Attachment failures must not trigger a fresh storage upload.
+        if (isConvexWritePressureError(error)) return text(error.message, 503, rate.headers);
+        throw error;
+      }
       await ctx.runMutation(internal.skillPublishUploads.attachSkillPublishUploadInternal, {
         userId: auth.userId,
         uploadTicket,
@@ -3643,83 +3692,6 @@ function skillVersionDeleteErrorToResponse(error: unknown, headers: HeadersInit)
   }
   if (lower.includes("not found")) return text(message, 404, headers);
   return text(message, 400, headers);
-}
-
-async function readOptionalJson(request: Request): Promise<unknown> {
-  const raw = await request.text();
-  if (!raw.trim()) return undefined;
-  return JSON.parse(raw) as unknown;
-}
-
-function optionalStringField(value: unknown, key: string): string | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === "string" ? field : undefined;
-}
-
-function hasOwnField(value: unknown, key: string) {
-  return Boolean(
-    value &&
-    typeof value === "object" &&
-    Object.prototype.hasOwnProperty.call(value as Record<string, unknown>, key),
-  );
-}
-
-function resolveVersionPathTarget(
-  pathVersion: string | undefined,
-  request: Request,
-  body: unknown,
-): { version?: string; error?: string } {
-  const rawBodyVersion = optionalStringField(body, "version");
-  if (hasOwnField(body, "version") && rawBodyVersion === undefined) {
-    return { error: "Version must be a non-empty string" };
-  }
-  const version = pathVersion?.trim();
-  const bodyVersion = rawBodyVersion?.trim();
-  const queryVersions = new URL(request.url).searchParams
-    .getAll("version")
-    .map((queryVersion) => queryVersion.trim());
-  if (
-    !version ||
-    (rawBodyVersion !== undefined && !bodyVersion) ||
-    queryVersions.some((queryVersion) => !queryVersion)
-  ) {
-    return { error: "Version cannot be empty" };
-  }
-  if (
-    (bodyVersion && bodyVersion !== version) ||
-    queryVersions.some((queryVersion) => queryVersion !== version)
-  ) {
-    return { error: "Version does not match request target" };
-  }
-  return { version };
-}
-
-function hasVersionDeleteSelector(request: Request, body: unknown) {
-  return hasOwnField(body, "version") || new URL(request.url).searchParams.has("version");
-}
-
-function versionDeleteRouteGuidance(basePath: string, request: Request, body: unknown) {
-  const version =
-    optionalStringField(body, "version")?.trim() ??
-    new URL(request.url).searchParams.get("version")?.trim();
-  return `Version deletion requires DELETE ${basePath}/versions/${
-    version ? encodeURIComponent(version) : "<version>"
-  }.`;
-}
-
-async function chunkedParallel<T, R>(
-  items: T[],
-  chunkSize: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  for (let i = 0; i < items.length; i += chunkSize) {
-    const chunk = items.slice(i, i + chunkSize);
-    const chunkResults = await Promise.all(chunk.map(fn));
-    results.push(...chunkResults);
-  }
-  return results;
 }
 
 type SkillsExportPhase =

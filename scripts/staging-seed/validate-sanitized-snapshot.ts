@@ -2,7 +2,12 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { listSnapshotEntries, readSelectedSnapshotEntries, readSnapshotTable } from "./snapshotIo";
-import { sanitizePublicText, type SnapshotDocument, type SnapshotFile } from "./snapshotPolicy";
+import {
+  isAllowedPackageArtifact,
+  sanitizePublicText,
+  type SnapshotDocument,
+  type SnapshotFile,
+} from "./snapshotPolicy";
 
 const REQUIRED_TABLES = [
   "users",
@@ -83,7 +88,7 @@ export async function validateSanitizedSnapshot(snapshotPath: string) {
     validateDocument(release, "packageReleases");
     validateCreatedBy(release, userIds, "packageReleases");
     const files = snapshotFiles(release.files);
-    if (files.some((file) => !isAllowedPackagePath(file.path))) {
+    if (files.some((file) => !isAllowedPackageArtifact(file.path))) {
       throw new Error(`packageReleases/${release._id} contains a non-allowlisted file`);
     }
     collectStorageIds(files, selectedStorageIds, artifactFiles);
@@ -328,18 +333,6 @@ async function validateStorageContents(
       throw new Error(`${entry} SHA-256 does not match artifact metadata`);
     }
   }
-}
-
-function isAllowedPackagePath(path: string) {
-  const normalized = path.toLowerCase().replace(/^\.\//, "");
-  return (
-    normalized === "readme.md" ||
-    normalized === "readme.markdown" ||
-    normalized === "package.json" ||
-    normalized === "openclaw.plugin.json" ||
-    normalized === "skill.md" ||
-    normalized.endsWith("/skill.md")
-  );
 }
 
 async function main() {

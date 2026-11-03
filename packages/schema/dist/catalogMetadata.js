@@ -21,7 +21,7 @@ export const RESERVED_CATALOG_TOPIC_SLUGS = [
     "verified",
 ];
 const CATALOG_TOPIC_FORMAT_CONTROL_RE = /\p{Cf}/u;
-export const CLAW_CATEGORY_DEFINITIONS = [
+export const TEMPLATE_CATEGORY_DEFINITIONS = [
     {
         slug: "personal",
         label: "Personal",
@@ -95,9 +95,9 @@ export const CLAW_CATEGORY_DEFINITIONS = [
         description: "Recruiting, hiring, employee support, and team development.",
     },
 ];
-const CLAW_CATEGORY_SLUGS = new Set(CLAW_CATEGORY_DEFINITIONS.map(({ slug }) => slug));
-export function isClawCategorySlug(value) {
-    return CLAW_CATEGORY_SLUGS.has(value);
+const TEMPLATE_CATEGORY_SLUGS = new Set(TEMPLATE_CATEGORY_DEFINITIONS.map(({ slug }) => slug));
+export function isTemplateCategorySlug(value) {
+    return TEMPLATE_CATEGORY_SLUGS.has(value);
 }
 export const PLUGIN_CATEGORY_DEFINITIONS = [
     {

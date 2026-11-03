@@ -1,4 +1,5 @@
-import { PLUGIN_CATEGORY_DEFINITIONS, type ManagedMcpDefinition } from "clawhub-schema";
+import type { ManagedMcpDefinition } from "clawhub-schema";
+import { PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema/catalogMetadata";
 import { useAction } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useEffect, useRef, useState, type FormEvent } from "react";

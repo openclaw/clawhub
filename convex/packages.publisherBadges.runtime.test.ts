@@ -19,7 +19,7 @@ describe("plugin publisher badges", () => {
     "projects current publisher status for %s without changing package status",
     async (family) => {
       const t = convexTest(schema, modules);
-      registerRateLimiter(t);
+      registerRateLimiter(t, "rateLimiterV2");
       const fixture = await t.run(async (ctx) => {
         const ownerUserId = await ctx.db.insert("users", { handle: "custodian" });
         const publisherId = await ctx.db.insert("publishers", {

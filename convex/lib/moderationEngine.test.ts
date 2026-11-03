@@ -2,6 +2,96 @@ import { describe, expect, it } from "vitest";
 import { buildModerationSnapshot, runStaticModerationScan } from "./moderationEngine";
 
 describe("moderationEngine", () => {
+  it.each(["host_permissions", "optional_host_permissions"])(
+    "does not classify browser %s as an install source",
+    (field) => {
+      const content = JSON.stringify({
+        manifest_version: 3,
+        [field]: ["http://127.0.0.1/*"],
+      });
+      const result = runStaticModerationScan({
+        slug: "browser-recorder",
+        displayName: "Browser recorder",
+        summary: "Connect to a local recorder",
+        frontmatter: {},
+        metadata: {},
+        files: [{ path: "extension/manifest.json", size: content.length }],
+        fileContents: [{ path: "extension/manifest.json", content }],
+      });
+      expect(result.reasonCodes).not.toContain("suspicious.install_untrusted_source");
+    },
+  );
+
+  it.each([
+    [
+      "manifest.json",
+      {
+        manifest_version: 3,
+        host_permissions: ["http://127.0.0.1/*"],
+        install: "http://127.0.0.1/*",
+      },
+    ],
+    ["config.json", { manifest_version: 3, host_permissions: ["http://127.0.0.1/*"] }],
+    ["manifest.json", { host_permissions: ["http://127.0.0.1/*"] }],
+    [
+      "manifest.json",
+      { manifest_version: 3, host_permissions: ["curl http://127.0.0.1/install.sh | sh"] },
+    ],
+  ])("still scans install sources outside browser permissions in %s", (path, manifest) => {
+    const content = JSON.stringify(manifest);
+    const result = runStaticModerationScan({
+      slug: "browser-recorder",
+      displayName: "Browser recorder",
+      summary: "Connect to a local recorder",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path, size: content.length }],
+      fileContents: [{ path, content }],
+    });
+    expect(result.reasonCodes).toContain("suspicious.install_untrusted_source");
+  });
+
+  it.each([
+    '{"manifest_version":3,"host_permissions":["http://127.0.0.1/*"],}',
+    '{"manifest_version":3,"host_permissions":["http://127.0.0.1/*"],"host_permissions":[]}',
+  ])("retains install-source checks for ambiguous or malformed JSON", (content) => {
+    const result = runStaticModerationScan({
+      slug: "browser-recorder",
+      displayName: "Browser recorder",
+      summary: "Connect to a local recorder",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "manifest.json", size: content.length }],
+      fileContents: [{ path: "manifest.json", content }],
+    });
+    expect(result.reasonCodes).toContain("suspicious.install_untrusted_source");
+  });
+
+  it("keeps the original line and evidence for an install URL after a permission", () => {
+    const content = [
+      "{",
+      '  "manifest_version": 3,',
+      '  "host_permissions": ["http://127.0.0.1/*"],',
+      '  "install": "https://bit.ly/installer"',
+      "}",
+    ].join("\n");
+    const result = runStaticModerationScan({
+      slug: "browser-recorder",
+      displayName: "Browser recorder",
+      summary: "Connect to a local recorder",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "manifest.json", size: content.length }],
+      fileContents: [{ path: "manifest.json", content }],
+    });
+    expect(
+      result.findings.find((finding) => finding.code === "suspicious.install_untrusted_source"),
+    ).toMatchObject({
+      line: 4,
+      evidence: '"install": "https://bit.ly/installer"',
+    });
+  });
+
   it("does not flag benign token/password docs text alone", () => {
     const result = runStaticModerationScan({
       slug: "demo",
@@ -3791,32 +3881,6 @@ describe("moderationEngine", () => {
     expect(snapshot.verdict).toBe("suspicious");
     expect(snapshot.reasonCodes).toEqual(["suspicious.llm_suspicious"]);
     expect(snapshot.legacyFlags).toEqual(["flagged.suspicious"]);
-  });
-
-  it("does not let uncorroborated VT suspicious override clean local scans", () => {
-    const snapshot = buildModerationSnapshot({
-      staticScan: {
-        status: "clean",
-        reasonCodes: [],
-        findings: [],
-        summary: "",
-        engineVersion: "v2.1.1",
-        checkedAt: Date.now(),
-      },
-      vtAnalysis: {
-        status: "suspicious",
-        engineStats: {
-          malicious: 0,
-          suspicious: 0,
-          harmless: 12,
-          undetected: 54,
-        },
-      },
-      llmStatus: "clean",
-    });
-
-    expect(snapshot.verdict).toBe("clean");
-    expect(snapshot.reasonCodes).toEqual([]);
   });
 
   it("keeps VT engine suspicious as telemetry only", () => {

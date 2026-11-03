@@ -81,12 +81,12 @@ describe("clawpack", () => {
     ]);
   });
 
-  it("accepts Claw tarballs without a plugin manifest", async () => {
+  it("accepts Template tarballs without a plugin manifest", async () => {
     const pack = npmPackFixture({
       "package/package.json": JSON.stringify({
         name: "demo",
         version: "1.0.0",
-        openclaw: { claw: "CLAW.md" },
+        openclaw: { template: "CLAW.md" },
       }),
       "package/CLAW.md": "---\nschemaVersion: 1\nagent: { id: demo }\n---\n",
     });

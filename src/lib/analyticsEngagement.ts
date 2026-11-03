@@ -3,7 +3,7 @@ import type { AnalyticsEvent } from "./analyticsEvents";
 
 const SECTIONS = {
   catalog: ".results-list, .skills-results, .search-results-sections",
-  install: ".skill-install-surface, .skill-install-command-card",
+  install: ".skill-install-command-card",
   readme: "#skill-tabpanel-readme",
   security: ".detail-security-summary, .skills-sh-security-audits",
   footer: "footer",

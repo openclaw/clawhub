@@ -36,6 +36,34 @@ afterEach(() => {
 });
 
 describe("cmdInspect", () => {
+  it("reports held-version publication status when the owner's first upload has no public detail", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("fixture-token");
+    httpMocks.apiRequest
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Skill is pending publication"), { status: 423 }),
+      )
+      .mockResolvedValueOnce({
+        skill: { slug: "demo", displayName: "Demo" },
+        publication: {
+          version: "2.0.0",
+          stage: "checks_failed",
+          retrying: true,
+          updatedAt: 3,
+          checks: { trufflehog: "clean", clawscan: "failed" },
+        },
+      });
+
+    await cmdInspect(makeGlobalOpts(), "@openclaw/demo", { version: "2.0.0", json: true });
+
+    const output = JSON.parse(String(mockLog.mock.calls[0]?.[0]));
+    expect(output).toMatchObject({
+      publication: { version: "2.0.0", stage: "checks_failed", retrying: true },
+      version: null,
+      file: null,
+    });
+    expect(httpMocks.fetchBinary).not.toHaveBeenCalled();
+  });
+
   it("fetches latest version files when --files is set", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
@@ -66,6 +94,120 @@ describe("cmdInspect", () => {
     expect(new URL(String(secondArgs?.url)).pathname).toBe(
       `${ApiRoutes.skills}/${encodeURIComponent("demo")}/versions/${encodeURIComponent("1.2.3")}`,
     );
+  });
+
+  it("distinguishes a held candidate from an older public release in inspect JSON", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("fixture-token");
+    httpMocks.apiRequest
+      .mockResolvedValueOnce({
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          tags: { latest: "1.0.0" },
+          stats: {},
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        latestVersion: { version: "1.0.0", createdAt: 1, changelog: "Public release" },
+        owner: { handle: "openclaw" },
+      })
+      .mockResolvedValueOnce({ moderation: null })
+      .mockRejectedValueOnce(Object.assign(new Error("Version not found"), { status: 404 }))
+      .mockResolvedValueOnce({
+        skill: { slug: "demo", displayName: "Demo" },
+        publication: {
+          version: "2.0.0",
+          stage: "checks_incomplete",
+          retrying: true,
+          updatedAt: 3,
+          checks: { trufflehog: "clean", clawscan: "clean" },
+        },
+      });
+
+    await cmdInspect(makeGlobalOpts(), "@openclaw/demo", { version: "2.0.0", json: true });
+
+    expect(JSON.parse(String(mockLog.mock.calls[0]?.[0]))).toMatchObject({
+      publication: { version: "2.0.0", stage: "checks_incomplete" },
+      latestVersion: { version: "1.0.0" },
+      version: null,
+      file: null,
+    });
+  });
+
+  it("prints recovery guidance while refusing a held version's file request", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("fixture-token");
+    httpMocks.apiRequest
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Skill is pending publication"), { status: 423 }),
+      )
+      .mockResolvedValueOnce({
+        skill: { slug: "demo", displayName: "Demo" },
+        publication: {
+          version: "2.0.0",
+          stage: "checks_failed",
+          retrying: true,
+          updatedAt: 3,
+          checks: { trufflehog: "clean", clawscan: "failed" },
+        },
+      });
+    await cmdInspect(makeGlobalOpts(), "@openclaw/demo", { version: "2.0.0", file: "SKILL.md" });
+    expect(loggedOutput()).toContain("Publication checks failed");
+    expect(loggedOutput()).toContain("not public or installable");
+    expect(loggedOutput()).toContain("you do not need a new version");
+    expect(loggedOutput()).toContain("clawhub scan download @openclaw/demo --version 2.0.0");
+    expect(loggedOutput()).toContain("https://github.com/openclaw/clawhub/issues/new");
+    expect(httpMocks.fetchBinary).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("describes a blocked submission without promising retained uploaded content", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("fixture-token");
+    httpMocks.apiRequest
+      .mockRejectedValueOnce(Object.assign(new Error("Version not found"), { status: 404 }))
+      .mockResolvedValueOnce({
+        skill: { slug: "demo", displayName: "Demo" },
+        publication: {
+          version: "2.0.0",
+          stage: "blocked",
+          retrying: false,
+          updatedAt: 3,
+          checks: { trufflehog: "blocked", clawscan: "pending" },
+        },
+      });
+
+    await cmdInspect(makeGlobalOpts(), "@openclaw/demo", { version: "2.0.0" });
+
+    expect(loggedOutput()).toContain("The submitted version is still recorded.");
+    expect(loggedOutput()).not.toContain("uploaded content is retained");
+    expect(httpMocks.fetchBinary).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 403, 404])(
+    "preserves the original read error when diagnostics returns %s",
+    async (status) => {
+      authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("fixture-token");
+      const original = Object.assign(new Error("Version not found"), { status: 404 });
+      httpMocks.apiRequest
+        .mockRejectedValueOnce(original)
+        .mockRejectedValueOnce(Object.assign(new Error("No owner diagnostics"), { status }))
+        .mockResolvedValueOnce({ moderation: null });
+      await expect(
+        cmdInspect(makeGlobalOpts(), "@openclaw/demo", { version: "2.0.0", json: true }),
+      ).rejects.toBe(original);
+      expect(mockLog).not.toHaveBeenCalled();
+    },
+  );
+
+  it("surfaces a status service failure without claiming a candidate status", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("fixture-token");
+    const failure = Object.assign(new Error("Status service unavailable"), { status: 503 });
+    httpMocks.apiRequest
+      .mockRejectedValueOnce(Object.assign(new Error("Version not found"), { status: 404 }))
+      .mockRejectedValueOnce(failure);
+    await expect(
+      cmdInspect(makeGlobalOpts(), "@openclaw/demo", { version: "2.0.0", json: true }),
+    ).rejects.toBe(failure);
+    expect(mockLog).not.toHaveBeenCalled();
   });
 
   it("passes owner when inspecting an owner-named skill", async () => {

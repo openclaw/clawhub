@@ -112,6 +112,16 @@ function writeJson(response: ServerResponse, status: number, body: unknown) {
   response.end(JSON.stringify(body));
 }
 
+const trustedPublisherFixture = {
+  provider: "github-actions",
+  repository: "openclaw/demo-plugin",
+  repositoryId: "1",
+  repositoryOwner: "openclaw",
+  repositoryOwnerId: "2",
+  workflowFilename: "release.yml",
+  environment: "release",
+};
+
 async function startLocalRegistry(catalogItems?: unknown[]) {
   const requests: RecordedRequest[] = [];
   const skillZip = zipSync({
@@ -128,6 +138,17 @@ async function startLocalRegistry(catalogItems?: unknown[]) {
     };
     if (bodyText) recorded.body = JSON.parse(bodyText) as unknown;
     requests.push(recorded);
+
+    if (url.pathname === "/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher") {
+      if (request.method === "POST") {
+        writeJson(response, 200, { trustedPublisher: trustedPublisherFixture });
+        return;
+      }
+      if (request.method === "DELETE") {
+        writeJson(response, 200, { ok: true });
+        return;
+      }
+    }
 
     if (request.method === "GET" && url.pathname === "/api/v1/skills" && catalogItems) {
       writeJson(response, 200, { items: catalogItems, nextCursor: null });
@@ -249,6 +270,65 @@ async function writeConfigWithToken(root: string, registry: string) {
 }
 
 describe("built CLI artifact", () => {
+  it("dispatches public trusted-publisher set and delete commands from built output", async () => {
+    const { registry, requests } = await startLocalRegistry();
+    const workdir = await makeTmpDir("clawhub-artifact-trusted-publisher-");
+    const configPath = await writeConfigWithToken(workdir, registry);
+    const args = [
+      binPath,
+      "--workdir",
+      workdir,
+      "--registry",
+      registry,
+      "--no-input",
+      "package",
+      "trusted-publisher",
+    ];
+    const env = { CLAWHUB_CONFIG_PATH: configPath };
+
+    const setResult = await runNodeAsync(
+      [
+        ...args,
+        "set",
+        "@openclaw/demo-plugin",
+        "--repository",
+        "openclaw/demo-plugin",
+        "--workflow-filename",
+        "release.yml",
+        "--environment",
+        "release",
+        "--json",
+      ],
+      env,
+    );
+    expect(setResult.status, setResult.stderr).toBe(0);
+    expect(JSON.parse(setResult.stdout)).toEqual({ trustedPublisher: trustedPublisherFixture });
+
+    const deleteResult = await runNodeAsync(
+      [...args, "delete", "@openclaw/demo-plugin", "--json"],
+      env,
+    );
+    expect(deleteResult.status, deleteResult.stderr).toBe(0);
+    expect(JSON.parse(deleteResult.stdout)).toEqual({ ok: true });
+    expect(requests).toEqual([
+      {
+        method: "POST",
+        path: "/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher",
+        authorization: "Bearer test-token",
+        body: {
+          repository: "openclaw/demo-plugin",
+          workflowFilename: "release.yml",
+          environment: "release",
+        },
+      },
+      {
+        method: "DELETE",
+        path: "/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher",
+        authorization: "Bearer test-token",
+      },
+    ]);
+  });
+
   it("explores same-slug owners, null versions, and an older custom registry", async () => {
     const item = {
       slug: "shared-fixture",

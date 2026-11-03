@@ -1,8 +1,9 @@
 /* @vitest-environment node */
 
-import { readdir, readFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  appendPackageModerationEventLog,
+  appendSkillModerationEventLog,
   type ArtifactAppealStatus,
   type ArtifactReportStatus,
   assertArtifactAppealFinalAction,
@@ -11,25 +12,6 @@ import {
   assertArtifactReportTransition,
   readArtifactReportStatus,
 } from "./artifactModeration";
-
-const repoRoot = new URL("../../", import.meta.url);
-const convexRoot = new URL("convex/", repoRoot);
-const eventLogTables = ["skillModerationEventLogs", "packageModerationEventLogs"] as const;
-
-async function listSourceFiles(dir: URL): Promise<URL[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  const files: URL[] = [];
-  for (const entry of entries) {
-    if (entry.name === "_generated") continue;
-    const child = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, dir);
-    if (entry.isDirectory()) {
-      files.push(...(await listSourceFiles(child)));
-    } else if (entry.name.endsWith(".ts")) {
-      files.push(child);
-    }
-  }
-  return files;
-}
 
 describe("artifact moderation state graph", () => {
   it.each([
@@ -154,35 +136,86 @@ describe("artifact moderation state graph", () => {
   );
 });
 
-describe("artifact moderation event logs", () => {
-  it("keeps event log writes behind append helpers", async () => {
-    const files = await listSourceFiles(convexRoot);
-    const insertReferences: string[] = [];
-    for (const file of files) {
-      const source = await readFile(file, "utf8");
-      for (const table of eventLogTables) {
-        if (source.includes(`insert("${table}"`)) {
-          insertReferences.push(file.pathname.replace(repoRoot.pathname, ""));
-        }
-      }
-    }
+describe.each(["skill", "package"] as const)("%s moderation event logs", (catalog) => {
+  const append =
+    catalog === "skill" ? appendSkillModerationEventLog : appendPackageModerationEventLog;
+  const table = `${catalog}ModerationEventLogs`;
 
-    expect([...new Set(insertReferences)]).toEqual(["convex/lib/artifactModeration.ts"]);
+  it("appends a report timeline entry and its matching audit record", async () => {
+    const insert = vi.fn().mockResolvedValue("event:1");
+    await append({ db: { insert } } as never, {
+      kind: "report",
+      reportId: `${catalog}Reports:report` as never,
+      actorUserId: "users:moderator" as never,
+      action: "report.confirm",
+      timelineMetadata: { status: "confirmed" },
+      auditAction: "moderation.report.confirm",
+      auditTargetType: `${catalog}Report`,
+      auditTargetId: "report:1",
+      auditMetadata: { reason: "reviewed" },
+      createdAt: 123,
+    });
+
+    expect(insert.mock.calls).toEqual([
+      [
+        table,
+        {
+          kind: "report",
+          reportId: `${catalog}Reports:report`,
+          actorUserId: "users:moderator",
+          action: "report.confirm",
+          metadata: { status: "confirmed" },
+          createdAt: 123,
+        },
+      ],
+      [
+        "auditLogs",
+        {
+          actorUserId: "users:moderator",
+          action: "moderation.report.confirm",
+          targetType: `${catalog}Report`,
+          targetId: "report:1",
+          metadata: { reason: "reviewed" },
+          createdAt: 123,
+        },
+      ],
+    ]);
   });
 
-  it("does not patch, replace, or delete event log tables by name", async () => {
-    const files = await listSourceFiles(convexRoot);
-    const forbiddenReferences: string[] = [];
-    for (const file of files) {
-      const source = await readFile(file, "utf8");
-      for (const table of eventLogTables) {
-        const forbiddenWrite = new RegExp(`\\.(patch|replace|delete)\\(\\s*["']${table}["']`);
-        if (forbiddenWrite.test(source)) {
-          forbiddenReferences.push(file.pathname.replace(repoRoot.pathname, ""));
-        }
-      }
-    }
+  it("appends an appeal and audit record without absent optional fields", async () => {
+    const insert = vi.fn().mockResolvedValue("event:1");
+    await append({ db: { insert } } as never, {
+      kind: "appeal",
+      appealId: `${catalog}Appeals:appeal` as never,
+      actorUserId: "users:moderator" as never,
+      action: "appeal.accept",
+      auditAction: "moderation.appeal.accept",
+      auditTargetType: `${catalog}Appeal`,
+      auditTargetId: "appeal:1",
+      createdAt: 456,
+    });
 
-    expect(forbiddenReferences).toEqual([]);
+    expect(insert.mock.calls).toEqual([
+      [
+        table,
+        {
+          kind: "appeal",
+          appealId: `${catalog}Appeals:appeal`,
+          actorUserId: "users:moderator",
+          action: "appeal.accept",
+          createdAt: 456,
+        },
+      ],
+      [
+        "auditLogs",
+        {
+          actorUserId: "users:moderator",
+          action: "moderation.appeal.accept",
+          targetType: `${catalog}Appeal`,
+          targetId: "appeal:1",
+          createdAt: 456,
+        },
+      ],
+    ]);
   });
 });

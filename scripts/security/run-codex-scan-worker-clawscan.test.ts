@@ -1,24 +1,112 @@
 /* @vitest-environment node */
 import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
-import type { ClaimedJob } from "./run-codex-scan-worker";
+import completeReport from "./fixtures/skillspector-completed.json";
+import partialReport from "./fixtures/skillspector-usable-partial.json";
+import type { ClaimedJob, ClawScanCommandDiagnostic } from "./run-codex-scan-worker";
 import {
   aggregateSkillSpectorAnalyses,
   normalizeAigAnalysis,
   processJob,
+  resolveClawScanTarget,
   resolveBundledSkillSpectorScanInputs,
   runClawScan,
+  runBundledSkillSpector,
+  writeJobDiagnostic,
 } from "./run-codex-scan-worker";
+import {
+  calculateSecurityScanWorkerHealthSummary,
+  renderSecurityScanWorkerSummaryMarkdown,
+  type SecurityScanJobHealth,
+} from "./security-scan-worker-summary";
 
 const tempDirs: string[] = [];
 const execFileAsync = promisify(execFile);
 const sha256 = (content: string) => createHash("sha256").update(content).digest("hex");
+
+it("selects the claimed bundle manifest without narrowing the artifact", async () => {
+  const workspace = await tempDir();
+  await mkdir(join(workspace, "artifact/.claude-plugin"), { recursive: true });
+  await writeFile(join(workspace, "artifact/.claude-plugin/plugin.json"), '{"name":"bundle"}');
+  await writeFile(join(workspace, "artifact/openclaw.plugin.json"), "{}");
+  await writeFile(join(workspace, "artifact/SKILL.md"), "# Inert companion skill");
+  const job = {
+    job: { targetKind: "packageRelease" },
+    target: { package: { family: "bundle-plugin" } },
+  } as unknown as ClaimedJob;
+  await expect(resolveClawScanTarget(workspace, job)).resolves.toBe(
+    "./artifact/.claude-plugin/plugin.json",
+  );
+});
+
+it("does not let a nested package.json relocate a legacy bundle root", async () => {
+  const workspace = await tempDir();
+  await mkdir(join(workspace, "artifact/.claude-plugin"), { recursive: true });
+  await mkdir(join(workspace, "artifact/package"), { recursive: true });
+  await writeFile(join(workspace, "artifact/.claude-plugin/plugin.json"), '{"name":"bundle"}');
+  await writeFile(join(workspace, "artifact/package/package.json"), "{}");
+  const job = {
+    job: { targetKind: "packageRelease" },
+    target: { package: { family: "bundle-plugin" }, release: { artifactKind: "legacy-zip" } },
+  } as unknown as ClaimedJob;
+  await expect(resolveClawScanTarget(workspace, job)).resolves.toBe(
+    "./artifact/.claude-plugin/plugin.json",
+  );
+});
+
+it.each([
+  { family: "code-plugin", paths: [".claude-plugin/plugin.json"] },
+  { family: "unknown", paths: ["openclaw.plugin.json"] },
+  { family: "bundle-plugin", paths: ["SKILL.md"] },
+])("fails closed for mismatched or ambiguous family $family", async ({ family, paths }) => {
+  const workspace = await tempDir();
+  for (const path of paths) {
+    await mkdir(dirname(join(workspace, "artifact", path)), { recursive: true });
+    await writeFile(join(workspace, "artifact", path), "{}");
+  }
+  const job = {
+    job: { targetKind: "packageRelease" },
+    target: { package: { family } },
+  } as unknown as ClaimedJob;
+  await expect(resolveClawScanTarget(workspace, job)).rejects.toThrow();
+});
+
+it.each([
+  {
+    family: "code-plugin",
+    paths: ["openclaw.plugin.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json"],
+    selected: "openclaw.plugin.json",
+  },
+  { family: "bundle-plugin", paths: ["openclaw.plugin.json"], selected: "openclaw.plugin.json" },
+  {
+    family: "bundle-plugin",
+    paths: [
+      "openclaw.plugin.json",
+      ".claude-plugin/plugin.json",
+      ".codex-plugin/plugin.json",
+      ".cursor-plugin/plugin.json",
+    ],
+    selected: ".codex-plugin/plugin.json",
+  },
+])("preserves already-admitted legacy $family selection", async ({ family, paths, selected }) => {
+  const workspace = await tempDir();
+  for (const path of paths) {
+    await mkdir(dirname(join(workspace, "artifact", path)), { recursive: true });
+    await writeFile(join(workspace, "artifact", path), '{"name":"legacy","id":"legacy"}');
+  }
+  const job = {
+    job: { targetKind: "packageRelease" },
+    target: { package: { family } },
+  } as unknown as ClaimedJob;
+  await expect(resolveClawScanTarget(workspace, job)).resolves.toBe(`./artifact/${selected}`);
+});
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -97,6 +185,7 @@ function claimedJob(input: {
       ...input.target,
       ...(input.targetKind === "packageRelease"
         ? {
+            package: { family: "code-plugin", ...(input.target.package as object) },
             release: {
               ...(input.target.release ?? {}),
               vtAnalysis: input.vtAnalysis ?? null,
@@ -108,6 +197,7 @@ function claimedJob(input: {
 }
 
 function fileTarget(path: string, content: string): ClaimedJob["target"] {
+  const manifest = '{"id":"fixture-plugin"}\n';
   return {
     files: [
       {
@@ -116,6 +206,16 @@ function fileTarget(path: string, content: string): ClaimedJob["target"] {
         size: Buffer.byteLength(content),
         url: `data:text/plain,${encodeURIComponent(content)}`,
       },
+      ...(path === "package.json"
+        ? [
+            {
+              path: "openclaw.plugin.json",
+              sha256: sha256(manifest),
+              size: Buffer.byteLength(manifest),
+              url: `data:application/json,${encodeURIComponent(manifest)}`,
+            },
+          ]
+        : []),
     ],
   };
 }
@@ -330,6 +430,7 @@ PY`,
 
 function pluginPackageJob(jobId: string): ClaimedJob {
   const packageJson = '{"name":"fixture-plugin","version":"1.0.0"}\n';
+  const manifest = '{"id":"fixture-plugin"}\n';
   return claimedJob({
     jobId,
     source: "publish",
@@ -338,6 +439,12 @@ function pluginPackageJob(jobId: string): ClaimedJob {
       package: { name: "@openclaw/fixture-plugin" },
       release: { version: "1.0.0" },
       files: [
+        {
+          path: "package/openclaw.plugin.json",
+          sha256: sha256(manifest),
+          size: Buffer.byteLength(manifest),
+          url: `data:application/json,${encodeURIComponent(manifest)}`,
+        },
         {
           path: "package/package.json",
           sha256: sha256(packageJson),
@@ -435,6 +542,244 @@ async function configureEndorFakeCommands(input: {
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
+  it("keeps scan eligibility unknown when artifact preparation fails before any judge call", async () => {
+    const job = skillVersionJob("securityScanJobs:input-unproven");
+    job.target.files![0]!.sha256 = "0".repeat(64);
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry: false })) };
+    const onHealth = vi.fn();
+    await expect(
+      processJob(client, "worker-auth", job, undefined, onHealth),
+    ).resolves.toMatchObject({ completed: false });
+    expect(onHealth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exposure: {
+          scanExecution: "not_started",
+          eligibleScanAttempt: null,
+          judgeInvocations: 0,
+          judgeOperationalFailures: 0,
+          recoveredReceiptRetries: 0,
+        },
+      }),
+    );
+  });
+
+  it.each([
+    ["repeated failure", 2, 2, false],
+    ["single failure", 1, 1, false],
+    ["legacy metadata", null, null, true],
+    ["malformed attempts", null, null, true],
+    ["unknown attempt status", null, null, true],
+    ["invalid duration", null, null, true],
+    ["inconsistent result", null, null, true],
+    ["retry never started", null, null, false],
+    ["nonreceipt retry", null, null, true],
+    ["invalid verdict", 1, 0, false],
+    ["missing artifact", null, null, false],
+    ["progress artifact", null, null, false],
+  ] as const)(
+    "reports %s without inventing exposure or a verdict",
+    async (scenario, invocations, failures, accepted) => {
+      const workspace = await tempDir();
+      const artifact = JSON.parse(clawScanArtifactJson());
+      const receiptError = "Judge did not provide the required artifact inspection receipt.";
+      const first = {
+        status: "failed",
+        error: receiptError,
+        result: null,
+        durationMs: 100,
+        challenge: "a".repeat(64),
+        requiredFile: "artifact/SKILL.md",
+        requiredFileSha256: "c".repeat(64),
+      };
+      const last = {
+        ...first,
+        status: "completed",
+        error: "",
+        challenge: "b".repeat(64),
+        result: artifact.judge.result,
+      };
+      artifact.judge.error = "";
+      artifact.judge.attempts = [first, last];
+      if (
+        scenario === "repeated failure" ||
+        scenario === "single failure" ||
+        scenario === "retry never started"
+      ) {
+        artifact.judge.status = "failed";
+        artifact.judge.error = receiptError;
+        artifact.judge.result = null;
+        artifact.judge.attempts =
+          scenario === "single failure"
+            ? [first]
+            : [first, { ...last, status: "failed", error: receiptError, result: null }];
+      }
+      if (scenario === "legacy metadata") {
+        delete artifact.judge.attempts;
+        artifact.judge.invocations = 0;
+      }
+      if (scenario === "malformed attempts") artifact.judge.attempts = { count: 0 };
+      if (scenario === "unknown attempt status") last.status = "green";
+      if (scenario === "invalid duration") last.durationMs = -1;
+      if (scenario === "inconsistent result") last.result = { verdict: "suspicious" };
+      if (scenario === "retry never started")
+        artifact.judge.attempts[1] = {
+          status: "failed",
+          error: "Judge retry could not start: private-error-body",
+          durationMs: 0,
+          result: null,
+        };
+      if (scenario === "nonreceipt retry")
+        first.error = "Judge command produced invalid JSON: private-error-body";
+      if (scenario === "invalid verdict") {
+        artifact.judge.result = { verdict: "benign" };
+        artifact.judge.attempts = [{ ...last, result: artifact.judge.result }];
+      }
+      const command = join(workspace, "fake-clawscan");
+      const raw =
+        scenario === "progress artifact"
+          ? '{"schemaVersion":"clawscan-progress-v1","event":"phase_end","phase":"judge"}'
+          : JSON.stringify(artifact);
+      await writeFakeClawScanCommand(
+        command,
+        scenario === "missing artifact"
+          ? 'echo "[clawscan-progress] judge completed" >&2'
+          : `while [[ "$1" != --output ]]; do shift; done\ncat > "$2" <<'JSON'\n${raw}\nJSON\nexit ${scenario === "repeated failure" ? 1 : 0}`,
+      );
+      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", command);
+      const diagnostic: ClawScanCommandDiagnostic = {};
+      const verdictAccepted = await runClawScan(
+        skillVersionJob("securityScanJobs:exposure"),
+        workspace,
+        (next) => Object.assign(diagnostic, next),
+      ).then(
+        () => true,
+        () => false,
+      );
+      expect(verdictAccepted).toBe(accepted);
+      expect(diagnostic.exposure).toEqual({
+        scanExecution: "started",
+        eligibleScanAttempt:
+          scenario === "missing artifact" || scenario === "progress artifact" ? null : true,
+        judgeInvocations: invocations,
+        judgeOperationalFailures: failures,
+        recoveredReceiptRetries: invocations === null ? null : 0,
+      });
+      expect(JSON.stringify(diagnostic.exposure)).not.toContain("private-error-body");
+      const summary = calculateSecurityScanWorkerHealthSummary({
+        durationMs: 1000,
+        outcomes: [
+          {
+            completed: verdictAccepted,
+            durationMs: 100,
+            judgeStageFailed: !accepted,
+            scannerStageFailed: false,
+            timedOut: false,
+            exposure: diagnostic.exposure,
+          },
+        ],
+        pool: {
+          totalClaimed: 1,
+          totalClaimFailures: 0,
+          totalCompleted: Number(accepted),
+          totalFailed: Number(!accepted),
+          totalRetryableFailed: 0,
+        },
+        workerId: "fixture",
+      });
+      expect(summary.clawscan.exposure.unknownJudgeRuns).toBe(invocations === null ? 1 : 0);
+      expect(summary.clawscan.exposure.judgeOperationalFailures).toBe(failures ?? 0);
+    },
+  );
+
+  it("retains a failed receipt invocation after a successful second receipt through worker summaries", async () => {
+    const workspace = await tempDir();
+    const diagnostics = await tempDir();
+    const artifact = JSON.parse(clawScanArtifactJson({ verdict: "malicious" }));
+    artifact.judge.result.artifact_inspection.challenge = "b".repeat(64);
+    artifact.judge.result.artifact_inspection.required_file_sha256 = "c".repeat(64);
+    const receiptAttempt = (status: string, challenge: string, error: string, result: unknown) => ({
+      status,
+      challenge: challenge.repeat(64),
+      requiredFile: "artifact/SKILL.md",
+      requiredFileSha256: "c".repeat(64),
+      durationMs: 100,
+      error,
+      result,
+    });
+    artifact.judge.error = "";
+    artifact.judge.attempts = [
+      receiptAttempt(
+        "failed",
+        "a",
+        "Judge did not provide the required artifact inspection receipt.",
+        { private: "unpublished-body" },
+      ),
+      receiptAttempt("completed", "b", "", artifact.judge.result),
+    ];
+    const command = join(workspace, "fake-clawscan");
+    await writeFakeClawScanCommand(
+      command,
+      `while [[ "$1" != --output ]]; do shift; done\ncat > "$2" <<'JSON'\n${JSON.stringify(artifact)}\nJSON`,
+    );
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", command);
+    const outcomes: SecurityScanJobHealth[] = [];
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+    await expect(
+      processJob(
+        client,
+        "worker-auth",
+        skillVersionJob("securityScanJobs:receipt-retry"),
+        diagnostics,
+        (health) => outcomes.push(health),
+      ),
+    ).resolves.toMatchObject({ completed: true });
+    const expectedExposure = {
+      eligibleScanAttempt: true,
+      scanExecution: "started",
+      judgeInvocations: 2,
+      judgeOperationalFailures: 1,
+      recoveredReceiptRetries: 1,
+    };
+    expect(outcomes[0]).toMatchObject({
+      exposure: expectedExposure,
+      verdict: "malicious",
+      judgeStageFailed: false,
+    });
+    const diagnostic = JSON.parse(
+      await readFile(
+        join(diagnostics, "securityScanJobs_receipt-retry", "diagnostic.json"),
+        "utf8",
+      ),
+    );
+    expect(diagnostic.clawscanResult.exposure).toEqual(expectedExposure);
+    const summary = calculateSecurityScanWorkerHealthSummary({
+      durationMs: 1000,
+      outcomes,
+      pool: {
+        totalClaimed: 1,
+        totalClaimFailures: 0,
+        totalCompleted: 1,
+        totalFailed: 0,
+        totalRetryableFailed: 0,
+      },
+      workerId: "fixture",
+    });
+    expect(summary.clawscan).toMatchObject({
+      completed: 1,
+      judgeStageFailures: 0,
+      exposure: {
+        judgeInvocations: 2,
+        judgeOperationalFailures: 1,
+        recoveredReceiptRetries: 1,
+        unknownJudgeRuns: 0,
+      },
+    });
+    expect(renderSecurityScanWorkerSummaryMarkdown(summary)).toContain(
+      "| Judge operationally failed invocations (known) | 1 |",
+    );
+    expect(JSON.stringify(summary)).not.toContain("unpublished-body");
+    expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("exposure");
+  });
   it("drops non-finite and invalid A.I.G SARIF line numbers", () => {
     const analysis = normalizeAigAnalysis(
       '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[{"ruleId":"T04","message":{"text":"Finding"},"locations":[{"physicalLocation":{"region":{"startLine":1e400,"endLine":-1}}}]}]}]}',
@@ -646,22 +991,121 @@ JSON`,
     });
   });
 
-  it("never passes a package root to SkillSpector", async () => {
-    const workspace = await tempDir();
-    const packageRoot = join(workspace, "artifact", "package");
-    await mkdir(join(packageRoot, "skills", "alpha"), { recursive: true });
-    await mkdir(join(packageRoot, "skills", "beta"), { recursive: true });
-    await writeFile(join(packageRoot, "package.json"), "{}\n");
-    await writeFile(join(packageRoot, "openclaw.plugin.json"), '{"id":"demo-plugin"}\n');
-    await writeFile(join(packageRoot, "SKILL.md"), "# Bundled skill\n");
-    await writeFile(join(packageRoot, "skills", "alpha", "SKILL.md"), "# alpha\n");
-    await writeFile(join(packageRoot, "skills", "beta", "SKILL.md"), "# beta\n");
+  it.each([0, 1])(
+    "retains original partial bundled reports for adjudication on exit %s without findings",
+    async (exitCode) => {
+      const workspace = await tempDir();
+      const partial = { ...structuredClone(partialReport), issues: [] };
+      const complete = structuredClone(completeReport);
+      const command = join(workspace, "skillspector");
+      await writeFakeClawScanCommand(
+        command,
+        `target="$2"
+while [[ "$1" != --output ]]; do shift; done
+case "$target" in
+  *alpha) printf '%s' '${JSON.stringify(partial)}' > "$2"; exit ${exitCode} ;;
+  *) printf '%s' '${JSON.stringify(complete)}' > "$2" ;;
+esac`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH ?? ""}`);
+      const onDiagnostic = vi.fn();
+      const result = await runBundledSkillSpector(
+        workspace,
+        [
+          { rootPath: "skills/alpha", scanPath: "artifact/skills/alpha" },
+          { rootPath: "skills/beta", scanPath: "artifact/skills/beta" },
+        ],
+        onDiagnostic,
+      );
+      expect(result).toMatchObject({
+        status: "suspicious",
+        analysis_completeness: { status: "partial", is_complete: false },
+        bundled_reports: [
+          { rootPath: "skills/alpha", report: partial },
+          { rootPath: "skills/beta", report: complete },
+        ],
+      });
+      expect(onDiagnostic).not.toHaveBeenCalled();
+    },
+  );
 
-    const fakeSkillSpector = join(workspace, "skillspector");
-    const skillSpectorTargets = join(workspace, "skillspector-targets.log");
-    await writeFakeClawScanCommand(
-      fakeSkillSpector,
-      `target="$2"
+  it.each(["no-partial", "partial"])(
+    "requires explicit complete-child controls only in a partial bundle (%s)",
+    async (mode) => {
+      const workspace = await tempDir();
+      const command = join(workspace, "skillspector");
+      const alpha = mode === "partial" ? partialReport : { status: "clean", issues: [] };
+      await writeFakeClawScanCommand(
+        command,
+        `target="$2"
+while [[ "$1" != --output ]]; do shift; done
+case "$target" in
+  *alpha) printf '%s' '${JSON.stringify(alpha)}' > "$2" ;;
+  *) printf '%s' '{"status":"clean","issues":[]}' > "$2" ;;
+esac`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH ?? ""}`);
+      const result = runBundledSkillSpector(
+        workspace,
+        [
+          { rootPath: "skills/alpha", scanPath: "artifact/skills/alpha" },
+          { rootPath: "skills/beta", scanPath: "artifact/skills/beta" },
+        ],
+        vi.fn(),
+      );
+      if (mode === "partial") await expect(result).rejects.toThrow();
+      else await expect(result).resolves.toMatchObject({ status: "clean" });
+    },
+  );
+
+  it.each(["crashed", "malformed", "duplicate-keys", "unsuccessful"])(
+    "rejects %s bundled evidence before the judge",
+    async (mode) => {
+      const workspace = await tempDir();
+      let raw = JSON.stringify(partialReport);
+      if (mode === "malformed") raw = "[]";
+      if (mode === "duplicate-keys")
+        raw = raw.replace(
+          '"execution_successful":true',
+          '"execution_successful":false,"execution_successful":true',
+        );
+      if (mode === "unsuccessful")
+        raw = JSON.stringify({ ...partialReport, execution_successful: false });
+      await writeFakeClawScanCommand(
+        join(workspace, "skillspector"),
+        `while [[ "$1" != --output ]]; do shift; done
+printf '%s' '${raw}' > "$2"
+exit ${mode === "crashed" ? 2 : 0}`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH ?? ""}`);
+      await expect(
+        runBundledSkillSpector(
+          workspace,
+          [{ rootPath: "skills/alpha", scanPath: "artifact/skills/alpha" }],
+          vi.fn(),
+        ),
+      ).rejects.toThrow();
+    },
+  );
+
+  it.each([0, 1])(
+    "never passes a package root to SkillSpector (findings exit %s)",
+    async (exitCode) => {
+      const workspace = await tempDir();
+      const packageRoot = join(workspace, "artifact", "package");
+      await mkdir(join(packageRoot, "skills", "alpha"), { recursive: true });
+      await mkdir(join(packageRoot, "skills", "beta"), { recursive: true });
+      await writeFile(join(packageRoot, "package.json"), "{}\n");
+      await writeFile(join(packageRoot, "openclaw.plugin.json"), '{"id":"demo-plugin"}\n');
+      await writeFile(join(packageRoot, "SKILL.md"), "# Bundled skill\n");
+      await writeFile(join(packageRoot, "skills", "alpha", "SKILL.md"), "# alpha\n");
+      await writeFile(join(packageRoot, "skills", "beta", "SKILL.md"), "# beta\n");
+
+      const fakeSkillSpector = join(workspace, "skillspector");
+      const skillSpectorTargets = join(workspace, "skillspector-targets.log");
+      await writeFakeClawScanCommand(
+        fakeSkillSpector,
+        `target="$2"
 test "\${SKILLSPECTOR_MODEL-}" = "gpt-6-luna"
 test "\${SKILLSPECTOR_REASONING_EFFORT-}" = "high"
 printf '%s\\n' "$target" >> ${JSON.stringify(skillSpectorTargets)}
@@ -679,14 +1123,15 @@ while [[ $# -gt 0 ]]; do
 done
 cat > "$out" <<JSON
 {"status":"suspicious","risk_score":25,"risk_severity":"MEDIUM","risk_recommendation":"REVIEW","issue_count":1,"issues":[{"id":"same-name","severity":"MEDIUM","file":"SKILL.md","explanation":"review"}],"scanner_version":"test","summary":"$(basename "$target") suspicious"}
-JSON`,
-    );
+JSON
+exit ${exitCode}`,
+      );
 
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    const copiedFixture = join(workspace, "skillspector-fixture.json");
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `test "$1" = "./artifact/package/openclaw.plugin.json"
+      const fakeClawScan = join(workspace, "fake-clawscan");
+      const copiedFixture = join(workspace, "skillspector-fixture.json");
+      await writeFakeClawScanCommand(
+        fakeClawScan,
+        `test "$1" = "./artifact/package/openclaw.plugin.json"
 out=""
 fixture=""
 while [[ $# -gt 0 ]]; do
@@ -708,51 +1153,56 @@ cp "$fixture" ${JSON.stringify(copiedFixture)}
 cat > "$out" <<'JSON'
 ${clawScanArtifactJson()}
 JSON`,
-    );
+      );
 
-    const previousClawScan = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-    const previousPath = process.env.PATH;
-    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
-    process.env.PATH = `${workspace}:${previousPath ?? ""}`;
-    vi.stubEnv("SKILLSPECTOR_MODEL", "gpt-6-luna");
-    vi.stubEnv("SKILLSPECTOR_REASONING_EFFORT", "high");
-    try {
-      const job = claimedJob({
-        jobId: "securityScanJobs:bundled-roots-only",
-        source: "publish",
-        targetKind: "packageRelease",
-        target: {
-          release: {
-            pluginManifestSummary: {
-              bundledSkills: [{ rootPath: "skills/beta" }, { rootPath: "skills/alpha" }],
+      const previousClawScan = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      const previousPath = process.env.PATH;
+      process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+      process.env.PATH = `${workspace}:${previousPath ?? ""}`;
+      vi.stubEnv("SKILLSPECTOR_MODEL", "gpt-6-luna");
+      vi.stubEnv("SKILLSPECTOR_REASONING_EFFORT", "high");
+      try {
+        const job = claimedJob({
+          jobId: "securityScanJobs:bundled-roots-only",
+          source: "publish",
+          targetKind: "packageRelease",
+          target: {
+            release: {
+              pluginManifestSummary: {
+                bundledSkills: [{ rootPath: "skills/beta" }, { rootPath: "skills/alpha" }],
+              },
             },
           },
-        },
-      });
+        });
 
-      await runClawScan(job, workspace, () => {});
+        const onDiagnostic = vi.fn<(next: Partial<ClawScanCommandDiagnostic>) => void>();
+        await runClawScan(job, workspace, onDiagnostic);
+        expect(onDiagnostic.mock.calls.some(([next]) => next.bundledSkillSpector?.failed)).toBe(
+          false,
+        );
 
-      expect((await readFile(skillSpectorTargets, "utf8")).trim().split("\n")).toEqual([
-        "artifact/package/skills/alpha",
-        "artifact/package/skills/beta",
-      ]);
-      expect(JSON.parse(await readFile(copiedFixture, "utf8"))).toMatchObject({
-        applicable: true,
-        status: "suspicious",
-        issue_count: 2,
-        filtered_findings: [{ file: "skills/alpha/SKILL.md" }, { file: "skills/beta/SKILL.md" }],
-        summary: "Scanned 2 bundled skills. alpha suspicious beta suspicious",
-      });
-    } finally {
-      if (previousClawScan === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousClawScan;
-      if (previousPath === undefined) {
-        delete process.env.PATH;
-      } else {
-        process.env.PATH = previousPath;
+        expect((await readFile(skillSpectorTargets, "utf8")).trim().split("\n")).toEqual([
+          "artifact/package/skills/alpha",
+          "artifact/package/skills/beta",
+        ]);
+        expect(JSON.parse(await readFile(copiedFixture, "utf8"))).toMatchObject({
+          applicable: true,
+          status: "suspicious",
+          issue_count: 2,
+          filtered_findings: [{ file: "skills/alpha/SKILL.md" }, { file: "skills/beta/SKILL.md" }],
+          summary: "Scanned 2 bundled skills. alpha suspicious beta suspicious",
+        });
+      } finally {
+        if (previousClawScan === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+        else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousClawScan;
+        if (previousPath === undefined) {
+          delete process.env.PATH;
+        } else {
+          process.env.PATH = previousPath;
+        }
       }
-    }
-  });
+    },
+  );
 
   it("uses ClawScan as the only skillVersion scan implementation", async () => {
     const workspace = await tempDir();
@@ -947,7 +1397,7 @@ JSON`,
       name: "package-release publish",
       source: "publish",
       targetKind: "packageRelease" as const,
-      expectedTarget: "./artifact/package",
+      expectedTarget: "./artifact/package/openclaw.plugin.json",
       expectedFile: "./artifact/package/package.json",
       target: clawPackTarget,
     },
@@ -971,7 +1421,7 @@ JSON`,
       name: "package-release backfill",
       source: "backfill",
       targetKind: "packageRelease" as const,
-      expectedTarget: "./artifact",
+      expectedTarget: "./artifact/openclaw.plugin.json",
       expectedFile: "./artifact/package.json",
       target: async () => fileTarget("package.json", '{"name":"backfill-plugin"}\n'),
     },
@@ -994,6 +1444,7 @@ JSON`,
       await writeFakeClawScanCommand(
         fakeClawScan,
         `target="$1"
+if [[ -f "$target" ]]; then target="$(dirname "$target")"; fi
 printf '%s\n' "$@" > ${JSON.stringify(argsLog)}
 find "$target" -type f -print | sort > ${JSON.stringify(filesLog)}
 out=""
@@ -1147,7 +1598,7 @@ JSON`,
   it.each([
     { status: "completed", exitCode: 0, output: endorArtifactJson() },
     { status: "failed", exitCode: 17, output: "{}" },
-  ])("saves $status Endor analysis without passing it to the judge by default", async (scan) => {
+  ])("saves $status official-code Endor analysis without passing it to the judge", async (scan) => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const cleanupMarker = join(workspace, "endor-cleaned");
@@ -1179,9 +1630,10 @@ JSON`,
       }),
       workspace,
     });
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "");
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", " @openclaw/other, @openclaw/fixture-plugin ");
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "0");
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", " @openclaw/* ");
     const job = pluginPackageJob(`securityScanJobs:endor-report-only-${scan.status}`);
+    job.target.trustedOpenClawPlugin = true;
     job.target.release = {
       ...job.target.release,
       endorAnalysis: { status: "completed", reachableFunctionCount: 99 },
@@ -1218,7 +1670,26 @@ JSON`,
     ]);
   });
 
-  it("does not launch Endor for a plugin outside the configured rollout cohort", async () => {
+  it.each([
+    {
+      excluded: "an unlisted name",
+      packages: " @openclaw/discord, @openclaw/codex ",
+      trustedOpenClawPlugin: true,
+      family: "code-plugin",
+    },
+    {
+      excluded: "an untrusted publisher",
+      packages: " @openclaw/* ",
+      trustedOpenClawPlugin: false,
+      family: "code-plugin",
+    },
+    {
+      excluded: "a trusted bundle",
+      packages: " @openclaw/* ",
+      trustedOpenClawPlugin: true,
+      family: "bundle-plugin",
+    },
+  ])("does not launch Endor for $excluded outside the rollout cohort", async (cohort) => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const dockerLog = join(workspace, "unexpected-docker-call");
@@ -1236,16 +1707,16 @@ JSON`,
       dockerBody: `touch ${JSON.stringify(dockerLog)}; exit 99`,
       workspace,
     });
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", " @openclaw/discord, @openclaw/codex ");
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", cohort.packages);
+    const job = pluginPackageJob("securityScanJobs:outside-cohort");
+    job.target.trustedOpenClawPlugin = cohort.trustedOpenClawPlugin;
+    job.target.package = { name: "@openclaw/fixture-plugin", family: cohort.family };
     const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
-    await expect(
-      processJob(
-        client,
-        "worker-auth",
-        pluginPackageJob("securityScanJobs:outside-cohort"),
-        undefined,
-      ),
-    ).resolves.toEqual({ completed: true, hardFailed: false, retryableFailed: false });
+    await expect(processJob(client, "worker-auth", job, undefined)).resolves.toEqual({
+      completed: true,
+      hardFailed: false,
+      retryableFailed: false,
+    });
     expect(client.action).toHaveBeenCalledTimes(1);
     expect(client.action.mock.calls[0]?.[1]).toMatchObject({
       llmAnalysis: { status: "clean", verdict: "benign" },
@@ -1463,6 +1934,7 @@ touch ${JSON.stringify(skillReady)}`,
 
   it("waits for Endor cleanup when bundled SkillSpector preparation fails early", async () => {
     const workspace = await tempDir();
+    const diagnosticsRoot = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const callLog = join(workspace, "clawscan-calls.log");
     const skillFailed = join(workspace, "skill-failed");
@@ -1492,12 +1964,14 @@ exit 7`,
     });
 
     const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry: true })) };
+    const onHealth = vi.fn();
     let settled = false;
     const jobPromise = processJob(
       client,
       "worker-auth",
       pluginPackageJobWithBundledSkill("securityScanJobs:early-primary-failure"),
-      undefined,
+      diagnosticsRoot,
+      onHealth,
     ).finally(() => {
       settled = true;
     });
@@ -1524,7 +1998,235 @@ exit 7`,
     expect(client.action.mock.calls[0]?.[1]).toMatchObject({
       error: expect.stringContaining("skillspector exited 7"),
     });
+    expect(onHealth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        completed: false,
+        scannerStageFailed: true,
+        failureStage: "scanner",
+        timedOut: false,
+        exposure: expect.objectContaining({ scanExecution: "not_started", judgeInvocations: 0 }),
+      }),
+    );
+    const diagnostic = JSON.parse(
+      await readFile(
+        join(diagnosticsRoot, "securityScanJobs_early-primary-failure", "diagnostic.json"),
+        "utf8",
+      ),
+    );
+    expect(diagnostic.clawscanResult.bundledSkillSpector).toMatchObject({
+      failed: true,
+      timedOut: false,
+      exitCode: 7,
+      termination: { exitCode: 7, timedOut: false, elapsedMs: expect.any(Number) },
+    });
   });
+
+  it.each(["child failure", "shared deadline"])(
+    "retains bounded context after an earlier bundled root succeeds: %s",
+    async (failure) => {
+      const workspace = await tempDir();
+      const diagnosticsRoot = await tempDir();
+      const fakeClawScan = join(workspace, "fake-clawscan");
+      const callLog = join(workspace, "clawscan-called");
+      const firstRootCompleted = join(workspace, "first-root-completed");
+      if (failure === "shared deadline") {
+        const now = Date.now.bind(Date);
+        vi.spyOn(Date, "now").mockImplementation(
+          () => now() + (existsSync(firstRootCompleted) ? 30 * 60 * 1000 : 0),
+        );
+      }
+      const contentCanary = "synthetic-private-terminal-content";
+      const credentialCanary = "synthetic-private-terminal-token";
+      const failedReport = {
+        execution_successful: false,
+        issues: [{ finding: contentCanary }],
+        metadata: { error: credentialCanary },
+        analysis_completeness: {
+          status: "failed",
+          ledger_exceptions: [
+            { reason_code: "llm_connection_retries_exhausted", path: contentCanary },
+            { reason_code: credentialCanary },
+          ],
+          analyzer_statuses: [
+            {
+              analyzer_id: "semantic_security_discovery",
+              status: "failed",
+              planned_work: 1,
+              completed: 0,
+              partial: 0,
+              skipped: 0,
+              failed: 1,
+              unaccounted: 0,
+            },
+            { analyzer_id: contentCanary, status: credentialCanary },
+          ],
+        },
+      };
+      await writeFakeClawScanCommand(fakeClawScan, `touch ${JSON.stringify(callLog)}\nexit 99`);
+      await writeFakeClawScanCommand(
+        join(workspace, "skillspector"),
+        `root="$2"
+while [[ "$1" != --output ]]; do shift; done
+if [[ "$root" == */example ]]; then
+  printf '%s' '{"risk_assessment":{"score":0},"issues":[]}' > "$2"
+  touch ${JSON.stringify(firstRootCompleted)}
+  exit 0
+fi
+cat > "$2" <<'JSON'
+${JSON.stringify(failedReport)}
+JSON
+echo '${credentialCanary}' >&2
+echo '${contentCanary}'
+exit 2`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH}`);
+      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
+      vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "0");
+      const job = pluginPackageJobWithBundledSkill("securityScanJobs:bounded-bundled-context");
+      const secondSkill = "# Second bundled skill\n";
+      job.target.files!.push({
+        path: "package/skills/second/SKILL.md",
+        sha256: sha256(secondSkill),
+        size: Buffer.byteLength(secondSkill),
+        url: `data:text/plain,${encodeURIComponent(secondSkill)}`,
+      });
+      job.target.release!.pluginManifestSummary = {
+        bundledSkills: [
+          { rootPath: "skills/second" },
+          { rootPath: "skills/example" },
+          { rootPath: "skills/example" },
+        ],
+      };
+      const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry: false })) };
+      await expect(processJob(client, "worker-auth", job, diagnosticsRoot)).resolves.toEqual({
+        completed: false,
+        hardFailed: true,
+        retryableFailed: false,
+      });
+      const diagnosticText = await readFile(
+        join(diagnosticsRoot, "securityScanJobs_bounded-bundled-context", "diagnostic.json"),
+        "utf8",
+      );
+      const diagnostic = JSON.parse(diagnosticText);
+      expect(diagnostic.clawscanResult.bundledSkillSpector).toMatchObject({
+        failed: true,
+        timedOut: failure === "shared deadline",
+        exitCode: failure === "shared deadline" ? null : 2,
+      });
+      expect(diagnostic.clawscanResult.bundledSkillSpector.context).toEqual(
+        failure === "shared deadline"
+          ? {
+              rootIndex: 1,
+              rootCount: 2,
+              completedRoots: 1,
+              childBudgetMs: 0,
+              remainingStageBudgetMs: 0,
+            }
+          : {
+              rootIndex: 1,
+              rootCount: 2,
+              completedRoots: 1,
+              childBudgetMs: expect.any(Number),
+              remainingStageBudgetMs: expect.any(Number),
+              terminal: {
+                presence: "present",
+                executionSuccessful: false,
+                completenessStatus: "failed",
+                reasonCounts: { llm_connection_retries_exhausted: 1 },
+                unknownReasons: 1,
+                unknownAnalyzers: 1,
+                incompleteAnalyzers: [
+                  {
+                    id: "semantic_security_discovery",
+                    status: "failed",
+                    planned_work: 1,
+                    completed: 0,
+                    partial: 0,
+                    skipped: 0,
+                    failed: 1,
+                    unaccounted: 0,
+                  },
+                ],
+              },
+            },
+      );
+      await expect(readFile(callLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      for (const canary of [contentCanary, credentialCanary, workspace]) {
+        expect(diagnosticText).not.toContain(canary);
+        expect(JSON.stringify(client.action.mock.calls)).not.toContain(canary);
+      }
+    },
+  );
+
+  it.each([true, false])(
+    "classifies bundled SkillSpector timeouts without changing retry=%s",
+    async (retry) => {
+      const workspace = await tempDir();
+      const diagnosticsRoot = await tempDir();
+      const callLog = join(workspace, "clawscan-called");
+      const started = join(workspace, "skillspector-started");
+      const timeoutMs = 2_000;
+      const fakeClawScan = join(workspace, "fake-clawscan");
+      const contentCanary = "synthetic-private-scan-content";
+      const credentialCanary = "synthetic-private-scanner-token";
+      await writeFakeClawScanCommand(fakeClawScan, `touch ${JSON.stringify(callLog)}\nexit 99`);
+      await writeFakeClawScanCommand(
+        join(workspace, "skillspector"),
+        `echo ${contentCanary}
+echo ${credentialCanary} >&2
+: > ${JSON.stringify(started)}
+exec sleep 10`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH}`);
+      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
+      // Allow the instrumented child to launch before testing its ten-second hang.
+      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", String(timeoutMs));
+      vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "0");
+      const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry })) };
+      const onHealth = vi.fn();
+      const result = await processJob(
+        client,
+        "worker-auth",
+        pluginPackageJobWithBundledSkill("securityScanJobs:bundled-timeout"),
+        diagnosticsRoot,
+        onHealth,
+      );
+      expect(result).toEqual({ completed: false, hardFailed: !retry, retryableFailed: retry });
+      expect(await readFile(started, "utf8")).toBe("");
+      await expect(readFile(callLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      expect(onHealth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scannerStageFailed: true,
+          failureStage: "scanner",
+          timedOut: true,
+          exposure: expect.objectContaining({ scanExecution: "not_started", judgeInvocations: 0 }),
+        }),
+      );
+      const diagnosticText = await readFile(
+        join(diagnosticsRoot, "securityScanJobs_bundled-timeout", "diagnostic.json"),
+        "utf8",
+      );
+      const diagnostic = JSON.parse(diagnosticText);
+      expect(diagnostic.clawscanResult.bundledSkillSpector).toMatchObject({
+        failed: true,
+        timedOut: true,
+        termination: { timedOut: true, elapsedMs: expect.any(Number) },
+        context: {
+          rootIndex: 0,
+          rootCount: 1,
+          completedRoots: 0,
+          childBudgetMs: timeoutMs,
+          remainingStageBudgetMs: expect.any(Number),
+          terminal: { presence: "invalid", executionSuccessful: null },
+        },
+      });
+      expect(client.action).toHaveBeenCalledTimes(1);
+      for (const canary of [contentCanary, credentialCanary, workspace]) {
+        expect(diagnosticText).not.toContain(canary);
+        expect(JSON.stringify(client.action.mock.calls)).not.toContain(canary);
+      }
+    },
+  );
 
   it("retries a primary ClawScan failure while retaining bounded diagnostics for both failures", async () => {
     const workspace = await tempDir();
@@ -2140,6 +2842,83 @@ echo "this should never complete"`,
     }
   });
 
+  it("retains opt-in phase evidence through the outer timeout diagnostic path", async () => {
+    const workspace = await tempDir();
+    const diagnosticsRoot = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const event =
+      '[clawscan-progress] {"schemaVersion":"clawscan-progress-v1","event":"command_start","phase":"scanner:skillspector","elapsedMs":1,"pid":42}';
+    const childEvent =
+      '[clawscan-progress] {"schemaVersion":"clawscan-progress-v1","event":"child_event","phase":"judge","elapsedMs":2,"pid":42,"sequence":1,"childEvent":"item.started","childItem":"command_execution","childState":"in_progress","command":"PRIVATE-HOSTILE-FIELD","prompt":"PRIVATE-HOSTILE-FIELD","stderr":"PRIVATE-HOSTILE-FIELD"}';
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `if [ "\${CLAWSCAN_PROGRESS-}" = "1" ]; then
+  printf '%s\\n' '${event}' >&2
+fi
+if [ "\${CLAWSCAN_CHILD_PROGRESS-}" = "1" ]; then
+  printf '%s\\n' '${childEvent}' >&2
+fi
+exec sleep 10`,
+    );
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "1000");
+    const diagnostic: ClawScanCommandDiagnostic = {};
+    const job = skillVersionJob("securityScanJobs:phase-timeout");
+    const startedAt = Date.now();
+    const pending = runClawScan(job, workspace, (update) => Object.assign(diagnostic, update));
+    await expect
+      .poll(() => diagnostic.progress?.some((record) => record.childItem === "command_execution"))
+      .toBe(true);
+    await expect(pending).rejects.toThrow("timed out");
+    expect(diagnostic.timedOut).toBe(true);
+    expect(diagnostic.rawArtifact).toBeUndefined();
+    expect(diagnostic.stderr).toContain(event);
+    expect(diagnostic.stderr).not.toContain("PRIVATE-HOSTILE-FIELD");
+    expect(diagnostic.exposure?.judgeInvocations).toBeNull();
+    expect(diagnostic.termination?.timedOut).toBe(true);
+    await writeJobDiagnostic({
+      clawscan: diagnostic,
+      completedAt: Date.now(),
+      diagnosticsRoot,
+      job,
+      startedAt,
+      status: "failed",
+    });
+    const retained = await readFile(
+      join(diagnosticsRoot, "securityScanJobs_phase-timeout", "clawscan.stderr.redacted.log"),
+      "utf8",
+    );
+    expect(retained).toContain(event);
+    const safeProgress = await readFile(
+      join(diagnosticsRoot, "securityScanJobs_phase-timeout", "clawscan.progress.jsonl"),
+      "utf8",
+    );
+    expect(safeProgress).toContain('"childState":"in_progress"');
+    expect(safeProgress).not.toContain("PRIVATE-HOSTILE-FIELD");
+    expect(JSON.stringify(diagnostic)).not.toContain("PRIVATE-HOSTILE-FIELD");
+  });
+
+  it("never accepts a progress checkpoint as a completed scan artifact", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    printf '%s\\n' '{"schemaVersion":"clawscan-progress-v1","event":"phase_end","phase":"judge","elapsedMs":3}' > "$2"
+    break
+  fi
+  shift
+done`,
+    );
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
+    await expect(
+      runClawScan(skillVersionJob("securityScanJobs:checkpoint-only"), workspace, () => {}),
+    ).rejects.toThrow();
+  });
+
   it("terminates the full ClawScan process tree on timeout", async () => {
     const workspace = await tempDir();
     await mkdir(join(workspace, "artifact"), { recursive: true });
@@ -2160,8 +2939,9 @@ wait "$child_pid"`,
     const previousTimeout = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS = "500";
-    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
     let descendantPid: number | undefined;
+    let scanSettled = false;
 
     try {
       const scanPromise = runClawScan(
@@ -2169,10 +2949,15 @@ wait "$child_pid"`,
         workspace,
         () => {},
       );
-      void scanPromise.catch(() => undefined);
+      void scanPromise
+        .finally(() => {
+          scanSettled = true;
+        })
+        .catch(() => undefined);
       descendantPid = await readStartedPid(descendantPidPath);
       await vi.advanceTimersByTimeAsync(10_500);
-      await expect(scanPromise).rejects.toThrow("timed out");
+      await vi.waitFor(() => expect(scanSettled).toBe(true), { timeout: 60_000, interval: 25 });
+      await expect(scanPromise).rejects.toMatchObject({ timedOut: true });
       vi.useRealTimers();
 
       let descendantRunning = true;

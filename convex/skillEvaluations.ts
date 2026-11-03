@@ -177,13 +177,17 @@ export const getCurrentForSkill = query({
       }
       const run = await ctx.db
         .query("skillEvaluationRuns")
-        .withIndex("by_skill_content_hash_config_key", (q) =>
+        .withIndex("by_skill_content_status_completed_at", (q) =>
           q
             .eq("skillId", skill._id)
             .eq("contentHash", skill.githubCurrentContentHash as string)
-            .eq("configKey", NVIDIA_SKILL_EVALUATION_CONFIG_KEY),
+            .eq("status", "succeeded")
+            .gt("completedAt", 0),
         )
-        .unique();
+        // A model recipe change must not hide a completed report for unchanged content.
+        .order("desc")
+        .filter((q) => q.neq(q.field("metrics"), undefined))
+        .first();
       if (run?.status !== "succeeded" || !run.metrics || !run.completedAt) return null;
       return {
         source: {

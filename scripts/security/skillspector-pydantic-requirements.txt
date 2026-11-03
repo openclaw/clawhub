@@ -1,0 +1,15 @@
+# SkillSpector compatibility closure for deferred-model serialization (Pydantic #13922).
+# Retain every other package from the upstream uv.lock.
+# Binary wheels: Ubuntu CPython 3.12 x86_64, Linux aarch64 and macOS arm64 controls.
+--only-binary=:all:
+
+pydantic==2.14.2 \
+  --hash=sha256:7efbf7507b937931cd32a5755acb00ea1cf5ccb1d4e8067a5850d5069e382118
+pydantic-core==2.50.2 \
+  --hash=sha256:596921489390a002d6a5e303384a0f1f98384f8bb550fbf38a1aafa6093da0f9 \
+  --hash=sha256:43a8fd56f3c681f3cda2d5c842ad28e88241df742dfcbe8fd1dd437a3056e1f6 \
+  --hash=sha256:9667637665acba166a7dbbc786f14c50512d3a01f7199e0e1a13b929e92d7c7a
+typing-extensions==4.16.0 \
+  --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+typing-inspection==0.4.4 \
+  --hash=sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147
