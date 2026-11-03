@@ -121,9 +121,9 @@ jobs:
             recovery-approved)
               [[ "$GITHUB_ACTOR" == Patrick-Erichsen && "$GITHUB_TRIGGERING_ACTOR" == Patrick-Erichsen ]] || exit 1
               [[ "$GITHUB_RUN_ATTEMPT" == 1 && "$SOURCE_CHOICE" == reviewed && "$RUNNER_CHOICE" == ubuntu-22.04 ]] || exit 1
-              [[ "$FIXTURE_CHOICE" =~ ^original-(038|079|004|016|017|026|027|074|008|011|036|033|065|073|042|055|039|010|019|005|006|015)-encrypted$ ]] || exit 1
+              [[ "$FIXTURE_CHOICE" =~ ^original-(038|079|004|016|017|026|027|074|008|011|036|033|065|073|042|055|039|010|019|005|006|015|071|007|009|014|013|029|030|002|003|067)-encrypted$ ]] || exit 1
               # Keep the consumer's reviewed code and dependencies stable as main advances.
-              consumer_sha=39c955143f13aa4ddb4c47272262e7e82e3e5340
+              consumer_sha=2db6eef5df3229741d22aa659d60057d17c8a2a2
               comparison=$(gh api --method GET "repos/openclaw/clawhub/compare/${consumer_sha}...${GITHUB_SHA}" \
                 --jq '[.base_commit.sha,.merge_base_commit.sha,(.status == "ahead" or .status == "identical")]|@tsv')
               [[ "$comparison" == "$(printf '%s\t%s\ttrue' "$consumer_sha" "$consumer_sha")" ]] || exit 1

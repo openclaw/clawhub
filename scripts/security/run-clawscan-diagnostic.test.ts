@@ -349,7 +349,7 @@ it("executes the actual inline consumer guard against trusted and hostile dispat
     (step: { id?: string }) => step.id === "consumer",
   );
   expect(guard).toBeDefined();
-  const consumer = "39c955143f13aa4ddb4c47272262e7e82e3e5340";
+  const consumer = "2db6eef5df3229741d22aa659d60057d17c8a2a2";
   const workflowCommit = "1f3ab438ef4b50da24c60c48b809e40b6564ae8c";
   const root = await mkdtemp(join(tmpdir(), "diagnostic-consumer-guard-"));
   try {
@@ -411,7 +411,7 @@ it("executes the actual inline consumer guard against trusted and hostile dispat
       );
       expect(result.provider).toBe("reached");
     }
-    // The old C39 consumer cannot select later registry admissions.
+    // The qualified consumer contains every explicitly admitted original.
     const pinnedFixtures = [
       "original-038-encrypted",
       "original-079-encrypted",
@@ -435,11 +435,6 @@ it("executes the actual inline consumer guard against trusted and hostile dispat
       "original-005-encrypted",
       "original-006-encrypted",
       "original-015-encrypted",
-    ];
-    for (const fixture of pinnedFixtures) {
-      expect((await execute({ FIXTURE_CHOICE: fixture })).provider, fixture).toBe("reached");
-    }
-    const nextFixtures = [
       "original-071-encrypted",
       "original-007-encrypted",
       "original-009-encrypted",
@@ -451,13 +446,16 @@ it("executes the actual inline consumer guard against trusted and hostile dispat
       "original-003-encrypted",
       "original-067-encrypted",
     ];
-    for (const fixture of nextFixtures) {
+    for (const fixture of pinnedFixtures) {
       expect(workflow.on.workflow_dispatch.inputs.fixture.options).toContain(fixture);
       const pinned = await execute({ FIXTURE_CHOICE: fixture });
-      expect(pinned.result, fixture).toMatchObject({ code: 1 });
-      expect(pinned.output, fixture).toBe("");
-      expect(pinned.calls, fixture).toBe("");
-      expect(pinned.provider, fixture).toBe("");
+      expect(pinned.output, fixture).toBe(
+        `consumer-sha=${consumer}\nworkflow-sha=${workflowCommit}\n`,
+      );
+      expect(pinned.calls, fixture).toContain(
+        `repos/openclaw/clawhub/compare/${consumer}...${workflowCommit}`,
+      );
+      expect(pinned.provider, fixture).toBe("reached");
       const normal = await execute({ CONSUMER_CHOICE: "workflow", FIXTURE_CHOICE: fixture });
       expect(normal.output).toBe(
         `consumer-sha=${workflowCommit}\nworkflow-sha=${workflowCommit}\n`,
@@ -471,7 +469,9 @@ it("executes the actual inline consumer guard against trusted and hostile dispat
     expect(legacy.provider).toBe("reached");
     const invalidInputs: Record<string, string>[] = [
       { CONSUMER_CHOICE: consumer },
+      { CONSUMER_CHOICE: "39c955143f13aa4ddb4c47272262e7e82e3e5340" },
       { CONSUMER_CHOICE: "main" },
+      { CONSUMER_CHOICE: "latest" },
       { GITHUB_REPOSITORY: "attacker/clawhub" },
       { GITHUB_EVENT_NAME: "pull_request" },
       { GITHUB_REF: "refs/heads/recovery" },
@@ -485,6 +485,8 @@ it("executes the actual inline consumer guard against trusted and hostile dispat
       { RUNNER_CHOICE: "blacksmith-16vcpu-ubuntu-2404" },
       { FIXTURE_CHOICE: "tiny" },
       { FIXTURE_CHOICE: "original-999-encrypted" },
+      { FIXTURE_CHOICE: "original-071-encrypted-extra" },
+      { FIXTURE_CHOICE: "original-71-encrypted" },
       { GH_RESPONSE: `${consumer}\t${consumer}\tfalse` },
       { GH_RESPONSE: `${consumer}\t${"b".repeat(40)}\ttrue` },
       { GH_RESPONSE: `${"b".repeat(40)}\t${consumer}\ttrue` },
@@ -510,7 +512,7 @@ it("stops a mismatched consumer checkout before reaching local actions or provid
     (step: { name?: string }) => step.name === "Verify diagnostic consumer checkout",
   );
   expect(verify).toBeDefined();
-  const consumer = "39c955143f13aa4ddb4c47272262e7e82e3e5340";
+  const consumer = "2db6eef5df3229741d22aa659d60057d17c8a2a2";
   const root = await mkdtemp(join(tmpdir(), "diagnostic-consumer-checkout-"));
   try {
     const git = join(root, "git");
