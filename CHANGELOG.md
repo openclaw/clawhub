@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CI: escape Unicode line separators in security dataset JSONL so line readers preserve complete records during snapshot validation.
+
 - CI: cache the pinned OpenClaw contract package store while retaining frozen installs and full contract proof on every run.
 - Tooling: use the existing pinned Bun formatter for format commands while preserving Oxfmt configuration and exclusions.
 
