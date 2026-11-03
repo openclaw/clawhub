@@ -19,6 +19,20 @@ fresh validation proof.
 
 ## Changes
 
+### Skill Card regeneration fixture clock
+
+Make the enqueued regeneration fixture explicitly due before claiming it.
+Convex-test advances its transaction clock monotonically; a same-tick action
+can otherwise see a queued job scheduled just after its wall clock. Keep all
+six changed-input assertions and their running-job checks. The unchanged suite
+failed with different missing claim receipts in both Crabbox and header PR CI.
+Five consecutive focused runs passed all 15 cases after this fixture correction.
+`ci:static`, package types, and full coverage passed (653 files, 8,850 tests;
+coverage thresholds met). Root typing found an optional ID crossing the fixture callback; capture the
+checked ID before entering it. Root typing, all 15 focused cases, and static
+checks passed again after that narrowing correction. Manual review found no
+other behavior changes; the queue timing tests remain separate.
+
 ### CLI package coverage
 
 Replace the trusted-publisher case that read its own test file and split on a

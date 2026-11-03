@@ -151,7 +151,15 @@ async function enqueueAndClaim(
   { t, versionId }: Awaited<ReturnType<typeof fixture>>,
   recipe = generationHash,
 ) {
-  await t.mutation(internal.skillCards.enqueueForVersionInternal, { versionId, source: "scan" });
+  const queued = await t.mutation(internal.skillCards.enqueueForVersionInternal, {
+    versionId,
+    source: "scan",
+  });
+  const jobId = "jobId" in queued ? queued.jobId : undefined;
+  if (!jobId) throw new Error("Expected a queued fixture job");
+  // Convex's transaction clock can lead the action clock. These cases test
+  // regeneration inputs, so make the queued fixture due before claiming it.
+  await t.run((ctx) => ctx.db.patch(jobId, { nextRunAt: 1 }));
   return t.action(api.skillCards.claimSkillCardJobs, {
     token,
     workerId: "fixture",
