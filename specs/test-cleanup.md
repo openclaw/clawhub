@@ -12,6 +12,11 @@ At baseline `16135e6b`, the repository contains 735 `*.test.*` files: 313 in
 audit. Remaining work includes backend mock/runtime coverage, CLI/schema overlap,
 script contracts, fixture consumers, browser skip conditions, and HTTP e2e mappings.
 
+Retain `fixtures/public-corpus/validation_report.json` as historical redaction-review
+evidence from https://github.com/openclaw/clawhub/pull/2226. It records validation
+and review samples for the original public seed; it is not a runtime fixture or
+fresh validation proof.
+
 ## Changes
 
 ### Header/footer/theme source contracts
@@ -64,12 +69,28 @@ four old positive cases pass and all five corrected cases fail; the route was
 restored before validation. `ci:static` and `ci:types:packages` passed. Independent
 P0-P3 diff review: scoped-clean. `ci:unit` passed 8,796 tests in 651 files
 (plus one skipped file and five skipped cases), with coverage thresholds met.
-Base: `0c83d0e7`. Landing: pending PR.
+Base: `0c83d0e7`. Landed: https://github.com/openclaw/clawhub/pull/4261.
+
+### Script behavior contracts
+
+Removed the undiscovered `run-codex-scan-worker.source-test.mjs`, whose shared
+per-root deadline assertions contradict current behavior. Keep the real
+multi-root subprocess timeout and total preparation ceiling tests.
+
+Move design-audit sandbox/network assertions from source spelling into the actual
+CLI argument builder tests, for default and explicit model settings. This checks
+emitted arguments and accepts harmless source formatting changes.
+
+Validation: all 18 focused/subprocess tests passed in Crabbox. A temporary network
+opt-in with whitespace passed the old source check and failed both new builder
+cases; the source was restored and both design-audit suites passed again.
+`ci:static` and `ci:types:packages` passed. Independent P0-P3 diff review:
+scoped-clean. After the byte-identical patch was restacked onto `ef634eac`, Crabbox
+passed all 18 focused tests, `ci:static`, `ci:types:packages`, and `ci:unit`
+(652 files, 8,800 tests; coverage thresholds met). Landing: pending PR.
 
 ## Next slices
 
-- Remove the undiscovered `scripts/security/run-codex-scan-worker.source-test.mjs`: direct Node execution fails both obsolete shared-deadline
-  assertions. Retain real subprocess budget tests in `run-codex-scan-worker-skillspector.test.ts`.
 - Deduplicate template validator parity checks and inspect CLI test self-inspection.
   Admin CLI duplicate runner execution was already fixed in
   https://github.com/openclaw/clawhub/pull/4244.
@@ -78,5 +99,3 @@ Base: `0c83d0e7`. Landing: pending PR.
   and the distinct promotion-after-scheduled-start case.
 - Inspect retired `listPublicPage`/V2 endpoint contracts before removing their
   stub-only suites; preserve V3 compatibility without runtime usage evidence.
-- Review `fixtures/public-corpus/validation_report.json`: no literal consumer
-  found; verify provenance before deleting an audit artifact.
