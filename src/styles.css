@@ -408,7 +408,6 @@ a.skill-card:hover,
 a.skill-list-item:hover,
 a.home-quick-link:hover,
 a.home-category-card:hover,
-a.home-v2-c-card:hover,
 a.home-v2-cat-item:hover,
 a.home-v2-trend-card:hover,
 a.dashboard-import-banner-action:hover {
@@ -23367,135 +23366,6 @@ a.search-empty-action {
   }
 }
 
-/* Carousel cards */
-.home-v2-c-card {
-  background: var(--hv2-surface);
-  border: 1px solid var(--hv2-border);
-  border-radius: var(--hv2-radius-lg);
-  padding: 24px;
-  min-width: 340px;
-  max-width: 340px;
-  flex-shrink: 0;
-  transition:
-    border-color 0.25s,
-    transform 0.25s,
-    box-shadow 0.3s,
-    background 0.25s;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  text-decoration: none;
-  color: inherit;
-}
-.home-v2-c-card:hover {
-  border-color: var(--hv2-border-hover);
-  transform: translateY(-3px);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
-  background: var(--hv2-surface-hover);
-}
-.home-v2-c-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 14px;
-}
-.home-v2-c-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--hv2-accent-fill);
-  border: 1.5px solid var(--hv2-accent-border);
-  flex-shrink: 0;
-  transition:
-    background 0.2s,
-    box-shadow 0.2s;
-}
-.home-v2-c-card:hover .home-v2-c-icon {
-  background: var(--hv2-accent-fill-hover);
-  box-shadow: 0 0 14px var(--hv2-accent-glow);
-}
-.home-v2-c-icon svg {
-  color: var(--hv2-accent);
-}
-.home-v2-c-meta {
-  flex: 1;
-}
-.home-v2-c-name {
-  font-weight: 600;
-  font-size: 15px;
-  color: var(--hv2-text);
-}
-.home-v2-c-by {
-  font-size: 13px;
-  color: var(--hv2-text-secondary);
-}
-.home-v2-c-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--hv2-text-tertiary);
-  background: var(--hv2-surface);
-  border: 1px solid var(--hv2-border);
-  border-radius: 100px;
-  padding: 3px 10px 3px 7px;
-  margin-bottom: 10px;
-  width: fit-content;
-}
-.home-v2-c-tag svg {
-  color: var(--hv2-accent);
-}
-.home-v2-c-desc {
-  font-size: 13px;
-  color: var(--hv2-text-secondary);
-  line-height: 1.55;
-  flex: 1;
-  margin-bottom: 18px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.home-v2-c-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.home-v2-c-stats {
-  display: flex;
-  gap: 14px;
-  font-size: 12px;
-  color: var(--hv2-text-tertiary);
-  font-weight: 500;
-}
-.home-v2-c-stats span {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-.home-v2-c-install {
-  background: var(--hv2-green-fill);
-  border: 1.5px solid var(--hv2-green-border);
-  border-radius: var(--hv2-radius-sm);
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--hv2-green);
-  cursor: pointer;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.home-v2-c-card:hover .home-v2-c-install {
-  background: var(--hv2-green-fill-hover);
-  border-color: var(--hv2-green-border-hover);
-}
-
 /* ═══ CATEGORIES ═══ */
 .home-v2-categories {
   padding: 40px 48px 0;
@@ -26482,11 +26352,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     animation: none;
     padding: 12px 20px 36px;
   }
-  .home-v2-c-card {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-  }
   .home-v2-categories {
     padding: 32px 20px 0;
   }
@@ -26599,14 +26464,12 @@ a.home-v2-byos-import:focus-visible svg:last-child {
    Darker border on outside, warm glow fading inward */
 
 /* Dark mode — cards get subtle warm-dark inner fade */
-.home-v2-c-card,
 .home-v2-trend-card {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
     inset 0 0 20px rgba(0, 0, 0, 0.15),
     0 1px 3px rgba(0, 0, 0, 0.12);
 }
-.home-v2-c-card:hover,
 .home-v2-trend-card:hover {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
@@ -26636,7 +26499,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
 }
 
 /* --- Light-mode inset shadow pattern --- */
-[data-theme-resolved="light"] .home-v2-c-card,
 [data-theme-resolved="light"] .home-v2-trend-card {
   background: var(--hv2-surface);
   border-color: var(--hv2-border-strong);
@@ -26644,7 +26506,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
     0 1px 3px rgba(0, 0, 0, 0.05);
 }
-[data-theme-resolved="light"] .home-v2-c-card:hover,
 [data-theme-resolved="light"] .home-v2-trend-card:hover {
   border-color: var(--hv2-border-hover);
   background: var(--hv2-surface-hover);
@@ -26715,24 +26576,15 @@ a.home-v2-byos-import:focus-visible svg:last-child {
 }
 
 /* Light — install buttons (green) */
-[data-theme-resolved="light"] .home-v2-c-install,
 [data-theme-resolved="light"] .home-v2-trend-install {
   background: rgba(45, 138, 72, 0.05);
   border-color: rgba(45, 138, 72, 0.2);
   color: #2d8a48;
   box-shadow: inset 0 0 8px rgba(45, 138, 72, 0.03);
 }
-[data-theme-resolved="light"] .home-v2-c-card:hover .home-v2-c-install,
 [data-theme-resolved="light"] .home-v2-trend-card:hover .home-v2-trend-install {
   background: rgba(45, 138, 72, 0.09);
   border-color: rgba(45, 138, 72, 0.32);
-}
-
-/* Light — tag badges */
-[data-theme-resolved="light"] .home-v2-c-tag {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: var(--hv2-border);
-  color: var(--hv2-text-secondary);
 }
 
 /* Light — carousel section */
@@ -26770,7 +26622,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
 
 /* ═══ DARK MODE — Enhanced inset pattern ═══ */
 /* Strengthen the darker-outline-fading-inward on dark cards too */
-[data-theme-resolved="dark"] .home-v2-c-card,
 [data-theme-resolved="dark"] .home-v2-trend-card {
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow:
@@ -26778,7 +26629,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     inset 0 0 28px rgba(0, 0, 0, 0.2),
     0 1px 4px rgba(0, 0, 0, 0.18);
 }
-[data-theme-resolved="dark"] .home-v2-c-card:hover,
 [data-theme-resolved="dark"] .home-v2-trend-card:hover {
   border-color: rgba(255, 255, 255, 0.15);
   box-shadow:
@@ -26806,7 +26656,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
 }
 
 /* Dark — install buttons */
-[data-theme-resolved="dark"] .home-v2-c-install,
 [data-theme-resolved="dark"] .home-v2-trend-install {
   box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.1);
 }
@@ -26822,12 +26671,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   border-radius: var(--oc-radius-control);
 }
 .home-v2-search-go {
-  border-radius: var(--oc-radius-control);
-}
-.home-v2-c-icon {
-  border-radius: var(--oc-radius-inset);
-}
-.home-v2-c-tag {
   border-radius: var(--oc-radius-control);
 }
 .home-v2-cat-icon {
@@ -26960,7 +26803,6 @@ a[class*="rounded-full"] {
 }
 
 /* Home v2 install buttons — match system */
-.home-v2-c-install,
 .home-v2-trend-install,
 .home-v2-search-go {
   border-radius: var(--r-btn) !important;
