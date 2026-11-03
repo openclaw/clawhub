@@ -254,6 +254,59 @@ describe("SkillsIndex", () => {
     expect(requestSignal?.aborted).toBe(true);
   });
 
+  it("propagates manual search cancellation without logging a failure", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("Navigation changed", "AbortError");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let requestSignal: AbortSignal | null | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: unknown, init?: RequestInit) => {
+        requestSignal = init?.signal;
+        return new Promise<Response>((_resolve, reject) => {
+          requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), {
+            once: true,
+          });
+        });
+      }),
+    );
+    try {
+      const result = loadInitialSkillsData({ q: "navigation" }, controller.signal, {
+        query: "navigation",
+        consumed: {},
+        kinds: ["skill"],
+      });
+      expect(requestSignal).toBe(controller.signal);
+      const rejection = expect(result).rejects.toBe(reason);
+      controller.abort(reason);
+      await rejection;
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("logs genuine manual search failures and preserves the fallback", async () => {
+    const failure = new Error("Search fixture unavailable");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(failure));
+    try {
+      await expect(
+        loadInitialSkillsData({ q: "navigation" }, new AbortController().signal, {
+          query: "navigation",
+          consumed: {},
+          kinds: ["skill"],
+        }),
+      ).resolves.toBeNull();
+      expect(errorSpy).toHaveBeenCalledExactlyOnceWith(
+        "Failed to load initial skills search:",
+        failure,
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("renders full-catalog loader data without a duplicate first-page request", async () => {
     searchMock = {};
     loaderDataMock = {

@@ -95,3 +95,10 @@ stored counts, like counts after other visibility changes, can temporarily overs
 
 Publisher diversity is a product follow-up for browse ranking. The current contract guarantees
 freshness and bounded novelty, while preserving stable cursor pagination and trust filters.
+
+## Initial browser search requests
+
+Navigation cancellation propagates through the initial manual-search request and
+must not be logged as a search failure. Keep this aligned with browse request
+cancellation. Genuine search failures still log the error and retain the existing
+client fallback; cancellation must not convert an error into successful results.
