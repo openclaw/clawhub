@@ -52,6 +52,11 @@ exact-key miss. There are no fallback keys or cached installed workspaces.
   profile-context shard's metadata layout checks, so those assertions do not
   depend on the availability of a live public skill.
 
+Browser jobs cache downloads by the installed `playwright-core` version, runner
+OS, and architecture. Unrelated Bun lockfile updates reuse those downloads.
+There is no fallback across Playwright versions; `playwright install chromium`
+still runs on every job to validate and install the requested browser revision.
+
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 covers the non-browser PR gates. Linux CI uses pinned tsrs for the root typecheck;
 local `ci:types-build` keeps native TypeScript for cross-platform support. Both
