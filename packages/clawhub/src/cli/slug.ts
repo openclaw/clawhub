@@ -27,3 +27,12 @@ export function parseSkillRef(skillArg: string) {
   if (!ownerHandle || !slug) fail(`Invalid skill ref: ${skillArg}`);
   return { slug, ownerHandle };
 }
+
+export function normalizeOwnerHandle(raw: string | null | undefined) {
+  const handle = raw?.trim().replace(/^@+/, "").toLowerCase();
+  if (!handle) return undefined;
+  if (handle.includes("/") || handle.includes("\\") || handle.includes("..")) {
+    fail(`Invalid owner handle: ${raw}`);
+  }
+  return handle;
+}
