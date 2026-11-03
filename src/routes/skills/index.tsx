@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ConvexHttpClient } from "convex/browser";
-import { useQuery } from "convex/react";
-import { useCallback, useRef } from "react";
+import { useQueries, useQuery } from "convex/react";
+import { useCallback, useMemo, useRef } from "react";
 import { api } from "../../../convex/_generated/api";
 import {
   BrowseCategorySelect,
@@ -203,7 +203,12 @@ export function SkillsIndex() {
   });
 
   const hasActiveFilters = model.hasQuery || Boolean(model.activeCategory) || Boolean(activeTopic);
-  const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
+  // Optional count failures must not throw into the catalog page's error boundary.
+  const totalCountQueries = useMemo(
+    () => ({ totalSkillsCount: { query: api.skills.countPublicSkills, args: {} } }),
+    [],
+  );
+  const { totalSkillsCount } = useQueries(totalCountQueries);
   const categoryTopics = useQuery(
     api.catalogTopics.listTopByCategory,
     model.activeCategory
@@ -213,7 +218,9 @@ export function SkillsIndex() {
         }
       : "skip",
   );
-  const formattedCount = !hasActiveFilters ? formatBrowseCount(totalSkillsCount) : null;
+  const formattedCount = !hasActiveFilters
+    ? formatBrowseCount(typeof totalSkillsCount === "number" ? totalSkillsCount : undefined)
+    : null;
 
   const handleCategoryChange = useCallback(
     (slug: string | undefined) => {

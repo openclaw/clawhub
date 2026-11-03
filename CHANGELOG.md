@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Catalog: keep skill and plugin browsing available when optional heading counts fail.
+
 - Search: propagate cancelled initial requests without logging expected navigation changes as search failures.
 
 - Publishing: bound stored-file metadata verification to 16 concurrent reads and drain started work before cleanup, preserving server-computed hashes and archive bytes.
