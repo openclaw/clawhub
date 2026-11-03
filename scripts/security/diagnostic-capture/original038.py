@@ -57,6 +57,66 @@ def missing_tool_capture_gaps(output,requirements):
         if not any((output/'tool-captures').glob(name+'-*'))]
 
 
+def sandbox_arguments(work,output,home,command):
+    # Codex uses /tmp for its daemon socket even when TMPDIR points elsewhere.
+    return ['/usr/bin/bwrap','--unshare-user','--unshare-pid','--die-with-parent',
+        '--ro-bind','/','/','--bind',str(work),str(work),'--bind',str(output),str(output),
+        '--bind',str(home),str(home),'--tmpfs','/tmp',
+        '--proc','/proc','--dev','/dev','--chdir',str(work),'--',*command]
+
+
+def sandbox_preflight(root,config,child):
+    work=root/'work';output=root/'evidence';home=root/'home'
+    tool=config['tools']['codex'];codex=Path(tool['path'])
+    if hashlib.sha256(codex.read_bytes()).hexdigest()!=tool['sha256']:
+        raise ValueError('preflight Codex tool changed')
+    fixture=root/'preflight-readonly.txt';marker=work/'preflight-workspace.txt'
+    fixture.write_text('PUBLIC_INERT_READONLY_PROBE\n')
+    inner=r"""import os,sys
+from pathlib import Path
+work,fixture=map(Path,sys.argv[1:])
+assert work.read_text()=='PUBLIC_INERT_WORKSPACE_PROBE\n'
+assert fixture.read_text()=='PUBLIC_INERT_READONLY_PROBE\n'
+for path in (work,fixture,Path('/etc/CLAWSCAN_PREFLIGHT_WRITE'),Path('/tmp/CLAWSCAN_PREFLIGHT_WRITE')):
+    try:
+        with path.open('ab')as stream:stream.write(b'WRITE_MUST_BE_DENIED')
+    except OSError:pass
+    else:raise AssertionError('inner sandbox write allowed')
+print('INNER_READ_OK_FOUR_WRITES_DENIED')
+"""
+    outer=r"""import os,subprocess,sys
+from pathlib import Path
+codex,work,fixture,inner=sys.argv[1:];work=Path(work)
+assert not any(os.environ.get(key)for key in ('OPENAI_API_KEY','CODEX_API_KEY','LLM_API_KEY'))
+assert not Path('/tmp',f'codex-daemon-{os.getuid()}').exists()
+work.write_text('PUBLIC_INERT_WORKSPACE_PROBE\n')
+print('OUTER_WORKSPACE_WRITABLE_FRESH_PRIVATE_TMP',flush=True)
+result=subprocess.run([codex,'sandbox','--permission-profile','diagnostic-readonly',
+    '-c','permissions.diagnostic-readonly.filesystem={"/"="read"}',
+    '-c','permissions.diagnostic-readonly.network.enabled=false','-C',str(work.parent),
+    '--',sys.executable,'-I','-B','-c',inner,str(work),fixture],check=False)
+assert result.returncode==0
+assert work.read_text()=='PUBLIC_INERT_WORKSPACE_PROBE\n'
+work.write_text('OUTER_WORKSPACE_STILL_WRITABLE\n')
+print('PREFLIGHT_PASSED',flush=True)
+"""
+    command=[sys.executable,'-I','-B','-c',outer,str(codex),str(marker),str(fixture),inner]
+    argv=sandbox_arguments(work,output,home,command)
+    argv.insert(1,'--unshare-net')
+    # Explicit allowlist excludes all provider aliases and capture-proxy context.
+    env={key:child[key]for key in ('PATH','HOME','CODEX_HOME','TMPDIR','TMP','TEMP','LANG')}
+    evidence=output/'sandbox-preflight'
+    try:
+        result=capture(argv,work,env,evidence,timeout=60,new_session=False)
+        gaps=capture_gaps(evidence,output_root=output,expected={'argv':argv,'cwd':str(work)})
+        passed=result['exitCode']==0 and not result['timedOut']and not gaps
+        save(output/'sandbox-preflight.json',{'passed':passed,'modelCalls':0,
+            'originalExecution':False,'providerCredentialsPresent':False,'captureGaps':gaps})
+        if not passed:raise ValueError('credential-free sandbox preflight failed')
+    finally:
+        marker.unlink(missing_ok=True);fixture.unlink(missing_ok=True)
+
+
 def run(root):
     config=json.loads((root/'harness/runtime.json').read_text())
     originals={'sn-ppt-workbench-2026.10.29':(26,3862533,'ea3f5eb2634dffda246aacd1798f9d4915b0cd223feeb2cd7de35e9d3856c6c8'),
@@ -90,6 +150,7 @@ def run(root):
     save(output/'capture-context.json',context)
     env={**child,'PATH':str(root/'harness/bin')+':'+child['PATH'],
         'CLAWSCAN_CAPTURE_CONTEXT':str(context_path)}
+    sandbox_preflight(root,config,child)
     secrets=tuple({os.environ[name].encode() for name in
         ('OPENAI_API_KEY','CODEX_API_KEY','LLM_API_KEY') if os.environ.get(name)})
     if not secrets:raise ValueError('provider key absent')
@@ -98,9 +159,7 @@ def run(root):
     native_result=work/'clawscan-result.json'
     native=[config['native'],case['path'],'--profile','clawhub','--output',
         str(native_result),'--sandbox','off']
-    argv=['/usr/bin/bwrap','--unshare-user','--unshare-pid','--die-with-parent',
-        '--ro-bind','/','/','--bind',str(work),str(work),'--bind',str(output),str(output),
-        '--bind',str(home),str(home),'--proc','/proc','--dev','/dev','--chdir',str(work),'--',*native]
+    argv=sandbox_arguments(work,output,home,native)
     save(output/'bounded-plan.json',{'nativeArgv':native,'outerTimeoutSeconds':900,
         'automaticTopLevelRetries':0,'nativePolicyUnchanged':True,'expectedVerdict':None})
     watcher=WorkspaceCapture(work,output/'workspace-capture',secrets);watcher.start()
