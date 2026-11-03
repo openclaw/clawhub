@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   adjustPublisherStatsForPackageChange,
   adjustPublisherStatsForSkillChange,
+  emptyPublisherStatsContribution,
 } from "./publisherStats";
 
 function makeSkill(overrides: Record<string, unknown>) {
@@ -30,6 +31,87 @@ function makePackage(overrides: Record<string, unknown>) {
 }
 
 describe("publisher stat maintenance", () => {
+  describe.each([
+    {
+      kind: "skill",
+      make: makeSkill,
+      adjust: adjustPublisherStatsForSkillChange,
+      contribution: {
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 4,
+        totalDownloads: 10,
+        totalStars: 2,
+        skillTotalInstalls: 4,
+        skillTotalDownloads: 10,
+        skillTotalStars: 2,
+      },
+    },
+    {
+      kind: "package",
+      make: makePackage,
+      adjust: adjustPublisherStatsForPackageChange,
+      contribution: {
+        publishedSkills: 0,
+        publishedPackages: 1,
+        totalInstalls: 4,
+        totalDownloads: 10,
+        totalStars: 2,
+        skillTotalInstalls: 0,
+        skillTotalDownloads: 0,
+        skillTotalStars: 0,
+      },
+    },
+  ])("$kind changes", ({ make, adjust, contribution }) => {
+    it("adds, transfers, and removes the contribution from the correct publishers", async () => {
+      const empty = emptyPublisherStatsContribution();
+      const publishers = new Map([
+        ["publishers:alice", { ...empty }],
+        ["publishers:bob", { ...empty }],
+      ]);
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) => publishers.get(id)),
+          patch: vi.fn(async (id: string, patch: typeof empty) => {
+            publishers.set(id, patch);
+          }),
+          query: vi.fn(),
+        },
+      };
+      const original = make({});
+      const transferred = make({ ownerPublisherId: "publishers:bob" });
+
+      await adjust(ctx as never, null, original);
+      expect(publishers.get("publishers:alice")).toEqual(contribution);
+      expect(publishers.get("publishers:bob")).toEqual(empty);
+
+      await adjust(ctx as never, original, transferred);
+      expect(publishers.get("publishers:alice")).toEqual(empty);
+      expect(publishers.get("publishers:bob")).toEqual(contribution);
+
+      await adjust(ctx as never, transferred, null);
+      expect(publishers.get("publishers:bob")).toEqual(empty);
+      expect(ctx.db.patch).toHaveBeenCalledTimes(4);
+      expect(ctx.db.query).not.toHaveBeenCalled();
+    });
+
+    it("does not touch publishers for absent, unowned, or soft-deleted documents", async () => {
+      const ctx = { db: { get: vi.fn(), patch: vi.fn(), query: vi.fn() } };
+
+      await adjust(ctx as never, null, undefined);
+      await adjust(ctx as never, null, make({ ownerPublisherId: undefined }));
+      await adjust(
+        ctx as never,
+        make({ softDeletedAt: 1 }),
+        make({ softDeletedAt: 1, ownerPublisherId: "publishers:bob" }),
+      );
+
+      expect(ctx.db.get).not.toHaveBeenCalled();
+      expect(ctx.db.patch).not.toHaveBeenCalled();
+      expect(ctx.db.query).not.toHaveBeenCalled();
+    });
+  });
+
   it("recomputes missing publisher aggregates before accepting incremental deltas", async () => {
     const patch = vi.fn();
     const ctx = {
