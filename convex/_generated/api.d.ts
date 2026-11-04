@@ -220,6 +220,7 @@ import type * as lib_skillPublicationProgress from "../lib/skillPublicationProgr
 import type * as lib_skillPublish from "../lib/skillPublish.js";
 import type * as lib_skillPublishAttemptKey from "../lib/skillPublishAttemptKey.js";
 import type * as lib_skillQuality from "../lib/skillQuality.js";
+import type * as lib_skillQualityContract from "../lib/skillQualityContract.js";
 import type * as lib_skillSafety from "../lib/skillSafety.js";
 import type * as lib_skillScanRequestFiles from "../lib/skillScanRequestFiles.js";
 import type * as lib_skillSearchDigest from "../lib/skillSearchDigest.js";
@@ -548,6 +549,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillPublish": typeof lib_skillPublish;
   "lib/skillPublishAttemptKey": typeof lib_skillPublishAttemptKey;
   "lib/skillQuality": typeof lib_skillQuality;
+  "lib/skillQualityContract": typeof lib_skillQualityContract;
   "lib/skillSafety": typeof lib_skillSafety;
   "lib/skillScanRequestFiles": typeof lib_skillScanRequestFiles;
   "lib/skillSearchDigest": typeof lib_skillSearchDigest;

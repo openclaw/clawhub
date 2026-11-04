@@ -37,6 +37,7 @@ import {
 } from "./lib/securityAnalysisValidators";
 import { skillEvaluationMetricsValidator } from "./lib/skillEvaluationMetrics";
 import { skillPresentationValidator } from "./lib/skillPresentationValidator";
+import { qualityAssessmentValidator } from "./lib/skillQualityContract";
 
 export { skillSpectorAnalysisValidator } from "./lib/securityAnalysisValidators";
 
@@ -923,26 +924,7 @@ const skills = defineTable({
   // Deprecated compatibility field. The cleanup migration removes stored
   // values before this field and its validator are removed in a follow-up.
   manualOverride: v.optional(manualModerationOverride),
-  quality: v.optional(
-    v.object({
-      score: v.number(),
-      decision: v.union(v.literal("pass"), v.literal("quarantine"), v.literal("reject")),
-      trustTier: v.union(v.literal("low"), v.literal("medium"), v.literal("trusted")),
-      similarRecentCount: v.number(),
-      reason: v.string(),
-      signals: v.object({
-        bodyChars: v.number(),
-        bodyWords: v.number(),
-        uniqueWordRatio: v.number(),
-        headingCount: v.number(),
-        bulletCount: v.number(),
-        templateMarkerHits: v.number(),
-        genericSummary: v.boolean(),
-        cjkChars: v.optional(v.number()),
-      }),
-      evaluatedAt: v.number(),
-    }),
-  ),
+  quality: v.optional(qualityAssessmentValidator.extend({ evaluatedAt: v.number() })),
   isSuspicious: v.optional(v.boolean()),
   moderationFlags: v.optional(v.array(v.string())),
   lastReviewedAt: v.optional(v.number()),
