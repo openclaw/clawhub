@@ -102,6 +102,65 @@ describe("SkillDetailPage", () => {
   const versionId = "skillVersions:1" as Id<"skillVersions">;
   const storageId = "storage:1" as Id<"_storage">;
 
+  function makeWeatherSkill() {
+    return {
+      _id: skillId,
+      _creationTime: 0,
+      slug: "weather",
+      displayName: "Weather",
+      summary: "Get current weather.",
+      ownerUserId: ownerId,
+      ownerPublisherId,
+      tags: {},
+      badges: {},
+      stats: {
+        stars: 12,
+        downloads: 34,
+        installs: 8,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 0,
+      updatedAt: 0,
+    };
+  }
+
+  function makeWeatherSkillResult(): NonNullable<SkillPageInitialData["result"]> {
+    return {
+      skill: makeWeatherSkill(),
+      owner: {
+        _id: ownerPublisherId,
+        _creationTime: 0,
+        kind: "user",
+        handle: "steipete",
+        displayName: "Peter",
+        linkedUserId: ownerId,
+      },
+      latestVersion: {
+        _id: versionId,
+        _creationTime: 0,
+        skillId,
+        version: "1.0.0",
+        fingerprint: "abc",
+        changelog: "Initial release",
+        parsed: { license: "MIT-0", frontmatter: {} },
+        files: [
+          {
+            path: "SKILL.md",
+            size: 10,
+            storageId,
+            sha256: "abc",
+            contentType: "text/markdown",
+          },
+        ],
+        createdBy: ownerId,
+        createdAt: 0,
+      },
+      forkOf: null,
+      canonical: null,
+    };
+  }
+
   function makeInitialData(githubBacked = false): SkillPageInitialData {
     return {
       result: {
@@ -195,58 +254,7 @@ describe("SkillDetailPage", () => {
       <SkillDetailPage
         slug="weather"
         initialData={{
-          result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
-            owner: {
-              _id: ownerPublisherId,
-              _creationTime: 0,
-              kind: "user",
-              handle: "steipete",
-              displayName: "Peter",
-              linkedUserId: ownerId,
-            },
-            latestVersion: {
-              _id: versionId,
-              _creationTime: 0,
-              skillId,
-              version: "1.0.0",
-              fingerprint: "abc",
-              changelog: "Initial release",
-              parsed: { license: "MIT-0", frontmatter: {} },
-              files: [
-                {
-                  path: "SKILL.md",
-                  size: 10,
-                  storageId,
-                  sha256: "abc",
-                  contentType: "text/markdown",
-                },
-              ],
-              createdBy: ownerId,
-              createdAt: 0,
-            },
-            forkOf: null,
-            canonical: null,
-          },
+          result: makeWeatherSkillResult(),
           readme: "# Weather",
           readmeError: null,
         }}
@@ -912,58 +920,7 @@ describe("SkillDetailPage", () => {
       <SkillDetailPage
         slug="weather"
         initialData={{
-          result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
-            owner: {
-              _id: ownerPublisherId,
-              _creationTime: 0,
-              kind: "user",
-              handle: "steipete",
-              displayName: "Peter",
-              linkedUserId: ownerId,
-            },
-            latestVersion: {
-              _id: versionId,
-              _creationTime: 0,
-              skillId,
-              version: "1.0.0",
-              fingerprint: "abc",
-              changelog: "Initial release",
-              parsed: { license: "MIT-0", frontmatter: {} },
-              files: [
-                {
-                  path: "SKILL.md",
-                  size: 10,
-                  storageId,
-                  sha256: "abc",
-                  contentType: "text/markdown",
-                },
-              ],
-              createdBy: ownerId,
-              createdAt: 0,
-            },
-            forkOf: null,
-            canonical: null,
-          },
+          result: makeWeatherSkillResult(),
           readme: "# Weather\n\nOnly old body.",
           readmeError: null,
         }}
@@ -1104,26 +1061,7 @@ describe("SkillDetailPage", () => {
         slug="weather"
         initialData={{
           result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
+            skill: makeWeatherSkill(),
             owner: {
               _id: ownerPublisherId,
               _creationTime: 0,
@@ -1474,26 +1412,7 @@ describe("SkillDetailPage", () => {
         slug="weather"
         initialData={{
           result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
+            skill: makeWeatherSkill(),
             owner: {
               _id: ownerPublisherId,
               _creationTime: 0,
@@ -1690,26 +1609,7 @@ describe("SkillDetailPage", () => {
         mode="settings"
         initialData={{
           result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
+            skill: makeWeatherSkill(),
             owner: {
               _id: ownerPublisherId,
               _creationTime: 0,
@@ -1760,58 +1660,7 @@ describe("SkillDetailPage", () => {
       <SkillDetailPage
         slug="weather"
         initialData={{
-          result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
-            owner: {
-              _id: ownerPublisherId,
-              _creationTime: 0,
-              kind: "user",
-              handle: "steipete",
-              displayName: "Peter",
-              linkedUserId: ownerId,
-            },
-            latestVersion: {
-              _id: versionId,
-              _creationTime: 0,
-              skillId,
-              version: "1.0.0",
-              fingerprint: "abc",
-              changelog: "Initial release",
-              parsed: { license: "MIT-0", frontmatter: {} },
-              files: [
-                {
-                  path: "SKILL.md",
-                  size: 10,
-                  storageId,
-                  sha256: "abc",
-                  contentType: "text/markdown",
-                },
-              ],
-              createdBy: ownerId,
-              createdAt: 0,
-            },
-            forkOf: null,
-            canonical: null,
-          },
+          result: makeWeatherSkillResult(),
           readme: "# Weather",
           readmeError: null,
         }}
@@ -2025,26 +1874,7 @@ describe("SkillDetailPage", () => {
         canonicalOwner="steipete"
         initialData={{
           result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
+            skill: makeWeatherSkill(),
             owner: {
               _id: ownerPublisherId,
               _creationTime: 0,
