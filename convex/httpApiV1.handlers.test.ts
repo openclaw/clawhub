@@ -687,7 +687,10 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("X-RateLimit-Limit")).toBe(String(RATE_LIMITS.export.key));
+    expect(response.headers.get("X-RateLimit-Limit")).toBeNull();
+    expect(findRateLimitCallArgs(runMutation)).toMatchObject({
+      config: expect.objectContaining({ rate: RATE_LIMITS.export.key }),
+    });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -9018,6 +9021,184 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  describe("truthful publish failures", () => {
+    const skillPublishRequest = () =>
+      new Request("https://example.com/api/v1/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          slug: "demo",
+          displayName: "Demo",
+          version: "1.0.0",
+          changelog: "c",
+          acceptLicenseTerms: true,
+          files: [
+            {
+              path: "SKILL.md",
+              size: 1,
+              storageId: "storage:1",
+              sha256: "abc",
+              contentType: "text/plain",
+              uploadTicket: "skillPublishUploadTickets:1",
+            },
+          ],
+        }),
+      });
+    const rateLimitHeaders = [
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Reset",
+      "RateLimit-Limit",
+      "RateLimit-Remaining",
+      "RateLimit-Reset",
+    ];
+
+    beforeEach(() => {
+      vi.mocked(requireApiTokenUser).mockResolvedValue({
+        userId: "users:1",
+        user: { handle: "p" },
+      } as never);
+    });
+
+    it.each([
+      {
+        error:
+          "[Request ID: 0123456789abcdef] Server Error\nUncaught Error: InternalServerError: Transient error while running mutation",
+        retryAfter: "2",
+      },
+      { error: "Overloaded: The deployment is overloaded. Try again later.", retryAfter: "2" },
+      { error: "Your request couldn't be completed. Try again later.", retryAfter: "2" },
+      {
+        error:
+          "CommitterFullError: Too many writes in a short period of time. Reduce your writes. (reset in 9s)",
+        retryAfter: "9",
+      },
+      {
+        error:
+          'Documents read from or written to the "skills" table changed while this mutation was being run and on every subsequent retry.',
+        retryAfter: "1",
+      },
+    ])("maps a transient Convex failure to 503 with Retry-After: $error", async (fixture) => {
+      vi.mocked(publishVersionForUser).mockRejectedValueOnce(new Error(fixture.error));
+      const response = await __handlers.publishSkillV1Handler(
+        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        skillPublishRequest(),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe(fixture.retryAfter);
+      for (const header of rateLimitHeaders) expect(response.headers.get(header)).toBeNull();
+      const body = await response.text();
+      expect(body).toMatch(/not rejected for validation/);
+      expect(body).not.toMatch(/reset in|rate limit/i);
+      if (fixture.error.includes("Request ID")) {
+        expect(body).toContain("[Request ID: 0123456789abcdef]");
+      }
+    });
+
+    it.each([
+      new Error("Version 1.0.0 already exists. Increment the version number and try again."),
+      new ConvexError("Version 1.0.0 already exists. Increment the version number and try again."),
+      // Application errors keep their status even when they quote platform text.
+      new ConvexError("InternalServerError: is a reserved skill name"),
+    ])("keeps a genuine validation error as 400 with its message: %s", async (error) => {
+      vi.mocked(publishVersionForUser).mockRejectedValueOnce(error);
+      const response = await __handlers.publishSkillV1Handler(
+        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        skillPublishRequest(),
+      );
+      expect(response.status).toBe(400);
+      expect(response.headers.get("Retry-After")).toBeNull();
+      for (const header of rateLimitHeaders) expect(response.headers.get(header)).toBeNull();
+      expect(await response.text()).toContain(error.message);
+    });
+
+    it("reports a transient failure while reading the API token as 503, not 401", async () => {
+      vi.mocked(requireApiTokenUser).mockReset();
+      vi.mocked(requireApiTokenUser).mockRejectedValueOnce(
+        new Error("Your request couldn't be completed. Try again later."),
+      );
+      const response = await __handlers.publishSkillV1Handler(
+        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        skillPublishRequest(),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe("2");
+      expect(await response.text()).not.toMatch(/unauthorized|login/i);
+      expect(publishVersionForUser).not.toHaveBeenCalled();
+    });
+
+    it("keeps a rejected API token as 401", async () => {
+      vi.mocked(requireApiTokenUser).mockReset();
+      vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new ConvexError("Unauthorized"));
+      const response = await __handlers.publishSkillV1Handler(
+        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        skillPublishRequest(),
+      );
+      expect(response.status).toBe(401);
+      expect(response.headers.get("Retry-After")).toBeNull();
+    });
+
+    it("maps a transient failure while minting a trusted publish token to 503", async () => {
+      const runQuery = vi.fn(async () => {
+        throw new Error("InternalServerError: Transient error while running query");
+      });
+      const response = await __handlers.mintPublishTokenV1Handler(
+        makeCtx({ runQuery, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        new Request("https://example.com/api/v1/publish/token/mint", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            packageName: "@openclaw/demo-plugin",
+            version: "1.0.0",
+            githubOidcToken: "gh.jwt",
+          }),
+        }),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe("2");
+    });
+
+    it("maps a transient publish-recovery failure to 503 and says the outcome is unknown", async () => {
+      const { recoverPackagePublishAttemptV1Handler } =
+        await import("./httpApiV1/packagePublishRecoveryV1");
+      const runAction = vi
+        .fn()
+        .mockRejectedValue(new Error("InternalServerError: Transient error while running action"));
+      const response = await recoverPackagePublishAttemptV1Handler(
+        makeCtx({ runAction, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        new Request("https://example.com/api/v1/publish/attempts/publishAttempts:1/recover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
+          body: JSON.stringify({ manualOverrideReason: "Retry after outage" }),
+        }),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe("2");
+      expect(await response.text()).toContain("may have completed");
+    });
+
+    it("maps a transient failure while minting a skill upload URL to 503", async () => {
+      vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        throw new Error("InternalServerError: Transient error while running mutation");
+      });
+      const response = await __handlers.skillsPostRouterV1Handler(
+        makeCtx({ runMutation }),
+        new Request("https://example.com/api/v1/skills/-/upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
+          body: JSON.stringify({ path: "SKILL.md", size: 1, sha256: "a".repeat(64) }),
+        }),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe("2");
+    });
+  });
+
   it("publish json defaults omitted ownerHandle to personal publish scope", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
       userId: "users:1",
@@ -11995,7 +12176,8 @@ describe("httpApiV1 handlers", () => {
       name: "readIp",
       config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
     });
-    expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
+    // Admitted requests carry no rate-limit headers.
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
   });
 
   it("packages search ignores retired environment capability shorthands", async () => {
@@ -17004,7 +17186,8 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
+    // Admitted requests carry no rate-limit headers.
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
     expect(findRateLimitCallArgs(runMutation)).toMatchObject({
       key: expect.stringMatching(/^ip:/),
       name: "downloadIp",
@@ -17070,7 +17253,8 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
+    // Admitted requests carry no rate-limit headers.
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
     expect(findRateLimitCallArgs(runMutation)).toMatchObject({
       key: expect.stringMatching(/^ip:/),
       name: "readIp",
@@ -17997,7 +18181,8 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
+    // Admitted requests carry no rate-limit headers.
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
     expect(findRateLimitCallArgs(runMutation)).toMatchObject({
       key: "user:users:1:write",
       name: "writeKey",
@@ -18015,12 +18200,12 @@ describe("httpApiV1 handlers", () => {
   it.each([
     { stage: "first-store", typed: true, status: 503 },
     { stage: "first-store", typed: false, status: 400 },
-    { stage: "extracted-store", typed: true, status: 400 },
-    { stage: "publish", typed: true, status: 400 },
-    { stage: "loose-file-store", typed: true, status: 400 },
+    { stage: "extracted-store", typed: true, status: 503 },
+    { stage: "publish", typed: true, status: 503 },
+    { stage: "loose-file-store", typed: true, status: 503 },
     { stage: "none", typed: true, status: 200 },
   ])(
-    "inline package storage classification preserves $stage (typed=$typed)",
+    "inline package storage classification maps $stage (typed=$typed) to $status",
     async ({ stage, typed, status }) => {
       vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
       vi.mocked(requirePackagePublishAuth).mockResolvedValue({
@@ -18102,7 +18287,19 @@ describe("httpApiV1 handlers", () => {
           });
         }
       }
-      if (stage !== "none") expect(await response.text()).toContain(message);
+      if (status === 400) expect(await response.text()).toContain(message);
+      if (status === 503) {
+        // Typed write-admission pressure is a platform failure, not validation
+        // or the caller's rate limit: its reset window moves into Retry-After.
+        const body = await response.text();
+        expect(body).toContain("ClawHub backend is temporarily unavailable.");
+        expect(body).toContain("CommitterFullError: Too many writes");
+        expect(body).not.toContain("reset in");
+        expect(response.headers.get("Retry-After")).toBe("30");
+        expect(response.headers.get("RateLimit-Reset")).toBeNull();
+        if (stage === "publish") expect(body).toContain("may have completed");
+        else expect(body).not.toContain("may have completed");
+      }
     },
   );
 

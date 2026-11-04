@@ -15,6 +15,10 @@ const RETRY_COUNT = 2;
 const RETRY_BACKOFF_BASE_MS = 300;
 const RETRY_BACKOFF_MAX_MS = 5_000;
 const RETRY_AFTER_JITTER_MS = 250;
+// Honor a server Retry-After only up to this bound. A longer wait (for example
+// a rate-limit window near its start) fails fast with the reset hint instead of
+// silently blocking the command.
+const RETRY_AFTER_MAX_MS = 60_000;
 const CURL_META_MARKER = "__CLAWHUB_CURL_META__";
 // curl 7.84+ spells response headers `%header{name}`; `%{header:name}` is an
 // unknown variable that prints nothing, which silently dropped Retry-After.
@@ -429,10 +433,13 @@ function createRetryRunner(deps: Pick<HttpClientDeps, "setTimeoutImpl" | "random
       maxTimeout: 0,
       factor: 1,
       randomize: false,
-      onFailedAttempt: async (attemptError) => {
+      // Wait here rather than in onFailedAttempt: p-retry calls this only when
+      // another attempt will run, so the final failure is not delayed.
+      shouldRetry: async (attemptError) => {
         const delayMs = getRetryDelayMs(attemptError, deps.random);
-        if (delayMs <= 0) return;
-        await sleep(delayMs, deps.setTimeoutImpl);
+        if (delayMs === null) return false;
+        if (delayMs > 0) await sleep(delayMs, deps.setTimeoutImpl);
+        return true;
       },
     });
   };
@@ -488,7 +495,12 @@ async function ensureResponseOk(
   );
 }
 
-function getRetryDelayMs(attemptError: unknown, random: () => number): number {
+/**
+ * Bounded, jittered backoff. A server `Retry-After` (sent on real 429s and on
+ * retryable 503s) sets the minimum wait; jitter spreads clients that received
+ * the same hint. Returns null when the requested wait exceeds the bound.
+ */
+function getRetryDelayMs(attemptError: unknown, random: () => number): number | null {
   const failed = attemptError as {
     attemptNumber?: number;
     cause?: unknown;
@@ -496,11 +508,17 @@ function getRetryDelayMs(attemptError: unknown, random: () => number): number {
   };
   const attemptNumber = Math.max(1, failed.attemptNumber ?? 1);
   const rootError = failed.cause ?? failed.error ?? attemptError;
+  const backoffMs = Math.min(
+    RETRY_BACKOFF_MAX_MS,
+    RETRY_BACKOFF_BASE_MS * 2 ** (attemptNumber - 1),
+  );
   if (rootError instanceof HttpStatusError && rootError.rateLimit.retryAfterSeconds !== undefined) {
-    return rootError.rateLimit.retryAfterSeconds * 1000 + jitterMs(RETRY_AFTER_JITTER_MS, random);
+    const retryAfterMs = rootError.rateLimit.retryAfterSeconds * 1000;
+    if (retryAfterMs > RETRY_AFTER_MAX_MS) return null;
+    const jitterWindowMs = Math.max(RETRY_AFTER_JITTER_MS, Math.floor(retryAfterMs / 4));
+    return Math.max(retryAfterMs, backoffMs) + jitterMs(jitterWindowMs, random);
   }
-  const baseMs = Math.min(RETRY_BACKOFF_MAX_MS, RETRY_BACKOFF_BASE_MS * 2 ** (attemptNumber - 1));
-  return baseMs + jitterMs(RETRY_BACKOFF_BASE_MS, random);
+  return backoffMs + jitterMs(RETRY_BACKOFF_BASE_MS, random);
 }
 
 function sleep(ms: number, setTimeoutImpl: typeof setTimeout): Promise<void> {
@@ -521,12 +539,15 @@ function throwHttpStatusError(
   now: () => number,
 ): never {
   const rateLimit = parseRateLimitInfo(headers, now);
-  const retryableTransientContention = isTransientConvexContention(text);
+  // Older servers answered some transient Convex failures with 4xx; recognize
+  // them from the body so they are still retried.
+  const retryableTransientBody =
+    isTransientConvexContention(text) || isTransientConvexSystemError(text);
   // Convex request IDs are 16 lowercase hex digits. Capture before wrapper cleanup.
   const requestId = /\[Request ID: ([0-9a-f]{16})\]/.exec(text)?.[1];
   const message = buildHttpErrorMessage(status, text, rateLimit);
   const error = new HttpStatusError(status, message, rateLimit, requestId);
-  if (status === 429 || status >= 500 || retryableTransientContention) {
+  if (status === 429 || status >= 500 || retryableTransientBody) {
     throw error;
   }
   throw new AbortError(error);
@@ -538,11 +559,16 @@ function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimi
   if (rateLimit.retryAfterSeconds !== undefined) {
     details.push(`retry in ${rateLimit.retryAfterSeconds}s`);
   }
-  if (rateLimit.remaining !== undefined && rateLimit.limit !== undefined) {
-    details.push(`remaining: ${rateLimit.remaining}/${rateLimit.limit}`);
-  }
-  if (rateLimit.resetDelaySeconds !== undefined) {
-    details.push(`reset in ${rateLimit.resetDelaySeconds}s`);
+  // Quota and reset hints describe a rate limit. Only a 429 is one; older
+  // servers attached these headers to every response, which made unrelated
+  // failures read as "rate limited".
+  if (status === 429) {
+    if (rateLimit.remaining !== undefined && rateLimit.limit !== undefined) {
+      details.push(`remaining: ${rateLimit.remaining}/${rateLimit.limit}`);
+    }
+    if (rateLimit.resetDelaySeconds !== undefined) {
+      details.push(`reset in ${rateLimit.resetDelaySeconds}s`);
+    }
   }
   return details.length === 0 ? base : `${base} (${details.join(", ")})`;
 }
@@ -557,8 +583,12 @@ function normalizeHttpErrorBody(status: number, text: string): string {
   if (formattedStructuredError) return formattedStructuredError;
   const lowered = body.toLowerCase();
   if (body && lowered !== "unauthorized" && lowered !== "forbidden") {
-    if (isTransientConvexContention(body)) {
+    // A 503 body already explains itself; label only legacy 4xx/5xx bodies.
+    if (status !== 503 && isTransientConvexContention(body)) {
       return `Transient ClawHub write contention. The package artifact passed request validation; retrying usually succeeds. ${body}`;
+    }
+    if (status !== 503 && isTransientConvexSystemError(body)) {
+      return `ClawHub backend is temporarily unavailable; this was not a validation failure and retrying usually succeeds. ${body}`;
     }
     if (status === 404 && lowered === "package not found") {
       return "Package not found or not visible to this account.";
@@ -657,6 +687,18 @@ function isTransientConvexContention(text: string) {
     lowered.includes("write conflict") ||
     (lowered.includes('documents read from or written to the "') &&
       lowered.includes("changed while this mutation was being run"))
+  );
+}
+
+// Mirrors the server classifier in convex/lib/httpUtils.ts: captured Convex
+// platform-failure signatures, never free-form validation text.
+function isTransientConvexSystemError(text: string) {
+  return (
+    /\bInternalServerError: /.test(text) ||
+    /\bOverloaded(?:Error)?: /.test(text) ||
+    /\bTransient error while /.test(text) ||
+    /\bCommitterFullError: Too many writes in a short period of time\./.test(text) ||
+    text.includes("Your request couldn't be completed. Try again later.")
   );
 }
 

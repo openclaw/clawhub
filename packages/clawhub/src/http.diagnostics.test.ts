@@ -64,20 +64,21 @@ for (const runtime of ["node", "bun"] as const) {
         expected: "Skill not found or unavailable to this account.",
       },
     ])(
-      "preserves existing shared-client HTTP $status messages",
+      "keeps HTTP $status messages free of rate-limit hints",
       async ({ status, body, expected }) => {
+        // Older servers sent RateLimit-Reset on every response; only a 429 is a rate limit.
         const { client } = makeClient(runtime, status, body);
         const error = await failRequest(client);
-        expect((error as Error).message).toBe(`${expected} (reset in 53s)`);
+        expect((error as Error).message).toBe(expected);
         expect(getHttpErrorDiagnostic(error)).toBe(`HTTP ${status}`);
       },
     );
 
     it.each([
-      { status: 400, attempts: 1, delays: [] },
-      { status: 503, attempts: 3, delays: [300, 600, 1200] },
-      { status: 429, attempts: 3, delays: [53000, 53000, 53000], retryAfter: "53" },
-    ])("exposes HTTP $status without changing messages or retries", async (fixture) => {
+      { status: 400, attempts: 1, delays: [], rateLimited: false },
+      { status: 503, attempts: 3, delays: [300, 600], rateLimited: false },
+      { status: 429, attempts: 3, delays: [53000, 53000], retryAfter: "53", rateLimited: true },
+    ])("exposes HTTP $status with truthful messages and bounded retries", async (fixture) => {
       const { client, attempts, delays } = makeClient(
         runtime,
         fixture.status,
@@ -87,7 +88,7 @@ for (const runtime of ["node", "bun"] as const) {
       const error = await failRequest(client);
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).toBe(
-        `${writePressure} (${fixture.retryAfter ? "retry in 53s, " : ""}reset in 53s)`,
+        fixture.rateLimited ? `${writePressure} (retry in 53s, reset in 53s)` : writePressure,
       );
       expect(getHttpErrorStatus(error)).toBe(fixture.status);
       expect(attempts).toHaveBeenCalledTimes(fixture.attempts);
@@ -104,7 +105,7 @@ for (const runtime of ["node", "bun"] as const) {
       const { client } = makeClient(runtime, status, "[Request ID: 0123456789abcdef] Server Error");
       const error = await failRequest(client);
       expect(error).toHaveProperty("requestId", "0123456789abcdef");
-      expect((error as Error).message).toBe("Server Error (reset in 53s)");
+      expect((error as Error).message).toBe("Server Error");
       expect(getHttpErrorDiagnostic(error)).toBe(`HTTP ${status} (Request ID: 0123456789abcdef)`);
     });
 

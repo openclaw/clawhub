@@ -72,7 +72,6 @@ import {
 } from "../lib/githubActionsOidc";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { isConvexWritePressureError } from "../lib/httpUtils";
 import { verifyOpenClawPublishAuthorization } from "../lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "../lib/packageArtifacts";
 import {
@@ -152,6 +151,7 @@ import {
   formatUserFacingErrorMessage,
   text,
   toOptionalNumber,
+  transientConvexErrorResponse,
 } from "./shared";
 
 const apiRefs = api as unknown as {
@@ -254,6 +254,8 @@ function packageOperationErrorToResponse(
   headers: HeadersInit,
   fallback = "Package operation failed",
 ) {
+  const transient = transientConvexErrorResponse(error, headers);
+  if (transient) return transient;
   const message = formatUserFacingErrorMessage(error, fallback);
   const lower = message.toLowerCase();
   if (lower.includes("unauthorized"))
@@ -264,26 +266,16 @@ function packageOperationErrorToResponse(
   return text(message, 400, headers);
 }
 
-function isTransientConvexContentionMessage(message: string) {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes("optimistic concurrency") ||
-    lower.includes("write conflict") ||
-    (/documents read from or written to the ".+" table changed/.test(lower) &&
-      lower.includes("while this mutation was being run"))
-  );
-}
-
-function packagePublishErrorToResponse(error: unknown, headers: HeadersInit) {
-  const message = formatUserFacingErrorMessage(error, "Publish failed");
-  if (!isTransientConvexContentionMessage(message)) {
-    return text(message, 400, headers);
-  }
-  return text(
-    `Transient ClawHub write contention. Package validation was not the cause; retrying usually succeeds. ${message}`,
-    503,
-    mergeHeaders(headers, { "Retry-After": "1" }),
-  );
+function packagePublishErrorToResponse(
+  error: unknown,
+  headers: HeadersInit,
+  options: { outcomeUnknown: boolean },
+) {
+  // After dispatch the publish action may have committed before the failure
+  // surfaced; say so instead of implying nothing happened.
+  const transient = transientConvexErrorResponse(error, headers, options);
+  if (transient) return transient;
+  return text(formatUserFacingErrorMessage(error, "Publish failed"), 400, headers);
 }
 
 async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
@@ -1076,8 +1068,6 @@ type PackagePublishTarballPart =
 
 type StoredPackagePublishFile = ServerPackagePublishRequest["files"][number];
 
-class InlinePackagePreBlobWritePressureError extends Error {}
-
 async function storeUploadedPackageFile(
   ctx: ActionCtx,
   entry: File,
@@ -1241,20 +1231,11 @@ async function parseMultipartPackagePublish(
     const artifactBytes = new Uint8Array(await tarballEntry.arrayBuffer());
     const parsed = await parseClawPack(artifactBytes);
     assertClawPackPublicationIdentity(metadata, parsed);
-    let artifactStorageId: Id<"_storage">;
-    try {
-      artifactStorageId = await storeRequestPackageBlob(
-        ctx,
-        requestStorageIds,
-        new Blob([bytesToArrayBuffer(artifactBytes)], { type: "application/octet-stream" }),
-      );
-    } catch (error) {
-      // Only this first inline store can reject before any request blob exists.
-      if (isConvexWritePressureError(error)) {
-        throw new InlinePackagePreBlobWritePressureError(error.message);
-      }
-      throw error;
-    }
+    const artifactStorageId = await storeRequestPackageBlob(
+      ctx,
+      requestStorageIds,
+      new Blob([bytesToArrayBuffer(artifactBytes)], { type: "application/octet-stream" }),
+    );
     return await buildPackagePublishRequestFromClawPack(
       ctx,
       metadata,
@@ -2359,17 +2340,14 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
           });
     return json(result, 200, rate.headers);
   } catch (error) {
-    if (
-      !publicationOwnsCleanup &&
-      requestStorageIds.size === 0 &&
-      error instanceof InlinePackagePreBlobWritePressureError
-    ) {
-      return text(error.message, 503, rate.headers);
-    }
     if (!publicationOwnsCleanup) {
+      // Before dispatch this request owns every stored blob, so reclaiming them
+      // makes a retry of a transient failure a clean, fresh publish attempt.
       await Promise.allSettled([...requestStorageIds].map((id) => ctx.storage.delete(id)));
     }
-    return packagePublishErrorToResponse(error, rate.headers);
+    return packagePublishErrorToResponse(error, rate.headers, {
+      outcomeUnknown: publicationOwnsCleanup,
+    });
   }
 }
 
@@ -2658,6 +2636,8 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
       throw error;
     }
   } catch (error) {
+    const transient = transientConvexErrorResponse(error, rate.headers);
+    if (transient) return transient;
     return text(error instanceof Error ? error.message : "Token mint failed", 400, rate.headers);
   }
 }

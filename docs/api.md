@@ -41,17 +41,18 @@ Auth-aware enforcement:
 - Write: 300/min per IP, 3000/min per key
 - Download: 1200/min per IP, 6000/min per key
 
-Headers: `X-RateLimit-Limit`, `X-RateLimit-Reset`, `RateLimit-Limit`, `RateLimit-Reset`;
-`X-RateLimit-Remaining`, `RateLimit-Remaining`, and `Retry-After` are included on `429`.
+Rate-limit headers are sent only on a `429` that the limiter actually denied:
+`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`,
+`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, and `Retry-After`.
+Admitted requests, including ones that later fail for another reason, carry no
+rate-limit headers. A response without them was not rate limited.
 
 Semantics:
 
 - `X-RateLimit-Reset`: Unix epoch seconds (absolute reset time)
 - `RateLimit-Reset`: delay seconds until reset
-- `X-RateLimit-Remaining` / `RateLimit-Remaining`: exact remaining budget when
-  present; sharded successful requests omit it rather than returning an approximate
-  global value
-- `Retry-After`: delay seconds to wait on `429`
+- `X-RateLimit-Remaining` / `RateLimit-Remaining`: `0` on a denied request
+- `Retry-After`: delay seconds to wait
 
 Example `429`:
 
@@ -75,7 +76,14 @@ Client handling:
 ## Errors
 
 - v1 errors are plain text (`text/plain; charset=utf-8`), including `400`,
-  `401`, `403`, `404`, `429`, and blocked-download responses.
+  `401`, `403`, `404`, `429`, `503`, and blocked-download responses.
+- `4xx` means the request itself was rejected (validation, auth, permissions,
+  conflicts, or a real `429`); the message is the actual reason.
+- `503` with `Retry-After` means a temporary backend failure (overload, internal
+  error, or write contention), not a validation or rate-limit failure. Retry
+  after the hinted delay with jitter. For publish requests that already reached
+  the publish step, the body says the earlier attempt may have completed; check
+  the version before changing it if a retry reports a conflict.
 - Unknown query parameters are ignored for compatibility.
 - Known query parameters with invalid values return `400`.
 

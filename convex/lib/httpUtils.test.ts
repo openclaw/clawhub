@@ -1,7 +1,9 @@
 /* @vitest-environment node */
 
+import { ConvexError } from "convex/values";
 import { describe, expect, it } from "vitest";
 import {
+  getTransientConvexErrorKind,
   isConvexWritePressureError,
   parseBooleanQueryParam,
   parseBooleanQueryParamOptional,
@@ -23,6 +25,39 @@ describe("isConvexWritePressureError", () => {
       null,
     ])
       expect(isConvexWritePressureError(error)).toBe(false);
+  });
+});
+
+describe("getTransientConvexErrorKind", () => {
+  it.each([
+    "[Request ID: 0123456789abcdef] Server Error\nUncaught Error: InternalServerError: Transient error while running generate upload url",
+    "InternalServerError: Your request couldn't be completed. Try again later.",
+    "Your request couldn't be completed. Try again later.",
+    "Overloaded: The deployment is overloaded. Try again later.",
+    "CommitterFullError: Too many writes in a short period of time. (reset in 43s)",
+  ])("classifies a Convex platform failure as system: %s", (message) => {
+    expect(getTransientConvexErrorKind(new Error(message))).toBe("system");
+  });
+
+  it.each([
+    'Documents read from or written to the "publishers" table changed while this mutation was being run and on every subsequent retry.',
+    'Document in table "rateLimits" changed while this mutation was being run',
+    "Optimistic concurrency control failure",
+  ])("classifies a write conflict: %s", (message) => {
+    expect(getTransientConvexErrorKind(new Error(message))).toBe("write_conflict");
+  });
+
+  it.each([
+    new Error("Version 1.0.0 already exists. Increment the version number and try again."),
+    new Error("Invalid file path: InternalServerError.md"),
+    new Error("Too many writes in a short period of time."),
+    new Error("Unauthorized"),
+    new ConvexError("InternalServerError: is a reserved skill name"),
+    new ConvexError("Your request couldn't be completed. Try again later."),
+    "InternalServerError: Transient error while running mutation",
+    null,
+  ])("leaves application and validation failures unclassified: %s", (error) => {
+    expect(getTransientConvexErrorKind(error)).toBeNull();
   });
 });
 

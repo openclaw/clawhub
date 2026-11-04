@@ -12,6 +12,7 @@ import { assertAdmin, assertModerator } from "../lib/access";
 import { requireApiTokenUser, requirePackagePublishAuth } from "../lib/apiTokenAuth";
 import { sha256Hex } from "../lib/hash";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
+import { getTransientConvexErrorKind } from "../lib/httpUtils";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { isMacJunkPath } from "../lib/skills";
 import type { PublicSkillVersionSelection } from "../lib/skills/publicVersions";
@@ -247,7 +248,7 @@ export async function requireApiTokenUserOrResponse(
       apiTokenId: auth.apiTokenId,
     };
   } catch (error) {
-    return { ok: false as const, response: text(formatAuthFailure(error), 401, headers) };
+    return { ok: false as const, response: authFailureResponse(error, headers) };
   }
 }
 
@@ -259,8 +260,16 @@ export async function requirePackagePublishAuthOrResponse(
   try {
     return { ok: true as const, auth: await requirePackagePublishAuth(ctx, request) };
   } catch (error) {
-    return { ok: false as const, response: text(formatAuthFailure(error), 401, headers) };
+    return { ok: false as const, response: authFailureResponse(error, headers) };
   }
+}
+
+// A platform failure while reading the token is not an authentication failure:
+// answering 401 would tell a valid publisher to log in again.
+function authFailureResponse(error: unknown, headers: HeadersInit) {
+  return (
+    transientConvexErrorResponse(error, headers) ?? text(formatAuthFailure(error), 401, headers)
+  );
 }
 
 export function requireAdminOrResponse(user: Doc<"users">, headers: HeadersInit) {
@@ -551,6 +560,57 @@ export function cleanUserFacingErrorMessage(message: string) {
 export function formatUserFacingErrorMessage(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : fallback;
   return cleanUserFacingErrorMessage(message) || fallback;
+}
+
+// Seconds a client should wait before retrying a request that hit a transient
+// Convex platform failure. Write conflicts clear fastest; system/overload
+// errors get a little longer so retries do not pile onto a struggling backend.
+const TRANSIENT_WRITE_CONFLICT_RETRY_AFTER_SECONDS = 1;
+const TRANSIENT_SYSTEM_ERROR_RETRY_AFTER_SECONDS = 2;
+const TRANSIENT_SYSTEM_ERROR_MAX_RETRY_AFTER_SECONDS = 30;
+// Convex write-admission errors end with "(reset in 43s)". That is backend
+// capacity, not the caller's rate limit: move it into Retry-After instead of
+// echoing text that reads like a quota reset.
+const CONVEX_CAPACITY_RESET_PATTERN = /\s*\(reset in (\d+)s\)/;
+
+/**
+ * Map a transient Convex platform failure (overload, internal/transient system
+ * error, write conflict) to a retryable 503 with `Retry-After`. Returns null for
+ * every other error so callers keep their validation/authorization mapping.
+ * Such failures are never a client error, so they must not become 4xx, and
+ * they are not rate limiting, so no rate-limit headers are added.
+ */
+export function transientConvexErrorResponse(
+  error: unknown,
+  headers?: HeadersInit,
+  options: { outcomeUnknown?: boolean } = {},
+): Response | null {
+  const kind = getTransientConvexErrorKind(error);
+  if (!kind) return null;
+  const raw = (error as Error).message;
+  const capacityReset = CONVEX_CAPACITY_RESET_PATTERN.exec(raw)?.[1];
+  const detail = cleanUserFacingErrorMessage(raw.replace(CONVEX_CAPACITY_RESET_PATTERN, ""));
+  // Keep the Convex request ID so operators can correlate the failure.
+  const requestId = /\[Request ID: ([^\]]+)\]/.exec(raw)?.[1];
+  const summary =
+    kind === "write_conflict"
+      ? "Transient ClawHub write contention"
+      : "ClawHub backend is temporarily unavailable";
+  const outcome = options.outcomeUnknown
+    ? "The request was not rejected for validation, but it may have completed before the failure; if a retry reports a conflict such as an existing version, check the current state before changing anything."
+    : "The request was not rejected for validation; retrying usually succeeds.";
+  const body = [`${summary}.`, outcome, detail, requestId ? `[Request ID: ${requestId}]` : ""]
+    .filter(Boolean)
+    .join(" ");
+  const retryAfter =
+    kind === "write_conflict"
+      ? TRANSIENT_WRITE_CONFLICT_RETRY_AFTER_SECONDS
+      : Math.min(
+          TRANSIENT_SYSTEM_ERROR_MAX_RETRY_AFTER_SECONDS,
+          Math.max(TRANSIENT_SYSTEM_ERROR_RETRY_AFTER_SECONDS, Number(capacityReset ?? 0)),
+        );
+  console.warn("http_transient_convex_error", { kind });
+  return text(body, 503, mergeHeaders(headers, { "Retry-After": String(retryAfter) }));
 }
 
 function formatAuthFailure(error: unknown) {

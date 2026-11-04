@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Publishing: return `503` with `Retry-After` instead of `400`/`401` when Convex reports a transient platform failure (overload, internal/transient error, write admission or conflict) on publish, upload, token-mint, recovery and API-token auth paths; genuine validation errors keep their `4xx` and message.
+- API: send rate-limit headers only on a real `429`, never on admitted requests or while the rate limiter is switched off.
+- CLI: retry `503` and real `429` responses with bounded, jittered backoff that honors `Retry-After`, and show quota/reset hints only for a real `429`.
+
 - Publishing: pin the server Plugin Inspector to 0.4.3 so large plugin publishes (such as `@openclaw/matrix` and `@openclaw/whatsapp`) stay under the 512 MiB Node action limit; 0.4.4+ type-checks the whole OpenClaw declaration surface while preparing the publish target. Until a bounded Inspector release, retirement notices may name replacements the selected OpenClaw release does not export yet.
 
 - CLI: reuse canonical schema implementations during builds while retaining standalone npm artifacts and embedding their debug sources.
