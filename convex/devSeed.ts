@@ -2476,8 +2476,8 @@ async function deletePackageDerivedSearchData(ctx: MutationCtx, packageId: Id<"p
   for (const row of inspectorWarnings) await ctx.db.delete(row._id);
 }
 
-async function deleteSeedSkillFixture(ctx: MutationCtx, slug = FLAGGED_SKILL_SLUG) {
-  const existing = await findSeedSkillFixture(ctx, slug);
+async function deleteSkillFixture(ctx: MutationCtx, slug: string) {
+  const existing = await findSkillFixture(ctx, slug);
   if (!existing) return;
 
   const versions = await ctx.db
@@ -2487,57 +2487,12 @@ async function deleteSeedSkillFixture(ctx: MutationCtx, slug = FLAGGED_SKILL_SLU
   for (const version of versions) {
     await ctx.db.delete(version._id);
   }
-  const embeddings = await ctx.db
-    .query("skillEmbeddings")
-    .withIndex("by_skill", (q) => q.eq("skillId", existing._id))
-    .collect();
-  for (const embedding of embeddings) {
-    const maps = await ctx.db
-      .query("embeddingSkillMap")
-      .withIndex("by_embedding", (q) => q.eq("embeddingId", embedding._id))
-      .collect();
-    for (const map of maps) await ctx.db.delete(map._id);
-    await ctx.db.delete(embedding._id);
-  }
+  await deleteSkillEmbeddingsForSkill(ctx, existing._id);
   await deleteSkillBadgesForSkill(ctx, existing._id);
   await ctx.db.delete(existing._id);
 }
 
-async function findSeedSkillFixture(ctx: MutationCtx, slug = FLAGGED_SKILL_SLUG) {
-  return await ctx.db
-    .query("skills")
-    .withIndex("by_slug", (q) => q.eq("slug", slug))
-    .unique();
-}
-
-async function deleteScannedSkillFixture(ctx: MutationCtx, slug = SCANNED_SKILL_SLUG) {
-  const existing = await findScannedSkillFixture(ctx, slug);
-  if (!existing) return;
-
-  const versions = await ctx.db
-    .query("skillVersions")
-    .withIndex("by_skill", (q) => q.eq("skillId", existing._id))
-    .collect();
-  for (const version of versions) {
-    await ctx.db.delete(version._id);
-  }
-  const embeddings = await ctx.db
-    .query("skillEmbeddings")
-    .withIndex("by_skill", (q) => q.eq("skillId", existing._id))
-    .collect();
-  for (const embedding of embeddings) {
-    const maps = await ctx.db
-      .query("embeddingSkillMap")
-      .withIndex("by_embedding", (q) => q.eq("embeddingId", embedding._id))
-      .collect();
-    for (const map of maps) await ctx.db.delete(map._id);
-    await ctx.db.delete(embedding._id);
-  }
-  await deleteSkillBadgesForSkill(ctx, existing._id);
-  await ctx.db.delete(existing._id);
-}
-
-async function findScannedSkillFixture(ctx: MutationCtx, slug = SCANNED_SKILL_SLUG) {
+async function findSkillFixture(ctx: MutationCtx, slug: string) {
   return await ctx.db
     .query("skills")
     .withIndex("by_slug", (q) => q.eq("slug", slug))
@@ -3140,11 +3095,11 @@ export async function seedLocalModerationFixturesHandler(
   if (args.excludeFromPublicCatalog && args.staleProofSkill) {
     await hideStaleTestProofSkill(ctx, args.staleProofSkill, now);
   }
-  const existingSkill = await findSeedSkillFixture(ctx, flaggedSkillSlug);
-  const existingScannedSkill = await findScannedSkillFixture(ctx, scannedSkillSlug);
+  const existingSkill = await findSkillFixture(ctx, flaggedSkillSlug);
+  const existingScannedSkill = await findSkillFixture(ctx, scannedSkillSlug);
   const existingPlugin = await findSeedPluginFixture(ctx, flaggedPluginName);
   const existingScannedPlugin = await findScannedPluginFixture(ctx, scannedPluginName);
-  const existingTruncationSkill = await findSeedSkillFixture(ctx, TRUNCATION_SKILL_SLUG);
+  const existingTruncationSkill = await findSkillFixture(ctx, TRUNCATION_SKILL_SLUG);
   const existingTruncationPlugin = await findSeedPluginFixtureByName(ctx, TRUNCATION_PLUGIN_NAME);
   if (
     existingSkill &&
@@ -3320,9 +3275,9 @@ export async function seedLocalModerationFixturesHandler(
     };
   }
 
-  await deleteSeedSkillFixture(ctx, flaggedSkillSlug);
-  await deleteScannedSkillFixture(ctx, scannedSkillSlug);
-  await deleteSeedSkillFixture(ctx, TRUNCATION_SKILL_SLUG);
+  await deleteSkillFixture(ctx, flaggedSkillSlug);
+  await deleteSkillFixture(ctx, scannedSkillSlug);
+  await deleteSkillFixture(ctx, TRUNCATION_SKILL_SLUG);
   await deleteSeedPluginFixture(ctx, flaggedPluginName);
   await deleteScannedPluginFixture(ctx, scannedPluginName);
   await deleteSeedPluginFixtureByName(ctx, TRUNCATION_PLUGIN_NAME);
@@ -4400,7 +4355,7 @@ export const seedAgenticRiskDemoSkillMutation = internalMutation({
     skillMd: v.string(),
   },
   handler: async (ctx, args) => {
-    const existing = await findScannedSkillFixture(ctx);
+    const existing = await findSkillFixture(ctx, SCANNED_SKILL_SLUG);
     if (existing && !args.reset) {
       return {
         ok: true,
@@ -4409,7 +4364,7 @@ export const seedAgenticRiskDemoSkillMutation = internalMutation({
         scannedSkillVersionId: existing.latestVersionId,
       };
     }
-    if (existing) await deleteScannedSkillFixture(ctx);
+    if (existing) await deleteSkillFixture(ctx, SCANNED_SKILL_SLUG);
 
     const now = Date.now();
     const { userId, publisherId } = await ensureLocalSeedOwner(ctx);
