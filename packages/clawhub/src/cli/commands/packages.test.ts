@@ -160,6 +160,12 @@ function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
   });
 }
 
+// makeCodePluginPackageJson declares ./dist/index.js; publish validation requires it.
+async function writeDeclaredDistEntry(folder: string) {
+  await mkdir(join(folder, "dist"), { recursive: true });
+  await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+}
+
 async function createCodePluginFixture(workdir: string, folderName: string, packageName: string) {
   const folder = join(workdir, folderName);
   await mkdir(join(folder, "dist"), { recursive: true });
@@ -3146,6 +3152,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("manual-token");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -3207,6 +3214,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequest.mockRejectedValueOnce(
@@ -3261,6 +3269,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequest.mockRejectedValueOnce(
@@ -3315,6 +3324,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -3835,6 +3845,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "broken.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       httpMocks.apiRequestForm.mockRejectedValueOnce(new Error("Registry rejected upload"));
 
@@ -4041,6 +4052,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       runGit(folder, ["init", "-b", "main"]);
       runGit(folder, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
@@ -4111,6 +4123,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin", configSchema: { type: "object" } }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       runGit(workdir, ["init", "-b", "main"]);
       runGit(workdir, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
