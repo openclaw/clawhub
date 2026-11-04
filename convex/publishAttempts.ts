@@ -1,4 +1,4 @@
-import { ConvexError, v } from "convex/values";
+import { ConvexError, type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -1849,40 +1849,26 @@ async function requireSkillPublishAttempt(
   if (!attempt || typeof attempt !== "object") {
     throw new ConvexError("Publish attempt not found.");
   }
-  const typed = attempt as {
-    _id: Id<"publishAttempts">;
-    kind: "skill" | "package";
-    status:
-      | "pending_checks"
-      | "ready_to_finalize"
-      | "finalizing"
-      | "finalized"
-      | "blocked"
-      | "failed"
-      | "expired";
+  const typed = attempt as Pick<
+    Doc<"publishAttempts">,
+    | "_id"
+    | "kind"
+    | "status"
+    | "userId"
+    | "ownerPublisherId"
+    | "slug"
+    | "version"
+    | "displayName"
+    | "artifactFingerprint"
+    | "createdAt"
+    | "finalizationClaimId"
+    | "finalizationClaimExpiresAt"
+    | "skillId"
+    | "skillVersionId"
+  > & {
     skillInsertArgs: unknown;
-    followup: { skipWebhook?: boolean; ownerHandle?: string };
-    userId: Id<"users">;
-    ownerPublisherId?: Id<"publishers">;
-    slug: string;
-    version: string;
-    displayName: string;
-    artifactFingerprint: string;
-    createdAt: number;
-    finalizationClaimId?: string;
-    finalizationClaimExpiresAt?: number;
-    result?: {
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      embeddingId?: Id<"skillEmbeddings">;
-      status?: "pending" | "published";
-      slug?: string;
-      version?: string;
-      publicationStatus?: "pending" | "published";
-      attemptId?: Id<"publishAttempts">;
-    };
-    skillId?: Id<"skills">;
-    skillVersionId?: Id<"skillVersions">;
+    followup: NonNullable<Doc<"publishAttempts">["followup"]>;
+    result?: Infer<typeof publishResultValidator>;
   };
   if (
     typed.kind !== "skill" ||
@@ -1891,13 +1877,7 @@ async function requireSkillPublishAttempt(
   ) {
     throw new ConvexError("Skill publish attempt not found.");
   }
-  return typed as typeof typed & {
-    kind: "skill";
-    skillId?: Id<"skills">;
-    skillVersionId?: Id<"skillVersions">;
-    skillInsertArgs?: unknown;
-    followup: { skipWebhook?: boolean; ownerHandle?: string };
-  };
+  return typed as typeof typed & { kind: "skill" };
 }
 
 async function requirePackagePublishAttempt(
@@ -1908,29 +1888,24 @@ async function requirePackagePublishAttempt(
   if (!attempt || typeof attempt !== "object") {
     throw new ConvexError("Publish attempt not found.");
   }
-  const typed = attempt as {
-    _id: Id<"publishAttempts">;
-    kind: "skill" | "package";
-    status:
-      | "pending_checks"
-      | "ready_to_finalize"
-      | "finalizing"
-      | "finalized"
-      | "blocked"
-      | "failed"
-      | "expired";
-    userId: Id<"users">;
-    ownerUserId?: Id<"users">;
-    ownerPublisherId?: Id<"publishers">;
-    slug: string;
-    version: string;
-    artifactFingerprint: string;
+  const typed = attempt as Pick<
+    Doc<"publishAttempts">,
+    | "_id"
+    | "kind"
+    | "status"
+    | "userId"
+    | "ownerUserId"
+    | "ownerPublisherId"
+    | "slug"
+    | "version"
+    | "artifactFingerprint"
+    | "packageId"
+    | "packageReleaseId"
+    | "finalizationClaimId"
+    | "finalizationClaimExpiresAt"
+  > & {
     packageInsertArgs?: unknown;
     packageFollowup?: unknown;
-    packageId?: Id<"packages">;
-    packageReleaseId?: Id<"packageReleases">;
-    finalizationClaimId?: string;
-    finalizationClaimExpiresAt?: number;
     result?: {
       ok: true;
       packageId: Id<"packages">;
