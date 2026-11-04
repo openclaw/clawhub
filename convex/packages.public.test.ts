@@ -512,6 +512,26 @@ const packageManifestFile = {
   contentType: "application/json",
 };
 
+function makeTrustedPackagePublishToken() {
+  return {
+    _id: "packagePublishTokens:1",
+    packageId: "packages:demo",
+    provider: "github-actions",
+    repository: "example/example",
+    repositoryId: "1",
+    repositoryOwner: "example",
+    repositoryOwnerId: "2",
+    workflowFilename: "plugin-clawhub-release.yml",
+    environment: "clawhub-release",
+    version: "1.0.0",
+    sha: "abc123",
+    ref: "refs/heads/main",
+    runId: "100",
+    runAttempt: "1",
+    expiresAt: Date.now() + 60_000,
+  };
+}
+
 function makePackageManifestStorage() {
   return {
     get: vi.fn(async (id: string) =>
@@ -12300,23 +12320,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(null),
     };
 
@@ -12796,23 +12800,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
@@ -12914,23 +12902,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(orphanParent)
         .mockResolvedValueOnce(trustedPublisher)
@@ -13013,23 +12985,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
@@ -13090,23 +13046,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
@@ -13158,23 +13098,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
@@ -13228,23 +13152,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
@@ -13329,23 +13237,7 @@ describe("packages public queries", () => {
       const ctx = {
         runQuery: vi
           .fn()
-          .mockResolvedValueOnce({
-            _id: "packagePublishTokens:1",
-            packageId: "packages:demo",
-            provider: "github-actions",
-            repository: "example/example",
-            repositoryId: "1",
-            repositoryOwner: "example",
-            repositoryOwnerId: "2",
-            workflowFilename: "plugin-clawhub-release.yml",
-            environment: "clawhub-release",
-            version: "1.0.0",
-            sha: "abc123",
-            ref: "refs/heads/main",
-            runId: "100",
-            runAttempt: "1",
-            expiresAt: Date.now() + 60_000,
-          })
+          .mockResolvedValueOnce(makeTrustedPackagePublishToken())
           .mockResolvedValueOnce(trustedPublisher)
           .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
           .mockResolvedValueOnce(trustedPublisher)
