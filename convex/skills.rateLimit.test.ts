@@ -130,6 +130,113 @@ function buildEmptyPublisherMembersQuery(table: string) {
   };
 }
 
+function createNewPublishQuery() {
+  return vi.fn((table: string) => {
+    const globalStatsQuery = buildGlobalStatsQuery(table);
+    if (globalStatsQuery) return globalStatsQuery;
+    const digestQuery = buildDigestQuery(table);
+    if (digestQuery) return digestQuery;
+    if (table === "skills") {
+      return {
+        withIndex: (name: string) => {
+          if (name === "by_slug") return { unique: async () => null };
+          if (name === "by_owner") {
+            return {
+              order: () => ({
+                take: async () => [],
+              }),
+            };
+          }
+          const ownerScoped = emptyOwnerScopedSkillLookup(name);
+          if (ownerScoped) return ownerScoped;
+          throw new Error(`unexpected skills index `);
+        },
+      };
+    }
+    if (table === "reservedSlugs") {
+      return {
+        withIndex: (name: string) => {
+          if (name === "by_slug_active_deletedAt") {
+            return { order: () => ({ take: async () => [] }) };
+          }
+          throw new Error(`unexpected reservedSlugs index ${name}`);
+        },
+      };
+    }
+    if (table === "skillVersionFingerprints") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_fingerprint") {
+            throw new Error(`unexpected skillVersionFingerprints index ${name}`);
+          }
+          return {
+            take: async () => [],
+          };
+        },
+      };
+    }
+    if (table === "skillVersions") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_skill_version") {
+            throw new Error(`unexpected skillVersions index ${name}`);
+          }
+          return {
+            unique: async () => null,
+          };
+        },
+      };
+    }
+    if (table === "skillBadges") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_skill") throw new Error(`unexpected skillBadges index ${name}`);
+          return {
+            take: async () => [],
+          };
+        },
+      };
+    }
+    if (table === "skillEmbeddings") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_version") {
+            throw new Error(`unexpected skillEmbeddings index ${name}`);
+          }
+          return {
+            unique: async () => null,
+          };
+        },
+      };
+    }
+    if (table === "skillSlugAliases") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_slug") {
+            const ownerScoped = emptyOwnerScopedAliasLookup(name);
+            if (ownerScoped) return ownerScoped;
+            throw new Error(`unexpected skillSlugAliases index `);
+          }
+          return {
+            unique: async () => null,
+          };
+        },
+      };
+    }
+    const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+    if (emptyAliasesQuery) return emptyAliasesQuery;
+    const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+    if (emptyReservationsQuery) return emptyReservationsQuery;
+    const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+    if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+    const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+    if (emptyPublishersQuery) return emptyPublishersQuery;
+    const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+    if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+    throw new Error(`unexpected table `);
+  });
+}
+
 function createSuccessfulPublishInsert(
   storedSkills: Map<string, Record<string, unknown>>,
   now: number,
@@ -1477,110 +1584,7 @@ describe("skills anti-spam guards", () => {
         }
         return null;
       }),
-      query: vi.fn((table: string) => {
-        const globalStatsQuery = buildGlobalStatsQuery(table);
-        if (globalStatsQuery) return globalStatsQuery;
-        const digestQuery = buildDigestQuery(table);
-        if (digestQuery) return digestQuery;
-        if (table === "skills") {
-          return {
-            withIndex: (name: string) => {
-              if (name === "by_slug") return { unique: async () => null };
-              if (name === "by_owner") {
-                return {
-                  order: () => ({
-                    take: async () => [],
-                  }),
-                };
-              }
-              const ownerScoped = emptyOwnerScopedSkillLookup(name);
-              if (ownerScoped) return ownerScoped;
-              throw new Error(`unexpected skills index `);
-            },
-          };
-        }
-        if (table === "reservedSlugs") {
-          return {
-            withIndex: (name: string) => {
-              if (name === "by_slug_active_deletedAt") {
-                return { order: () => ({ take: async () => [] }) };
-              }
-              throw new Error(`unexpected reservedSlugs index ${name}`);
-            },
-          };
-        }
-        if (table === "skillVersionFingerprints") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_fingerprint") {
-                throw new Error(`unexpected skillVersionFingerprints index ${name}`);
-              }
-              return {
-                take: async () => [],
-              };
-            },
-          };
-        }
-        if (table === "skillVersions") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_skill_version") {
-                throw new Error(`unexpected skillVersions index ${name}`);
-              }
-              return {
-                unique: async () => null,
-              };
-            },
-          };
-        }
-        if (table === "skillBadges") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_skill") throw new Error(`unexpected skillBadges index ${name}`);
-              return {
-                take: async () => [],
-              };
-            },
-          };
-        }
-        if (table === "skillEmbeddings") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_version") {
-                throw new Error(`unexpected skillEmbeddings index ${name}`);
-              }
-              return {
-                unique: async () => null,
-              };
-            },
-          };
-        }
-        if (table === "skillSlugAliases") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_slug") {
-                const ownerScoped = emptyOwnerScopedAliasLookup(name);
-                if (ownerScoped) return ownerScoped;
-                throw new Error(`unexpected skillSlugAliases index `);
-              }
-              return {
-                unique: async () => null,
-              };
-            },
-          };
-        }
-        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
-        if (emptyAliasesQuery) return emptyAliasesQuery;
-        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
-        if (emptyReservationsQuery) return emptyReservationsQuery;
-        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
-        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
-        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
-        if (emptyPublishersQuery) return emptyPublishersQuery;
-        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
-        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
-        throw new Error(`unexpected table `);
-      }),
+      query: createNewPublishQuery(),
       patch,
       insert,
       normalizeId: vi.fn((tableName: string, id: string) =>
@@ -2374,110 +2378,7 @@ describe("skills anti-spam guards", () => {
         }
         return null;
       }),
-      query: vi.fn((table: string) => {
-        const globalStatsQuery = buildGlobalStatsQuery(table);
-        if (globalStatsQuery) return globalStatsQuery;
-        const digestQuery = buildDigestQuery(table);
-        if (digestQuery) return digestQuery;
-        if (table === "skills") {
-          return {
-            withIndex: (name: string) => {
-              if (name === "by_slug") return { unique: async () => null };
-              if (name === "by_owner") {
-                return {
-                  order: () => ({
-                    take: async () => [],
-                  }),
-                };
-              }
-              const ownerScoped = emptyOwnerScopedSkillLookup(name);
-              if (ownerScoped) return ownerScoped;
-              throw new Error(`unexpected skills index `);
-            },
-          };
-        }
-        if (table === "reservedSlugs") {
-          return {
-            withIndex: (name: string) => {
-              if (name === "by_slug_active_deletedAt") {
-                return { order: () => ({ take: async () => [] }) };
-              }
-              throw new Error(`unexpected reservedSlugs index ${name}`);
-            },
-          };
-        }
-        if (table === "skillVersionFingerprints") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_fingerprint") {
-                throw new Error(`unexpected skillVersionFingerprints index ${name}`);
-              }
-              return {
-                take: async () => [],
-              };
-            },
-          };
-        }
-        if (table === "skillVersions") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_skill_version") {
-                throw new Error(`unexpected skillVersions index ${name}`);
-              }
-              return {
-                unique: async () => null,
-              };
-            },
-          };
-        }
-        if (table === "skillBadges") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_skill") throw new Error(`unexpected skillBadges index ${name}`);
-              return {
-                take: async () => [],
-              };
-            },
-          };
-        }
-        if (table === "skillEmbeddings") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_version") {
-                throw new Error(`unexpected skillEmbeddings index ${name}`);
-              }
-              return {
-                unique: async () => null,
-              };
-            },
-          };
-        }
-        if (table === "skillSlugAliases") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_slug") {
-                const ownerScoped = emptyOwnerScopedAliasLookup(name);
-                if (ownerScoped) return ownerScoped;
-                throw new Error(`unexpected skillSlugAliases index `);
-              }
-              return {
-                unique: async () => null,
-              };
-            },
-          };
-        }
-        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
-        if (emptyAliasesQuery) return emptyAliasesQuery;
-        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
-        if (emptyReservationsQuery) return emptyReservationsQuery;
-        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
-        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
-        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
-        if (emptyPublishersQuery) return emptyPublishersQuery;
-        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
-        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
-        throw new Error(`unexpected table `);
-      }),
+      query: createNewPublishQuery(),
       patch,
       insert,
       normalizeId: vi.fn((tableName: string, id: string) =>
