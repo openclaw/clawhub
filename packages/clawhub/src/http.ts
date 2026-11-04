@@ -129,14 +129,22 @@ class HttpStatusError extends Error {
   readonly rateLimit: RateLimitInfo;
   readonly requestId?: string;
   readonly diagnostic: string;
+  readonly retryable: boolean;
 
-  constructor(status: number, message: string, rateLimit: RateLimitInfo, requestId?: string) {
+  constructor(
+    status: number,
+    message: string,
+    rateLimit: RateLimitInfo,
+    requestId: string | undefined,
+    retryable: boolean,
+  ) {
     super(message);
     this.name = "HttpStatusError";
     this.status = status;
     this.rateLimit = rateLimit;
     this.requestId = requestId;
     this.diagnostic = buildHttpErrorDiagnostic(status, requestId);
+    this.retryable = retryable;
   }
 }
 
@@ -427,22 +435,44 @@ function createRetryRunner(deps: Pick<HttpClientDeps, "setTimeoutImpl" | "random
     fn: () => Promise<T>,
     retryCount = RETRY_COUNT,
   ): Promise<T> {
-    return await pRetry(fn, {
-      retries: retryCount,
-      minTimeout: 0,
-      maxTimeout: 0,
-      factor: 1,
-      randomize: false,
-      // Wait here rather than in onFailedAttempt: p-retry calls this only when
-      // another attempt will run, so the final failure is not delayed.
-      shouldRetry: async (attemptError) => {
-        const delayMs = getRetryDelayMs(attemptError, deps.random);
-        if (delayMs === null) return false;
-        if (delayMs > 0) await sleep(delayMs, deps.setTimeoutImpl);
-        return true;
-      },
-    });
+    let retriedFailure: HttpStatusError | undefined;
+    try {
+      return await pRetry(fn, {
+        retries: retryCount,
+        minTimeout: 0,
+        maxTimeout: 0,
+        factor: 1,
+        randomize: false,
+        // Wait here rather than in onFailedAttempt: p-retry calls this only when
+        // another attempt will run, so the final failure is not delayed.
+        shouldRetry: async (attemptError) => {
+          const delayMs = getRetryDelayMs(attemptError, deps.random);
+          if (delayMs === null) return false;
+          const failure = getRootError(attemptError);
+          if (failure instanceof HttpStatusError) retriedFailure = failure;
+          if (delayMs > 0) await sleep(delayMs, deps.setTimeoutImpl);
+          return true;
+        },
+      });
+    } catch (error) {
+      throw withRetriedFailureContext(error, retriedFailure);
+    }
   };
+}
+
+// A retry can turn an ambiguous temporary failure into a misleading final
+// rejection (for example "version already exists" after the first attempt
+// committed). Keep the earlier failure in the reported message.
+function withRetriedFailureContext(error: unknown, retriedFailure: HttpStatusError | undefined) {
+  if (retriedFailure && error instanceof HttpStatusError && !error.retryable) {
+    error.message = `${error.message} (after retrying an earlier temporary failure: ${retriedFailure.message})`;
+  }
+  return error;
+}
+
+function getRootError(attemptError: unknown) {
+  const failed = attemptError as { cause?: unknown; error?: unknown };
+  return failed.cause ?? failed.error ?? attemptError;
 }
 
 function bytesToArrayBuffer(bytes: Uint8Array) {
@@ -501,13 +531,11 @@ async function ensureResponseOk(
  * the same hint. Returns null when the requested wait exceeds the bound.
  */
 function getRetryDelayMs(attemptError: unknown, random: () => number): number | null {
-  const failed = attemptError as {
-    attemptNumber?: number;
-    cause?: unknown;
-    error?: unknown;
-  };
-  const attemptNumber = Math.max(1, failed.attemptNumber ?? 1);
-  const rootError = failed.cause ?? failed.error ?? attemptError;
+  const attemptNumber = Math.max(
+    1,
+    (attemptError as { attemptNumber?: number }).attemptNumber ?? 1,
+  );
+  const rootError = getRootError(attemptError);
   const backoffMs = Math.min(
     RETRY_BACKOFF_MAX_MS,
     RETRY_BACKOFF_BASE_MS * 2 ** (attemptNumber - 1),
@@ -539,17 +567,15 @@ function throwHttpStatusError(
   now: () => number,
 ): never {
   const rateLimit = parseRateLimitInfo(headers, now);
-  // Older servers answered some transient Convex failures with 4xx; recognize
-  // them from the body so they are still retried.
-  const retryableTransientBody =
-    isTransientConvexContention(text) || isTransientConvexSystemError(text);
+  // Older servers answered some transient Convex failures with 400/401;
+  // recognize them from the body so they are still retried.
+  const retryableTransientBody = isLegacyTransientFailure(status, text);
   // Convex request IDs are 16 lowercase hex digits. Capture before wrapper cleanup.
   const requestId = /\[Request ID: ([0-9a-f]{16})\]/.exec(text)?.[1];
   const message = buildHttpErrorMessage(status, text, rateLimit);
-  const error = new HttpStatusError(status, message, rateLimit, requestId);
-  if (status === 429 || status >= 500 || retryableTransientBody) {
-    throw error;
-  }
+  const retryable = status === 429 || status >= 500 || retryableTransientBody;
+  const error = new HttpStatusError(status, message, rateLimit, requestId, retryable);
+  if (retryable) throw error;
   throw new AbortError(error);
 }
 
@@ -583,11 +609,12 @@ function normalizeHttpErrorBody(status: number, text: string): string {
   if (formattedStructuredError) return formattedStructuredError;
   const lowered = body.toLowerCase();
   if (body && lowered !== "unauthorized" && lowered !== "forbidden") {
-    // A 503 body already explains itself; label only legacy 4xx/5xx bodies.
-    if (status !== 503 && isTransientConvexContention(body)) {
+    // Current servers explain transient failures themselves (503, or 409 when
+    // the request cannot be resent); label only legacy 400/401 bodies.
+    if (isLegacyStatus(status) && isTransientConvexContention(body)) {
       return `Transient ClawHub write contention. The package artifact passed request validation; retrying usually succeeds. ${body}`;
     }
-    if (status !== 503 && isTransientConvexSystemError(body)) {
+    if (isLegacyStatus(status) && isTransientConvexSystemError(body)) {
       return `ClawHub backend is temporarily unavailable; this was not a validation failure and retrying usually succeeds. ${body}`;
     }
     if (status === 404 && lowered === "package not found") {
@@ -690,13 +717,25 @@ function isTransientConvexContention(text: string) {
   );
 }
 
-// Mirrors the server classifier in convex/lib/httpUtils.ts: captured Convex
-// platform-failure signatures, never free-form validation text.
+// Statuses older servers used for transient Convex failures they misreported.
+function isLegacyStatus(status: number) {
+  return status === 400 || status === 401;
+}
+
+function isLegacyTransientFailure(status: number, text: string) {
+  return (
+    isLegacyStatus(status) &&
+    (isTransientConvexContention(text) || isTransientConvexSystemError(text))
+  );
+}
+
+// Older servers sent some transient Convex failures as 4xx with the raw
+// platform text. The client only sees text, not the error type the server uses
+// to exclude application `ConvexError`s, so match full platform sentences
+// rather than bare codes a validation message could quote.
 function isTransientConvexSystemError(text: string) {
   return (
-    /\bInternalServerError: /.test(text) ||
-    /\bOverloaded(?:Error)?: /.test(text) ||
-    /\bTransient error while /.test(text) ||
+    /\bInternalServerError: Transient error while /.test(text) ||
     /\bCommitterFullError: Too many writes in a short period of time\./.test(text) ||
     text.includes("Your request couldn't be completed. Try again later.")
   );

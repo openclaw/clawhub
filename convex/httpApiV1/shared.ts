@@ -583,7 +583,14 @@ const CONVEX_CAPACITY_RESET_PATTERN = /\s*\(reset in (\d+)s\)/;
 export function transientConvexErrorResponse(
   error: unknown,
   headers?: HeadersInit,
-  options: { outcomeUnknown?: boolean } = {},
+  options: {
+    // The request may have committed before the failure surfaced.
+    outcomeUnknown?: boolean;
+    // The request consumed one-shot state (for example upload tickets) before
+    // failing, so resending it can never succeed: answer 409 without
+    // Retry-After instead of inviting a futile automatic retry.
+    restartRequired?: boolean;
+  } = {},
 ): Response | null {
   const kind = getTransientConvexErrorKind(error);
   if (!kind) return null;
@@ -596,12 +603,16 @@ export function transientConvexErrorResponse(
     kind === "write_conflict"
       ? "Transient ClawHub write contention"
       : "ClawHub backend is temporarily unavailable";
-  const outcome = options.outcomeUnknown
-    ? "The request was not rejected for validation, but it may have completed before the failure; if a retry reports a conflict such as an existing version, check the current state before changing anything."
-    : "The request was not rejected for validation; retrying usually succeeds.";
+  const outcome = options.restartRequired
+    ? "The request was not rejected for validation, but the failure happened after it saved its uploaded files, so the same request cannot be retried. It may have completed; check the version, and otherwise run publish again to upload the files again."
+    : options.outcomeUnknown
+      ? "The request was not rejected for validation, but it may have completed before the failure; if a retry reports a conflict such as an existing version, check the current state before changing anything."
+      : "The request was not rejected for validation; retrying usually succeeds.";
   const body = [`${summary}.`, outcome, detail, requestId ? `[Request ID: ${requestId}]` : ""]
     .filter(Boolean)
     .join(" ");
+  console.warn("http_transient_convex_error", { kind, restartRequired: !!options.restartRequired });
+  if (options.restartRequired) return text(body, 409, headers);
   const retryAfter =
     kind === "write_conflict"
       ? TRANSIENT_WRITE_CONFLICT_RETRY_AFTER_SECONDS
@@ -609,7 +620,6 @@ export function transientConvexErrorResponse(
           TRANSIENT_SYSTEM_ERROR_MAX_RETRY_AFTER_SECONDS,
           Math.max(TRANSIENT_SYSTEM_ERROR_RETRY_AFTER_SECONDS, Number(capacityReset ?? 0)),
         );
-  console.warn("http_transient_convex_error", { kind });
   return text(body, 503, mergeHeaders(headers, { "Retry-After": String(retryAfter) }));
 }
 

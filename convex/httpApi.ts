@@ -200,6 +200,9 @@ async function cliUploadUrlHandler(ctx: ActionCtx, request: Request) {
 export const cliUploadUrlHttp = httpAction(cliUploadUrlHandler);
 
 async function cliPublishHandler(ctx: ActionCtx, request: Request) {
+  // Once files persist, a failed publish discards them, so resending the same
+  // storage IDs can never succeed.
+  let filesPersisted = false;
   let body: unknown;
   try {
     body = await request.json();
@@ -234,10 +237,15 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
       ...(target ? { ownerPublisherId: target.publisherId } : {}),
       ...(source ? { sourceOwnerPublisherId: source.publisherId } : {}),
       ...(shouldMigrateOwner ? { migrateOwner: true } : {}),
+      onFilesPersisted: () => {
+        filesPersisted = true;
+      },
     });
     return json({ ok: true, ...result });
   } catch (error) {
-    const transient = transientConvexErrorResponse(error);
+    const transient = transientConvexErrorResponse(error, undefined, {
+      restartRequired: filesPersisted,
+    });
     if (transient) return transient;
     const message = error instanceof Error ? error.message : "Publish failed";
     if (message.toLowerCase().includes("unauthorized")) return text(formatAuthFailure(error), 401);

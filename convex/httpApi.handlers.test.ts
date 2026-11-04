@@ -722,6 +722,27 @@ describe("httpApi handlers", () => {
     expect(await response.text()).toMatch(/^ClawHub backend is temporarily unavailable\./);
   });
 
+  it("cliPublishHttp answers 409 when the failure follows persisted files", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    vi.mocked(publishVersionForUser).mockImplementationOnce(
+      async (_ctx, _userId, _args, options) => {
+        options?.onFilesPersisted?.();
+        throw new Error("Your request couldn't be completed. Try again later.");
+      },
+    );
+    const response = await __handlers.cliPublishHandler(
+      makeCtx({}),
+      new Request("https://x/api/cli/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: legacyPublishBody(),
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(response.headers.get("Retry-After")).toBeNull();
+    expect(await response.text()).toContain("cannot be retried");
+  });
+
   it("cliPublishHttp keeps an application error quoting platform text as 400", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
     const { ConvexError } = await import("convex/values");
@@ -873,7 +894,7 @@ describe("httpApi handlers", () => {
       expect.anything(),
       "user1",
       expect.not.objectContaining({ ownerHandle: expect.anything() }),
-      { ownerPublisherId: "publishers:openclaw" },
+      { ownerPublisherId: "publishers:openclaw", onFilesPersisted: expect.any(Function) },
     );
   });
 

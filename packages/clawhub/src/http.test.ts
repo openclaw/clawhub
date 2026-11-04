@@ -765,6 +765,54 @@ describe("truthful retryable publish errors", () => {
     },
   );
 
+  it("does not mistake a validation message quoting a platform code for an outage", async () => {
+    const invalid = () =>
+      new Response("Skill file InternalServerError: notes.md is not allowed", { status: 400 });
+    const { client, fetchImpl, delays } = createRecordingClient([invalid]);
+    const error = await publish(client, 5).catch((caught: unknown) => caught);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(delays).toEqual([]);
+    expect((error as Error).message).toBe(
+      "Skill file InternalServerError: notes.md is not allowed",
+    );
+  });
+
+  it("keeps an ambiguous temporary failure in the final error when a retry is then rejected", async () => {
+    const outcomeUnknown = () =>
+      new Response(
+        "ClawHub backend is temporarily unavailable. The request was not rejected for validation, but it may have completed before the failure.",
+        { status: 503, headers: { "Retry-After": "2" } },
+      );
+    const exists = () =>
+      new Response("Version 1.0.0 already exists. Increment the version number and try again.", {
+        status: 400,
+      });
+    const { client, fetchImpl } = createRecordingClient([outcomeUnknown, exists]);
+    const error = await publish(client, 5).catch((caught: unknown) => caught);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(getHttpErrorStatus(error)).toBe(400);
+    expect((error as Error).message).toBe(
+      "Version 1.0.0 already exists. Increment the version number and try again. (after retrying an earlier temporary failure: ClawHub backend is temporarily unavailable. The request was not rejected for validation, but it may have completed before the failure. (retry in 2s))",
+    );
+  });
+
+  it("does not retry a 409 restart-required publish failure", async () => {
+    const restart = () =>
+      new Response(
+        "ClawHub backend is temporarily unavailable. The request was not rejected for validation, but the failure happened after it saved its uploaded files, so the same request cannot be retried. InternalServerError: Transient error while running mutation",
+        { status: 409 },
+      );
+    const { client, fetchImpl, delays } = createRecordingClient([restart]);
+    const error = await publish(client, 5).catch((caught: unknown) => caught);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(delays).toEqual([]);
+    expect(getHttpErrorStatus(error)).toBe(409);
+    expect((error as Error).message).toMatch(
+      /^ClawHub backend is temporarily unavailable\. .*cannot be retried/,
+    );
+    expect((error as Error).message).not.toMatch(/retrying usually succeeds/);
+  });
+
   it("does not retry genuine validation errors", async () => {
     const invalid = () =>
       new Response("Version 1.0.0 already exists. Increment the version number and try again.", {

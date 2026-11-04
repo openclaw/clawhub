@@ -2661,6 +2661,9 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
   if (!auth.ok) return auth.response;
 
   const contentType = request.headers.get("content-type") ?? "";
+  // Ticketed JSON publishes consume their upload tickets once files persist; a
+  // later failure cannot be fixed by resending the same request.
+  let ticketedFilesPersisted = false;
   try {
     if (contentType.includes("application/json")) {
       const body = await request.json();
@@ -2675,7 +2678,9 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
           rate.headers,
         );
       }
-      const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload);
+      const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload, () => {
+        ticketedFilesPersisted = true;
+      });
       return json({ ok: true, ...result }, 200, rate.headers);
     }
 
@@ -2697,7 +2702,9 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       }
     }
   } catch (error) {
-    const transient = transientConvexErrorResponse(error, rate.headers);
+    const transient = transientConvexErrorResponse(error, rate.headers, {
+      restartRequired: ticketedFilesPersisted,
+    });
     if (transient) return transient;
     const message = error instanceof Error ? error.message : "Publish failed";
     return text(message, 400, rate.headers);

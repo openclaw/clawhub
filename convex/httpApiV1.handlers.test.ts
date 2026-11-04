@@ -9095,6 +9095,26 @@ describe("httpApiV1 handlers", () => {
       }
     });
 
+    it("answers 409 without Retry-After when the failure follows consumed upload tickets", async () => {
+      vi.mocked(publishVersionForUser).mockImplementationOnce(
+        async (_ctx, _userId, _args, options) => {
+          options?.onFilesPersisted?.();
+          throw new Error("InternalServerError: Transient error while running mutation");
+        },
+      );
+      const response = await __handlers.publishSkillV1Handler(
+        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        skillPublishRequest(),
+      );
+      // Resending the same tickets can never succeed, so do not invite an automatic retry.
+      expect(response.status).toBe(409);
+      expect(response.headers.get("Retry-After")).toBeNull();
+      for (const header of rateLimitHeaders) expect(response.headers.get(header)).toBeNull();
+      const body = await response.text();
+      expect(body).toContain("cannot be retried");
+      expect(body).toContain("may have completed");
+    });
+
     it.each([
       new Error("Version 1.0.0 already exists. Increment the version number and try again."),
       new ConvexError("Version 1.0.0 already exists. Increment the version number and try again."),

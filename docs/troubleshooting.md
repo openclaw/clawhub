@@ -51,6 +51,10 @@ it with backoff, honoring the server's `Retry-After`. Run the command again
 shortly. If a retry reports that the version already exists, an earlier attempt
 completed; check the published version before bumping it.
 
+If the same failure arrives as `409` saying the request cannot be retried, it
+happened after the publish saved its uploaded files. Check whether the version
+was published; if not, run `clawhub publish` again to upload the files again.
+
 ## Search or install fails behind a proxy
 
 The CLI respects standard proxy variables:

@@ -48,7 +48,15 @@ recovery, and API-token auth in `requireApiTokenUserOrResponse` /
 `requirePackagePublishAuthOrResponse` / legacy whoami (a platform failure
 reading a token must not tell a valid publisher to log in again).
 
-## Ambiguous outcomes
+## Ambiguous outcomes and one-shot state
+
+A ticketed JSON skill publish (v1, and legacy `/api/cli/publish` with stored
+file IDs) consumes its upload tickets once the pending version persists; if a
+later step fails, compensation discards the files. Resending that request can
+never succeed, so a transient failure after `onFilesPersisted` answers `409`
+without `Retry-After` and tells the publisher to check the version and run
+publish again (which uploads the files again). Failures before persistence stay
+retryable `503`s.
 
 Before package publish dispatch, the request owns every stored blob and deletes
 them on failure, so a retry is a clean fresh attempt. After dispatch (and for
@@ -61,10 +69,20 @@ ticket rather than attach a second blob.
 
 ## CLI retry contract
 
-`packages/clawhub/src/http.ts` retries `408`, `429`, `5xx`, network failures,
-and (for older servers) `4xx` bodies matching the same transient signatures.
+`packages/clawhub/src/http.ts` retries `429`, `5xx`, network failures, and
+(for older servers) `400`/`401` bodies carrying a full Convex platform sentence
+(`InternalServerError: Transient error while`, `Your request couldn't be
+completed`, typed `CommitterFullError`, or a write conflict). It never body-sniffs
+`409`, which current servers use for "do not resend".
 Backoff is bounded and jittered: the wait is `max(Retry-After,
 exponential backoff)` plus jitter of `max(250ms, Retry-After/4)`. A
 `Retry-After` above 60s is not waited out; the command fails fast with the hint.
 No sleep follows the final attempt. Quota (`remaining`) and `reset in` hints are
-shown only for a `429`; `retry in Ns` reflects any `Retry-After`.
+shown only for a `429`; `retry in Ns` reflects any `Retry-After`. When a retried
+temporary failure is followed by a non-retryable rejection (for example "version
+already exists" after an ambiguous publish), the final message keeps the earlier
+failure so the publisher can tell the version may already be published.
+
+Follow-up: a skill upload whose attachment commits but still reports a transient
+error deletes the blob the ticket now references (pre-existing); the retry then
+fails as a used ticket. Reconciling would need a ticket read-back after the error.

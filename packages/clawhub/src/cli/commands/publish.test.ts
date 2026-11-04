@@ -217,8 +217,9 @@ describe("cmdPublish", () => {
         );
         expect(caught).toBe(failure);
         expect(realHttp.getHttpErrorStatus(caught)).toBe(fixture.status);
+        // Retry-After on a non-429 is a retry hint, not a rate-limit reset.
         expect((caught as Error).message).toBe(
-          `${fixture.label}: HTTP ${fixture.status} (Request ID: 0123456789abcdef): Request rejected (retry in 53s, reset in 53s)`,
+          `${fixture.label}: HTTP ${fixture.status} (Request ID: 0123456789abcdef): Request rejected (retry in 53s)`,
         );
         expect(tickets).toBe(2);
         expect(httpMocks.uploadBinary).toHaveBeenCalledTimes(fixture.uploads);
