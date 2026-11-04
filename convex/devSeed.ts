@@ -2521,27 +2521,11 @@ async function deleteSeedPluginFixtureByName(ctx: MutationCtx, name: string) {
   }
 }
 
-async function deleteSeedPluginFixture(ctx: MutationCtx, name = FLAGGED_PLUGIN_NAME) {
-  await deleteSeedPluginFixtureByName(ctx, name);
-}
-
-async function deleteScannedPluginFixture(ctx: MutationCtx, name = SCANNED_PLUGIN_NAME) {
-  await deleteSeedPluginFixtureByName(ctx, name);
-}
-
 async function findSeedPluginFixtureByName(ctx: MutationCtx, name: string) {
   return await ctx.db
     .query("packages")
     .withIndex("by_name", (q) => q.eq("normalizedName", normalizePackageName(name)))
     .unique();
-}
-
-async function findSeedPluginFixture(ctx: MutationCtx, name = FLAGGED_PLUGIN_NAME) {
-  return await findSeedPluginFixtureByName(ctx, name);
-}
-
-async function findScannedPluginFixture(ctx: MutationCtx, name = SCANNED_PLUGIN_NAME) {
-  return await findSeedPluginFixtureByName(ctx, name);
 }
 
 async function ensureSkillBadge(
@@ -3097,8 +3081,8 @@ export async function seedLocalModerationFixturesHandler(
   }
   const existingSkill = await findSkillFixture(ctx, flaggedSkillSlug);
   const existingScannedSkill = await findSkillFixture(ctx, scannedSkillSlug);
-  const existingPlugin = await findSeedPluginFixture(ctx, flaggedPluginName);
-  const existingScannedPlugin = await findScannedPluginFixture(ctx, scannedPluginName);
+  const existingPlugin = await findSeedPluginFixtureByName(ctx, flaggedPluginName);
+  const existingScannedPlugin = await findSeedPluginFixtureByName(ctx, scannedPluginName);
   const existingTruncationSkill = await findSkillFixture(ctx, TRUNCATION_SKILL_SLUG);
   const existingTruncationPlugin = await findSeedPluginFixtureByName(ctx, TRUNCATION_PLUGIN_NAME);
   if (
@@ -3278,8 +3262,8 @@ export async function seedLocalModerationFixturesHandler(
   await deleteSkillFixture(ctx, flaggedSkillSlug);
   await deleteSkillFixture(ctx, scannedSkillSlug);
   await deleteSkillFixture(ctx, TRUNCATION_SKILL_SLUG);
-  await deleteSeedPluginFixture(ctx, flaggedPluginName);
-  await deleteScannedPluginFixture(ctx, scannedPluginName);
+  await deleteSeedPluginFixtureByName(ctx, flaggedPluginName);
+  await deleteSeedPluginFixtureByName(ctx, scannedPluginName);
   await deleteSeedPluginFixtureByName(ctx, TRUNCATION_PLUGIN_NAME);
 
   const { userId, publisherId } = owner;
