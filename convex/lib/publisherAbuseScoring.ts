@@ -1,3 +1,13 @@
+import type {
+  StoredTemporalAbuseCohortBenchmark,
+  TemporalAbuseCohortBenchmark,
+} from "./publisherAbuseBenchmark";
+
+export type {
+  StoredTemporalAbuseCohortBenchmark,
+  TemporalAbuseCohortBenchmark,
+} from "./publisherAbuseBenchmark";
+
 export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v4";
 export const PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION = "publisher-abuse-temporal.v2";
 
@@ -93,25 +103,6 @@ export type SkillTemporalAbuseScore = {
   nearConversionWindowEndDay?: number;
   reasonCodes: string[];
 };
-
-export type TemporalAbuseCohortBenchmark = {
-  scope?: "all_active_skills";
-  sampleSize: number;
-  downloads30dAverage: number;
-  downloads30dMedian: number;
-  downloads30dP95: number;
-  downloads30dP99: number;
-  spikeMultiplier7dP95: number;
-  spikeMultiplier7dP99: number;
-  excess7DownloadsP95: number;
-  excess7DownloadsP99: number;
-};
-
-export type StoredTemporalAbuseCohortBenchmark = Omit<
-  TemporalAbuseCohortBenchmark,
-  "excess7DownloadsP95" | "excess7DownloadsP99"
-> &
-  Partial<Pick<TemporalAbuseCohortBenchmark, "excess7DownloadsP95" | "excess7DownloadsP99">>;
 
 export function normalizeTemporalAbuseCohortBenchmark(
   benchmark: StoredTemporalAbuseCohortBenchmark,

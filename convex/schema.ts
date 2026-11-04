@@ -20,6 +20,7 @@ import {
   pluginCategoryClassificationValidator,
   pluginCategoryReviewValidator,
 } from "./lib/pluginCategoryClassificationContract";
+import { storedTemporalBenchmarkValidator } from "./lib/publisherAbuseBenchmark";
 import { searchDigestValidator } from "./lib/searchDigestContract";
 import {
   searchArtifactKind,
@@ -3742,20 +3743,7 @@ const publisherAbuseScoreRuns = defineTable({
   temporalSpikeP99: v.optional(v.number()),
   temporalExcessP95: v.optional(v.number()),
   temporalExcessP99: v.optional(v.number()),
-  temporalBenchmark: v.optional(
-    v.object({
-      scope: v.optional(v.literal("all_active_skills")),
-      sampleSize: v.number(),
-      downloads30dAverage: v.number(),
-      downloads30dMedian: v.number(),
-      downloads30dP95: v.number(),
-      downloads30dP99: v.number(),
-      spikeMultiplier7dP95: v.number(),
-      spikeMultiplier7dP99: v.number(),
-      excess7DownloadsP95: v.optional(v.number()),
-      excess7DownloadsP99: v.optional(v.number()),
-    }),
-  ),
+  temporalBenchmark: v.optional(storedTemporalBenchmarkValidator),
   errorMessage: v.optional(v.string()),
   // Distinguishes an intentional stop from a scan failure in the staff UI.
   canceledAt: v.optional(v.number()),
@@ -3897,20 +3885,7 @@ const publisherAbuseScores = defineTable({
   temporalSpikeSkillCount: v.optional(v.number()),
   temporalSustainedSkillCount: v.optional(v.number()),
   temporalMaxPressure: v.optional(v.number()),
-  temporalBenchmark: v.optional(
-    v.object({
-      scope: v.optional(v.literal("all_active_skills")),
-      sampleSize: v.number(),
-      downloads30dAverage: v.number(),
-      downloads30dMedian: v.number(),
-      downloads30dP95: v.number(),
-      downloads30dP99: v.number(),
-      spikeMultiplier7dP95: v.number(),
-      spikeMultiplier7dP99: v.number(),
-      excess7DownloadsP95: v.optional(v.number()),
-      excess7DownloadsP99: v.optional(v.number()),
-    }),
-  ),
+  temporalBenchmark: v.optional(storedTemporalBenchmarkValidator),
   temporalEvidence: v.optional(
     v.array(
       v.object({
@@ -4065,20 +4040,7 @@ const publisherAbuseSignals = defineTable({
   allTimeDownloads: v.number(),
   allTimeInstalls: v.number(),
   allTimeInstallDownloadRatio: v.number(),
-  temporalBenchmark: v.optional(
-    v.object({
-      scope: v.optional(v.literal("all_active_skills")),
-      sampleSize: v.number(),
-      downloads30dAverage: v.number(),
-      downloads30dMedian: v.number(),
-      downloads30dP95: v.number(),
-      downloads30dP99: v.number(),
-      spikeMultiplier7dP95: v.number(),
-      spikeMultiplier7dP99: v.number(),
-      excess7DownloadsP95: v.optional(v.number()),
-      excess7DownloadsP99: v.optional(v.number()),
-    }),
-  ),
+  temporalBenchmark: v.optional(storedTemporalBenchmarkValidator),
   expected7Downloads: v.optional(v.number()),
   excess7Downloads: v.optional(v.number()),
   spikeMultiplier: v.optional(v.number()),
