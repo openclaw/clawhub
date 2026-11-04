@@ -86,6 +86,24 @@ afterEach(() => {
   vi.mocked(getAuthUserId).mockReset();
 });
 
+function makeOrgAdminMembershipQuery() {
+  return {
+    withIndex: (name: string) => {
+      if (name !== "by_publisher_user") {
+        throw new Error(`unexpected publisherMembers index ${name}`);
+      }
+      return {
+        unique: async () => ({
+          _id: "publisherMembers:1",
+          publisherId: "publishers:org",
+          userId: "users:actor",
+          role: "admin",
+        }),
+      };
+    },
+  };
+}
+
 function chainEq(constraints: Record<string, unknown>) {
   return {
     eq(field: string, value: unknown) {
@@ -759,21 +777,7 @@ describe("skills ownership", () => {
               };
             }
             if (table === "publisherMembers") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_publisher_user") {
-                    throw new Error(`unexpected publisherMembers index ${name}`);
-                  }
-                  return {
-                    unique: async () => ({
-                      _id: "publisherMembers:1",
-                      publisherId: "publishers:org",
-                      userId: "users:actor",
-                      role: "admin",
-                    }),
-                  };
-                },
-              };
+              return makeOrgAdminMembershipQuery();
             }
             if (table === "skillSlugAliases") {
               return {
@@ -1005,21 +1009,7 @@ describe("skills ownership", () => {
               };
             }
             if (table === "publisherMembers") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_publisher_user") {
-                    throw new Error(`unexpected publisherMembers index ${name}`);
-                  }
-                  return {
-                    unique: async () => ({
-                      _id: "publisherMembers:1",
-                      publisherId: "publishers:org",
-                      userId: "users:actor",
-                      role: "admin",
-                    }),
-                  };
-                },
-              };
+              return makeOrgAdminMembershipQuery();
             }
             if (table === "skillSlugAliases") {
               return {
@@ -1448,21 +1438,7 @@ describe("skills ownership", () => {
               };
             }
             if (table === "publisherMembers") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_publisher_user") {
-                    throw new Error(`unexpected publisherMembers index ${name}`);
-                  }
-                  return {
-                    unique: async () => ({
-                      _id: "publisherMembers:1",
-                      publisherId: "publishers:org",
-                      userId: "users:actor",
-                      role: "admin",
-                    }),
-                  };
-                },
-              };
+              return makeOrgAdminMembershipQuery();
             }
             if (table === "skillSlugAliases") {
               return {
@@ -1604,21 +1580,7 @@ describe("skills ownership", () => {
               };
             }
             if (table === "publisherMembers") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_publisher_user") {
-                    throw new Error(`unexpected publisherMembers index ${name}`);
-                  }
-                  return {
-                    unique: async () => ({
-                      _id: "publisherMembers:1",
-                      publisherId: "publishers:org",
-                      userId: "users:actor",
-                      role: "admin",
-                    }),
-                  };
-                },
-              };
+              return makeOrgAdminMembershipQuery();
             }
             if (table === "skillSlugAliases") {
               return {
@@ -1822,21 +1784,7 @@ describe("skills ownership", () => {
                 };
               }
               if (table === "publisherMembers") {
-                return {
-                  withIndex: (name: string) => {
-                    if (name !== "by_publisher_user") {
-                      throw new Error(`unexpected publisherMembers index ${name}`);
-                    }
-                    return {
-                      unique: async () => ({
-                        _id: "publisherMembers:1",
-                        publisherId: "publishers:org",
-                        userId: "users:actor",
-                        role: "admin",
-                      }),
-                    };
-                  },
-                };
+                return makeOrgAdminMembershipQuery();
               }
               if (table === "skillSlugAliases") {
                 return {
