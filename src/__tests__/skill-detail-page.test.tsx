@@ -102,6 +102,30 @@ describe("SkillDetailPage", () => {
   const versionId = "skillVersions:1" as Id<"skillVersions">;
   const storageId = "storage:1" as Id<"_storage">;
 
+  function makeMinimalWeatherSkillResult() {
+    return {
+      skill: {
+        _id: "skills:1",
+        slug: "weather",
+        displayName: "Weather",
+        summary: "Get current weather.",
+        ownerUserId: "users:1",
+        ownerPublisherId: "publishers:steipete",
+        tags: {},
+        stats: { stars: 0, downloads: 0 },
+      },
+      owner: {
+        _id: "publishers:steipete",
+        _creationTime: 0,
+        kind: "user",
+        handle: "steipete",
+        displayName: "Peter",
+        linkedUserId: "users:1",
+      },
+      latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+    };
+  }
+
   function makeWeatherSkill() {
     return {
       _id: skillId,
@@ -2073,27 +2097,7 @@ describe("SkillDetailPage", () => {
       if (args === "skip") return undefined;
       if (args && typeof args === "object" && "skillId" in args) return [];
       if (args && typeof args === "object" && "slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: "users:1",
-            ownerPublisherId: "publishers:steipete",
-            tags: {},
-            stats: { stars: 0, downloads: 0 },
-          },
-          owner: {
-            _id: "publishers:steipete",
-            _creationTime: 0,
-            kind: "user",
-            handle: "steipete",
-            displayName: "Peter",
-            linkedUserId: "users:1",
-          },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
-        };
+        return makeMinimalWeatherSkillResult();
       }
       return undefined;
     });
@@ -2130,27 +2134,7 @@ describe("SkillDetailPage", () => {
       }
       if (args && typeof args === "object" && "skillId" in args) return [];
       if (args && typeof args === "object" && "slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: "users:1",
-            ownerPublisherId: "publishers:steipete",
-            tags: {},
-            stats: { stars: 0, downloads: 0 },
-          },
-          owner: {
-            _id: "publishers:steipete",
-            _creationTime: 0,
-            kind: "user",
-            handle: "steipete",
-            displayName: "Peter",
-            linkedUserId: "users:1",
-          },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
-        };
+        return makeMinimalWeatherSkillResult();
       }
       return undefined;
     });
@@ -2197,27 +2181,7 @@ describe("SkillDetailPage", () => {
       }
       if (args && typeof args === "object" && "skillId" in args) return [];
       if (args && typeof args === "object" && "slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: "users:1",
-            ownerPublisherId: "publishers:steipete",
-            tags: {},
-            stats: { stars: 0, downloads: 0 },
-          },
-          owner: {
-            _id: "publishers:steipete",
-            _creationTime: 0,
-            kind: "user",
-            handle: "steipete",
-            displayName: "Peter",
-            linkedUserId: "users:1",
-          },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
-        };
+        return makeMinimalWeatherSkillResult();
       }
       return undefined;
     });
@@ -2250,27 +2214,7 @@ describe("SkillDetailPage", () => {
       if (args === "skip") return undefined;
       if (args && typeof args === "object" && "skillId" in args) return [];
       if (args && typeof args === "object" && "slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: "users:1",
-            ownerPublisherId: "publishers:steipete",
-            tags: {},
-            stats: { stars: 0, downloads: 0 },
-          },
-          owner: {
-            _id: "publishers:steipete",
-            _creationTime: 0,
-            kind: "user",
-            handle: "steipete",
-            displayName: "Peter",
-            linkedUserId: "users:1",
-          },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
-        };
+        return makeMinimalWeatherSkillResult();
       }
       return undefined;
     });
@@ -2713,27 +2657,7 @@ describe("SkillDetailPage", () => {
         return [];
       }
       if (args && typeof args === "object" && "slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: "users:1",
-            ownerPublisherId: "publishers:steipete",
-            tags: {},
-            stats: { stars: 0, downloads: 0 },
-          },
-          owner: {
-            _id: "publishers:steipete",
-            _creationTime: 0,
-            kind: "user",
-            handle: "steipete",
-            displayName: "Peter",
-            linkedUserId: "users:1",
-          },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
-        };
+        return makeMinimalWeatherSkillResult();
       }
       return undefined;
     });
