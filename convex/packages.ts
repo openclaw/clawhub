@@ -1816,66 +1816,6 @@ function buildPackagePluginCategoryDigestQuery(
   const channel = args.channel;
   const isOfficial = args.isOfficial;
   const digests = ctx.db.query("packagePluginCategorySearchDigest");
-  if (args.sort === "downloads") {
-    if (family && channel && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_family_channel_official_category_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category),
-      );
-    }
-    if (family && channel) {
-      return digests.withIndex("by_active_family_channel_category_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("pluginCategory", args.category),
-      );
-    }
-    if (family && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_family_official_category_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category),
-      );
-    }
-    if (channel && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_channel_official_category_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category),
-      );
-    }
-    if (family) {
-      return digests.withIndex("by_active_family_category_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
-      );
-    }
-    if (channel) {
-      return digests.withIndex("by_active_channel_category_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("channel", channel).eq("pluginCategory", args.category),
-      );
-    }
-    if (typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_official_category_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category),
-      );
-    }
-    return digests.withIndex("by_active_category_downloads", (q) =>
-      q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
-    );
-  }
   if (args.sort === "installs" || args.sort === "recommended") {
     if (family && typeof isOfficial === "boolean") {
       return digests.withIndex(
@@ -1918,8 +1858,19 @@ function buildPackagePluginCategoryDigestQuery(
       (q) => q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
     );
   }
+  const sort = args.sort === "downloads" ? "downloads" : "updated";
+  if (sort === "downloads" && family && channel && typeof isOfficial === "boolean") {
+    return digests.withIndex("by_active_family_channel_official_category_downloads", (q) =>
+      q
+        .eq("softDeletedAt", undefined)
+        .eq("family", family)
+        .eq("channel", channel)
+        .eq("isOfficial", isOfficial)
+        .eq("pluginCategory", args.category),
+    );
+  }
   if (family && channel) {
-    return digests.withIndex("by_active_family_channel_category_updated", (q) =>
+    return digests.withIndex(`by_active_family_channel_category_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("family", family)
@@ -1928,7 +1879,7 @@ function buildPackagePluginCategoryDigestQuery(
     );
   }
   if (family && typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_family_official_category_updated", (q) =>
+    return digests.withIndex(`by_active_family_official_category_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("family", family)
@@ -1937,7 +1888,7 @@ function buildPackagePluginCategoryDigestQuery(
     );
   }
   if (channel && typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_channel_official_category_updated", (q) =>
+    return digests.withIndex(`by_active_channel_official_category_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("channel", channel)
@@ -1946,24 +1897,24 @@ function buildPackagePluginCategoryDigestQuery(
     );
   }
   if (family) {
-    return digests.withIndex("by_active_family_category_updated", (q) =>
+    return digests.withIndex(`by_active_family_category_${sort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
     );
   }
   if (channel) {
-    return digests.withIndex("by_active_channel_category_updated", (q) =>
+    return digests.withIndex(`by_active_channel_category_${sort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("channel", channel).eq("pluginCategory", args.category),
     );
   }
   if (typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_official_category_updated", (q) =>
+    return digests.withIndex(`by_active_official_category_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("isOfficial", isOfficial)
         .eq("pluginCategory", args.category),
     );
   }
-  return digests.withIndex("by_active_category_updated", (q) =>
+  return digests.withIndex(`by_active_category_${sort}`, (q) =>
     q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
   );
 }
@@ -1982,63 +1933,6 @@ function buildPackageTopicDigestQuery(
   const channel = args.channel;
   const isOfficial = args.isOfficial;
   const digests = ctx.db.query("packageTopicSearchDigest");
-  if (args.sort === "downloads") {
-    if (family && channel && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_family_channel_official_topic_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("topic", args.topic),
-      );
-    }
-    if (family && channel) {
-      return digests.withIndex("by_active_family_channel_topic_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("topic", args.topic),
-      );
-    }
-    if (family && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_family_official_topic_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("topic", args.topic),
-      );
-    }
-    if (channel && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_channel_official_topic_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("topic", args.topic),
-      );
-    }
-    if (family) {
-      return digests.withIndex("by_active_family_topic_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("family", family).eq("topic", args.topic),
-      );
-    }
-    if (channel) {
-      return digests.withIndex("by_active_channel_topic_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("channel", channel).eq("topic", args.topic),
-      );
-    }
-    if (typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_official_topic_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("isOfficial", isOfficial).eq("topic", args.topic),
-      );
-    }
-    return digests.withIndex("by_active_topic_downloads", (q) =>
-      q.eq("softDeletedAt", undefined).eq("topic", args.topic),
-    );
-  }
   if (args.sort === "installs") {
     if (typeof isOfficial === "boolean") {
       return digests.withIndex("by_active_official_topic_installs", (q) =>
@@ -2059,8 +1953,19 @@ function buildPackageTopicDigestQuery(
       q.eq("softDeletedAt", undefined).eq("topic", args.topic),
     );
   }
+  const sort = args.sort === "downloads" ? "downloads" : "updated";
+  if (sort === "downloads" && family && channel && typeof isOfficial === "boolean") {
+    return digests.withIndex("by_active_family_channel_official_topic_downloads", (q) =>
+      q
+        .eq("softDeletedAt", undefined)
+        .eq("family", family)
+        .eq("channel", channel)
+        .eq("isOfficial", isOfficial)
+        .eq("topic", args.topic),
+    );
+  }
   if (family && channel) {
-    return digests.withIndex("by_active_family_channel_topic_updated", (q) =>
+    return digests.withIndex(`by_active_family_channel_topic_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("family", family)
@@ -2069,7 +1974,7 @@ function buildPackageTopicDigestQuery(
     );
   }
   if (family && typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_family_official_topic_updated", (q) =>
+    return digests.withIndex(`by_active_family_official_topic_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("family", family)
@@ -2078,7 +1983,7 @@ function buildPackageTopicDigestQuery(
     );
   }
   if (channel && typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_channel_official_topic_updated", (q) =>
+    return digests.withIndex(`by_active_channel_official_topic_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("channel", channel)
@@ -2087,21 +1992,21 @@ function buildPackageTopicDigestQuery(
     );
   }
   if (family) {
-    return digests.withIndex("by_active_family_topic_updated", (q) =>
+    return digests.withIndex(`by_active_family_topic_${sort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("family", family).eq("topic", args.topic),
     );
   }
   if (channel) {
-    return digests.withIndex("by_active_channel_topic_updated", (q) =>
+    return digests.withIndex(`by_active_channel_topic_${sort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("channel", channel).eq("topic", args.topic),
     );
   }
   if (typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_official_topic_updated", (q) =>
+    return digests.withIndex(`by_active_official_topic_${sort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("isOfficial", isOfficial).eq("topic", args.topic),
     );
   }
-  return digests.withIndex("by_active_topic_updated", (q) =>
+  return digests.withIndex(`by_active_topic_${sort}`, (q) =>
     q.eq("softDeletedAt", undefined).eq("topic", args.topic),
   );
 }
