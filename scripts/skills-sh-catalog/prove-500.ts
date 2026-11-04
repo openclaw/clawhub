@@ -174,6 +174,17 @@ async function main() {
   const query = <T>(operation: () => Promise<T>) => measured("query", operation);
   const mutation = <T>(operation: () => Promise<T>) => measured("mutation", operation);
 
+  async function processFixtureRun(runId: Doc<"skillsShCatalogRuns">["_id"]) {
+    let run = await query(() => client.query(internal.skillsShCatalog.getRunInternal, { runId }));
+    while (run?.status === "running") {
+      await mutation(() =>
+        client.mutation(internal.skillsShCatalog.processFixtureBatchInternal, { runId }),
+      );
+      run = await query(() => client.query(internal.skillsShCatalog.getRunInternal, { runId }));
+    }
+    return run;
+  }
+
   const cronsSource = await readFile(resolve(process.cwd(), "convex/crons.ts"), "utf8");
   const schedulesPresent =
     cronsSource.includes("skillsShCatalog") || cronsSource.includes("skills-sh");
@@ -250,23 +261,7 @@ async function main() {
       dryRun: true,
     }),
   );
-  let dryRun = await query(() =>
-    client.query(internal.skillsShCatalog.getRunInternal, {
-      runId: dryStart.runId,
-    }),
-  );
-  while (dryRun?.status === "running") {
-    await mutation(() =>
-      client.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-        runId: dryStart.runId,
-      }),
-    );
-    dryRun = await query(() =>
-      client.query(internal.skillsShCatalog.getRunInternal, {
-        runId: dryStart.runId,
-      }),
-    );
-  }
+  let dryRun = await processFixtureRun(dryStart.runId);
   assert(dryRun?.status === "completed", "20,000-row dry run did not finish");
   assert(
     dryRun.counts.observed === 20_000 &&
@@ -441,23 +436,7 @@ async function main() {
       reason: "identical frozen rerun",
     }),
   );
-  let repeatedRun = await query(() =>
-    client.query(internal.skillsShCatalog.getRunInternal, {
-      runId: repeatedStart.runId,
-    }),
-  );
-  while (repeatedRun?.status === "running") {
-    await mutation(() =>
-      client.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-        runId: repeatedStart.runId,
-      }),
-    );
-    repeatedRun = await query(() =>
-      client.query(internal.skillsShCatalog.getRunInternal, {
-        runId: repeatedStart.runId,
-      }),
-    );
-  }
+  let repeatedRun = await processFixtureRun(repeatedStart.runId);
   assert(
     repeatedRun?.counts.unchanged === 500 && repeatedRun.counts.scansPlanned === 0,
     "identical rerun was not idempotent",
@@ -486,23 +465,7 @@ async function main() {
         reason: `synthetic ${maxEntriesPerRun}-row admission race`,
       }),
     );
-    let run = await query(() =>
-      client.query(internal.skillsShCatalog.getRunInternal, {
-        runId: started.runId,
-      }),
-    );
-    while (run?.status === "running") {
-      await mutation(() =>
-        client.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-          runId: started.runId,
-        }),
-      );
-      run = await query(() =>
-        client.query(internal.skillsShCatalog.getRunInternal, {
-          runId: started.runId,
-        }),
-      );
-    }
+    await processFixtureRun(started.runId);
     return started.runId;
   };
 
@@ -730,23 +693,7 @@ async function main() {
       reason: "changed frozen rerun",
     }),
   );
-  let changedRun = await query(() =>
-    client.query(internal.skillsShCatalog.getRunInternal, {
-      runId: changedStart.runId,
-    }),
-  );
-  while (changedRun?.status === "running") {
-    await mutation(() =>
-      client.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-        runId: changedStart.runId,
-      }),
-    );
-    changedRun = await query(() =>
-      client.query(internal.skillsShCatalog.getRunInternal, {
-        runId: changedStart.runId,
-      }),
-    );
-  }
+  let changedRun = await processFixtureRun(changedStart.runId);
   assert(
     changedRun?.counts.updated === 2 && changedRun.counts.scansPlanned === 1,
     "changed rerun did not produce exactly two updates and one rescan plan",
