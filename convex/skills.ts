@@ -30,6 +30,7 @@ import {
   assertAdmin,
   assertModerator,
   getOptionalActiveAuthUserId,
+  requireActiveUserById,
   requireUser,
   requireUserFromAction,
 } from "./lib/access";
@@ -3617,8 +3618,7 @@ export const reportSkillForUserInternal = internalMutation({
     ownerHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || undefined;
     const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, ownerHandle);
@@ -4006,8 +4006,7 @@ export const submitSkillAppealForUserInternal = internalMutation({
     message: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug, {
       includeSoftDeleted: true,
@@ -4102,8 +4101,7 @@ export const listSkillReportsInternal = internalQuery({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -4141,8 +4139,7 @@ export const triageSkillReportForUserInternal = internalMutation({
     finalAction: v.optional(v.union(v.literal("none"), v.literal("hide"))),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const skillReport = await ctx.db.get(args.reportId);
@@ -4229,8 +4226,7 @@ export const listSkillAppealsInternal = internalQuery({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -4267,8 +4263,7 @@ export const resolveSkillAppealForUserInternal = internalMutation({
     finalAction: v.optional(v.union(v.literal("none"), v.literal("restore"))),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const appeal = await ctx.db.get(args.appealId);
@@ -4333,8 +4328,7 @@ export const listSkillModerationEventLogsInternal = internalQuery({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 50), 100));
@@ -8155,8 +8149,7 @@ export async function deleteOwnedSkillVersionForUser(
     version: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
 
   const slug = args.slug.trim();
   if (!slug) throw new ConvexError("Slug required");
@@ -8269,8 +8262,7 @@ export async function restoreOwnedSkillVersionForUser(
     ownerHandle?: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
 
   const slug = args.slug.trim().toLowerCase();
   if (!slug) throw new ConvexError("Slug required");
@@ -8328,8 +8320,7 @@ export async function revokeSkillVersionForUser(
     ownerHandle?: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
   assertModerator(actor);
 
   const slug = args.slug.trim().toLowerCase();
@@ -8940,8 +8931,7 @@ export const setSkillTagForUserInternal = internalMutation({
     ownerHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const slug = args.slug.trim().toLowerCase();
     if (!slug) throw new ConvexError("Slug required");
@@ -9220,8 +9210,7 @@ export const setSkillFeaturedForUserInternal = internalMutation({
     featured: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
@@ -9940,8 +9929,7 @@ export const transferSkillOwnerForUserInternal = internalMutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const slug = normalizeSkillSlug(args.slug);
     if (!slug) throw new ConvexError("Skill slug required");
@@ -10482,8 +10470,7 @@ export const hardDeleteForAdminInternal = internalMutation({
     confirmationToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const slug = normalizeSkillSlugKey(args.slug);
