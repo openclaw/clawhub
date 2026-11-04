@@ -1980,6 +1980,8 @@ const packageInspectorScanStates = defineTable({
   sdkUsage: v.optional(sdkUsageScan),
   // Absent on rows written before outcomes were recorded; those scans completed.
   outcome: v.optional(packageInspectorOutcomeValidator),
+  // The most recent tool failure for this scan identity. On a completed
+  // outcome it records a later failed rescan that left the verdict in place.
   failure: v.optional(packageInspectorFailureValidator),
   scanSource: v.optional(v.union(v.literal("publish"), v.literal("nightly"))),
 })

@@ -107,6 +107,12 @@ describe("OpenClaw declared entrypoint validation", () => {
     expect(messages({ extensions: ["../shared/index.js"] }, ["index.js"])).toEqual([
       "demo-plugin declares openclaw.extensions entry ../shared/index.js, which points outside the package. Point it at a file inside the published package.",
     ]);
+    // OpenClaw bounds-checks the declared entry even when a runtime entry replaces it.
+    expect(
+      messages({ extensions: ["../evil.ts"], runtimeExtensions: ["./dist/index.js"] }, [
+        "dist/index.js",
+      ]),
+    ).toEqual([expect.stringContaining("entry ../evil.ts, which points outside the package")]);
   });
 
   it("reports each missing runtime file when runtime and source lists differ in length", () => {

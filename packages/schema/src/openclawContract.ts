@@ -173,6 +173,14 @@ function validateDeclaredEntry(
   check: DeclaredEntryCheck,
 ): OpenClawExternalPluginValidationIssue | undefined {
   const { packageName, packageFiles, entry, runtimeEntry } = check;
+  const entryPath = resolvePackageEntryPath(entry);
+  // OpenClaw bounds-checks the declared entry even when a runtime entry replaces it.
+  if (!entryPath) {
+    return {
+      fieldPath: check.fieldPath,
+      message: `${packageName} declares ${check.fieldPath} entry ${entry}, which points outside the package. Point it at a file inside the published package.`,
+    };
+  }
   if (runtimeEntry) {
     const runtimePath = resolvePackageEntryPath(runtimeEntry);
     if (runtimePath && packageFiles.has(runtimePath)) return undefined;
@@ -184,13 +192,6 @@ function validateDeclaredEntry(
     };
   }
 
-  const entryPath = resolvePackageEntryPath(entry);
-  if (!entryPath) {
-    return {
-      fieldPath: check.fieldPath,
-      message: `${packageName} declares ${check.fieldPath} entry ${entry}, which points outside the package. Point it at a file inside the published package.`,
-    };
-  }
   const candidates = compiledRuntimeCandidates(entryPath);
   if (candidates.some((candidate) => packageFiles.has(candidate))) return undefined;
   if (candidates.length > 0) {

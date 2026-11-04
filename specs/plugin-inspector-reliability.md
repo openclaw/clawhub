@@ -37,7 +37,13 @@ preparation errors. Those were reported to publishers as plugin breakage.
 - Outcomes are recorded on `packageInspectorScanStates` (`outcome`, `failure`,
   `scanSource`). A publish-time failure that never resolved its target uses
   `targetOpenClawVersion: "unresolved"`, which matches no real target. Rows
-  written before outcomes existed have no `outcome` and are completed scans.
+  written before outcomes existed have no `outcome` and are completed scans;
+  a pre-outcome bulk-scan failure therefore still reads as a completed scan
+  until the next scan of that identity rewrites it.
+- A failed rescan never replaces a completed verdict for the same release,
+  Inspector version, and target: the row keeps its `outcome`, `completedAt`,
+  and findings and records only the latest `failure`. A later completed scan
+  clears `failure`.
 - A failed or timed-out scan state never counts as covering a release: the
   bulk scan claim does not skip it, and the plugin validation report takes its
   verdict and nightly finding tuple from the latest scan that actually

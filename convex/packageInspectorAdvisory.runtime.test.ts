@@ -196,6 +196,81 @@ describe("advisory Plugin Inspector outcomes", () => {
     ).toEqual([]);
   });
 
+  it("finalizes a legacy staged attempt without an Inspector outcome as before", async () => {
+    const { finalizeWithFollowup, scanStates, findings } = await fixture();
+
+    const { result } = await finalizeWithFollowup({
+      inspectorWarnings: [
+        {
+          code: "manifest-name-missing",
+          level: "warning",
+          message: "manifest display name is missing",
+          authorRemediation: { summary: "Add a display name." },
+        },
+      ],
+      inspectorMetadata: { inspectorVersion: "0.4.3", targetOpenClawVersion: "2026.10.5" },
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(await findings()).toEqual([
+      expect.objectContaining({ code: "manifest-name-missing", findingKind: "warning" }),
+    ]);
+    expect(await scanStates()).toEqual([]);
+  });
+
+  it("keeps a completed nightly verdict and its findings when a rescan of the same target fails", async () => {
+    const { t, packageId, releaseId, scanStates, findings } = await fixture();
+    await t.run((ctx) => ctx.db.patch(releaseId, { publicationStatus: "published" }));
+    const ingest = (body: Record<string, unknown>) =>
+      t.fetch("/api/v1/package-inspector/results", {
+        method: "POST",
+        headers: { authorization: `Bearer ${workerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          packageId,
+          releaseId,
+          inspectorVersion: "0.4.3",
+          targetOpenClawVersion: "2026.11.1-beta.1",
+          notifyOwners: false,
+          ...body,
+        }),
+      });
+
+    expect(
+      (
+        await ingest({
+          findings: [
+            {
+              code: "unknown-hook-name",
+              level: "breakage",
+              message: "plugin registers an unknown hook",
+              authorRemediation: { summary: "Register a supported hook name." },
+            },
+          ],
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await ingest({
+          findings: [],
+          inspectionFailed: true,
+          failure: { stage: "bulk scan", reason: "out_of_memory", message: "heap out of memory" },
+        })
+      ).status,
+    ).toBe(200);
+
+    expect(await scanStates()).toEqual([
+      expect.objectContaining({
+        outcome: "findings",
+        scanSource: "nightly",
+        failure: expect.objectContaining({ reason: "out_of_memory" }),
+      }),
+    ]);
+    expect(await findings()).toEqual([
+      expect.objectContaining({ code: "unknown-hook-name", scanSource: "nightly" }),
+    ]);
+  });
+
   it("records nightly scan timeouts as monitoring data and keeps the release eligible for rescans", async () => {
     const { t, packageId, releaseId, scanStates, findings } = await fixture();
     await t.run((ctx) => ctx.db.patch(releaseId, { publicationStatus: "published" }));

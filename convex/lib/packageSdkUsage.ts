@@ -1,7 +1,11 @@
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import type { PackageInspectorFailure, PackageInspectorOutcome } from "./packageInspectorOutcome";
+import {
+  isPackageInspectorFailureOutcome,
+  type PackageInspectorFailure,
+  type PackageInspectorOutcome,
+} from "./packageInspectorOutcome";
 import { isPublishedPackageRelease } from "./packageReleaseVisibility";
 import {
   MAX_SDK_USAGE_ENTRIES,
@@ -132,9 +136,19 @@ export async function recordPackageInspectorScan(
     ...(args.scanSource ? { scanSource: args.scanSource } : {}),
   };
   const scanId = existing?._id ?? (await ctx.db.insert("packageInspectorScanStates", values));
-  // A rescan with an outcome replaces the previous one, clearing any stale failure.
-  if (existing)
-    await ctx.db.patch(scanId, args.outcome ? { failure: undefined, ...values } : values);
+  if (existing) {
+    if (
+      isPackageInspectorFailureOutcome(args.outcome) &&
+      !isPackageInspectorFailureOutcome(existing.outcome)
+    ) {
+      // A crashed or timed-out rescan says nothing about the plugin: keep the
+      // completed verdict (and its findings) and only note the latest failure.
+      await ctx.db.patch(scanId, { failure: args.failure });
+    } else {
+      // A rescan with an outcome replaces the previous one, clearing any stale failure.
+      await ctx.db.patch(scanId, args.outcome ? { failure: undefined, ...values } : values);
+    }
+  }
   if (args.report && args.artifactSha256) {
     return await replacePackageSdkUsage(ctx, {
       pkg,

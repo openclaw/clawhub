@@ -127,6 +127,14 @@ const PUBLISH_ENTRY_FIX = "Build first and publish a local folder or .tgz, or in
 // otherwise a compiled candidate of a TypeScript entry, or the JavaScript entry itself.
 function validateDeclaredEntry(check) {
     const { packageName, packageFiles, entry, runtimeEntry } = check;
+    const entryPath = resolvePackageEntryPath(entry);
+    // OpenClaw bounds-checks the declared entry even when a runtime entry replaces it.
+    if (!entryPath) {
+        return {
+            fieldPath: check.fieldPath,
+            message: `${packageName} declares ${check.fieldPath} entry ${entry}, which points outside the package. Point it at a file inside the published package.`,
+        };
+    }
     if (runtimeEntry) {
         const runtimePath = resolvePackageEntryPath(runtimeEntry);
         if (runtimePath && packageFiles.has(runtimePath))
@@ -136,13 +144,6 @@ function validateDeclaredEntry(check) {
             message: runtimePath
                 ? `${packageName} declares ${check.runtimeFieldPath} entry ./${runtimePath}, but that file is missing from the package. ${PUBLISH_ENTRY_FIX}`
                 : `${packageName} declares ${check.runtimeFieldPath} entry ${runtimeEntry}, which points outside the package. Point it at a file inside the published package.`,
-        };
-    }
-    const entryPath = resolvePackageEntryPath(entry);
-    if (!entryPath) {
-        return {
-            fieldPath: check.fieldPath,
-            message: `${packageName} declares ${check.fieldPath} entry ${entry}, which points outside the package. Point it at a file inside the published package.`,
         };
     }
     const candidates = compiledRuntimeCandidates(entryPath);
