@@ -269,56 +269,6 @@ describe("skills ownership", () => {
                 },
               };
             }
-            if (table === "skillSlugAliases") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") {
-                    throw new Error(`unexpected skillSlugAliases index ${name}`);
-                  }
-                  return { take: async () => [] };
-                },
-              };
-            }
-            if (table === "skillSlugAliases") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") {
-                    throw new Error(`unexpected skillSlugAliases index ${name}`);
-                  }
-                  return { take: async () => [] };
-                },
-              };
-            }
-            if (table === "skillSlugAliases") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") {
-                    throw new Error(`unexpected skillSlugAliases index ${name}`);
-                  }
-                  return { take: async () => [] };
-                },
-              };
-            }
-            if (table === "skillSlugAliases") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") {
-                    throw new Error(`unexpected skillSlugAliases index ${name}`);
-                  }
-                  return { take: async () => [] };
-                },
-              };
-            }
-            if (table === "skillSlugAliases") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") {
-                    throw new Error(`unexpected skillSlugAliases index ${name}`);
-                  }
-                  return { take: async () => [] };
-                },
-              };
-            }
             throw new Error(`unexpected table ${table}`);
           }),
         },
@@ -1786,46 +1736,6 @@ describe("skills ownership", () => {
               if (table === "publisherMembers") {
                 return makeOrgAdminMembershipQuery();
               }
-              if (table === "skillSlugAliases") {
-                return {
-                  withIndex: (name: string) => {
-                    if (name !== "by_slug") {
-                      throw new Error(`unexpected skillSlugAliases index ${name}`);
-                    }
-                    return { take: async () => [] };
-                  },
-                };
-              }
-              if (table === "skillSlugAliases") {
-                return {
-                  withIndex: (name: string) => {
-                    if (name !== "by_slug") {
-                      throw new Error(`unexpected skillSlugAliases index ${name}`);
-                    }
-                    return { take: async () => [] };
-                  },
-                };
-              }
-              if (table === "skillSlugAliases") {
-                return {
-                  withIndex: (name: string) => {
-                    if (name !== "by_slug") {
-                      throw new Error(`unexpected skillSlugAliases index ${name}`);
-                    }
-                    return { take: async () => [] };
-                  },
-                };
-              }
-              if (table === "skillSlugAliases") {
-                return {
-                  withIndex: (name: string) => {
-                    if (name !== "by_slug") {
-                      throw new Error(`unexpected skillSlugAliases index ${name}`);
-                    }
-                    return { take: async () => [] };
-                  },
-                };
-              }
               throw new Error(`unexpected table ${table}`);
             }),
             patch,
@@ -2339,16 +2249,6 @@ describe("skills ownership", () => {
                     throw new Error(`unexpected skillSearchDigest index ${name}`);
                   }
                   return { unique: async () => ({ _id: "skillSearchDigest:source" }) };
-                },
-              };
-            }
-            if (table === "skillSlugAliases") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") {
-                    throw new Error(`unexpected skillSlugAliases index ${name}`);
-                  }
-                  return { take: async () => [] };
                 },
               };
             }
