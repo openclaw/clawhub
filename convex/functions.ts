@@ -1,7 +1,6 @@
 import { customCtx, customMutation } from "convex-helpers/server/customFunctions";
 import { Triggers, type Change } from "convex-helpers/server/triggers";
 import { v } from "convex/values";
-import semver from "semver";
 import { internal } from "./_generated/api";
 import type { DataModel, Doc, Id } from "./_generated/dataModel";
 import {
@@ -14,6 +13,7 @@ import {
   httpAction,
 } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import { comparePackageReleaseOrder } from "./lib/packageReleaseFamily";
 import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
 import {
   deletePackageSearchDigests,
@@ -70,24 +70,6 @@ function toPackageLatestVersionSummary(
   };
 }
 
-function compareFallbackReleases(
-  family: Doc<"packages">["family"],
-  a: LatestPackageRelease,
-  b: LatestPackageRelease,
-) {
-  if (family === "bundle-plugin") {
-    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
-    return a._id.localeCompare(b._id);
-  }
-  const aSemver = semver.valid(a.version);
-  const bSemver = semver.valid(b.version);
-  if (aSemver && bSemver) return semver.compare(aSemver, bSemver);
-  if (aSemver) return 1;
-  if (bSemver) return -1;
-  if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
-  return a._id.localeCompare(b._id);
-}
-
 async function getPreferredFallbackPackageRelease(
   ctx: PackageDigestSyncCtx,
   packageId: Id<"packages">,
@@ -118,7 +100,7 @@ async function getPreferredFallbackPackageRelease(
         distTags: release.distTags,
         pluginManifestSummary: release.pluginManifestSummary,
       };
-      if (!best || compareFallbackReleases(family, candidate, best) > 0) best = candidate;
+      if (!best || comparePackageReleaseOrder(family, candidate, best) > 0) best = candidate;
     }
     if (page.isDone) return best;
     cursor = page.continueCursor;
