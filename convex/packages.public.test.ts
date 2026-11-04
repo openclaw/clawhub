@@ -14505,29 +14505,18 @@ describe("packages public queries", () => {
       return attemptCall?.[1].packageFollowup as Record<string, unknown> | undefined;
     }
 
-    it.each([
-      [
-        "runs out of memory",
-        async () => {
-          throw new Error("Node.js action execution ran out of memory");
-        },
-      ],
-      ["never finishes", () => new Promise(() => undefined)],
-      [
-        "reports a breakage",
-        async () => ({
-          ...makeCleanPackageInspectorResult(),
-          outcome: "findings",
-          breakages: [{ code: "unknown-hook-name", level: "breakage", message: "bad hook" }],
-        }),
-      ],
-    ])("publishes without running Plugin Inspector even when it %s", async (_label, inspector) => {
+    it("publishes without invoking Plugin Inspector or staging Inspector results", async () => {
+      // Any Inspector invocation fails the test instead of returning a stub result.
+      const inspector = vi.fn(async () => {
+        throw new Error("Plugin Inspector must not run in the publish request");
+      });
       const { ctx, runMutation } = makeAdvisoryPublishCtx({ runAction: inspector });
 
       const result = await publishDemoPlugin(ctx);
 
       expect(result).toMatchObject({ ok: true, status: "pending", publicationStatus: "pending" });
       expect(result).not.toHaveProperty("inspectorFindings");
+      expect(inspector).not.toHaveBeenCalled();
       expect(
         ctx.runAction.mock.calls.some(([ref]) =>
           getFunctionName(ref as FunctionReference<"action">).startsWith("packageInspectorNode:"),

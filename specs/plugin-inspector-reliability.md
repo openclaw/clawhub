@@ -34,6 +34,27 @@ preparation errors. Those were reported to publishers as plugin breakage.
   latest public plugin release dispatches. Monitoring has no publish-time
   budget: it runs on a GitHub runner, not the 512 MiB Convex Node action,
   with a 30-minute job timeout for release scans.
+- Eligibility is rechecked at every privileged step, never carried from the
+  queue. Each dispatch attempt, including a queued retry, re-reads whether the
+  release is still the latest public plugin release before it mints a GitHub
+  App token; a release made private, blocked, or superseded meanwhile is
+  dropped with no token and no repository_dispatch. The worker resolves the
+  package through the public package API, and the protected artifact route
+  rechecks publication, privacy, deletion, family, and security status before
+  it reads storage, so a run dispatched before the change is refused without
+  artifact I/O.
+- `convex/pluginInspectorReleaseScan.chain.runtime.test.ts` proves that chain
+  in a disposable convex-test backend: the HTTP publish route, check
+  completion, scheduled finalization, the scheduled dispatcher and its retry,
+  and the worker's own lookup and artifact code all run for real; GitHub's
+  token and repository_dispatch APIs are simulated, and the Actions runner is
+  replaced by evaluating the workflow's real step expressions for the
+  dispatched event. Storage reads are observed at the storage syscall, and
+  calls are attributed to the dispatcher by its User-Agent.
+  `CLAWHUB_PLUGIN_INSPECTOR_CHAIN_PROOF=1` additionally spawns the full worker
+  script, with the real Inspector and its public npm OpenClaw target, over a
+  loopback bridge to that backend. Nothing in the proof reaches GitHub or a
+  ClawHub deployment.
 - Inspector results carry an outcome: `clean`, `findings`, `tool_failure`, or
   `timeout`. Failures carry `{ stage, reason, message }` with reason
   `out_of_memory`, `target_unavailable`, `timeout`, or `error`. A tool failure
