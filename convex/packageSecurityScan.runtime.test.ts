@@ -429,11 +429,10 @@ it("keeps automatic reports distinct from explicit plugin rescans and retires le
   expect((await readReleaseAndJob(t, releaseId, jobId)).job?.status).toBe("failed");
 });
 
-it("explicit plugin rescans reject missing or failed AIG evidence before any release write", async () => {
+it("explicit plugin rescans reject failed supplied AIG evidence before any release write", async () => {
   const { t, releaseId, jobId } = await createPackageScanFixture();
   const before = await readReleaseAndJob(t, releaseId, jobId);
   for (const invalidAigAnalysis of [
-    undefined,
     { status: "failed", issueCount: 0, findings: [], checkedAt: 10 },
   ]) {
     await expect(
@@ -447,4 +446,23 @@ it("explicit plugin rescans reject missing or failed AIG evidence before any rel
     ).rejects.toThrow("completed ClawScan and A.I.G evidence");
     expect(await readReleaseAndJob(t, releaseId, jobId)).toEqual(before);
   }
+});
+
+it("preserves the old pinned package scanner contract without fabricated AIG evidence", async () => {
+  const { t, releaseId, jobId } = await createPackageScanFixture();
+  const analysis = {
+    status: "clean",
+    verdict: "benign",
+    summary: "Exact legacy publication scan",
+    checkedAt: 10,
+  };
+  await t.mutation(internal.packages.completeReleaseSecurityScanInternal, {
+    releaseId,
+    jobId,
+    leaseToken: "lease-one",
+    llmAnalysis: analysis,
+  });
+  const { release } = await readReleaseAndJob(t, releaseId, jobId);
+  expect(release?.llmAnalysis).toEqual(analysis);
+  expect(release?.aigAnalysis).toBeUndefined();
 });

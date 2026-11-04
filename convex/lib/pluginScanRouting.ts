@@ -23,7 +23,10 @@ export function assertPluginScanEvidence(
     !Number.isFinite(llmAnalysis.checkedAt) ||
     !["clean", "benign", "suspicious", "malicious"].includes(verdict ?? "") ||
     !["completed", "clean", "benign", "suspicious", "malicious"].includes(status ?? "") ||
-    !reusableAigAnalysis(aigAnalysis) ||
+    // The production c3cfaf15 package lane never executes AIG. Preserve that
+    // historical/pinned contract; any supplied AIG must be usable. The new MCP
+    // lane requires scanner provenance in the worker and is still fenced off.
+    (aigAnalysis !== undefined && !reusableAigAnalysis(aigAnalysis)) ||
     (expectedCheck === "clean" && verdict === "malicious") ||
     (expectedCheck === "blocked" && verdict !== "malicious")
   ) {
