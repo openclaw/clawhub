@@ -409,6 +409,24 @@ describe("versioned ClawScan receipt consumer", () => {
     expect(() => validateClawScanArtifactForClawHubProfile(artifact)).toThrow();
   });
 
+  it("records a refused oversized judge prompt as zero judge invocations", () => {
+    const artifact = artifactFixture() as ReturnType<typeof artifactFixture> & {
+      judge: Record<string, unknown>;
+    };
+    artifact.judge.attempts = [];
+    artifact.judge.status = "failed";
+    artifact.judge.commandStarted = false;
+    artifact.judge.error = "judge prompt too large: 1322168 chars exceeds budget 943718";
+    expect(clawScanExposure(artifact)).toEqual({
+      scanExecution: "started",
+      eligibleScanAttempt: true,
+      judgeInvocations: 0,
+      judgeOperationalFailures: 0,
+      recoveredReceiptRetries: 0,
+    });
+    expect(() => validateClawScanArtifactForClawHubProfile(artifact)).toThrow();
+  });
+
   it("does not classify arbitrary receipt-looking text as recovered exposure", () => {
     const artifact = artifactFixture();
     artifact.judge.attempts.unshift({
