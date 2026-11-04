@@ -8,10 +8,13 @@ import { manualPackageRecovery } from "./lib/packagePublishRecovery";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
 import { assertScannerSource } from "./lib/scannerSource";
+import {
+  aigAnalysisValidator,
+  skillSpectorAnalysisValidator,
+} from "./lib/securityAnalysisValidators";
 import { isPublishedSkillVersion } from "./lib/skillFileAccess";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
-import { skillSpectorAnalysisValidator } from "./schema";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
@@ -75,28 +78,6 @@ const workerLlmAnalysisValidator = v.object({
   guidance: v.optional(v.string()),
   findings: v.optional(v.string()),
   model: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const workerAigAnalysisValidator = v.object({
-  status: v.string(),
-  issueCount: v.number(),
-  findings: v.array(
-    v.object({
-      ruleId: v.string(),
-      level: v.string(),
-      message: v.string(),
-      title: v.optional(v.string()),
-      description: v.optional(v.string()),
-      file: v.optional(v.string()),
-      startLine: v.optional(v.number()),
-      endLine: v.optional(v.number()),
-      remediation: v.optional(v.string()),
-    }),
-  ),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
   checkedAt: v.number(),
 });
 
@@ -761,7 +742,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     trufflehog: workerCheckResultValidator,
     clawscan: workerCheckResultValidator,
     clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
-    aigAnalysis: v.optional(workerAigAnalysisValidator),
+    aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   },
   handler: async (ctx, args) => {
@@ -1802,7 +1783,7 @@ export const completePrePublicationChecks: ReturnType<typeof action> = action({
     trufflehog: workerCheckResultValidator,
     clawscan: workerCheckResultValidator,
     clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
-    aigAnalysis: v.optional(workerAigAnalysisValidator),
+    aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   },
   handler: async (ctx, args): Promise<unknown> => {
