@@ -2620,6 +2620,9 @@ export async function processJob(
     return { completed: true, hardFailed: false, retryableFailed: false };
   } catch (error) {
     const workerMustStop = error instanceof EndorContainerCleanupError;
+    // Both report-only and adjudication paths must retain the mounted source
+    // while container removal is unconfirmed. A hard stop is not cleanup proof.
+    if (workerMustStop) preserveWorkspaceForEndorCleanup = true;
     errorMessage = sanitizeWorkerErrorMessage(
       error instanceof Error ? error.message : String(error),
     );

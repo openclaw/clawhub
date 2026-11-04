@@ -2,14 +2,24 @@ type SecurityAuditOverviewInput = {
   llmAnalysis?: {
     summary?: string | null;
     guidance?: string | null;
+    status?: string | null;
+    verdict?: string | null;
   } | null;
 };
 
 export function getSecurityAuditOverviewCopy({
   llmAnalysis,
 }: SecurityAuditOverviewInput): string[] {
+  const status = (llmAnalysis?.verdict ?? llmAnalysis?.status)?.trim().toLowerCase();
+  const unavailable = ["benign", "clean", "suspicious", "malicious", "completed"].includes(
+    status ?? "",
+  )
+    ? "No overview is available for this completed security scan."
+    : ["failed", "error"].includes(status ?? "")
+      ? "The security scan failed. No overview is available."
+      : "No security analysis has been recorded yet.";
   return [
-    llmAnalysis?.summary?.trim() || "No security analysis has been recorded yet.",
+    llmAnalysis?.summary?.trim() || unavailable,
     llmAnalysis?.guidance?.trim() || null,
   ].filter((copy): copy is string => Boolean(copy));
 }

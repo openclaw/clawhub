@@ -1808,47 +1808,56 @@ JSON`,
     expect(await readFile(cleanupMarker, "utf8")).toBe("");
   });
 
-  it("fails closed and stops the worker when Endor container cleanup fails", async () => {
-    const workspace = await tempDir();
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    const callLog = join(workspace, "clawscan-calls.log");
-    await writeFakeClawScanCommand(fakeClawScan, `touch ${JSON.stringify(callLog)}\nexit 0`);
-    await configureEndorFakeCommands({
-      clawScan: fakeClawScan,
-      dockerBody: fakeEndorDockerBody({
-        cleanupFails: true,
-        cleanupMarker: join(workspace, "endor-cleaned"),
-        exitCode: 0,
-        startOutput: endorArtifactJson(),
-      }),
-      workspace,
-    });
+  it.each([false, true])(
+    "fails closed and preserves the workspace when Endor cleanup fails (report-only: %s)",
+    async (reportOnly) => {
+      const workspace = await tempDir();
+      const fakeClawScan = join(workspace, "fake-clawscan");
+      const callLog = join(workspace, "clawscan-calls.log");
+      await writeFakeClawScanCommand(fakeClawScan, `touch ${JSON.stringify(callLog)}\nexit 0`);
+      await configureEndorFakeCommands({
+        clawScan: fakeClawScan,
+        dockerBody: fakeEndorDockerBody({
+          cleanupFails: true,
+          cleanupMarker: join(workspace, "endor-cleaned"),
+          exitCode: 0,
+          startOutput: endorArtifactJson(),
+        }),
+        workspace,
+      });
 
-    const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry: true })) };
-    await expect(
-      processJob(
-        client,
-        "worker-auth",
-        pluginPackageJob("securityScanJobs:endor-cleanup-failure"),
-        undefined,
-      ),
-    ).resolves.toEqual({
-      completed: false,
-      hardFailed: true,
-      retryableFailed: false,
-      workerMustStop: true,
-    });
-    expect(client.action).toHaveBeenCalledTimes(1);
-    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-      error: expect.stringContaining("Docker cleanup failed"),
-    });
-    await expect(readFile(callLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    const mountedWorkspace = await readFile(join(workspace, "endor-mounted-source"), "utf8");
-    tempDirs.push(dirname(mountedWorkspace));
-    await expect(readFile(join(mountedWorkspace, "package.json"), "utf8")).resolves.toContain(
-      "name",
-    );
-  });
+      const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry: true })) };
+      await expect(
+        processJob(
+          client,
+          "worker-auth",
+          {
+            ...pluginPackageJob("securityScanJobs:endor-cleanup-failure"),
+            job: {
+              ...pluginPackageJob("securityScanJobs:endor-cleanup-failure").job,
+              ...(reportOnly ? { scanMode: "endor-report-only" as const } : {}),
+            },
+          },
+          undefined,
+        ),
+      ).resolves.toEqual({
+        completed: false,
+        hardFailed: true,
+        retryableFailed: false,
+        workerMustStop: true,
+      });
+      expect(client.action).toHaveBeenCalledTimes(1);
+      expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+        error: expect.stringContaining("Docker cleanup failed"),
+      });
+      await expect(readFile(callLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      const mountedWorkspace = await readFile(join(workspace, "endor-mounted-source"), "utf8");
+      tempDirs.push(dirname(mountedWorkspace));
+      await expect(readFile(join(mountedWorkspace, "package.json"), "utf8")).resolves.toContain(
+        "name",
+      );
+    },
+  );
 
   it("passes failed Endor analysis to the judge and completes the moderation result", async () => {
     vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "1");
