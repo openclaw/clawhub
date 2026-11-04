@@ -9,6 +9,10 @@ import {
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
+import {
+  packageInspectorFailureValidator,
+  packageInspectorOutcomeValidator,
+} from "./lib/packageInspectorOutcome";
 import { sdkUsageEntry, sdkUsageScan } from "./lib/packageSdkUsageContract";
 import {
   pluginCategoryClassificationValidator,
@@ -1974,6 +1978,10 @@ const packageInspectorScanStates = defineTable({
   completedAt: v.number(),
   notificationCompletedAt: v.optional(v.number()),
   sdkUsage: v.optional(sdkUsageScan),
+  // Absent on rows written before outcomes were recorded; those scans completed.
+  outcome: v.optional(packageInspectorOutcomeValidator),
+  failure: v.optional(packageInspectorFailureValidator),
+  scanSource: v.optional(v.union(v.literal("publish"), v.literal("nightly"))),
 })
   .index("by_release_and_inspector_version_and_target_openclaw_version", [
     "releaseId",

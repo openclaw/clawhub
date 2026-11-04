@@ -137,6 +137,8 @@ import type * as lib_packageClawpackPublish from "../lib/packageClawpackPublish.
 import type * as lib_packageFileVerification from "../lib/packageFileVerification.js";
 import type * as lib_packageIcons from "../lib/packageIcons.js";
 import type * as lib_packageInspectorFinding from "../lib/packageInspectorFinding.js";
+import type * as lib_packageInspectorOutcome from "../lib/packageInspectorOutcome.js";
+import type * as lib_packageInspectorVersion from "../lib/packageInspectorVersion.js";
 import type * as lib_packagePageCursor from "../lib/packagePageCursor.js";
 import type * as lib_packagePublishRecovery from "../lib/packagePublishRecovery.js";
 import type * as lib_packageReadProjection from "../lib/packageReadProjection.js";
@@ -462,6 +464,8 @@ declare const fullApi: ApiFromModules<{
   "lib/packageFileVerification": typeof lib_packageFileVerification;
   "lib/packageIcons": typeof lib_packageIcons;
   "lib/packageInspectorFinding": typeof lib_packageInspectorFinding;
+  "lib/packageInspectorOutcome": typeof lib_packageInspectorOutcome;
+  "lib/packageInspectorVersion": typeof lib_packageInspectorVersion;
   "lib/packagePageCursor": typeof lib_packagePageCursor;
   "lib/packagePublishRecovery": typeof lib_packagePublishRecovery;
   "lib/packageReadProjection": typeof lib_packageReadProjection;

@@ -56,7 +56,7 @@ describe("package inspector publish normalization", () => {
         coverage: { filesDiscovered: 106, filesAnalyzed: 2, filesExcluded: 104 },
       },
     });
-    expect(result).toMatchObject({ status: "pass", warnings: [], breakages: [] });
+    expect(result).toMatchObject({ outcome: "clean", warnings: [], breakages: [] });
     expect(result).not.toHaveProperty("sdkUsage");
   });
 
@@ -210,7 +210,7 @@ describe("package inspector publish normalization", () => {
     });
 
     expect(result).toMatchObject({
-      status: "fail",
+      outcome: "findings",
       summary: {
         breakageCount: 1,
         warningCount: 0,
@@ -257,7 +257,7 @@ describe("package inspector publish normalization", () => {
     });
 
     expect(result).toMatchObject({
-      status: "pass",
+      outcome: "findings",
       summary: {
         breakageCount: 0,
         warningCount: 2,
@@ -366,7 +366,7 @@ describe("package inspector publish normalization", () => {
     });
 
     expect(result).toMatchObject({
-      status: "pass",
+      outcome: "findings",
       summary: { breakageCount: 0, warningCount: 1 },
       breakages: [],
       warnings: [

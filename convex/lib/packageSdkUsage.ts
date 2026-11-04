@@ -1,6 +1,7 @@
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import type { PackageInspectorFailure, PackageInspectorOutcome } from "./packageInspectorOutcome";
 import { isPublishedPackageRelease } from "./packageReleaseVisibility";
 import {
   MAX_SDK_USAGE_ENTRIES,
@@ -103,6 +104,9 @@ export async function recordPackageInspectorScan(
     notificationComplete?: boolean;
     report?: SdkUsageReport;
     artifactSha256?: string;
+    outcome?: PackageInspectorOutcome;
+    failure?: PackageInspectorFailure;
+    scanSource?: "publish" | "nightly";
   },
 ) {
   const { pkg, release, inspectorVersion, targetOpenClawVersion } = args;
@@ -123,9 +127,14 @@ export async function recordPackageInspectorScan(
     targetOpenClawVersion,
     completedAt,
     ...(args.notificationComplete ? { notificationCompletedAt: completedAt } : {}),
+    ...(args.outcome ? { outcome: args.outcome } : {}),
+    ...(args.failure ? { failure: args.failure } : {}),
+    ...(args.scanSource ? { scanSource: args.scanSource } : {}),
   };
   const scanId = existing?._id ?? (await ctx.db.insert("packageInspectorScanStates", values));
-  if (existing) await ctx.db.patch(scanId, values);
+  // A rescan with an outcome replaces the previous one, clearing any stale failure.
+  if (existing)
+    await ctx.db.patch(scanId, args.outcome ? { failure: undefined, ...values } : values);
   if (args.report && args.artifactSha256) {
     return await replacePackageSdkUsage(ctx, {
       pkg,

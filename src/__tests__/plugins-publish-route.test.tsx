@@ -849,7 +849,7 @@ describe("plugins publish route", () => {
   it("shows backend publish failures inline on the upload form", async () => {
     publishRelease.mockRejectedValueOnce(
       new Error(
-        "Plugin Inspector blocked publish: 1 breakage. missing-expected-seam: missing expected registration registerTool",
+        "demo-plugin declares openclaw.extensions entry ./dist/index.js, but that file is missing from the package. OpenClaw cannot load this plugin without it.",
       ),
     );
     renderPublishRoute();
@@ -890,13 +890,13 @@ describe("plugins publish route", () => {
     fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toContain("Plugin Inspector blocked publish");
+      expect(screen.getByRole("alert").textContent).toContain(
+        "openclaw.extensions entry ./dist/index.js, but that file is missing from the package",
+      );
     });
-    expect(screen.getByRole("columnheader", { name: "Code" })).toBeTruthy();
-    expect(screen.getByRole("columnheader", { name: "Message" })).toBeTruthy();
-    expect(screen.getByText("missing-expected-seam")).toBeTruthy();
-    expect(screen.getByText("missing expected registration registerTool")).toBeTruthy();
-    expect(toastErrorMock).not.toHaveBeenCalled();
+    expect(toastErrorMock).toHaveBeenCalledWith(
+      expect.stringContaining("openclaw.extensions entry ./dist/index.js"),
+    );
   });
 
   it("surfaces missing OpenClaw compatibility metadata before publish", async () => {

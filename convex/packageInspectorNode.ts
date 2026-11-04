@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { v } from "convex/values";
-import rootPackageJson from "../package.json";
 import { LEGACY_AUTHOR_REMEDIATION_SUMMARIES } from "../packages/clawhub/src/packageInspectorRemediation";
 import { internalAction } from "./_generated/server";
 import { prepareOpenClawInspectorTarget } from "./lib/openClawInspectorTarget";
@@ -12,6 +11,15 @@ import {
   type PackageInspectorFinding as InspectorFinding,
   type PackageInspectorAuthorRemediation as InspectorAuthorRemediation,
 } from "./lib/packageInspectorFinding";
+import {
+  classifyPackageInspectorFailure,
+  PACKAGE_INSPECTOR_TARGET_STAGE,
+  packageInspectorFailureValidator,
+  type PackageInspectorFailure,
+  type PackageInspectorOutcome,
+  packageInspectorOutcomeValidator,
+} from "./lib/packageInspectorOutcome";
+import { getBundledPackageInspectorVersion } from "./lib/packageInspectorVersion";
 import { pluginApiRetirement } from "./lib/pluginApiRetirements";
 
 type InspectorReport = {
@@ -113,6 +121,16 @@ function canUseServerlessTempFallback(preferredTempDir: string, error: unknown) 
   );
 }
 
+type PublishInspectorResult = Omit<
+  ReturnType<typeof normalizeInspectorReportForPublish>,
+  "outcome"
+> & {
+  outcome: PackageInspectorOutcome;
+  failure?: PackageInspectorFailure;
+};
+
+// Advisory only: this action reports findings or the reason it could not
+// inspect, and never fabricates a plugin breakage from its own failure.
 export const runPackageInspectorForPublishInternal = internalAction({
   args: {
     packageName: v.string(),
@@ -120,7 +138,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
     files: v.array(publishFileValidator),
   },
   returns: v.object({
-    status: v.union(v.literal("pass"), v.literal("fail")),
+    outcome: packageInspectorOutcomeValidator,
     summary: v.object({
       breakageCount: v.number(),
       warningCount: v.number(),
@@ -130,11 +148,12 @@ export const runPackageInspectorForPublishInternal = internalAction({
     breakages: v.array(findingValidator),
     warnings: v.array(findingValidator),
     metadata: inspectorMetadataValidator,
+    failure: v.optional(packageInspectorFailureValidator),
   }),
   handler: async (ctx, args) => {
     let workspaceRoot: string | undefined;
     let stage = "workspace";
-    let result = normalizeInspectorReportForPublish({});
+    let result: PublishInspectorResult = normalizeInspectorReportForPublish({});
     const enterStage = (nextStage: string) => {
       stage = nextStage;
       // Convex attaches the action request id; record no file contents, credentials, or scratch paths.
@@ -142,18 +161,6 @@ export const runPackageInspectorForPublishInternal = internalAction({
         stage,
         packageName: args.packageName,
         version: args.version,
-      });
-    };
-    const recordFailure = (error: unknown, code: string) => {
-      const message = error instanceof Error ? error.message : String(error);
-      result.status = "fail";
-      result.summary.breakageCount += 1;
-      result.summary.issueCount += 1;
-      result.breakages.push({
-        code,
-        severity: "P0",
-        level: "breakage",
-        message: `Plugin Inspector could not inspect ${args.packageName}@${args.version} (${stage}): ${message}`,
       });
     };
     try {
@@ -174,7 +181,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
       await writeSyntheticInspectorConfigIfNeeded(root, args.files, args.packageName);
 
       const { openClawTargets, pluginRoot, reports } = await import("@openclaw/plugin-inspector");
-      enterStage("OpenClaw target preparation");
+      enterStage(PACKAGE_INSPECTOR_TARGET_STAGE);
       const targetOpenClaw = await prepareOpenClawInspectorTarget(
         await resolveOpenClawTargetCacheRoot(),
         {
@@ -192,15 +199,31 @@ export const runPackageInspectorForPublishInternal = internalAction({
 
       result = normalizeInspectorReportForPublish(report);
     } catch (error) {
-      recordFailure(error, "plugin-inspector-error");
+      const classified = classifyPackageInspectorFailure(error, stage);
+      console.warn("Plugin Inspector could not inspect package", {
+        packageName: args.packageName,
+        version: args.version,
+        outcome: classified.outcome,
+        stage: classified.failure.stage,
+        reason: classified.failure.reason,
+      });
+      result = { ...normalizeInspectorReportForPublish({}), ...classified };
     } finally {
       if (workspaceRoot) {
         enterStage("workspace cleanup");
         try {
           await rm(workspaceRoot, { recursive: true, force: true });
         } catch (error) {
-          // Cleanup must block publication without erasing the original inspection findings.
-          recordFailure(error, "plugin-inspector-cleanup-error");
+          // Leftover scratch space is an operational problem, not a plugin finding;
+          // keep the inspection outcome and leave the error to the logs.
+          console.error("Plugin Inspector workspace cleanup failed", {
+            packageName: args.packageName,
+            version: args.version,
+            code:
+              typeof error === "object" && error !== null && "code" in error
+                ? String(error.code)
+                : undefined,
+          });
         }
       }
     }
@@ -290,7 +313,7 @@ export function normalizeInspectorReportForPublish(report: unknown) {
   const warnings =
     issues.length > 0 ? issueWarnings : normalizeWarnings(parsed).filter(hasAuthorRemediation);
   return {
-    status: breakages.length > 0 ? ("fail" as const) : ("pass" as const),
+    outcome: breakages.length + warnings.length > 0 ? ("findings" as const) : ("clean" as const),
     summary: {
       breakageCount: breakages.length,
       warningCount: warnings.length,
@@ -302,7 +325,7 @@ export function normalizeInspectorReportForPublish(report: unknown) {
     breakages,
     warnings,
     metadata: {
-      inspectorVersion: getBundledInspectorVersion(),
+      inspectorVersion: getBundledPackageInspectorVersion(),
       targetOpenClawVersion: extractTargetOpenClawVersion(parsed.targetOpenClaw),
     },
   };
@@ -387,13 +410,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function getBundledInspectorVersion() {
-  return (
-    stringValue(process.env.CLAWHUB_PLUGIN_INSPECTOR_VERSION) ??
-    rootPackageJson.dependencies["@openclaw/plugin-inspector"]
-  );
 }
 
 function extractTargetOpenClawVersion(targetOpenClaw: unknown) {

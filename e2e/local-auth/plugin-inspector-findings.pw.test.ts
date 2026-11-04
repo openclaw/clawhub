@@ -32,13 +32,10 @@ if (process.env.CLAWHUB_CAPTURE_PLUGIN_INSPECTOR_PROOF === "1") {
 
 const exec = promisify(execFile);
 
-type PluginFixtureKind = "hard-error" | "warning";
+type PluginFixtureKind = "missing-entrypoint" | "warning";
 
 function pluginPackageJson(args: { name: string; displayName: string; kind: PluginFixtureKind }) {
-  const pluginInspector =
-    args.kind === "hard-error"
-      ? { version: 1, plugin: { id: "invalid.fixture.id" } }
-      : { version: 1, plugin: { id: args.name, sourceRoot: "dist" } };
+  const pluginInspector = { version: 1, plugin: { id: args.name, sourceRoot: "dist" } };
   return JSON.stringify(
     {
       name: args.name,
@@ -48,7 +45,8 @@ function pluginPackageJson(args: { name: string; displayName: string; kind: Plug
       repository: `https://github.com/openclaw/${args.name}.git`,
       pluginInspector,
       openclaw: {
-        extensions: [args.kind === "warning" ? "./src/index.ts" : "./dist/index.js"],
+        // The missing-entrypoint fixture declares a runtime file the upload does not contain.
+        extensions: [args.kind === "warning" ? "./src/index.ts" : "./dist/plugin.js"],
         ...(args.kind === "warning" ? { runtimeExtensions: ["./dist/index.js"] } : {}),
         compat: { pluginApi: ">=2026.3.24-beta.2" },
         build: { openclawVersion: "2026.3.24-beta.2" },
@@ -336,7 +334,7 @@ async function publishWarningPluginWithRetry(args: {
   throw lastError;
 }
 
-async function publishHardErrorPluginWithRetry(args: {
+async function publishMissingEntrypointPluginWithRetry(args: {
   errors: string[];
   page: Page;
   suffix: string;
@@ -358,7 +356,7 @@ async function publishHardErrorPluginWithRetry(args: {
         await writePluginZip(args.testInfo, {
           name: badName,
           displayName: "Playwright Inspector Bad Plugin",
-          kind: "hard-error",
+          kind: "missing-entrypoint",
         }),
       );
       await expect(args.page.locator("#pluginName")).toHaveValue(badName);
@@ -366,9 +364,11 @@ async function publishHardErrorPluginWithRetry(args: {
       const publishButton = args.page.getByRole("button", { name: "Publish plugin" });
       await expect(publishButton).toBeEnabled({ timeout: 60_000 });
       await publishButton.click({ timeout: 15_000 });
-      await expect(args.page.getByRole("alert")).toContainText("Plugin Inspector blocked publish", {
-        timeout: 60_000,
-      });
+      // Package validation rejects the release before any advisory Inspector run.
+      await expect(args.page.getByRole("alert")).toContainText(
+        "declares openclaw.extensions entry ./dist/plugin.js, but that file is missing from the package",
+        { timeout: 60_000 },
+      );
       return { badName };
     } catch (error) {
       lastError = error;
@@ -476,7 +476,7 @@ test("malicious ClawScan verdict keeps a staged plugin private", async ({
   await expectHealthyInspectorPage(page, errors);
 });
 
-test("plugin inspector blocks hard publish errors and publishes warning findings", async ({
+test("plugin publish rejects missing entrypoints and publishes warning findings", async ({
   page,
 }, testInfo) => {
   const errors = trackRuntimeErrors(page, { includeConsoleLocation: true });
@@ -484,13 +484,13 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
 
   await signInAsLocalPersona(page, "admin");
 
-  await publishHardErrorPluginWithRetry({
+  await publishMissingEntrypointPluginWithRetry({
     errors,
     page,
     suffix,
     testInfo,
   });
-  await captureProof(page, testInfo, "01-upload-hard-error");
+  await captureProof(page, testInfo, "01-upload-missing-entrypoint");
   const { warningName } = await publishWarningPluginWithRetry({
     errors,
     page,

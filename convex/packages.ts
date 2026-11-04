@@ -110,6 +110,16 @@ import {
   type PackageInspectorFinding,
   type PackageInspectorAuthorRemediation,
 } from "./lib/packageInspectorFinding";
+import {
+  classifyPackageInspectorFailure,
+  isPackageInspectorFailureOutcome,
+  type PackageInspectorFailure,
+  packageInspectorFailureValidator,
+  type PackageInspectorOutcome,
+  packageInspectorOutcomeValidator,
+  UNRESOLVED_OPENCLAW_TARGET_VERSION,
+} from "./lib/packageInspectorOutcome";
+import { getBundledPackageInspectorVersion } from "./lib/packageInspectorVersion";
 import { decodePublicPageCursor, encodePublicPageCursor } from "./lib/packagePageCursor";
 import {
   assertManualRecoveryFinalization,
@@ -490,7 +500,8 @@ const internalRefs = internal as unknown as {
 };
 
 type PackageInspectorPublishResult = {
-  status: "pass" | "fail";
+  outcome: PackageInspectorOutcome;
+  failure?: PackageInspectorFailure;
   summary: {
     breakageCount: number;
     warningCount: number;
@@ -3858,6 +3869,8 @@ export const listPluginExportPageInternal = internalQuery({
   },
 });
 
+const PLUGIN_VALIDATION_REPORT_SCAN_STATE_LOOKBACK = 10;
+
 function normalizePackageValidationFinding(warning: Doc<"packageInspectorWarnings">) {
   const severity =
     warning.findingKind === "error" ||
@@ -3895,11 +3908,24 @@ export const listPluginValidationReportPageInternal = internalQuery({
       if (!digest.latestReleaseId) continue;
       const release = await ctx.db.get(digest.latestReleaseId);
       if (!isPublishedPackageRelease(release, digest.packageId)) continue;
-      const scanState = await ctx.db
+      const recentScanStates = await ctx.db
         .query("packageInspectorScanStates")
         .withIndex("by_release_and_completed_at", (q) => q.eq("releaseId", release._id))
         .order("desc")
-        .first();
+        .take(PLUGIN_VALIDATION_REPORT_SCAN_STATE_LOOKBACK);
+      // Tool failures and timeouts say nothing about the plugin: findings and the
+      // clean verdict come from the latest scan that actually inspected it.
+      const scanState =
+        recentScanStates.find((state) => !isPackageInspectorFailureOutcome(state.outcome)) ?? null;
+      const nightlyScanState =
+        recentScanStates.find(
+          (state) =>
+            state.scanSource !== "publish" && !isPackageInspectorFailureOutcome(state.outcome),
+        ) ?? null;
+      const failedScanState =
+        !scanState && isPackageInspectorFailureOutcome(recentScanStates[0]?.outcome)
+          ? recentScanStates[0]
+          : null;
       // CLAW-626 reconciles nightly findings per release and preserves publish/static findings.
       // Matching the selected tuple also fails closed if stale nightly rows survive a partial rollout.
       const storedWarnings = await ctx.db
@@ -3910,18 +3936,20 @@ export const listPluginValidationReportPageInternal = internalQuery({
       const warnings = storedWarnings.filter(
         (warning) =>
           warning.scanSource !== "nightly" ||
-          (scanState !== null &&
-            warning.inspectorVersion === scanState.inspectorVersion &&
-            warning.targetOpenClawVersion === scanState.targetOpenClawVersion),
+          (nightlyScanState !== null &&
+            warning.inspectorVersion === nightlyScanState.inspectorVersion &&
+            warning.targetOpenClawVersion === nightlyScanState.targetOpenClawVersion),
       );
       const findings = warnings.map(normalizePackageValidationFinding);
       const status = findings.some((finding) => finding.severity === "error")
         ? ("error" as const)
         : findings.length > 0
           ? ("warning" as const)
-          : !scanState
-            ? ("not-scanned" as const)
-            : ("clean" as const);
+          : scanState
+            ? ("clean" as const)
+            : failedScanState
+              ? ("skipped" as const)
+              : ("not-scanned" as const);
       items.push({
         package: {
           id: String(digest.packageId),
@@ -3941,10 +3969,18 @@ export const listPluginValidationReportPageInternal = internalQuery({
           status,
           scannedAt: scanState?.completedAt ?? null,
           target: scanState
-            ? { channel: "beta" as const, version: scanState.targetOpenClawVersion }
+            ? {
+                channel: scanState.scanSource === "publish" ? "latest" : "beta",
+                version: scanState.targetOpenClawVersion,
+              }
             : null,
           inspectorVersion: scanState?.inspectorVersion ?? null,
-          skipReason: null,
+          skipReason:
+            status === "skipped" && failedScanState
+              ? failedScanState.outcome === "timeout"
+                ? "inspector-timeout"
+                : "inspector-tool-failure"
+              : null,
         },
         findings,
       });
@@ -8361,7 +8397,29 @@ async function reverifyStagedOpenClawAuthorizationBeforeFinalize(
   };
 }
 
-async function runPackageInspectorPublishGate(
+// The advisory Inspector may not hold a publish open past this budget. Its
+// heaviest phases are synchronous TypeScript work inside the Node action, so the
+// deadline is enforced here, from the publishing action, not inside Inspector.
+export const PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS = 120_000;
+
+function emptyPackageInspectorPublishResult(
+  outcome: PackageInspectorOutcome,
+  failure?: PackageInspectorFailure,
+): PackageInspectorPublishResult {
+  return {
+    outcome,
+    ...(failure ? { failure } : {}),
+    summary: { breakageCount: 0, warningCount: 0, deprecationWarningCount: 0, issueCount: 0 },
+    breakages: [],
+    warnings: [],
+    metadata: { inspectorVersion: getBundledPackageInspectorVersion() },
+  };
+}
+
+// Plugin Inspector is advisory: an Inspector crash, out-of-memory kill, timeout,
+// or target preparation failure is recorded as a tool outcome and the publish
+// continues. Real findings, breakages included, are recorded but never block.
+async function runPackageInspectorAdvisory(
   ctx: Pick<ActionCtx, "runAction">,
   args: {
     packageName: string;
@@ -8369,7 +8427,8 @@ async function runPackageInspectorPublishGate(
     files: ReturnType<typeof normalizePublishFiles>;
   },
 ): Promise<PackageInspectorPublishResult> {
-  const result = await runActionRef<PackageInspectorPublishResult>(
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const inspection = runActionRef<PackageInspectorPublishResult>(
     ctx,
     internalRefs.packageInspectorNode.runPackageInspectorForPublishInternal,
     {
@@ -8377,21 +8436,38 @@ async function runPackageInspectorPublishGate(
       version: args.version,
       files: args.files,
     },
+  ).then(
+    (result) => ({ kind: "result" as const, result }),
+    (error: unknown) => ({ kind: "error" as const, error }),
   );
-  if (result.status === "fail" || result.summary.breakageCount > 0) {
-    throw new ConvexError(formatPackageInspectorBlockedPublishError(result));
+  const deadline = new Promise<{ kind: "timeout" }>((resolve) => {
+    timer = setTimeout(() => resolve({ kind: "timeout" }), PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS);
+  });
+  const settled = await Promise.race([inspection, deadline]).finally(() => clearTimeout(timer));
+  let result: PackageInspectorPublishResult;
+  if (settled.kind === "result") {
+    result = settled.result;
+  } else if (settled.kind === "timeout") {
+    result = emptyPackageInspectorPublishResult("timeout", {
+      stage: "publish",
+      reason: "timeout",
+      message: `Plugin Inspector did not finish within ${PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS / 1000}s`,
+    });
+  } else {
+    // The Node action itself died (for example an out-of-memory kill).
+    const classified = classifyPackageInspectorFailure(settled.error, "action");
+    result = emptyPackageInspectorPublishResult(classified.outcome, classified.failure);
+  }
+  if (isPackageInspectorFailureOutcome(result.outcome)) {
+    console.warn("Plugin Inspector advisory check unavailable; publish continues", {
+      packageName: args.packageName,
+      version: args.version,
+      outcome: result.outcome,
+      stage: result.failure?.stage,
+      reason: result.failure?.reason,
+    });
   }
   return result;
-}
-
-function formatPackageInspectorBlockedPublishError(result: PackageInspectorPublishResult) {
-  const count = Math.max(result.summary.breakageCount, result.breakages.length, 1);
-  const noun = count === 1 ? "breakage" : "breakages";
-  const details = result.breakages
-    .slice(0, 3)
-    .map((finding) => `${finding.code}: ${finding.message}`)
-    .join("; ");
-  return `Plugin Inspector blocked publish: ${count} ${noun}${details ? `. ${details}` : ""}`;
 }
 
 function packageInspectorWarningDedupeKey(
@@ -8911,7 +8987,7 @@ async function publishPackageImpl(
   });
   const inspectorResult =
     family === "code-plugin" || family === "bundle-plugin"
-      ? await runPackageInspectorPublishGate(ctx, {
+      ? await runPackageInspectorAdvisory(ctx, {
           packageName: name,
           version,
           files,
@@ -9045,10 +9121,13 @@ async function publishPackageImpl(
     }
   };
 
-  const inspectorFindings =
-    inspectorResult?.warnings.map((finding) =>
-      toPackageInspectorPublishResponseFinding(finding, inspectorResult.metadata),
-    ) ?? [];
+  // Breakages are advisory findings now: they are reported and stored, never thrown.
+  const inspectorFindingsForRelease = inspectorResult
+    ? [...inspectorResult.breakages, ...inspectorResult.warnings]
+    : [];
+  const inspectorFindings = inspectorFindingsForRelease.map((finding) =>
+    toPackageInspectorPublishResponseFinding(finding, inspectorResult?.metadata),
+  );
 
   await reverifyOpenClawAuthorizationBeforePublish(auth, {
     name,
@@ -9099,8 +9178,16 @@ async function publishPackageImpl(
       ownerPublisherId,
       packageName: name,
       version,
-      inspectorWarnings: inspectorResult?.warnings ?? [],
+      inspectorWarnings: inspectorFindingsForRelease,
       inspectorMetadata: inspectorResult?.metadata,
+      ...(inspectorResult
+        ? {
+            inspectorOutcome: {
+              outcome: inspectorResult.outcome,
+              ...(inspectorResult.failure ? { failure: inspectorResult.failure } : {}),
+            },
+          }
+        : {}),
       trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
       trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
       trustedPublishAuthorizationVersion:
@@ -9657,6 +9744,10 @@ async function runPackagePublishPostFinalizeFollowups(
     version?: string;
     inspectorWarnings?: PackageInspectorFinding[];
     inspectorMetadata?: PackageInspectorPublishResult["metadata"];
+    inspectorOutcome?: {
+      outcome: PackageInspectorOutcome;
+      failure?: PackageInspectorFailure;
+    };
     inspectorSdkUsage?: SdkUsageReport;
     inspectorSdkUsageStorageId?: Id<"_storage">;
     trustedPublishTokenId?: Id<"packagePublishTokens">;
@@ -9692,7 +9783,7 @@ async function runPackagePublishPostFinalizeFollowups(
     followup.ownerUserId &&
     followup.packageName &&
     followup.version &&
-    (followup.inspectorWarnings?.length || inspectorSdkUsage)
+    (followup.inspectorWarnings?.length || inspectorSdkUsage || followup.inspectorOutcome)
   ) {
     const insertFindingsResult = await runMutationRef<{
       ok: true;
@@ -9709,6 +9800,16 @@ async function runPackagePublishPostFinalizeFollowups(
       inspectorVersion: followup.inspectorMetadata?.inspectorVersion,
       targetOpenClawVersion: followup.inspectorMetadata?.targetOpenClawVersion,
       findings: followup.inspectorWarnings,
+      // Publish-time findings are advisory; owner email belongs to reviewed scans.
+      notifyOwners: false,
+      ...(followup.inspectorOutcome
+        ? {
+            outcome: followup.inspectorOutcome.outcome,
+            ...(followup.inspectorOutcome.failure
+              ? { failure: followup.inspectorOutcome.failure }
+              : {}),
+          }
+        : {}),
       ...(inspectorSdkUsage ? { sdkUsage: inspectorSdkUsage } : {}),
     });
     if (insertFindingsResult.shouldEmailOwner) {
@@ -10283,10 +10384,17 @@ export const insertPackageInspectorWarningsInternal = internalMutation({
     targetOpenClawVersion: v.optional(v.string()),
     findings: v.optional(v.array(packageInspectorIssueInputValidator)),
     warnings: v.optional(v.array(packageInspectorIssueInputValidator)),
+    notifyOwners: v.optional(v.boolean()),
     sdkUsage: v.optional(sdkUsageReport),
+    outcome: v.optional(packageInspectorOutcomeValidator),
+    failure: v.optional(packageInspectorFailureValidator),
   },
   handler: async (ctx, args) => {
-    const result = await insertPackageInspectorFindings(ctx, args);
+    const { outcome, failure, ...findingArgs } = args;
+    // A tool failure carries no plugin findings, whatever the caller staged.
+    const result = isPackageInspectorFailureOutcome(outcome)
+      ? { ok: true as const, inserted: 0, shouldEmailOwner: false }
+      : await insertPackageInspectorFindings(ctx, findingArgs);
     if (args.sdkUsage) {
       const [pkg, release] = await Promise.all([
         ctx.db.get(args.packageId),
@@ -10308,7 +10416,27 @@ export const insertPackageInspectorWarningsInternal = internalMutation({
         targetOpenClawVersion: args.targetOpenClawVersion,
         artifactSha256: sdkUsageArtifactSha256(release),
         report: args.sdkUsage,
+        outcome,
+        failure,
+        scanSource: args.scanSource,
       });
+    } else if (outcome && args.inspectorVersion) {
+      const [pkg, release] = await Promise.all([
+        ctx.db.get(args.packageId),
+        ctx.db.get(args.releaseId),
+      ]);
+      if (pkg && release && release.packageId === pkg._id) {
+        await recordPackageInspectorScan(ctx, {
+          pkg,
+          release,
+          inspectorVersion: args.inspectorVersion,
+          // A crash or timeout can precede target resolution; keep the outcome anyway.
+          targetOpenClawVersion: args.targetOpenClawVersion ?? UNRESOLVED_OPENCLAW_TARGET_VERSION,
+          outcome,
+          failure,
+          scanSource: args.scanSource,
+        });
+      }
     }
     return result;
   },
@@ -10731,6 +10859,8 @@ async function listPackageInspectorScanBatch(
         scanState.sdkUsage.analysisVersion === args.inventoryAnalysisVersion;
       if (
         scanState &&
+        // A crashed or timed-out scan never counts as covering the release.
+        !isPackageInspectorFailureOutcome(scanState.outcome) &&
         (!inventoryRequired || inventoryCurrent) &&
         (!args.notifyOwners || scanState.notificationCompletedAt)
       ) {
@@ -10943,6 +11073,8 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
     sdkUsage: v.optional(sdkUsageReport),
     artifactSha256: v.optional(v.string()),
     inspectionFailed: v.optional(v.boolean()),
+    // Distinguishes a scan that ran out of time from other tool failures.
+    failure: v.optional(packageInspectorFailureValidator),
   },
   handler: async (ctx, args) => {
     if (
@@ -10981,6 +11113,13 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
         });
     const { inspectorVersion, targetOpenClawVersion } = args;
     if (inspectorVersion && targetOpenClawVersion) {
+      const outcome: PackageInspectorOutcome = args.inspectionFailed
+        ? args.failure?.reason === "timeout"
+          ? "timeout"
+          : "tool_failure"
+        : args.findings.length > 0
+          ? "findings"
+          : "clean";
       const sdkUsage = await recordPackageInspectorScan(ctx, {
         pkg,
         release,
@@ -10989,6 +11128,9 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
         notificationComplete: args.notifyOwners === true && !result.shouldEmailOwner,
         report: args.sdkUsage,
         artifactSha256: args.artifactSha256,
+        outcome,
+        failure: args.inspectionFailed ? args.failure : undefined,
+        scanSource: "nightly",
       });
       if (sdkUsage) return { ...result, sdkUsage };
     }

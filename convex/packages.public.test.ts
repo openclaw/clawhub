@@ -23,6 +23,7 @@ import {
   publishRelease,
   publishPackageForTrustedPublisherInternal,
   publishPackageForUserInternal,
+  PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS,
   generateChangelogPreview,
   assertCanGenerateChangelogPreviewInternal,
   listPackageReportsInternal,
@@ -574,7 +575,7 @@ function makePublishRunActionMock(
 
 function makeCleanPackageInspectorResult() {
   return {
-    status: "pass",
+    outcome: "clean",
     summary: {
       breakageCount: 0,
       warningCount: 0,
@@ -2346,11 +2347,10 @@ function makePluginValidationReportCtx(
                 builder(queryBuilder);
                 return {
                   order: vi.fn(() => ({
-                    first: vi.fn(
-                      async () =>
-                        [...(options.statesByRelease?.[releaseId] ?? [])].sort(
-                          (a, b) => Number(b.completedAt) - Number(a.completedAt),
-                        )[0] ?? null,
+                    take: vi.fn(async (count: number) =>
+                      [...(options.statesByRelease?.[releaseId] ?? [])]
+                        .sort((a, b) => Number(b.completedAt) - Number(a.completedAt))
+                        .slice(0, count),
                     ),
                   })),
                 };
@@ -3522,6 +3522,69 @@ describe("packages public queries", () => {
       nextCursor: null,
       done: true,
     });
+  });
+
+  it("reports Inspector tool failures as skipped scans, never as plugin errors", async () => {
+    const failedOnly = makePluginExportDigest("failed-only", "code-plugin", 300);
+    const recovered = makePluginExportDigest("recovered", "code-plugin", 200);
+    const ctx = makePluginValidationReportCtx([failedOnly, recovered], {
+      statesByRelease: {
+        "packageReleases:failed-only-1": [
+          {
+            releaseId: "packageReleases:failed-only-1",
+            inspectorVersion: "0.4.3",
+            targetOpenClawVersion: "unresolved",
+            completedAt: 100,
+            outcome: "timeout",
+            scanSource: "publish",
+          },
+        ],
+        "packageReleases:recovered-1": [
+          {
+            releaseId: "packageReleases:recovered-1",
+            inspectorVersion: "0.4.3",
+            targetOpenClawVersion: "2026.11.1-beta.1",
+            completedAt: 100,
+            outcome: "clean",
+            scanSource: "nightly",
+          },
+          {
+            releaseId: "packageReleases:recovered-1",
+            inspectorVersion: "0.4.3",
+            targetOpenClawVersion: "2026.11.2-beta.1",
+            completedAt: 200,
+            outcome: "tool_failure",
+            scanSource: "nightly",
+          },
+        ],
+      },
+    });
+
+    const result = await listPluginValidationReportPageInternalHandler(ctx, { numItems: 20 });
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        package: expect.objectContaining({ name: "failed-only" }),
+        scan: {
+          status: "skipped",
+          scannedAt: null,
+          target: null,
+          inspectorVersion: null,
+          skipReason: "inspector-timeout",
+        },
+        findings: [],
+      }),
+      expect.objectContaining({
+        package: expect.objectContaining({ name: "recovered" }),
+        scan: expect.objectContaining({
+          status: "clean",
+          scannedAt: 100,
+          target: { channel: "beta", version: "2026.11.1-beta.1" },
+          skipReason: null,
+        }),
+        findings: [],
+      }),
+    ]);
   });
 
   it("represents missing scans and preserves plugin pagination continuity", async () => {
@@ -14311,13 +14374,14 @@ describe("packages public queries", () => {
         store: vi.fn(async () => "storage:legacy-zip"),
       },
       runAction: makePublishRunActionMock(() => ({
-        status: "pass",
+        outcome: "clean",
         summary: {
           breakageCount: 0,
           warningCount: 0,
           deprecationWarningCount: 0,
           issueCount: 0,
         },
+        breakages: [],
         warnings: [],
       })),
     };
@@ -14410,73 +14474,69 @@ describe("packages public queries", () => {
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it("blocks plugin publishes when plugin inspector reports hard breakages", async () => {
-    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
-      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
-      if (typeof args === "object" && args !== null && "minimumRole" in args) return null;
-      return args;
-    });
-    const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce(null),
-      runMutation,
-      runAction: vi.fn(async () => ({
-        status: "fail",
-        summary: {
-          breakageCount: 1,
-          warningCount: 0,
-          deprecationWarningCount: 0,
-          issueCount: 1,
+  describe("advisory Plugin Inspector", () => {
+    const pluginPackageJson = (openclaw: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        name: "demo-plugin",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: "^1.0.0" },
+          build: { openclawVersion: "2026.3.14" },
+          configSchema: { type: "object" },
+          ...openclaw,
         },
-        warnings: [],
-        breakages: [
-          {
-            code: "missing-expected-seam",
-            severity: "P0",
-            message: "missing expected registration registerTool",
-            evidence: ["registerTool"],
-          },
-        ],
-      })),
-      scheduler: {
-        runAfter: vi.fn(),
-      },
-      storage: {
-        get: vi.fn(async (storageId: string) => {
-          const files = new Map<string, string>([
-            [
-              "storage:package",
-              JSON.stringify({
-                name: "demo-plugin",
-                openclaw: {
-                  extensions: ["./dist/index.js"],
-                  compat: { pluginApi: "^1.0.0" },
-                  build: { openclawVersion: "2026.3.14" },
-                  configSchema: { type: "object" },
-                },
-              }),
-            ],
-            ["storage:manifest", JSON.stringify({ id: "demo.plugin" })],
-            ["storage:code", "export const demo = true;\n"],
-          ]);
-          const content = files.get(storageId);
-          return content ? new Blob([content]) : null;
-        }),
-        store: vi.fn(async () => "storage:legacy-zip"),
-      },
-    };
+      });
 
-    await expect(
+    function makeAdvisoryPublishCtx(options: {
+      runAction?: (ref: unknown, args: unknown) => Promise<unknown>;
+      packageJson?: string;
+    }) {
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
+        if ("minimumRole" in args) return null;
+        return { ok: true, packageId: "packages:demo", releaseId: "packageReleases:demo-1" };
+      });
+      const storedFiles = new Map<string, string>([
+        ["storage:package", options.packageJson ?? pluginPackageJson()],
+        ["storage:manifest", JSON.stringify({ id: "demo.plugin" })],
+        ["storage:code", "export const demo = true;\n"],
+      ]);
+      const inspectorRunAction =
+        options.runAction ?? (async () => makeCleanPackageInspectorResult());
+      const ctx = {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce(null),
+        runMutation,
+        runAction: vi.fn(async function (this: PublishScanStorage, ref: unknown, args: unknown) {
+          const name = getFunctionName(ref as FunctionReference<"action">);
+          if (name === "packageInspectorNode:runPackageInspectorForPublishInternal") {
+            return await inspectorRunAction(ref, args);
+          }
+          return await makePublishRunActionMock().call(this, ref, args);
+        }),
+        scheduler: { runAfter: vi.fn() },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            const content = storedFiles.get(storageId);
+            return content ? new Blob([content]) : null;
+          }),
+          store: vi.fn(async () => "storage:legacy-zip"),
+        },
+      };
+      return { ctx, runMutation };
+    }
+
+    const publishDemoPlugin = (ctx: unknown, files?: Array<{ path: string; storageId: string }>) =>
       publishPackageForUserInternalHandler(ctx as never, {
         actorUserId: "users:owner",
         payload: {
@@ -14494,38 +14554,166 @@ describe("packages public queries", () => {
             path: ".",
             importedAt: Date.now(),
           },
-          files: [
-            {
-              path: "package.json",
-              size: 1,
-              storageId: "storage:package",
-              sha256: "package",
-              contentType: "application/json",
-            },
-            {
-              path: "openclaw.plugin.json",
-              size: 1,
-              storageId: "storage:manifest",
-              sha256: "manifest",
-              contentType: "application/json",
-            },
-            {
-              path: "dist/index.js",
-              size: 1,
-              storageId: "storage:code",
-              sha256: "code",
-              contentType: "application/javascript",
-            },
-          ],
+          files: (
+            files ?? [
+              { path: "package.json", storageId: "storage:package" },
+              { path: "openclaw.plugin.json", storageId: "storage:manifest" },
+              { path: "dist/index.js", storageId: "storage:code" },
+            ]
+          ).map((file) => ({
+            ...file,
+            size: 1,
+            sha256: file.storageId.replace("storage:", ""),
+            contentType: file.path.endsWith(".json") ? "application/json" : "text/javascript",
+          })),
         },
-      }),
-    ).rejects.toThrow(/Plugin Inspector blocked publish: 1 breakage/);
+      });
 
-    expect(runMutation).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ version: "1.0.0" }),
-    );
-    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+    function stagedFollowup(runMutation: ReturnType<typeof vi.fn>) {
+      const attemptCall = runMutation.mock.calls.find(([, args]) =>
+        isPackagePublishAttemptArgs(args),
+      );
+      return attemptCall?.[1].packageFollowup as Record<string, unknown> | undefined;
+    }
+
+    it("publishes when the Inspector action runs out of memory and records a tool failure", async () => {
+      const { ctx, runMutation } = makeAdvisoryPublishCtx({
+        runAction: async () => {
+          throw new Error("Node.js action execution ran out of memory");
+        },
+      });
+
+      const result = await publishDemoPlugin(ctx);
+
+      expect(result).toMatchObject({ ok: true, status: "pending", publicationStatus: "pending" });
+      expect(result).not.toHaveProperty("inspectorFindings");
+      const followup = stagedFollowup(runMutation);
+      expect(followup).toMatchObject({
+        inspectorWarnings: [],
+        inspectorOutcome: {
+          outcome: "tool_failure",
+          failure: { stage: "action", reason: "out_of_memory" },
+        },
+      });
+    });
+
+    it("publishes when the Inspector reports it could not prepare its OpenClaw target", async () => {
+      const { ctx, runMutation } = makeAdvisoryPublishCtx({
+        runAction: async () => ({
+          ...makeCleanPackageInspectorResult(),
+          outcome: "tool_failure",
+          failure: {
+            stage: "OpenClaw target preparation",
+            reason: "target_unavailable",
+            message: "npm registry returned 503",
+          },
+        }),
+      });
+
+      const result = await publishDemoPlugin(ctx);
+
+      expect(result).toMatchObject({ ok: true, publicationStatus: "pending" });
+      expect(result).not.toHaveProperty("inspectorFindings");
+      expect(stagedFollowup(runMutation)).toMatchObject({
+        inspectorWarnings: [],
+        inspectorOutcome: {
+          outcome: "tool_failure",
+          failure: { reason: "target_unavailable" },
+        },
+      });
+    });
+
+    it("publishes when the Inspector exceeds its publish budget and records a timeout", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        let markStarted = () => {};
+        const started = new Promise<void>((resolve) => {
+          markStarted = resolve;
+        });
+        const { ctx, runMutation } = makeAdvisoryPublishCtx({
+          runAction: () => {
+            markStarted();
+            return new Promise(() => undefined);
+          },
+        });
+
+        const publish = publishDemoPlugin(ctx);
+        await started;
+        await vi.advanceTimersByTimeAsync(PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS);
+        const result = await publish;
+
+        expect(result).toMatchObject({ ok: true, publicationStatus: "pending" });
+        expect(stagedFollowup(runMutation)).toMatchObject({
+          inspectorWarnings: [],
+          inspectorOutcome: { outcome: "timeout", failure: { reason: "timeout" } },
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("publishes and reports real Inspector breakages as advisory findings", async () => {
+      const breakage = {
+        code: "unknown-hook-name",
+        severity: "P0",
+        level: "breakage",
+        message: "plugin registers an unknown hook",
+        authorRemediation: { summary: "Register a supported hook name." },
+      };
+      const { ctx, runMutation } = makeAdvisoryPublishCtx({
+        runAction: async () => ({
+          ...makeCleanPackageInspectorResult(),
+          outcome: "findings",
+          summary: { breakageCount: 1, warningCount: 0, deprecationWarningCount: 0, issueCount: 1 },
+          breakages: [breakage],
+          metadata: { inspectorVersion: "0.4.3", targetOpenClawVersion: "2026.10.5" },
+        }),
+      });
+
+      const result = await publishDemoPlugin(ctx);
+
+      expect(result).toMatchObject({
+        ok: true,
+        publicationStatus: "pending",
+        inspectorFindings: [
+          expect.objectContaining({ findingKind: "error", code: "unknown-hook-name" }),
+        ],
+      });
+      expect(stagedFollowup(runMutation)).toMatchObject({
+        inspectorWarnings: [expect.objectContaining({ code: "unknown-hook-name" })],
+        inspectorOutcome: { outcome: "findings" },
+      });
+    });
+
+    it("rejects a publish whose declared entrypoint is missing before running the Inspector", async () => {
+      const { ctx, runMutation } = makeAdvisoryPublishCtx({
+        packageJson: pluginPackageJson({ extensions: ["./dist/plugin.js"] }),
+      });
+
+      await expect(publishDemoPlugin(ctx)).rejects.toThrow(
+        "demo-plugin declares openclaw.extensions entry ./dist/plugin.js, but that file is missing from the package.",
+      );
+      expect(
+        ctx.runAction.mock.calls.some(
+          ([ref]) =>
+            getFunctionName(ref as FunctionReference<"action">) ===
+            "packageInspectorNode:runPackageInspectorForPublishInternal",
+        ),
+      ).toBe(false);
+      expect(stagedFollowup(runMutation)).toBeUndefined();
+    });
+
+    it("publishes a valid plugin with a clean Inspector outcome", async () => {
+      const { ctx, runMutation } = makeAdvisoryPublishCtx({});
+
+      const result = await publishDemoPlugin(ctx);
+
+      expect(result).toMatchObject({ ok: true, publicationStatus: "pending" });
+      expect(stagedFollowup(runMutation)).toMatchObject({
+        inspectorWarnings: [],
+        inspectorOutcome: { outcome: "clean" },
+      });
+    });
   });
 
   it("defers author warnings and leaves SDK inventories to the Package Inspector scan", async () => {
@@ -14550,7 +14738,8 @@ describe("packages public queries", () => {
         .mockResolvedValueOnce(null),
       runMutation,
       runAction: makePublishRunActionMock(() => ({
-        status: "pass",
+        outcome: "findings",
+        breakages: [],
         summary: {
           breakageCount: 0,
           warningCount: 1,
@@ -15068,6 +15257,8 @@ describe("packages public queries", () => {
       targetOpenClawVersion: "2026.8.0-beta.1",
       completedAt: expect.any(Number),
       notificationCompletedAt: expect.any(Number),
+      outcome: "clean",
+      scanSource: "nightly",
     });
   });
 

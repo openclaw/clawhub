@@ -16,7 +16,6 @@ export const OPENCLAW_EXTERNAL_CODE_PLUGIN_REQUIRED_FIELD_PATHS = [
   "openclaw.compat.pluginApi",
   "openclaw.build.openclawVersion",
 ] as const;
-const COMPILED_RUNTIME_EXTENSIONS = [".js", ".mjs", ".cjs"] as const;
 
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -34,24 +33,60 @@ function getTrimmedStringArray(value: unknown): string[] {
     : [];
 }
 
-function normalizePackagePath(value: string): string {
+// OpenClaw resolves entries with path.resolve(packageDir, entry) and rejects any
+// that leave the package directory. Mirror that without node:path so browsers
+// and the Convex runtime share one implementation. Returns null for escapes.
+function resolvePackageEntryPath(value: string): string | null {
+  const slashed = value.trim().replaceAll("\\", "/");
+  if (slashed.startsWith("/") || /^[a-z]:\//iu.test(slashed)) return null;
+  const segments: string[] = [];
+  for (const segment of slashed.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      if (segments.length === 0) return null;
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return segments.length > 0 ? segments.join("/") : null;
+}
+
+function normalizePackageFilePath(value: string): string {
   return value.trim().replaceAll("\\", "/").replace(/^\.\//, "");
 }
 
-function isTypeScriptRuntimeEntry(value: string): boolean {
-  return /\.(?:c|m)?ts$/u.test(value);
+function packageEntryExtension(entry: string): string {
+  const fileName = entry.slice(entry.lastIndexOf("/") + 1);
+  const dot = fileName.lastIndexOf(".");
+  return dot > 0 ? fileName.slice(dot).toLowerCase() : "";
 }
 
+function isTypeScriptRuntimeEntry(value: string): boolean {
+  return [".ts", ".tsx", ".mts", ".cts"].includes(packageEntryExtension(value));
+}
+
+// Mirrors OpenClaw's listBuiltRuntimeEntryCandidates (src/plugins/package-entrypoints.ts):
+// installed packages never load TypeScript source, only these compiled outputs.
 function compiledRuntimeCandidates(entry: string): string[] {
-  const normalized = normalizePackagePath(entry);
-  const withoutExtension = normalized.replace(/\.[^.]+$/u, "");
-  const distBase = normalized.startsWith("src/")
-    ? `dist/${normalized.slice("src/".length).replace(/\.[^.]+$/u, "")}`
+  const normalized = resolvePackageEntryPath(entry);
+  if (!normalized || !isTypeScriptRuntimeEntry(normalized)) return [];
+  const withoutExtension = normalized.replace(/\.[^./]+$/u, "");
+  const distBase = withoutExtension.startsWith("src/")
+    ? `dist/${withoutExtension.slice("src/".length)}`
     : `dist/${withoutExtension}`;
+  const sourceExtension = packageEntryExtension(normalized);
+  const outputExtensions =
+    sourceExtension === ".mts"
+      ? [".mjs", ".js", ".cjs"]
+      : sourceExtension === ".cts"
+        ? [".cjs", ".js", ".mjs"]
+        : [".js", ".mjs", ".cjs"];
   return [
-    ...COMPILED_RUNTIME_EXTENSIONS.map((ext) => `${distBase}${ext}`),
-    ...COMPILED_RUNTIME_EXTENSIONS.map((ext) => `${withoutExtension}${ext}`),
-  ];
+    distBase,
+    ...(withoutExtension.startsWith("src/") ? [`dist/${withoutExtension}`] : []),
+    withoutExtension,
+  ].flatMap((base) => outputExtensions.map((extension) => `${base}${extension}`));
 }
 
 function readOpenClawBlock(packageJson: unknown) {
@@ -119,6 +154,63 @@ export function validateOpenClawExternalCodePluginPackageJson(
   };
 }
 
+type DeclaredEntryCheck = {
+  packageName: string;
+  packageFiles: ReadonlySet<string>;
+  entry: string;
+  runtimeEntry?: string;
+  fieldPath: "openclaw.extensions" | "openclaw.setupEntry";
+  runtimeFieldPath: "openclaw.runtimeExtensions" | "openclaw.runtimeSetupEntry";
+};
+
+const PUBLISH_ENTRY_FIX =
+  "Build first and publish a local folder or .tgz, or include the runtime file in the GitHub ref.";
+
+// Mirrors OpenClaw's validatePackageExtensionEntriesForInstall for installed
+// packages (no TypeScript source fallback): a declared runtime entry must exist;
+// otherwise a compiled candidate of a TypeScript entry, or the JavaScript entry itself.
+function validateDeclaredEntry(
+  check: DeclaredEntryCheck,
+): OpenClawExternalPluginValidationIssue | undefined {
+  const { packageName, packageFiles, entry, runtimeEntry } = check;
+  if (runtimeEntry) {
+    const runtimePath = resolvePackageEntryPath(runtimeEntry);
+    if (runtimePath && packageFiles.has(runtimePath)) return undefined;
+    return {
+      fieldPath: check.runtimeFieldPath,
+      message: runtimePath
+        ? `${packageName} declares ${check.runtimeFieldPath} entry ./${runtimePath}, but that file is missing from the package. ${PUBLISH_ENTRY_FIX}`
+        : `${packageName} declares ${check.runtimeFieldPath} entry ${runtimeEntry}, which points outside the package. Point it at a file inside the published package.`,
+    };
+  }
+
+  const entryPath = resolvePackageEntryPath(entry);
+  if (!entryPath) {
+    return {
+      fieldPath: check.fieldPath,
+      message: `${packageName} declares ${check.fieldPath} entry ${entry}, which points outside the package. Point it at a file inside the published package.`,
+    };
+  }
+  const candidates = compiledRuntimeCandidates(entryPath);
+  if (candidates.some((candidate) => packageFiles.has(candidate))) return undefined;
+  if (candidates.length > 0) {
+    return {
+      fieldPath: check.fieldPath,
+      message: `${packageName} requires compiled runtime output for TypeScript entry ${entry}: expected ${candidates.map((candidate) => `./${candidate}`).join(", ")}. ${PUBLISH_ENTRY_FIX}`,
+    };
+  }
+  if (packageFiles.has(entryPath)) return undefined;
+  return {
+    fieldPath: check.fieldPath,
+    message: `${packageName} declares ${check.fieldPath} entry ./${entryPath}, but that file is missing from the package. OpenClaw cannot load this plugin without it. ${PUBLISH_ENTRY_FIX} Otherwise update package.json ${check.fieldPath} to point at a published file.`,
+  };
+}
+
+/**
+ * Validates package metadata plus the declared OpenClaw entrypoints against the
+ * uploaded file list. Entry checks follow OpenClaw's installed-package rules so a
+ * release ClawHub accepts is one OpenClaw can load.
+ */
 export function validateOpenClawExternalCodePluginPackageContents(
   packageJson: unknown,
   filePaths: Iterable<string>,
@@ -126,7 +218,12 @@ export function validateOpenClawExternalCodePluginPackageContents(
   const validation = validateOpenClawExternalCodePluginPackageJson(packageJson);
   const { root, openclaw } = readOpenClawBlock(packageJson);
   const name = getTrimmedString(root?.name) ?? "package";
-  const packageFiles = new Set(Array.from(filePaths, normalizePackagePath));
+  const packageFiles = new Set(
+    Array.from(
+      filePaths,
+      (filePath) => resolvePackageEntryPath(filePath) ?? normalizePackageFilePath(filePath),
+    ),
+  );
   const sourceEntries = getTrimmedStringArray(openclaw?.extensions);
   const runtimeEntries = getTrimmedStringArray(openclaw?.runtimeExtensions);
 
@@ -135,28 +232,49 @@ export function validateOpenClawExternalCodePluginPackageContents(
       fieldPath: "openclaw.runtimeExtensions",
       message: `${name} openclaw.runtimeExtensions length (${runtimeEntries.length}) must match openclaw.extensions length (${sourceEntries.length}).`,
     });
-  }
-
-  for (const runtimeEntry of runtimeEntries) {
-    const normalized = normalizePackagePath(runtimeEntry);
-    if (!packageFiles.has(normalized)) {
-      validation.issues.push({
-        fieldPath: "openclaw.runtimeExtensions",
-        message: `${name} declares openclaw.runtimeExtensions entry ./${normalized}, but that file is missing from the package. Build first and publish a local folder or .tgz, or include the runtime file in the GitHub ref.`,
-      });
-    }
-  }
-
-  if (runtimeEntries.length === 0) {
-    for (const sourceEntry of sourceEntries) {
-      if (!isTypeScriptRuntimeEntry(sourceEntry)) continue;
-      const candidates = compiledRuntimeCandidates(sourceEntry);
-      if (candidates.some((candidate) => packageFiles.has(candidate))) continue;
-      validation.issues.push({
+    // Without a one-to-one mapping, report every declared runtime file that is absent.
+    for (const runtimeEntry of runtimeEntries) {
+      const issue = validateDeclaredEntry({
+        packageName: name,
+        packageFiles,
+        entry: runtimeEntry,
+        runtimeEntry,
         fieldPath: "openclaw.extensions",
-        message: `${name} requires compiled runtime output for TypeScript entry ${sourceEntry}: expected ${candidates.map((candidate) => `./${candidate}`).join(", ")}`,
+        runtimeFieldPath: "openclaw.runtimeExtensions",
       });
+      if (issue) validation.issues.push(issue);
     }
+  } else {
+    for (const [index, entry] of sourceEntries.entries()) {
+      const issue = validateDeclaredEntry({
+        packageName: name,
+        packageFiles,
+        entry,
+        runtimeEntry: runtimeEntries[index],
+        fieldPath: "openclaw.extensions",
+        runtimeFieldPath: "openclaw.runtimeExtensions",
+      });
+      if (issue) validation.issues.push(issue);
+    }
+  }
+
+  const setupEntry = getTrimmedString(openclaw?.setupEntry);
+  const runtimeSetupEntry = getTrimmedString(openclaw?.runtimeSetupEntry);
+  if (runtimeSetupEntry && !setupEntry) {
+    validation.issues.push({
+      fieldPath: "openclaw.runtimeSetupEntry",
+      message: `${name} declares openclaw.runtimeSetupEntry without openclaw.setupEntry. OpenClaw requires openclaw.setupEntry whenever openclaw.runtimeSetupEntry is set.`,
+    });
+  } else if (setupEntry) {
+    const issue = validateDeclaredEntry({
+      packageName: name,
+      packageFiles,
+      entry: setupEntry,
+      runtimeEntry: runtimeSetupEntry,
+      fieldPath: "openclaw.setupEntry",
+      runtimeFieldPath: "openclaw.runtimeSetupEntry",
+    });
+    if (issue) validation.issues.push(issue);
   }
 
   return validation;

@@ -3854,7 +3854,7 @@ describe("package commands", () => {
     }
   });
 
-  it("fails CLI publish on server Plugin Inspector hard errors", async () => {
+  it("fails CLI publish when the registry rejects the release", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "broken-plugin");
@@ -3875,9 +3875,7 @@ describe("package commands", () => {
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
       httpMocks.apiRequestForm.mockRejectedValueOnce(
-        new Error(
-          "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
-        ),
+        new Error("Published package inventory does not match the minted authorization"),
       );
 
       await expect(
@@ -3885,10 +3883,10 @@ describe("package commands", () => {
           sourceRepo: "openclaw/broken-plugin",
           sourceCommit: "deadbeef",
         }),
-      ).rejects.toThrow("Plugin Inspector blocked publish");
+      ).rejects.toThrow("Published package inventory does not match the minted authorization");
 
       expect(uiMocks.spinner.fail).toHaveBeenCalledWith(
-        "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
+        "Published package inventory does not match the minted authorization",
       );
       expect(uiMocks.spinner.succeed).not.toHaveBeenCalled();
     } finally {
