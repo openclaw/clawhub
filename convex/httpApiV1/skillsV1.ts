@@ -1606,7 +1606,11 @@ async function describeOwnerVisibleSkillState(
   }
 
   if (skill.moderationStatus === "hidden") {
-    if (skill.moderationReason === "pending.scan") {
+    if (
+      skill.moderationReason === "pending.scan" ||
+      // Legacy retired-VirusTotal reason, pending until the moderation backfill rebuilds it.
+      skill.moderationReason === "scanner.vt.pending"
+    ) {
       return {
         status: 423,
         message: "Skill is hidden while security scan is pending. Try again in a few minutes.",

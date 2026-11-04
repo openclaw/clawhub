@@ -39,6 +39,9 @@ function isPendingSkillModerationReason(reason: string | null | undefined) {
   return (
     normalized === "pending.scan" ||
     normalized === "pending.scan.stale" ||
+    // Legacy reason from the retired VirusTotal poller. It stays pending (fail
+    // closed) until backfillLatestSkillModerationInternal rebuilds it from ClawScan.
+    normalized === "scanner.vt.pending" ||
     normalized === "scanner.llm.pending"
   );
 }

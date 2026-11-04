@@ -174,6 +174,10 @@ const jobSourceValidator = v.union(
   v.literal("skills-sh-catalog-test"),
 );
 
+// Claim reads still accept the retired "vt-update" source so queued legacy rows
+// drain through the normal claim path; enqueue arguments no longer accept it.
+const claimJobSourceValidator = v.union(jobSourceValidator, v.literal("vt-update"));
+
 // "vt-update" is a retired source: nothing enqueues it anymore, but queued legacy
 // rows still drain through the normal claim path at their original priority.
 type SecurityScanJobSource =
@@ -1490,6 +1494,9 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
       frontmatter: v.record(v.string(), v.any()),
       presentation: v.optional(skillPresentationValidator),
     }),
+    // Retired static publish scan. Accepted and ignored so GitHub verify actions
+    // already running during deploy still validate; remove in a follow-up.
+    staticScan: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);
@@ -2809,7 +2816,7 @@ function readySourceJobsForClaimQuery(
 
 export const listReadySourceJobsForClaimInternal = internalQuery({
   args: {
-    source: jobSourceValidator,
+    source: claimJobSourceValidator,
     now: v.number(),
     cursor: v.union(v.string(), v.null()),
     numItems: v.number(),

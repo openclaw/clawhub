@@ -76,6 +76,16 @@ describe("publicBrowse", () => {
     ).toBe(true);
   });
 
+  it("keeps legacy retired-VirusTotal pending reasons pending until the moderation backfill", () => {
+    expect(
+      isSkillPendingPublicReview({
+        moderationStatus: "active",
+        moderationReason: "scanner.vt.pending",
+        moderationFlags: undefined,
+      }),
+    ).toBe(true);
+  });
+
   it("excludes first-publish pending review skills from public browse", () => {
     expect(
       shouldExcludeSkillFromPublicBrowse({

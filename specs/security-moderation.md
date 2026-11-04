@@ -702,11 +702,20 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - The skill-version `sha256hash` (deterministic ZIP hash used for hosted catalog
   integrity, Skill Cards, and verification) used to be computed by the VirusTotal
   upload. Publish finalization now schedules a dedicated hash action with the same
-  ZIP inputs, so the value stays byte-identical to historical hashes.
+  ZIP inputs, so the value stays byte-identical to historical hashes. Versions
+  that never received a hash (VirusTotal jobs still queued at retirement, or a
+  failed hash action) are repaired by the operator-run
+  `skillVersionArtifactHash:backfillMissingSkillVersionArtifactHashesInternal`.
 - Legacy moderation reasons stamped by retired scanners (`scanner.vt.*`,
-  `scanner.vt-rescan.*`, `scanner.static.*`) no longer mean "pending" anywhere.
-  The latest-version moderation backfill treats them as stale and rebuilds those
-  rows from ClawScan.
+  `scanner.vt-rescan.*`, `scanner.static.*`) are never written anymore. The
+  latest-version moderation backfill treats them as stale and rebuilds those rows
+  from ClawScan. Until that operator backfill runs, a stored `scanner.vt.pending`
+  still reads as pending (fail closed) so the retirement deploy does not newly
+  expose skills whose latest version has no settled ClawScan result.
+- Search digests (`skillSearchDigest.publicVersion`) computed before the
+  retirement may still mark versions unavailable because of a VirusTotal or
+  static result. That is fail-closed; digests refresh on the next skill/version
+  change or an operator digest resync.
 - ClawScan is the only scanner result that gates public listing of a skill version
   (pending/not-run holds, malicious blocks). Stored VirusTotal or static results on
   older versions no longer hold or block listing.

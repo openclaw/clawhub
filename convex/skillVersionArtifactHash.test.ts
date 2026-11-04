@@ -4,7 +4,10 @@ import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "./lib/hash";
 import { buildDeterministicZip } from "./lib/skillZip";
-import { computeSkillVersionArtifactHashInternal } from "./skillVersionArtifactHash";
+import {
+  backfillMissingSkillVersionArtifactHashesInternal,
+  computeSkillVersionArtifactHashInternal,
+} from "./skillVersionArtifactHash";
 
 type Handler = (ctx: unknown, args: { versionId: string }) => Promise<unknown>;
 const handler = (computeSkillVersionArtifactHashInternal as unknown as { _handler: Handler })
@@ -81,6 +84,9 @@ describe("computeSkillVersionArtifactHashInternal", () => {
         },
       ),
     );
+    // Golden value produced by the same inputs on origin/main (the retired VirusTotal
+    // upload path); pins byte parity with historical hashes.
+    expect(expected).toBe("86723f5255a8a99851dfb9814be72086eec0c28411df24911789f4e2ab795f38");
     expect(result).toEqual({ ok: true, sha256hash: expected });
     expect(runMutation).toHaveBeenCalledTimes(1);
     const [ref, args] = runMutation.mock.calls[0] as unknown as [unknown, unknown];
@@ -96,5 +102,75 @@ describe("computeSkillVersionArtifactHashInternal", () => {
       reason: "missing_version",
     });
     expect(runMutation).not.toHaveBeenCalled();
+  });
+});
+
+type BackfillHandler = (
+  ctx: unknown,
+  args: { cursor?: string | null; batchSize?: number; dryRun?: boolean },
+) => Promise<unknown>;
+const backfillHandler = (
+  backfillMissingSkillVersionArtifactHashesInternal as unknown as { _handler: BackfillHandler }
+)._handler;
+
+function makeBackfillCtx(page: Array<Record<string, unknown>>, isDone: boolean) {
+  const runAfter = vi.fn(async () => undefined);
+  const paginate = vi.fn(async () => ({ page, isDone, continueCursor: "cursor:next" }));
+  const ctx = {
+    db: {
+      query: vi.fn(() => ({
+        withIndex: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
+      })),
+      get: vi.fn(),
+      insert: vi.fn(),
+      patch: vi.fn(),
+      replace: vi.fn(),
+      delete: vi.fn(),
+      normalizeId: vi.fn(() => null),
+      system: {},
+    },
+    scheduler: { runAfter },
+  };
+  return { ctx, runAfter };
+}
+
+const backfillPage = [
+  { _id: "skillVersions:missing", files: [{ path: "SKILL.md" }] },
+  { _id: "skillVersions:hashed", sha256hash: "a".repeat(64), files: [{ path: "SKILL.md" }] },
+  { _id: "skillVersions:staged", publicationStatus: "pending", files: [{ path: "SKILL.md" }] },
+  { _id: "skillVersions:empty", files: [] },
+];
+
+describe("backfillMissingSkillVersionArtifactHashesInternal", () => {
+  it("schedules hashes only for published versions missing one and continues paging", async () => {
+    const { ctx, runAfter } = makeBackfillCtx(backfillPage, false);
+
+    const result = await backfillHandler(ctx, { batchSize: 4 });
+
+    expect(result).toMatchObject({ dryRun: false, matched: 1, scheduled: 1, isDone: false });
+    const calls = runAfter.mock.calls as unknown as Array<[number, unknown, unknown]>;
+    expect(calls.map(([delay, ref, args]) => [delay, getFunctionName(ref as never), args])).toEqual(
+      [
+        [
+          0,
+          "skillVersionArtifactHash:computeSkillVersionArtifactHashInternal",
+          { versionId: "skillVersions:missing" },
+        ],
+        [
+          1_000,
+          "skillVersionArtifactHash:backfillMissingSkillVersionArtifactHashesInternal",
+          { cursor: "cursor:next", batchSize: 4, scheduled: 1 },
+        ],
+      ],
+    );
+  });
+
+  it("reports one page without scheduling in dry-run mode", async () => {
+    const { ctx, runAfter } = makeBackfillCtx(backfillPage, false);
+
+    const result = await backfillHandler(ctx, { dryRun: true });
+
+    expect(result).toMatchObject({ dryRun: true, matched: 1, scheduled: 0, isDone: false });
+    expect(runAfter).not.toHaveBeenCalled();
   });
 });
