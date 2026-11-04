@@ -4449,24 +4449,15 @@ async function listPackagePageImpl(
         collected.push(await toPublicPackageListItemFromPackage(ctx, pkg));
         if (collected.length >= targetCount) {
           const nextOffset = index + 1;
-          const nextState =
-            nextOffset < page.page.length
-              ? {
-                  cursor: currentCursor,
-                  offset: nextOffset,
-                  pageSize: scanPageSize,
-                  done: page.isDone,
-                  mode: "packages" as const,
-                  packageIndex: sortedPackageIndex,
-                }
-              : {
-                  cursor: page.continueCursor,
-                  offset: 0,
-                  pageSize: scanPageSize,
-                  done: page.isDone,
-                  mode: "packages" as const,
-                  packageIndex: sortedPackageIndex,
-                };
+          const hasMoreInPage = nextOffset < page.page.length;
+          const nextState = {
+            cursor: hasMoreInPage ? currentCursor : page.continueCursor,
+            offset: hasMoreInPage ? nextOffset : 0,
+            pageSize: scanPageSize,
+            done: page.isDone,
+            mode: "packages" as const,
+            packageIndex: sortedPackageIndex,
+          };
           return {
             page: collected,
             isDone: nextState.done && nextState.offset === 0,
@@ -4556,24 +4547,15 @@ async function listPackagePageImpl(
         collected.push(await toPublicPackageListItem(ctx, digest));
         if (collected.length >= targetCount) {
           const nextOffset = index + 1;
-          const nextState =
-            nextOffset < page.page.length
-              ? {
-                  cursor: currentCursor,
-                  offset: nextOffset,
-                  pageSize: scanPageSize,
-                  done: page.isDone,
-                  mode: "digest" as const,
-                  sort: effectiveDigestSort,
-                }
-              : {
-                  cursor: page.continueCursor,
-                  offset: 0,
-                  pageSize: scanPageSize,
-                  done: page.isDone,
-                  mode: "digest" as const,
-                  sort: effectiveDigestSort,
-                };
+          const hasMoreInPage = nextOffset < page.page.length;
+          const nextState = {
+            cursor: hasMoreInPage ? currentCursor : page.continueCursor,
+            offset: hasMoreInPage ? nextOffset : 0,
+            pageSize: scanPageSize,
+            done: page.isDone,
+            mode: "digest" as const,
+            sort: effectiveDigestSort,
+          };
           return {
             page: collected,
             isDone: nextState.done && nextState.offset === 0,
