@@ -33,7 +33,7 @@ describe("staging worker relays", () => {
       expect(worker.environment).toBe(
         workflowName === "prepublication-publish-checks"
           ? "${{ github.ref == 'refs/heads/staging' && 'Staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'Test' || 'Production') }}"
-          : "${{ inputs.environment || 'Production' }}",
+          : "${{ (inputs.environment == 'Test' || github.event.client_payload.environment == 'test') && 'Test' || 'Production' }}",
       );
       const guard = worker.steps.findIndex(
         (step: { name?: string }) => step.name === "Verify staging worker target",

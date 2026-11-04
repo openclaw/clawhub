@@ -4,7 +4,6 @@ import {
   skillSecurityStatus,
   skillVisibilityStatus,
 } from "./artifactStatusLabels";
-import { collectAttentionItems } from "./dashboardAttention";
 import type {
   DashboardAttentionItem,
   DashboardCatalogItem,
@@ -15,40 +14,12 @@ import type {
   DashboardSortKey,
 } from "./types";
 
-type DashboardAggregateStats = {
-  skillsCount: number;
-  pluginsCount: number;
-  totalInstalls: number;
-  totalDownloads: number;
-  needsAttentionCount: number;
-};
-
 function readSkillInstalls(skill: DashboardSkill) {
   return skill.stats?.installsAllTime ?? skill.stats?.installsCurrent ?? 0;
 }
 
 function readSkillDownloads(skill: DashboardSkill) {
   return skill.stats?.downloads ?? 0;
-}
-
-export function computeDashboardStats(
-  skills: DashboardSkill[],
-  packages: DashboardPackage[],
-  ownerHandle = "",
-): DashboardAggregateStats {
-  const skillInstalls = skills.reduce((sum, skill) => sum + readSkillInstalls(skill), 0);
-  const pluginInstalls = packages.reduce((sum, pkg) => sum + (pkg.stats.installs ?? 0), 0);
-  const skillDownloads = skills.reduce((sum, skill) => sum + readSkillDownloads(skill), 0);
-  const pluginDownloads = packages.reduce((sum, pkg) => sum + (pkg.stats.downloads ?? 0), 0);
-  const attentionItems = collectAttentionItems(skills, packages, ownerHandle);
-
-  return {
-    skillsCount: skills.length,
-    pluginsCount: packages.length,
-    totalInstalls: skillInstalls + pluginInstalls,
-    totalDownloads: skillDownloads + pluginDownloads,
-    needsAttentionCount: attentionItems.length,
-  };
 }
 
 export function mergeDashboardItems(

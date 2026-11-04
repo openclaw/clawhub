@@ -9,7 +9,10 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 const token = "synthetic-card-worker";
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 async function fixture() {
   vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
@@ -151,7 +154,16 @@ async function enqueueAndClaim(
   { t, versionId }: Awaited<ReturnType<typeof fixture>>,
   recipe = generationHash,
 ) {
-  await t.mutation(internal.skillCards.enqueueForVersionInternal, { versionId, source: "scan" });
+  const queued = await t.mutation(internal.skillCards.enqueueForVersionInternal, {
+    versionId,
+    source: "scan",
+  });
+  const jobId = queued.jobId;
+  if (!jobId) throw new Error("Fixture version was not queued");
+  const job = await t.run((ctx) => ctx.db.get(jobId));
+  if (!job) throw new Error("Fixture job is missing");
+  // The test database's commit clock can advance beyond the action's wall clock.
+  await vi.waitUntil(() => Date.now() >= job.nextRunAt, { interval: 1, timeout: 1_000 });
   return t.action(api.skillCards.claimSkillCardJobs, {
     token,
     workerId: "fixture",
@@ -190,6 +202,8 @@ it("reuses a completed card across timestamps, object key ordering and fresh sca
 it.each(["source", "security", "publisher", "metadata", "recipe", "attached-card"])(
   "regenerates when %s changes",
   async (change) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     const state = await generatedFixture();
     await state.t.run(async (ctx) => {
       const version = (await ctx.db.get(state.versionId))!;

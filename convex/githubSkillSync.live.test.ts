@@ -211,7 +211,7 @@ describe("GitHub-backed skills live canary", () => {
               }
             )._handler({ db } as never, args as never);
           }
-          if ("staticScan" in args && "commit" in args && "contentHash" in args) {
+          if ("parsed" in args && "commit" in args && "contentHash" in args) {
             return await (
               prepareGitHubSkillScanRequestInternal as unknown as {
                 _handler: (ctx: never, args: never) => unknown;

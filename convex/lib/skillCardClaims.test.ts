@@ -1,3 +1,5 @@
+/* @vitest-environment edge-runtime */
+
 import { convexTest } from "convex-test";
 import { defineSchema, defineTable } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
@@ -169,8 +171,8 @@ describe("Skill Card capacity ownership", () => {
     vi.useFakeTimers();
     try {
       const { plan, admit } = await fixture(1);
-      const now = Date.now();
-      expect((await admit(await plan())).jobs[0].leaseExpiresAt).toBe(now + 60 * 60 * 1000);
+      const claim = (await admit(await plan())).jobs[0];
+      expect(claim.leaseExpiresAt).toBe(claim.updatedAt + 60 * 60 * 1000);
     } finally {
       vi.useRealTimers();
     }

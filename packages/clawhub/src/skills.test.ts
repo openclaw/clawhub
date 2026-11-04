@@ -10,7 +10,6 @@ import {
   extractGitHubZipPathToDir,
   extractZipToDir,
   hashSkillFiles,
-  hashSkillZip,
   listManualSkills,
   listSkillFiles,
   readLockfile,
@@ -222,50 +221,6 @@ describe("skills", () => {
       { path: "b.txt", sha256: sha256Hex(strToU8("b")) },
     ]);
     expect(fingerprint).toBe(expected);
-  });
-
-  it("hashes every eligible file inside a downloaded zip deterministically", () => {
-    const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
-    const zip = zipSync({
-      "SKILL.md": strToU8("hello"),
-      "notes.md": strToU8("world"),
-      ".npmrc": strToU8("//registry.npmjs.org/:_authToken=secret\n"),
-      "config/endpoints.tsv": strToU8("name\turl\napi\thttps://example.com\n"),
-      "bin/tool": strToU8("#!/usr/bin/env sh\necho ok\n"),
-      "main.tf": strToU8('resource "null_resource" "demo" {}\n'),
-      "assets/payload.bin": opaqueBytes,
-    });
-    const { fingerprint } = hashSkillZip(new Uint8Array(zip));
-    const expected = buildSkillFingerprint([
-      { path: "SKILL.md", sha256: sha256Hex(strToU8("hello")) },
-      { path: "assets/payload.bin", sha256: sha256Hex(opaqueBytes) },
-      { path: "bin/tool", sha256: sha256Hex(strToU8("#!/usr/bin/env sh\necho ok\n")) },
-      {
-        path: "config/endpoints.tsv",
-        sha256: sha256Hex(strToU8("name\turl\napi\thttps://example.com\n")),
-      },
-      {
-        path: "main.tf",
-        sha256: sha256Hex(strToU8('resource "null_resource" "demo" {}\n')),
-      },
-      { path: "notes.md", sha256: sha256Hex(strToU8("world")) },
-    ]);
-    expect(fingerprint).toBe(expected);
-  });
-
-  it("ignores unsafe entries when hashing zips", () => {
-    const zip = zipSync({
-      "SKILL.md": strToU8("hello"),
-      "folder/": strToU8(""),
-      "../evil.txt": strToU8("nope"),
-      "bad\\path.txt": strToU8("nope"),
-      "image.png": strToU8("included"),
-    });
-    const { files } = hashSkillZip(new Uint8Array(zip));
-    expect(files).toEqual([
-      { path: "SKILL.md", sha256: sha256Hex(strToU8("hello")), size: 5 },
-      { path: "image.png", sha256: sha256Hex(strToU8("included")), size: 8 },
-    ]);
   });
 
   it("builds fingerprints from valid entries only", () => {

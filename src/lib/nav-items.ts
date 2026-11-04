@@ -69,7 +69,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
 // Secondary nav items (desktop secondary tabs + mobile dropdown section)
 // ---------------------------------------------------------------------------
 
-const OPENCLAW_SUPPORT_URL = "https://community.openclaw.ai/";
+export const OPENCLAW_SUPPORT_URL = "https://community.openclaw.ai/";
 
 export const SECONDARY_NAV_ITEMS: NavItem[] = [
   {
@@ -183,7 +183,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
       {
         kind: "external",
         label: "Discord",
-        href: "https://discord.gg/clawd",
+        href: "https://openclaw.ai/discord?from=clawhub-community-nav",
         icon: "discord",
       },
     ],

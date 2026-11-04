@@ -6,6 +6,26 @@ read_when:
 
 # Intermediary disclosure
 
+## Experiment activation and review boundary
+
+This remains a draft RFC, not approval to deploy or classify the public catalog.
+Artifact extraction is disabled unless the worker explicitly sets
+`CLAWHUB_INTERMEDIARY_DISCLOSURE_ENABLED=1`. With the flag absent or disabled,
+the result stays unknown and the extractor must not read artifact files or call
+a provider. Enabling the flag is an operator action requiring a maintainer
+decision on classification policy, correction handling, retention and cost.
+Existing provider credentials alone must never opt a worker into this experiment.
+
+Deterministic provider fixtures exercise plumbing, not model accuracy or a live
+paid extraction. Keep those proof claims separate. Missing keys, extraction
+failures and legacy versions without this optional analysis remain unknown; none
+may change security verdicts, publication eligibility or installability.
+
+The combined plugin detail response must project metadata from the same selected
+release used for its version projection and the standalone metadata endpoint.
+Never add an independent lookup to repair this: preserve the bounded detail
+snapshot request.
+
 ## Public contract
 
 - `requiresIntermediary: true | false | null`

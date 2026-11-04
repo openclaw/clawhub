@@ -3,7 +3,7 @@ version = 1
 name = "ClawHub"
 
 [setup]
-script = "bun run setup:worktree -- --quiet && bun scripts/dev-worktree.ts --detach"
+script = "bun run setup:worktree -- --quiet && bun run --cwd packages/schema build && bun scripts/dev-worktree.ts --detach"
 
 [[actions]]
 name = "Run"
@@ -13,7 +13,7 @@ command = "bun run dev:worktree"
 [[actions]]
 name = "Convex Dev"
 icon = "tool"
-command = "bun run setup:worktree -- --quiet && bunx convex dev --typecheck=disable"
+command = "bun run setup:worktree -- --quiet && bun run --cwd packages/schema build && bunx convex dev --typecheck=disable"
 
 [[actions]]
 name = "Seed Dev DB"

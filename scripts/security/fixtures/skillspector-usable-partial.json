@@ -1,0 +1,37 @@
+{
+  "execution_successful": true,
+  "analysis_completeness": {
+    "execution_successful": true,
+    "is_complete": false,
+    "status": "partial",
+    "total_components": 2,
+    "fully_inspected_files": 0,
+    "partially_inspected_files": 1,
+    "entirely_uninspected_files": 1,
+    "analyzer_statuses": [],
+    "ledger_exceptions": [
+      {
+        "reason_code": "dynamic_import",
+        "fatal": false
+      }
+    ],
+    "coverage_percent": 0
+  },
+  "components": [
+    {
+      "path": "tool.js",
+      "type": "script",
+      "limitations": ["dynamic import"]
+    }
+  ],
+  "issues": [
+    {
+      "issue_id": "partial-finding",
+      "severity": "high",
+      "explanation": "Review import."
+    }
+  ],
+  "metadata": {
+    "skillspector_version": "2.0.0"
+  }
+}

@@ -144,51 +144,92 @@ function extractManageContextValues(frames: CapturedConvexFrame[]) {
   }
 
   const values: PackageManageContextPayload[] = [];
+  let nullSeen = false;
   for (const frame of frames) {
     if (frame.direction !== "in") continue;
     const parsed = parseFrameData(frame.data);
     collectObjects(parsed, (objectValue) => {
       const queryId = readQueryId(objectValue);
       if (!queryId || !queryIds.has(queryId)) return;
+      if (objectValue.type === "QueryUpdated" && objectValue.value === null) nullSeen = true;
       const payload = findPackageManageContextPayload(objectValue);
       if (payload) values.push(payload);
     });
   }
-  return { querySeen: queryIds.size > 0, values };
+  return { querySeen: queryIds.size > 0, values, nullSeen };
 }
 
-async function installConvexFrameCapture(page: Page) {
-  await page.addInitScript(() => {
-    const originalWebSocket = window.WebSocket;
-    window.__clawhubConvexFrames = [];
-
-    function capture(direction: "in" | "out", data: unknown) {
-      if (typeof data !== "string") return;
-      window.__clawhubConvexFrames?.push({ direction, data });
-    }
-
-    class CapturedWebSocket extends originalWebSocket {
-      constructor(url: string | URL, protocols?: string | string[]) {
-        if (protocols === undefined) {
-          super(url);
-        } else {
-          super(url, protocols);
+async function installConvexFrameCapture(
+  page: Page,
+  options: { failInspectorSummary?: boolean } = {},
+) {
+  await page.addInitScript(
+    ({ failInspectorSummary }) => {
+      const originalWebSocket = window.WebSocket;
+      window.__clawhubConvexFrames = [];
+      const inspectorQueryIds = new Set<string>();
+      function capture(direction: "in" | "out", data: unknown) {
+        if (typeof data === "string") window.__clawhubConvexFrames?.push({ direction, data });
+      }
+      class CapturedWebSocket extends originalWebSocket {
+        constructor(url: string | URL, protocols?: string | string[]) {
+          if (protocols === undefined) super(url);
+          else super(url, protocols);
+          this.addEventListener("message", (event) => {
+            if (failInspectorSummary && typeof event.data === "string") {
+              const message = JSON.parse(event.data);
+              let changed = false;
+              if (Array.isArray(message.modifications)) {
+                message.modifications = message.modifications.map(
+                  (modification: Record<string, unknown>) => {
+                    if (
+                      modification.type !== "QueryUpdated" ||
+                      !inspectorQueryIds.has(String(modification.queryId))
+                    )
+                      return modification;
+                    changed = true;
+                    const { value: _value, ...rest } = modification;
+                    return {
+                      ...rest,
+                      type: "QueryFailed",
+                      errorMessage: "Function execution timed out (maximum duration: 1s)",
+                      logLines: [],
+                    };
+                  },
+                );
+              }
+              if (changed) {
+                event.stopImmediatePropagation();
+                this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(message) }));
+                return;
+              }
+            }
+            capture("in", event.data);
+          });
         }
-        this.addEventListener("message", (event) => capture("in", event.data));
+        override send(data: string | Blob | BufferSource) {
+          if (failInspectorSummary && typeof data === "string") {
+            const message = JSON.parse(data);
+            for (const modification of message.modifications ?? []) {
+              if (
+                modification.type === "Add" &&
+                modification.udfPath === "packages:getPackageInspectorValidationSummaryPublic"
+              )
+                inspectorQueryIds.add(String(modification.queryId));
+            }
+          }
+          capture("out", data);
+          return super.send(data);
+        }
       }
-
-      override send(data: string | Blob | BufferSource) {
-        capture("out", data);
-        return super.send(data);
-      }
-    }
-
-    Object.defineProperty(window, "WebSocket", {
-      configurable: true,
-      writable: true,
-      value: CapturedWebSocket,
-    });
-  });
+      Object.defineProperty(window, "WebSocket", {
+        configurable: true,
+        writable: true,
+        value: CapturedWebSocket,
+      });
+    },
+    { failInspectorSummary: options.failInspectorSummary === true },
+  );
 }
 
 async function readConvexFrames(page: Page) {
@@ -286,8 +327,52 @@ async function gotoPluginDetailWithOwnerControls(page: Page) {
   throw lastError;
 }
 
+test.beforeAll(() => {
+  if (process.env.PLAYWRIGHT_LOCAL_AUTH_SEED_CATALOG !== "1") seedLocalModerationFixtures();
+});
+
+test("seeded public plugin detail supports versions navigation", async ({
+  page,
+  request,
+}, testInfo) => {
+  const name = "local-scanned-runtime-plugin";
+  const response = await request.get(
+    new URL(`/api/v1/packages/${name}`, process.env.VITE_CONVEX_SITE_URL).toString(),
+  );
+  expect(response.status()).toBe(200);
+  const payload = await response.json();
+  expect(payload.package).toMatchObject({ name, displayName: "Local Scanned Runtime Plugin" });
+  const errors = trackRuntimeErrors(page);
+  await page.goto(buildPluginDetailHref(name, { ownerHandle: "local" }), {
+    waitUntil: "domcontentloaded",
+  });
+  await waitForHydration(page);
+  await expect(
+    page.getByRole("heading", { name: "Local Scanned Runtime Plugin", exact: true }).first(),
+  ).toBeVisible();
+  const versions = page.getByRole("tab", { name: "Versions", exact: true });
+  await versions.click();
+  await expect(page).toHaveURL(/#versions$/);
+  await expect(versions).toHaveAttribute("aria-selected", "true");
+  const release = page.locator(".skill-version-release").filter({ hasText: "v0.1.0" });
+  await expect(release).toHaveCount(1);
+  await release.getByRole("button", { name: "Show changelog for v0.1.0", exact: true }).click();
+  await expect(release).toContainText(
+    "Seeded public scanned release for plugin scanner page previews.",
+  );
+  await expect(
+    page.getByText("Release history is temporarily unavailable.", { exact: true }),
+  ).toHaveCount(0);
+  const screenshotPath = testInfo.outputPath("plugin-release-history.png");
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  await testInfo.attach("Plugin release history", {
+    path: screenshotPath,
+    contentType: "image/png",
+  });
+  await expectHealthyManageContextPage(page, errors);
+});
+
 test("plugin manage context query returns only slim catalog metadata", async ({ page }) => {
-  seedLocalModerationFixtures();
   await installConvexFrameCapture(page);
   const errors = trackRuntimeErrors(page);
 
@@ -316,3 +401,32 @@ test("plugin manage context query returns only slim catalog metadata", async ({ 
 
   await expectHealthyManageContextPage(page, errors);
 });
+
+for (const persona of ["owner", "user"] as const) {
+  test(`inspector summary timeout preserves ${persona} authorization and reports compatibility as unavailable`, async ({
+    page,
+  }) => {
+    await installConvexFrameCapture(page, { failInspectorSummary: true });
+    const errors = trackRuntimeErrors(page);
+    await signInAsLocalPersona(page, persona);
+    errors.length = 0;
+    await page.goto(
+      buildPluginDetailHref("local-scanned-runtime-plugin", { ownerHandle: "local" }),
+      { waitUntil: "domcontentloaded" },
+    );
+    await waitForHydration(page);
+    await expect(
+      page.getByText("Compatibility details are temporarily unavailable.", { exact: false }),
+    ).toBeVisible();
+    if (persona === "owner") {
+      await expect(page.getByRole("link", { name: "New version" })).toBeVisible();
+      await expectSlimManageContextPayload(page);
+    } else {
+      await expect
+        .poll(async () => extractManageContextValues(await readConvexFrames(page)))
+        .toMatchObject({ querySeen: true, nullSeen: true, values: [] });
+      await expect(page.getByRole("link", { name: "New version" })).toHaveCount(0);
+    }
+    await expectHealthyManageContextPage(page, errors);
+  });
+}

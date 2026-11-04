@@ -160,6 +160,12 @@ function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
   });
 }
 
+// makeCodePluginPackageJson declares ./dist/index.js; publish validation requires it.
+async function writeDeclaredDistEntry(folder: string) {
+  await mkdir(join(folder, "dist"), { recursive: true });
+  await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+}
+
 async function createCodePluginFixture(workdir: string, folderName: string, packageName: string) {
   const folder = join(workdir, folderName);
   await mkdir(join(folder, "dist"), { recursive: true });
@@ -764,13 +770,13 @@ describe("package commands", () => {
     expect(url.searchParams.get("limit")).toBe("7");
   });
 
-  it("supports Claw family package browse requests", async () => {
+  it("supports Template family package browse requests", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       items: [
         {
           name: "@openclaw/hosted",
-          displayName: "Hosted Claw",
-          family: "claw",
+          displayName: "Hosted Template",
+          family: "template",
           channel: "official",
           isOfficial: true,
           latestVersion: "1.0.0",
@@ -779,14 +785,14 @@ describe("package commands", () => {
       nextCursor: null,
     });
 
-    await cmdExplorePackages(makeOpts(), "", { family: "claw", limit: 7 });
+    await cmdExplorePackages(makeOpts(), "", { family: "template", limit: 7 });
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
     const url = new URL(String(request?.url));
     expect(url.pathname).toBe("/api/v1/packages");
-    expect(url.searchParams.get("family")).toBe("claw");
+    expect(url.searchParams.get("family")).toBe("template");
     expect(url.searchParams.get("limit")).toBe("7");
-    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("[Claw, official]"));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("[Template, official]"));
   });
 
   it("uses tag param when fetching a package file", async () => {
@@ -2772,14 +2778,14 @@ describe("package commands", () => {
           sourceRepo: "openclaw/demo-plugin",
           sourceCommit: "abc123",
         }),
-      ).rejects.toThrow("openclaw.plugin.json required");
+      ).rejects.toThrow("openclaw.plugin.json is required");
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
   });
 
-  it("publishes a Claw tarball without a plugin manifest", async () => {
+  it("publishes a Template tarball without a plugin manifest", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.0.tgz";
@@ -2789,9 +2795,10 @@ describe("package commands", () => {
           "package/package.json": JSON.stringify({
             name: "demo-claw",
             version: "1.0.0",
-            openclaw: { claw: "CLAW.md" },
+            openclaw: { template: "CLAW.md" },
           }),
-          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Template\n",
         }),
       );
       const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
@@ -2807,7 +2814,7 @@ describe("package commands", () => {
 
       expect(getPublishPayload()).toMatchObject({
         name: "demo-claw",
-        family: "claw",
+        family: "template",
         version: "1.0.0",
         expectedArtifactSha256: artifactSha256,
         categories: ["automation"],
@@ -2822,7 +2829,7 @@ describe("package commands", () => {
     }
   });
 
-  it("rejects a legacy-only profile for a first Claw publish before upload", async () => {
+  it("rejects a legacy-only profile for a first Template publish before upload", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.0.tgz";
@@ -2832,9 +2839,10 @@ describe("package commands", () => {
           "package/package.json": JSON.stringify({
             name: "demo-claw",
             version: "1.0.0",
-            openclaw: { claw: "CLAW.md" },
+            openclaw: { template: "CLAW.md" },
           }),
-          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Template\n",
           "package/profiles/openclaw.yml":
             "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
         }),
@@ -2850,7 +2858,7 @@ describe("package commands", () => {
     }
   });
 
-  it("preserves a legacy-only profile for a grandfathered Claw package", async () => {
+  it("preserves a legacy-only profile for a grandfathered Template package", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.1.tgz";
@@ -2860,9 +2868,10 @@ describe("package commands", () => {
           "package/package.json": JSON.stringify({
             name: "demo-claw",
             version: "1.0.1",
-            openclaw: { claw: "CLAW.md" },
+            openclaw: { template: "CLAW.md" },
           }),
-          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Template\n",
           "package/profiles/openclaw.yml":
             "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
         }),
@@ -2872,8 +2881,8 @@ describe("package commands", () => {
       httpMocks.apiRequest.mockResolvedValueOnce({
         package: {
           name: "demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
+          displayName: "Demo Template",
+          family: "template",
         },
         owner: null,
       });
@@ -2900,7 +2909,7 @@ describe("package commands", () => {
     }
   });
 
-  it("fails closed when ClawHub does not confirm the submitted Claw digest", async () => {
+  it("fails closed when ClawHub does not confirm the submitted Template digest", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.0.tgz";
@@ -2910,9 +2919,10 @@ describe("package commands", () => {
           "package/package.json": JSON.stringify({
             name: "demo-claw",
             version: "1.0.0",
-            openclaw: { claw: "CLAW.md" },
+            openclaw: { template: "CLAW.md" },
           }),
-          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Template\n",
         }),
       );
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -2931,7 +2941,7 @@ describe("package commands", () => {
     }
   });
 
-  it("fails closed when a finalized Claw publish reports a different digest", async () => {
+  it("fails closed when a finalized Template publish reports a different digest", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.0.tgz";
@@ -2939,9 +2949,9 @@ describe("package commands", () => {
         "package/package.json": JSON.stringify({
           name: "demo-claw",
           version: "1.0.0",
-          openclaw: { claw: "CLAW.md" },
+          openclaw: { template: "CLAW.md" },
         }),
-        "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+        "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Template\n",
       });
       await writeFile(join(workdir, packName), pack);
       const artifactSha256 = artifactIdentity(pack).sha256;
@@ -3142,6 +3152,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("manual-token");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -3203,6 +3214,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequest.mockRejectedValueOnce(
@@ -3257,6 +3269,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequest.mockRejectedValueOnce(
@@ -3311,6 +3324,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -3333,112 +3347,146 @@ describe("package commands", () => {
     }
   });
 
-  it("publishes a bundle plugin package with real bundle marker detection", async () => {
-    const workdir = await makeTmpWorkdir();
-    try {
-      const folder = join(workdir, "demo-bundle");
-      await mkdir(join(folder, "dist"), { recursive: true });
-      await mkdir(join(folder, ".codex-plugin"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        JSON.stringify({
+  it.each([true, false])(
+    "publishes canonical bundle bytes with native envelope=%s",
+    async (nativeEnvelope) => {
+      const workdir = await makeTmpWorkdir();
+      try {
+        const folder = join(workdir, "demo-bundle");
+        await mkdir(join(folder, "dist"), { recursive: true });
+        await mkdir(join(folder, ".codex-plugin"), { recursive: true });
+        await writeFile(
+          join(folder, "package.json"),
+          JSON.stringify({
+            name: "demo-bundle",
+            displayName: "Demo Bundle",
+            version: "0.4.0",
+          }),
+          "utf8",
+        );
+        if (nativeEnvelope) {
+          await writeFile(
+            join(folder, "openclaw.plugin.json"),
+            JSON.stringify({ id: "demo.bundle" }),
+            "utf8",
+          );
+        }
+        await writeFile(
+          join(folder, ".codex-plugin", "plugin.json"),
+          JSON.stringify({ name: "Demo Bundle", skills: ["skills"] }),
+          "utf8",
+        );
+        await writeFile(join(folder, "dist", "plugin.wasm"), "binary", "utf8");
+
+        httpMocks.apiRequestForm.mockResolvedValueOnce({
+          ok: true,
+          packageId: "pkg_bundle",
+          releaseId: "rel_bundle",
+        });
+
+        await cmdPublishPackage(makeOpts(workdir), "demo-bundle", {
+          bundleFormat: "codex",
+          hostTargets: "desktop,mobile",
+        });
+
+        expect(getPublishPayload()).toEqual({
           name: "demo-bundle",
           displayName: "Demo Bundle",
+          family: "bundle-plugin",
           version: "0.4.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.bundle" }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, ".codex-plugin", "plugin.json"),
-        JSON.stringify({ name: "Demo Bundle", skills: ["skills"] }),
-        "utf8",
-      );
-      await writeFile(join(folder, "dist", "plugin.wasm"), "binary", "utf8");
+          changelog: "",
+          tags: ["latest"],
+          bundle: {
+            format: "codex",
+            hostTargets: ["desktop", "mobile"],
+          },
+        });
+        expect(getUploadedFileNames()).toEqual([
+          ".codex-plugin/plugin.json",
+          "dist/plugin.wasm",
+          ...(nativeEnvelope ? ["openclaw.plugin.json"] : []),
+          "package.json",
+        ]);
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+      }
+    },
+  );
 
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        packageId: "pkg_bundle",
-        releaseId: "rel_bundle",
-      });
+  it.each([undefined, "code-plugin"] as const)(
+    "selects the native manifest and preserves all companion host files (family=%s)",
+    async (family) => {
+      const workdir = await makeTmpWorkdir();
+      try {
+        const folder = join(workdir, "demo-plugin");
+        await mkdir(join(folder, "dist"), { recursive: true });
+        await mkdir(join(folder, "skills", "demo"), { recursive: true });
+        await writeFile(
+          join(folder, "package.json"),
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.0.0",
+          }),
+          "utf8",
+        );
+        await writeFile(
+          join(folder, "openclaw.plugin.json"),
+          JSON.stringify({ id: "demo.plugin" }),
+          "utf8",
+        );
+        for (const host of ["codex", "claude", "cursor"]) {
+          await mkdir(join(folder, `.${host}-plugin`));
+          await writeFile(
+            join(folder, `.${host}-plugin`, "plugin.json"),
+            JSON.stringify({ name: "different-host-identity" }),
+            "utf8",
+          );
+        }
+        await writeFile(
+          join(folder, "skills", "demo", "SKILL.md"),
+          "---\nname: demo\n---\n",
+          "utf8",
+        );
+        await writeFile(join(folder, "dist", "index.js"), "export default {};\n", "utf8");
 
-      await cmdPublishPackage(makeOpts(workdir), "demo-bundle", {
-        bundleFormat: "openclaw-bundle",
-        hostTargets: "desktop,mobile",
-      });
+        httpMocks.apiRequestForm.mockResolvedValueOnce({
+          ok: true,
+          packageId: "pkg_code",
+          releaseId: "rel_code",
+        });
 
-      expect(getPublishPayload()).toEqual({
-        name: "demo-bundle",
-        displayName: "Demo Bundle",
-        family: "bundle-plugin",
-        version: "0.4.0",
-        changelog: "",
-        tags: ["latest"],
-        bundle: {
-          format: "openclaw-bundle",
-          hostTargets: ["desktop", "mobile"],
-        },
-      });
-      expect(getUploadedFileNames()).toEqual([
-        ".codex-plugin/plugin.json",
-        "dist/plugin.wasm",
-        "openclaw.plugin.json",
-        "package.json",
-      ]);
-    } finally {
-      await rm(workdir, { recursive: true, force: true });
-    }
-  });
+        await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+          family,
+          sourceRepo: "openclaw/demo-plugin",
+          sourceCommit: "abc123",
+        });
 
-  it("prefers openclaw.plugin.json over skills markers when detecting package family", async () => {
-    const workdir = await makeTmpWorkdir();
-    try {
-      const folder = join(workdir, "demo-plugin");
-      await mkdir(join(folder, "dist"), { recursive: true });
-      await mkdir(join(folder, "skills", "demo"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+        expect(getPublishPayload()).toMatchObject({
           name: "demo-plugin",
           displayName: "Demo Plugin",
+          family: "code-plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
-      );
-      await writeFile(join(folder, "skills", "demo", "SKILL.md"), "---\nname: demo\n---\n", "utf8");
-      await writeFile(join(folder, "dist", "index.js"), "export default {};\n", "utf8");
-
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        packageId: "pkg_code",
-        releaseId: "rel_code",
-      });
-
-      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
-        sourceRepo: "openclaw/demo-plugin",
-        sourceCommit: "abc123",
-      });
-
-      expect(getPublishPayload()).toMatchObject({
-        name: "demo-plugin",
-        displayName: "Demo Plugin",
-        family: "code-plugin",
-        version: "1.0.0",
-      });
-      expect(getUploadedClawPackNames()).toEqual(["demo-plugin-1.0.0.tgz"]);
-    } finally {
-      await rm(workdir, { recursive: true, force: true });
-    }
-  });
+        });
+        expect(getUploadedClawPackNames()).toEqual(["demo-plugin-1.0.0.tgz"]);
+        const uploaded = getUploadedClawPacks()[0];
+        expect(uploaded).toBeDefined();
+        if (!uploaded) throw new Error("Expected uploaded ClawPack");
+        const packed = parseClawPack(new Uint8Array(await uploaded.arrayBuffer()));
+        for (const host of ["codex", "claude", "cursor"]) {
+          const path = `.${host}-plugin/plugin.json`;
+          const entry = packed.entries.find((file) => file.path === path);
+          expect(entry).toBeDefined();
+          expect(entry?.bytes).toEqual(new Uint8Array(await readFile(join(folder, path))));
+        }
+        expect(packed.entries.find((file) => file.path === "openclaw.plugin.json")?.bytes).toEqual(
+          new Uint8Array(await readFile(join(folder, "openclaw.plugin.json"))),
+        );
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("rejects code-plugin publish without source metadata", async () => {
     const workdir = await makeTmpWorkdir();
@@ -3482,7 +3530,7 @@ describe("package commands", () => {
           sourceRepo: "openclaw/demo-plugin",
           sourceCommit: "abc123",
         }),
-      ).rejects.toThrow("openclaw.plugin.json required");
+      ).rejects.toThrow("openclaw.plugin.json is required");
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
@@ -3574,7 +3622,7 @@ describe("package commands", () => {
     }
   });
 
-  it("rejects bundle-plugin publish when openclaw.plugin.json is missing", async () => {
+  it("rejects bundle-plugin publish without a supported bundle marker", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "demo-bundle");
@@ -3587,14 +3635,14 @@ describe("package commands", () => {
 
       await expect(
         cmdPublishPackage(makeOpts(workdir), "demo-bundle", { family: "bundle-plugin" }),
-      ).rejects.toThrow("openclaw.plugin.json required");
+      ).rejects.toThrow("requires exactly one supported bundle manifest");
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
   });
 
-  it("validates a Claw source folder but requires a built tarball for publication", async () => {
+  it("validates a Template source folder but requires a built tarball for publication", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "github-triage");
@@ -3605,7 +3653,7 @@ describe("package commands", () => {
           name: "@acme/github-triage",
           displayName: "GitHub Triage",
           version: "1.0.0",
-          openclaw: { claw: "CLAW.md" },
+          openclaw: { template: "CLAW.md" },
         }),
         "utf8",
       );
@@ -3648,7 +3696,7 @@ describe("package commands", () => {
         "utf8",
       );
       await expect(cmdPublishPackage(makeOpts(workdir), "github-triage")).rejects.toThrow(
-        "Claw publication requires an already-built package tarball (.tgz)",
+        "Template publication requires an already-built package tarball (.tgz)",
       );
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
@@ -3656,7 +3704,7 @@ describe("package commands", () => {
     }
   });
 
-  it("rejects Claw manifests with malformed UTF-8 before upload", async () => {
+  it("rejects Template manifests with malformed UTF-8 before upload", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "invalid-utf8-claw");
@@ -3665,9 +3713,9 @@ describe("package commands", () => {
         join(folder, "package.json"),
         JSON.stringify({
           name: "invalid-utf8-claw",
-          displayName: "Invalid UTF-8 Claw",
+          displayName: "Invalid UTF-8 Template",
           version: "1.0.0",
-          openclaw: { claw: "CLAW.md" },
+          openclaw: { template: "CLAW.md" },
         }),
         "utf8",
       );
@@ -3675,13 +3723,13 @@ describe("package commands", () => {
         join(folder, "CLAW.md"),
         Uint8Array.from([
           ...new TextEncoder().encode(
-            "---\nschemaVersion: 1\nagent:\n  id: invalid-utf8-claw\n---\n# Invalid UTF-8 Claw\n",
+            "---\nschemaVersion: 1\nagent:\n  id: invalid-utf8-claw\n---\n# Invalid UTF-8 Template\n",
           ),
           0xff,
         ]),
       );
       await expect(cmdPublishPackage(makeOpts(workdir), "invalid-utf8-claw")).rejects.toThrow(
-        "CLAW.md: The declared Claw manifest is missing or is not UTF-8 text.",
+        "CLAW.md: The declared Template manifest is missing or is not UTF-8 text.",
       );
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
@@ -3689,7 +3737,7 @@ describe("package commands", () => {
     }
   });
 
-  it("rejects Claws with missing workspace sources before upload", async () => {
+  it("rejects Templates with missing workspace sources before upload", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "broken-claw");
@@ -3699,13 +3747,13 @@ describe("package commands", () => {
         JSON.stringify({
           name: "broken-claw",
           version: "1.0.0",
-          openclaw: { claw: "CLAW.md" },
+          openclaw: { template: "CLAW.md" },
         }),
         "utf8",
       );
       await writeFile(
         join(folder, "CLAW.md"),
-        "---\nschemaVersion: 1\nagent:\n  id: broken-claw\nworkspace:\n  files:\n    - source: missing.md\n      path: missing.md\n---\n# Broken Claw\n",
+        "---\nschemaVersion: 1\nagent:\n  id: broken-claw\nworkspace:\n  files:\n    - source: missing.md\n      path: missing.md\n---\n# Broken Template\n",
         "utf8",
       );
 
@@ -3797,6 +3845,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "broken.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       httpMocks.apiRequestForm.mockRejectedValueOnce(new Error("Registry rejected upload"));
 
@@ -3816,7 +3865,7 @@ describe("package commands", () => {
     }
   });
 
-  it("fails CLI publish on server Plugin Inspector hard errors", async () => {
+  it("fails CLI publish when the registry rejects the release", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "broken-plugin");
@@ -3837,9 +3886,7 @@ describe("package commands", () => {
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
       httpMocks.apiRequestForm.mockRejectedValueOnce(
-        new Error(
-          "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
-        ),
+        new Error("Published package inventory does not match the minted authorization"),
       );
 
       await expect(
@@ -3847,10 +3894,10 @@ describe("package commands", () => {
           sourceRepo: "openclaw/broken-plugin",
           sourceCommit: "deadbeef",
         }),
-      ).rejects.toThrow("Plugin Inspector blocked publish");
+      ).rejects.toThrow("Published package inventory does not match the minted authorization");
 
       expect(uiMocks.spinner.fail).toHaveBeenCalledWith(
-        "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
+        "Published package inventory does not match the minted authorization",
       );
       expect(uiMocks.spinner.succeed).not.toHaveBeenCalled();
     } finally {
@@ -4005,6 +4052,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       runGit(folder, ["init", "-b", "main"]);
       runGit(folder, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
@@ -4075,6 +4123,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin", configSchema: { type: "object" } }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       runGit(workdir, ["init", "-b", "main"]);
       runGit(workdir, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
@@ -4365,23 +4414,6 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith("Repository: openclaw/openclaw");
     expect(mockLog).toHaveBeenCalledWith("Workflow: plugin-clawhub-release.yml");
     expect(mockLog).not.toHaveBeenCalledWith(expect.stringContaining("Environment:"));
-  });
-
-  it("owns trusted publisher set and delete commands in the public package CLI", async () => {
-    const testSource = await readFile(new URL("./packages.test.ts", import.meta.url), "utf8");
-    const cliSource = await readFile(new URL("../../cli.ts", import.meta.url), "utf8");
-    const modImportPrefix = testSource.split(
-      '} = await import("../../../../clawhub-mod/src/commands/packages");',
-    )[0];
-    const modImportBlock = modImportPrefix ? (modImportPrefix.split("const {").at(-1) ?? "") : "";
-
-    expect(modImportBlock).not.toEqual("");
-    expect(modImportBlock).not.toContain("cmdSetPackageTrustedPublisher");
-    expect(modImportBlock).not.toContain("cmdDeletePackageTrustedPublisher");
-    expect(cliSource).toContain('["package", "trusted-publisher", "set"]');
-    expect(cliSource).toContain('["package", "trusted-publisher", "delete"]');
-    expect(cliSource).toContain("cmdSetPackageTrustedPublisher(opts, name, options)");
-    expect(cliSource).toContain("cmdDeletePackageTrustedPublisher(opts, name, options)");
   });
 
   it("sets trusted publisher config for a package", async () => {

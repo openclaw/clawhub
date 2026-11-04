@@ -1,5 +1,5 @@
 import { authTables } from "@convex-dev/auth/server";
-import { createClawManifestSummarySchema } from "clawhub-schema";
+import { createTemplateManifestSummarySchema } from "clawhub-schema";
 import { defineSchema, defineTable } from "convex/server";
 import { type GenericValidator, v } from "convex/values";
 import {
@@ -10,6 +10,10 @@ import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
 import { intermediaryAnalysisValidator } from "./lib/intermediaryAnalysis";
+import {
+  packageInspectorFailureValidator,
+  packageInspectorOutcomeValidator,
+} from "./lib/packageInspectorOutcome";
 import { sdkUsageEntry, sdkUsageScan } from "./lib/packageSdkUsageContract";
 import {
   pluginCategoryClassificationValidator,
@@ -23,6 +27,16 @@ import {
   searchScope,
 } from "./lib/searchInsights";
 import { reportRequest } from "./lib/searchReportContract";
+import {
+  aigAnalysisValidator,
+  skillSpectorAnalysisValidator,
+  staticScanValidator,
+  vtAnalysisValidator,
+} from "./lib/securityAnalysisValidators";
+import { skillEvaluationMetricsValidator } from "./lib/skillEvaluationMetrics";
+import { skillPresentationValidator } from "./lib/skillPresentationValidator";
+
+export { skillSpectorAnalysisValidator } from "./lib/securityAnalysisValidators";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -31,74 +45,6 @@ const manualModerationOverride = v.object({
   note: v.string(),
   reviewerUserId: v.id("users"),
   updatedAt: v.number(),
-});
-
-const vtEngineStatsValidator = v.object({
-  malicious: v.optional(v.number()),
-  suspicious: v.optional(v.number()),
-  undetected: v.optional(v.number()),
-  harmless: v.optional(v.number()),
-});
-
-const vtAnalysisValidator = v.object({
-  status: v.string(),
-  verdict: v.optional(v.string()),
-  analysis: v.optional(v.string()),
-  source: v.optional(v.string()),
-  scanner: v.optional(v.string()),
-  engineStats: v.optional(vtEngineStatsValidator),
-  checkedAt: v.number(),
-});
-
-const skillSpectorIssueValidator = v.object({
-  issueId: v.string(),
-  category: v.optional(v.string()),
-  pattern: v.optional(v.string()),
-  severity: v.string(),
-  confidence: v.optional(v.number()),
-  file: v.optional(v.string()),
-  startLine: v.optional(v.number()),
-  endLine: v.optional(v.number()),
-  explanation: v.string(),
-  remediation: v.optional(v.string()),
-  finding: v.optional(v.string()),
-  codeSnippet: v.optional(v.string()),
-});
-
-const skillSpectorAnalysisValidator = v.object({
-  status: v.string(),
-  score: v.optional(v.number()),
-  severity: v.optional(v.string()),
-  recommendation: v.optional(v.string()),
-  issueCount: v.number(),
-  // Scanner/action boundaries cap this array before storage; Convex validators cannot express max length.
-  issues: v.array(skillSpectorIssueValidator),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const aigAnalysisValidator = v.object({
-  status: v.string(),
-  issueCount: v.number(),
-  findings: v.array(
-    v.object({
-      ruleId: v.string(),
-      level: v.string(),
-      message: v.string(),
-      title: v.optional(v.string()),
-      description: v.optional(v.string()),
-      file: v.optional(v.string()),
-      startLine: v.optional(v.number()),
-      endLine: v.optional(v.number()),
-      remediation: v.optional(v.string()),
-    }),
-  ),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
 });
 
 const depRegistryStatusValidator = v.union(
@@ -181,24 +127,6 @@ export const llmAnalysisValidator = v.object({
     }),
   ),
   model: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const staticScanValidator = v.object({
-  status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-  reasonCodes: v.array(v.string()),
-  findings: v.array(
-    v.object({
-      code: v.string(),
-      severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-      file: v.string(),
-      line: v.number(),
-      message: v.string(),
-      evidence: v.string(),
-    }),
-  ),
-  summary: v.string(),
-  engineVersion: v.string(),
   checkedAt: v.number(),
 });
 
@@ -620,6 +548,7 @@ const githubSkillScans = defineTable({
   path: v.string(),
   status: githubSkillScanStatusValidator,
   skillScanRequestId: v.optional(v.id("skillScanRequests")),
+  // Retired static publish scan. Historical rows only: no longer written or displayed.
   staticScan: v.optional(staticScanValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
@@ -633,6 +562,8 @@ const githubSkillScans = defineTable({
   .index("by_skill_and_content_hash", ["skillId", "contentHash"])
   .index("by_github_source_and_updated_at", ["githubSourceId", "updatedAt"]);
 
+// Live production rows and all derived indexes retain the physical "claw" tag.
+// Public Template names are translated at the package boundary; do not narrow this without a staged data migration.
 const packageFamilyValidator = v.union(
   v.literal("skill"),
   v.literal("code-plugin"),
@@ -778,7 +709,7 @@ export const pluginManifestSummaryValidator = v.object({
   ),
 });
 
-const clawManifestSummaryValidator = createClawManifestSummarySchema<GenericValidator>({
+const clawManifestSummaryValidator = createTemplateManifestSummarySchema<GenericValidator>({
   literalOne: v.literal(1),
   string: v.string(),
   number: v.number(),
@@ -868,6 +799,7 @@ const skillEvaluationRunStatusValidator = v.union(
 const skillEvaluationRunSourceValidator = v.union(v.literal("sync"), v.literal("backfill"));
 const securityScanJobSourceValidator = v.union(
   v.literal("publish"),
+  // Retired: VirusTotal re-queue source. Nothing enqueues it; legacy rows remain valid.
   v.literal("vt-update"),
   v.literal("backfill"),
   v.literal("bulk-rescan"),
@@ -1039,7 +971,8 @@ const skills = defineTable({
   isSuspicious: v.optional(v.boolean()),
   moderationFlags: v.optional(v.array(v.string())),
   lastReviewedAt: v.optional(v.number()),
-  // VT scan tracking
+  // Retired VirusTotal polling bookkeeping. No longer written or read; kept
+  // optional until existing rows are cleared and the fields can be dropped.
   scanLastCheckedAt: v.optional(v.number()),
   scanCheckCount: v.optional(v.number()),
   hiddenAt: v.optional(v.number()),
@@ -1171,6 +1104,13 @@ const skillSlugAliases = defineTable({
   .index("by_owner_slug", ["ownerUserId", "slug"])
   .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"]);
 
+const operationalPublishRetryValidator = v.object({
+  attemptId: v.id("publishAttempts"),
+  actorUserId: v.id("users"),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+});
+
 const skillVersions = defineTable({
   skillId: v.id("skills"),
   version: v.string(),
@@ -1178,6 +1118,7 @@ const skillVersions = defineTable({
     v.union(v.literal("pending"), v.literal("published"), v.literal("blocked")),
   ),
   publishAttemptId: v.optional(v.id("publishAttempts")),
+  operationalRetry: v.optional(operationalPublishRetryValidator),
   pendingPublication: v.optional(v.any()),
   fingerprint: v.optional(v.string()),
   sourceProvenance: v.optional(
@@ -1210,29 +1151,7 @@ const skillVersions = defineTable({
     clawdis: v.optional(v.any()),
     moltbot: v.optional(v.any()),
     license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-    presentation: v.optional(
-      v.object({
-        displayName: v.string(),
-        displayNameSource: v.optional(
-          v.union(
-            v.literal("publisher"),
-            v.literal("openai"),
-            v.literal("skill"),
-            v.literal("slug"),
-          ),
-        ),
-        summary: v.optional(v.string()),
-        summarySource: v.optional(
-          v.union(
-            v.literal("publisher"),
-            v.literal("openai"),
-            v.literal("skill"),
-            v.literal("generated"),
-          ),
-        ),
-        icon: v.optional(v.string()),
-      }),
-    ),
+    presentation: v.optional(skillPresentationValidator),
   }),
   createdBy: v.id("users"),
   createdAt: v.number(),
@@ -1248,68 +1167,21 @@ const skillVersions = defineTable({
   ),
   sha256hash: v.optional(v.string()),
   scannerReportsStorageId: v.optional(v.id("_storage")),
+  // Retired VirusTotal telemetry. Historical rows only: no longer written or read.
   vtAnalysis: v.optional(vtAnalysisValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
-  llmAnalysis: v.optional(
-    v.object({
-      intermediaryAnalysis: v.optional(intermediaryAnalysisValidator),
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      confidence: v.optional(v.string()),
-      summary: v.optional(v.string()),
-      dimensions: v.optional(
-        v.array(
-          v.object({
-            name: v.string(),
-            label: v.string(),
-            rating: v.string(),
-            detail: v.string(),
-          }),
-        ),
-      ),
-      guidance: v.optional(v.string()),
-      findings: v.optional(v.string()),
-      agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
-      riskSummary: v.optional(
-        v.object({
-          abnormal_behavior_control: llmRiskSummaryBucketValidator,
-          permission_boundary: llmRiskSummaryBucketValidator,
-          sensitive_data_protection: llmRiskSummaryBucketValidator,
-        }),
-      ),
-      model: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
-  ),
+  llmAnalysis: v.optional(llmAnalysisValidator),
   depRegistryAnalysis: v.optional(depRegistryAnalysisValidator),
   depRegistryScanStatus: v.optional(depRegistryStatusValidator),
-  staticScan: v.optional(
-    v.object({
-      status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-      reasonCodes: v.array(v.string()),
-      findings: v.array(
-        v.object({
-          code: v.string(),
-          severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-          file: v.string(),
-          line: v.number(),
-          message: v.string(),
-          evidence: v.string(),
-        }),
-      ),
-      summary: v.string(),
-      engineVersion: v.string(),
-      checkedAt: v.number(),
-    }),
-  ),
+  // Retired static publish scan. Historical rows only: no longer written or displayed.
+  staticScan: v.optional(staticScanValidator),
 })
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
   .index("by_skill_active_created", ["skillId", "softDeletedAt", "createdAt"])
   .index("by_skill_owner_deleted_created", ["skillId", "ownerDeletedBy", "createdAt"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
-  .index("by_active_vt_status_created", ["softDeletedAt", "vtAnalysis.status", "createdAt"])
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 
@@ -1386,6 +1258,11 @@ const publishAttempts = defineTable({
   checkClaimExpiresAt: v.optional(v.number()),
   checkClaimLastError: v.optional(v.string()),
   checkFailureCount: v.optional(v.number()),
+  requiredScannerSource: v.optional(v.string()),
+  // Latest scan lease's reported source; retained after completion for attribution.
+  lastScannerSourceClaim: v.optional(
+    v.object({ claimId: v.string(), source: v.string(), claimedAt: v.number() }),
+  ),
   finalizationClaimId: v.optional(v.string()),
   finalizationClaimedAt: v.optional(v.number()),
   finalizationClaimExpiresAt: v.optional(v.number()),
@@ -1774,6 +1651,7 @@ const packages = defineTable({
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
   family: packageFamilyValidator,
+  // Physical historical key: public DTOs expose templateProfilePolicyVersion.
   clawProfilePolicyVersion: v.optional(v.literal(1)),
   channel: packageChannelValidator,
   isOfficial: v.boolean(),
@@ -1909,11 +1787,14 @@ const packages = defineTable({
 
 const packageReleases = defineTable({
   packageId: v.id("packages"),
+  // Immutable admitted plugin family; absent legacy releases use their parent.
+  pluginFamily: v.optional(v.union(v.literal("code-plugin"), v.literal("bundle-plugin"))),
   version: v.string(),
   publicationStatus: v.optional(
     v.union(v.literal("pending"), v.literal("published"), v.literal("blocked")),
   ),
   publishAttemptId: v.optional(v.id("publishAttempts")),
+  operationalRetry: v.optional(operationalPublishRetryValidator),
   pendingPublication: v.optional(v.any()),
   changelog: v.string(),
   summary: v.optional(v.string()),
@@ -1937,6 +1818,7 @@ const packageReleases = defineTable({
   manifestSearchTerms: v.optional(v.array(v.string())),
   pluginManifestSummary: v.optional(pluginManifestSummaryValidator),
   categoryClassification: v.optional(pluginCategoryClassificationValidator),
+  // Preserve published releases and immutable archive lineage; expose templateManifestSummary on the wire.
   clawManifestSummary: v.optional(clawManifestSummaryValidator),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
@@ -1944,30 +1826,16 @@ const packageReleases = defineTable({
   verification: packageVerificationValidator,
   // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
   sha256hash: v.optional(v.string()),
+  // Retired VirusTotal telemetry. Historical rows only: no longer written or read.
   vtAnalysis: v.optional(vtAnalysisValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   endorAnalysis: v.optional(endorAnalysisValidator),
   llmAnalysis: v.optional(llmAnalysisValidator),
-  staticScan: v.optional(
-    v.object({
-      status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-      reasonCodes: v.array(v.string()),
-      findings: v.array(
-        v.object({
-          code: v.string(),
-          severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-          file: v.string(),
-          line: v.number(),
-          message: v.string(),
-          evidence: v.string(),
-        }),
-      ),
-      summary: v.string(),
-      engineVersion: v.string(),
-      checkedAt: v.number(),
-    }),
-  ),
+  // Retired static publish scan. Historical rows only: no longer written or displayed.
+  // The package trust resolver still reads it to neutralize legacy static-derived
+  // verification statuses (see resolvePackageReleaseScanStatus).
+  staticScan: v.optional(staticScanValidator),
   manualModeration: v.optional(packageReleaseModerationOverrideValidator),
   source: v.optional(v.any()),
   createdBy: v.id("users"),
@@ -2120,6 +1988,12 @@ const packageInspectorScanStates = defineTable({
   completedAt: v.number(),
   notificationCompletedAt: v.optional(v.number()),
   sdkUsage: v.optional(sdkUsageScan),
+  // Absent on rows written before outcomes were recorded; those scans completed.
+  outcome: v.optional(packageInspectorOutcomeValidator),
+  // The most recent tool failure for this scan identity. On a completed
+  // outcome it records a later failed rescan that left the verdict in place.
+  failure: v.optional(packageInspectorFailureValidator),
+  scanSource: v.optional(v.union(v.literal("publish"), v.literal("nightly"))),
 })
   .index("by_release_and_inspector_version_and_target_openclaw_version", [
     "releaseId",
@@ -2148,7 +2022,9 @@ const securityScanJobs = defineTable({
   source: securityScanJobSourceValidator,
   priority: v.number(),
   hasMaliciousSignal: v.boolean(),
-  waitForVtUntil: v.number(),
+  // Retired VirusTotal wait deadline. No longer written or read; optional until
+  // existing rows are migrated and the field can be dropped.
+  waitForVtUntil: v.optional(v.number()),
   nextRunAt: v.number(),
   attempts: v.number(),
   leaseToken: v.optional(v.string()),
@@ -2218,36 +2094,19 @@ const skillEvaluationRuns = defineTable({
   evalDatasetPath: v.optional(v.string()),
   evalConfigPath: v.optional(v.string()),
   nativeResultStorageId: v.optional(v.id("_storage")),
-  metrics: v.optional(
-    v.object({
-      sampleCount: v.number(),
-      overall: v.object({
-        withSkill: v.number(),
-        withoutSkill: v.number(),
-        delta: v.number(),
-      }),
-      cases: v.object({
-        withSkillPassed: v.number(),
-        withSkillTotal: v.number(),
-        withoutSkillPassed: v.number(),
-        withoutSkillTotal: v.number(),
-      }),
-      dimensions: v.array(
-        v.object({
-          id: v.string(),
-          withSkill: v.number(),
-          withoutSkill: v.number(),
-          delta: v.number(),
-        }),
-      ),
-    }),
-  ),
+  metrics: v.optional(skillEvaluationMetricsValidator),
   startedAt: v.optional(v.number()),
   completedAt: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
 })
   .index("by_skill_content_hash_config_key", ["skillId", "contentHash", "configKey"])
+  .index("by_skill_content_status_completed_at", [
+    "skillId",
+    "contentHash",
+    "status",
+    "completedAt",
+  ])
   .index("by_status_next_run_at", ["status", "nextRunAt"])
   .index("by_status_source_next_run_at", ["status", "source", "nextRunAt"])
   .index("by_status_lease_expires_at", ["status", "leaseExpiresAt"]);
@@ -2278,32 +2137,11 @@ const skillScanRequests = defineTable({
       clawdis: v.optional(v.any()),
       moltbot: v.optional(v.any()),
       license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-      presentation: v.optional(
-        v.object({
-          displayName: v.string(),
-          displayNameSource: v.optional(
-            v.union(
-              v.literal("publisher"),
-              v.literal("openai"),
-              v.literal("skill"),
-              v.literal("slug"),
-            ),
-          ),
-          summary: v.optional(v.string()),
-          summarySource: v.optional(
-            v.union(
-              v.literal("publisher"),
-              v.literal("openai"),
-              v.literal("skill"),
-              v.literal("generated"),
-            ),
-          ),
-          icon: v.optional(v.string()),
-        }),
-      ),
+      presentation: v.optional(skillPresentationValidator),
     }),
   ),
   sha256hash: v.optional(v.string()),
+  // Retired VirusTotal / static publish scan results. Historical rows only.
   vtAnalysis: v.optional(vtAnalysisValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
@@ -3260,6 +3098,7 @@ const catalogFeedPublications = defineTable({
   payload: v.string(),
   payloadSha256: v.string(),
   publishedAt: v.number(),
+  // Historical storage markers also exist on published empty snapshots. Keep their physical names.
   clawPolicyVersion: v.optional(v.literal(1)),
   clawEntryCount: v.optional(v.number()),
   clawPublisherId: v.optional(v.id("publishers")),
@@ -4347,6 +4186,8 @@ const publisherAbuseSignalReviewEvents = defineTable({
   createdAt: v.number(),
 });
 
+// Kept only so existing VirusTotal scan log rows remain valid. No active function
+// reads or writes this table after the VirusTotal retirement.
 const vtScanLogs = defineTable({
   type: v.union(v.literal("daily_rescan"), v.literal("backfill"), v.literal("pending_poll")),
   total: v.number(),
@@ -4798,7 +4639,7 @@ export default defineSchema({
   vtScanLogs,
   apiTokens,
   cliDeviceCodes,
-  httpRateLimitKeys,
+  httpRateLimitKeysV2: httpRateLimitKeys,
   downloadMetricDedupes,
   packageInstallMetricDedupes,
   installTelemetryDedupes,

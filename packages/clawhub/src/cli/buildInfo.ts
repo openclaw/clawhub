@@ -22,7 +22,7 @@ function readPackageVersion() {
   }
 }
 
-function shortCommit(value: string) {
+export function shortCommit(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return null;
   if (trimmed.length <= 8) return trimmed;
@@ -58,7 +58,10 @@ export function getCliBuildLabel() {
 function readGitCommitFromCwd() {
   const revParseCommit = readGitCommitFromRevParse();
   if (revParseCommit) return revParseCommit;
+  return readGitCommitFromFiles();
+}
 
+export function readGitCommitFromFiles() {
   try {
     const gitDir = findGitDir(process.cwd());
     if (!gitDir) return null;

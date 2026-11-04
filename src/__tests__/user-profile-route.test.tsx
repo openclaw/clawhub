@@ -4,13 +4,9 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  buildPublisherCatalogCategoryOptions,
   buildPublisherGroupTabOptions,
-  formatRelativeUpdatedAt,
-  getCatalogItemShortTypeLabel,
   groupPublisherCatalogItemsByTopic,
   parsePluginCatalogRoute,
-  publisherCatalogItemMatchesCategory,
   resolveDefaultCatalogTab,
   shouldShowPublisherCatalogLoadMore,
 } from "../routes/user/$handle";
@@ -680,68 +676,5 @@ describe("publisher profile helpers", () => {
         activePublishedDisplay: null,
       }),
     ).toBe(true);
-  });
-
-  it("formats short type labels and relative update times", () => {
-    expect(
-      getCatalogItemShortTypeLabel({
-        _id: "skills:prompt",
-        kind: "skill",
-        displayName: "Prompt",
-        summary: null,
-        topics: ["Prompt"],
-        icon: null,
-        href: "/x/prompt",
-        installs: 0,
-        stars: 0,
-        isOfficial: false,
-        updatedAt: 1,
-      }),
-    ).toBe("prompt");
-
-    const now = Date.UTC(2026, 5, 23, 12, 0, 0);
-    expect(formatRelativeUpdatedAt(now - 3 * 24 * 60 * 60 * 1000, now)).toBe("3d ago");
-  });
-
-  it("builds category options from catalog items and matches category slugs", () => {
-    const items = [
-      {
-        _id: "skills:dev",
-        kind: "skill" as const,
-        displayName: "Dev Helper",
-        summary: null,
-        topics: [],
-        categories: ["development"],
-        icon: null,
-        href: "/nvidia/dev-helper",
-        installs: 0,
-        stars: 0,
-        isOfficial: false,
-        updatedAt: 1,
-      },
-      {
-        _id: "packages:gateway",
-        kind: "plugin" as const,
-        displayName: "Gateway Plugin",
-        summary: null,
-        topics: [],
-        categories: ["gateway"],
-        icon: null,
-        href: "/plugins/gateway",
-        installs: 0,
-        stars: 0,
-        isOfficial: false,
-        updatedAt: 1,
-      },
-    ];
-
-    expect(
-      buildPublisherCatalogCategoryOptions(items, "skill").map((category) => category.slug),
-    ).toEqual(["development"]);
-    expect(
-      buildPublisherCatalogCategoryOptions(items, "plugin").map((category) => category.slug),
-    ).toEqual(["gateway"]);
-    expect(publisherCatalogItemMatchesCategory(items[0], "development")).toBe(true);
-    expect(publisherCatalogItemMatchesCategory(items[0], "automation")).toBe(false);
   });
 });

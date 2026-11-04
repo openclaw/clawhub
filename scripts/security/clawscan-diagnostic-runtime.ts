@@ -3,16 +3,53 @@ import { copyFile, lstat, mkdir, readFile, readdir, realpath, writeFile } from "
 import { dirname, join, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { runWorkerCommand } from "../lib/runWorkerCommand";
+import { ORIGINAL038_SOURCE, validateOriginal038Packages } from "./clawscan-diagnostic-fixed038";
 import { attestRuntime } from "./run-clawscan-diagnostic";
 
 const SKILLSPECTOR_REF = "95a52d89fa16f608f0b18ccee76b0918ea4b7eef";
 const AIG_REF = "a5c5a72c2e5b88fc6e5b27e0c86110943c4d350b";
 const LOCK_SHA256 = "86da392895db777270d9f1e2390c6956df2beaae31578235389d584fafe10adc";
+const LOCK_SHA256_BY_SOURCE = new Map([
+  ["9662307780b2834791e2b0be8b166b44f4144ef4", LOCK_SHA256],
+  ["fd5f18ad3365f623d4165740b124cd7f142d0556", LOCK_SHA256],
+  [
+    "ff67692a1b58882a398449a1a5cdba620c88ad57",
+    "b8d19c16020091af248ec1566d6666de4cf408e4dca193f0c9ead67072da785e",
+  ],
+  [
+    "c0731bff55f735957dda18d3fc29e54d7b9f3b13",
+    "f4bfc4c3d226c4be309e01b7c5043ca34c53a40975a1ba39cae4c0463c98fb7f",
+  ],
+  [
+    "aff544dc623c9b2d420bbd13a2c8aab46a90738c",
+    "f4bfc4c3d226c4be309e01b7c5043ca34c53a40975a1ba39cae4c0463c98fb7f",
+  ],
+  [
+    "cafdd8a5766fa82874a805a4af369cfd0a038018",
+    "f4bfc4c3d226c4be309e01b7c5043ca34c53a40975a1ba39cae4c0463c98fb7f",
+  ],
+  [
+    "e14f9960cc290d47f99fd3416b0589bbc0080f24",
+    "f4bfc4c3d226c4be309e01b7c5043ca34c53a40975a1ba39cae4c0463c98fb7f",
+  ],
+  [
+    "c0b813f1001062257758f079795cdd176b7e31a4",
+    "f4bfc4c3d226c4be309e01b7c5043ca34c53a40975a1ba39cae4c0463c98fb7f",
+  ],
+  [ORIGINAL038_SOURCE, "f4bfc4c3d226c4be309e01b7c5043ca34c53a40975a1ba39cae4c0463c98fb7f"],
+]);
 const hash = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex");
 
-export function validateOriginalScannerBounds(state: string, mcp: string, lockSha256: string) {
+export function validateOriginalScannerBounds(
+  state: string,
+  mcp: string,
+  lockSha256: string,
+  sourcePin: string,
+) {
+  const expectedLock = LOCK_SHA256_BY_SOURCE.get(sourcePin);
   if (
-    lockSha256 !== LOCK_SHA256 ||
+    !expectedLock ||
+    lockSha256 !== expectedLock ||
     !/^DEFAULT_MAX_WORKFLOW_SECONDS = 600\.0$/m.test(state) ||
     !/^TP4_MAX_FILES = 128$/m.test(mcp)
   )
@@ -88,13 +125,18 @@ export async function installOriginalRuntime(
   pin: string,
   fullProfile: boolean,
   env: NodeJS.ProcessEnv,
+  fixed038 = false,
 ) {
+  if (fixed038 && (pin !== ORIGINAL038_SOURCE || !fullProfile))
+    throw new Error("Fixed original runtime requires the exact merged full profile");
   const installer = join(root, "installer");
   await mkdir(installer, { mode: 0o700 });
   for (const file of [
     "install-clawscan.sh",
     "install-clawscan-scanners.sh",
     "aig-worker-requirements.txt",
+    "skillspector-pydantic-requirements.txt",
+    "test_skillspector_serialization.py",
   ])
     await copyFile(new URL(file, import.meta.url), join(installer, file));
   await writeFile(join(installer, "clawscan-source-commit.txt"), `${pin}\n`, { mode: 0o600 });
@@ -125,16 +167,28 @@ export async function installOriginalRuntime(
   await run("sh", [join(installer, "install-clawscan-scanners.sh"), "skillspector"], false);
   if (fullProfile) await run("sh", [join(installer, "install-clawscan-scanners.sh"), "aig"], false);
   const binary = join(root, "clawscan-bin/clawscan");
-  const attestation = await attestRuntime("reviewed", "tiny", root, env, {
-    sourceDir,
-    pin,
-    binary,
-  });
+  const attestation = await attestRuntime(
+    "reviewed",
+    fixed038 ? "original038" : "tiny",
+    root,
+    env,
+    {
+      sourceDir,
+      pin,
+      binary,
+    },
+  );
   if (
     attestation.metadata.scannerSources.skillspector !== SKILLSPECTOR_REF ||
     attestation.metadata.scannerSources.aig !== AIG_REF
   )
     throw new Error("Unexpected upstream scanner refs");
+  if (
+    fixed038 &&
+    (await run("git", ["-C", sourceDir, "rev-parse", "HEAD:docker/clawscan-runtime"])) !==
+      "bd1667eb84dc0bfd454717500965724f96a51ba6"
+  )
+    throw new Error("Fixed original runtime tree differs from the reviewed source");
   const entrypoint = await realpath(join(root, "clawscan-scanner-bin/skillspector"));
   if (!entrypoint.startsWith(`${await realpath(root)}${sep}`))
     throw new Error("Unexpected scanner entrypoint");
@@ -146,7 +200,7 @@ export async function installOriginalRuntime(
     join(scannerDir, "src/skillspector/nodes/analyzers/mcp_tool_poisoning.py"),
     "utf8",
   );
-  validateOriginalScannerBounds(state, mcp, uvLockSha256);
+  validateOriginalScannerBounds(state, mcp, uvLockSha256, pin);
   const profile = await readFile(join(sourceDir, "internal/profiles/clawhub/clawscan.yml"), "utf8");
   validateOriginalProfile(profile);
   const sdkInventory = validateOriginalSdkInventory(
@@ -160,6 +214,22 @@ export async function installOriginalRuntime(
   );
   const venvPython = await run(python, ["--version"]);
   if (!/^Python 3\.12\.\d+$/.test(venvPython)) throw new Error("Invalid scanner Python");
+  let fullDependencyInventory: Record<string, unknown> | null = null;
+  if (fixed038) {
+    if (venvPython !== "Python 3.12.16" || attestation.metadata.python !== "Python 3.12.16")
+      throw new Error("Fixed original Python differs from production contract");
+    fullDependencyInventory = {};
+    const inventoryCode =
+      "import importlib.metadata,json,re; print(json.dumps({re.sub(r'[-_.]+','-',d.metadata['Name']).lower():d.version for d in importlib.metadata.distributions()}))";
+    for (const [kind, executable] of [
+      ["skillspector", python],
+      ["aig", join(root, "aig-venv/bin/python")],
+    ] as const) {
+      const actual = JSON.parse(await run(executable, ["-I", "-c", inventoryCode]));
+      validateOriginal038Packages(kind, actual);
+      fullDependencyInventory[kind] = actual;
+    }
+  }
   const skillspectorVersion = await run(python, [
     "-I",
     "-c",
@@ -167,6 +237,28 @@ export async function installOriginalRuntime(
   ]);
   if (!/^\d+\.\d+\.\d+(?:[a-z0-9.+-]*)$/.test(skillspectorVersion))
     throw new Error("Invalid scanner version");
+  const runtimeDockerfile = await readFile(
+    join(sourceDir, "docker/clawscan-runtime/Dockerfile"),
+    "utf8",
+  );
+  const bashPins = [...runtimeDockerfile.matchAll(/^ARG SHFMT_VERSION=(v\d+\.\d+\.\d+)$/gm)];
+  const bashModule = await lstat(join(scannerDir, "src/skillspector/shell_source.py")).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    },
+  );
+  let bashParserVersion: string | null = null;
+  let bashParserSha256: string | null = null;
+  if (bashModule) {
+    if (!bashModule.isFile() || bashPins.length !== 1) throw new Error("Invalid Bash parser pin");
+    const bashParser = join(root, "clawscan-scanner-bin/shfmt");
+    bashParserVersion = await run(bashParser, ["--version"]);
+    if (bashParserVersion !== bashPins[0]![1]) throw new Error("Bash parser version mismatch");
+    bashParserSha256 = hash(await readFile(bashParser));
+  } else if (/^ARG SHFMT_VERSION(?:=|$)/m.test(runtimeDockerfile)) {
+    throw new Error("Bash parser pin has no matching scanner module");
+  }
   const consumerRevision = await run("git", ["-C", process.cwd(), "rev-parse", "HEAD"]);
   if (!/^[a-f0-9]{40}$/.test(consumerRevision)) throw new Error("Invalid consumer source");
   const metadata = {
@@ -176,11 +268,15 @@ export async function installOriginalRuntime(
       "manual serial controls; no backend, claim, publication or production recovery samples",
       "verified original logical files; original compressed archive identity not claimed",
       "fresh private HOME/CODEX_HOME; host scanners; no Docker image used",
+      "reviewed Pydantic compatibility set applied over the upstream dependency lock",
     ],
     runtimeImage: "N/A",
     runtimeMode: "reviewed-host-scanners-sandbox-off",
     venvPython,
     skillspectorVersion,
+    bashParserRequired: bashModule !== null,
+    bashParserVersion,
+    bashParserSha256,
     consumerRevision,
     profileSha256: hash(profile),
     sdkInventory,
@@ -201,9 +297,16 @@ export async function installOriginalRuntime(
     },
     installerSha256: hash(await readFile(join(installer, "install-clawscan-scanners.sh"))),
     aigRequirementsSha256: hash(await readFile(join(installer, "aig-worker-requirements.txt"))),
+    skillspectorPydanticRequirementsSha256: hash(
+      await readFile(join(installer, "skillspector-pydantic-requirements.txt")),
+    ),
+    skillspectorSerializationProbeSha256: hash(
+      await readFile(join(installer, "test_skillspector_serialization.py")),
+    ),
     aggregateScannerBudgetSeconds: 600,
     mcpArtifactCountLimit: 128,
     aigInstalled: fullProfile,
+    ...(fixed038 ? { fullDependencyInventory } : {}),
   };
   return { binary, python, metadata, scannerBin: join(root, "clawscan-scanner-bin") };
 }

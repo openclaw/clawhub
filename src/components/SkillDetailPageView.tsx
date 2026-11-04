@@ -5,6 +5,7 @@ import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
 import { Bookmark, Flag, Settings, ShieldCheck, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import type { SkillPublicationProgress } from "../../convex/lib/skillPublicationProgress";
 import type { ActivityTrend } from "../lib/activityTrend";
 import { getSkillBadges, isSkillOfficial } from "../lib/badges";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
@@ -31,6 +32,7 @@ import { IntermediaryDisclosure } from "./IntermediaryDisclosure";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
+import { SkillPublicationNotice } from "./SkillPublicationNotice";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -141,6 +143,8 @@ export type SkillDetailPageViewProps = {
   ownerHandle: string | null;
   latestVersion: SkillDetailLatestVersion;
   modInfo: SkillModerationInfo | null;
+  isPendingPublication?: boolean;
+  publicationProgress?: SkillPublicationProgress | null;
   canManage: boolean;
   isAuthenticated: boolean;
   isStaff: boolean;
@@ -195,6 +199,8 @@ export function SkillDetailPageView({
   ownerHandle,
   latestVersion,
   modInfo,
+  isPendingPublication = false,
+  publicationProgress = null,
   canManage,
   isAuthenticated,
   isStaff,
@@ -376,7 +382,22 @@ export function SkillDetailPageView({
   return (
     <main className={cn("section detail-page-section skill-detail-page", pageClassName)}>
       <DetailPageShell>
-        {modInfo?.isPendingScan ? (
+        {publicationProgress ? (
+          <SkillPublicationNotice
+            progress={publicationProgress}
+            publishedVersion={latestVersion?.version}
+          />
+        ) : isPendingPublication ? (
+          <div className="pending-banner">
+            <div className="pending-banner-content">
+              <strong>Pending publication</strong>
+              <p>
+                This skill is visible to its publisher and ClawHub staff, but not yet public or
+                installable. ClawHub is completing security and publication checks.
+              </p>
+            </div>
+          </div>
+        ) : modInfo?.isPendingScan ? (
           <div className="pending-banner">
             <div className="pending-banner-content">
               <strong>Security scan in progress</strong>
@@ -591,17 +612,19 @@ export function SkillDetailPageView({
             </>
           }
         >
-          <div className="detail-mobile-install">
-            {installContent ?? (
-              <SkillCommandLineCard
-                slug={skill.slug}
-                displayName={skill.displayName}
-                ownerHandle={ownerHandle}
-                ownerId={installOwnerId}
-                clawdis={clawdis}
-              />
-            )}
-          </div>
+          {!isPendingPublication ? (
+            <div className="detail-mobile-install">
+              {installContent ?? (
+                <SkillCommandLineCard
+                  slug={skill.slug}
+                  displayName={skill.displayName}
+                  ownerHandle={ownerHandle}
+                  ownerId={installOwnerId}
+                  clawdis={clawdis}
+                />
+              )}
+            </div>
+          ) : null}
 
           <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>
             <div

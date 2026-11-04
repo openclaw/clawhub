@@ -45,11 +45,6 @@ export async function expandFilesWithReport(selected: File[]): Promise<ExpandFil
   return { files: expanded, ignoredLocalMetadataPaths };
 }
 
-export async function expandFiles(selected: File[]) {
-  const report = await expandFilesWithReport(selected);
-  return report.files;
-}
-
 export async function expandDroppedItems(items: DataTransferItemList | null) {
   if (!items || items.length === 0) return [];
   const dropped: File[] = [];

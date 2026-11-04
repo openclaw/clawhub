@@ -125,19 +125,52 @@ async function readEvidence(root: string): Promise<ArtifactEvidence> {
 }
 
 /** Best-effort companion extraction: it cannot fail or alter the security scan. */
-export async function inferIntermediaries(
-  artifactRoot: string,
-  options: { apiKey?: string; model?: string; fetch?: typeof fetch } = {},
-): Promise<IntermediaryAnalysis> {
-  const model = options.model ?? process.env.INTERMEDIARY_MODEL ?? "gpt-6-luna";
-  const unknown: IntermediaryAnalysis = {
+type IntermediaryOptions = {
+  enabled?: boolean;
+  apiKey?: string;
+  model?: string;
+  fetch?: typeof fetch;
+};
+
+function isIntermediaryInspectionEnabled(options: IntermediaryOptions) {
+  return options.enabled ?? process.env.CLAWHUB_INTERMEDIARY_DISCLOSURE_ENABLED === "1";
+}
+
+function unknownIntermediaryAnalysis(options: IntermediaryOptions): IntermediaryAnalysis {
+  return {
     requiresIntermediary: null,
     intermediaryDetails: null,
     checkedAt: Date.now(),
     recipe: RECIPE,
-    model,
+    model: options.model ?? process.env.INTERMEDIARY_MODEL ?? "gpt-6-luna",
     evidence: [],
   };
+}
+
+/** Disclosure failures must never turn a successful security scan into a failure. */
+export async function attachIntermediaries<T extends object>(
+  analysis: T,
+  resolveArtifactRoot: () => string | Promise<string>,
+  options: IntermediaryOptions = {},
+): Promise<T & { intermediaryAnalysis: IntermediaryAnalysis }> {
+  let intermediaryAnalysis = unknownIntermediaryAnalysis(options);
+  if (isIntermediaryInspectionEnabled(options)) {
+    try {
+      intermediaryAnalysis = await inferIntermediaries(await resolveArtifactRoot(), options);
+    } catch {
+      // Root resolution is inside the same fail-open boundary as provider extraction.
+    }
+  }
+  return { ...analysis, intermediaryAnalysis };
+}
+
+export async function inferIntermediaries(
+  artifactRoot: string,
+  options: IntermediaryOptions = {},
+): Promise<IntermediaryAnalysis> {
+  const unknown = unknownIntermediaryAnalysis(options);
+  if (!isIntermediaryInspectionEnabled(options)) return unknown;
+  const model = unknown.model;
   const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) return unknown;
   try {

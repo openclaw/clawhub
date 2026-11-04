@@ -66,7 +66,6 @@ import {
   listVersionsForViewerInternal,
   listVersionsForManager,
   updateReleaseLlmAnalysisInternal,
-  updateReleaseStaticScanInternal,
   applyAccountDeletionToOwnedPackagesBatchInternal,
   applyPublisherDeletionToOwnedPackagesBatchInternal,
   applyBanToOwnedPackagesBatchInternal,
@@ -81,7 +80,6 @@ import {
   searchPublic,
 } from "./packages";
 import { preview as previewPluginCategoryRefresh } from "./pluginCategoryRefresh";
-import { runStaticPublishScanInternal } from "./staticPublishScanNode";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -120,10 +118,7 @@ const listHandler = (
       name: string;
       pendingReview?: boolean;
       scanStatus?: string;
-      latestRelease: {
-        vtStatus: string | null;
-        staticScanStatus: string | null;
-      } | null;
+      latestRelease: {} | null;
     }>
   >
 )._handler;
@@ -170,7 +165,7 @@ const getVersionSecurityByNameForViewerInternalHandler = (
 const listPublicPageHandler = (
   listPublicPage as unknown as WrappedHandler<
     {
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -207,7 +202,7 @@ const listPublicNewPluginsPageHandler = (
 const listPageForViewerInternalHandler = (
   listPageForViewerInternal as unknown as WrappedHandler<
     {
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
       families?: Array<"skill" | "code-plugin" | "bundle-plugin">;
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
@@ -299,7 +294,7 @@ const listVersionsForManagerHandler = (
     }
   >
 )._handler;
-const insertReleaseInternalHandler = (
+const rawInsertReleaseInternalHandler = (
   insertReleaseInternal as unknown as WrappedHandler<
     {
       actorUserId: string;
@@ -317,7 +312,7 @@ const insertReleaseInternalHandler = (
           };
       name: string;
       displayName: string;
-      family: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family: "skill" | "code-plugin" | "bundle-plugin" | "template" | "claw";
       version: string;
       publicationStatus?: "pending" | "published";
       changelog: string;
@@ -364,6 +359,10 @@ const insertReleaseInternalHandler = (
     unknown
   >
 )._handler;
+const insertReleaseInternalHandler = (
+  ctx: unknown,
+  args: Parameters<typeof rawInsertReleaseInternalHandler>[1],
+) => rawInsertReleaseInternalHandler(ctx, storedFixture(args));
 const findPackagePublishResultInternalHandler = (
   findPackagePublishResultInternal as unknown as WrappedHandler<
     {
@@ -415,7 +414,7 @@ const reservePackageNameInternalHandler = (
       name: string;
       displayName?: string;
       summary?: string;
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
       reason?: string;
     },
     { ok: true; action: string; packageId: string; name: string }
@@ -426,7 +425,7 @@ const searchPublicHandler = (
     {
       query: string;
       limit?: number;
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -445,7 +444,7 @@ const searchForViewerInternalHandler = (
     {
       query: string;
       limit?: number;
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
+      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -505,48 +504,43 @@ const assertCanGenerateChangelogPreviewInternalHandler = (
 )._handler;
 
 const packageManifestFile = {
-  path: "openclaw.plugin.json",
+  path: ".claude-plugin/plugin.json",
   size: 32,
   storageId: "storage:manifest",
   sha256: "manifest",
   contentType: "application/json",
 };
 
+function makeTrustedPackagePublishToken() {
+  return {
+    _id: "packagePublishTokens:1",
+    packageId: "packages:demo",
+    provider: "github-actions",
+    repository: "example/example",
+    repositoryId: "1",
+    repositoryOwner: "example",
+    repositoryOwnerId: "2",
+    workflowFilename: "plugin-clawhub-release.yml",
+    environment: "clawhub-release",
+    version: "1.0.0",
+    sha: "abc123",
+    ref: "refs/heads/main",
+    runId: "100",
+    runAttempt: "1",
+    expiresAt: Date.now() + 60_000,
+  };
+}
+
 function makePackageManifestStorage() {
   return {
     get: vi.fn(async (id: string) =>
-      id === "storage:manifest" ? new Blob([JSON.stringify({ id: "demo.plugin" })]) : null,
+      id === "storage:manifest" ? new Blob([JSON.stringify({ name: "demo-plugin" })]) : null,
     ),
     store: vi.fn(async () => "storage:legacy-zip"),
   };
 }
 
-type PublishScanStorage = { storage: { get: (storageId: string) => Promise<Blob | null> } };
-
-// Convex rejects action arguments whose object keys start with `$` (package.json
-// `$schema` is the production case); mirror that rule so the mock fails the way
-// the real boundary would.
-function assertConvexValueKeys(value: unknown, path = "args"): void {
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => assertConvexValueKeys(item, `${path}[${index}]`));
-    return;
-  }
-  if (value && typeof value === "object") {
-    for (const [key, nested] of Object.entries(value)) {
-      if (key.startsWith("$")) {
-        throw new Error(`Field name ${key} at ${path} starts with a '$', which is reserved.`);
-      }
-      assertConvexValueKeys(nested, `${path}.${key}`);
-    }
-  }
-}
-
-type StaticScanHandler = (ctx: unknown, args: unknown) => Promise<unknown>;
-
-// Publish actions hop to the Node runtime for the moderation scan; run the real
-// action handler against the calling ctx's storage (`ctx.runAction(...)` binds
-// `this`) so scan verdicts stay observable, and answer every other action (the
-// package inspector) with the supplied result.
+// Publish actions answer every action (the package inspector) with the supplied result.
 const STAGED_PACKAGE_ATTEMPT = { attemptId: "publishAttempts:package", status: "pending_checks" };
 
 function isPackagePublishAttemptArgs(args: unknown) {
@@ -556,21 +550,12 @@ function isPackagePublishAttemptArgs(args: unknown) {
 function makePublishRunActionMock(
   inspectorResult: () => unknown = makeCleanPackageInspectorResult,
 ) {
-  return vi.fn(async function (this: PublishScanStorage, ref: unknown, args: unknown) {
-    const name = getFunctionName(ref as FunctionReference<"action">);
-    if (name === "staticPublishScanNode:runStaticPublishScanInternal") {
-      assertConvexValueKeys(args);
-      const handler = (runStaticPublishScanInternal as unknown as { _handler: StaticScanHandler })
-        ._handler;
-      return await handler(this, args);
-    }
-    return inspectorResult();
-  });
+  return vi.fn(async () => inspectorResult());
 }
 
 function makeCleanPackageInspectorResult() {
   return {
-    status: "pass",
+    outcome: "clean",
     summary: {
       breakageCount: 0,
       warningCount: 0,
@@ -580,6 +565,33 @@ function makeCleanPackageInspectorResult() {
     warnings: [],
     breakages: [],
   };
+}
+
+function makeModerationDigestQueryMock() {
+  return vi.fn((table: string) => {
+    if (table === "packageSearchDigest") {
+      return {
+        withIndex: vi.fn(() => ({
+          unique: vi.fn().mockResolvedValue({
+            _id: "packageSearchDigest:demo",
+            packageId: "packages:demo",
+          }),
+        })),
+      };
+    }
+    if (
+      table === "packageCapabilitySearchDigest" ||
+      table === "packageTopicSearchDigest" ||
+      table === "packagePluginCategorySearchDigest"
+    ) {
+      return {
+        withIndex: vi.fn(() => ({
+          collect: vi.fn().mockResolvedValue([]),
+        })),
+      };
+    }
+    throw new Error(`Unexpected table ${table}`);
+  });
 }
 
 function makeEmptyPackageInspectorWarningsQuery() {
@@ -929,9 +941,6 @@ const getPackageReleaseScanBackfillBatchInternalHandler = (
       releases: Array<{
         releaseId: string;
         packageId: string;
-        needsVt: boolean;
-        needsLlm: boolean;
-        needsStatic: boolean;
       }>;
       nextCursor: number;
       done: boolean;
@@ -1041,29 +1050,6 @@ const listPackageModerationQueueInternalHandler = (
       nextCursor: string | null;
       done: boolean;
     }
-  >
-)._handler;
-const updateReleaseStaticScanInternalHandler = (
-  updateReleaseStaticScanInternal as unknown as WrappedHandler<
-    {
-      releaseId: string;
-      staticScan: {
-        status: "clean" | "suspicious" | "malicious";
-        reasonCodes: string[];
-        findings: Array<{
-          code: string;
-          severity: string;
-          file: string;
-          line: number;
-          message: string;
-          evidence: string;
-        }>;
-        summary: string;
-        engineVersion: string;
-        checkedAt: number;
-      };
-    },
-    unknown
   >
 )._handler;
 const updateReleaseLlmAnalysisInternalHandler = (
@@ -1195,6 +1181,29 @@ afterEach(() => {
   vi.mocked(getAuthUserId).mockResolvedValue(null);
 });
 
+// These builders represent persisted documents, not public wire DTOs. Logical
+// Template test inputs deliberately materialize the already-deployed physical keys.
+function storedFixture<T extends Record<string, unknown>>(input: T): T {
+  const result: Record<string, unknown> = { ...input };
+  if (result.family === "template") result.family = "claw";
+  for (const [wire, physical] of [
+    ["templateManifestSummary", "clawManifestSummary"],
+    ["templateProfilePolicyVersion", "clawProfilePolicyVersion"],
+  ]) {
+    if (Object.hasOwn(result, wire)) {
+      result[physical] = result[wire];
+      delete result[wire];
+    }
+  }
+  if (
+    result.pendingPublication &&
+    typeof result.pendingPublication === "object" &&
+    !Array.isArray(result.pendingPublication)
+  )
+    result.pendingPublication = storedFixture(result.pendingPublication as Record<string, unknown>);
+  return result as T;
+}
+
 function makeDigest(
   name: string,
   overrides: Partial<Record<string, unknown>> = {},
@@ -1221,7 +1230,7 @@ function makeDigest(
     executesCode: false,
     verificationTier: null,
     softDeletedAt: undefined,
-    ...overrides,
+    ...storedFixture(overrides),
   };
 }
 
@@ -1247,7 +1256,7 @@ function makePackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
     createdAt: 1,
     updatedAt: 1,
     softDeletedAt: undefined,
-    ...overrides,
+    ...storedFixture(overrides),
   };
 }
 
@@ -1258,11 +1267,11 @@ const openClawPublisher = {
 };
 const activeOpenClawPublisherDocs = { [openClawPublisher._id]: openClawPublisher };
 
-function makeOpenClawClawPackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
+function makeOpenClawTemplatePackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
   return makePackageDoc({
     name: "@openclaw/demo-claw",
     normalizedName: "@openclaw/demo-claw",
-    family: "claw",
+    family: "template",
     ownerPublisherId: openClawPublisher._id,
     ...overrides,
   });
@@ -1397,7 +1406,7 @@ function makeReleaseDoc(overrides: Partial<Record<string, unknown>> = {}) {
     softDeletedAt: undefined,
     createdBy: "users:owner",
     publishActor: { kind: "user", userId: "users:owner" },
-    ...overrides,
+    ...storedFixture(overrides),
   };
 }
 
@@ -2319,11 +2328,10 @@ function makePluginValidationReportCtx(
                 builder(queryBuilder);
                 return {
                   order: vi.fn(() => ({
-                    first: vi.fn(
-                      async () =>
-                        [...(options.statesByRelease?.[releaseId] ?? [])].sort(
-                          (a, b) => Number(b.completedAt) - Number(a.completedAt),
-                        )[0] ?? null,
+                    take: vi.fn(async (count: number) =>
+                      [...(options.statesByRelease?.[releaseId] ?? [])]
+                        .sort((a, b) => Number(b.completedAt) - Number(a.completedAt))
+                        .slice(0, count),
                     ),
                   })),
                 };
@@ -3495,6 +3503,69 @@ describe("packages public queries", () => {
       nextCursor: null,
       done: true,
     });
+  });
+
+  it("reports Inspector tool failures as skipped scans, never as plugin errors", async () => {
+    const failedOnly = makePluginExportDigest("failed-only", "code-plugin", 300);
+    const recovered = makePluginExportDigest("recovered", "code-plugin", 200);
+    const ctx = makePluginValidationReportCtx([failedOnly, recovered], {
+      statesByRelease: {
+        "packageReleases:failed-only-1": [
+          {
+            releaseId: "packageReleases:failed-only-1",
+            inspectorVersion: "0.4.3",
+            targetOpenClawVersion: "unresolved",
+            completedAt: 100,
+            outcome: "timeout",
+            scanSource: "publish",
+          },
+        ],
+        "packageReleases:recovered-1": [
+          {
+            releaseId: "packageReleases:recovered-1",
+            inspectorVersion: "0.4.3",
+            targetOpenClawVersion: "2026.11.1-beta.1",
+            completedAt: 100,
+            outcome: "clean",
+            scanSource: "nightly",
+          },
+          {
+            releaseId: "packageReleases:recovered-1",
+            inspectorVersion: "0.4.3",
+            targetOpenClawVersion: "2026.11.2-beta.1",
+            completedAt: 200,
+            outcome: "tool_failure",
+            scanSource: "nightly",
+          },
+        ],
+      },
+    });
+
+    const result = await listPluginValidationReportPageInternalHandler(ctx, { numItems: 20 });
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        package: expect.objectContaining({ name: "failed-only" }),
+        scan: {
+          status: "skipped",
+          scannedAt: null,
+          target: null,
+          inspectorVersion: null,
+          skipReason: "inspector-timeout",
+        },
+        findings: [],
+      }),
+      expect.objectContaining({
+        package: expect.objectContaining({ name: "recovered" }),
+        scan: expect.objectContaining({
+          status: "clean",
+          scannedAt: 100,
+          target: { channel: "beta", version: "2026.11.1-beta.1" },
+          skipReason: null,
+        }),
+        findings: [],
+      }),
+    ]);
   });
 
   it("represents missing scans and preserves plugin pagination continuity", async () => {
@@ -5618,9 +5689,9 @@ describe("packages public queries", () => {
     ]);
   });
 
-  it("filters Claws by their stored category tags without using plugin indexes", async () => {
-    const officialClaw = {
-      family: "claw",
+  it("filters Templates by their stored category tags without using plugin indexes", async () => {
+    const officialTemplate = {
+      family: "template",
       channel: "official",
       isOfficial: true,
       ownerPublisherId: openClawPublisher._id,
@@ -5632,10 +5703,10 @@ describe("packages public queries", () => {
         {
           page: [
             makeDigest("@openclaw/travel-planner", {
-              ...officialClaw,
+              ...officialTemplate,
               categories: ["travel", "personal"],
             }),
-            makeDigest("@openclaw/budget-coach", { ...officialClaw, categories: ["finance"] }),
+            makeDigest("@openclaw/budget-coach", { ...officialTemplate, categories: ["finance"] }),
           ],
           isDone: true,
           continueCursor: "",
@@ -5645,7 +5716,7 @@ describe("packages public queries", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       category: "travel",
       paginationOpts: { cursor: null, numItems: 10 },
     });
@@ -5654,9 +5725,9 @@ describe("packages public queries", () => {
     expect(tableNames).toEqual(["packageSearchDigest"]);
   });
 
-  it("searches Claws within their stored category tags", async () => {
-    const officialClaw = {
-      family: "claw",
+  it("searches Templates within their stored category tags", async () => {
+    const officialTemplate = {
+      family: "template",
       channel: "official",
       isOfficial: true,
       ownerPublisherId: openClawPublisher._id,
@@ -5667,8 +5738,8 @@ describe("packages public queries", () => {
       pages: [
         {
           page: [
-            makeDigest("@openclaw/travel-planner", { ...officialClaw, categories: ["travel"] }),
-            makeDigest("@openclaw/travel-budget", { ...officialClaw, categories: ["finance"] }),
+            makeDigest("@openclaw/travel-planner", { ...officialTemplate, categories: ["travel"] }),
+            makeDigest("@openclaw/travel-budget", { ...officialTemplate, categories: ["finance"] }),
           ],
           isDone: true,
           continueCursor: "",
@@ -5679,7 +5750,7 @@ describe("packages public queries", () => {
 
     const result = await searchPublicHandler(ctx, {
       query: "travel",
-      family: "claw",
+      family: "template",
       category: "travel",
       limit: 10,
     });
@@ -7526,7 +7597,7 @@ describe("packages public queries", () => {
       clawpackSha256: "a".repeat(64),
     });
     const { ctx } = makePackageCtx({
-      pkg: makeOpenClawClawPackageDoc(),
+      pkg: makeOpenClawTemplatePackageDoc(),
       latestRelease: release,
       versionRelease: release,
       versionsPage: {
@@ -9562,7 +9633,7 @@ describe("packages public queries", () => {
     });
   });
 
-  it("does not recover a Claw publish result for different exact artifact bytes", async () => {
+  it("does not recover a Template publish result for different exact artifact bytes", async () => {
     const ctx = {
       db: {
         query: vi.fn((table: string) => ({
@@ -9570,7 +9641,7 @@ describe("packages public queries", () => {
             unique: vi.fn().mockResolvedValue(
               table === "packages"
                 ? makePackageDoc({
-                    family: "claw",
+                    family: "template",
                     ownerUserId: "users:owner",
                     ownerPublisherId: "publishers:owner",
                   })
@@ -10105,7 +10176,7 @@ describe("packages public queries", () => {
     expect(ctx.insert).toHaveBeenCalledWith("packageReleases", expect.anything());
   });
 
-  it("pins newly created Claw packages to the current profile policy", async () => {
+  it("pins newly created Template packages to the current profile policy", async () => {
     const ctx = makeInsertReleaseCtx(null);
 
     await insertReleaseInternalHandler(ctx, {
@@ -10113,7 +10184,7 @@ describe("packages public queries", () => {
       ownerUserId: "users:owner",
       ownerPublisherId: openClawPublisher._id,
       name: "@openclaw/demo-claw",
-      displayName: "Demo Claw",
+      displayName: "Demo Template",
       family: "claw",
       version: "1.0.0",
       changelog: "init",
@@ -10132,7 +10203,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("publishes a Claw in the community channel when its owner is not Official", async () => {
+  it("publishes a Template in the community channel when its owner is not Official", async () => {
     const ctx = makeInsertReleaseCtx(
       null,
       [],
@@ -10149,8 +10220,8 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: openClawPublisher._id,
         name: "@openclaw/demo-claw",
-        displayName: "Demo Claw",
-        family: "claw",
+        displayName: "Demo Template",
+        family: "template",
         version: "1.0.0",
         changelog: "init",
         tags: ["latest"],
@@ -10198,7 +10269,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("rejects a Claw release whose @openclaw name is owned by another publisher", async () => {
+  it("rejects a Template release whose @openclaw name is owned by another publisher", async () => {
     const ctx = makeInsertReleaseCtx(null, [], {
       "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
     });
@@ -10209,8 +10280,8 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: "publishers:other",
         name: "@openclaw/demo-claw",
-        displayName: "Demo Claw",
-        family: "claw",
+        displayName: "Demo Template",
+        family: "template",
         version: "1.0.0",
         changelog: "init",
         tags: ["latest"],
@@ -10222,7 +10293,7 @@ describe("packages public queries", () => {
     expect(ctx.insert).not.toHaveBeenCalledWith("packages", expect.anything());
   });
 
-  it("publishes a Claw under its matching third-party organization", async () => {
+  it("publishes a Template under its matching third-party organization", async () => {
     const ctx = makeInsertReleaseCtx(null, [], {
       "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
     });
@@ -10233,8 +10304,8 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: "publishers:other",
         name: "@other/demo-claw",
-        displayName: "Demo Claw",
-        family: "claw",
+        displayName: "Demo Template",
+        family: "template",
         version: "1.0.0",
         changelog: "init",
         tags: ["latest"],
@@ -10249,7 +10320,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("keeps the existing user-owned Claw publication path without a publisher row", async () => {
+  it("keeps the existing user-owned Template publication path without a publisher row", async () => {
     const ctx = makeInsertReleaseCtx(null);
 
     await expect(
@@ -10257,8 +10328,8 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         ownerUserId: "users:owner",
         name: "legacy-claw",
-        displayName: "Legacy Claw",
-        family: "claw",
+        displayName: "Legacy Template",
+        family: "template",
         version: "1.0.0",
         changelog: "init",
         tags: ["latest"],
@@ -10273,8 +10344,8 @@ describe("packages public queries", () => {
     );
   });
 
-  it("pins a reserved package when its first published release is a Claw", async () => {
-    const reservation = makeOpenClawClawPackageDoc({
+  it("pins a reserved package when its first published release is a Template", async () => {
+    const reservation = makeOpenClawTemplatePackageDoc({
       family: "code-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
@@ -10287,8 +10358,8 @@ describe("packages public queries", () => {
       ownerUserId: "users:owner",
       ownerPublisherId: openClawPublisher._id,
       name: "@openclaw/demo-claw",
-      displayName: "Demo Claw",
-      family: "claw",
+      displayName: "Demo Template",
+      family: "template",
       version: "1.0.0",
       changelog: "init",
       tags: ["latest"],
@@ -10306,8 +10377,8 @@ describe("packages public queries", () => {
     );
   });
 
-  it("pins a reserved package when its pending first Claw release is published", async () => {
-    const reservation = makeOpenClawClawPackageDoc({
+  it("pins a reserved package when its pending first Template release is published", async () => {
+    const reservation = makeOpenClawTemplatePackageDoc({
       family: "code-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
@@ -10318,8 +10389,8 @@ describe("packages public queries", () => {
       packageId: "packages:demo",
       publicationStatus: "pending",
       pendingPublication: {
-        family: "claw",
-        displayName: "Demo Claw",
+        family: "template",
+        displayName: "Demo Template",
         tags: ["latest"],
       },
     });
@@ -10341,7 +10412,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("finalizes a pending user-owned Claw without a publisher row", async () => {
+  it("finalizes a pending user-owned Template without a publisher row", async () => {
     const reservation = makePackageDoc({
       name: "legacy-claw",
       normalizedName: "legacy-claw",
@@ -10355,8 +10426,8 @@ describe("packages public queries", () => {
       packageId: "packages:demo",
       publicationStatus: "pending",
       pendingPublication: {
-        family: "claw",
-        displayName: "Legacy Claw",
+        family: "template",
+        displayName: "Legacy Template",
         tags: ["latest"],
       },
     });
@@ -10374,7 +10445,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("does not finalize a pending Claw after its reserved package has a different owner", async () => {
+  it("does not finalize a pending Template after its reserved package has a different owner", async () => {
     const reservation = makePackageDoc({
       name: "@openclaw/demo-claw",
       normalizedName: "@openclaw/demo-claw",
@@ -10389,8 +10460,8 @@ describe("packages public queries", () => {
       packageId: "packages:demo",
       publicationStatus: "pending",
       pendingPublication: {
-        family: "claw",
-        displayName: "Demo Claw",
+        family: "template",
+        displayName: "Demo Template",
         tags: ["latest"],
       },
     });
@@ -10407,9 +10478,9 @@ describe("packages public queries", () => {
   });
 
   it.each(["deletedAt", "deactivatedAt"] as const)(
-    "does not finalize a pending Claw when its publisher has %s",
+    "does not finalize a pending Template when its publisher has %s",
     async (inactiveField) => {
-      const reservation = makeOpenClawClawPackageDoc({
+      const reservation = makeOpenClawTemplatePackageDoc({
         family: "code-plugin",
         latestReleaseId: undefined,
         latestVersionSummary: undefined,
@@ -10418,7 +10489,7 @@ describe("packages public queries", () => {
       const pendingRelease = makeReleaseDoc({
         _id: "packageReleases:pending",
         publicationStatus: "pending",
-        pendingPublication: { family: "claw", displayName: "Demo Claw", tags: ["latest"] },
+        pendingPublication: { family: "template", displayName: "Demo Template", tags: ["latest"] },
       });
       const ctx = makeInsertReleaseCtx(reservation, [pendingRelease], {
         "packages:demo": reservation,
@@ -10428,13 +10499,13 @@ describe("packages public queries", () => {
 
       await expect(
         publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:pending" }),
-      ).rejects.toThrow("Claw package owner publisher is unavailable");
+      ).rejects.toThrow("Template package owner publisher is unavailable");
       expect(ctx.patch).not.toHaveBeenCalled();
     },
   );
 
-  it("finalizes a staged Claw after @openclaw loses Official status", async () => {
-    const reservation = makeOpenClawClawPackageDoc({
+  it("finalizes a staged Template after @openclaw loses Official status", async () => {
+    const reservation = makeOpenClawTemplatePackageDoc({
       family: "code-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
@@ -10461,8 +10532,8 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: openClawPublisher._id,
         name: "@openclaw/demo-claw",
-        displayName: "Demo Claw",
-        family: "claw",
+        displayName: "Demo Template",
+        family: "template",
         version: "1.0.0",
         changelog: "init",
         tags: ["latest"],
@@ -10473,7 +10544,7 @@ describe("packages public queries", () => {
       }),
     ).resolves.toMatchObject({ publicationStatus: "pending" });
     const pendingInsert = ctx.insert.mock.calls.find(([table]) => table === "packageReleases");
-    if (!pendingInsert) throw new Error("Expected a staged Claw release");
+    if (!pendingInsert) throw new Error("Expected a staged Template release");
     recordsById["packageReleases:new"] = makeReleaseDoc({
       ...pendingInsert[1],
       _id: "packageReleases:new",
@@ -10641,7 +10712,7 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         ownerUserId: "users:owner",
         name: "dronzerclaw",
-        displayName: "Dronzer Claw",
+        displayName: "Dronzer Template",
         family: "code-plugin",
         version: "1.0.0",
         changelog: "init",
@@ -10670,7 +10741,7 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         ownerUserId: "users:owner",
         name: "dronzerclaw",
-        displayName: "Dronzer Claw",
+        displayName: "Dronzer Template",
         family: "code-plugin",
         version: "1.0.0",
         changelog: "init",
@@ -11251,8 +11322,8 @@ describe("packages public queries", () => {
     },
   );
 
-  it("rejects a Claw version retry when the exact artifact digest differs", async () => {
-    const ctx = makeInsertReleaseCtx(makeOpenClawClawPackageDoc(), [
+  it("rejects a Template version retry when the exact artifact digest differs", async () => {
+    const ctx = makeInsertReleaseCtx(makeOpenClawTemplatePackageDoc(), [
       makeReleaseDoc({
         _id: "packageReleases:existing",
         version: "1.0.0",
@@ -11267,7 +11338,7 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: openClawPublisher._id,
         name: "@openclaw/demo-claw",
-        displayName: "Demo Claw",
+        displayName: "Demo Template",
         family: "claw",
         version: "1.0.0",
         changelog: "retry",
@@ -11281,9 +11352,9 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
   });
 
-  it("treats an ordinary-user exact Claw artifact retry as idempotent", async () => {
+  it("treats an ordinary-user exact Template artifact retry as idempotent", async () => {
     const artifactSha256 = "a".repeat(64);
-    const ctx = makeInsertReleaseCtx(makeOpenClawClawPackageDoc(), [
+    const ctx = makeInsertReleaseCtx(makeOpenClawTemplatePackageDoc(), [
       makeReleaseDoc({
         _id: "packageReleases:existing",
         version: "1.0.0",
@@ -11298,7 +11369,7 @@ describe("packages public queries", () => {
         ownerUserId: "users:owner",
         ownerPublisherId: openClawPublisher._id,
         name: "@openclaw/demo-claw",
-        displayName: "Demo Claw",
+        displayName: "Demo Template",
         family: "claw",
         version: "1.0.0",
         changelog: "retry",
@@ -11316,10 +11387,10 @@ describe("packages public queries", () => {
   });
 
   it.each(["pending", "blocked"] as const)(
-    "does not report a %s exact Claw release as published",
+    "does not report a %s exact Template release as published",
     async (publicationStatus) => {
       const artifactSha256 = "a".repeat(64);
-      const ctx = makeInsertReleaseCtx(makeOpenClawClawPackageDoc(), [
+      const ctx = makeInsertReleaseCtx(makeOpenClawTemplatePackageDoc(), [
         makeReleaseDoc({
           _id: "packageReleases:pending",
           version: "1.0.0",
@@ -11335,7 +11406,7 @@ describe("packages public queries", () => {
           ownerUserId: "users:owner",
           ownerPublisherId: openClawPublisher._id,
           name: "@openclaw/demo-claw",
-          displayName: "Demo Claw",
+          displayName: "Demo Template",
           family: "claw",
           version: "1.0.0",
           changelog: "retry",
@@ -11393,9 +11464,12 @@ describe("packages public queries", () => {
       expect.objectContaining({
         distTags: ["beta"],
         verification: expect.objectContaining({ scanStatus: "suspicious" }),
-        staticScan: expect.objectContaining({ status: "suspicious" }),
       }),
     );
+    // Legacy staged insert args may still carry a retired static scan; it is not persisted.
+    expect(
+      (ctx.insert.mock.calls as unknown[][]).find(([table]) => table === "packageReleases")?.[1],
+    ).not.toHaveProperty("staticScan");
     expect(ctx.patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
@@ -11466,35 +11540,35 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Skill packages must use the skills publish flow");
   });
 
-  it("requires the exact-artifact HTTP flow for public Claw publishes", async () => {
+  it("requires the exact-artifact HTTP flow for public Template publishes", async () => {
     await expect(
       publishReleaseHandler({} as never, {
         payload: {
           name: "demo-claw",
-          family: "claw",
+          family: "template",
           version: "1.0.0",
         },
       }),
-    ).rejects.toThrow("Claw packages must use the exact-artifact HTTP publish flow");
+    ).rejects.toThrow("Template packages must use the exact-artifact HTTP publish flow");
     expect(getAuthUserId).not.toHaveBeenCalled();
   });
 
-  it("requires a built tarball before a Claw publish reaches mutations", async () => {
+  it("requires a built tarball before a Template publish reaches mutations", async () => {
     await expect(
       publishPackageForUserInternalHandler({} as never, {
         actorUserId: "users:owner",
         payload: {
           name: "demo-claw",
-          family: "claw",
+          family: "template",
           version: "1.0.0",
           changelog: "init",
           files: [],
         },
       }),
-    ).rejects.toThrow("Claw publication requires an already-built package tarball (.tgz)");
+    ).rejects.toThrow("Template publication requires an already-built package tarball (.tgz)");
   });
 
-  it("rejects a Claw publish when the resolved @openclaw owner is another publisher", async () => {
+  it("rejects a Template publish when the resolved @openclaw owner is another publisher", async () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null)
@@ -11519,7 +11593,7 @@ describe("packages public queries", () => {
           actorUserId: "users:owner",
           payload: {
             name: "@openclaw/demo-claw",
-            family: "claw",
+            family: "template",
             version: "1.0.0",
             changelog: "init",
             files: [],
@@ -11544,12 +11618,12 @@ describe("packages public queries", () => {
     expect(runMutation).toHaveBeenCalledTimes(1);
   });
 
-  it("still requires a first manual publish for a third-party trusted Claw", async () => {
+  it("still requires a first manual publish for a third-party trusted Template", async () => {
     const token = {
       _id: "packagePublishTokens:other",
       packageId: "packages:other",
       provider: "github-actions",
-      repository: "other/awesome-claws",
+      repository: "other/awesome-templates",
       repositoryId: "1",
       repositoryOwner: "other",
       repositoryOwnerId: "2",
@@ -11579,7 +11653,7 @@ describe("packages public queries", () => {
         publishTokenId: token._id,
         payload: {
           name: "@other/demo-claw",
-          family: "claw",
+          family: "template",
           version: "1.0.0",
           changelog: "init",
           files: [],
@@ -11602,8 +11676,8 @@ describe("packages public queries", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
-  it("publishes a profile-bearing Claw through the staged release pipeline", async () => {
-    const longClawDescription = "x".repeat(1_100);
+  it("publishes a profile-bearing Template through the staged release pipeline", async () => {
+    const longTemplateDescription = "x".repeat(1_100);
     const artifactSha256 = "a".repeat(64);
     const storedFiles = new Map<string, string>([
       [
@@ -11611,12 +11685,12 @@ describe("packages public queries", () => {
         JSON.stringify({
           name: "demo-claw",
           version: "1.0.0",
-          openclaw: { claw: "manifests/CLAW.md" },
+          openclaw: { template: "manifests/CLAW.md" },
         }),
       ],
       [
         "storage:claw",
-        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\n---\nRun the demo workflow precisely.\n`,
+        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Template\n  description: ${longTemplateDescription}\n---\nRun the demo workflow precisely.\n`,
       ],
       ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
       ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
@@ -11667,8 +11741,8 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         payload: {
           name: "demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
+          displayName: "Demo Template",
+          family: "template",
           version: "1.0.0",
           changelog: "init",
           expectedArtifactSha256: artifactSha256,
@@ -11678,7 +11752,7 @@ describe("packages public queries", () => {
               path: "manifests/CLAW.md",
               size: 1,
               storageId: "storage:claw",
-              sha256: "claw",
+              sha256: "template",
             },
             {
               path: "profiles/openclaw.yml",
@@ -11750,10 +11824,10 @@ describe("packages public queries", () => {
       ([, args]) => args.family === "claw",
     )?.[1];
     expect(publishMutationArgs?.summary).toBe("x".repeat(1_024));
-    expect(publishMutationArgs).not.toHaveProperty("extractedClawManifest");
+    expect(publishMutationArgs).not.toHaveProperty("extractedTemplateManifest");
   });
 
-  it("reuses an in-flight staged Claw publish for the same user and artifact", async () => {
+  it("reuses an in-flight staged Template publish for the same user and artifact", async () => {
     const artifactSha256 = "a".repeat(64);
     const storedFiles = new Map<string, string>([
       [
@@ -11761,17 +11835,17 @@ describe("packages public queries", () => {
         JSON.stringify({
           name: "demo-claw",
           version: "1.0.0",
-          openclaw: { claw: "manifests/CLAW.md" },
+          openclaw: { template: "manifests/CLAW.md" },
         }),
       ],
       [
         "storage:claw",
-        "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n---\nRun the demo workflow precisely.\n",
+        "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Template\n---\nRun the demo workflow precisely.\n",
       ],
       ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n"],
     ]);
     const existingPackage = makePackageDoc({
-      family: "claw",
+      family: "template",
       ownerUserId: "users:owner",
       ownerPublisherId: "publishers:owner",
     });
@@ -11838,8 +11912,8 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         payload: {
           name: "demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
+          displayName: "Demo Template",
+          family: "template",
           version: "1.0.0",
           changelog: "retry",
           ownerHandle: "owner",
@@ -11850,7 +11924,7 @@ describe("packages public queries", () => {
               path: "manifests/CLAW.md",
               size: 1,
               storageId: "storage:claw",
-              sha256: "claw",
+              sha256: "template",
             },
             {
               path: "profiles/openclaw.yml",
@@ -11926,8 +12000,8 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         payload: {
           name: "demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
+          displayName: "Demo Template",
+          family: "template",
           version: "1.0.0",
           changelog: "retry",
           ownerHandle: "owner",
@@ -11938,7 +12012,7 @@ describe("packages public queries", () => {
               path: "manifests/CLAW.md",
               size: 1,
               storageId: "storage:claw",
-              sha256: "claw",
+              sha256: "template",
             },
             {
               path: "profiles/openclaw.yml",
@@ -11996,8 +12070,8 @@ describe("packages public queries", () => {
         actorUserId: "users:owner",
         payload: {
           name: "demo-claw",
-          displayName: "Demo Claw",
-          family: "claw",
+          displayName: "Demo Template",
+          family: "template",
           version: "1.0.0",
           changelog: "different artifact",
           ownerHandle: "owner",
@@ -12008,7 +12082,7 @@ describe("packages public queries", () => {
               path: "manifests/CLAW.md",
               size: 1,
               storageId: "storage:claw",
-              sha256: "claw",
+              sha256: "template",
             },
             {
               path: "profiles/openclaw.yml",
@@ -12245,23 +12319,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(null),
     };
 
@@ -12326,7 +12384,7 @@ describe("packages public queries", () => {
 
   it("binds a split-ref trusted publish to the frozen candidate source", async () => {
     const candidateSha = "b".repeat(40);
-    const manifestBytes = new TextEncoder().encode(JSON.stringify({ id: "demo.plugin" }));
+    const manifestBytes = new TextEncoder().encode(JSON.stringify({ name: "demo-plugin" }));
     const inventoryDigest = await buildPackageInventoryDigest([
       {
         path: packageManifestFile.path,
@@ -12741,23 +12799,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
@@ -12859,23 +12901,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(orphanParent)
         .mockResolvedValueOnce(trustedPublisher)
@@ -12958,23 +12984,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
@@ -13035,23 +13045,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
@@ -13103,23 +13097,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
@@ -13173,23 +13151,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/heads/main",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken())
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
@@ -13274,23 +13236,7 @@ describe("packages public queries", () => {
       const ctx = {
         runQuery: vi
           .fn()
-          .mockResolvedValueOnce({
-            _id: "packagePublishTokens:1",
-            packageId: "packages:demo",
-            provider: "github-actions",
-            repository: "example/example",
-            repositoryId: "1",
-            repositoryOwner: "example",
-            repositoryOwnerId: "2",
-            workflowFilename: "plugin-clawhub-release.yml",
-            environment: "clawhub-release",
-            version: "1.0.0",
-            sha: "abc123",
-            ref: "refs/heads/main",
-            runId: "100",
-            runAttempt: "1",
-            expiresAt: Date.now() + 60_000,
-          })
+          .mockResolvedValueOnce(makeTrustedPackagePublishToken())
           .mockResolvedValueOnce(trustedPublisher)
           .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
           .mockResolvedValueOnce(trustedPublisher)
@@ -13595,7 +13541,7 @@ describe("packages public queries", () => {
           files: [],
         },
       }),
-    ).rejects.toThrow("openclaw.plugin.json is required");
+    ).rejects.toThrow("requires exactly one supported bundle manifest");
   });
 
   it.each(["publishRelease", "publishPackageForUserInternal"] as const)(
@@ -13900,7 +13846,7 @@ describe("packages public queries", () => {
           JSON.stringify({
             name: "demo-plugin",
             openclaw: {
-              extensions: ["./dist/index.js"],
+              ...(bundleManifest ? {} : { extensions: ["./dist/index.js"] }),
               hostTargets: ["darwin-arm64", "linux-x64"],
               environment: {},
               compat: { pluginApi: "^1.0.0" },
@@ -13954,14 +13900,10 @@ describe("packages public queries", () => {
             linkedUserId: "users:owner",
           }),
         runMutation,
-        runAction: vi.fn(async function (
-          this: PublishScanStorage,
-          ref: FunctionReference<"action">,
-          args: unknown,
-        ) {
+        runAction: vi.fn(async (ref: FunctionReference<"action">) => {
           return getFunctionName(ref) === "skillPresentationImageNode:validateRasterInternal"
             ? true
-            : makePublishRunActionMock().call(this, ref, args);
+            : makePublishRunActionMock()();
         }),
         scheduler: {
           runAfter: vi.fn(),
@@ -14127,6 +14069,7 @@ describe("packages public queries", () => {
     });
     await expect(
       publishWithManifestIcon(undefined, {
+        name: "demo-plugin",
         channels: ["whatsapp"],
         providers: ["openrouter"],
         kind: "memory",
@@ -14283,13 +14226,14 @@ describe("packages public queries", () => {
         store: vi.fn(async () => "storage:legacy-zip"),
       },
       runAction: makePublishRunActionMock(() => ({
-        status: "pass",
+        outcome: "clean",
         summary: {
           breakageCount: 0,
           warningCount: 0,
           deprecationWarningCount: 0,
           issueCount: 0,
         },
+        breakages: [],
         warnings: [],
       })),
     };
@@ -14368,87 +14312,79 @@ describe("packages public queries", () => {
     expect(result.topics).toBeUndefined();
     expect(result.sha256hash).toBe(expectedLegacyZipSha256);
     expect(result.verification).toEqual(expect.objectContaining({ scanStatus: "pending" }));
-    expect(result.staticScan).toEqual(
-      expect.objectContaining({
-        status: "suspicious",
-        reasonCodes: expect.arrayContaining(["suspicious.dangerous_exec"]),
-      }),
-    );
+    // The retired static publish scan no longer runs during publish.
+    expect(result).not.toHaveProperty("staticScan");
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ name: "demo-plugin", artifactFingerprint: expect.any(String) }),
     );
-    // VirusTotal and post-publication scans are scheduled by finalization, not publish.
+    // Post-publication scans are scheduled by finalization, not publish.
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it("blocks plugin publishes when plugin inspector reports hard breakages", async () => {
-    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
-      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
-      if (typeof args === "object" && args !== null && "minimumRole" in args) return null;
-      return args;
-    });
-    const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce(null),
-      runMutation,
-      runAction: vi.fn(async () => ({
-        status: "fail",
-        summary: {
-          breakageCount: 1,
-          warningCount: 0,
-          deprecationWarningCount: 0,
-          issueCount: 1,
+  describe("Plugin Inspector stays out of the publish request", () => {
+    const pluginPackageJson = (openclaw: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        name: "demo-plugin",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: "^1.0.0" },
+          build: { openclawVersion: "2026.3.14" },
+          configSchema: { type: "object" },
+          ...openclaw,
         },
-        warnings: [],
-        breakages: [
-          {
-            code: "missing-expected-seam",
-            severity: "P0",
-            message: "missing expected registration registerTool",
-            evidence: ["registerTool"],
-          },
-        ],
-      })),
-      scheduler: {
-        runAfter: vi.fn(),
-      },
-      storage: {
-        get: vi.fn(async (storageId: string) => {
-          const files = new Map<string, string>([
-            [
-              "storage:package",
-              JSON.stringify({
-                name: "demo-plugin",
-                openclaw: {
-                  extensions: ["./dist/index.js"],
-                  compat: { pluginApi: "^1.0.0" },
-                  build: { openclawVersion: "2026.3.14" },
-                  configSchema: { type: "object" },
-                },
-              }),
-            ],
-            ["storage:manifest", JSON.stringify({ id: "demo.plugin" })],
-            ["storage:code", "export const demo = true;\n"],
-          ]);
-          const content = files.get(storageId);
-          return content ? new Blob([content]) : null;
-        }),
-        store: vi.fn(async () => "storage:legacy-zip"),
-      },
-    };
+      });
 
-    await expect(
+    function makeAdvisoryPublishCtx(options: {
+      runAction?: (ref: unknown, args: unknown) => Promise<unknown>;
+      packageJson?: string;
+    }) {
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
+        if ("minimumRole" in args) return null;
+        return { ok: true, packageId: "packages:demo", releaseId: "packageReleases:demo-1" };
+      });
+      const storedFiles = new Map<string, string>([
+        ["storage:package", options.packageJson ?? pluginPackageJson()],
+        ["storage:manifest", JSON.stringify({ id: "demo.plugin" })],
+        ["storage:code", "export const demo = true;\n"],
+      ]);
+      const inspectorRunAction =
+        options.runAction ?? (async () => makeCleanPackageInspectorResult());
+      const ctx = {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce(null),
+        runMutation,
+        runAction: vi.fn(async (ref: unknown, args: unknown) => {
+          const name = getFunctionName(ref as FunctionReference<"action">);
+          if (name === "packageInspectorNode:runPackageInspectorForPublishInternal") {
+            return await inspectorRunAction(ref, args);
+          }
+          return await makePublishRunActionMock()();
+        }),
+        scheduler: { runAfter: vi.fn() },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            const content = storedFiles.get(storageId);
+            return content ? new Blob([content]) : null;
+          }),
+          store: vi.fn(async () => "storage:legacy-zip"),
+        },
+      };
+      return { ctx, runMutation };
+    }
+
+    const publishDemoPlugin = (ctx: unknown, files?: Array<{ path: string; storageId: string }>) =>
       publishPackageForUserInternalHandler(ctx as never, {
         actorUserId: "users:owner",
         payload: {
@@ -14466,204 +14402,73 @@ describe("packages public queries", () => {
             path: ".",
             importedAt: Date.now(),
           },
-          files: [
-            {
-              path: "package.json",
-              size: 1,
-              storageId: "storage:package",
-              sha256: "package",
-              contentType: "application/json",
-            },
-            {
-              path: "openclaw.plugin.json",
-              size: 1,
-              storageId: "storage:manifest",
-              sha256: "manifest",
-              contentType: "application/json",
-            },
-            {
-              path: "dist/index.js",
-              size: 1,
-              storageId: "storage:code",
-              sha256: "code",
-              contentType: "application/javascript",
-            },
-          ],
+          files: (
+            files ?? [
+              { path: "package.json", storageId: "storage:package" },
+              { path: "openclaw.plugin.json", storageId: "storage:manifest" },
+              { path: "dist/index.js", storageId: "storage:code" },
+            ]
+          ).map((file) => ({
+            ...file,
+            size: 1,
+            sha256: file.storageId.replace("storage:", ""),
+            contentType: file.path.endsWith(".json") ? "application/json" : "text/javascript",
+          })),
         },
-      }),
-    ).rejects.toThrow(/Plugin Inspector blocked publish: 1 breakage/);
+      });
 
-    expect(runMutation).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ version: "1.0.0" }),
-    );
-    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
-  });
+    function stagedFollowup(runMutation: ReturnType<typeof vi.fn>) {
+      const attemptCall = runMutation.mock.calls.find(([, args]) =>
+        isPackagePublishAttemptArgs(args),
+      );
+      return attemptCall?.[1].packageFollowup as Record<string, unknown> | undefined;
+    }
 
-  it("defers author warnings and leaves SDK inventories to the Package Inspector scan", async () => {
-    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
-      if ("minimumRole" in args) return null;
-      if ("warnings" in args) return { ok: true, inserted: 1 };
-      return { ok: true, packageId: "packages:demo", releaseId: "packageReleases:demo-1" };
-    });
-    const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce(null),
-      runMutation,
-      runAction: makePublishRunActionMock(() => ({
-        status: "pass",
-        summary: {
-          breakageCount: 0,
-          warningCount: 1,
-          deprecationWarningCount: 1,
-          issueCount: 1,
-        },
-        warnings: [
-          {
-            id: "demo:legacy-before-agent-start",
-            code: "legacy-before-agent-start",
-            severity: "P2",
-            issueClass: "deprecation-warning",
-            compatStatus: "deprecated",
-            message: "legacy before_agent_start hook is deprecated",
-            evidence: ["src/index.ts:4"],
-            authorRemediation: {
-              summary: "Move prompt mutation work to before_prompt_build.",
-              docsUrl:
-                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-            },
-          },
-        ],
-        metadata: {
-          inspectorVersion: "0.3.19",
-          targetOpenClawVersion: "2026.7.1-2",
-        },
-      })),
-      scheduler: {
-        runAfter: vi.fn(),
-      },
-      storage: {
-        get: vi.fn(async (storageId: string) => {
-          const files = new Map<string, string>([
-            [
-              "storage:package",
-              JSON.stringify({
-                name: "demo-plugin",
-                openclaw: {
-                  extensions: ["./dist/index.js"],
-                  compat: { pluginApi: "^1.0.0" },
-                  build: { openclawVersion: "2026.3.14" },
-                  configSchema: { type: "object" },
-                },
-              }),
-            ],
-            ["storage:manifest", JSON.stringify({ id: "demo.plugin" })],
-            ["storage:code", "export const demo = true;\n"],
-          ]);
-          const content = files.get(storageId);
-          return content ? new Blob([content]) : null;
-        }),
-        store: vi.fn(async (blob: Blob) =>
-          blob.type === "application/json" ? "storage:inventory" : "storage:legacy-zip",
+    it("publishes without invoking Plugin Inspector or staging Inspector results", async () => {
+      // Any Inspector invocation fails the test instead of returning a stub result.
+      const inspector = vi.fn(async () => {
+        throw new Error("Plugin Inspector must not run in the publish request");
+      });
+      const { ctx, runMutation } = makeAdvisoryPublishCtx({ runAction: inspector });
+
+      const result = await publishDemoPlugin(ctx);
+
+      expect(result).toMatchObject({ ok: true, status: "pending", publicationStatus: "pending" });
+      expect(result).not.toHaveProperty("inspectorFindings");
+      expect(inspector).not.toHaveBeenCalled();
+      expect(
+        ctx.runAction.mock.calls.some(([ref]) =>
+          getFunctionName(ref as FunctionReference<"action">).startsWith("packageInspectorNode:"),
         ),
-      },
-    };
-
-    await publishPackageForUserInternalHandler(ctx as never, {
-      actorUserId: "users:owner",
-      payload: {
-        name: "demo-plugin",
-        displayName: "Demo Plugin",
-        family: "code-plugin",
-        version: "1.0.0",
-        changelog: "init",
-        source: {
-          kind: "github",
-          url: "https://github.com/openclaw/demo-plugin",
-          repo: "openclaw/demo-plugin",
-          ref: "refs/tags/v1.0.0",
-          commit: "abc123",
-          path: ".",
-          importedAt: Date.now(),
-        },
-        files: [
-          {
-            path: "package.json",
-            size: 1,
-            storageId: "storage:package",
-            sha256: "package",
-            contentType: "application/json",
-          },
-          {
-            path: "openclaw.plugin.json",
-            size: 1,
-            storageId: "storage:manifest",
-            sha256: "manifest",
-            contentType: "application/json",
-          },
-          {
-            path: "dist/index.js",
-            size: 1,
-            storageId: "storage:code",
-            sha256: "code",
-            contentType: "application/javascript",
-          },
-        ],
-      },
+      ).toBe(false);
+      const followup = stagedFollowup(runMutation);
+      expect(followup).toBeDefined();
+      expect(followup).not.toHaveProperty("inspectorWarnings");
+      expect(followup).not.toHaveProperty("inspectorOutcome");
+      expect(followup).not.toHaveProperty("inspectorMetadata");
     });
 
-    // Warnings are stored for the release only after it passes the pre-publication checks.
-    expect(
-      runMutation.mock.calls.some(
-        ([, args]) =>
-          typeof args === "object" &&
-          args !== null &&
-          Array.isArray((args as { findings?: unknown[] }).findings),
-      ),
-    ).toBe(false);
-    const attemptCall = runMutation.mock.calls.find(([, args]) =>
-      isPackagePublishAttemptArgs(args),
-    );
-    const followup = attemptCall?.[1].packageFollowup as Record<string, unknown>;
-    expect(followup.inspectorSdkUsage).toBeUndefined();
-    expect(followup.inspectorSdkUsageStorageId).toBeUndefined();
-    expect(ctx.storage.store.mock.calls.some(([value]) => value.type === "application/json")).toBe(
-      false,
-    );
-    expect(attemptCall?.[1]).toMatchObject({
-      packageId: "packages:demo",
-      packageReleaseId: "packageReleases:demo-1",
-      packageFollowup: {
+    it("rejects a publish whose declared entrypoint is missing", async () => {
+      const { ctx, runMutation } = makeAdvisoryPublishCtx({
+        packageJson: pluginPackageJson({ extensions: ["./dist/plugin.js"] }),
+      });
+
+      await expect(publishDemoPlugin(ctx)).rejects.toThrow(
+        "demo-plugin declares openclaw.extensions entry ./dist/plugin.js, but that file is missing from the package.",
+      );
+      expect(stagedFollowup(runMutation)).toBeUndefined();
+    });
+
+    it("publishes a valid plugin", async () => {
+      const { ctx, runMutation } = makeAdvisoryPublishCtx({});
+
+      const result = await publishDemoPlugin(ctx);
+
+      expect(result).toMatchObject({ ok: true, publicationStatus: "pending" });
+      expect(stagedFollowup(runMutation)).toMatchObject({
         packageName: "demo-plugin",
         version: "1.0.0",
-        inspectorMetadata: {
-          inspectorVersion: "0.3.19",
-          targetOpenClawVersion: "2026.7.1-2",
-        },
-        inspectorWarnings: [
-          expect.objectContaining({
-            code: "legacy-before-agent-start",
-            issueClass: "deprecation-warning",
-            message: "legacy before_agent_start hook is deprecated",
-            authorRemediation: {
-              summary: "Move prompt mutation work to before_prompt_build.",
-              docsUrl:
-                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-            },
-          }),
-        ],
-      },
+      });
     });
   });
 
@@ -15040,6 +14845,8 @@ describe("packages public queries", () => {
       targetOpenClawVersion: "2026.8.0-beta.1",
       completedAt: expect.any(Number),
       notificationCompletedAt: expect.any(Number),
+      outcome: "clean",
+      scanSource: "nightly",
     });
   });
 
@@ -16782,7 +16589,7 @@ describe("packages public queries", () => {
           files: [],
         },
       }),
-    ).rejects.toThrow("openclaw.plugin.json is required");
+    ).rejects.toThrow("requires exactly one supported bundle manifest");
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
@@ -16838,7 +16645,7 @@ describe("packages public queries", () => {
           files: [],
         },
       }),
-    ).rejects.toThrow("openclaw.plugin.json is required");
+    ).rejects.toThrow("requires exactly one supported bundle manifest");
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
@@ -17313,10 +17120,7 @@ describe("packages public queries", () => {
         pendingReview: true,
         scanStatus: "pending",
         inspectorWarningCount: 1,
-        latestRelease: expect.objectContaining({
-          vtStatus: "pending",
-          staticScanStatus: "clean",
-        }),
+        latestRelease: expect.objectContaining({}),
       }),
     ]);
   });
@@ -17861,30 +17665,7 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn((table: string) => {
-            if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                  }),
-                })),
-              };
-            }
-            if (
-              table === "packageCapabilitySearchDigest" ||
-              table === "packageTopicSearchDigest" ||
-              table === "packagePluginCategorySearchDigest"
-            ) {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([]),
-                })),
-              };
-            }
-            throw new Error(`Unexpected table ${table}`);
-          }),
+          query: makeModerationDigestQueryMock(),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -17954,30 +17735,7 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn((table: string) => {
-            if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                  }),
-                })),
-              };
-            }
-            if (
-              table === "packageCapabilitySearchDigest" ||
-              table === "packageTopicSearchDigest" ||
-              table === "packagePluginCategorySearchDigest"
-            ) {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([]),
-                })),
-              };
-            }
-            throw new Error(`Unexpected table ${table}`);
-          }),
+          query: makeModerationDigestQueryMock(),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -18686,30 +18444,7 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn((table: string) => {
-            if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                  }),
-                })),
-              };
-            }
-            if (
-              table === "packageCapabilitySearchDigest" ||
-              table === "packageTopicSearchDigest" ||
-              table === "packagePluginCategorySearchDigest"
-            ) {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([]),
-                })),
-              };
-            }
-            throw new Error(`Unexpected table ${table}`);
-          }),
+          query: makeModerationDigestQueryMock(),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -18784,30 +18519,7 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn((table: string) => {
-            if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                  }),
-                })),
-              };
-            }
-            if (
-              table === "packageCapabilitySearchDigest" ||
-              table === "packageTopicSearchDigest" ||
-              table === "packagePluginCategorySearchDigest"
-            ) {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([]),
-                })),
-              };
-            }
-            throw new Error(`Unexpected table ${table}`);
-          }),
+          query: makeModerationDigestQueryMock(),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -19239,7 +18951,7 @@ describe("package scan backfill", () => {
     ]);
   });
 
-  it("includes releases missing static scan in the backfill batch", async () => {
+  it("only backfills releases missing a usable ClawScan result", async () => {
     const result = await getPackageReleaseScanBackfillBatchInternalHandler(
       {
         db: {
@@ -19253,22 +18965,28 @@ describe("package scan backfill", () => {
                 order: vi.fn(() => ({
                   take: vi.fn().mockResolvedValue([
                     {
-                      _id: "packageReleases:missing-static",
+                      // Missing retired VirusTotal/static results no longer trigger work.
+                      _id: "packageReleases:missing-retired-scanners",
                       _creationTime: 10,
                       packageId: "packages:demo",
                       sha256hash: "hash",
-                      vtAnalysis: { status: "clean" },
+                      vtAnalysis: undefined,
                       llmAnalysis: { status: "clean" },
                       staticScan: undefined,
                     },
                     {
-                      _id: "packageReleases:fully-scanned",
+                      _id: "packageReleases:missing-clawscan",
                       _creationTime: 11,
                       packageId: "packages:demo",
                       sha256hash: "hash",
-                      vtAnalysis: { status: "clean" },
-                      llmAnalysis: { status: "clean" },
-                      staticScan: { status: "clean" },
+                      llmAnalysis: undefined,
+                    },
+                    {
+                      _id: "packageReleases:errored-clawscan",
+                      _creationTime: 12,
+                      packageId: "packages:demo",
+                      sha256hash: "hash",
+                      llmAnalysis: { status: "error" },
                     },
                   ]),
                 })),
@@ -19285,13 +19003,8 @@ describe("package scan backfill", () => {
     );
 
     expect(result.releases).toEqual([
-      {
-        releaseId: "packageReleases:missing-static",
-        packageId: "packages:demo",
-        needsVt: false,
-        needsLlm: false,
-        needsStatic: true,
-      },
+      { releaseId: "packageReleases:missing-clawscan", packageId: "packages:demo" },
+      { releaseId: "packageReleases:errored-clawscan", packageId: "packages:demo" },
     ]);
   });
 
@@ -19397,13 +19110,11 @@ describe("package scan backfill", () => {
               order: vi.fn(() => ({
                 take: vi.fn().mockResolvedValue([
                   {
-                    _id: "packageReleases:recent-vt",
+                    _id: "packageReleases:recent-unscanned",
                     _creationTime: 200,
                     packageId: "packages:demo",
                     sha256hash: "hash",
-                    vtAnalysis: undefined,
-                    llmAnalysis: { status: "clean" },
-                    staticScan: { status: "clean" },
+                    llmAnalysis: undefined,
                   },
                 ]),
               })),
@@ -19411,13 +19122,11 @@ describe("package scan backfill", () => {
                 order: vi.fn(() => ({
                   take: vi.fn().mockResolvedValue([
                     {
-                      _id: "packageReleases:old-static",
+                      _id: "packageReleases:old-unscanned",
                       _creationTime: 10,
                       packageId: "packages:demo",
                       sha256hash: "hash",
-                      vtAnalysis: { status: "clean" },
-                      llmAnalysis: { status: "clean" },
-                      staticScan: undefined,
+                      llmAnalysis: undefined,
                     },
                   ]),
                 })),
@@ -19436,11 +19145,8 @@ describe("package scan backfill", () => {
     expect(result).toEqual({
       releases: [
         {
-          releaseId: "packageReleases:recent-vt",
+          releaseId: "packageReleases:recent-unscanned",
           packageId: "packages:demo",
-          needsVt: true,
-          needsLlm: false,
-          needsStatic: false,
         },
       ],
       nextCursor: 0,
@@ -19472,45 +19178,30 @@ describe("package scan backfill", () => {
     });
   });
 
-  it("schedules static rescans for releases missing only static scan data", async () => {
-    const originalVtApiKey = process.env.VT_API_KEY;
-    process.env.VT_API_KEY = "vt-test-key";
+  it("queues a ClawScan backfill job for each batch release without other scanners", async () => {
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+    const result = await backfillPackageReleaseScansInternalHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          releases: [{ releaseId: "packageReleases:unscanned", packageId: "packages:demo" }],
+          nextCursor: 123,
+          done: true,
+        }),
+        runMutation,
+        scheduler: { runAfter },
+      } as never,
+      { batchSize: 10 },
+    );
 
-    try {
-      const runAfter = vi.fn().mockResolvedValue(undefined);
-      const result = await backfillPackageReleaseScansInternalHandler(
-        {
-          runQuery: vi.fn().mockResolvedValue({
-            releases: [
-              {
-                releaseId: "packageReleases:static-only",
-                needsVt: false,
-                needsLlm: false,
-                needsStatic: true,
-              },
-            ],
-            nextCursor: 123,
-            done: true,
-          }),
-          scheduler: { runAfter },
-        } as never,
-        { batchSize: 10 },
-      );
-
-      expect(result).toEqual({ scheduled: 1, nextCursor: 123, done: true });
-      expect(runAfter).toHaveBeenCalledTimes(1);
-      expect(runAfter).toHaveBeenCalledWith(
-        0,
-        expect.anything(),
-        expect.objectContaining({ releaseId: "packageReleases:static-only" }),
-      );
-    } finally {
-      if (originalVtApiKey === undefined) {
-        delete process.env.VT_API_KEY;
-      } else {
-        process.env.VT_API_KEY = originalVtApiKey;
-      }
-    }
+    expect(result).toEqual({ scheduled: 1, nextCursor: 123, done: true });
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      releaseId: "packageReleases:unscanned",
+      source: "backfill",
+    });
+    // No static scan or VirusTotal upload is scheduled.
+    expect(runAfter).not.toHaveBeenCalled();
   });
 
   it("backfills legacy static-only package scan status into the package search digest", async () => {
@@ -19714,115 +19405,6 @@ describe("package scan backfill", () => {
         ownerHandle: "tongfei11",
         ownerKind: "user",
       }),
-    );
-  });
-
-  it("stores static package scan results without promoting malware status", async () => {
-    const patch = vi.fn().mockResolvedValue(undefined);
-    const release = {
-      _id: "packageReleases:demo-1",
-      packageId: "packages:demo",
-      verification: {
-        tier: "source-linked",
-        scope: "artifact-only",
-        scanStatus: "pending",
-      },
-      softDeletedAt: undefined,
-    };
-    const pkg = {
-      ...makePackageDoc(),
-      _id: "packages:demo",
-      latestReleaseId: "packageReleases:demo-1",
-      verification: {
-        tier: "source-linked",
-        scope: "artifact-only",
-        scanStatus: "pending",
-      },
-      latestVersionSummary: {
-        version: "1.0.0",
-        verification: {
-          tier: "source-linked",
-          scope: "artifact-only",
-          scanStatus: "pending",
-        },
-      },
-    };
-
-    await updateReleaseStaticScanInternalHandler(
-      {
-        db: {
-          get: vi.fn(async (id: string) => {
-            if (id === "packageReleases:demo-1") return release;
-            if (id === "packages:demo") return pkg;
-            return null;
-          }),
-          query: vi.fn((table: string) => {
-            if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                    scanStatus: "pending",
-                  }),
-                })),
-              };
-            }
-            if (
-              table === "packageCapabilitySearchDigest" ||
-              table === "packageTopicSearchDigest" ||
-              table === "packagePluginCategorySearchDigest"
-            ) {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([]),
-                })),
-              };
-            }
-            throw new Error(`Unexpected query table: ${table}`);
-          }),
-          insert: vi.fn(),
-          patch,
-          replace: vi.fn(),
-          delete: vi.fn(),
-          normalizeId: vi.fn(),
-        },
-      } as never,
-      {
-        releaseId: "packageReleases:demo-1",
-        staticScan: {
-          status: "malicious",
-          reasonCodes: ["malware.test"],
-          findings: [],
-          summary: "Malware detected",
-          engineVersion: "test",
-          checkedAt: 1,
-        },
-      },
-    );
-
-    expect(patch).toHaveBeenNthCalledWith(
-      1,
-      "packageReleases:demo-1",
-      expect.objectContaining({
-        staticScan: expect.objectContaining({ status: "malicious" }),
-        verification: expect.objectContaining({ scanStatus: "pending" }),
-      }),
-    );
-    expect(patch).toHaveBeenNthCalledWith(
-      2,
-      "packages:demo",
-      expect.objectContaining({
-        scanStatus: "pending",
-        verification: expect.objectContaining({ scanStatus: "pending" }),
-        latestVersionSummary: expect.objectContaining({
-          verification: expect.objectContaining({ scanStatus: "pending" }),
-        }),
-      }),
-    );
-    expect(patch).toHaveBeenCalledWith(
-      "packageSearchDigest:demo",
-      expect.objectContaining({ scanStatus: "pending" }),
     );
   });
 
@@ -21503,13 +21085,13 @@ describe("restorePackageInternal", () => {
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
 
-  it("keeps a third-party Claw readable by exact name outside the official catalog", async () => {
+  it("keeps a third-party Template readable by exact name outside the official catalog", async () => {
     const name = "@other/demo-claw";
     const { ctx } = makePackageCtx({
       pkg: makePackageDoc({
         name,
         normalizedName: name,
-        family: "claw",
+        family: "template",
         ownerPublisherId: "publishers:other",
       }),
       latestRelease: makeReleaseDoc({ files: [], distTags: [] }),
@@ -21517,29 +21099,29 @@ describe("restorePackageInternal", () => {
     });
 
     await expect(getByNameHandler(ctx, { name })).resolves.toMatchObject({
-      package: { name, family: "claw" },
+      package: { name, family: "template" },
     });
     await expect(getVersionByNameHandler(ctx, { name, version: "1.0.0" })).resolves.toMatchObject({
-      package: { name, family: "claw" },
+      package: { name, family: "template" },
     });
     await expect(
       getVersionSecurityByNameForViewerInternalHandler(ctx, { name, version: "1.0.0" }),
     ).resolves.not.toBeNull();
   });
 
-  it("exposes only the safe manifest summary on named Claw reads", async () => {
+  it("exposes only the safe manifest summary on named Template reads", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
-    const latestClawManifestSummary = {
+    const latestTemplateManifestSummary = {
       schemaVersion: 1,
-      agent: { id: "demo-claw-latest", name: "Demo Claw Latest", description: "Latest" },
+      agent: { id: "demo-claw-latest", name: "Demo Template Latest", description: "Latest" },
       workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
       packages: { skillCount: 1, pluginCount: 1 },
       mcpServerCount: 1,
       cronJobCount: 1,
     };
-    const exactClawManifestSummary = {
+    const exactTemplateManifestSummary = {
       schemaVersion: 1,
-      agent: { id: "demo-claw-v1", name: "Demo Claw v1", description: "Exact" },
+      agent: { id: "demo-claw-v1", name: "Demo Template v1", description: "Exact" },
       workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 2 },
       packages: { skillCount: 2, pluginCount: 1 },
       mcpServerCount: 2,
@@ -21552,7 +21134,7 @@ describe("restorePackageInternal", () => {
       distTags: ["latest"],
       files: [],
       integritySha256: "latest-integrity",
-      clawManifestSummary: latestClawManifestSummary,
+      templateManifestSummary: latestTemplateManifestSummary,
       createdBy: "users:must-not-project-latest",
       publishActor: { kind: "user", userId: "users:must-not-project-latest" },
       extractedPackageJson: {
@@ -21566,14 +21148,14 @@ describe("restorePackageInternal", () => {
           },
         },
       },
-      extractedClawManifest: {
+      extractedTemplateManifest: {
         schemaVersion: 1,
         agent: { id: "demo-claw-latest" },
       },
     });
     const { ctx } = makePackageCtx({
-      pkg: makeOpenClawClawPackageDoc({
-        clawProfilePolicyVersion: 1,
+      pkg: makeOpenClawTemplatePackageDoc({
+        templateProfilePolicyVersion: 1,
         latestReleaseId: "packageReleases:demo-latest",
         latestVersionSummary: { version: "2.0.0" },
       }),
@@ -21584,7 +21166,7 @@ describe("restorePackageInternal", () => {
         distTags: [],
         files: [],
         integritySha256: "exact-integrity",
-        clawManifestSummary: exactClawManifestSummary,
+        templateManifestSummary: exactTemplateManifestSummary,
         createdBy: "users:must-not-project-exact",
         publishActor: { kind: "user", userId: "users:must-not-project-exact" },
         extractedPackageJson: {
@@ -21598,7 +21180,7 @@ describe("restorePackageInternal", () => {
             },
           },
         },
-        extractedClawManifest: {
+        extractedTemplateManifest: {
           schemaVersion: 1,
           agent: { id: "demo-claw-v1" },
           workspace: { bootstrapFiles: { "SOUL.md": { source: "workspace/SOUL.md" } } },
@@ -21610,13 +21192,13 @@ describe("restorePackageInternal", () => {
       const detail = await getByNameHandler(ctx, { name: "@openclaw/demo-claw" });
       expect(detail).toMatchObject({
         package: {
-          family: "claw",
-          clawProfilePolicyVersion: 1,
-          clawManifestSummary: latestClawManifestSummary,
+          family: "template",
+          templateProfilePolicyVersion: 1,
+          templateManifestSummary: latestTemplateManifestSummary,
         },
-        latestRelease: { clawManifestSummary: latestClawManifestSummary },
+        latestRelease: { templateManifestSummary: latestTemplateManifestSummary },
       });
-      expect(detail?.latestRelease).not.toHaveProperty("extractedClawManifest");
+      expect(detail?.latestRelease).not.toHaveProperty("extractedTemplateManifest");
       expect(JSON.stringify(detail)).not.toContain("must-not-project");
 
       const version = await getVersionByNameHandler(ctx, {
@@ -21624,10 +21206,10 @@ describe("restorePackageInternal", () => {
         version: "1.0.0",
       });
       expect(version).toMatchObject({
-        package: { family: "claw", clawManifestSummary: latestClawManifestSummary },
-        version: { clawManifestSummary: exactClawManifestSummary },
+        package: { family: "template", templateManifestSummary: latestTemplateManifestSummary },
+        version: { templateManifestSummary: exactTemplateManifestSummary },
       });
-      expect(version?.version).not.toHaveProperty("extractedClawManifest");
+      expect(version?.version).not.toHaveProperty("extractedTemplateManifest");
       expect(JSON.stringify(version)).not.toContain("must-not-project");
     }
   });
@@ -21644,29 +21226,29 @@ describe("restorePackageInternal", () => {
     };
 
     {
-      const clawRelease = makeReleaseDoc({
+      const templateRelease = makeReleaseDoc({
         files: [],
-        clawManifestSummary: undefined,
+        templateManifestSummary: undefined,
         createdBy: "users:must-not-project",
         publishActor: { kind: "user", userId: "users:must-not-project" },
         extractedPackageJson: { privateWorkspace: "must-not-project" },
       });
-      const { ctx: clawCtx } = makePackageCtx({
-        pkg: makeOpenClawClawPackageDoc(),
-        latestRelease: clawRelease,
+      const { ctx: templateCtx } = makePackageCtx({
+        pkg: makeOpenClawTemplatePackageDoc(),
+        latestRelease: templateRelease,
       });
-      const claw = await getByNameHandler(clawCtx, { name: "@openclaw/demo-claw" });
-      expect(claw?.latestRelease).not.toHaveProperty("extractedPackageJson");
-      expect(JSON.stringify(claw)).not.toContain("must-not-project");
+      const template = await getByNameHandler(templateCtx, { name: "@openclaw/demo-claw" });
+      expect(template?.latestRelease).not.toHaveProperty("extractedPackageJson");
+      expect(JSON.stringify(template)).not.toContain("must-not-project");
 
       const ownerDeletedRelease = makeReleaseDoc({
         files: [],
         ownerDeletedAt: 123,
-        clawManifestSummary: staleSummary,
+        templateManifestSummary: staleSummary,
         extractedPackageJson: { privateWorkspace: "must-not-project-owner-deleted" },
       });
       const { ctx: ownerDeletedCtx } = makePackageCtx({
-        pkg: makeOpenClawClawPackageDoc(),
+        pkg: makeOpenClawTemplatePackageDoc(),
         latestRelease: ownerDeletedRelease,
       });
       const ownerDeleted = await getByNameHandler(ownerDeletedCtx, {
@@ -21678,19 +21260,19 @@ describe("restorePackageInternal", () => {
 
       const pluginPackageJson = { name: "demo-plugin", openclaw: { extensions: ["index.js"] } };
       const pluginRelease = makeReleaseDoc({
-        clawManifestSummary: staleSummary,
+        templateManifestSummary: staleSummary,
         extractedPackageJson: pluginPackageJson,
       });
       const { ctx: pluginCtx } = makePackageCtx({ latestRelease: pluginRelease });
       const plugin = await getByNameHandler(pluginCtx, { name: "demo-plugin" });
       expect(plugin?.latestRelease).toMatchObject({ extractedPackageJson: pluginPackageJson });
-      expect(plugin?.latestRelease).not.toHaveProperty("clawManifestSummary");
+      expect(plugin?.latestRelease).not.toHaveProperty("templateManifestSummary");
     }
   });
 
-  it("hides Claws with missing publishers from package list and search", async () => {
+  it("hides Templates with missing publishers from package list and search", async () => {
     const otherOfficial = makeDigest("@other/matching-claw", {
-      family: "claw",
+      family: "template",
       channel: "official",
       isOfficial: true,
       ownerPublisherId: "publishers:other",
@@ -21698,13 +21280,13 @@ describe("restorePackageInternal", () => {
       ownerKind: "org",
     });
     const spoofedName = makeDigest("@openclaw/spoofed-claw", {
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
       ownerHandle: "other",
       ownerKind: "org",
     });
     const openclaw = makeDigest("@openclaw/matching-claw", {
-      family: "claw",
+      family: "template",
       channel: "official",
       isOfficial: true,
       ownerPublisherId: "publishers:openclaw",
@@ -21723,20 +21305,24 @@ describe("restorePackageInternal", () => {
     });
 
     const listed = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       paginationOpts: { cursor: null, numItems: 10 },
     });
     expect(listed.page.map((entry) => entry.name)).toEqual(["@openclaw/matching-claw"]);
 
-    const searched = await searchPublicHandler(ctx, { query: "claw", family: "claw", limit: 10 });
+    const searched = await searchPublicHandler(ctx, {
+      query: "matching",
+      family: "template",
+      limit: 10,
+    });
     expect(searched.map((entry) => entry.package.name)).toEqual(["@openclaw/matching-claw"]);
   });
 
   it.each(["deletedAt", "deactivatedAt"] as const)(
-    "hides an @openclaw Claw from the catalog when its publisher has %s",
+    "hides an @openclaw Template from the catalog when its publisher has %s",
     async (inactiveField) => {
       const inactivePublisher = { ...openClawPublisher, [inactiveField]: 123 };
-      const pkg = makeOpenClawClawPackageDoc();
+      const pkg = makeOpenClawTemplatePackageDoc();
       const { ctx: namedCtx } = makePackageCtx({
         pkg,
         latestRelease: makeReleaseDoc({ files: [] }),
@@ -21751,7 +21337,7 @@ describe("restorePackageInternal", () => {
       ).resolves.not.toBeNull();
 
       const digest = makeDigest(pkg.name as string, {
-        family: "claw",
+        family: "template",
         ownerPublisherId: openClawPublisher._id,
         ownerHandle: "openclaw",
         ownerKind: "org",
@@ -21761,13 +21347,13 @@ describe("restorePackageInternal", () => {
         publisherDocs: { [openClawPublisher._id]: inactivePublisher },
       });
       const listed = await listPublicPageHandler(discoveryCtx, {
-        family: "claw",
+        family: "template",
         paginationOpts: { cursor: null, numItems: 10 },
       });
       expect(listed.page).toEqual([]);
       const searched = await searchPublicHandler(discoveryCtx, {
         query: "demo-claw",
-        family: "claw",
+        family: "template",
         limit: 10,
       });
       expect(searched).toEqual([]);
@@ -21777,7 +21363,7 @@ describe("restorePackageInternal", () => {
         publisherDocs: { [openClawPublisher._id]: inactivePublisher },
       });
       const sorted = await listPublicPageHandler(sortedCtx, {
-        family: "claw",
+        family: "template",
         sort: "downloads",
         paginationOpts: { cursor: null, numItems: 10 },
       });
@@ -21797,8 +21383,8 @@ describe("restorePackageInternal", () => {
     },
   );
 
-  it("keeps active Claws discoverable without a publisher Official badge", async () => {
-    const pkg = makeOpenClawClawPackageDoc();
+  it("keeps active Templates discoverable without a publisher Official badge", async () => {
+    const pkg = makeOpenClawTemplatePackageDoc();
     const { ctx: namedCtx } = makePackageCtx({
       pkg,
       latestRelease: makeReleaseDoc({ files: [] }),
@@ -21810,7 +21396,7 @@ describe("restorePackageInternal", () => {
     ).resolves.not.toBeNull();
 
     const digest = makeDigest(pkg.name as string, {
-      family: "claw",
+      family: "template",
       channel: "official",
       isOfficial: true,
       ownerPublisherId: openClawPublisher._id,
@@ -21823,29 +21409,29 @@ describe("restorePackageInternal", () => {
       officialPublisherIds: [],
     });
     const listed = await listPublicPageHandler(discoveryCtx, {
-      family: "claw",
+      family: "template",
       paginationOpts: { cursor: null, numItems: 10 },
     });
     expect(listed.page).toMatchObject([{ name: pkg.name, ownerOfficial: false }]);
     const searched = await searchPublicHandler(discoveryCtx, {
       query: "demo-claw",
-      family: "claw",
+      family: "template",
       limit: 10,
     });
     expect(searched).toMatchObject([{ package: { name: pkg.name, ownerOfficial: false } }]);
   });
 
-  it("lists an @openclaw Claw beyond a first page of hidden legacy Claws", async () => {
+  it("lists an @openclaw Template beyond a first page of hidden legacy Templates", async () => {
     const hidden = Array.from({ length: 50 }, (_, index) =>
       makeDigest(`@other/legacy-${index}`, {
-        family: "claw",
+        family: "template",
         ownerPublisherId: "publishers:other",
         ownerHandle: "other",
         ownerKind: "org",
       }),
     );
     const official = makeDigest("@openclaw/assistant", {
-      family: "claw",
+      family: "template",
       ownerPublisherId: openClawPublisher._id,
       ownerHandle: "openclaw",
       ownerKind: "org",
@@ -21859,7 +21445,7 @@ describe("restorePackageInternal", () => {
     });
 
     const first = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       paginationOpts: { cursor: null, numItems: 10 },
     });
     expect(first.page).toEqual([]);
@@ -21867,7 +21453,7 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenCalledTimes(1);
 
     const second = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       paginationOpts: { cursor: first.continueCursor, numItems: 10 },
     });
     expect(second.page.map((entry) => entry.name)).toEqual(["@openclaw/assistant"]);
@@ -21875,15 +21461,15 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenCalledTimes(2);
   });
 
-  it("does not let hidden Claws starve an unfiltered catalog page", async () => {
+  it("does not let hidden Templates starve an unfiltered catalog page", async () => {
     const hidden = makeDigest("@other/legacy", {
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
       ownerHandle: "other",
       ownerKind: "org",
     });
     const official = makeDigest("@openclaw/assistant", {
-      family: "claw",
+      family: "template",
       ownerPublisherId: openClawPublisher._id,
       ownerHandle: "openclaw",
       ownerKind: "org",
@@ -21912,10 +21498,10 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenNthCalledWith(2, { cursor: "after-legacy", numItems: 10 });
   });
 
-  it("searches past hidden legacy Claws to find an @openclaw Claw", async () => {
+  it("searches past hidden legacy Templates to find an @openclaw Template", async () => {
     const hidden = Array.from({ length: 50 }, (_, index) =>
       makeDigest(`@other/legacy-${index}`, {
-        family: "claw",
+        family: "template",
         displayName: `Legacy ${index}`,
         summary: "assistant",
         ownerPublisherId: "publishers:other",
@@ -21924,7 +21510,7 @@ describe("restorePackageInternal", () => {
       }),
     );
     const official = makeDigest("@openclaw/qualified", {
-      family: "claw",
+      family: "template",
       displayName: "Qualified",
       summary: "assistant",
       ownerPublisherId: openClawPublisher._id,
@@ -21942,16 +21528,16 @@ describe("restorePackageInternal", () => {
 
     const result = await searchPublicHandler(ctx, {
       query: "assistant",
-      family: "claw",
+      family: "template",
       limit: 10,
     });
     expect(result.map((entry) => entry.package.name)).toEqual(["@openclaw/qualified"]);
   });
 
-  it("does not let hidden Claws starve unfiltered catalog search", async () => {
+  it("does not let hidden Templates starve unfiltered catalog search", async () => {
     const hidden = Array.from({ length: 50 }, (_, index) =>
       makeDigest(`@other/legacy-${index}`, {
-        family: "claw",
+        family: "template",
         displayName: `Legacy ${index}`,
         summary: "assistant",
         ownerPublisherId: "publishers:other",
@@ -21960,7 +21546,7 @@ describe("restorePackageInternal", () => {
       }),
     );
     const official = makeDigest("@openclaw/qualified", {
-      family: "claw",
+      family: "template",
       displayName: "Qualified",
       summary: "assistant",
       ownerPublisherId: openClawPublisher._id,
@@ -21983,11 +21569,11 @@ describe("restorePackageInternal", () => {
   });
 
   it.each([false, true])(
-    "recalls stable package families when Claws exhaust the unfiltered search window (active publisher=%s)",
+    "recalls stable package families when Templates exhaust the unfiltered search window (active publisher=%s)",
     async (activePublisher) => {
       const hidden = Array.from({ length: 50 }, (_, index) =>
         makeDigest(`@other/legacy-${index}`, {
-          family: "claw",
+          family: "template",
           displayName: `Legacy ${index}`,
           summary: activePublisher ? "unrelated" : "assistant",
           ownerPublisherId: "publishers:other",
@@ -22017,26 +21603,26 @@ describe("restorePackageInternal", () => {
     },
   );
 
-  it("lists community Claws while hiding scope-owner mismatches in package-backed sorted lists", async () => {
+  it("lists community Templates while hiding scope-owner mismatches in package-backed sorted lists", async () => {
     const other = makePackageDoc({
       _id: "packages:other",
       name: "@other/other-claw",
       normalizedName: "@other/other-claw",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
     });
     const spoofed = makePackageDoc({
       _id: "packages:spoofed",
       name: "@openclaw/spoofed-claw",
       normalizedName: "@openclaw/spoofed-claw",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
     });
     const official = makePackageDoc({
       _id: "packages:official",
       name: "@openclaw/official-claw",
       normalizedName: "@openclaw/official-claw",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:openclaw",
     });
     const { ctx } = makeDigestCtx({
@@ -22052,7 +21638,7 @@ describe("restorePackageInternal", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       sort: "downloads",
       paginationOpts: { cursor: null, numItems: 10 },
     });
@@ -22062,15 +21648,15 @@ describe("restorePackageInternal", () => {
     ]);
   });
 
-  it("scans sorted Claw pages past deactivated publishers", async () => {
+  it("scans sorted Template pages past deactivated publishers", async () => {
     const hidden = makePackageDoc({
       _id: "packages:legacy",
       name: "@other/legacy",
       normalizedName: "@other/legacy",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
     });
-    const official = makeOpenClawClawPackageDoc({ _id: "packages:official" });
+    const official = makeOpenClawTemplatePackageDoc({ _id: "packages:official" });
     const { ctx, paginate } = makeDigestCtx({
       packagePages: [
         { page: [hidden], isDone: false, continueCursor: "after-legacy" },
@@ -22088,7 +21674,7 @@ describe("restorePackageInternal", () => {
     });
 
     const first = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       sort: "downloads",
       paginationOpts: { cursor: null, numItems: 10 },
     });
@@ -22097,7 +21683,7 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenCalledTimes(1);
 
     const second = await listPublicPageHandler(ctx, {
-      family: "claw",
+      family: "template",
       sort: "downloads",
       paginationOpts: { cursor: first.continueCursor, numItems: 10 },
     });
@@ -22106,15 +21692,15 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenCalledTimes(2);
   });
 
-  it("does not let hidden Claws starve a sorted unfiltered catalog page", async () => {
+  it("does not let hidden Templates starve a sorted unfiltered catalog page", async () => {
     const hidden = makePackageDoc({
       _id: "packages:legacy",
       name: "@other/legacy",
       normalizedName: "@other/legacy",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
     });
-    const official = makeOpenClawClawPackageDoc({ _id: "packages:official" });
+    const official = makeOpenClawTemplatePackageDoc({ _id: "packages:official" });
     const { ctx, paginate } = makeDigestCtx({
       packagePages: [
         { page: [hidden], isDone: false, continueCursor: "after-legacy" },
@@ -22140,19 +21726,19 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenCalledTimes(2);
   });
 
-  it("exports a third-party Claw release by exact package and release IDs", async () => {
+  it("exports a third-party Template release by exact package and release IDs", async () => {
     const other = makePackageDoc({
       _id: "packages:other",
       name: "@other/other-claw",
       normalizedName: "@other/other-claw",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:other",
     });
     const official = makePackageDoc({
       _id: "packages:official",
       name: "@openclaw/official-claw",
       normalizedName: "@openclaw/official-claw",
-      family: "claw",
+      family: "template",
       ownerPublisherId: "publishers:openclaw",
     });
     const otherRelease = makeReleaseDoc({

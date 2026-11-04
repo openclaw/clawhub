@@ -235,6 +235,12 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 - Account settings: name + delete account (permanent, non-recoverable; published skills stay public).
 - Admin: user role management + badge approvals + audit log.
 
+Public skill-detail metadata is registered in `publicSkillPage:getBySlug` so
+reads do not initialize publishing or schema compilation. The legacy
+`skills:getBySlug` registration shares the same implementation. Preserve owner
+scope, moderation visibility, public-version selection, and sanitized responses
+at both registrations. Deploy the backend registration before moving clients to it.
+
 ## Testing + quality
 
 - Vitest 4 with >=70% global coverage.

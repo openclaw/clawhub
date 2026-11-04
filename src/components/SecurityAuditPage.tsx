@@ -1,12 +1,13 @@
-import { getSecurityAuditOverviewCopy, type PackageEndorAnalysis } from "clawhub-schema";
+import type { PackageEndorAnalysis } from "clawhub-schema";
+import { getSecurityAuditOverviewCopy } from "clawhub-schema/securityAudit";
 import { ArrowLeft, Check, Clock, Download, Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
+import { resolveAbsoluteBaseUrl } from "../lib/publicApiUrl";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import {
   buildSecurityAuditExportFilename,
   buildSecurityAuditExportZip,
-  type StaticScan,
 } from "../lib/securityAuditExport";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { ScannerInfoTooltip } from "./ScannerInfoTooltip";
@@ -29,7 +30,6 @@ import {
   type LlmAnalysis,
   type SkillSpectorAnalysis,
   type SkillSpectorIssue,
-  type VtAnalysis,
 } from "./SkillSecurityScanResults";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
@@ -53,13 +53,11 @@ type EntityRef = {
 type SecurityAuditPageProps = {
   entity: EntityRef;
   sha256hash?: string | null;
-  vtAnalysis?: VtAnalysis | null;
   aigAnalysis?: AigAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
   endorAnalysis?: PackageEndorAnalysis | null;
   skillSpectorApplicable?: boolean;
-  staticScan?: StaticScan | null;
   source?: Record<string, unknown> | null;
   canManageArtifact?: boolean;
   onRequestRescan?: (() => Promise<unknown>) | null;
@@ -453,11 +451,7 @@ function SecurityAuditOverview(props: SecurityAuditPageProps) {
   );
 }
 
-function hasStaticScanDetails(staticScan?: StaticScan | null): staticScan is StaticScan {
-  return Boolean(staticScan?.summary?.trim() || staticScan?.findings?.length);
-}
-
-function formatStaticScanSeverity(value: string) {
+function formatSeverityLabel(value: string) {
   return value
     .trim()
     .split(/[-_\s]+/)
@@ -466,63 +460,100 @@ function formatStaticScanSeverity(value: string) {
     .join(" ");
 }
 
-function StaticScanDetails({ staticScan }: { staticScan: StaticScan }) {
-  const findings = staticScan.findings ?? [];
+function EndorFindingText({ text }: { text: string }) {
+  const parts = text.split(/\b(CVE-\d{4}-\d{4,}|GHSA-[a-z0-9]{4}(?:-[a-z0-9]{4}){2})\b/g);
   return (
-    <div className="security-report-panel-body security-report-panel-body-findings">
-      {staticScan.summary?.trim() ? (
-        <div className="security-report-overview-body">
-          <p>{staticScan.summary}</p>
-        </div>
-      ) : null}
-      {findings.length ? (
-        <div className="static-analysis-findings">
-          {findings.map((finding, index) => (
-            <article
-              key={`${finding.code}-${finding.file}-${finding.line}-${index}`}
-              className="static-analysis-finding"
-            >
-              <div className="static-analysis-finding-header">
-                <h3 className="agentic-risk-finding-title">{finding.message}</h3>
-                <div className="agentic-risk-finding-badges">
-                  <ScanResultBadge
-                    status={finding.severity}
-                    label={formatStaticScanSeverity(finding.severity)}
-                  />
-                </div>
-              </div>
-              <dl className="static-analysis-finding-details">
-                <div>
-                  <dt>Code</dt>
-                  <dd>{finding.code}</dd>
-                </div>
-                <div>
-                  <dt>Location</dt>
-                  <dd>
-                    {finding.file}:{finding.line}
-                  </dd>
-                </div>
-                {finding.evidence?.trim() ? (
-                  <div>
-                    <dt>Evidence</dt>
-                    <dd>
-                      <pre className="agentic-risk-evidence-snippet">{finding.evidence}</pre>
-                    </dd>
-                  </div>
-                ) : null}
-              </dl>
-            </article>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <>
+      {parts.map((part, index) =>
+        index % 2 === 0 ? (
+          part
+        ) : (
+          <a
+            key={`${part}-${index}`}
+            href={
+              part.startsWith("CVE-")
+                ? `https://nvd.nist.gov/vuln/detail/${part}`
+                : `https://github.com/advisories/${part}`
+            }
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {part}
+          </a>
+        ),
+      )}
+    </>
   );
 }
 
-function StaticScanSection(props: SecurityAuditPageProps) {
-  const staticScan = hasStaticScanDetails(props.staticScan) ? props.staticScan : null;
-  if (!staticScan) return null;
-  return <StaticScanDetails staticScan={staticScan} />;
+function EndorFinding({
+  finding,
+}: {
+  finding: Extract<PackageEndorAnalysis, { status: "completed" }>["findings"][number];
+}) {
+  // Stored scans contain prose, not a dependency graph. Only promote facts in
+  // Endor's observed sentence format; other wording stays visible as reported.
+  const details = finding.summary.match(
+    /^(\S+) has a (?:critical|high|medium|low)(?: severity)? vulnerability identified by ((?:CVE-\d{4}-\d{4,}|GHSA-[a-z0-9]{4}(?:-[a-z0-9]{4}){2})): (.+)\. A vulnerable function is reachable\.([\s\S]*)$/,
+  );
+  const badge = (
+    <ScanResultBadge
+      status={finding.severity}
+      label={formatSeverityLabel(finding.severity)}
+      className="endor-audit-severity"
+    />
+  );
+
+  if (!details) {
+    return (
+      <>
+        {badge}
+        <p>
+          <EndorFindingText text={finding.summary} />
+        </p>
+      </>
+    );
+  }
+
+  const [, dependency, advisory, title, remainder] = details;
+  const fixedVersion = remainder.match(
+    /^ This vulnerability was fixed in version (\S+)\.(?:\n|$)/,
+  )?.[1];
+  const relationship = remainder.split("\n").slice(1).join("\n").trim();
+  const direct = relationship.match(/^(\S+) is a direct dependency of (\S+)\.$/);
+  const parent = direct?.[1] === dependency ? direct?.[2] : undefined;
+  const separator = <span aria-hidden="true"> · </span>;
+
+  return (
+    <>
+      {badge}
+      <div className="endor-audit-finding-content">
+        <h3>{title}</h3>
+        <p className="endor-audit-finding-meta">
+          <code>{dependency}</code>
+          {fixedVersion ? (
+            <>
+              {separator}Fixed in <code>{fixedVersion}</code>
+            </>
+          ) : null}
+        </p>
+        <div className="endor-audit-finding-context">
+          <EndorFindingText text={advisory} />
+          {relationship ? (
+            <span>
+              {parent ? (
+                <>
+                  Direct dependency of <code>{parent}</code>
+                </>
+              ) : (
+                <EndorFindingText text={relationship} />
+              )}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </>
+  );
 }
 
 function AigSection(props: SecurityAuditPageProps) {
@@ -635,7 +666,7 @@ function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] 
           {rule ? ` · ${rule.name}` : ""}
         </h3>
         <div className="agentic-risk-finding-badges">
-          <ScanResultBadge status={finding.level} label={formatStaticScanSeverity(finding.level)} />
+          <ScanResultBadge status={finding.level} label={formatSeverityLabel(finding.level)} />
         </div>
       </div>
       <dl className="static-analysis-finding-details aig-finding-details">
@@ -813,19 +844,6 @@ function AigAttribution() {
   );
 }
 
-function resolveAbsoluteBaseUrl(...candidates: Array<string | undefined>) {
-  for (const candidate of candidates) {
-    const value = candidate?.trim();
-    if (!value) continue;
-    try {
-      return new URL(value).toString();
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
 function buildArtifactFileUrl(entity: EntityRef, path: string) {
   const base =
     entity.kind === "skill"
@@ -956,7 +974,6 @@ function SecurityAuditScannerSection({
           {kind === "aig" ? <AigAttribution /> : null}
         </div>
       </div>
-      {kind === "static" ? <StaticScanSection {...props} /> : null}
       {kind === "aig" ? <AigSection {...props} /> : null}
       {kind === "skillspector" ? <SkillSpectorSection {...props} /> : null}
     </section>
@@ -1025,37 +1042,63 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
                 className="security-report-panel security-report-panel-compact"
                 aria-labelledby="endor-heading"
               >
-                <div className="security-report-panel-header">
+                <div className="security-report-panel-header endor-audit-header">
                   <h2 id="endor-heading" className="skill-install-panel-title">
                     Endor dependency reachability
                   </h2>
+                  <p className="endor-audit-checked">
+                    Checked {formatAuditSidebarTime(props.endorAnalysis.checkedAt)}
+                  </p>
                 </div>
-                <div className="security-report-overview-body">
-                  <p>Checked {formatAuditSidebarTime(props.endorAnalysis.checkedAt)}</p>
+                <div className="endor-audit-body">
                   {props.endorAnalysis.status !== "completed" ? (
-                    <p>
+                    <p className="endor-audit-note">
                       {props.endorAnalysis.status === "failed" ? "Scan failed" : "Not analyzed"}:{" "}
                       {props.endorAnalysis.reason}
                     </p>
                   ) : (
                     <>
-                      <p>
-                        {props.endorAnalysis.reachableFunctionCount === 0
-                          ? "Endor found no vulnerabilities marked as reachable functions."
-                          : `${props.endorAnalysis.reachableFunctionCount} ${props.endorAnalysis.reachableFunctionCount === 1 ? "vulnerability" : "vulnerabilities"} marked as reachable functions by Endor.`}
-                      </p>
+                      <div
+                        className={
+                          props.endorAnalysis.reachableFunctionCount === 0
+                            ? "endor-audit-result endor-audit-result-clean"
+                            : "endor-audit-result"
+                        }
+                      >
+                        {props.endorAnalysis.reachableFunctionCount === 0 ? (
+                          <Check size={18} aria-hidden="true" />
+                        ) : (
+                          <TriangleAlert size={18} aria-hidden="true" />
+                        )}
+                        <div>
+                          <p>
+                            {props.endorAnalysis.reachableFunctionCount === 0
+                              ? "No reachable vulnerabilities reported"
+                              : `${props.endorAnalysis.reachableFunctionCount} reachable ${props.endorAnalysis.reachableFunctionCount === 1 ? "vulnerability" : "vulnerabilities"}`}
+                          </p>
+                          {props.endorAnalysis.reachableFunctionCount === 0 ? (
+                            <p className="endor-audit-note">Endor dependency scan completed.</p>
+                          ) : null}
+                        </div>
+                      </div>
                       {props.endorAnalysis.findings.length > 0 ? (
-                        <ul>
+                        <ul className="endor-audit-findings">
                           {props.endorAnalysis.findings.map((finding) => (
-                            <li key={`${finding.severity}:${finding.summary}`}>
-                              <strong>{finding.severity}</strong> — {finding.summary}
+                            <li
+                              key={`${finding.severity}:${finding.summary}`}
+                              className="endor-audit-finding"
+                            >
+                              <EndorFinding finding={finding} />
                             </li>
                           ))}
                         </ul>
                       ) : null}
                       {props.endorAnalysis.reachableFunctionCount >
                       props.endorAnalysis.findings.length ? (
-                        <p>Showing the first {props.endorAnalysis.findings.length} findings.</p>
+                        <p className="endor-audit-note">
+                          Showing {props.endorAnalysis.findings.length} of{" "}
+                          {props.endorAnalysis.reachableFunctionCount} findings.
+                        </p>
                       ) : null}
                     </>
                   )}

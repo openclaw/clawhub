@@ -66,9 +66,7 @@ describe("skill evaluation workflow", () => {
     expect(install?.env).toEqual({
       SKILL_EVALUATOR_DIR: "${{ runner.temp }}/SkillEvaluator",
     });
-    expect(installCodex?.run).toContain("npm install -g @openai/codex@0.148.0");
-    expect(installCodex?.run).toContain("codex --version");
-    expect(installCodex?.run).not.toContain("@latest");
+    expect(installCodex?.uses).toBe("./.github/actions/setup-codex");
     expect(job.env).not.toHaveProperty("OPENAI_API_KEY");
     expect(job.env).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
     expect(run?.env).toEqual({

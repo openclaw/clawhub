@@ -21,6 +21,7 @@ const isRateLimitedPackageApiErrorMock = vi.fn(
     typeof error === "object" && error !== null && (error as { status?: number }).status === 429,
 );
 const useQueryMock = vi.fn();
+const useQueriesMock = vi.fn();
 const useMutationMock = vi.fn();
 const convexQueryMock = vi.fn();
 const convexClientMock = { query: convexQueryMock };
@@ -100,6 +101,8 @@ vi.mock("convex/react", () => ({
   },
   useConvex: () => convexClientMock,
   useQuery: (...args: unknown[]) => useQueryMock(...args),
+  useQueries: (queries: Record<string, { query: unknown; args: unknown }>) =>
+    useQueriesMock(queries),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
   usePaginatedQuery: () => ({
     results: [],
@@ -233,6 +236,21 @@ describe("plugin detail route", () => {
     isRateLimitedPackageApiErrorMock.mockClear();
     useQueryMock.mockReset();
     useQueryMock.mockReturnValue(undefined);
+    useQueriesMock.mockReset();
+    // Match Convex's query-keyed results, including Error values, while keeping
+    // the existing per-query fixture implementations and assertions intact.
+    useQueriesMock.mockImplementation(
+      (queries: Record<string, { query: unknown; args: unknown }>) =>
+        Object.fromEntries(
+          Object.entries(queries).map(([key, { query, args }]) => {
+            try {
+              return [key, useQueryMock(query, args)];
+            } catch (error) {
+              return [key, error instanceof Error ? error : new Error(String(error))];
+            }
+          }),
+        ),
+    );
     useMutationMock.mockReset();
     useMutationMock.mockReturnValue(vi.fn());
     convexQueryMock.mockReset();
@@ -254,14 +272,15 @@ describe("plugin detail route", () => {
   });
 
   it.each([
-    { family: "code-plugin", name: "demo-plugin", target: "demo-plugin@latest" },
-    { family: "code-plugin", name: "discord", target: "discord@latest" },
-    { family: "code-plugin", name: "@composio/composio", target: "@composio/composio" },
-    { family: "code-plugin", name: "owner/plugin", target: "owner/plugin" },
-    { family: "bundle-plugin", name: "demo-bundle", target: "demo-bundle@latest" },
+    { family: "code-plugin", name: "demo-plugin" },
+    { family: "code-plugin", name: "discord" },
+    { family: "code-plugin", name: "@shopify/ai-toolkit" },
+    { family: "code-plugin", name: "owner/plugin" },
+    { family: "bundle-plugin", name: "demo-bundle" },
+    { family: "bundle-plugin", name: "@owner/scoped-bundle" },
   ] as const)(
-    "shows and copies stable and updated OpenClaw commands for $name",
-    async ({ family, name, target }) => {
+    "shows and copies one explicit ClawHub command for $name",
+    async ({ family, name }) => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       vi.stubGlobal("navigator", { clipboard: { writeText } });
       loaderDataMock.detail.package = { ...loaderDataMock.detail.package!, family, name };
@@ -270,33 +289,49 @@ describe("plugin detail route", () => {
 
       render(<Component />);
 
-      const stable = screen.getByRole("group", {
-        name: "Current stable OpenClaw · through 2026.10.4",
-      });
-      const updated = screen.getByRole("group", { name: "Updated OpenClaw · main/dev" });
-      expect(stable.querySelector(".skill-install-command")?.textContent).toBe(
-        `openclaw plugins install clawhub:${name}`,
-      );
-      expect(updated.querySelector(".skill-install-command")?.textContent).toBe(
-        `openclaw plugins install ${target}`,
-      );
-      expect(
-        within(updated).getByText("Requires a build with ClawHub-default support."),
-      ).toBeTruthy();
+      const card = screen
+        .getByRole("heading", { name: "Install" })
+        .closest(".skill-install-command-card")!;
+      const command = `openclaw plugins install clawhub:${name}`;
+      expect(card.querySelectorAll("pre")).toHaveLength(1);
+      expect(card.querySelector(".skill-install-command-wrap pre")).toBeTruthy();
+      expect(card.querySelector("pre")?.textContent).toBe(command);
+      expect(card.querySelector("p")).toBeNull();
+      expect(within(card as HTMLElement).getAllByRole("button")).toHaveLength(1);
       fireEvent.click(
-        within(stable).getByRole("button", { name: "Copy current stable plugin install command" }),
+        within(card as HTMLElement).getByRole("button", { name: "Copy plugin install command" }),
       );
-      await waitFor(() =>
-        expect(writeText).toHaveBeenCalledWith(`openclaw plugins install clawhub:${name}`),
-      );
-      fireEvent.click(
-        within(updated).getByRole("button", { name: "Copy updated plugin install command" }),
-      );
-      await waitFor(() =>
-        expect(writeText).toHaveBeenCalledWith(`openclaw plugins install ${target}`),
-      );
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
     },
   );
+
+  it.each([488, 1280])("preserves the skill command at viewport width %i", async (width) => {
+    setViewportWidth(width);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    loaderDataMock.detail.package = {
+      ...loaderDataMock.detail.package!,
+      family: "skill",
+      name: "demo-skill",
+    };
+    loaderDataMock.detail.owner = { handle: "@demo-owner", displayName: "Demo Owner", image: null };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const card = screen
+      .getByRole("heading", { name: "Install" })
+      .closest(".skill-install-command-card")!;
+    const command = "openclaw skills install @demo-owner/demo-skill";
+    expect(card.querySelectorAll("pre")).toHaveLength(1);
+    expect(card.querySelector("pre")?.textContent).toBe(command);
+    expect(card.querySelector("p")).toBeNull();
+    fireEvent.click(
+      within(card as HTMLElement).getByRole("button", { name: "Copy skill install command" }),
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
+  });
 
   it("uses mobile About and Stats tabs below 901px", async () => {
     setViewportWidth(488);
@@ -1207,26 +1242,6 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
   });
 
-  it("renders canonical topics in the detail hero", async () => {
-    loaderDataMock = {
-      ...loaderDataMock,
-      detail: {
-        ...loaderDataMock.detail,
-        package: {
-          ...loaderDataMock.detail.package!,
-          topics: ["Web Search", "Research"],
-        },
-      },
-    };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
-  });
-
   it("renders the plugin 30-day downloads graph from a deferred activity query", async () => {
     loaderDataMock = {
       ...loaderDataMock,
@@ -1392,9 +1407,7 @@ describe("plugin detail route", () => {
           compatibility: null,
           verification: null,
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1417,6 +1430,54 @@ describe("plugin detail route", () => {
       candidateNames: ["@openclaw/demo-plugin", "demo-plugin"],
     });
   });
+
+  it.each([true, false])(
+    "keeps inspector failure as an explicit Error value without changing management permission (%s)",
+    async (canManage) => {
+      const error = new Error("Function execution timed out (maximum duration: 1s)");
+      useAuthStatusMock.mockReturnValue({
+        isAuthenticated: true,
+        isLoading: false,
+        me: { _id: "users:viewer", role: "user" },
+      });
+      useQueryMock.mockImplementation((query: unknown) => {
+        const name = getFunctionName(query as never);
+        if (name === "packages:getPackageInspectorValidationSummaryPublic") throw error;
+        if (name === "packages:getManageContext") {
+          return canManage
+            ? {
+                package: {
+                  _id: "packages:1",
+                  name: "demo-plugin",
+                  displayName: "Demo Plugin",
+                },
+                latestRelease: { _id: "packageReleases:1", version: "1.0.0" },
+              }
+            : null;
+        }
+        return undefined;
+      });
+      const route = await loadRoute();
+      const Component = route.__config.component as ComponentType;
+      render(<Component />);
+
+      expect(screen.getByRole("heading", { name: /^Demo Plugin$/ })).toBeTruthy();
+      expect(screen.getByText(/Compatibility details are temporarily unavailable/)).toBeTruthy();
+      expect(screen.queryByText("Something went wrong")).toBeNull();
+      expect(Boolean(screen.queryByRole("link", { name: "New version" }))).toBe(canManage);
+      expect(useQueriesMock).toHaveBeenCalledWith({
+        validationSummary: {
+          query: expect.anything(),
+          args: { name: "demo-plugin" },
+        },
+      });
+      expect(
+        useQueriesMock.mock.results.some(
+          (result) => result.type === "return" && result.value.validationSummary === error,
+        ),
+      ).toBe(true);
+    },
+  );
 
   it("hides plugin settings when the viewer cannot manage the plugin", async () => {
     useAuthStatusMock.mockReturnValue({
@@ -1626,22 +1687,10 @@ describe("plugin detail route", () => {
           compatibility: null,
           verification: { tier: "source-linked", scope: "artifact-only", scanStatus: "clean" },
           sha256hash: "a".repeat(64),
-          vtAnalysis: {
-            status: "clean",
-            checkedAt: 1,
-          },
           llmAnalysis: {
             status: "clean",
             verdict: "clean",
             summary: "Looks safe.",
-            checkedAt: 1,
-          },
-          staticScan: {
-            status: "clean",
-            reasonCodes: [],
-            findings: [],
-            summary: "No issues",
-            engineVersion: "1",
             checkedAt: 1,
           },
         },
@@ -1709,9 +1758,7 @@ describe("plugin detail route", () => {
           compatibility: null,
           verification: null,
           sha256hash: "a".repeat(64),
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1772,9 +1819,7 @@ describe("plugin detail route", () => {
             npmFileCount: 3,
           },
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1790,9 +1835,9 @@ describe("plugin detail route", () => {
     expect(screen.getByText("ClawPack")).toBeTruthy();
     expect(screen.getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
     expect(screen.getByText("sha512-demo")).toBeTruthy();
-    expect(screen.getAllByText("openclaw plugins install")).toHaveLength(2);
+    expect(screen.getAllByText("openclaw plugins install")).toHaveLength(1);
     expect(
-      screen.getByText("demo-plugin@latest", { selector: ".skill-install-command-target" }),
+      screen.getByText("clawhub:demo-plugin", { selector: ".skill-install-command-target" }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",
@@ -1833,9 +1878,7 @@ describe("plugin detail route", () => {
             format: "zip",
           },
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1855,7 +1898,7 @@ describe("plugin detail route", () => {
     );
   });
 
-  it("keeps public incompatibility alerts alongside API updates without exposing validation outputs", async () => {
+  it("hides retirement notices, incompatibility alerts, and validation outputs from visitors", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -1904,9 +1947,7 @@ describe("plugin detail route", () => {
           verification: null,
           artifact: null,
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1919,9 +1960,11 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     expect(
-      screen.getByText("This plugin is incompatible with OpenClaw versions greater than 0.9.0."),
-    ).toBeTruthy();
-    expect(screen.getByRole("region", { name: "OpenClaw API updates" })).toBeTruthy();
+      screen.queryByText("This plugin is incompatible with OpenClaw versions greater than 0.9.0."),
+    ).toBeNull();
+    expect(screen.queryByRole("region", { name: "OpenClaw API updates" })).toBeNull();
+    expect(screen.queryByText("API details")).toBeNull();
+    expect(screen.getByRole("heading", { name: /^Install$/ })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
   });
@@ -2011,9 +2054,7 @@ describe("plugin detail route", () => {
           verification: null,
           artifact: null,
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,

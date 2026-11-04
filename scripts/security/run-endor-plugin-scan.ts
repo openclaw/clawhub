@@ -298,15 +298,20 @@ async function resolvePackageArtifactRoot(workspace: string) {
 }
 
 export function isEndorPluginScanEnabled(
-  packageName: string | undefined,
+  plugin: { name?: string; family?: string; trustedOpenClawPlugin?: boolean },
   env: NodeJS.ProcessEnv = process.env,
-) {
+): boolean {
   const packages = env.CODEX_SECURITY_SCAN_ENDOR_PACKAGES?.split(",")
     .map((name) => name.trim())
     .filter(Boolean);
   return (
     env.CODEX_SECURITY_SCAN_ENDOR_ENABLED === "1" &&
-    (!packages?.length || (packageName !== undefined && packages.includes(packageName)))
+    (!packages?.length ||
+      packages.some((name) =>
+        name === "@openclaw/*"
+          ? plugin.trustedOpenClawPlugin === true && plugin.family === "code-plugin"
+          : name === plugin.name,
+      ))
   );
 }
 

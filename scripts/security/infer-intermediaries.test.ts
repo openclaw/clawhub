@@ -2,11 +2,14 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { extractResponseText } from "../../convex/lib/openaiResponse";
-import { inferIntermediaries } from "./infer-intermediaries";
+import { attachIntermediaries, inferIntermediaries } from "./infer-intermediaries";
 
 const dirs: string[] = [];
+beforeEach(() => {
+  vi.stubEnv("CLAWHUB_INTERMEDIARY_DISCLOSURE_ENABLED", "1");
+});
 afterEach(async () => {
   vi.unstubAllEnvs();
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -260,5 +263,76 @@ describe("artifact intermediary extraction", () => {
       requiresIntermediary: null,
       intermediaryDetails: null,
     });
+  });
+});
+
+describe("worker intermediary attachment boundary", () => {
+  const analysis = Object.freeze({
+    status: "completed",
+    verdict: "benign",
+    confidence: "high",
+    findings: "No security findings",
+    checkedAt: 123,
+    dimensions: [{ name: "safety", label: "Safety", rating: "low", detail: "Unchanged" }],
+  });
+
+  it.each(["", "0", "true"])(
+    "does not opt in with flag %j, even with credentials",
+    async (flag) => {
+      vi.stubEnv("CLAWHUB_INTERMEDIARY_DISCLOSURE_ENABLED", flag);
+      const root = vi.fn(() => "must-not-be-read");
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      const result = await attachIntermediaries(analysis, root, { apiKey: "test", fetch });
+      expect(result.intermediaryAnalysis.requiresIntermediary).toBeNull();
+      expect(root).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+      const direct = await inferIntermediaries("must-not-be-read", { apiKey: "test", fetch });
+      expect(direct.requiresIntermediary).toBeNull();
+      expect(fetch).not.toHaveBeenCalled();
+      const { intermediaryAnalysis: _disclosure, ...security } = result;
+      expect(security).toEqual(analysis);
+      expect(result.dimensions).toBe(analysis.dimensions);
+    },
+  );
+
+  it("keeps security successful when artifact root resolution fails", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const result = await attachIntermediaries(
+      analysis,
+      async () => {
+        throw new Error("missing root");
+      },
+      { apiKey: "test", fetch },
+    );
+    expect(result.intermediaryAnalysis.requiresIntermediary).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(result).toMatchObject(analysis);
+  });
+
+  it("attaches actual extraction output without mutating the security analysis", async () => {
+    const dir = await artifact({ "SKILL.md": "Gmail access requires a Bridge account." });
+    const fetch = response({
+      requiresIntermediary: true,
+      intermediaryDetails: "Requires a Bridge account.",
+      evidence: ["e0"],
+    });
+    const result = await attachIntermediaries(analysis, () => dir, { apiKey: "test", fetch });
+    expect(result.intermediaryAnalysis.requiresIntermediary).toBe(true);
+    expect(result).toMatchObject(analysis);
+    expect(result.dimensions).toBe(analysis.dimensions);
+    expect(analysis).not.toHaveProperty("intermediaryAnalysis");
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it("attaches unknown after provider failure without changing the security result", async () => {
+    const dir = await artifact({ "SKILL.md": "Use Gmail." });
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockRejectedValue(new Error("provider unavailable"));
+    const result = await attachIntermediaries(analysis, () => dir, { apiKey: "test", fetch });
+    expect(result.intermediaryAnalysis.requiresIntermediary).toBeNull();
+    const { intermediaryAnalysis: _disclosure, ...security } = result;
+    expect(security).toEqual(analysis);
+    expect(result.dimensions).toBe(analysis.dimensions);
   });
 });

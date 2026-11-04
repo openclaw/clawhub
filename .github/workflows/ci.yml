@@ -24,21 +24,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
 
       - uses: ./.github/actions/setup-bun
 
       - name: Static checks
         run: bun run ci:static
 
-  claws-openclaw-contract:
-    name: claws-openclaw-contract
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+  templates-openclaw-contract:
+    name: templates-openclaw-contract
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       OPENCLAW_CONTRACT_REPOSITORY: openclaw/openclaw
-      OPENCLAW_CONTRACT_SHA: f8c0e1b8325b1fc36e039cf357a2c4602f76d5aa
+      OPENCLAW_CONTRACT_SHA: 522e31dbe8c5012914400d71664e9dc1343db0d2
 
     steps:
       - uses: actions/checkout@v7.0.1
@@ -57,21 +55,41 @@ jobs:
         with:
           node-version: 24.22.1
 
-      - name: Install pinned OpenClaw dependencies
+      - name: Locate the pinned OpenClaw pnpm store
+        id: openclaw-store
         working-directory: .artifacts/openclaw-contract
         run: |
           corepack enable
-          corepack pnpm install --frozen-lockfile
+          echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+          echo "runtime=$(node --version)-pnpm$(corepack pnpm --version)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pinned OpenClaw package store
+        id: openclaw-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ steps.openclaw-store.outputs.path }}
+          key: openclaw-contract-${{ runner.os }}-${{ runner.arch }}-${{ steps.openclaw-store.outputs.runtime }}-${{ env.OPENCLAW_CONTRACT_SHA }}-${{ hashFiles('.artifacts/openclaw-contract/pnpm-lock.yaml', '.artifacts/openclaw-contract/package.json') }}
+
+      - name: Install pinned OpenClaw dependencies
+        working-directory: .artifacts/openclaw-contract
+        run: corepack pnpm install --frozen-lockfile
 
       - name: Run ClawHub to OpenClaw contract proof
         env:
-          OPENCLAW_CLAWS_CHECKOUT: ${{ github.workspace }}/.artifacts/openclaw-contract
-        run: bunx vitest run scripts/claws-feed-openclaw-e2e.test.ts --maxWorkers=1
+          OPENCLAW_TEMPLATES_CHECKOUT: ${{ github.workspace }}/.artifacts/openclaw-contract
+        run: bunx vitest run scripts/templates-feed-openclaw-e2e.test.ts --maxWorkers=1
+
+      - name: Save the trusted OpenClaw package store
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.openclaw-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ steps.openclaw-store.outputs.path }}
+          key: ${{ steps.openclaw-cache.outputs.cache-primary-key }}
 
   unit:
     name: unit
-    runs-on: blacksmith-32vcpu-ubuntu-2404
-    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v7.0.1
@@ -121,7 +139,7 @@ jobs:
       - uses: ./.github/actions/setup-bun
 
       - name: Typecheck and build
-        run: bun run ci:types-build
+        run: bunx --no-install tsrs --noEmit && VITE_CONVEX_URL=https://example.invalid bun run build
 
   e2e-http:
     name: e2e-http
@@ -143,7 +161,7 @@ jobs:
 
   playwright-smoke:
     name: playwright-smoke
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     steps:
@@ -151,13 +169,15 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(bun -e 'console.log(require("playwright-core/package.json").version)')" >> "$GITHUB_OUTPUT"
+
       - name: Cache Playwright browsers
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}
 
       - name: Install Playwright browsers
         run: bunx playwright install chromium
@@ -175,7 +195,7 @@ jobs:
 
   playwright-local-auth-shard:
     name: playwright-local-auth / ${{ matrix.name }}
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -187,11 +207,29 @@ jobs:
               e2e/local-auth/delete-account-resources.pw.test.ts
               e2e/local-auth/delete-org-resources.pw.test.ts
           - name: profile-context
+            fixture_slug: local-agentic-risk-demo
+            fixture_owner: local
             specs: |
+              e2e/catalog-workflows.pw.test.ts
               e2e/local-auth/header-profile-link.pw.test.ts
               e2e/local-auth/manage-context-proof.pw.test.ts
+              e2e/local-auth/plugin-catalog-api.pw.test.ts
+              e2e/local-auth/publisher-create-owner.pw.test.ts
               e2e/local-auth/publisher-github-profile.pw.test.ts
               e2e/local-auth/skill-hero-metadata.pw.test.ts
+              e2e/local-auth/skill-presentation-metadata.pw.test.ts
+              e2e/local-auth/featured-lineup.pw.test.ts
+          - name: catalog-mobile
+            project: mobile-chrome
+            fixture_slug: local-agentic-risk-demo
+            fixture_owner: local
+            specs: |
+              e2e/catalog-workflows.pw.test.ts
+              e2e/mobile-skills.pw.test.ts
+          - name: template-artifacts
+            specs: |
+              e2e/local-auth/exact-template-artifact.pw.test.ts
+              e2e/local-auth/template-official-boundary.pw.test.ts
           - name: moderation-malicious
             specs: e2e/local-auth/malicious-skill-ban-flow.pw.test.ts
           - name: star-sync
@@ -200,13 +238,17 @@ jobs:
             specs: |
               e2e/local-auth/plugin-inspector-findings.pw.test.ts
               e2e/local-auth/plugin-api-retirements.pw.test.ts
+              e2e/local-auth/package-ssr-identity.pw.test.ts
               e2e/local-auth/version-delete.pw.test.ts
           - name: publish-generated-card
             specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
             grep: publishing a skill queues scan
           - name: publish-new-version
             specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
-            grep: skill publishers can create a skill
+            grep: skill publishers can create a skill|owner sees (failed publication|failed checks|incomplete checks)
+          - name: publish-security
+            specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
+            grep: clean skill publish|secret-positive pending skill upload|suspicious ClawScan verdict
           - name: old-cli-publish
             specs: e2e/local-auth/old-cli-publish-compat.pw.test.ts
 
@@ -215,13 +257,15 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(bun -e 'console.log(require("playwright-core/package.json").version)')" >> "$GITHUB_OUTPUT"
+
       - name: Cache Playwright browsers
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}
 
       - name: Cache npm packages for local Convex external dependencies
         uses: actions/cache@v6
@@ -238,6 +282,10 @@ jobs:
         env:
           PLAYWRIGHT_GREP: ${{ matrix.grep || '' }}
           PLAYWRIGHT_SPECS: ${{ matrix.specs }}
+          PLAYWRIGHT_PROJECT: ${{ matrix.project || 'chromium' }}
+          PLAYWRIGHT_LOCAL_AUTH_SEED_CATALOG: ${{ matrix.fixture_slug && '1' || '' }}
+          CLAWHUB_E2E_SKILL_SLUG: ${{ matrix.fixture_slug || '' }}
+          CLAWHUB_E2E_SKILL_OWNER: ${{ matrix.fixture_owner || '' }}
         run: |
           set -euo pipefail
           pressure_phase=before
@@ -262,7 +310,7 @@ jobs:
           trap report_runner_pressure EXIT
 
           mapfile -t specs < <(printf '%s\n' "$PLAYWRIGHT_SPECS" | sed '/^[[:space:]]*$/d')
-          args=(--project=chromium "${specs[@]}")
+          args=(--project="$PLAYWRIGHT_PROJECT" "${specs[@]}")
           if [[ -n "$PLAYWRIGHT_GREP" ]]; then
             args+=(--grep "$PLAYWRIGHT_GREP")
           fi

@@ -159,9 +159,7 @@ type TestSkill = {
   latestVersion: {
     version: string;
     createdAt: number;
-    vtStatus: string | null;
     llmStatus: string | null;
-    staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   };
 };
 
@@ -193,9 +191,7 @@ type TestPackage = {
   latestRelease: {
     version: string;
     createdAt: number;
-    vtStatus: string | null;
     llmStatus: string | null;
-    staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   };
 };
 
@@ -254,9 +250,7 @@ function createSkill(overrides?: Partial<TestSkill>): TestSkill {
     latestVersion: {
       version: "1.0.0",
       createdAt: 1,
-      vtStatus: "suspicious",
       llmStatus: "suspicious",
-      staticScanStatus: "suspicious",
     },
     ...overrides,
   };
@@ -282,9 +276,7 @@ function createPackage(overrides?: Partial<TestPackage>): TestPackage {
     latestRelease: {
       version: "1.0.0",
       createdAt: 1,
-      vtStatus: "malicious",
       llmStatus: "malicious",
-      staticScanStatus: "malicious",
     },
     ...overrides,
   };
@@ -298,9 +290,7 @@ function createCatalogSkill(overrides?: Partial<TestSkill>): TestSkill {
     latestVersion: {
       version: "1.0.0",
       createdAt: 1,
-      vtStatus: "clean",
       llmStatus: "clean",
-      staticScanStatus: "clean",
     },
     ...overrides,
   });
@@ -313,9 +303,7 @@ function createCatalogPackage(overrides?: Partial<TestPackage>): TestPackage {
     latestRelease: {
       version: "1.0.0",
       createdAt: 1,
-      vtStatus: "clean",
       llmStatus: "clean",
-      staticScanStatus: "clean",
     },
     ...overrides,
   });
@@ -443,9 +431,7 @@ describe("Dashboard rows", () => {
           latestVersion: {
             version: "1.0.0",
             createdAt: 1,
-            vtStatus: "clean",
             llmStatus: "clean",
-            staticScanStatus: "clean",
           },
         }),
       ],
@@ -456,9 +442,7 @@ describe("Dashboard rows", () => {
           latestRelease: {
             version: "1.0.0",
             createdAt: 1,
-            vtStatus: "clean",
             llmStatus: "clean",
-            staticScanStatus: "clean",
           },
         }),
       ],
@@ -484,9 +468,7 @@ describe("Dashboard rows", () => {
           latestVersion: {
             version: "1.0.0",
             createdAt: 1,
-            vtStatus: "clean",
             llmStatus: "clean",
-            staticScanStatus: "clean",
           },
         }),
       ],
@@ -498,9 +480,7 @@ describe("Dashboard rows", () => {
           latestRelease: {
             version: "1.0.0",
             createdAt: 1,
-            vtStatus: "clean",
             llmStatus: "clean",
-            staticScanStatus: "clean",
           },
         }),
       ],
@@ -525,9 +505,7 @@ describe("Dashboard rows", () => {
           latestVersion: {
             version: "1.0.0",
             createdAt: 1,
-            vtStatus: "clean",
             llmStatus: "clean",
-            staticScanStatus: "clean",
           },
         }),
       ],
@@ -537,9 +515,7 @@ describe("Dashboard rows", () => {
           latestRelease: {
             version: "1.0.0",
             createdAt: 1,
-            vtStatus: "clean",
             llmStatus: "clean",
-            staticScanStatus: "clean",
           },
         }),
       ],
@@ -652,9 +628,7 @@ describe("Dashboard rows", () => {
           latestRelease: {
             version: "1.0.0",
             createdAt: 1,
-            vtStatus: "suspicious",
             llmStatus: "suspicious",
-            staticScanStatus: "suspicious",
           },
         }),
         createPackage({
@@ -665,9 +639,7 @@ describe("Dashboard rows", () => {
           latestRelease: {
             version: "1.0.0",
             createdAt: 1,
-            vtStatus: "suspicious",
             llmStatus: "suspicious",
-            staticScanStatus: "suspicious",
           },
         }),
       ],
@@ -703,9 +675,7 @@ describe("Dashboard rows", () => {
         latestRelease: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "clean",
           llmStatus: "clean",
-          staticScanStatus: "clean",
         },
       }),
     ];
@@ -758,9 +728,7 @@ describe("Dashboard rows", () => {
         latestRelease: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "clean",
           llmStatus: "clean",
-          staticScanStatus: "clean",
         },
       }),
     ];
@@ -856,9 +824,7 @@ describe("Dashboard rows", () => {
           latestVersion: {
             version: "1.0.0",
             createdAt: 1,
-            vtStatus: "clean",
             llmStatus: "clean",
-            staticScanStatus: "clean",
           },
         }),
       ],
@@ -927,9 +893,7 @@ describe("Dashboard rows", () => {
           latestVersion: {
             version: "1.0.0",
             createdAt: 1,
-            vtStatus: "clean",
             llmStatus: "clean",
-            staticScanStatus: "clean",
           },
         }),
       ],

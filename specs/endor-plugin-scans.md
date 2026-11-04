@@ -9,9 +9,11 @@ one lease per release scan, one ClawScan judge, and one completion submission.
 
 New publications, owner-requested rescans, and admin bulk plugin rescans all use
 this path. The existing dispatch watchdog and expired-lease recovery service the
-queue. This change does not add a periodic full-catalog LLM rescan. Existing
-plugins can be queued through the admin plugin bulk-rescan command, which already
-supports paced batches and preserves active jobs.
+queue. This change does not add a periodic full-catalog LLM rescan or queue
+existing releases. After merge, existing official code-plugin releases need
+explicitly named release rescans. Do not use the unfiltered admin
+`plugins rescan-all` command for this cohort: it also queues community plugins
+and their AI scans.
 
 ## Result contract
 
@@ -48,6 +50,29 @@ supports paced batches and preserves active jobs.
   artifact. Wait for both, including Endor's Docker cleanup, before starting the
   single ClawScan judge or deleting the workspace if preparation fails. The
   ClawScan subprocess never receives Endor credentials.
+- Bundled SkillSpector uses its `--output` JSON file as evidence. Drain its raw
+  stderr without retaining it or applying a byte cap, matching the ClawScan
+  adapter and diagnostic probe: verbose scanner logs must not abort an otherwise
+  valid report. Give each root its own `CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS`
+  budget (15 minutes in the hosted workflow), subject to a fixed 20-minute total
+  preparation ceiling. Start each subprocess with the smaller of its root budget
+  and the remaining total budget; do not start another root after the ceiling.
+  Keep roots sequential rather than multiplying the scanner's own API fan-out.
+  This lets later roots use the preparation envelope already reserved for Endor
+  without allowing root count to extend the job indefinitely. A root or total
+  timeout still fails the scan. Usable partial SkillSpector reports may reach
+  the judge under ClawScan's explicit `judge-gaps` policy: retain every original
+  bundled-root report alongside the aggregate findings, including completeness,
+  analyzer failures, limitations, and suppressed findings. Accept exit 0 or 1
+  only with usable structured evidence; reject unsuccessful, malformed,
+  duplicate-key, crashed, and timed-out reports. Coverage gaps are evidence for
+  independent adjudication, without a minimum coverage threshold. Within a new
+  partial wrapper, every complete sibling must explicitly declare root
+  `execution_successful=true` and accounting `execution_successful=true`,
+  `is_complete=true`, with existing error/fatal guards. Complete-only legacy
+  aggregation keeps its existing contract. Keep
+  exit/findings validation, stdout cap, and structured termination diagnostics;
+  other worker commands keep their limits.
 
 The immutable uploaded artifact remains the source of truth. Endor's disposable
 copy may normalize an npm shrinkwrap filename and remove unresolved workspace
@@ -58,11 +83,24 @@ development dependencies. Runtime dependencies remain unchanged.
 The worker is off for Endor until `CODEX_SECURITY_SCAN_ENDOR_ENABLED=1` is set.
 `CODEX_SECURITY_SCAN_ENDOR_PACKAGES` optionally restricts it to comma-separated
 package names; whitespace is trimmed and an empty list means all package jobs.
-Begin with `@openclaw/discord,@openclaw/codex,@openclaw/slack` and inspect saved
-projects, release summaries, failures, and queue health before expanding. Keep
-`CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED` unset or `0` during this report-only
-rollout. Enable scanning only after the backend result contract is deployed and
-the following worker configuration is available:
+The reserved selector `@openclaw/*` selects only claimed jobs with
+`trustedOpenClawPlugin=true` and package family `code-plugin`. The backend derives
+trust from the OpenClaw namespace and owning publisher; a name prefix alone is
+insufficient. Trusted bundles and community packages are outside this selector.
+Exact package names retain their existing selection behavior.
+
+The Production workflow sets `@openclaw/*` and forces
+`CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED=0`, regardless of the environment's old
+three-package cohort or judge variable. All official code plugins are eligible
+for report-only analysis; this does not promise coverage for every release.
+Artifacts without `package.json` at the root or under `package/`, including
+unsupported ZIP layouts, retain an explicit skipped result.
+
+Test keeps its configured package list and judge flag. An empty Test list stays
+empty and retains unrestricted package-job selection, as do explicit local
+runs; it does not inherit the Production selector. Leave the judge flag unset
+or `0` for report-only Test/local runs. Enable scanning only after the backend
+result contract is deployed and the following worker configuration is available:
 
 - `CODEX_SECURITY_SCAN_CLAWSCAN_VERSION`: an exact released ClawScan version with
   custom profiles and scanner-result injection. The default is `0.2.0`. Endor
@@ -78,10 +116,16 @@ the following worker configuration is available:
 The worker authenticates to GHCR with its read-only package token, pulls the
 pinned image, and removes that login before claiming work.
 The hosted job has a 60-minute timeout. Its 12-minute claim window plus the
-longer of Endor's 20-minute and SkillSpector's 15-minute preparation deadlines,
+longer of Endor's and bundled SkillSpector's 20-minute preparation ceilings,
 then ClawScan's 15-minute deadline, can reach 47 minutes before setup and
 cleanup. The 60-minute job lease still exceeds an individual scan's 35-minute
-scanner and judge budget.
+scanner and judge budget. The claim window stops new claims, not in-flight scans;
+leases start at claim time, are capped at 60 minutes by the backend, and are not
+renewed by the worker. Do not replace the total preparation ceiling with
+`rootCount * rootTimeout`: three 15-minute roots plus the judge would consume the
+entire lease and exceed the hosted timeout after the claim window and setup.
+These bounds describe the hosted defaults; timeout/claim-window overrides must
+retain setup, artifact materialization, submission and cleanup headroom.
 The worker writes a trusted ClawHub profile and prompt outside the submitted
 artifact. Endor credentials are available only to the worker step and dedicated
 Endor subprocess; the ClawScan judge and other scanners do not inherit them.
@@ -112,10 +156,12 @@ manual rollout actions.
    releases without Endor fields remain readable, and workers that omit Endor
    results can still complete jobs.
 2. Configure the released scanner version, image digest, and credentials while
-   Endor remains disabled. Set the package allowlist before enabling it, then inspect the
-   stored summaries, failures, and queue health before expanding.
-3. To stop Endor, disable the worker flag and allow active jobs to finish or stop
-   their workers. Keep the additive backend schema and result handlers deployed.
+   Endor remains disabled. Production uses the official code-plugin selector;
+   configure Test's cohort explicitly before enabling it. Inspect stored
+   summaries, failures, and queue health during rollout.
+3. To stop Endor, set `CODEX_SECURITY_SCAN_ENDOR_ENABLED=0` and allow active jobs
+   to finish or stop their workers. This master rollback switch applies to
+   Production and Test. Keep the additive backend schema and result handlers deployed.
    The fields remain readable; later scans replace the release's current summary.
    This is not a report history archive.
 

@@ -7,7 +7,6 @@ import {
   getScanStatusInfo,
   ScanResultBadge,
   type LlmAnalysis,
-  type VtAnalysis,
 } from "../components/SkillSecurityScanResults";
 import { convexHttp } from "../convex/client";
 import {
@@ -38,7 +37,6 @@ type SkillAuditRow = {
   ownerHandle: string | null;
   latestVersion: {
     version: string;
-    vtAnalysis?: VtAnalysis | null;
     llmAnalysis?: LlmAnalysis | null;
   } | null;
 };
@@ -64,7 +62,6 @@ type PluginAuditRow = {
   };
   latestRelease: {
     version: string;
-    vtAnalysis?: VtAnalysis | null;
     llmAnalysis?: LlmAnalysis | null;
   } | null;
 };

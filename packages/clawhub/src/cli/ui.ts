@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { stdin } from "node:process";
 import { confirm, isCancel } from "@clack/prompts";
 import ora from "ora";
@@ -41,32 +40,6 @@ export async function promptConfirm(prompt: string) {
   const answer = await confirm({ message: prompt });
   if (isCancel(answer)) return false;
   return answer;
-}
-
-export function openInBrowser(url: string) {
-  const args =
-    process.platform === "darwin"
-      ? ["open", url]
-      : process.platform === "win32"
-        ? ["explorer", url]
-        : ["xdg-open", url];
-  const [command, ...commandArgs] = args;
-  if (!command) return;
-
-  const child = spawn(command, commandArgs, { stdio: "ignore", detached: true });
-
-  child.on("error", (err) => {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      console.log("");
-      console.log("Could not open browser automatically.");
-      console.log("Please open this URL manually:");
-      console.log("");
-      console.log(`  ${url}`);
-      console.log("");
-    }
-  });
-
-  child.unref();
 }
 
 export function isInteractive() {
@@ -138,6 +111,7 @@ export function createCrabLoader(text: string): CrabLoader {
 
 export function formatError(error: unknown) {
   if (error instanceof Error) {
+    if (error instanceof TransportDiagnosticError) return error.message;
     const diagnostic = formatTransportError(error);
     if (diagnostic) return diagnostic;
     return redactSensitiveText(error.message);
@@ -178,7 +152,16 @@ export function fail(message: string): never {
   process.exit(1);
 }
 
-function formatTransportError(error: Error) {
+class TransportDiagnosticError extends Error {}
+
+// Keep classification and recovery guidance without retaining raw messages or causes.
+export function withTransportErrorContext(error: unknown, context: string): Error | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const diagnostic = formatTransportError(error, false);
+  return diagnostic ? new TransportDiagnosticError(`${context}: ${diagnostic}`) : undefined;
+}
+
+function formatTransportError(error: Error, includeDetails = true) {
   const chain = errorChain(error);
   const messages = chain
     .map((entry) => entry.message)
@@ -187,7 +170,7 @@ function formatTransportError(error: Error) {
   const combined = [...messages, ...codes].join("\n");
   if (!isTransportError(combined)) return null;
 
-  const sanitized = redactSensitiveText(messages.join(": "));
+  const sanitized = includeDetails ? redactSensitiveText(messages.join(": ")) : "";
   const reason = classifyTransportError(combined);
   const detail = sanitized.length > 0 ? ` ${sanitized}` : "";
   return `${reason}${detail}\nCheck the registry URL, network connection, proxy settings (HTTPS_PROXY, HTTP_PROXY, NO_PROXY), and TLS/certificate configuration.`;

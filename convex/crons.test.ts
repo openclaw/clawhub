@@ -120,10 +120,6 @@ vi.mock("./_generated/api", () => ({
     prepublicationObservability: {
       logPrePublicationQueueHealthInternal: mocks.prepublicationQueueHealthRef,
     },
-    vt: {
-      pollPendingScans: Symbol("vt-pending-scans"),
-      backfillActiveSkillsVTCache: Symbol("vt-cache-backfill"),
-    },
     securityScan: {
       pruneExpiredSkillScanRequestsInternal: Symbol("skill-scan-request-prune"),
       requeueExpiredCodexScanJobsInternal: mocks.securityScanExpiredLeaseRecoveryRef,
@@ -166,10 +162,12 @@ describe("crons", () => {
   afterEach(() => {
     delete process.env.CLAWHUB_DISABLE_CRONS;
     delete process.env.CLAWHUB_PREVIEW;
+    vi.unstubAllEnvs();
   });
 
   it("does not register production cron work when explicitly disabled", async () => {
     process.env.CLAWHUB_DISABLE_CRONS = "1";
+    vi.stubEnv("CLAWHUB_ENV", "production");
 
     await import("./crons");
 
@@ -177,8 +175,23 @@ describe("crons", () => {
     expect(mocks.cron).not.toHaveBeenCalled();
   });
 
+  it("retains only security scan recovery when Test catalog schedules are disabled", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+
+    await import("./crons");
+
+    expect(mocks.interval.mock.calls.map(([, , ref]) => ref)).toEqual([
+      mocks.securityScanExpiredLeaseRecoveryRef,
+      mocks.securityScanDispatchWatchdogRef,
+    ]);
+    expect(mocks.cron).not.toHaveBeenCalled();
+  });
+
   it("does not register side-effecting cron work in disposable previews", async () => {
     process.env.CLAWHUB_PREVIEW = "1";
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "1");
 
     await import("./crons");
 
@@ -208,12 +221,12 @@ describe("crons", () => {
     );
   });
 
-  it("runs GitHub skill source sync every 15 minutes", async () => {
+  it("runs GitHub skill source sync once per day", async () => {
     await import("./crons");
 
     expect(mocks.interval).toHaveBeenCalledWith(
       "github-skill-source-sync",
-      { minutes: 15 },
+      { hours: 24 },
       mocks.githubSkillSyncRef,
       {},
     );

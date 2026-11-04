@@ -104,3 +104,8 @@ function proxyReactInternals() {
 }
 
 proxyReactInternals();
+
+// Route and handler tests assert one quota consume per request. Batched quota
+// accounting (the production default) is covered by its own suite in
+// convex/lib/httpRateLimit.test.ts, which clears this override.
+process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING ??= "off";

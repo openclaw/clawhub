@@ -1,3 +1,4 @@
+/* @vitest-environment node */
 import { describe, expect, it } from "vitest";
 import { buildHuggingFaceSecuritySignalRows } from "./huggingFaceExport";
 import { hashString, type NormalizedDatasetRows } from "./normalize";

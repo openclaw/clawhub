@@ -273,7 +273,7 @@ jobs:
       - uses: actions/setup-python@v7
         if: ${{ env.HF_UPLOAD == 'true' }}
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
 
       - name: Download sanitized shard artifacts
         uses: actions/download-artifact@v8
@@ -359,7 +359,7 @@ jobs:
       - uses: actions/setup-python@v7
         if: ${{ env.HF_UPLOAD == 'true' }}
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
 
       - name: Download existing shard artifacts
         run: |

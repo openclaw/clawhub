@@ -34,7 +34,7 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
   crons.interval(
     "github-skill-source-sync",
-    { minutes: 15 },
+    { hours: 24 },
     internal.githubSkillSyncNode.syncGitHubSkillSourcesInternal,
     {},
   );
@@ -187,14 +187,6 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
     { batchSize: 1, maxPages: 50 },
   );
 
-  crons.interval("vt-pending-scans", { minutes: 5 }, internal.vt.pollPendingScans, {
-    batchSize: 100,
-  });
-
-  crons.interval("vt-cache-backfill", { minutes: 30 }, internal.vt.backfillActiveSkillsVTCache, {
-    batchSize: 100,
-  });
-
   crons.interval(
     "package-scan-backfill",
     { minutes: 30 },
@@ -220,20 +212,6 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
     "prepublication-queue-health",
     { minutes: 5 },
     internal.prepublicationObservability.logPrePublicationQueueHealthInternal,
-    {},
-  );
-
-  crons.interval(
-    "codex-scan-expired-lease-recovery",
-    { minutes: 5 },
-    internal.securityScan.requeueExpiredCodexScanJobsInternal,
-    {},
-  );
-
-  crons.interval(
-    "codex-scan-dispatch-watchdog",
-    { minutes: 5 },
-    internal.securityScanDispatch.requestSecurityScanDispatchInternal,
     {},
   );
 
@@ -298,6 +276,26 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
     { hours: 1 },
     internal.rateLimits.pruneHttpRateLimitKeysInternal,
     { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+}
+
+// Test pauses catalog schedules, but scan leases and dispatch still need recovery.
+if (
+  process.env.CLAWHUB_PREVIEW !== "1" &&
+  (process.env.CLAWHUB_DISABLE_CRONS !== "1" || process.env.CLAWHUB_ENV === "test")
+) {
+  crons.interval(
+    "codex-scan-expired-lease-recovery",
+    { minutes: 5 },
+    internal.securityScan.requeueExpiredCodexScanJobsInternal,
+    {},
+  );
+
+  crons.interval(
+    "codex-scan-dispatch-watchdog",
+    { minutes: 5 },
+    internal.securityScanDispatch.requestSecurityScanDispatchInternal,
+    {},
   );
 }
 

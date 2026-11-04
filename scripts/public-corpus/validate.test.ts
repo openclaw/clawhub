@@ -1,3 +1,4 @@
+/* @vitest-environment node */
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PUBLIC_CORPUS_FIXTURE,

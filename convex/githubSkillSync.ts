@@ -5,7 +5,6 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./functions";
 import { assertAdmin, requireUserFromAction } from "./lib/access";
-import { decodeBoundedUtf8Text } from "./lib/artifactText";
 import { buildGitHubApiHeaders } from "./lib/githubAuth";
 import { getGitHubProviderAccountId } from "./lib/githubIdentity";
 import {
@@ -16,6 +15,7 @@ import {
 } from "./lib/githubImport";
 import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
 import {
+  normalizeRepoPath,
   buildGitHubSkillSourceSnapshot,
   buildGitHubSkillSyncPlan,
   type DiscoveredGitHubSkill,
@@ -26,7 +26,7 @@ import {
   type GitHubSkillSourceSnapshot,
 } from "./lib/githubSkillSync";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
-import { runStaticModerationScan } from "./lib/moderationEngine";
+import { sha256Hex } from "./lib/hash";
 import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
 import { requirePublisherRole } from "./lib/publishers";
 import {
@@ -55,10 +55,17 @@ const DEFAULT_BRANCH = "main";
 const GITHUB_SKILL_SCAN_ACTION_LEASE_MS = 15 * 60 * 1000;
 const PUBLIC_REPO_ONLY_ERROR = "Enter a public GitHub repo.";
 const MAX_UNZIPPED_BYTES = 80 * 1024 * 1024;
-const MAX_FILE_COUNT = 7_500;
+// Counts file entries only. MAX_UNZIPPED_BYTES and MAX_SINGLE_FILE_BYTES bound
+// memory for file contents; this cap only bounds per-entry overhead from archives
+// with huge numbers of tiny files. Whole-repo sources such as NVIDIA/skills carry
+// hundreds of skills, so keep it well above real catalog sizes.
+const MAX_FILE_COUNT = 75_000;
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_STATIC_SCAN_TEXT_FILES = 200;
-const MAX_STATIC_SCAN_TEXT_FILE_BYTES = 256 * 1024;
+// Each legacy plan operation patches or inserts a skill, refreshes its search digest and public
+// count, and schedules verification. Applying a whole NVIDIA/skills snapshot in one mutation
+// exceeds Convex's 1s mutation budget, so the sync action applies it in bounded batches.
+const LEGACY_SYNC_MAX_OPERATIONS_PER_MUTATION = 50;
+const LEGACY_SYNC_MAX_BATCHES = 200;
 const DEFAULT_SOURCE_SYNC_BATCH_SIZE = 20;
 const MAX_SOURCE_SYNC_BATCH_SIZE = 50;
 
@@ -103,6 +110,8 @@ export type SyncOneResult = {
     invalid: number;
     revived: number;
   };
+  // Set by bounded legacy applies: plan operations still pending after this call.
+  remaining?: number;
   claim?: {
     phase: "first-claim" | "native-followup";
     attempt: number;
@@ -774,6 +783,7 @@ export type ApplyGitHubSkillSourceSyncArgs = {
   skillsShClaimPath?: string;
   snapshot: GitHubSkillSourceMetadataSnapshot;
   now?: number;
+  maxOperations?: number;
 };
 
 export async function applyGitHubSkillSourceSyncHandler(
@@ -850,9 +860,40 @@ export async function applyGitHubSkillSourceSyncHandler(
   const discoveredByPath = new Map(args.snapshot.skills.map((skill) => [skill.path, skill]));
   const discoveredBySlug = new Map(args.snapshot.skills.map((skill) => [skill.slug, skill]));
 
+  // Bounded applies reuse one `now` for the whole sync run, so a skill already patched by an
+  // earlier batch carries this run's commit and check time and drops out of the pending work.
+  const bounded = args.maxOperations !== undefined;
+  const existingSkillById = new Map(existingSkills.map((skill) => [skill._id as string, skill]));
+  const pendingSkillPatches = bounded
+    ? plan.skillPatches.filter((skillPatch) => {
+        const existing = existingSkillById.get(skillPatch.skillId);
+        return !(
+          existing &&
+          existing.githubCurrentCommit === args.snapshot.commit &&
+          existing.githubCurrentCheckedAt === now
+        );
+      })
+    : plan.skillPatches;
+  const validSkillInsertCount = plan.skillInserts.filter((skillInsert) => {
+    try {
+      assertValidSkillSlug(skillInsert.slug);
+      return true;
+    } catch {
+      return false;
+    }
+  }).length;
+  const pendingOperations = pendingSkillPatches.length + validSkillInsertCount;
+  let operationBudget = bounded
+    ? Math.max(1, Math.floor(args.maxOperations ?? 1))
+    : Number.POSITIVE_INFINITY;
+  let appliedOperations = 0;
+
   await ctx.db.patch(sourceId, plan.sourcePatch);
 
-  for (const skillPatch of plan.skillPatches) {
+  for (const skillPatch of pendingSkillPatches) {
+    if (operationBudget <= 0) break;
+    operationBudget -= 1;
+    appliedOperations += 1;
     const previousSkill = existingSkills.find((skill) => skill._id === skillPatch.skillId);
     const previousSkillSnapshot = previousSkill ? ({ ...previousSkill } as Doc<"skills">) : null;
     await ctx.db.patch(skillPatch.skillId as Id<"skills">, skillPatch.patch);
@@ -931,6 +972,9 @@ export async function applyGitHubSkillSourceSyncHandler(
       });
       continue;
     }
+    if (operationBudget <= 0) continue;
+    operationBudget -= 1;
+    appliedOperations += 1;
 
     const reviveCandidate = await findGitHubSkillRevivalCandidate(ctx, {
       ownerUserId: args.ownerUserId,
@@ -1039,6 +1083,7 @@ export async function applyGitHubSkillSourceSyncHandler(
       invalid,
       revived,
     },
+    ...(bounded ? { remaining: Math.max(0, pendingOperations - appliedOperations) } : {}),
   };
 }
 
@@ -2097,6 +2142,7 @@ export const applyGitHubSkillSourceSyncInternal = internalMutation({
     skillsShClaimPath: v.optional(v.string()),
     snapshot: sourceSnapshotValidator,
     now: v.optional(v.number()),
+    maxOperations: v.optional(v.number()),
   },
   handler: applyGitHubSkillSourceSyncHandler,
 });
@@ -2526,14 +2572,6 @@ export async function verifyGitHubSkillHandler(
     });
   }
 
-  const staticScan = runStaticModerationScan({
-    slug: target.skill.slug,
-    displayName: target.skill.displayName,
-    summary: target.skill.summary,
-    frontmatter: parseFrontmatter(discovered.skillMarkdown),
-    files: listGitHubSkillFiles(entries, discovered.path),
-    fileContents: listGitHubSkillTextContents(entries, discovered.path),
-  });
   const presentationIcon = iconForDiscoveredGitHubSkill(discovered);
 
   const prepared = (await ctx.runMutation(
@@ -2551,7 +2589,6 @@ export async function verifyGitHubSkillHandler(
           ...(presentationIcon ? { icon: presentationIcon } : {}),
         },
       },
-      staticScan,
     },
   )) as GitHubSkillVerificationResult | undefined;
 
@@ -2700,7 +2737,8 @@ async function applyFetchedGitHubSkillSourceSnapshot(
         }
       ).skillsShClaims.applyClaimedGitHubSkillSourceSyncInternal
     : internal.githubSkillSync.applyGitHubSkillSourceSyncInternal;
-  const result = (await ctx.runMutation(syncFunction, {
+  const batchedLegacyApply = !args.skillsShClaim && isLegacyNvidiaSkillSource(args.repo);
+  const mutationArgs = {
     sourceId: args.sourceId,
     repo: args.repo,
     ownerUserId: args.ownerUserId,
@@ -2711,10 +2749,46 @@ async function applyFetchedGitHubSkillSourceSnapshot(
     ...(args.skillsShClaimPath ? { skillsShClaimPath: args.skillsShClaimPath } : {}),
     ...(args.skillsShClaim ? { skillsShClaim: args.skillsShClaim } : {}),
     snapshot: toGitHubSkillSourceMetadataSnapshot(args.snapshot),
-  })) as SyncOneResult;
+    ...(batchedLegacyApply
+      ? { now: Date.now(), maxOperations: LEGACY_SYNC_MAX_OPERATIONS_PER_MUTATION }
+      : {}),
+  };
+  let result = (await ctx.runMutation(syncFunction, mutationArgs)) as SyncOneResult;
+  if (batchedLegacyApply) {
+    const planStats = result.stats;
+    let inserted = result.stats.inserted;
+    let revived = result.stats.revived;
+    let batches = 1;
+    while ((result.remaining ?? 0) > 0) {
+      if (batches >= LEGACY_SYNC_MAX_BATCHES) {
+        throw new ConvexError("GitHub skill source sync did not converge.");
+      }
+      result = (await ctx.runMutation(syncFunction, {
+        ...mutationArgs,
+        sourceId: result.sourceId ?? mutationArgs.sourceId,
+      })) as SyncOneResult;
+      inserted += result.stats.inserted;
+      revived += result.stats.revived;
+      batches += 1;
+    }
+    result = {
+      ...result,
+      stats: { ...result.stats, ...pickPlanStats(planStats), inserted, revived },
+    };
+  }
   if (result.skipped === "stale-source-observation") return result;
   await persistGitHubSkillContentsForSnapshot(ctx, result, args.snapshot);
   return result;
+}
+
+function pickPlanStats(stats: SyncOneResult["stats"]) {
+  // The first bounded batch sees the full diff; later batches only see what is still pending.
+  return {
+    discovered: stats.discovered,
+    changed: stats.changed,
+    unchanged: stats.unchanged,
+    removed: stats.removed,
+  };
 }
 
 function toGitHubSkillSourceMetadataSnapshot(
@@ -3039,27 +3113,6 @@ async function fetchGitHubSkillSourceSnapshotWithEntries(
   return { snapshot, entries };
 }
 
-function listGitHubSkillFiles(entries: Record<string, Uint8Array>, folderPath: string) {
-  return listGitHubSkillFolderEntries(entries, folderPath).map(([path, bytes]) => ({
-    path,
-    size: bytes.byteLength,
-  }));
-}
-
-function listGitHubSkillTextContents(entries: Record<string, Uint8Array>, folderPath: string) {
-  const textFiles = [];
-  for (const [path, bytes] of listGitHubSkillFolderEntries(entries, folderPath)) {
-    if (textFiles.length >= MAX_STATIC_SCAN_TEXT_FILES) break;
-    const content = decodeBoundedUtf8Text(bytes, MAX_STATIC_SCAN_TEXT_FILE_BYTES);
-    if (content === null) continue;
-    textFiles.push({
-      path,
-      content,
-    });
-  }
-  return textFiles;
-}
-
 function listGitHubSkillFolderEntries(entries: Record<string, Uint8Array>, folderPath: string) {
   const root = folderPath ? `${folderPath}/` : "";
   return Object.entries(entries)
@@ -3142,13 +3195,6 @@ async function deleteStoredGitHubSkillScanFiles(
   files: Array<{ storageId: Id<"_storage"> }>,
 ) {
   await Promise.allSettled(files.map((file) => ctx.storage.delete(file.storageId)));
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 function buildGitHubSourceImport(repo: string, defaultBranch: string): GitHubImportUrl {
@@ -3274,8 +3320,8 @@ function getGitHubSkillSourceHostname(input: RequestInfo | URL) {
   }
 }
 
-function unzipToEntries(zipBytes: Uint8Array) {
-  const limits = createZipEntryLimitFilter();
+function unzipToEntries(zipBytes: Uint8Array, maxFileCount = MAX_FILE_COUNT) {
+  const limits = createZipEntryLimitFilter(maxFileCount);
   const entries = unzipSync(zipBytes, {
     filter: (file) => limits.accept(file),
   });
@@ -3292,14 +3338,14 @@ function unzipToEntries(zipBytes: Uint8Array) {
   return out;
 }
 
-function createZipEntryLimitFilter() {
+function createZipEntryLimitFilter(maxFileCount: number) {
   let fileCount = 0;
   let totalBytes = 0;
   return {
     accept(file: UnzipFileInfo) {
-      fileCount += 1;
-      if (fileCount > MAX_FILE_COUNT) throw new ConvexError("Repo archive has too many files");
       if (file.name.endsWith("/")) return false;
+      fileCount += 1;
+      if (fileCount > maxFileCount) throw new ConvexError("Repo archive has too many files");
 
       const normalizedPath = normalizeRepoPath(file.name);
       if (!normalizedPath) throw new ConvexError("Repo archive contains an invalid path");
@@ -3367,19 +3413,6 @@ function normalizeRepo(value: string) {
   return `${parts[0]}/${parts[1]}`;
 }
 
-function normalizeRepoPath(path: string) {
-  if (path.includes("\u0000")) return "";
-  const normalized = path
-    .replaceAll("\\", "/")
-    .trim()
-    .replace(/^\.\/+/, "")
-    .replace(/^\/+/, "");
-  if (!normalized) return "";
-  const segments = normalized.split("/").filter(Boolean);
-  if (segments.some((segment) => segment === "." || segment === "..")) return "";
-  return segments.join("/");
-}
-
 function assertExactSkillsShSourceSelection(
   snapshot: GitHubSkillSourceSnapshot,
   expected: ExpectedSkillsShSource,
@@ -3425,6 +3458,7 @@ function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T>
 }
 
 export const __test = {
+  MAX_FILE_COUNT,
   assertExactSkillsShSourceSelection,
   buildGitHubSkillSourceFetch,
   buildGitHubSourceImport,

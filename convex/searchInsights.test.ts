@@ -345,7 +345,7 @@ describe("staff search intelligence report", () => {
 
   it("denies anonymous and non-staff reports and serves the same facts over the authenticated HTTP boundary", async () => {
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     const token = "search-insights-contract-fixture";
     const ids = await t.run(async (ctx) => {
       const staff = await ctx.db.insert("users", { role: "moderator" });

@@ -10,7 +10,7 @@ import {
   labelForPublisherAbuseScore,
   labelForPublisherAbuseZScore,
   isPublisherSynchronyTemporalCandidate,
-  scorePublisherAbuseCohort,
+  summarizePublisherAbuseLogPressure,
 } from "./publisherAbuseScoring";
 
 describe("publisher abuse scoring", () => {
@@ -95,7 +95,7 @@ describe("publisher abuse scoring", () => {
   });
 
   it("keeps a high-volume publisher with strong usage below low-engagement publishers", () => {
-    const scored = scorePublisherAbuseCohort([
+    const scored = [
       publisher("byungkyu", {
         publishedSkills: 148,
         totalInstalls: 900,
@@ -132,17 +132,19 @@ describe("publisher abuse scoring", () => {
         totalStars: 2,
         totalDownloads: 600,
       }),
-    ]);
+    ].map((input) => computePublisherAbuseRawScore(input));
 
     const byHandle = new Map(scored.map((score) => [score.input.handleSnapshot, score]));
-    expect(byHandle.get("byungkyu")?.label).toBe("pass");
-    expect(byHandle.get("gora050")?.rank).toBeLessThan(byHandle.get("byungkyu")?.rank ?? 0);
-    expect(byHandle.get("membranedev")?.rank).toBeLessThan(byHandle.get("byungkyu")?.rank ?? 0);
-    expect(byHandle.get("peand-rover")?.rank).toBeLessThan(byHandle.get("byungkyu")?.rank ?? 0);
+    const highAdoption = byHandle.get("byungkyu");
+    if (!highAdoption) throw new Error("Missing high-adoption publisher");
+    expect(labelForPublisherAbuseScore(highAdoption, 3)).toBe("pass");
+    expect(byHandle.get("gora050")?.pressure).toBeGreaterThan(highAdoption.pressure);
+    expect(byHandle.get("membranedev")?.pressure).toBeGreaterThan(highAdoption.pressure);
+    expect(byHandle.get("peand-rover")?.pressure).toBeGreaterThan(highAdoption.pressure);
   });
 
   it("keeps high-adoption bulk publishers out of aggregate spam labels", () => {
-    const scored = scorePublisherAbuseCohort([
+    const scored = [
       ...Array.from({ length: 200 }, (_, index) =>
         publisher(`ordinary-${index}`, {
           publishedSkills: 3,
@@ -181,14 +183,28 @@ describe("publisher abuse scoring", () => {
         totalStars: 5,
         totalDownloads: 24_362,
       }),
-    ]);
+    ].map((input) => computePublisherAbuseRawScore(input));
 
-    const byHandle = new Map(scored.map((score) => [score.input.handleSnapshot, score]));
-    expect(byHandle.get("ivangdavila-shape")?.label).toBe("pass");
-    expect(byHandle.get("harrylabsj-shape")?.label).toBe("pass");
-    expect(byHandle.get("oomol-shape")?.label).toBe("potential_ban_candidate");
-    expect(byHandle.get("justoneapi-shape")?.label).toBe("review");
-    expect(byHandle.get("ai-gaoqian-shape")?.label).toBe("potential_ban_candidate");
+    const { meanLogPressure, stdDevLogPressure } = summarizePublisherAbuseLogPressure(
+      scored.reduce((sum, score) => sum + score.logPressure, 0),
+      scored.reduce((sum, score) => sum + score.logPressure ** 2, 0),
+      scored.length,
+    );
+    expect(stdDevLogPressure).toBeGreaterThan(0);
+    const byHandle = new Map(
+      scored.map((score) => [
+        score.input.handleSnapshot,
+        labelForPublisherAbuseScore(
+          score,
+          (score.logPressure - meanLogPressure) / stdDevLogPressure,
+        ),
+      ]),
+    );
+    expect(byHandle.get("ivangdavila-shape")).toBe("pass");
+    expect(byHandle.get("harrylabsj-shape")).toBe("pass");
+    expect(byHandle.get("oomol-shape")).toBe("potential_ban_candidate");
+    expect(byHandle.get("justoneapi-shape")).toBe("review");
+    expect(byHandle.get("ai-gaoqian-shape")).toBe("potential_ban_candidate");
   });
 
   it("keeps below-pivot catalogs out of aggregate spam abuse labels", () => {
@@ -327,7 +343,7 @@ describe("publisher abuse scoring", () => {
   });
 
   it("weights stars ahead of installs and downloads", () => {
-    const [withStars, withInstalls, withDownloads] = scorePublisherAbuseCohort([
+    const [withStars, withInstalls, withDownloads] = [
       publisher("with-stars", {
         publishedSkills: 500,
         totalInstalls: 1_000,
@@ -346,7 +362,9 @@ describe("publisher abuse scoring", () => {
         totalStars: 25,
         totalDownloads: 250_000,
       }),
-    ]).sort((left, right) => left.pressure - right.pressure);
+    ]
+      .map((input) => computePublisherAbuseRawScore(input))
+      .sort((left, right) => left.pressure - right.pressure);
 
     expect(withStars?.input.handleSnapshot).toBe("with-stars");
     expect(withInstalls?.input.handleSnapshot).toBe("with-installs");
@@ -365,26 +383,7 @@ describe("publisher abuse scoring", () => {
     expect(rawScore.pressure).toBe(0);
     expect(rawScore.reasonCodes).toEqual([]);
 
-    const scored = scorePublisherAbuseCohort([
-      ...Array.from({ length: 99 }, (_, index) =>
-        publisher(`ordinary-${index}`, {
-          publishedSkills: 3,
-          totalInstalls: 15,
-          totalStars: 1,
-          totalDownloads: 600,
-        }),
-      ),
-      publisher("empty-publisher", {
-        publishedSkills: 0,
-        totalInstalls: 0,
-        totalStars: 0,
-        totalDownloads: 0,
-      }),
-    ]);
-
-    expect(scored.find((score) => score.input.handleSnapshot === "empty-publisher")?.label).toBe(
-      "pass",
-    );
+    expect(labelForPublisherAbuseScore(rawScore, 3)).toBe("pass");
   });
 
   it("reserves proportional 7-day spikes for publisher synchrony", () => {

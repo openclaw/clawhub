@@ -1,5 +1,5 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { inferSkillCategories, resolveSkillCategories } from "clawhub-schema";
+import { inferSkillCategories, resolveSkillCategories } from "clawhub-schema/catalogMetadata";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
@@ -44,7 +44,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { getClawHubSiteUrl, SITE_NAME } from "../lib/site";
+import { getClawHubSiteUrl, getPublicClawHubSiteUrl, SITE_NAME } from "../lib/site";
 import { getPublicSlugCollision } from "../lib/slugCollision";
 import { formatBytes } from "../lib/uploadUtils";
 import { useAuthStatus } from "../lib/useAuthStatus";
@@ -161,8 +161,6 @@ type PublishResultRow = {
 
 const OPENCLAW_SKILLS_DISCORD_URL =
   "https://discord.com/channels/1456350064065904867/1456891440897724637";
-const PUBLIC_CLAWHUB_SITE_URL = "https://clawhub.ai";
-const LOCAL_SHARE_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
 const GITHUB_REPO_PAGE_SIZE = 100;
 const DEV_MOCK_SKILL_NAMES = [
   "agent-release-notes",
@@ -1579,17 +1577,6 @@ function toSlugQueryKey(key: string) {
 function buildSkillHref(ownerHandle: string | null | undefined, slug: string) {
   const owner = ownerHandle?.trim() || "me";
   return `/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`;
-}
-
-function getPublicClawHubSiteUrl() {
-  const configured = getClawHubSiteUrl();
-  try {
-    const hostname = new URL(configured).hostname;
-    if (LOCAL_SHARE_HOSTS.has(hostname)) return PUBLIC_CLAWHUB_SITE_URL;
-  } catch {
-    return PUBLIC_CLAWHUB_SITE_URL;
-  }
-  return configured;
 }
 
 function buildSkillUrl(ownerHandle: string | null | undefined, slug: string) {
