@@ -58,6 +58,34 @@ const { __handlers } = await import("./httpApiV1");
 
 type ActionCtx = import("./_generated/server").ActionCtx;
 
+function makeSkillScanQuery<TSkill, TVersion>(
+  selectedSkill: TSkill,
+  selectedVersion0: TVersion,
+  isSuspicious: boolean,
+) {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+      return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+    }
+
+    if ("slug" in args) {
+      return {
+        skill: selectedSkill,
+        latestVersion: selectedVersion0,
+        owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
+        moderationInfo: {
+          isPendingScan: false,
+          isMalwareBlocked: false,
+          isSuspicious,
+          isHiddenByMod: false,
+          isRemoved: false,
+        },
+      };
+    }
+    return null;
+  });
+}
+
 function makeVersionDetailQuery<TSkill, TVersion>(
   selectedSkill: TSkill,
   selectedVersion0: TVersion,
@@ -6077,27 +6105,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: selectedVersion0,
-          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
-          moderationInfo: {
-            isPendingScan: false,
-            isMalwareBlocked: false,
-            isSuspicious: true,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, true);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -6144,27 +6152,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: selectedVersion0,
-          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
-          moderationInfo: {
-            isPendingScan: false,
-            isMalwareBlocked: false,
-            isSuspicious: false,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -6290,27 +6278,7 @@ describe("httpApiV1 handlers", () => {
       capabilityTags: ["posts-externally", "requires-oauth-token"],
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: selectedVersion0,
-          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
-          moderationInfo: {
-            isPendingScan: false,
-            isMalwareBlocked: false,
-            isSuspicious: false,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -6652,27 +6620,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: selectedVersion0,
-          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
-          moderationInfo: {
-            isPendingScan: false,
-            isMalwareBlocked: false,
-            isSuspicious: false,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
