@@ -873,7 +873,7 @@ function resolveInspectorConfigPath(root: string) {
   return undefined;
 }
 
-async function resolveTargetPackageItems(packageNames: string[]): Promise<ClaimItem[]> {
+export async function resolveTargetPackageItems(packageNames: string[]): Promise<ClaimItem[]> {
   const items: ClaimItem[] = [];
   for (const packageName of packageNames) {
     const detail = await fetch(`${siteUrl}/api/v1/packages/${encodeURIComponent(packageName)}`);

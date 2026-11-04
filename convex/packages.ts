@@ -110,7 +110,6 @@ import {
   type PackageInspectorAuthorRemediation,
 } from "./lib/packageInspectorFinding";
 import {
-  classifyPackageInspectorFailure,
   isPackageInspectorFailureOutcome,
   type PackageInspectorFailure,
   packageInspectorFailureValidator,
@@ -118,7 +117,6 @@ import {
   packageInspectorOutcomeValidator,
   UNRESOLVED_OPENCLAW_TARGET_VERSION,
 } from "./lib/packageInspectorOutcome";
-import { getBundledPackageInspectorVersion } from "./lib/packageInspectorVersion";
 import { decodePublicPageCursor, encodePublicPageCursor } from "./lib/packagePageCursor";
 import {
   assertManualRecoveryFinalization,
@@ -183,6 +181,7 @@ import {
   listCuratedPluginCategoryPage,
   listPluginOverviewCategory,
 } from "./lib/pluginDiscoveryQueries";
+import { isPluginInspectorReleaseScanDispatchEnabled } from "./lib/pluginInspectorReleaseScan";
 import { toPublicPublisher } from "./lib/public";
 import { assertOperationalPackageRetryFinalization } from "./lib/publishAttemptOperationalRecovery";
 import {
@@ -460,8 +459,8 @@ const internalRefs = internal as unknown as {
     cleanupReassignedPackageReleaseTagsInternal: unknown;
     publishPendingReleaseInternal: unknown;
   };
-  packageInspectorNode: {
-    runPackageInspectorForPublishInternal: unknown;
+  pluginInspectorDispatch: {
+    dispatchPluginInspectorReleaseScanInternal: unknown;
   };
   packagePublishTokens: {
     createInternal: unknown;
@@ -491,21 +490,9 @@ const internalRefs = internal as unknown as {
   };
 };
 
-type PackageInspectorPublishResult = {
-  outcome: PackageInspectorOutcome;
-  failure?: PackageInspectorFailure;
-  summary: {
-    breakageCount: number;
-    warningCount: number;
-    deprecationWarningCount: number;
-    issueCount: number;
-  };
-  breakages: PackageInspectorFinding[];
-  warnings: PackageInspectorFinding[];
-  metadata?: {
-    inspectorVersion?: string;
-    targetOpenClawVersion?: string;
-  };
+type PackageInspectorMetadata = {
+  inspectorVersion?: string;
+  targetOpenClawVersion?: string;
 };
 
 function hasAuthorRemediation(finding: PackageInspectorFinding) {
@@ -8289,79 +8276,6 @@ async function reverifyStagedOpenClawAuthorizationBeforeFinalize(
   };
 }
 
-// The advisory Inspector may not hold a publish open past this budget. Its
-// heaviest phases are synchronous TypeScript work inside the Node action, so the
-// deadline is enforced here, from the publishing action, not inside Inspector.
-export const PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS = 120_000;
-
-function emptyPackageInspectorPublishResult(
-  outcome: PackageInspectorOutcome,
-  failure?: PackageInspectorFailure,
-): PackageInspectorPublishResult {
-  return {
-    outcome,
-    ...(failure ? { failure } : {}),
-    summary: { breakageCount: 0, warningCount: 0, deprecationWarningCount: 0, issueCount: 0 },
-    breakages: [],
-    warnings: [],
-    metadata: { inspectorVersion: getBundledPackageInspectorVersion() },
-  };
-}
-
-// Plugin Inspector is advisory: an Inspector crash, out-of-memory kill, timeout,
-// or target preparation failure is recorded as a tool outcome and the publish
-// continues. Real findings, breakages included, are recorded but never block.
-async function runPackageInspectorAdvisory(
-  ctx: Pick<ActionCtx, "runAction">,
-  args: {
-    packageName: string;
-    version: string;
-    files: ReturnType<typeof normalizePublishFiles>;
-  },
-): Promise<PackageInspectorPublishResult> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const inspection = runActionRef<PackageInspectorPublishResult>(
-    ctx,
-    internalRefs.packageInspectorNode.runPackageInspectorForPublishInternal,
-    {
-      packageName: args.packageName,
-      version: args.version,
-      files: args.files,
-    },
-  ).then(
-    (result) => ({ kind: "result" as const, result }),
-    (error: unknown) => ({ kind: "error" as const, error }),
-  );
-  const deadline = new Promise<{ kind: "timeout" }>((resolve) => {
-    timer = setTimeout(() => resolve({ kind: "timeout" }), PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS);
-  });
-  const settled = await Promise.race([inspection, deadline]).finally(() => clearTimeout(timer));
-  let result: PackageInspectorPublishResult;
-  if (settled.kind === "result") {
-    result = settled.result;
-  } else if (settled.kind === "timeout") {
-    result = emptyPackageInspectorPublishResult("timeout", {
-      stage: "publish",
-      reason: "timeout",
-      message: `Plugin Inspector did not finish within ${PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS / 1000}s`,
-    });
-  } else {
-    // The Node action itself died (for example an out-of-memory kill).
-    const classified = classifyPackageInspectorFailure(settled.error, "action");
-    result = emptyPackageInspectorPublishResult(classified.outcome, classified.failure);
-  }
-  if (isPackageInspectorFailureOutcome(result.outcome)) {
-    console.warn("Plugin Inspector advisory check unavailable; publish continues", {
-      packageName: args.packageName,
-      version: args.version,
-      outcome: result.outcome,
-      stage: result.failure?.stage,
-      reason: result.failure?.reason,
-    });
-  }
-  return result;
-}
-
 function packageInspectorWarningDedupeKey(
   warning: Pick<PackageInspectorFinding, "id" | "code" | "message" | "evidence" | "fixture"> & {
     inspectorVersion?: string;
@@ -8864,14 +8778,6 @@ async function publishPackageImpl(
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
   }
   const topics = normalizedTopics.length ? normalizedTopics : undefined;
-  const inspectorResult =
-    family === "code-plugin" || family === "bundle-plugin"
-      ? await runPackageInspectorAdvisory(ctx, {
-          packageName: name,
-          version,
-          files,
-        })
-      : null;
   const ownerPublisher = ownerPublisherId
     ? await runQueryRef<Doc<"publishers"> | null>(ctx, internalRefs.publishers.getByIdInternal, {
         publisherId: ownerPublisherId,
@@ -8999,14 +8905,6 @@ async function publishPackageImpl(
     }
   };
 
-  // Breakages are advisory findings now: they are reported and stored, never thrown.
-  const inspectorFindingsForRelease = inspectorResult
-    ? [...inspectorResult.breakages, ...inspectorResult.warnings]
-    : [];
-  const inspectorFindings = inspectorFindingsForRelease.map((finding) =>
-    toPackageInspectorPublishResponseFinding(finding, inspectorResult?.metadata),
-  );
-
   await reverifyOpenClawAuthorizationBeforePublish(auth, {
     name,
     version,
@@ -9056,16 +8954,6 @@ async function publishPackageImpl(
       ownerPublisherId,
       packageName: name,
       version,
-      inspectorWarnings: inspectorFindingsForRelease,
-      inspectorMetadata: inspectorResult?.metadata,
-      ...(inspectorResult
-        ? {
-            inspectorOutcome: {
-              outcome: inspectorResult.outcome,
-              ...(inspectorResult.failure ? { failure: inspectorResult.failure } : {}),
-            },
-          }
-        : {}),
       trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
       trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
       trustedPublishAuthorizationVersion:
@@ -9117,9 +9005,7 @@ async function publishPackageImpl(
       publicationStatus: "published" as const,
       ...(publishedArtifactSha256 ? { artifactSha256: publishedArtifactSha256 } : {}),
     };
-    return inspectorFindings.length > 0
-      ? { ...finalizedResult, inspectorFindings }
-      : finalizedResult;
+    return finalizedResult;
   }
 
   return {
@@ -9132,7 +9018,6 @@ async function publishPackageImpl(
     attemptId: staged.attemptId,
     packageName: name,
     version,
-    ...(inspectorFindings.length > 0 ? { inspectorFindings } : {}),
   };
 }
 
@@ -9287,27 +9172,6 @@ async function settleExistingStagedPackagePublication(
     throw versionExists();
   }
   return null;
-}
-
-function toPackageInspectorPublishResponseFinding(
-  finding: PackageInspectorFinding,
-  metadata: PackageInspectorPublishResult["metadata"],
-) {
-  const findingKind =
-    finding.level === "breakage" || finding.level === "error" || finding.severity === "P0"
-      ? ("error" as const)
-      : ("warning" as const);
-  return {
-    findingKind,
-    code: finding.code,
-    severity: finding.severity,
-    level: finding.level,
-    issueClass: finding.issueClass,
-    message: finding.message,
-    authorRemediation: finding.authorRemediation,
-    inspectorVersion: metadata?.inspectorVersion,
-    targetOpenClawVersion: metadata?.targetOpenClawVersion,
-  };
 }
 
 async function withRequestPackageStorage<TResult>(
@@ -9470,6 +9334,8 @@ export const finalizePackagePublishAttemptInternal = internalAction({
       throw error;
     }
 
+    // Plugin Inspector is monitoring of accepted releases; it can never affect this publish.
+    await requestPluginInspectorReleaseScan(ctx, publishResult);
     return publishResult;
   },
 });
@@ -9609,6 +9475,26 @@ async function releasePackagePublishAttemptFinalizationClaim(
   );
 }
 
+async function requestPluginInspectorReleaseScan(
+  ctx: Pick<ActionCtx, "scheduler">,
+  publishResult: { packageId: Id<"packages">; releaseId: Id<"packageReleases"> },
+) {
+  if (!isPluginInspectorReleaseScanDispatchEnabled()) return;
+  try {
+    await ctx.scheduler.runAfter(
+      0,
+      internalRefs.pluginInspectorDispatch.dispatchPluginInspectorReleaseScanInternal as never,
+      { releaseId: publishResult.releaseId, retryCount: 0 } as never,
+    );
+  } catch (error) {
+    // The nightly sweep covers any release whose scan was never dispatched.
+    console.warn("Plugin Inspector release scan was not scheduled", {
+      releaseId: publishResult.releaseId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 async function runPackagePublishPostFinalizeFollowups(
   ctx: ActionCtx,
   publishResult: { packageId: Id<"packages">; releaseId: Id<"packageReleases"> },
@@ -9620,7 +9506,7 @@ async function runPackagePublishPostFinalizeFollowups(
     packageName?: string;
     version?: string;
     inspectorWarnings?: PackageInspectorFinding[];
-    inspectorMetadata?: PackageInspectorPublishResult["metadata"];
+    inspectorMetadata?: PackageInspectorMetadata;
     inspectorOutcome?: {
       outcome: PackageInspectorOutcome;
       failure?: PackageInspectorFailure;
@@ -9653,8 +9539,9 @@ async function runPackagePublishPostFinalizeFollowups(
     };
   };
 
-  // Publishes no longer stage inventories; this applies reports staged by
-  // attempts created before that cutover until their 30-day attempt TTL.
+  // Publishes no longer stage inventories or Inspector results; Inspector runs as
+  // post-acceptance monitoring. This applies reports and findings staged by
+  // attempts created before those cutovers until their 30-day attempt TTL.
   const inspectorSdkUsage = await readStagedSdkUsageReport(ctx, followup);
   if (
     followup.ownerUserId &&
@@ -10901,6 +10788,20 @@ export const acknowledgePackageInspectorScanBatchInternal = internalMutation({
       updatedAt: now,
     });
     return { ok: true as const, cursor: args.cursor, completed };
+  },
+});
+
+// Accepted releases dispatch a targeted bulk scan, which inspects the package's
+// latest public release; anything else waits for the nightly sweep.
+export const getPluginInspectorReleaseScanTargetInternal = internalQuery({
+  args: {
+    releaseId: v.id("packageReleases"),
+  },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    const pkg = release ? await ctx.db.get(release.packageId) : null;
+    if (!pkg || !isPublicSdkUsageRelease(pkg, release)) return null;
+    return { packageName: pkg.name, version: release.version, releaseId: release._id };
   },
 });
 

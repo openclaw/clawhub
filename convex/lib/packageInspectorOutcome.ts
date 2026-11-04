@@ -33,7 +33,7 @@ export type PackageInspectorFailure = Infer<typeof packageInspectorFailureValida
 // scan state still needs a key, and this value never matches a real target.
 export const UNRESOLVED_OPENCLAW_TARGET_VERSION = "unresolved";
 
-export const PACKAGE_INSPECTOR_TARGET_STAGE = "OpenClaw target preparation";
+const PACKAGE_INSPECTOR_TARGET_STAGE = "OpenClaw target preparation";
 
 const MAX_FAILURE_MESSAGE_LENGTH = 300;
 

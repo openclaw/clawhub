@@ -185,12 +185,13 @@ to keep out of public issues.
 - Expect new releases to stay out of public install surfaces until automated
   security checks and verification finish.
 
-Plugin Inspector findings are advisory and never block a publish. Findings,
-including Inspector errors, appear in the publish output and on the plugin's
-validation tab. If Inspector itself fails, runs out of memory, or times out,
-the release still publishes; ClawHub records that as an Inspector outcome, not
-as a problem with your plugin, and the scheduled scan inspects the release
-again later.
+Plugin Inspector does not run during publish and never blocks it. After a
+release is accepted, ClawHub scans it with Plugin Inspector as monitoring, and
+again in the nightly scan; findings appear on the plugin's validation tab. If
+Inspector itself fails or times out, ClawHub records that as an Inspector
+outcome, not as a problem with your plugin, and scans the release again later.
+Run `clawhub package validate <source>` to see the same findings before you
+publish.
 
 ### Plugin Icons
 
