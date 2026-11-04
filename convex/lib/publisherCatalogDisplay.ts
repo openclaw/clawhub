@@ -1,16 +1,9 @@
-type DisplayManifest = {
-  notGrouped?: "top" | "bottom";
-  groupings: Array<{
-    title: string;
-    description?: string;
-    skills: string[];
-  }>;
-};
+import type { DisplayManifest, DisplayManifestStatus } from "./displayManifest";
 
 export type GitHubSkillCatalogSource = {
   _id: string;
   repo: string;
-  displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
+  displayManifestStatus?: DisplayManifestStatus;
   displayManifest?: DisplayManifest;
 };
 

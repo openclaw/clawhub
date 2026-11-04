@@ -1,4 +1,5 @@
 import { ConvexError } from "convex/values";
+import type { DisplayManifest, DisplayManifestStatus } from "./displayManifest";
 import { sha256Hex } from "./hash";
 import {
   shouldPreserveSecurityScanStateForUnchangedContent,
@@ -14,18 +15,10 @@ import {
 import { getFrontmatterValue, parseFrontmatter } from "./skills";
 import { createInitialSkillStats } from "./skillStats";
 
+export type { DisplayManifest, DisplayManifestStatus } from "./displayManifest";
+
 export type GitHubSkillScanStatus = SourceBackedSkillScanStatus;
 export type GitHubCurrentStatus = "present" | "missing" | "unknown";
-export type DisplayManifestStatus = "ok" | "missing" | "invalid" | "failed";
-
-export type DisplayManifest = {
-  notGrouped?: "top" | "bottom";
-  groupings: Array<{
-    title: string;
-    description?: string;
-    skills: string[];
-  }>;
-};
 
 export type GitHubSkillSourceSnapshot = {
   repo: string;

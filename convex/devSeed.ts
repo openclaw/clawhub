@@ -13,6 +13,12 @@ import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
 import { isLocalDevAuthEnabled } from "./lib/devAuth";
+import {
+  type DisplayManifest,
+  type DisplayManifestStatus,
+  displayManifestStatusValidator,
+  displayManifestValidator,
+} from "./lib/displayManifest";
 import { ACTIVITY_TREND_DAYS } from "./lib/downloadTrend";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
@@ -104,24 +110,6 @@ function seededPackageRecommendationPatch(stats: {
   };
 }
 
-const displayManifestStatusValidator = v.union(
-  v.literal("ok"),
-  v.literal("missing"),
-  v.literal("invalid"),
-  v.literal("failed"),
-);
-
-const displayManifestValidator = v.object({
-  notGrouped: v.optional(v.union(v.literal("top"), v.literal("bottom"))),
-  groupings: v.array(
-    v.object({
-      title: v.string(),
-      description: v.optional(v.string()),
-      skills: v.array(v.string()),
-    }),
-  ),
-});
-
 const githubSkillScanStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -141,15 +129,8 @@ type SeedGitHubBackedSkillSourceArgs = {
   displayManifestHash?: string;
   displayManifestCommit?: string;
   displayManifestFetchedAt?: number;
-  displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
-  displayManifest?: {
-    notGrouped?: "top" | "bottom";
-    groupings: Array<{
-      title: string;
-      description?: string;
-      skills: string[];
-    }>;
-  };
+  displayManifestStatus?: DisplayManifestStatus;
+  displayManifest?: DisplayManifest;
   skills: Array<{
     slug: string;
     displayName: string;
