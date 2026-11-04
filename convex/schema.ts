@@ -6,6 +6,7 @@ import {
   canonicalTrendingCardValidator,
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
+import { displayManifestStatusValidator, displayManifestValidator } from "./lib/displayManifest";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
@@ -325,24 +326,6 @@ const officialPublishers = defineTable({
 })
   .index("by_publisher", ["publisherId"])
   .index("by_created", ["createdAt"]);
-
-const displayManifestStatusValidator = v.union(
-  v.literal("ok"),
-  v.literal("missing"),
-  v.literal("invalid"),
-  v.literal("failed"),
-);
-
-const displayManifestValidator = v.object({
-  notGrouped: v.optional(v.union(v.literal("top"), v.literal("bottom"))),
-  groupings: v.array(
-    v.object({
-      title: v.string(),
-      description: v.optional(v.string()),
-      skills: v.array(v.string()),
-    }),
-  ),
-});
 
 const githubSkillSourceInvalidSkillValidator = v.object({
   slug: v.string(),
