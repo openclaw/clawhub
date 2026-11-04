@@ -100,6 +100,17 @@ describe("assertValidSkillSlug", () => {
     },
   );
 
+  it.each(["doca-comm-channel-admin", "admin-tools", "cluster-admin"])(
+    "allows descriptive slugs that contain admin as an affix: %s",
+    (slug) => {
+      expect(assertValidSkillSlug(slug)).toBe(slug);
+    },
+  );
+
+  it("keeps the exact admin slug reserved", () => {
+    expect(() => assertValidSkillSlug("admin")).toThrow(/reserved/i);
+  });
+
   it("allows reserved and protected slugs when allowReserved is set", () => {
     expect(() => assertValidSkillSlug("admin", { allowReserved: true })).not.toThrow();
     expect(assertValidSkillSlug("admin", { allowReserved: true })).toBe("admin");
