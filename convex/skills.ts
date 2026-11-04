@@ -16,7 +16,7 @@ import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   action,
@@ -1442,6 +1442,21 @@ async function hardDeleteSkillStep(
     await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
   }
 
+  const deleteBatch = async (
+    batchQuery: { take: (limit: number) => Promise<Array<{ _id: Id<TableNames> }>> },
+    nextPhase: HardDeletePhase,
+  ) => {
+    const rows = await batchQuery.take(HARD_DELETE_BATCH_SIZE);
+    for (const row of rows) {
+      await ctx.db.delete(row._id);
+    }
+    if (rows.length === HARD_DELETE_BATCH_SIZE) {
+      await scheduleHardDelete(ctx, skill._id, actorUserId, phase, scope);
+      return;
+    }
+    await scheduleHardDelete(ctx, skill._id, actorUserId, nextPhase, scope);
+  };
+
   switch (phase) {
     case "versions": {
       const versions = await ctx.db
@@ -1461,21 +1476,13 @@ async function hardDeleteSkillStep(
       await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints", scope);
       return;
     }
-    case "fingerprints": {
-      const fingerprints = await ctx.db
-        .query("skillVersionFingerprints")
-        .withIndex("by_skill_fingerprint", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const fingerprint of fingerprints) {
-        await ctx.db.delete(fingerprint._id);
-      }
-      if (fingerprints.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "githubScans", scope);
-      return;
-    }
+    case "fingerprints":
+      return deleteBatch(
+        ctx.db
+          .query("skillVersionFingerprints")
+          .withIndex("by_skill_fingerprint", (q) => q.eq("skillId", skill._id)),
+        "githubScans",
+      );
     case "githubScans": {
       const deletedScans = await deleteGitHubSkillScansForSkill(
         ctx,
@@ -1489,21 +1496,13 @@ async function hardDeleteSkillStep(
       await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs", scope);
       return;
     }
-    case "skillCardJobs": {
-      const jobs = await ctx.db
-        .query("skillCardGenerationJobs")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const job of jobs) {
-        await ctx.db.delete(job._id);
-      }
-      if (jobs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings", scope);
-      return;
-    }
+    case "skillCardJobs":
+      return deleteBatch(
+        ctx.db
+          .query("skillCardGenerationJobs")
+          .withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "embeddings",
+      );
     case "embeddings": {
       const embeddings = await ctx.db
         .query("skillEmbeddings")
@@ -1524,111 +1523,45 @@ async function hardDeleteSkillStep(
       await scheduleHardDelete(ctx, skill._id, actorUserId, "reports", scope);
       return;
     }
-    case "reports": {
-      const reports = await ctx.db
-        .query("skillReports")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const report of reports) {
-        await ctx.db.delete(report._id);
-      }
-      if (reports.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "reports", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "stars", scope);
-      return;
-    }
-    case "stars": {
-      const stars = await ctx.db
-        .query("stars")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const star of stars) {
-        await ctx.db.delete(star._id);
-      }
-      if (stars.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "stars", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "badges", scope);
-      return;
-    }
-    case "badges": {
-      const badges = await ctx.db
-        .query("skillBadges")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const badge of badges) {
-        await ctx.db.delete(badge._id);
-      }
-      if (badges.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "badges", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats", scope);
-      return;
-    }
-    case "dailyStats": {
-      const dailyStats = await ctx.db
-        .query("skillDailyStats")
-        .withIndex("by_skill_day", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const stat of dailyStats) {
-        await ctx.db.delete(stat._id);
-      }
-      if (dailyStats.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents", scope);
-      return;
-    }
-    case "statEvents": {
-      const statEvents = await ctx.db
-        .query("skillStatEvents")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const statEvent of statEvents) {
-        await ctx.db.delete(statEvent._id);
-      }
-      if (statEvents.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "installs", scope);
-      return;
-    }
-    case "installs": {
-      const installs = await ctx.db
-        .query("userSkillInstalls")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const install of installs) {
-        await ctx.db.delete(install._id);
-      }
-      if (installs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "installs", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "installTelemetryDedupes", scope);
-      return;
-    }
-    case "installTelemetryDedupes": {
-      const dedupeRows = await ctx.db
-        .query("installTelemetryDedupes")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const row of dedupeRows) {
-        await ctx.db.delete(row._id);
-      }
-      if (dedupeRows.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "installTelemetryDedupes", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards", scope);
-      return;
-    }
+    case "reports":
+      return deleteBatch(
+        ctx.db.query("skillReports").withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "stars",
+      );
+    case "stars":
+      return deleteBatch(
+        ctx.db.query("stars").withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "badges",
+      );
+    case "badges":
+      return deleteBatch(
+        ctx.db.query("skillBadges").withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "dailyStats",
+      );
+    case "dailyStats":
+      return deleteBatch(
+        ctx.db
+          .query("skillDailyStats")
+          .withIndex("by_skill_day", (q) => q.eq("skillId", skill._id)),
+        "statEvents",
+      );
+    case "statEvents":
+      return deleteBatch(
+        ctx.db.query("skillStatEvents").withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "installs",
+      );
+    case "installs":
+      return deleteBatch(
+        ctx.db.query("userSkillInstalls").withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "installTelemetryDedupes",
+      );
+    case "installTelemetryDedupes":
+      return deleteBatch(
+        ctx.db
+          .query("installTelemetryDedupes")
+          .withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "leaderboards",
+      );
     case "leaderboards": {
       const leaderboards = await ctx.db
         .query("skillLeaderboards")
