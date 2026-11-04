@@ -4,7 +4,7 @@ import {
   normalizePluginCategories,
   normalizeSkillCategories,
 } from "clawhub-schema";
-import { convexToJson, ConvexError, v } from "convex/values";
+import { convexToJson, ConvexError, type Infer, v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -1118,31 +1118,35 @@ type LatestPluginManifestSummaryCandidatePage = {
   continueCursor: string;
 };
 
-type PluginManifestSummaryBackfillSample = {
-  packageName: string;
-  displayName: string;
-  version: string;
-  releaseId: Id<"packageReleases">;
-  configFieldCount: number;
-  mcpServerCount: number;
-  bundledSkillCount: number;
-};
+const pluginManifestSummaryBackfillResultValidator = v.object({
+  ok: v.literal(true),
+  dryRun: v.boolean(),
+  confirmRequired: v.optional(v.string()),
+  scannedPackages: v.number(),
+  eligibleReleases: v.number(),
+  changedReleases: v.number(),
+  patchedReleases: v.number(),
+  unchangedReleases: v.number(),
+  skippedMissingRelease: v.number(),
+  skippedMissingManifest: v.number(),
+  skippedSkillMarkdownReadErrorReleases: v.number(),
+  skillMarkdownReadErrors: v.number(),
+  samples: v.array(
+    v.object({
+      packageName: v.string(),
+      displayName: v.string(),
+      version: v.string(),
+      releaseId: v.id("packageReleases"),
+      configFieldCount: v.number(),
+      mcpServerCount: v.number(),
+      bundledSkillCount: v.number(),
+    }),
+  ),
+});
 
-type PluginManifestSummaryBackfillResult = {
-  ok: true;
-  dryRun: boolean;
-  confirmRequired?: string;
-  scannedPackages: number;
-  eligibleReleases: number;
-  changedReleases: number;
-  patchedReleases: number;
-  unchangedReleases: number;
-  skippedMissingRelease: number;
-  skippedMissingManifest: number;
-  skippedSkillMarkdownReadErrorReleases: number;
-  skillMarkdownReadErrors: number;
-  samples: PluginManifestSummaryBackfillSample[];
-};
+type PluginManifestSummaryBackfillResult = Infer<
+  typeof pluginManifestSummaryBackfillResultValidator
+>;
 
 function isJsonRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -1415,31 +1419,7 @@ export const runPluginManifestSummaryBackfill = internalAction({
     confirm: v.optional(v.string()),
     maxPackages: v.optional(v.number()),
   },
-  returns: v.object({
-    ok: v.literal(true),
-    dryRun: v.boolean(),
-    confirmRequired: v.optional(v.string()),
-    scannedPackages: v.number(),
-    eligibleReleases: v.number(),
-    changedReleases: v.number(),
-    patchedReleases: v.number(),
-    unchangedReleases: v.number(),
-    skippedMissingRelease: v.number(),
-    skippedMissingManifest: v.number(),
-    skippedSkillMarkdownReadErrorReleases: v.number(),
-    skillMarkdownReadErrors: v.number(),
-    samples: v.array(
-      v.object({
-        packageName: v.string(),
-        displayName: v.string(),
-        version: v.string(),
-        releaseId: v.id("packageReleases"),
-        configFieldCount: v.number(),
-        mcpServerCount: v.number(),
-        bundledSkillCount: v.number(),
-      }),
-    ),
-  }),
+  returns: pluginManifestSummaryBackfillResultValidator,
   handler: async (ctx, args): Promise<PluginManifestSummaryBackfillResult> => {
     const dryRun = args.dryRun !== false;
     if (!dryRun && args.confirm !== BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM) {
@@ -1503,33 +1483,10 @@ export const runPluginManifestSummaryBackfillPage = internalAction({
     dryRun: v.optional(v.boolean()),
     confirm: v.optional(v.string()),
   },
-  returns: v.object({
-    ok: v.literal(true),
-    dryRun: v.boolean(),
-    confirmRequired: v.optional(v.string()),
+  returns: pluginManifestSummaryBackfillResultValidator.extend({
     family: pluginPackageFamilyValidator,
     continueCursor: v.string(),
     isDone: v.boolean(),
-    scannedPackages: v.number(),
-    eligibleReleases: v.number(),
-    changedReleases: v.number(),
-    patchedReleases: v.number(),
-    unchangedReleases: v.number(),
-    skippedMissingRelease: v.number(),
-    skippedMissingManifest: v.number(),
-    skippedSkillMarkdownReadErrorReleases: v.number(),
-    skillMarkdownReadErrors: v.number(),
-    samples: v.array(
-      v.object({
-        packageName: v.string(),
-        displayName: v.string(),
-        version: v.string(),
-        releaseId: v.id("packageReleases"),
-        configFieldCount: v.number(),
-        mcpServerCount: v.number(),
-        bundledSkillCount: v.number(),
-      }),
-    ),
   }),
   handler: async (ctx, args) => {
     const dryRun = args.dryRun !== false;
