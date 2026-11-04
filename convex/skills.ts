@@ -52,6 +52,7 @@ import {
 } from "./lib/downloadTrend";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
+import { storedFilesValidator } from "./lib/fileValidators";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
   getGitHubProviderAccountId,
@@ -8493,15 +8494,7 @@ export const publishVersion: ReturnType<typeof action> = action({
         version: v.optional(v.string()),
       }),
     ),
-    files: v.array(
-      v.object({
-        path: v.string(),
-        size: v.number(),
-        storageId: v.id("_storage"),
-        sha256: v.string(),
-        contentType: v.optional(v.string()),
-      }),
-    ),
+    files: storedFilesValidator,
   },
   handler: async (ctx, args): Promise<SkillPublishResult> => {
     if (args.acceptLicenseTerms !== true) {
@@ -10684,15 +10677,7 @@ export const insertVersion = internalMutation({
         version: v.optional(v.string()),
       }),
     ),
-    files: v.array(
-      v.object({
-        path: v.string(),
-        size: v.number(),
-        storageId: v.id("_storage"),
-        sha256: v.string(),
-        contentType: v.optional(v.string()),
-      }),
-    ),
+    files: storedFilesValidator,
     parsed: v.object({
       frontmatter: v.record(v.string(), v.any()),
       metadata: v.optional(v.any()),

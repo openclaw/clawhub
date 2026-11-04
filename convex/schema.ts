@@ -9,6 +9,7 @@ import {
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
+import { storedFilesValidator } from "./lib/fileValidators";
 import { intermediaryAnalysisValidator } from "./lib/intermediaryAnalysis";
 import {
   packageInspectorFailureValidator,
@@ -818,15 +819,7 @@ const skillCardGenerationJobSourceValidator = v.union(
   v.literal("manual"),
 );
 
-const packageFilesValidator = v.array(
-  v.object({
-    path: v.string(),
-    size: v.number(),
-    storageId: v.id("_storage"),
-    sha256: v.string(),
-    contentType: v.optional(v.string()),
-  }),
-);
+const packageFilesValidator = storedFilesValidator;
 
 const catalogClassificationConfidenceValidator = v.union(
   v.literal("high"),
@@ -1135,15 +1128,7 @@ const skillVersions = defineTable({
   changelog: v.string(),
   changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
   icon: v.optional(v.string()),
-  files: v.array(
-    v.object({
-      path: v.string(),
-      size: v.number(),
-      storageId: v.id("_storage"),
-      sha256: v.string(),
-      contentType: v.optional(v.string()),
-    }),
-  ),
+  files: storedFilesValidator,
   skillCardGeneration: v.optional(v.object({ inputHash: v.string(), cardSha256: v.string() })),
   parsed: v.object({
     frontmatter: v.record(v.string(), v.any()),

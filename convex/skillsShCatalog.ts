@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery, query } from "./functions";
+import { storedFileValidator } from "./lib/fileValidators";
 import { getRuntimeRolloutCapabilities } from "./lib/rolloutCapabilities";
 import {
   assertSkillsShCatalogControlMutationAllowed,
@@ -79,13 +80,7 @@ const sourceVerificationValidator = v.object({
   githubCheckedAt: v.string(),
   githubFetches: v.number(),
 });
-const scanRequestFileValidator = v.object({
-  path: v.string(),
-  size: v.number(),
-  storageId: v.id("_storage"),
-  sha256: v.string(),
-  contentType: v.optional(v.string()),
-});
+const scanRequestFileValidator = storedFileValidator;
 const stagingLiveArtifactValidator = v.object({
   externalId: v.string(),
   artifactContentHash: v.string(),
