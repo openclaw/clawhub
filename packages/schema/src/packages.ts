@@ -17,6 +17,7 @@ import {
   PackageVerificationScopeSchema,
   PackageVerificationTierSchema,
   PackageVtAnalysisSchema,
+  PluginManifestSummarySchema,
 } from "./packageShared.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 import { TemplateManifestSummarySchema } from "./templates.js";
@@ -34,46 +35,6 @@ export {
 
 export const PackagePublishFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"template"');
 export type PackagePublishFamily = (typeof PackagePublishFamilySchema)[inferred];
-
-export const PluginManifestSummarySchema = type({
-  schemaVersion: "number",
-  contracts: type({ "[string]": "string[]" }).optional(),
-  providers: "string[]?",
-  channels: "string[]?",
-  categories: "string[]?",
-  icon: "string?",
-  compatibility: PackageCompatibilitySchema.optional(),
-  manifestIdentity: type({
-    name: "string?",
-    description: "string?",
-    version: "string?",
-    family: "string?",
-  }).optional(),
-  configFields: type({
-    name: "string",
-    description: "string?",
-    required: "boolean",
-    sensitive: "boolean",
-  }).array(),
-  mcpServers: type({
-    name: "string",
-    url: "string?",
-    "transport?": '"streamable-http"|"sse"|"stdio"',
-    "auth?": '"oauth"|"api-key"|"none"',
-    scope: "string?",
-    setup: "string?",
-    endpointRedacted: "boolean?",
-  }).array(),
-  bundledSkills: type({
-    name: "string",
-    description: "string?",
-    rootPath: "string",
-    skillMdPath: "string",
-    sha256: "string",
-    size: "number",
-  }).array(),
-});
-export type PluginManifestSummary = (typeof PluginManifestSummarySchema)[inferred];
 
 const PackageVersionIdentitySchema = type({
   "+": "reject",
