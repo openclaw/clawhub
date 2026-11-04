@@ -81,7 +81,9 @@ No sleep follows the final attempt. Quota (`remaining`) and `reset in` hints are
 shown only for a `429`; `retry in Ns` reflects any `Retry-After`. When a retried
 temporary failure is followed by a non-retryable rejection (for example "version
 already exists" after an ambiguous publish), the final message keeps the earlier
-failure so the publisher can tell the version may already be published.
+failure so the publisher can tell the version may already be published. An
+earlier network failure or timeout is noted with a fixed phrase, never its raw
+message, because transport errors can carry signed URLs.
 
 Follow-up: a skill upload whose attachment commits but still reports a transient
 error deletes the blob the ticket now references (pre-existing); the retry then

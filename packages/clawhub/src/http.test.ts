@@ -796,6 +796,38 @@ describe("truthful retryable publish errors", () => {
     );
   });
 
+  it("notes an earlier network failure without echoing transport details", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        throw new Error("Request timed out at https://upload.invalid/private?token=secret");
+      }
+      return new Response(
+        "Version 1.0.0 already exists. Increment the version number and try again.",
+        {
+          status: 400,
+        },
+      );
+    });
+    const client = createHttpClient({
+      runtime: "node",
+      configureDispatcher: false,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      setTimeoutImpl: ((callback: () => void, ms: number) => {
+        if (ms !== REQUEST_TIMEOUT_MS && ms !== UPLOAD_TIMEOUT_MS) callback();
+        return 1;
+      }) as unknown as typeof setTimeout,
+      clearTimeoutImpl: vi.fn(),
+      random: () => 0,
+    });
+    const error = await publish(client, 5).catch((caught: unknown) => caught);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect((error as Error).message).toBe(
+      "Version 1.0.0 already exists. Increment the version number and try again. (after retrying an earlier network failure or timeout)",
+    );
+  });
+
   it("does not retry a 409 restart-required publish failure", async () => {
     const restart = () =>
       new Response(

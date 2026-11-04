@@ -435,7 +435,7 @@ function createRetryRunner(deps: Pick<HttpClientDeps, "setTimeoutImpl" | "random
     fn: () => Promise<T>,
     retryCount = RETRY_COUNT,
   ): Promise<T> {
-    let retriedFailure: HttpStatusError | undefined;
+    let retriedFailure: HttpStatusError | "transport" | undefined;
     try {
       return await pRetry(fn, {
         retries: retryCount,
@@ -449,7 +449,7 @@ function createRetryRunner(deps: Pick<HttpClientDeps, "setTimeoutImpl" | "random
           const delayMs = getRetryDelayMs(attemptError, deps.random);
           if (delayMs === null) return false;
           const failure = getRootError(attemptError);
-          if (failure instanceof HttpStatusError) retriedFailure = failure;
+          retriedFailure = failure instanceof HttpStatusError ? failure : "transport";
           if (delayMs > 0) await sleep(delayMs, deps.setTimeoutImpl);
           return true;
         },
@@ -463,10 +463,16 @@ function createRetryRunner(deps: Pick<HttpClientDeps, "setTimeoutImpl" | "random
 // A retry can turn an ambiguous temporary failure into a misleading final
 // rejection (for example "version already exists" after the first attempt
 // committed). Keep the earlier failure in the reported message.
-function withRetriedFailureContext(error: unknown, retriedFailure: HttpStatusError | undefined) {
-  if (retriedFailure && error instanceof HttpStatusError && !error.retryable) {
-    error.message = `${error.message} (after retrying an earlier temporary failure: ${retriedFailure.message})`;
-  }
+function withRetriedFailureContext(
+  error: unknown,
+  retriedFailure: HttpStatusError | "transport" | undefined,
+) {
+  if (!retriedFailure || !(error instanceof HttpStatusError) || error.retryable) return error;
+  // Transport errors can carry signed URLs; describe them with a fixed phrase.
+  error.message =
+    retriedFailure === "transport"
+      ? `${error.message} (after retrying an earlier network failure or timeout)`
+      : `${error.message} (after retrying an earlier temporary failure: ${retriedFailure.message})`;
   return error;
 }
 
