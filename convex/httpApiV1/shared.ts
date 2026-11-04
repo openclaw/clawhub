@@ -4,6 +4,7 @@ import {
   getClawHubRuntimeEnvironment,
   normalizeContentType,
   parseArk,
+  type ArkValidator,
 } from "clawhub-schema";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -169,6 +170,33 @@ export async function parseJsonPayload(request: Request, headers: HeadersInit) {
     return { ok: true as const, payload };
   } catch {
     return { ok: false as const, response: text("Invalid JSON", 400, headers) };
+  }
+}
+
+export async function moderationDecisionResponse(
+  ctx: ActionCtx,
+  request: Request,
+  headers: HeadersInit,
+  schema: ArkValidator<{ status: string; note?: string; finalAction?: string }>,
+  label: string,
+  fallback: string,
+  resolveMutation: () => { ref: unknown; args: Record<string, unknown> },
+) {
+  try {
+    const body = parseArk(schema, await request.json(), label);
+    const { ref, args } = resolveMutation();
+    const result = await ctx.runMutation(
+      ref as never,
+      {
+        ...args,
+        status: body.status,
+        ...(body.note ? { note: body.note } : {}),
+        ...(body.finalAction ? { finalAction: body.finalAction } : {}),
+      } as never,
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    return text(error instanceof Error ? error.message : fallback, 400, headers);
   }
 }
 
