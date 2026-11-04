@@ -73,6 +73,7 @@ import {
 } from "./lib/emails";
 import { endorAnalysisSchema, endorAnalysisValidator } from "./lib/endorAnalysis";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
+import { storedFilesValidator } from "./lib/fileValidators";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
@@ -11368,15 +11369,7 @@ export const insertReleaseInternal = internalMutation({
     llmAnalysis: v.optional(v.any()),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     allowExistingRelease: v.optional(v.boolean()),
-    files: v.array(
-      v.object({
-        path: v.string(),
-        size: v.number(),
-        storageId: v.id("_storage"),
-        sha256: v.string(),
-        contentType: v.optional(v.string()),
-      }),
-    ),
+    files: storedFilesValidator,
     integritySha256: v.string(),
     sha256hash: v.string(),
     artifactKind: v.optional(v.union(v.literal("legacy-zip"), v.literal("npm-pack"))),
