@@ -144,6 +144,25 @@ function makeNpmMirrorQuery() {
   });
 }
 
+function makeDemoPluginLookupResult() {
+  return {
+    package: {
+      _id: "packages:demo-plugin",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      tags: { latest: "packageReleases:1" },
+      latestReleaseId: "packageReleases:1",
+      channel: "community",
+      isOfficial: false,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+    latestRelease: null,
+    owner: { _id: "publishers:demo", handle: "demo" },
+  };
+}
+
 function makePackageDownloadQuery() {
   return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
     if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
@@ -14941,22 +14960,7 @@ describe("httpApiV1 handlers", () => {
   it("packages version detail returns security scan fields for plugins", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
@@ -15201,22 +15205,7 @@ describe("httpApiV1 handlers", () => {
   it("packages version detail returns ClawPack artifact metadata", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
@@ -15275,22 +15264,7 @@ describe("httpApiV1 handlers", () => {
   it("package artifact endpoint exposes ClawPack resolver URLs", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
@@ -15344,22 +15318,7 @@ describe("httpApiV1 handlers", () => {
   it("package artifact endpoint exposes legacy zip resolver compatibility aliases", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
@@ -15416,22 +15375,7 @@ describe("httpApiV1 handlers", () => {
   it("package security endpoint uses the canonical npm artifact hash", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
@@ -15858,22 +15802,7 @@ describe("httpApiV1 handlers", () => {
   it("package artifact endpoint omits legacy zip archive aliases when archive hash is missing", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
