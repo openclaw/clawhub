@@ -21,6 +21,12 @@ bun install
 cp .env.local.example .env.local
 ```
 
+The root install builds the ignored schema output in `packages/schema/dist`. Install
+with development dependencies before running the app, Convex, workers, or checks.
+After editing schema sources, or when reusing copied dependencies or installing
+with `--ignore-scripts`, run `bun run --cwd packages/schema build` first.
+Do not commit generated schema files.
+
 Edit `.env.local` with the following values for **local Convex**:
 
 ```bash

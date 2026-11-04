@@ -56,6 +56,8 @@
 
 - CI: batch main CodeQL scans every six hours while preserving PR and manual scans; include local composite actions and attribute-only PR changes.
 
+- Tooling: generate schema build output during workspace install and Worktrunk setup instead of tracking compiled files; installs that skip scripts must build the schema package before use.
+
 ## 0.25.1 - 2026-11-03
 
 ### Fixes
