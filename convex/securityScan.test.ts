@@ -101,12 +101,13 @@ const requeueExpiredCodexScanJobsInternalHandler = (
 
 const requeueFailedSecurityScanJobsInternalHandler = (
   requeueFailedSecurityScanJobsInternal as unknown as WrappedHandler<
-    { failedAfter: number; failedBefore: number; dryRun: boolean; limit?: number },
+    { failedAfter: number; failedBefore: number; dryRun: boolean; limit?: number; cursor?: string },
     {
       dryRun: boolean;
       matched: number;
       requeued: number;
       hasMore: boolean;
+      nextCursor: string | null;
       bySource: Record<string, number>;
       byTargetKind: Record<string, number>;
       sampleJobIds: string[];
@@ -730,7 +731,16 @@ function makeFailedScanRecoveryCtx(
             order: vi.fn((direction: string) => {
               expect(direction).toBe("asc");
               return {
-                take: vi.fn(async (limit: number) => filtered.slice(0, limit)),
+                paginate: vi.fn(
+                  async ({ numItems, cursor }: { numItems: number; cursor: string | null }) => {
+                    const start = cursor ? Number(cursor) : 0;
+                    return {
+                      page: filtered.slice(start, start + numItems),
+                      isDone: start + numItems >= filtered.length,
+                      continueCursor: String(start + numItems),
+                    };
+                  },
+                ),
               };
             }),
           };
@@ -2763,6 +2773,7 @@ describe("securityScan", () => {
       matched: 2,
       requeued: 0,
       hasMore: false,
+      nextCursor: null,
       bySource: { manual: 1, publish: 1 },
       byTargetKind: { skillScanRequest: 1, skillVersion: 1 },
       sampleJobIds: ["securityScanJobs:publish-failed", "securityScanJobs:manual-failed"],

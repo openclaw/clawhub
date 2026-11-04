@@ -11,7 +11,12 @@ import { Events, logEvent } from "./lib/observabilityEvents";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { normalizePackageScanStatus } from "./lib/packageSecurity";
-import { isExplicitPluginScanSource, isSingleScanPlugin } from "./lib/pluginScanRouting";
+import {
+  isExplicitPluginScanSource,
+  isRetiredAutomaticPluginScan,
+  isSingleScanPlugin,
+  terminalizeRetiredAutomaticPluginScan,
+} from "./lib/pluginScanRouting";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 import {
   getRuntimeRolloutCapabilities,
@@ -2761,22 +2766,6 @@ async function enqueuePackageReleaseScan(
   return { ok: true as const, jobId, alreadyQueued: false as const };
 }
 
-async function isRetiredAutomaticPluginScan(
-  ctx: Pick<QueryCtx, "db">,
-  job: Doc<"securityScanJobs">,
-) {
-  if (
-    job.targetKind !== "packageRelease" ||
-    !job.packageReleaseId ||
-    job.scanMode === "endor-report-only" ||
-    isExplicitPluginScanSource(job.source)
-  )
-    return false;
-  const release = await ctx.db.get(job.packageReleaseId);
-  const pkg = release ? await ctx.db.get(release.packageId) : null;
-  return isSingleScanPlugin(pkg?.family);
-}
-
 export const clearQueuedBackfillJobsForLocalDev = internalMutation({
   args: {
     dryRun: v.optional(v.boolean()),
@@ -3332,20 +3321,24 @@ export const requeueExpiredCodexScanJobsInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    const limit = Math.max(
+      1,
+      Math.min(args.limit ?? MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES, MAX_CODEX_SCAN_CLAIM_LIMIT),
+    );
     const jobs = await ctx.db
       .query("securityScanJobs")
       .withIndex("by_status_and_lease_expires_at", (q) =>
         q.eq("status", "running").lte("leaseExpiresAt", now),
       )
-      .take(
-        Math.max(
-          1,
-          Math.min(args.limit ?? MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES, MAX_CODEX_SCAN_CLAIM_LIMIT),
-        ),
-      );
+      .take(limit);
     let requeued = 0;
+    let retired = 0;
     for (const job of jobs) {
-      if (await isRetiredAutomaticPluginScan(ctx, job)) continue;
+      if (await isRetiredAutomaticPluginScan(ctx, job)) {
+        await terminalizeRetiredAutomaticPluginScan(ctx, job, now);
+        retired += 1;
+        continue;
+      }
       const catalogRetry = await prepareCatalogRetry(ctx, job, now);
       if (catalogRetry.kind === "blocked") {
         await terminalizeBlockedCatalogRetry(ctx, catalogRetry, now);
@@ -3386,6 +3379,13 @@ export const requeueExpiredCodexScanJobsInternal = internalMutation({
       }
       requeued += 1;
     }
+    // A full retired window must not consume every cron tick forever. Each
+    // bounded continuation removes those heads without reviving their authority.
+    if (retired > 0 && jobs.length === limit) {
+      await ctx.scheduler.runAfter(0, internal.securityScan.requeueExpiredCodexScanJobsInternal, {
+        limit,
+      });
+    }
     if (requeued > 0) await requestSecurityScanDispatch(ctx);
     return { requeued };
   },
@@ -3397,6 +3397,7 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
     failedBefore: v.number(),
     dryRun: v.boolean(),
     limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     if (args.failedBefore <= args.failedAfter) {
@@ -3409,7 +3410,7 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
         MAX_FAILED_SCAN_RECOVERY_LIMIT,
       ),
     );
-    const jobs = await ctx.db
+    const page = await ctx.db
       .query("securityScanJobs")
       .withIndex("by_status_and_updated_at", (q) =>
         q
@@ -3419,14 +3420,22 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
       )
       .filter((q) => q.neq(q.field("source"), "skills-sh-catalog-test"))
       .order("asc")
-      .take(limit + 1);
-    const matched = jobs.slice(0, limit);
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: limit,
+        maximumRowsRead: MAX_FAILED_SCAN_RECOVERY_LIMIT + 1,
+      });
+    // Retired failures remain untouched, including during dry runs. Return the
+    // native index cursor so a retained head cannot hide later eligible jobs.
+    const matched: Doc<"securityScanJobs">[] = [];
+    for (const job of page.page) {
+      if (!(await isRetiredAutomaticPluginScan(ctx, job))) matched.push(job);
+    }
     const bySource: Partial<Record<SecurityScanJobSource, number>> = {};
     const byTargetKind: Partial<Record<Doc<"securityScanJobs">["targetKind"], number>> = {};
     let requeued = 0;
 
     for (const job of matched) {
-      if (await isRetiredAutomaticPluginScan(ctx, job)) continue;
       bySource[job.source] = (bySource[job.source] ?? 0) + 1;
       byTargetKind[job.targetKind] = (byTargetKind[job.targetKind] ?? 0) + 1;
       if (args.dryRun) continue;
@@ -3483,7 +3492,8 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
       dryRun: args.dryRun,
       matched: matched.length,
       requeued: args.dryRun ? 0 : requeued,
-      hasMore: jobs.length > limit,
+      hasMore: !page.isDone,
+      nextCursor: page.isDone ? null : page.continueCursor,
       bySource,
       byTargetKind,
       sampleJobIds: matched.slice(0, FAILED_SCAN_RECOVERY_SAMPLE_LIMIT).map((job) => job._id),

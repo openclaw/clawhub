@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { reusableAigAnalysis } from "./aigAnalysis";
 
 export function isSingleScanPlugin(family: Doc<"packages">["family"] | undefined) {
@@ -34,4 +35,38 @@ export function assertPluginScanEvidence(
       "Plugin scans require completed ClawScan and A.I.G evidence matching the publication decision.",
     );
   }
+}
+
+/** Legacy automatic plugin ClawScan work has no authority to adjudicate a release. */
+export async function isRetiredAutomaticPluginScan(
+  ctx: Pick<QueryCtx, "db">,
+  job: Doc<"securityScanJobs">,
+) {
+  if (
+    job.targetKind !== "packageRelease" ||
+    !job.packageReleaseId ||
+    job.scanMode === "endor-report-only" ||
+    isExplicitPluginScanSource(job.source)
+  )
+    return false;
+  const release = await ctx.db.get(job.packageReleaseId);
+  const pkg = release ? await ctx.db.get(release.packageId) : null;
+  return isSingleScanPlugin(pkg?.family);
+}
+
+/** Retain the row and prior error/evidence, but remove it from active queue indexes. */
+export async function terminalizeRetiredAutomaticPluginScan(
+  ctx: Pick<MutationCtx, "db">,
+  job: Doc<"securityScanJobs">,
+  now: number,
+) {
+  await ctx.db.patch(job._id, {
+    status: "failed",
+    lastError: job.lastError ?? "Automatic plugin ClawScan retired; explicit rescan required",
+    completedAt: job.completedAt ?? now,
+    leaseToken: undefined,
+    leaseExpiresAt: undefined,
+    workerId: undefined,
+    updatedAt: now,
+  });
 }

@@ -98,3 +98,53 @@ Later readonly inspection saw #148 at 66c4361 and #149 at 30524c5; #149 still ha
 uncommitted patch/test changes. Neither is paired merged source qualification or
 authority to remove the worker/installer fence. Independent review, complete
 install integration and UI absent-overview copy/proof remain follow-up blockers.
+
+## Repair validation superseding the preparation record (2026-11-04)
+
+Current main 612ab448 is merged. Its post-acceptance Plugin Inspector monitoring
+remains intact; this branch does not reintroduce an in-publish Inspector action.
+
+The three failed CI browser leaves were introduced fixture-contract mismatches:
+shared completeMockPrePublicationChecks omitted analysis for clean outcomes on
+both main and candidate. The stricter candidate correctly rejected bare clean
+checks. Fixtures now provide canonical completed benign analysis, including the
+newly merged Inspector authority-chain unit proof. No production gate relaxation.
+
+The local backend startup and local transport failures were separately traced
+to inherited HTTP_PROXY/HTTPS_PROXY routing loopback requests through a proxy.
+Adding loopback-only NO_PROXY/no_proxy restored the supported isolated backend,
+without changing external proxy routing or production env. Exact template,
+old-CLI and Inspector CI leaf specs now pass locally: 9/9 real-browser tests.
+
+Absent-overview copy now distinguishes a completed verdict with unavailable
+optional prose from a scan that never ran or failed. Released CLI 0.14.0 uploads
+a real local artifact; the supported prepublication action supplies simulated
+scanner results without summary. The actual stored public version API is
+asserted before real Chromium desktop/mobile audit captures. Both show Pass,
+version 1.0.0 and truthful absent-overview text. Screenshots were inspected and
+attached directly to PR #4411 comment 6626929490. This proves product/backend
+consumer behavior, not live Decisions/AIG MCP or isolation qualification.
+
+Independent narrative read-only review (GPT-6.1 Sol) found three P2s. The
+Endor-only path now preserves its mounted workspace on unconfirmed container
+cleanup and stops the worker; regression exercises both job modes. Retired
+automatic jobs no longer starve expired recovery or create endless empty worker
+dispatches. See plugin-scan-queue-retirement.md for bounded cleanup/pagination
+and failed-recovery cursor semantics; historical rows/reports are retained.
+Nine real Convex scheduler/index/pagination regressions fail against a6219be800
+and pass the repaired candidate. Independent fix verification is pending.
+
+Latest broad validation:
+
+- ci:unit: 8899 passed, 5 skipped, coverage gate passed.
+- ci:types-build, Convex deploy TypeScript, ci:packages and ci:e2e-http passed.
+- Complete installed oxfmt check (1908 files), full type-aware lint, deadcode
+  and release-action-pin checks passed. ci:static itself still stops at bun fmt,
+  unavailable in local Bun 1.4.0; main has the same command. Hosted static passed
+  on a6219be800, before the final queue repairs.
+- A621 hosted code checks passed; only Vercel quota remained failed. No quota
+  work, production deploy or activation was attempted. Later heads need checks.
+
+Source qualification/install integration of the paired corrected upstream and
+removal of MCP fences still require parent clearance and real qualification.
+The production scanner pin and activation settings remain unchanged.
