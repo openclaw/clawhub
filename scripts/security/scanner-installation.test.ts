@@ -20,8 +20,8 @@ describe("reviewed ClawScan installation", () => {
     ).toBe("${{ vars.PREPUBLICATION_REPORT_SCANNER_SOURCE || 'false' }}");
   });
   it("ships a full immutable source lock for the workflow installers", async () => {
-    expect(await readFile(join(scripts, "clawscan-source-commit.txt"), "utf8")).toMatch(
-      /^[a-f0-9]{40}\n$/,
+    expect(await readFile(join(scripts, "clawscan-source-commit.txt"), "utf8")).toBe(
+      "c3cfaf1515a47685786d72f031c714b1e5d9b34e\n",
     );
   });
 
@@ -59,6 +59,10 @@ describe("reviewed ClawScan installation", () => {
     const root = await mkdtemp(join(tmpdir(), "clawscan-install-reject-"));
     try {
       await copyFile(join(scripts, "install-clawscan.sh"), join(root, "install.sh"));
+      await copyFile(
+        join(scripts, "clawscan-install-source.sh"),
+        join(root, "clawscan-install-source.sh"),
+      );
       await expect(
         run("sh", [join(root, "install.sh")], { env: { PATH: process.env.PATH } }),
       ).rejects.toThrow();
@@ -96,6 +100,7 @@ describe("reviewed ClawScan installation", () => {
           join(scriptDir, "install.sh"),
         );
         for (const file of [
+          "clawscan-install-source.sh",
           "skillspector-pydantic-requirements.txt",
           "test_skillspector_serialization.py",
         ]) {

@@ -4,9 +4,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { clawScanExposure } from "./clawscan-exposure";
-import { validateClawScanArtifactForClawHubProfile } from "./run-codex-scan-worker";
+import { runClawScan, validateClawScanArtifactForClawHubProfile } from "./run-codex-scan-worker";
 import type { ClaimedJob } from "./run-codex-scan-worker";
 import { runNativeClawScan } from "./run-prepublication-worker";
+
+const runtimeFixture = vi.hoisted(() => ({ qualified: false, command: "" }));
+vi.mock("./clawscan-plugin-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./clawscan-plugin-runtime")>();
+  return {
+    ...actual,
+    usesWholePluginScanForTarget: async (kind: string) =>
+      runtimeFixture.qualified && kind === "packageRelease",
+    qualifiedPluginCommand: async () => runtimeFixture.command,
+  };
+});
+import { QUALIFIED_PLUGIN_IMAGE } from "./clawscan-plugin-runtime";
 
 // Wire shape from #148 JudgeResult/JudgeAttempt and #149 ScannerResult/SARIF.
 // Synthetic provider response: proves the consumer seam, not live qualification.
@@ -39,6 +51,7 @@ function fixture(verdict = "benign") {
   };
   return {
     schemaVersion: "clawscan-run-v1",
+    configSource: "built-in",
     profile: "clawhub",
     status: "completed",
     complete: true,
@@ -81,12 +94,16 @@ function fixture(verdict = "benign") {
 }
 const dirs: string[] = [];
 afterEach(async () => {
+  runtimeFixture.qualified = false;
+  runtimeFixture.command = "";
   vi.unstubAllEnvs();
   await Promise.all(dirs.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 async function runFixture(
   artifact: unknown,
   targetKind: ClaimedJob["job"]["targetKind"] = "packageRelease",
+  qualified = false,
+  rescan = false,
 ) {
   const workspace = await mkdtemp(join(tmpdir(), "decisions-consumer-"));
   dirs.push(workspace);
@@ -99,8 +116,30 @@ async function runFixture(
       JSON.stringify(JSON.stringify(artifact)) +
       ");\n",
   );
+  runtimeFixture.qualified = qualified;
+  runtimeFixture.command = command;
   await chmod(command, 0o755);
   vi.stubEnv("PREPUBLICATION_CLAWSCAN_COMMAND", command);
+  if (rescan) {
+    let invocation: string[] | undefined;
+    const job: ClaimedJob = {
+      job: {
+        _id: "fixture",
+        targetKind,
+        source: "manual",
+        leaseToken: "fixture",
+        hasMaliciousSignal: false,
+      },
+      target: { package: { family: "code-plugin" }, release: { artifactKind: "legacy-zip" } },
+    };
+    const mapped = await runClawScan(job, workspace, (diagnostic) => {
+      if (diagnostic.args) invocation = diagnostic.args;
+    });
+    expect(invocation).toContain("./artifact");
+    expect(invocation).toContain(QUALIFIED_PLUGIN_IMAGE);
+    expect(invocation).not.toContain("--scanner-result");
+    return { analysis: mapped.llmAnalysis, check: { status: "rescan", summary: undefined } };
+  }
   return runNativeClawScan(
     {
       job: {
@@ -116,6 +155,53 @@ async function runFixture(
   );
 }
 describe("Decisions publication consumer", () => {
+  it.each(["benign", "suspicious", "malicious"])(
+    "uses the qualified verdict mapper for manual %s rescan",
+    async (verdict) => {
+      const artifact = fixture(verdict) as Record<string, any>;
+      artifact.sandbox = { mode: "docker", image: QUALIFIED_PLUGIN_IMAGE };
+      delete artifact.scanners["aig-mcp"].raw.runs[0].invocations;
+      const result = await runFixture(artifact, "packageRelease", true, true);
+      expect(result.analysis).toMatchObject({ verdict, model: "provider-returned-model" });
+    },
+  );
+  it.each([
+    ["benign", "clean"],
+    ["suspicious", "clean"],
+    ["malicious", "blocked"],
+  ])("accepts %s only through qualified image-backed execution", async (verdict, expected) => {
+    const artifact = fixture(verdict) as Record<string, any>;
+    artifact.sandbox = { mode: "docker", image: QUALIFIED_PLUGIN_IMAGE };
+    // Actual upstream AIG MCP 0.2.0 SARIF omits invocations.
+    delete artifact.scanners["aig-mcp"].raw.runs[0].invocations;
+    const result = await runFixture(artifact, "packageRelease", true);
+    expect(result.check.status).toBe(expected);
+    expect(result.analysis).toMatchObject({ verdict, model: "provider-returned-model" });
+    expect(result.analysis?.summary).toBeUndefined();
+  });
+  it.each([
+    "provider/exhaustion failure",
+    "coverage failure",
+    "missing scanner",
+    "host execution",
+    "mutable image",
+  ])("rejects qualified-source %s", async (reason) => {
+    const artifact = fixture() as Record<string, any>;
+    artifact.sandbox = { mode: "docker", image: QUALIFIED_PLUGIN_IMAGE };
+    if (reason === "provider/exhaustion failure")
+      Object.assign(artifact.scanners["aig-mcp"], {
+        status: "failed",
+        error: "aig-mcp-scan exhausted its iteration budget",
+      });
+    if (reason === "missing scanner") delete artifact.scanners["aig-mcp"];
+    if (reason === "coverage failure")
+      artifact.scanners["aig-mcp"].raw.runs[0].properties.scanNote = "incomplete";
+    if (reason === "host execution") artifact.sandbox.mode = "off";
+    if (reason === "mutable image")
+      artifact.sandbox.image = "ghcr.io/openclaw/clawscan-runtime:latest";
+    expect((await runFixture(artifact, "packageRelease", true)).check.status).toBe("failed");
+  });
+
   it("rejects standalone skill evidence for a plugin claim", async () => {
     const artifact = fixture() as Record<string, any>;
     artifact.scanners.aig = artifact.scanners["aig-mcp"];
@@ -133,7 +219,7 @@ describe("Decisions publication consumer", () => {
   ])("maps %s without inventing prose", async (verdict, check) => {
     const result = await runFixture(fixture(verdict));
     expect(result.check.status).toBe("failed");
-    expect(result.check.summary).toContain("corrected scanner runtime");
+    expect(result.check.summary).toContain("qualified source");
     const projected = validateClawScanArtifactForClawHubProfile(fixture(verdict), ["aig-mcp"]);
     expect(projected.llmAnalysis).toMatchObject({
       verdict,
@@ -148,9 +234,10 @@ describe("Decisions publication consumer", () => {
     expect(() => validateClawScanArtifactForClawHubProfile(fixture())).toThrow();
   });
   it.each([
+    "custom profile",
     "missing judge",
     "failed judge",
-    "missing invocation",
+    "imported scanner",
     "unsuccessful invocation",
     "mixed-case invocation",
     "coverage gap",
@@ -162,9 +249,10 @@ describe("Decisions publication consumer", () => {
   ])("fails closed: %s", async (scenario) => {
     const artifact = fixture() as Record<string, any>;
     const scanner = artifact.scanners["aig-mcp"];
+    if (scenario === "custom profile") artifact.configSource = "artifact/clawscan.yml";
     if (scenario === "missing judge") delete artifact.judge;
     if (scenario === "failed judge") artifact.judge.status = "failed";
-    if (scenario === "missing invocation") delete scanner.raw.runs[0].invocations;
+    if (scenario === "imported scanner") scanner.command = ["scanner-result", "aig-mcp=file.json"];
     if (scenario === "unsuccessful invocation")
       scanner.raw.runs[0].invocations[0].executionSuccessful = false;
     if (scenario === "mixed-case invocation")
@@ -213,6 +301,8 @@ describe("Decisions publication consumer", () => {
       judgeOperationalFailures: 0,
       recoveredReceiptRetries: 0,
     });
+    artifact.scanners["aig-mcp"].command = ["scanner-result", "aig-mcp=saved.json"];
+    expect(clawScanExposure(artifact).eligibleScanAttempt).toBe(false);
     artifact.scanners["aig-mcp"].command = [];
     expect(clawScanExposure(artifact).eligibleScanAttempt).toBe(false);
     artifact.complete = false;

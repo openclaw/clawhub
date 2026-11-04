@@ -1,12 +1,11 @@
 #!/bin/sh
-# Build the reviewed source and retain it for matching host scanner adapters.
+# Build the reviewed source and retain it for matching scanner/judge adapters.
 set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-source_commit=$(cat "$script_dir/clawscan-source-commit.txt")
-case "$source_commit" in
-  *[!a-f0-9]*|'') echo 'ClawScan requires a full reviewed source commit' >&2; exit 1 ;;
-esac
-[ "${#source_commit}" -eq 40 ] || { echo "ClawScan source commit must be 40 hex characters" >&2; exit 1; }
+[ "$#" -le 1 ] || { echo 'Usage: install-clawscan.sh [reviewed-source-commit]' >&2; exit 1; }
+. "$script_dir/clawscan-install-source.sh"
+select_clawscan_source "$@"
+source_commit=$selected_commit
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
 : "${GITHUB_PATH:?GITHUB_PATH is required}"
 : "${GITHUB_ENV:?GITHUB_ENV is required}"
@@ -15,7 +14,7 @@ git init --quiet "$source_dir"
 git -C "$source_dir" remote add origin https://github.com/openclaw/clawscan.git
 git -C "$source_dir" fetch --quiet --depth 1 origin "$source_commit"
 git -C "$source_dir" checkout --quiet --detach FETCH_HEAD
-[ "$(git -C "$source_dir" rev-parse HEAD)" = "$source_commit" ]
+verify_clawscan_source "$source_dir"
 export GOTOOLCHAIN=go1.27.3
 bin_dir="$RUNNER_TEMP/clawscan-bin"
 mkdir -p "$bin_dir"
@@ -30,7 +29,7 @@ go version -m "$bin_dir/clawscan"
 runtime_dir="$source_dir/docker/clawscan-runtime"
 judge_source="$runtime_dir/judges/clawscan_decisions_judge.py"
 judge_tests="$runtime_dir/tests/test_decisions_judge.py"
-if [ -e "$judge_source" ] || [ -L "$judge_source" ] || [ -e "$judge_tests" ] || [ -L "$judge_tests" ]; then
+if [ "$source_commit" = "$qualified_source_commit" ] || [ -e "$judge_source" ] || [ -L "$judge_source" ] || [ -e "$judge_tests" ] || [ -L "$judge_tests" ]; then
   for file in "$judge_source" "$judge_tests"; do
     [ -f "$file" ] && [ ! -L "$file" ] || {
       echo 'Decisions judge requires matching regular source and qualification tests' >&2; exit 1;

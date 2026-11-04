@@ -83,6 +83,7 @@ export function hasScannerExecution(value: unknown) {
     (scanner.durationMs as number) >= 0 &&
     Array.isArray(scanner.command) &&
     scanner.command.length > 0 &&
+    scanner.command[0] !== "scanner-result" &&
     scanner.command.every((arg) => typeof arg === "string" && arg.length > 0) &&
     Number.isSafeInteger(scanner.exitCode) &&
     (scanner.exitCode as number) >= 0 &&
@@ -155,24 +156,25 @@ export function validateAigMcpReport(value: unknown) {
     driver?.name !== "aig-mcp-scan" ||
     !Array.isArray(run.results) ||
     properties?.scanNote !== "complete" ||
-    !Array.isArray(run.invocations) ||
-    !run.invocations.length ||
-    run.invocations.some((entry) => {
-      const invocation = object(entry);
-      return (
-        !invocation ||
-        invocation.executionSuccessful !== true ||
-        Object.entries(invocation).some(
-          ([key, value]) => key.toLowerCase() === "executionsuccessful" && value !== true,
-        )
-      );
-    })
+    (run.invocations !== undefined &&
+      (!Array.isArray(run.invocations) ||
+        !run.invocations.length ||
+        run.invocations.some((entry) => {
+          const invocation = object(entry);
+          return (
+            !invocation ||
+            invocation.executionSuccessful !== true ||
+            Object.entries(invocation).some(
+              ([key, value]) => key.toLowerCase() === "executionsuccessful" && value !== true,
+            )
+          );
+        })))
   ) {
     throw new Error("ClawScan AIG MCP report lacked successful complete execution evidence");
   }
-  // Only native complete reports are accepted. No consumer-side guess about
-  // unknown coverage property names can replace upstream ranged-read and
-  // exhaustion qualification; the installer refuses unqualified runtime sources.
+  // AIG MCP 0.2.0 does not emit invocations. If supplied, validate them strictly.
+  // Native adapter success and the qualified image own provider/exhaustion and
+  // confined ranged-read checks; no property-name guess substitutes for them.
   return document;
 }
 export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: readonly string[]) {
@@ -181,6 +183,7 @@ export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: r
     run.profile !== "clawhub" ||
     run.status !== "completed" ||
     run.complete !== true ||
+    run.configSource !== "built-in" ||
     !validTime(run.startedAt) ||
     !validTime(run.completedAt) ||
     Date.parse(run.completedAt) < Date.parse(run.startedAt)
@@ -202,6 +205,8 @@ export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: r
       scanner.error !== "" ||
       scanner.exitCode !== 0 ||
       !hasScannerExecution(scanner) ||
+      (id === "aig-mcp" &&
+        (!Array.isArray(scanner.command) || scanner.command[0] !== "aig-mcp-scan")) ||
       !object(scanner.raw)
     ) {
       throw new Error("ClawScan scanner " + id + " did not complete with execution provenance");

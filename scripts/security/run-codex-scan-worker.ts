@@ -38,7 +38,12 @@ import {
   noClawScanExposure,
   unknownClawScanExposure,
 } from "./clawscan-exposure";
-import { usesWholePluginScan } from "./clawscan-plugin-runtime";
+import {
+  usesWholePluginScanForTarget,
+  qualifiedPluginCommand,
+  QUALIFIED_PLUGIN_IMAGE,
+  assertQualifiedPluginArtifact,
+} from "./clawscan-plugin-runtime";
 import {
   createClawScanProgressCollector,
   parseClawScanProgress,
@@ -2232,10 +2237,11 @@ export async function runClawScan(
   endorAnalysis?: EndorAnalysis,
   preparedSkillSpectorPath?: string,
 ) {
-  const command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
+  let command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
   const artifactPath = join(workspace, "clawscan-artifact.json");
   const target = await resolveClawScanTarget(workspace, job);
-  const wholePlugin = job.job.targetKind === "packageRelease" && (await usesWholePluginScan());
+  const wholePlugin = await usesWholePluginScanForTarget(job.job.targetKind, job.target.package);
+  if (wholePlugin) command = await qualifiedPluginCommand("CODEX_SECURITY_SCAN");
   const scannerSet = wholePlugin ? ["aig-mcp"] : requiredClawHubScanners(job.job.targetKind);
   if (scannerSet.includes("aig")) {
     assertAigFilePathsHaveNoCompiledPython(job.target.files?.map((file) => file.path) ?? []);
@@ -2266,7 +2272,9 @@ export async function runClawScan(
   }
   args.push("--output", artifactPath);
   const sandbox = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX?.trim();
-  if (sandbox) {
+  if (wholePlugin) {
+    args.push("--sandbox", "docker", "--sandbox-image", QUALIFIED_PLUGIN_IMAGE);
+  } else if (sandbox) {
     args.push("--sandbox", sandbox);
     const sandboxImage = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX_IMAGE?.trim();
     if (sandbox === "docker" && sandboxImage) args.push("--sandbox-image", sandboxImage);
@@ -2341,12 +2349,17 @@ export async function runClawScan(
   const artifact = await captureArtifact();
   if (!artifact) throw new Error("ClawScan did not emit a valid JSON artifact");
 
-  if (wholePlugin || Object.hasOwn(asRecord(artifact.scanners) ?? {}, "aig-mcp")) {
+  if (wholePlugin) assertQualifiedPluginArtifact(artifact);
+  else if (Object.hasOwn(asRecord(artifact.scanners) ?? {}, "aig-mcp")) {
     throw new Error(
-      "A.I.G MCP publication is unavailable until the corrected scanner runtime is qualified.",
+      "A.I.G MCP evidence requires the qualified source and immutable Docker runtime",
     );
   }
-  const mapped = validateClawScanArtifactForClawHubProfile(artifact, scannerSet, endorAnalysis);
+  const mapped = validateClawScanArtifactForClawHubProfile(
+    artifact,
+    scannerSet,
+    wholePlugin ? undefined : endorAnalysis,
+  );
   onDiagnostic({ mapping: mapped.mapping });
   return mapped;
 }
@@ -2364,7 +2377,7 @@ export async function resolveClawScanTarget(workspace: string, job: ClaimedJob) 
     job.job.targetKind === "packageRelease" && job.target.release?.artifactKind === "legacy-zip"
       ? "./artifact"
       : await resolveScanArtifactRoot(workspace, job);
-  if (job.job.targetKind === "packageRelease" && (await usesWholePluginScan())) return root;
+  if (await usesWholePluginScanForTarget(job.job.targetKind, job.target.package)) return root;
   const manifests = [
     "SKILL.md",
     "openclaw.plugin.json",
@@ -2525,7 +2538,8 @@ export async function processJob(
             },
           })
         : Promise.resolve(undefined),
-      job.job.targetKind === "packageRelease" && !(await usesWholePluginScan())
+      job.job.targetKind === "packageRelease" &&
+      !(await usesWholePluginScanForTarget(job.job.targetKind, job.target.package))
         ? prepareBundledSkillSpector(job, workspace, (next) => {
             Object.assign(clawscan, next);
           })

@@ -9,11 +9,16 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${CLAWSCAN_SOURCE_DIR:?Run install-clawscan.sh first}"
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
 : "${GITHUB_PATH:?GITHUB_PATH is required}"
-expected_commit=$(cat "$script_dir/clawscan-source-commit.txt")
-[ "$(git -C "$CLAWSCAN_SOURCE_DIR" rev-parse HEAD)" = "$expected_commit" ] || { echo "ClawScan source revision mismatch" >&2; exit 1; }
+[ "$#" -ge 1 ] && [ "$#" -le 2 ] || { echo 'Usage: install-clawscan-scanners.sh skillspector|aig|aig-mcp [reviewed-source-commit]' >&2; exit 1; }
+scanner=$1
+shift
+. "$script_dir/clawscan-install-source.sh"
+select_clawscan_source "$@"
+expected_commit=$selected_commit
+verify_clawscan_source "$CLAWSCAN_SOURCE_DIR"
 runtime_dir="$CLAWSCAN_SOURCE_DIR/docker/clawscan-runtime"
 bin_dir="$RUNNER_TEMP/clawscan-scanner-bin"
-case "${1:-}" in
+case "$scanner" in
   skillspector)
     pin_name=SKILLSPECTOR_REF
     repository=https://github.com/NVIDIA/skillspector.git
@@ -23,17 +28,26 @@ case "${1:-}" in
     repository=https://github.com/Tencent/AI-Infra-Guard.git
     ;;
   aig-mcp)
-    # Stock 0.2.0 and the initial upstream static-tools patch are NOT safe host
-    # integrations: mixed-case dispatch, ranged reads and inspection exhaustion
-    # need corrected upstream controls plus matching tests/dependency pins.
-    # Keep this explicit preparation path closed until that source is reviewed;
-    # never fall back to pip install aig-mcp-scan or the skill scanner.
-    echo 'aig-mcp installation blocked: corrected reviewed static-tools patch, qualification tests and dependency pins are required' >&2
-    exit 1
+    # No host installation or unpatched fallback. The immutable image was built
+    # with the source's exact static-tools patch and its 28 static/entry-network
+    # tests plus the stdlib judge qualification. Qualify CLI availability locally
+    # without granting network access or mounting the host/plugin under test.
+    [ "$expected_commit" = "$qualified_source_commit" ] || {
+      echo 'aig-mcp requires the exact qualified source and immutable runtime image' >&2; exit 1;
+    }
+    docker pull "$qualified_runtime_image"
+    image_digests=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$qualified_runtime_image")
+    printf '%s\n' "$image_digests" | LC_ALL=C grep -Fx -- "$qualified_runtime_image" >/dev/null || {
+      echo 'Qualified ClawScan runtime image digest mismatch' >&2; exit 1;
+    }
+    docker run --rm --pull never --network none --entrypoint /bin/sh "$qualified_runtime_image" -ec \
+      'aig-mcp-scan --help >/dev/null; clawscan-decisions-judge --help >/dev/null'
+    # This prepares a Docker sandbox image, not a host aig-mcp-scan command.
+    printf 'Qualified ClawScan aig-mcp runtime: %s\n' "$qualified_runtime_image"
+    exit 0
     ;;
   *) echo "Usage: install-clawscan-scanners.sh skillspector|aig|aig-mcp" >&2; exit 1 ;;
 esac
-scanner=$1
 source_commit=$(sed -n "s/^ARG $pin_name=//p" "$runtime_dir/Dockerfile")
 case "$source_commit" in
   *[!a-f0-9]*|'') echo 'Scanner requires a full reviewed source commit' >&2; exit 1 ;;

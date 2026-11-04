@@ -148,3 +148,13 @@ Latest broad validation:
 Source qualification/install integration of the paired corrected upstream and
 removal of MCP fences still require parent clearance and real qualification.
 The production scanner pin and activation settings remain unchanged.
+
+## Landed-pair qualification supersedes temporary fence (2026-11-04)
+
+The parent cleared consumer preparation against landed source 56d17aaa and its
+native both-architecture immutable runtime. See plugin-qualified-runtime.md for
+exact source/tree/digest, qualification evidence, preparation commands, worker
+source/binary/image checks, tests and remaining limits. The temporary blanket
+MCP installer/completion fence is replaced by that exact image-only route.
+Default production source pin, workflows and activation remain unchanged.
+This is not complete live-provider/corpus validation or rollout permission.

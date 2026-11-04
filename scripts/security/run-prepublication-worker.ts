@@ -26,6 +26,12 @@ import {
   noClawScanExposure,
   summarizeClawScanExposure,
 } from "./clawscan-exposure";
+import {
+  usesWholePluginScanForTarget,
+  qualifiedPluginCommand,
+  QUALIFIED_PLUGIN_IMAGE,
+  assertQualifiedPluginArtifact,
+} from "./clawscan-plugin-runtime";
 import { resolvePrepublicationScannerRuntime } from "./prepublicationScannerSource";
 import {
   type AigAnalysis,
@@ -485,6 +491,7 @@ function collectClawScanScannerFailures(
 function storedAnalysisFromClawScanArtifact(
   artifact: unknown,
   targetKind: ClaimedJob["job"]["targetKind"],
+  requiredScannerOverride?: string[],
 ): {
   analysis?: StoredLlmAnalysis;
   aigAnalysis?: AigAnalysis;
@@ -492,11 +499,12 @@ function storedAnalysisFromClawScanArtifact(
   error?: string;
 } {
   const record = asRecord(artifact);
-  if (record && isDecisionsRun(record)) {
+  if (record && (isDecisionsRun(record) || requiredScannerOverride)) {
     try {
       const mapped = validateClawScanArtifactForClawHubProfile(
         record,
-        targetKind === "packageRelease" ? ["aig-mcp"] : ["skillspector", "aig"],
+        requiredScannerOverride ??
+          (targetKind === "packageRelease" ? ["aig-mcp"] : ["skillspector", "aig"]),
       );
       return {
         analysis: mapped.llmAnalysis,
@@ -681,10 +689,13 @@ export async function runNativeClawScan(
   if (job.job.targetKind !== "packageRelease") {
     assertAigFilePathsHaveNoCompiledPython(job.target.files?.map((file) => file.path) ?? []);
   }
-  const command = clawScanCommand();
+  const wholePlugin = await usesWholePluginScanForTarget(job.job.targetKind, job.target.package);
+  const command = wholePlugin ? await qualifiedPluginCommand("PREPUBLICATION") : clawScanCommand();
   const args = [target, "--profile", "clawhub", "--output", artifactPath];
   const sandbox = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX?.trim();
-  if (sandbox) {
+  if (wholePlugin) {
+    args.push("--sandbox", "docker", "--sandbox-image", QUALIFIED_PLUGIN_IMAGE);
+  } else if (sandbox) {
     args.push("--sandbox", sandbox);
     const sandboxImage = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX_IMAGE?.trim();
     if (sandbox === "docker" && sandboxImage) args.push("--sandbox-image", sandboxImage);
@@ -761,19 +772,27 @@ export async function runNativeClawScan(
       };
     }
 
-    // #149 at d430dc4 has unresolved dispatch, ranged-read and exhaustion
-    // blockers. Projection compatibility is not publication authorization.
-    // Remove this fence only with the separately reviewed runtime integration.
-    if (Object.hasOwn(asRecord(asRecord(artifact)?.scanners) ?? {}, "aig-mcp")) {
-      return {
-        check: {
-          status: "failed",
-          summary:
-            "A.I.G MCP publication is unavailable until the corrected scanner runtime is qualified.",
-        },
-      };
+    if (wholePlugin || Object.hasOwn(asRecord(asRecord(artifact)?.scanners) ?? {}, "aig-mcp")) {
+      try {
+        if (!wholePlugin)
+          throw new Error(
+            "A.I.G MCP evidence requires the qualified source and immutable Docker runtime",
+          );
+        assertQualifiedPluginArtifact(asRecord(artifact)!);
+      } catch (error) {
+        return {
+          check: {
+            status: "failed",
+            summary: error instanceof Error ? error.message : "Unqualified A.I.G MCP runtime",
+          },
+        };
+      }
     }
-    const parsed = storedAnalysisFromClawScanArtifact(artifact, job.job.targetKind);
+    const parsed = storedAnalysisFromClawScanArtifact(
+      artifact,
+      job.job.targetKind,
+      wholePlugin ? ["aig-mcp"] : undefined,
+    );
     if (parsed.error || !parsed.analysis) {
       logFailureDiagnostic();
       return {

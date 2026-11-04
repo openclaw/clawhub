@@ -18,7 +18,12 @@ import { describe, expect, it } from "vitest";
 
 const run = promisify(execFile);
 const scripts = resolve("scripts/security");
-const pin = "a".repeat(40);
+const pin = "c3cfaf1515a47685786d72f031c714b1e5d9b34e";
+const candidate = "56d17aaa423cdb1ed87aeda970b9a2b30eed7dd8";
+const candidateTree = "d860e0022e5832b76abf7c7ab6c3a679fdda1f64";
+const runtimeTree = "ddfec1285eaf19beb3043e9e5ad043a0d274cb53";
+const image =
+  "ghcr.io/openclaw/clawscan-runtime@sha256:9c765a089a034451c428d563f0f09f4004c898ac14802470bb6a58fca7755960";
 
 async function installFixture() {
   const root = await mkdtemp(join(tmpdir(), "clawscan-runtime-install-"));
@@ -28,18 +33,23 @@ async function installFixture() {
   const runtime = join(fixture, "docker/clawscan-runtime");
   for (const path of [bin, scriptDir, join(runtime, "judges"), join(runtime, "tests")])
     await mkdir(path, { recursive: true });
-  for (const file of ["install-clawscan.sh", "install-clawscan-scanners.sh"])
+  for (const file of [
+    "install-clawscan.sh",
+    "install-clawscan-scanners.sh",
+    "clawscan-install-source.sh",
+  ])
     await copyFile(join(scripts, file), join(scriptDir, file));
   await writeFile(join(scriptDir, "clawscan-source-commit.txt"), pin + "\n");
   const fake = [
     "#!/bin/sh",
     'echo "$(basename "$0") $*" >> "$COMMAND_LOG"',
     'case "$(basename "$0")" in',
-    ' git) if [ "${3:-}" = rev-parse ]; then echo "$CLAWSCAN_PIN"; elif [ "${3:-}" = checkout ]; then cp -R "$REVIEWED_FIXTURE/." "$2/"; fi;;',
+    ' git) if [ "${3:-}" = rev-parse ]; then case "$4" in HEAD) echo "$CLAWSCAN_PIN";; HEAD^{tree}) echo "$SOURCE_TREE";; HEAD:docker/clawscan-runtime) echo "$RUNTIME_TREE";; esac; elif [ "${3:-}" = status ]; then printf "%s" "${SOURCE_STATUS:-}"; exit "${STATUS_FAILURE:-0}"; elif [ "${3:-}" = checkout ]; then cp -R "$REVIEWED_FIXTURE/." "$2/"; fi;;',
     ' go) if [ "${1:-}" = build ]; then printf "#!/bin/sh\nexit 0\n" > "$4"; chmod 0755 "$4"; fi;;',
+    ' docker) case "$1" in pull) exit "${PULL_FAILURE:-0}";; image) printf "%s\n" "${REPORTED_IMAGE:-$QUALIFIED_IMAGE}"; exit "${INSPECT_FAILURE:-0}";; run) exit "${CLI_FAILURE:-0}";; esac;;',
     "esac",
   ].join("\n");
-  for (const command of ["git", "go"]) {
+  for (const command of ["git", "go", "docker"]) {
     await writeFile(join(bin, command), fake);
     await chmod(join(bin, command), 0o755);
   }
@@ -47,6 +57,9 @@ async function installFixture() {
     PATH: bin + ":" + process.env.PATH,
     COMMAND_LOG: join(root, "commands.log"),
     CLAWSCAN_PIN: pin,
+    SOURCE_TREE: candidateTree,
+    RUNTIME_TREE: runtimeTree,
+    QUALIFIED_IMAGE: image,
     REVIEWED_FIXTURE: fixture,
     RUNNER_TEMP: root,
     GITHUB_PATH: join(root, "github-path"),
@@ -206,9 +219,7 @@ describe("optional source-qualified scanner runtime commands", () => {
         run("sh", [join(fixture.scriptDir, "install-clawscan-scanners.sh"), "aig-mcp"], {
           env: { ...fixture.env, CLAWSCAN_SOURCE_DIR: fixture.fixture },
         }),
-      ).rejects.toThrow(
-        /corrected reviewed static-tools patch, qualification tests and dependency pins/,
-      );
+      ).rejects.toThrow(/exact qualified source and immutable runtime image/);
       expect(await readFile(fixture.env.COMMAND_LOG, "utf8")).toBe(
         "git -C " + fixture.fixture + " rev-parse HEAD\n",
       );
@@ -217,4 +228,174 @@ describe("optional source-qualified scanner runtime commands", () => {
       await rm(fixture.root, { recursive: true, force: true });
     }
   });
+});
+
+describe("explicit qualified candidate installation", () => {
+  it("builds the explicit candidate and qualifies its matching stdlib judge without changing the default", async () => {
+    const fixture = await installFixture();
+    try {
+      await addJudge(fixture.runtime);
+      const result = await run("sh", [join(fixture.scriptDir, "install-clawscan.sh"), candidate], {
+        env: { ...fixture.env, CLAWSCAN_PIN: candidate },
+      });
+      expect(result.stdout).toContain("ClawScan source: " + candidate);
+      expect(await readFile(join(fixture.scriptDir, "clawscan-source-commit.txt"), "utf8")).toBe(
+        pin + "\n",
+      );
+      const commands = await readFile(fixture.env.COMMAND_LOG, "utf8");
+      expect(commands).toContain("fetch --quiet --depth 1 origin " + candidate);
+      expect(commands).toContain("rev-parse HEAD^{tree}");
+      expect(commands).toContain("rev-parse HEAD:docker/clawscan-runtime");
+      expect(commands).toContain("status --porcelain=v1 --untracked-files=all --ignored");
+      expect(await readFile(fixture.env.QUALIFICATION_LOG, "utf8")).toContain(
+        "clawscan_decisions_judge.py",
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    "",
+    "main",
+    "A".repeat(40),
+    "a".repeat(39),
+    "a".repeat(41),
+    "a".repeat(40),
+    candidate + "\nmain",
+  ])("rejects a malformed or unapproved explicit source before tools (%j)", async (source) => {
+    const fixture = await installFixture();
+    try {
+      for (const args of [
+        ["install-clawscan.sh", source],
+        ["install-clawscan-scanners.sh", "aig-mcp", source],
+      ]) {
+        await expect(
+          run("sh", [join(fixture.scriptDir, args[0]), ...args.slice(1)], {
+            env: { ...fixture.env, CLAWSCAN_SOURCE_DIR: fixture.fixture },
+          }),
+        ).rejects.toThrow();
+      }
+      await expect(readFile(fixture.env.COMMAND_LOG, "utf8")).rejects.toThrow();
+      await expect(readFile(fixture.env.GITHUB_PATH, "utf8")).rejects.toThrow();
+      await expect(readFile(fixture.env.GITHUB_ENV, "utf8")).rejects.toThrow();
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { CLAWSCAN_PIN: pin },
+    { SOURCE_TREE: "a".repeat(40) },
+    { RUNTIME_TREE: "a".repeat(40) },
+    { SOURCE_STATUS: " M docker/clawscan-runtime/Dockerfile\n" },
+    { SOURCE_STATUS: "?? unreviewed.py\n" },
+    { SOURCE_STATUS: "!! ignored.py\n" },
+    { STATUS_FAILURE: "72" },
+  ])("rejects candidate source drift before image or build tools (%j)", async (failure) => {
+    const fixture = await installFixture();
+    try {
+      for (const args of [
+        ["install-clawscan.sh", candidate],
+        ["install-clawscan-scanners.sh", "aig-mcp", candidate],
+      ]) {
+        await expect(
+          run("sh", [join(fixture.scriptDir, args[0]), ...args.slice(1)], {
+            env: {
+              ...fixture.env,
+              CLAWSCAN_PIN: candidate,
+              CLAWSCAN_SOURCE_DIR: fixture.fixture,
+              ...failure,
+            },
+          }),
+        ).rejects.toThrow();
+      }
+      expect(await readFile(fixture.env.COMMAND_LOG, "utf8")).not.toMatch(/docker |go /);
+      await expect(readFile(fixture.env.GITHUB_PATH, "utf8")).rejects.toThrow();
+      await expect(readFile(fixture.env.GITHUB_ENV, "utf8")).rejects.toThrow();
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("requires the candidate's judge pair even when both files are missing", async () => {
+    const fixture = await installFixture();
+    try {
+      await expect(
+        run("sh", [join(fixture.scriptDir, "install-clawscan.sh"), candidate], {
+          env: { ...fixture.env, CLAWSCAN_PIN: candidate },
+        }),
+      ).rejects.toThrow(/matching regular source and qualification tests/);
+      await expect(readFile(fixture.env.GITHUB_PATH, "utf8")).rejects.toThrow();
+      await expect(readFile(fixture.env.GITHUB_ENV, "utf8")).rejects.toThrow();
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("prepares only the approved digest and qualifies MCP/judge CLIs with no host install, mounts or network", async () => {
+    const fixture = await installFixture();
+    try {
+      const result = await run(
+        "sh",
+        [join(fixture.scriptDir, "install-clawscan-scanners.sh"), "aig-mcp", candidate],
+        {
+          env: { ...fixture.env, CLAWSCAN_PIN: candidate, CLAWSCAN_SOURCE_DIR: fixture.fixture },
+        },
+      );
+      expect(result.stdout).toContain("Qualified ClawScan aig-mcp runtime: " + image);
+      const commands = await readFile(fixture.env.COMMAND_LOG, "utf8");
+      expect(commands).toContain("docker pull " + image + "\n");
+      expect(commands).toContain(
+        "docker image inspect --format {{range .RepoDigests}}{{println .}}{{end}} " + image + "\n",
+      );
+      expect(commands).toContain(
+        "docker run --rm --pull never --network none --entrypoint /bin/sh " +
+          image +
+          " -ec aig-mcp-scan --help >/dev/null; clawscan-decisions-judge --help >/dev/null\n",
+      );
+      expect(commands).not.toMatch(/pip|uv |fetch |--mount|--volume/);
+      await expect(readFile(fixture.env.GITHUB_PATH, "utf8")).rejects.toThrow();
+      await expect(readFile(fixture.env.GITHUB_ENV, "utf8")).rejects.toThrow();
+      await expect(readdir(join(fixture.root, "clawscan-scanner-bin"))).rejects.toThrow();
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { PULL_FAILURE: "71" },
+    { INSPECT_FAILURE: "72" },
+    { REPORTED_IMAGE: "ghcr.io/openclaw/clawscan-runtime:latest" },
+    { REPORTED_IMAGE: image + "-unexpected" },
+    { CLI_FAILURE: "73" },
+  ])(
+    "fails closed without exposing a host command or successful qualification (%j)",
+    async (failure) => {
+      const fixture = await installFixture();
+      try {
+        await expect(
+          run(
+            "sh",
+            [join(fixture.scriptDir, "install-clawscan-scanners.sh"), "aig-mcp", candidate],
+            {
+              env: {
+                ...fixture.env,
+                CLAWSCAN_PIN: candidate,
+                CLAWSCAN_SOURCE_DIR: fixture.fixture,
+                ...failure,
+              },
+            },
+          ),
+        ).rejects.toThrow();
+        const commands = await readFile(fixture.env.COMMAND_LOG, "utf8");
+        if (!("CLI_FAILURE" in failure)) expect(commands).not.toContain("docker run ");
+        expect(commands).not.toMatch(/pip|uv |fetch /);
+        await expect(readFile(fixture.env.GITHUB_PATH, "utf8")).rejects.toThrow();
+        await expect(readFile(fixture.env.GITHUB_ENV, "utf8")).rejects.toThrow();
+      } finally {
+        await rm(fixture.root, { recursive: true, force: true });
+      }
+    },
+  );
 });
