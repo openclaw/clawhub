@@ -548,6 +548,33 @@ function makeCleanPackageInspectorResult() {
   };
 }
 
+function makeModerationDigestQueryMock() {
+  return vi.fn((table: string) => {
+    if (table === "packageSearchDigest") {
+      return {
+        withIndex: vi.fn(() => ({
+          unique: vi.fn().mockResolvedValue({
+            _id: "packageSearchDigest:demo",
+            packageId: "packages:demo",
+          }),
+        })),
+      };
+    }
+    if (
+      table === "packageCapabilitySearchDigest" ||
+      table === "packageTopicSearchDigest" ||
+      table === "packagePluginCategorySearchDigest"
+    ) {
+      return {
+        withIndex: vi.fn(() => ({
+          collect: vi.fn().mockResolvedValue([]),
+        })),
+      };
+    }
+    throw new Error(`Unexpected table ${table}`);
+  });
+}
+
 function makeEmptyPackageInspectorWarningsQuery() {
   return {
     withIndex: vi.fn(() => ({
@@ -18007,30 +18034,7 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn((table: string) => {
-            if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                  }),
-                })),
-              };
-            }
-            if (
-              table === "packageCapabilitySearchDigest" ||
-              table === "packageTopicSearchDigest" ||
-              table === "packagePluginCategorySearchDigest"
-            ) {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([]),
-                })),
-              };
-            }
-            throw new Error(`Unexpected table ${table}`);
-          }),
+          query: makeModerationDigestQueryMock(),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -18100,30 +18104,7 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn((table: string) => {
-            if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                  }),
-                })),
-              };
-            }
-            if (
-              table === "packageCapabilitySearchDigest" ||
-              table === "packageTopicSearchDigest" ||
-              table === "packagePluginCategorySearchDigest"
-            ) {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([]),
-                })),
-              };
-            }
-            throw new Error(`Unexpected table ${table}`);
-          }),
+          query: makeModerationDigestQueryMock(),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -18832,30 +18813,7 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn((table: string) => {
-            if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                  }),
-                })),
-              };
-            }
-            if (
-              table === "packageCapabilitySearchDigest" ||
-              table === "packageTopicSearchDigest" ||
-              table === "packagePluginCategorySearchDigest"
-            ) {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([]),
-                })),
-              };
-            }
-            throw new Error(`Unexpected table ${table}`);
-          }),
+          query: makeModerationDigestQueryMock(),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -18930,30 +18888,7 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn((table: string) => {
-            if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                  }),
-                })),
-              };
-            }
-            if (
-              table === "packageCapabilitySearchDigest" ||
-              table === "packageTopicSearchDigest" ||
-              table === "packagePluginCategorySearchDigest"
-            ) {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([]),
-                })),
-              };
-            }
-            throw new Error(`Unexpected table ${table}`);
-          }),
+          query: makeModerationDigestQueryMock(),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
