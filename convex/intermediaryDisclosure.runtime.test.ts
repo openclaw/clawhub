@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 /* @vitest-environment edge-runtime */
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
@@ -125,7 +125,7 @@ describe("legacy disclosure data and worker completion", () => {
           .first();
         const pkg = await ctx.db
           .query("packages")
-          .withIndex("by_name", (q) => q.eq("name", "local-intermediary-required"))
+          .withIndex("by_name", (q) => q.eq("normalizedName", "local-intermediary-required"))
           .first();
         const llmAnalysis = hasAnalysis
           ? { status: "clean", verdict: "benign", checkedAt: 1 }
@@ -170,6 +170,7 @@ describe("legacy disclosure data and worker completion", () => {
       vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-fixture");
       vi.stubEnv("CLAWHUB_INTERMEDIARY_DISCLOSURE_ENABLED", "1");
       const t = await fixture();
+      await mkdir(join(process.cwd(), ".artifacts"), { recursive: true });
       const dir = await mkdtemp(join(process.cwd(), ".artifacts/pr4045-extraction-"));
       try {
         await writeFile(join(dir, "SKILL.md"), "Gmail access requires a Bridge account.");
@@ -207,39 +208,41 @@ describe("legacy disclosure data and worker completion", () => {
         });
         expect(analysis.intermediaryAnalysis.requiresIntermediary).toBe(failed ? null : true);
         expect(analysis).toMatchObject(security);
-        const { jobId, versionId } = await t.run(async (ctx) => {
-          const skill = await ctx.db
-            .query("skills")
-            .withIndex("by_slug", (q) => q.eq("slug", "intermediary-required"))
-            .first();
-          const pkg = await ctx.db
-            .query("packages")
-            .withIndex("by_name", (q) => q.eq("name", "local-intermediary-required"))
-            .first();
-          const versionId =
-            targetKind === "skillVersion" ? skill!.latestVersionId! : pkg!.latestReleaseId!;
-          const jobId = await ctx.db.insert("securityScanJobs", {
-            targetKind,
-            ...(targetKind === "skillVersion"
-              ? { skillVersionId: skill!.latestVersionId! }
-              : { packageReleaseId: pkg!.latestReleaseId! }),
-            status: "running",
-            source: "manual",
-            priority: 1,
-            hasMaliciousSignal: false,
-            nextRunAt: 0,
-            attempts: 1,
-            leaseToken: "lease-fixture",
-            workerId: "disclosure-fixture",
-            leaseExpiresAt: Date.now() + 60000,
-            createdAt: 1,
-            updatedAt: 1,
-          });
-          return { jobId, versionId };
-        });
+        const { jobId: completedJobId, versionId: completedVersionId } = await t.run(
+          async (ctx) => {
+            const skill = await ctx.db
+              .query("skills")
+              .withIndex("by_slug", (q) => q.eq("slug", "intermediary-required"))
+              .first();
+            const pkg = await ctx.db
+              .query("packages")
+              .withIndex("by_name", (q) => q.eq("normalizedName", "local-intermediary-required"))
+              .first();
+            const versionId =
+              targetKind === "skillVersion" ? skill!.latestVersionId! : pkg!.latestReleaseId!;
+            const jobId = await ctx.db.insert("securityScanJobs", {
+              targetKind,
+              ...(targetKind === "skillVersion"
+                ? { skillVersionId: skill!.latestVersionId! }
+                : { packageReleaseId: pkg!.latestReleaseId! }),
+              status: "running",
+              source: "manual",
+              priority: 1,
+              hasMaliciousSignal: false,
+              nextRunAt: 0,
+              attempts: 1,
+              leaseToken: "lease-fixture",
+              workerId: "disclosure-fixture",
+              leaseExpiresAt: Date.now() + 60000,
+              createdAt: 1,
+              updatedAt: 1,
+            });
+            return { jobId, versionId };
+          },
+        );
         await t.action(api.securityScan.completeCodexScanJob, {
           token: "worker-fixture",
-          jobId,
+          jobId: completedJobId,
           leaseToken: "lease-fixture",
           llmAnalysis: analysis,
           ...(targetKind === "skillVersion"
@@ -253,7 +256,9 @@ describe("legacy disclosure data and worker completion", () => {
               }
             : {}),
         });
-        const stored = await t.run(async (ctx) => (await ctx.db.get(versionId))!.llmAnalysis);
+        const stored = await t.run(
+          async (ctx) => (await ctx.db.get(completedVersionId))!.llmAnalysis,
+        );
         expect(stored).toEqual(analysis);
         const path =
           targetKind === "skillVersion"

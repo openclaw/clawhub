@@ -63,11 +63,11 @@ import {
   isPublicSkillDoc,
   readGlobalPublicSkillsCount,
 } from "./lib/globalStats";
-import { intermediaryAnalysisValidator } from "./lib/intermediaryAnalysis";
 import {
   decodeIndexCursor as decodePublicListCursor,
   encodeIndexCursor as encodeIndexKey,
 } from "./lib/indexCursor";
+import { intermediaryAnalysisValidator } from "./lib/intermediaryAnalysis";
 import {
   TRENDING_LEADERBOARD_KIND,
   TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
