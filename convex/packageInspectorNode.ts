@@ -7,30 +7,12 @@ import rootPackageJson from "../package.json";
 import { LEGACY_AUTHOR_REMEDIATION_SUMMARIES } from "../packages/clawhub/src/packageInspectorRemediation";
 import { internalAction } from "./_generated/server";
 import { prepareOpenClawInspectorTarget } from "./lib/openClawInspectorTarget";
+import {
+  packageInspectorIssueInputValidator as findingValidator,
+  type PackageInspectorFinding as InspectorFinding,
+  type PackageInspectorAuthorRemediation as InspectorAuthorRemediation,
+} from "./lib/packageInspectorFinding";
 import { pluginApiRetirement } from "./lib/pluginApiRetirements";
-
-type InspectorFinding = {
-  id?: string;
-  code: string;
-  severity?: string;
-  level?: string;
-  issueClass?: string;
-  compatStatus?: string;
-  deprecated?: boolean;
-  deprecatedApi?: string;
-  replacement?: string;
-  removeAfter?: string;
-  message: string;
-  evidence?: string[];
-  authorRemediation?: InspectorAuthorRemediation;
-  fixture?: string;
-  decision?: string;
-};
-
-type InspectorAuthorRemediation = {
-  summary: string;
-  docsUrl?: string;
-};
 
 type InspectorReport = {
   status?: string;
@@ -59,29 +41,6 @@ const publishFileValidator = v.object({
   storageId: v.id("_storage"),
   sha256: v.string(),
   contentType: v.optional(v.string()),
-});
-
-const findingValidator = v.object({
-  id: v.optional(v.string()),
-  code: v.string(),
-  severity: v.optional(v.string()),
-  level: v.optional(v.string()),
-  issueClass: v.optional(v.string()),
-  compatStatus: v.optional(v.string()),
-  deprecated: v.optional(v.boolean()),
-  deprecatedApi: v.optional(v.string()),
-  replacement: v.optional(v.string()),
-  removeAfter: v.optional(v.string()),
-  message: v.string(),
-  evidence: v.optional(v.array(v.string())),
-  authorRemediation: v.optional(
-    v.object({
-      summary: v.string(),
-      docsUrl: v.optional(v.string()),
-    }),
-  ),
-  fixture: v.optional(v.string()),
-  decision: v.optional(v.string()),
 });
 
 const inspectorMetadataValidator = v.object({

@@ -105,6 +105,11 @@ import {
 } from "./lib/packageCatalogRead";
 import { verifyPublishFileStorageMetadata } from "./lib/packageFileVerification";
 import { resolvePackageIcon } from "./lib/packageIcons";
+import {
+  packageInspectorIssueInputValidator,
+  type PackageInspectorFinding,
+  type PackageInspectorAuthorRemediation,
+} from "./lib/packageInspectorFinding";
 import { decodePublicPageCursor, encodePublicPageCursor } from "./lib/packagePageCursor";
 import {
   assertManualRecoveryFinalization,
@@ -482,52 +487,6 @@ const internalRefs = internal as unknown as {
   vt: {
     scanPackageReleaseWithVirusTotal: unknown;
   };
-};
-
-const packageInspectorIssueInputValidator = v.object({
-  id: v.optional(v.string()),
-  code: v.string(),
-  severity: v.optional(v.string()),
-  level: v.optional(v.string()),
-  issueClass: v.optional(v.string()),
-  compatStatus: v.optional(v.string()),
-  deprecated: v.optional(v.boolean()),
-  deprecatedApi: v.optional(v.string()),
-  replacement: v.optional(v.string()),
-  removeAfter: v.optional(v.string()),
-  message: v.string(),
-  evidence: v.optional(v.array(v.string())),
-  authorRemediation: v.optional(
-    v.object({
-      summary: v.string(),
-      docsUrl: v.optional(v.string()),
-    }),
-  ),
-  fixture: v.optional(v.string()),
-  decision: v.optional(v.string()),
-});
-
-type PackageInspectorAuthorRemediation = {
-  summary: string;
-  docsUrl?: string;
-};
-
-type PackageInspectorFinding = {
-  id?: string;
-  code: string;
-  severity?: string;
-  level?: string;
-  issueClass?: string;
-  compatStatus?: string;
-  deprecated?: boolean;
-  deprecatedApi?: string;
-  replacement?: string;
-  removeAfter?: string;
-  message: string;
-  evidence?: string[];
-  authorRemediation?: PackageInspectorAuthorRemediation;
-  fixture?: string;
-  decision?: string;
 };
 
 type PackageInspectorPublishResult = {
