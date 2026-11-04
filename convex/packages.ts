@@ -140,7 +140,10 @@ import {
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
-import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
+import {
+  comparePackageReleaseOrder,
+  resolvePackageReleaseFamily,
+} from "./lib/packageReleaseFamily";
 import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
 import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
 import {
@@ -5881,31 +5884,13 @@ export const hardDeleteForAdminInternal = internalMutation({
   },
 });
 
-function comparePackageRestoreLatestCandidates(
-  family: Doc<"packages">["family"],
-  a: Doc<"packageReleases">,
-  b: Doc<"packageReleases">,
-) {
-  if (family === "bundle-plugin") {
-    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
-    return a._id.localeCompare(b._id);
-  }
-  const aSemver = semver.valid(a.version);
-  const bSemver = semver.valid(b.version);
-  if (aSemver && bSemver) return semver.compare(aSemver, bSemver);
-  if (aSemver) return 1;
-  if (bSemver) return -1;
-  if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
-  return a._id.localeCompare(b._id);
-}
-
 export function getPreferredRestoredPackageRelease(
   family: Doc<"packages">["family"],
   releases: Doc<"packageReleases">[],
 ) {
   return releases.reduce<Doc<"packageReleases"> | null>((best, release) => {
     if (!isPublishedPackageRelease(release)) return best;
-    if (!best || comparePackageRestoreLatestCandidates(family, best, release) < 0) return release;
+    if (!best || comparePackageReleaseOrder(family, best, release) < 0) return release;
     return best;
   }, null);
 }

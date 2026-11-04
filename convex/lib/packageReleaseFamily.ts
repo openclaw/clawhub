@@ -1,3 +1,4 @@
+import semver from "semver";
 import type { Doc } from "../_generated/dataModel";
 
 /** A plugin release's admitted family survives a guarded parent-family repair. */
@@ -11,4 +12,24 @@ export function resolvePackageReleaseFamily(
     return release?.pluginFamily ?? family;
   }
   return family;
+}
+
+type ComparablePackageRelease = Pick<Doc<"packageReleases">, "_id" | "createdAt" | "version">;
+
+export function comparePackageReleaseOrder(
+  family: Doc<"packages">["family"],
+  a: ComparablePackageRelease,
+  b: ComparablePackageRelease,
+) {
+  if (family === "bundle-plugin") {
+    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+    return a._id.localeCompare(b._id);
+  }
+  const aSemver = semver.valid(a.version);
+  const bSemver = semver.valid(b.version);
+  if (aSemver && bSemver) return semver.compare(aSemver, bSemver);
+  if (aSemver) return 1;
+  if (bSemver) return -1;
+  if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+  return a._id.localeCompare(b._id);
 }
