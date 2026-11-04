@@ -47,6 +47,12 @@ async function seedLargeScannedPackageReleases(t: ReturnType<typeof convexTest>,
         verification: { tier: "structural", scope: "artifact-only", scanStatus: "clean" },
         vtAnalysis: { status: "clean", checkedAt: 1 },
         llmAnalysis: { status: "clean", checkedAt: 1 },
+        endorAnalysis: {
+          status: "completed",
+          checkedAt: 1,
+          reachableFunctionCount: 0,
+          findings: [],
+        },
         staticScan: {
           status: "clean",
           reasonCodes: [],

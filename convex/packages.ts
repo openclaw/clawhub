@@ -183,6 +183,11 @@ import {
   listCuratedPluginCategoryPage,
   listPluginOverviewCategory,
 } from "./lib/pluginDiscoveryQueries";
+import {
+  assertPluginScanEvidence,
+  isExplicitPluginScanSource,
+  isSingleScanPlugin,
+} from "./lib/pluginScanRouting";
 import { toPublicPublisher } from "./lib/public";
 import { assertOperationalPackageRetryFinalization } from "./lib/publishAttemptOperationalRecovery";
 import {
@@ -8053,8 +8058,12 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
       const pkg = await ctx.db.get(release.packageId);
       if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
 
-      const needsLlm = !release.llmAnalysis || release.llmAnalysis.status === "error";
-      if (!needsLlm) continue;
+      // Automatic plugin backfill supplements reports, never replaces a historical
+      // ClawScan verdict (including a missing/error verdict).
+      const needsReport = isSingleScanPlugin(pkg.family)
+        ? !release.endorAnalysis || release.endorAnalysis.status === "failed"
+        : !release.llmAnalysis || release.llmAnalysis.status === "error";
+      if (!needsReport) continue;
 
       results.push({
         releaseId: release._id,
@@ -11617,7 +11626,8 @@ export const insertReleaseInternal = internalMutation({
     // Retired static publish scan. Still accepted so stored insert args from
     // publish attempts staged before its removal can finalize; never persisted.
     staticScan: v.optional(v.any()),
-    llmAnalysis: v.optional(v.any()),
+    llmAnalysis: v.optional(llmAnalysisValidator),
+    aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     allowExistingRelease: v.optional(v.boolean()),
     files: v.array(
@@ -11985,6 +11995,7 @@ export const insertReleaseInternal = internalMutation({
       sourceRepo: args.sourceRepo,
       verification: releaseVerification,
       llmAnalysis: args.llmAnalysis,
+      aigAnalysis: args.aigAnalysis,
       skillSpectorAnalysis: args.skillSpectorAnalysis,
       source: args.source,
       createdBy: args.actorUserId,
@@ -12327,7 +12338,10 @@ type ReleaseLlmAnalysis = NonNullable<Doc<"packageReleases">["llmAnalysis"]>;
 async function applyReleaseSecurityAnalysis(
   ctx: Pick<MutationCtx, "db"> & Partial<Pick<MutationCtx, "scheduler">>,
   release: Doc<"packageReleases">,
-  results: Pick<Doc<"packageReleases">, "endorAnalysis" | "skillSpectorAnalysis"> & {
+  results: Pick<
+    Doc<"packageReleases">,
+    "endorAnalysis" | "skillSpectorAnalysis" | "aigAnalysis"
+  > & {
     llmAnalysis: ReleaseLlmAnalysis;
   },
 ) {
@@ -12347,7 +12361,8 @@ export const completeReleaseSecurityScanInternal = internalMutation({
     jobId: v.id("securityScanJobs"),
     leaseToken: v.string(),
     runId: v.optional(v.string()),
-    llmAnalysis: llmAnalysisValidator,
+    llmAnalysis: v.optional(llmAnalysisValidator),
+    aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     endorAnalysis: v.optional(endorAnalysisValidator),
   },
@@ -12368,13 +12383,33 @@ export const completeReleaseSecurityScanInternal = internalMutation({
       ? endorAnalysisSchema.parse(args.endorAnalysis)
       : undefined;
 
-    await applyReleaseSecurityAnalysis(ctx, release, {
-      llmAnalysis: args.llmAnalysis,
-      ...(args.skillSpectorAnalysis !== undefined
-        ? { skillSpectorAnalysis: args.skillSpectorAnalysis }
-        : {}),
-      ...(endorAnalysis ? { endorAnalysis } : {}),
-    });
+    const pkg = await ctx.db.get(release.packageId);
+    if (job.scanMode === "endor-report-only") {
+      if (!isSingleScanPlugin(pkg?.family) || !endorAnalysis) {
+        throw new ConvexError("Endor report-only completion requires a plugin report");
+      }
+      if (args.llmAnalysis || args.aigAnalysis || args.skillSpectorAnalysis) {
+        throw new ConvexError("Endor report-only jobs cannot replace ClawScan evidence");
+      }
+      // No verification, moderation, tags, files or admitted scanner evidence changes.
+      await ctx.db.patch(release._id, { endorAnalysis });
+    } else {
+      if (!args.llmAnalysis) throw new ConvexError("ClawScan analysis is required");
+      if (isSingleScanPlugin(pkg?.family)) {
+        if (!isExplicitPluginScanSource(job.source)) {
+          throw new ConvexError("Automatic plugin ClawScan jobs are retired");
+        }
+        assertPluginScanEvidence(args.llmAnalysis, args.aigAnalysis);
+      }
+      await applyReleaseSecurityAnalysis(ctx, release, {
+        llmAnalysis: args.llmAnalysis,
+        ...(args.aigAnalysis ? { aigAnalysis: args.aigAnalysis } : {}),
+        ...(args.skillSpectorAnalysis !== undefined
+          ? { skillSpectorAnalysis: args.skillSpectorAnalysis }
+          : {}),
+        ...(endorAnalysis ? { endorAnalysis } : {}),
+      });
+    }
 
     const now = Date.now();
     await ctx.db.patch(args.jobId, {

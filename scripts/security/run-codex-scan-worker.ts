@@ -31,12 +31,14 @@ import {
   type BundledSkillSpectorFailureContext,
 } from "./bundled-skillspector-diagnostic";
 import { writeClawHubEndorProfile } from "./clawHubEndorProfile";
+import { isDecisionsRun, validateDecisionsRun, validateAigMcpReport } from "./clawscan-decisions";
 import {
   clawScanExposure,
   type ClawScanExposure,
   noClawScanExposure,
   unknownClawScanExposure,
 } from "./clawscan-exposure";
+import { usesWholePluginScan } from "./clawscan-plugin-runtime";
 import {
   createClawScanProgressCollector,
   parseClawScanProgress,
@@ -71,6 +73,7 @@ export type ClaimedJob = {
     targetKind: "skillVersion" | "packageRelease" | "skillScanRequest";
     source: string;
     hasMaliciousSignal: boolean;
+    scanMode?: "endor-report-only";
     attempts?: number;
   };
   target: Record<string, unknown> & {
@@ -98,7 +101,7 @@ export type StoredLlmAnalysis = {
   dimensions?: LlmEvalDimension[];
   guidance?: string;
   findings?: string;
-  // Configured judge identity from execution metadata, not provider-returned identity.
+  // Legacy configured identity; Decisions uses its validated provider-returned model.
   model?: string;
   checkedAt: number;
 };
@@ -2059,6 +2062,53 @@ export function validateClawScanArtifactForClawHubProfile(
   scannerSet = REQUIRED_CLAWHUB_SCANNERS,
   endorAnalysis?: EndorAnalysis,
 ) {
+  if (isDecisionsRun(artifact)) {
+    // Requirements come from the claim, never from returned scanner IDs.
+    const required = scannerSet.includes("aig-mcp")
+      ? ["aig-mcp"]
+      : scannerSet.filter((id) => id !== "clawscan-static");
+    const llmAnalysis = validateDecisionsRun(artifact, required);
+    const scanners = asRecord(artifact.scanners)!;
+    const aig = asRecord(scanners[required.includes("aig-mcp") ? "aig-mcp" : "aig"]);
+    const raw = required.includes("aig-mcp") ? validateAigMcpReport(aig?.raw) : asRecord(aig?.raw);
+    // Reuse SARIF display projection without changing the retained raw report.
+    const normalized =
+      raw && required.includes("aig-mcp")
+        ? {
+            ...raw,
+            runs: (raw.runs as unknown[]).map((value) => {
+              const run = asRecord(value)!;
+              const tool = asRecord(run.tool)!;
+              return {
+                ...run,
+                tool: { ...tool, driver: { ...asRecord(tool.driver), name: "aig-skill-scan" } },
+              };
+            }),
+          }
+        : raw;
+    const aigAnalysis = normalized
+      ? normalizeAigAnalysis(JSON.stringify(normalized), llmAnalysis.checkedAt)
+      : undefined;
+    if (!aigAnalysis || aigAnalysis.status === "error")
+      throw new Error("ClawScan AIG report was unusable");
+    return {
+      llmAnalysis,
+      aigAnalysis,
+      skillSpectorAnalysis: scanners.skillspector
+        ? normalizeSkillSpectorAnalysis(
+            JSON.stringify(asRecord(scanners.skillspector)?.raw),
+            llmAnalysis.checkedAt,
+          )
+        : undefined,
+      mapping: clawScanDiagnosticMapping(artifact, required),
+      scannerReportsJson: JSON.stringify({
+        checkedAt: llmAnalysis.checkedAt,
+        aig: raw,
+        skillspector: asRecord(scanners.skillspector)?.raw ?? null,
+      }),
+    };
+  }
+
   const schemaVersion = readString(artifact, ["schemaVersion"]);
   if (schemaVersion !== "clawscan-run-v1") {
     throw new Error(`ClawScan artifact schemaVersion was ${schemaVersion ?? "missing"}`);
@@ -2185,12 +2235,13 @@ export async function runClawScan(
   const command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
   const artifactPath = join(workspace, "clawscan-artifact.json");
   const target = await resolveClawScanTarget(workspace, job);
-  const scannerSet = requiredClawHubScanners(job.job.targetKind);
+  const wholePlugin = job.job.targetKind === "packageRelease" && (await usesWholePluginScan());
+  const scannerSet = wholePlugin ? ["aig-mcp"] : requiredClawHubScanners(job.job.targetKind);
   if (scannerSet.includes("aig")) {
     assertAigFilePathsHaveNoCompiledPython(job.target.files?.map((file) => file.path) ?? []);
   }
   const args = [target, "--profile", "clawhub"];
-  if (endorAnalysis) {
+  if (endorAnalysis && !wholePlugin) {
     const configPath = await writeClawHubEndorProfile(workspace, schemaPath);
     const endorResultPath = join(workspace, "endor-analysis.json");
     const contextPath = join(workspace, "clawhub-endor-context.json");
@@ -2206,7 +2257,7 @@ export async function runClawScan(
       `endor=${endorResultPath}`,
     );
   }
-  if (job.job.targetKind === "packageRelease") {
+  if (job.job.targetKind === "packageRelease" && !wholePlugin) {
     // SkillSpector only understands skills. ClawHub owns the plugin manifest
     // boundary, so never let ClawScan fall back to scanning the whole package.
     const skillSpectorResultPath =
@@ -2290,6 +2341,11 @@ export async function runClawScan(
   const artifact = await captureArtifact();
   if (!artifact) throw new Error("ClawScan did not emit a valid JSON artifact");
 
+  if (wholePlugin || Object.hasOwn(asRecord(artifact.scanners) ?? {}, "aig-mcp")) {
+    throw new Error(
+      "A.I.G MCP publication is unavailable until the corrected scanner runtime is qualified.",
+    );
+  }
   const mapped = validateClawScanArtifactForClawHubProfile(artifact, scannerSet, endorAnalysis);
   onDiagnostic({ mapping: mapped.mapping });
   return mapped;
@@ -2308,6 +2364,7 @@ export async function resolveClawScanTarget(workspace: string, job: ClaimedJob) 
     job.job.targetKind === "packageRelease" && job.target.release?.artifactKind === "legacy-zip"
       ? "./artifact"
       : await resolveScanArtifactRoot(workspace, job);
+  if (job.job.targetKind === "packageRelease" && (await usesWholePluginScan())) return root;
   const manifests = [
     "SKILL.md",
     "openclaw.plugin.json",
@@ -2415,6 +2472,41 @@ export async function processJob(
   let status: JobDiagnosticInput["status"] = "failed";
   try {
     await writeArtifactWorkspace(job, workspace);
+    if (job.job.scanMode === "endor-report-only") {
+      if (job.job.targetKind !== "packageRelease")
+        throw new Error("Endor report-only requires a package release");
+      const plugin = asRecord(job.target.package) ?? {};
+      const enabled = isEndorPluginScanEnabled({
+        trustedOpenClawPlugin: job.target.trustedOpenClawPlugin === true,
+        name: readString(plugin, ["name"]),
+        family: readString(plugin, ["family"]),
+      });
+      const report = enabled
+        ? await runEndorPluginScan({
+            workspace,
+            packageRelease: job.target,
+            onDiagnostic: (next) => Object.assign(endor, next),
+          })
+        : {
+            status: "skipped" as const,
+            checkedAt: Date.now(),
+            reason: "Endor report-only scanning is not enabled for this plugin.",
+          };
+      await client.action(api.securityScan.completeCodexScanJob, {
+        token,
+        jobId: job.job._id as Id<"securityScanJobs">,
+        leaseToken: job.job.leaseToken,
+        endorAnalysis: report,
+        runId: process.env.GITHUB_RUN_ID,
+      });
+      status = "completed";
+      onHealth?.({
+        completed: true,
+        durationMs: Date.now() - startedAt,
+        ...scanHealthClassification({ clawscan, endor, status: "completed" }),
+      });
+      return { completed: true, hardFailed: false, retryableFailed: false };
+    }
     const plugin = asRecord(job.target.package) ?? {};
     const shouldRunEndor =
       job.job.targetKind === "packageRelease" &&
@@ -2433,7 +2525,7 @@ export async function processJob(
             },
           })
         : Promise.resolve(undefined),
-      job.job.targetKind === "packageRelease"
+      job.job.targetKind === "packageRelease" && !(await usesWholePluginScan())
         ? prepareBundledSkillSpector(job, workspace, (next) => {
             Object.assign(clawscan, next);
           })

@@ -2011,6 +2011,8 @@ const packageSdkUsage = defineTable({
   .index("by_packageId_and_key", ["packageId", "key"]);
 
 const securityScanJobs = defineTable({
+  // Absent on historical jobs. Only explicit plugin rescans may run ClawScan.
+  scanMode: v.optional(v.literal("endor-report-only")),
   targetKind: securityScanTargetKindValidator,
   skillVersionId: v.optional(v.id("skillVersions")),
   packageReleaseId: v.optional(v.id("packageReleases")),

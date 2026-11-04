@@ -24,6 +24,7 @@ export type ReleaseLike = {
   verification?: Doc<"packageReleases">["verification"];
   extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
   sha256hash?: string;
+  aigAnalysis?: Doc<"packageReleases">["aigAnalysis"];
   skillSpectorAnalysis?: Doc<"packageReleases">["skillSpectorAnalysis"];
   endorAnalysis?: Doc<"packageReleases">["endorAnalysis"];
   llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
@@ -126,6 +127,7 @@ export function toPackageVersionResponse(release: ReleaseLike, packageName: stri
     verification,
     artifact: toReleaseArtifact(release, packageName),
     sha256hash: release.sha256hash ?? null,
+    ...(release.aigAnalysis ? { aigAnalysis: release.aigAnalysis } : {}),
     skillSpectorAnalysis: release.skillSpectorAnalysis ?? null,
     ...(release.endorAnalysis ? { endorAnalysis: release.endorAnalysis } : {}),
     llmAnalysis: release.llmAnalysis ?? null,

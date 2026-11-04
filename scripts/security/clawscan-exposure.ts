@@ -1,4 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
+import {
+  decisionsJudgeAccounting,
+  hasScannerExecution,
+  isDecisionsRun,
+} from "./clawscan-decisions";
 
 export type ClawScanExposure = {
   scanExecution: "started" | "not_started" | "unknown";
@@ -64,6 +69,27 @@ export function clawScanExposure(artifact?: unknown): ClawScanExposure {
     !Number.isFinite(Date.parse(run.completedAt))
   )
     return unknown;
+  if (
+    isDecisionsRun(run) ||
+    record(run.judge)?.command?.toString().includes("clawscan-decisions-judge")
+  ) {
+    const accounting = decisionsJudgeAccounting(run);
+    const scanners = record(run.scanners);
+    const completed =
+      run.status === "completed" &&
+      run.complete === true &&
+      typeof run.startedAt === "string" &&
+      Number.isFinite(Date.parse(run.startedAt)) &&
+      Date.parse(run.completedAt as string) >= Date.parse(run.startedAt);
+    return {
+      scanExecution: "started",
+      eligibleScanAttempt:
+        completed && Boolean(scanners && Object.values(scanners).some(hasScannerExecution)),
+      judgeInvocations: accounting?.judgeInvocations ?? null,
+      judgeOperationalFailures: accounting?.judgeOperationalFailures ?? null,
+      recoveredReceiptRetries: accounting?.recoveredReceiptRetries ?? null,
+    };
+  }
   const staticStatus = record(record(run.scanners)?.["clawscan-static"])?.status;
   if (staticStatus === "completed" || staticStatus === "failed") unknown.eligibleScanAttempt = true;
   const judge = record(run.judge);

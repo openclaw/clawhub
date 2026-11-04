@@ -19,9 +19,29 @@ git -C "$source_dir" checkout --quiet --detach FETCH_HEAD
 export GOTOOLCHAIN=go1.27.3
 bin_dir="$RUNNER_TEMP/clawscan-bin"
 mkdir -p "$bin_dir"
+# A repeated installation must not retain a judge from a different source.
+rm -f "$bin_dir/clawscan-decisions-judge"
 (cd "$source_dir" && go build -trimpath -o "$bin_dir/clawscan" ./cmd/clawscan)
 "$bin_dir/clawscan" --version
 go version -m "$bin_dir/clawscan"
+# Older reviewed sources have no Decisions judge. When either half is present,
+# require and qualify the source's matching stdlib command/tests before exposing
+# it. Do not fetch a second judge version or install a provider SDK.
+runtime_dir="$source_dir/docker/clawscan-runtime"
+judge_source="$runtime_dir/judges/clawscan_decisions_judge.py"
+judge_tests="$runtime_dir/tests/test_decisions_judge.py"
+if [ -e "$judge_source" ] || [ -L "$judge_source" ] || [ -e "$judge_tests" ] || [ -L "$judge_tests" ]; then
+  for file in "$judge_source" "$judge_tests"; do
+    [ -f "$file" ] && [ ! -L "$file" ] || {
+      echo 'Decisions judge requires matching regular source and qualification tests' >&2; exit 1;
+    }
+  done
+  # -I avoids ambient Python modules; -B preserves the retained source checkout.
+  CLAWSCAN_DECISIONS_JUDGE="$judge_source" python3 -I -B "$judge_tests"
+  python3 -I -B "$judge_source" --help >/dev/null
+  cp "$judge_source" "$bin_dir/clawscan-decisions-judge"
+  chmod 0755 "$bin_dir/clawscan-decisions-judge"
+fi
 printf "ClawScan source: %s\n" "$source_commit"
 printf "%s\n" "$bin_dir" >> "$GITHUB_PATH"
 printf "CLAWSCAN_SOURCE_DIR=%s\n" "$source_dir" >> "$GITHUB_ENV"

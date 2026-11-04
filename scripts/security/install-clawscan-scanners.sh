@@ -22,7 +22,16 @@ case "${1:-}" in
     pin_name=AIG_SKILL_SCAN_REF
     repository=https://github.com/Tencent/AI-Infra-Guard.git
     ;;
-  *) echo "Usage: install-clawscan-scanners.sh skillspector|aig" >&2; exit 1 ;;
+  aig-mcp)
+    # Stock 0.2.0 and the initial upstream static-tools patch are NOT safe host
+    # integrations: mixed-case dispatch, ranged reads and inspection exhaustion
+    # need corrected upstream controls plus matching tests/dependency pins.
+    # Keep this explicit preparation path closed until that source is reviewed;
+    # never fall back to pip install aig-mcp-scan or the skill scanner.
+    echo 'aig-mcp installation blocked: corrected reviewed static-tools patch, qualification tests and dependency pins are required' >&2
+    exit 1
+    ;;
+  *) echo "Usage: install-clawscan-scanners.sh skillspector|aig|aig-mcp" >&2; exit 1 ;;
 esac
 scanner=$1
 source_commit=$(sed -n "s/^ARG $pin_name=//p" "$runtime_dir/Dockerfile")

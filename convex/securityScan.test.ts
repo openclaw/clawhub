@@ -5700,7 +5700,7 @@ describe("securityScan", () => {
     expect(runMutation).toHaveBeenCalledTimes(2);
   });
 
-  it("commits the package Endor summary without persisting package AIG payloads", async () => {
+  it("commits explicit package scanner evidence and the Endor summary together", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const runQuery = vi.fn(async () => ({
       job: {
@@ -5727,12 +5727,7 @@ describe("securityScan", () => {
           reachableFunctionCount: 3,
           findings: [{ severity: "high", summary: "Reachable finding" }],
         },
-        aigAnalysis: {
-          status: "error",
-          issueCount: 99,
-          findings: [],
-          checkedAt: Number.POSITIVE_INFINITY,
-        },
+        aigAnalysis: cleanAigAnalysis,
       },
     );
 
@@ -5750,7 +5745,7 @@ describe("securityScan", () => {
       },
     });
     expect(releasePatches).not.toContainEqual(expect.objectContaining({ aigAnalysis: undefined }));
-    expect(releasePatches.some((patch) => "aigAnalysis" in patch)).toBe(false);
+    expect(releasePatches[0]).toMatchObject({ aigAnalysis: cleanAigAnalysis });
   });
 
   it("persists an error ClawScan result when worker retries are exhausted", async () => {

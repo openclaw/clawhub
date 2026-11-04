@@ -18,6 +18,7 @@ import {
   redactWorkerPublicErrorMessage,
   redactWorkerPublicText,
 } from "../lib/workerRedaction";
+import { isDecisionsRun } from "./clawscan-decisions";
 import { projectSkillSpectorReport } from "./clawscan-diagnostic-skillspector";
 import {
   clawScanExposure,
@@ -491,6 +492,23 @@ function storedAnalysisFromClawScanArtifact(
   error?: string;
 } {
   const record = asRecord(artifact);
+  if (record && isDecisionsRun(record)) {
+    try {
+      const mapped = validateClawScanArtifactForClawHubProfile(
+        record,
+        targetKind === "packageRelease" ? ["aig-mcp"] : ["skillspector", "aig"],
+      );
+      return {
+        analysis: mapped.llmAnalysis,
+        aigAnalysis: mapped.aigAnalysis,
+        skillSpectorAnalysis: mapped.skillSpectorAnalysis,
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : "ClawScan Decisions artifact was invalid",
+      };
+    }
+  }
   const judge = asRecord(record?.judge);
   const judgeStatus = readString(judge, ["status"]);
   const judgeError = readString(judge, ["error"]);
@@ -743,6 +761,18 @@ export async function runNativeClawScan(
       };
     }
 
+    // #149 at d430dc4 has unresolved dispatch, ranged-read and exhaustion
+    // blockers. Projection compatibility is not publication authorization.
+    // Remove this fence only with the separately reviewed runtime integration.
+    if (Object.hasOwn(asRecord(asRecord(artifact)?.scanners) ?? {}, "aig-mcp")) {
+      return {
+        check: {
+          status: "failed",
+          summary:
+            "A.I.G MCP publication is unavailable until the corrected scanner runtime is qualified.",
+        },
+      };
+    }
     const parsed = storedAnalysisFromClawScanArtifact(artifact, job.job.targetKind);
     if (parsed.error || !parsed.analysis) {
       logFailureDiagnostic();

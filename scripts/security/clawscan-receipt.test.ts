@@ -114,8 +114,8 @@ describe("versioned ClawScan receipt consumer", () => {
     };
     Object.assign(artifact.scanners.skillspector, { raw });
     const mapped = validateClawScanArtifactForClawHubProfile(artifact);
-    expect(mapped.skillSpectorAnalysis.status).toBe("suspicious");
-    expect(mapped.skillSpectorAnalysis.recommendation).toBe("CAUTION");
+    expect(mapped.skillSpectorAnalysis?.status).toBe("suspicious");
+    expect(mapped.skillSpectorAnalysis?.recommendation).toBe("CAUTION");
     expect(JSON.parse(mapped.scannerReportsJson).skillspector).toEqual(raw);
     expect(mapped.llmAnalysis.verdict).toBe("suspicious");
   });
@@ -232,7 +232,7 @@ describe("versioned ClawScan receipt consumer", () => {
         .skillspector,
     ).toEqual(raw);
     expect(
-      validateClawScanArtifactForClawHubProfile(artifact).skillSpectorAnalysis.inspectionStatus,
+      validateClawScanArtifactForClawHubProfile(artifact).skillSpectorAnalysis?.inspectionStatus,
     ).toBe("partial");
     raw.bundled_reports[1]!.report = {
       execution_successful: false,

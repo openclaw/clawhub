@@ -7,6 +7,7 @@ import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { manualPackageRecovery } from "./lib/packagePublishRecovery";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
+import { assertPluginScanEvidence } from "./lib/pluginScanRouting";
 import { assertScannerSource } from "./lib/scannerSource";
 import {
   aigAnalysisValidator,
@@ -15,6 +16,7 @@ import {
 import { isPublishedSkillVersion } from "./lib/skillFileAccess";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
+import { llmAnalysisValidator } from "./schema";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
@@ -59,26 +61,7 @@ const workerCheckResultValidator = v.object({
   redactedFindings: v.optional(v.array(v.string())),
 });
 
-const workerLlmAnalysisValidator = v.object({
-  status: v.string(),
-  verdict: v.optional(v.string()),
-  confidence: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  dimensions: v.optional(
-    v.array(
-      v.object({
-        name: v.string(),
-        label: v.string(),
-        rating: v.string(),
-        detail: v.string(),
-      }),
-    ),
-  ),
-  guidance: v.optional(v.string()),
-  findings: v.optional(v.string()),
-  model: v.optional(v.string()),
-  checkedAt: v.number(),
-});
+const workerLlmAnalysisValidator = llmAnalysisValidator;
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -806,6 +789,14 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
       return { attemptId: attempt._id, kind: attempt.kind, status: "blocked" as const };
     }
 
+    if (attempt.kind === "package" && args.clawscan.status !== "failed") {
+      const pkg = attempt.packageId ? await ctx.db.get(attempt.packageId) : null;
+      const family = pkg?.family ?? asRecord(attempt.packageInsertArgs).family;
+      if (family === "code-plugin" || family === "bundle-plugin") {
+        assertPluginScanEvidence(args.clawscanAnalysis, args.aigAnalysis, args.clawscan.status);
+      }
+    }
+
     if (args.clawscan.status === "blocked") {
       if (attempt.kind === "skill" && attempt.skillVersionId) {
         await ctx.db.patch(attempt.skillVersionId, {
@@ -1475,8 +1466,8 @@ export const recordPackagePublishAttemptFinalizedInternal = internalMutation({
       throw new ConvexError("Publish attempt public result does not match.");
     }
 
-    // Keep the immediate package enqueue in this transaction, including its job
-    // identity/deduplication logic, rather than introducing a new async boundary.
+    // Automatic plugin followup is Endor-only. The exact prepublication ClawScan
+    // evidence remains the release audit/detail result; explicit rescans are separate.
     await ctx.runMutation(internal.securityScan.enqueuePackageReleaseScanInternal, {
       releaseId: release._id,
       source: "publish",

@@ -269,10 +269,7 @@ describe.each(["skill", "package"] as const)("%s pre-publication checks fail clo
             summary: "Inspected source with residual uncertainty.",
             checkedAt,
           },
-          aigAnalysis:
-            kind === "skill"
-              ? { status: "clean", issueCount: 0, findings: [], checkedAt }
-              : undefined,
+          aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt },
           skillSpectorAnalysis,
         }),
       ).resolves.toMatchObject({ status: "finalized" });
@@ -367,6 +364,7 @@ describe.each(["skill", "package"] as const)("%s pre-publication checks fail clo
       f.complete(claimId, {
         trufflehog: { status: "clean" },
         clawscan: { status: "blocked", summary: "Malicious credential exfiltration." },
+        aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
         skillSpectorAnalysis,
         clawscanAnalysis: {
           status: "malicious",
@@ -404,4 +402,42 @@ describe.each(["skill", "package"] as const)("%s pre-publication checks fail clo
     expect((await f.target())?.publicationStatus).toBe("pending");
     await f.expectNotPublic();
   });
+});
+
+it("requires canonical plugin precheck evidence and retains that exact object after publication", async () => {
+  vi.useFakeTimers();
+  const f = await stagedFixture("package");
+  const { claimId } = await f.claim();
+  const before = await f.target();
+  const base = {
+    trufflehog: { status: "clean" as const },
+    clawscan: { status: "clean" as const },
+    aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: 12 },
+  };
+  await expect(f.complete(claimId, base)).rejects.toThrow("completed ClawScan and A.I.G evidence");
+  expect(await f.target()).toEqual(before);
+  expect((await f.attempt())?.status).toBe("pending_checks");
+  const submitted = {
+    status: "clean",
+    verdict: "benign",
+    checkedAt: 12,
+    summary: "Publication decision, not a second review",
+    guidance: "Exact guidance",
+    findings: "Exact findings",
+    model: "fixture-judge",
+    dimensions: [{ name: "intent", label: "Intent", rating: "pass", detail: "Exact evidence" }],
+    agenticRiskFindings: [],
+    riskSummary: {
+      abnormal_behavior_control: { status: "none" as const, summary: "Exact control summary" },
+      permission_boundary: { status: "note" as const, summary: "Exact permission summary" },
+      sensitive_data_protection: { status: "concern" as const, summary: "Exact data summary" },
+    },
+  };
+  await f.complete(claimId, { ...base, clawscanAnalysis: submitted });
+  expect((await f.target())?.llmAnalysis).toEqual(submitted);
+  const response = await f.t.fetch("/api/v1/packages/" + PACKAGE_NAME + "/versions/1.0.0");
+  const version = await response.json();
+  expect(version.version.llmAnalysis).toEqual(submitted);
+  const jobs = await f.t.run((ctx) => ctx.db.query("securityScanJobs").collect());
+  expect(jobs).toMatchObject([{ targetKind: "packageRelease", scanMode: "endor-report-only" }]);
 });

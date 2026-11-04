@@ -640,6 +640,8 @@ it("terminalizes full-action finalization after publisher membership is lost", a
     attemptId,
     claimId: "scanner",
     artifactFingerprint: "c".repeat(64),
+    clawscanAnalysis: { status: "clean", verdict: "benign", checkedAt: Date.now() },
+    aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
     trufflehog: { status: "clean" },
     clawscan: { status: "clean" },
   });
@@ -667,6 +669,12 @@ it.each(["trufflehog", "clawscan"] as const)(
       attemptId,
       claimId: "scanner",
       artifactFingerprint: "c".repeat(64),
+      clawscanAnalysis: {
+        status: scanner === "clawscan" ? "malicious" : "clean",
+        verdict: scanner === "clawscan" ? "malicious" : "benign",
+        checkedAt: Date.now(),
+      },
+      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
       trufflehog: { status: scanner === "trufflehog" ? "blocked" : "clean" },
       clawscan: { status: scanner === "clawscan" ? "blocked" : "clean" },
     });
@@ -702,6 +710,8 @@ it("finalizes a second successor through the complete action and replays its res
     attemptId,
     claimId: "scanner",
     artifactFingerprint: "c".repeat(64),
+    clawscanAnalysis: { status: "clean", verdict: "benign", checkedAt: Date.now() },
+    aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
     trufflehog: { status: "clean" },
     clawscan: { status: "clean" },
   });
@@ -904,6 +914,8 @@ it.each(["none", "membership", "token", "archive-digest"] as const)(
       attemptId,
       claimId: "fresh-scanner",
       artifactFingerprint: "c".repeat(64),
+      clawscanAnalysis: { status: "clean", verdict: "benign", checkedAt: Date.now() },
+      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
       trufflehog: { status: "clean", summary: "Fresh secret scan" },
       clawscan: { status: "clean", summary: "Fresh policy scan" },
     });
@@ -1294,6 +1306,8 @@ it.each(["none", "membership", "token"] as const)(
       attemptId: successorId,
       claimId: "successor-scan",
       artifactFingerprint: original.attempt.artifactFingerprint,
+      clawscanAnalysis: { status: "clean", verdict: "benign", checkedAt: Date.now() },
+      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
       trufflehog: { status: "clean" },
       clawscan: { status: "clean" },
     });

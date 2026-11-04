@@ -19212,7 +19212,7 @@ describe("package scan backfill", () => {
     ]);
   });
 
-  it("only backfills releases missing a usable ClawScan result", async () => {
+  it("backfills plugin Endor reports without requiring a new ClawScan verdict", async () => {
     const result = await getPackageReleaseScanBackfillBatchInternalHandler(
       {
         db: {
@@ -19264,6 +19264,7 @@ describe("package scan backfill", () => {
     );
 
     expect(result.releases).toEqual([
+      { releaseId: "packageReleases:missing-retired-scanners", packageId: "packages:demo" },
       { releaseId: "packageReleases:missing-clawscan", packageId: "packages:demo" },
       { releaseId: "packageReleases:errored-clawscan", packageId: "packages:demo" },
     ]);
@@ -19285,6 +19286,12 @@ describe("package scan backfill", () => {
                     {
                       _id: "packageReleases:npm-missing-artifact-hash",
                       _creationTime: 10,
+                      endorAnalysis: {
+                        status: "completed",
+                        checkedAt: 10,
+                        reachableFunctionCount: 0,
+                        findings: [],
+                      },
                       packageId: "packages:demo",
                       artifactKind: "npm-pack",
                       sha256hash: "legacy-zip-hash",
