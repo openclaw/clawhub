@@ -120,7 +120,6 @@ const PROTECTED_SKILL_SLUG_AFFIXES = [
   "official",
   "verified",
   "staff",
-  "admin",
   "moderator",
 ] as const;
 
