@@ -160,6 +160,12 @@ function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
   });
 }
 
+// makeCodePluginPackageJson declares ./dist/index.js; publish validation requires it.
+async function writeDeclaredDistEntry(folder: string) {
+  await mkdir(join(folder, "dist"), { recursive: true });
+  await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+}
+
 async function createCodePluginFixture(workdir: string, folderName: string, packageName: string) {
   const folder = join(workdir, folderName);
   await mkdir(join(folder, "dist"), { recursive: true });
@@ -3146,6 +3152,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("manual-token");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -3207,6 +3214,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequest.mockRejectedValueOnce(
@@ -3261,6 +3269,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequest.mockRejectedValueOnce(
@@ -3315,6 +3324,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -3835,6 +3845,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "broken.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       httpMocks.apiRequestForm.mockRejectedValueOnce(new Error("Registry rejected upload"));
 
@@ -3854,7 +3865,7 @@ describe("package commands", () => {
     }
   });
 
-  it("fails CLI publish on server Plugin Inspector hard errors", async () => {
+  it("fails CLI publish when the registry rejects the release", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "broken-plugin");
@@ -3875,9 +3886,7 @@ describe("package commands", () => {
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
       httpMocks.apiRequestForm.mockRejectedValueOnce(
-        new Error(
-          "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
-        ),
+        new Error("Published package inventory does not match the minted authorization"),
       );
 
       await expect(
@@ -3885,10 +3894,10 @@ describe("package commands", () => {
           sourceRepo: "openclaw/broken-plugin",
           sourceCommit: "deadbeef",
         }),
-      ).rejects.toThrow("Plugin Inspector blocked publish");
+      ).rejects.toThrow("Published package inventory does not match the minted authorization");
 
       expect(uiMocks.spinner.fail).toHaveBeenCalledWith(
-        "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
+        "Published package inventory does not match the minted authorization",
       );
       expect(uiMocks.spinner.succeed).not.toHaveBeenCalled();
     } finally {
@@ -4043,6 +4052,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       runGit(folder, ["init", "-b", "main"]);
       runGit(folder, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
@@ -4113,6 +4123,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin", configSchema: { type: "object" } }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       runGit(workdir, ["init", "-b", "main"]);
       runGit(workdir, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);

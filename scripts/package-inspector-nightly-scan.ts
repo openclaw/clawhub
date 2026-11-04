@@ -5,6 +5,7 @@ import { mkdir, readFile, readdir, rm, rmdir, stat, writeFile } from "node:fs/pr
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { classifyPackageInspectorFailure } from "../convex/lib/packageInspectorOutcome.ts";
 import {
   failedSdkUsageReport,
   normalizeSdkUsageReport,
@@ -640,6 +641,8 @@ async function inspectPackageItem(
           artifactSha256: item.artifactSha256,
           notifyOwners: false,
           inspectionFailed: true,
+          // A tool failure or timeout is monitoring data, never a plugin finding.
+          failure: classifyPackageInspectorFailure(error, "bulk scan").failure,
           findings: [],
           sdkUsage,
         });

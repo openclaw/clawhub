@@ -1,9 +1,69 @@
 # Plugin Inspector operational failures
 
+## Plugin Inspector is advisory
+
+Plugin Inspector never fails or blocks a publish. Over the 30 days before this
+rule, the publish gate blocked 145 plugin publishes and only 4 were plugin
+defects (declared entrypoints missing from the upload); the other 141 were the
+tool failing: 512 MiB Node action OOMs, timeouts, or OpenClaw target
+preparation errors. Those were reported to publishers as plugin breakage.
+
+- Package validation owns the one real check. `validateOpenClawExternalCodePluginPackageContents`
+  (clawhub-schema) rejects a code plugin whose `openclaw.extensions`,
+  `openclaw.runtimeExtensions`, `openclaw.setupEntry`, or
+  `openclaw.runtimeSetupEntry` entries are missing from the uploaded files. It
+  mirrors OpenClaw's `validatePackageExtensionEntriesForInstall` for installed
+  packages (no TypeScript source fallback): a declared runtime entry must exist;
+  otherwise a TypeScript entry needs one of `listBuiltRuntimeEntryCandidates`,
+  and a JavaScript entry must exist itself. Entries that resolve outside the
+  package are rejected. The CLI runs the same function before upload, so the
+  author sees the error locally. Undeclared entrypoints stay out of scope.
+- Publish-time Inspector results carry an outcome: `clean`, `findings`,
+  `tool_failure`, or `timeout`. Failures carry `{ stage, reason, message }`
+  with reason `out_of_memory`, `target_unavailable`, `timeout`, or `error`.
+  A tool failure never becomes a finding, an email, or a publish error; the
+  Node action no longer fabricates a P0 `plugin-inspector-error` breakage.
+- The publishing action races the Inspector action against
+  `PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS` (120 s). The deadline lives in the
+  caller because Inspector's heaviest work is synchronous TypeScript analysis
+  that would starve an in-action timer, and because an OOM kills the Node
+  action outright; the caller sees a rejected `runAction` and records
+  `tool_failure` with reason `out_of_memory`. A timed-out action may still run
+  to completion; its result is discarded.
+- Real findings, breakages included, are returned in `inspectorFindings`,
+  staged with the attempt, and stored at finalization with `scanSource:
+  "publish"`. Publish-time findings never email owners: owner email stays with
+  reviewed notification runs of the bulk scan.
+- Outcomes are recorded on `packageInspectorScanStates` (`outcome`, `failure`,
+  `scanSource`). A publish-time failure that never resolved its target uses
+  `targetOpenClawVersion: "unresolved"`, which matches no real target. Rows
+  written before outcomes existed have no `outcome` and are completed scans;
+  a pre-outcome bulk-scan failure therefore still reads as a completed scan
+  until the next scan of that identity rewrites it.
+- A failed rescan never replaces a completed verdict for the same release,
+  Inspector version, and target: the row keeps its `outcome`, `completedAt`,
+  and findings and records only the latest `failure`. A later completed scan
+  clears `failure`.
+- A failed or timed-out scan state never counts as covering a release: the
+  bulk scan claim does not skip it, and the plugin validation report takes its
+  verdict and nightly finding tuple from the latest scan that actually
+  inspected the release. A release with only failed scans reports
+  `status: "skipped"` with `skipReason` `inspector-timeout` or
+  `inspector-tool-failure`, never `error`.
+- The bulk scan reports its own failures with the same classification so a
+  timeout is distinguishable from other tool failures.
+
+Running Inspector inside the publish request at all is transitional. The next
+step moves it to monitoring after the release is accepted: the existing bulk
+scan workflow, dispatched per accepted release plus the nightly sweep.
+
+## Workspace and logging
+
 Publish-time inspection owns one disposable workspace containing submitted
 files and reports. Every owned operation finishes before recursive cleanup.
-Cleanup never converts a failure into a pass or replaces the original findings:
-its error is a separate blocking finding. Stage logs contain package identity
+Cleanup never converts a failure into a pass or replaces the original findings.
+A cleanup error is logged as an operational problem and never becomes a
+finding. Stage logs contain package identity
 and a fixed stage name, with Convex's action request id providing correlation.
 They must not log credentials, file contents, or scratch paths.
 
