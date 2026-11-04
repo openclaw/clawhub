@@ -137,48 +137,52 @@ function aggregateEvents(events: Doc<"skillStatEvents">[]): AggregatedDeltas {
   };
 
   for (const event of events) {
-    switch (event.kind) {
-      case "download":
-        result.downloads += 1;
-        result.downloadEvents.push(event.occurredAt);
-        break;
-      case "star":
-        // Star counts are updated synchronously from `stars` mutations now.
-        // Historical queued star events are marked processed without changing stats.
-        break;
-      case "unstar":
-        // See `star` above.
-        break;
-      case "comment":
-      case "uncomment":
-        // Skill comments are retired. Keep old rows schema-valid and mark
-        // them processed without changing historical `stats.comments`.
-        break;
-      case "install_new":
-        // New user installing for the first time: count toward both lifetime and current
-        result.installsAllTime += 1;
-        result.installsCurrent += 1;
-        result.installNewEvents.push(event.occurredAt);
-        break;
-      case "install_reactivate":
-        // User re-added skill after removing: only affects current count
-        result.installsCurrent += 1;
-        break;
-      case "install_deactivate":
-        // User removed skill from all projects: only affects current count
-        result.installsCurrent -= 1;
-        break;
-      case "install_clear":
-        // User cleared telemetry: uses custom delta values (typically negative)
-        if (event.delta) {
-          result.installsAllTime += event.delta.allTime;
-          result.installsCurrent += event.delta.current;
-        }
-        break;
-    }
+    applyStatEventDelta(result, event);
   }
 
   return result;
+}
+
+function applyStatEventDelta(result: AggregatedDeltas, event: Doc<"skillStatEvents">) {
+  switch (event.kind) {
+    case "download":
+      result.downloads += 1;
+      result.downloadEvents.push(event.occurredAt);
+      break;
+    case "star":
+      // Star counts are updated synchronously from `stars` mutations now.
+      // Historical queued star events are marked processed without changing stats.
+      break;
+    case "unstar":
+      // See `star` above.
+      break;
+    case "comment":
+    case "uncomment":
+      // Skill comments are retired. Keep old rows schema-valid and mark
+      // them processed without changing historical `stats.comments`.
+      break;
+    case "install_new":
+      // New user installing for the first time: count toward both lifetime and current
+      result.installsAllTime += 1;
+      result.installsCurrent += 1;
+      result.installNewEvents.push(event.occurredAt);
+      break;
+    case "install_reactivate":
+      // User re-added skill after removing: only affects current count
+      result.installsCurrent += 1;
+      break;
+    case "install_deactivate":
+      // User removed skill from all projects: only affects current count
+      result.installsCurrent -= 1;
+      break;
+    case "install_clear":
+      // User cleared telemetry: uses custom delta values (typically negative)
+      if (event.delta) {
+        result.installsAllTime += event.delta.allTime;
+        result.installsCurrent += event.delta.current;
+      }
+      break;
+  }
 }
 
 const DOC_SYNC_LEASE_KEY = "skill_doc_stat_sync";
@@ -1265,17 +1269,7 @@ export const processSkillStatEventsAction = internalAction({
     console.log(`[STAT-AGG] Starting aggregation, cursor=${cursor ?? "none"}`);
 
     // Aggregated deltas per skill
-    const aggregatedBySkill = new Map<
-      Id<"skills">,
-      {
-        downloads: number;
-        stars: number;
-        installsAllTime: number;
-        installsCurrent: number;
-        downloadEvents: number[];
-        installNewEvents: number[];
-      }
-    >();
+    const aggregatedBySkill = new Map<Id<"skills">, AggregatedDeltas>();
 
     let maxCreationTime: number | undefined = cursor;
     let exhausted = false;
@@ -1312,39 +1306,7 @@ export const processSkillStatEventsAction = internalAction({
         }
 
         // Apply event to aggregated deltas
-        switch (event.kind) {
-          case "download":
-            skillDelta.downloads += 1;
-            skillDelta.downloadEvents.push(event.occurredAt);
-            break;
-          case "star":
-            // Star counts are updated synchronously from `stars` mutations now.
-            break;
-          case "unstar":
-            // Historical queued unstar events should not double-apply.
-            break;
-          case "comment":
-          case "uncomment":
-            // Skill comments are retired; old rows only advance the cursor.
-            break;
-          case "install_new":
-            skillDelta.installsAllTime += 1;
-            skillDelta.installsCurrent += 1;
-            skillDelta.installNewEvents.push(event.occurredAt);
-            break;
-          case "install_reactivate":
-            skillDelta.installsCurrent += 1;
-            break;
-          case "install_deactivate":
-            skillDelta.installsCurrent -= 1;
-            break;
-          case "install_clear":
-            if (event.delta) {
-              skillDelta.installsAllTime += event.delta.allTime;
-              skillDelta.installsCurrent += event.delta.current;
-            }
-            break;
-        }
+        applyStatEventDelta(skillDelta, event);
 
         // Track highest _creationTime seen
         if (maxCreationTime === undefined || event._creationTime > maxCreationTime) {
