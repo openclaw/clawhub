@@ -147,6 +147,7 @@ import {
   type PublicSkillVersionParsed,
 } from "./lib/skillPageRead";
 import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
+import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 import {
   readSkillPublicationProgress,
   readSkillVersionPublicationProgress,
@@ -11951,29 +11952,7 @@ export const insertVersion = internalMutation({
       metadata: v.optional(v.any()),
       clawdis: v.optional(v.any()),
       license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-      presentation: v.optional(
-        v.object({
-          displayName: v.string(),
-          displayNameSource: v.optional(
-            v.union(
-              v.literal("publisher"),
-              v.literal("openai"),
-              v.literal("skill"),
-              v.literal("slug"),
-            ),
-          ),
-          summary: v.optional(v.string()),
-          summarySource: v.optional(
-            v.union(
-              v.literal("publisher"),
-              v.literal("openai"),
-              v.literal("skill"),
-              v.literal("generated"),
-            ),
-          ),
-          icon: v.optional(v.string()),
-        }),
-      ),
+      presentation: v.optional(skillPresentationValidator),
     }),
     summary: v.optional(v.string()),
     qualityAssessment: v.optional(

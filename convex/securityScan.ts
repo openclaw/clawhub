@@ -22,6 +22,7 @@ import {
   staticScanValidator,
 } from "./lib/securityAnalysisValidators";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
+import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 import {
   getSkillBySlugForPublisher,
   resolveLegacySkillBySlugOrAlias,
@@ -1556,29 +1557,7 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
     force: v.optional(v.boolean()),
     parsed: v.object({
       frontmatter: v.record(v.string(), v.any()),
-      presentation: v.optional(
-        v.object({
-          displayName: v.string(),
-          displayNameSource: v.optional(
-            v.union(
-              v.literal("publisher"),
-              v.literal("openai"),
-              v.literal("skill"),
-              v.literal("slug"),
-            ),
-          ),
-          summary: v.optional(v.string()),
-          summarySource: v.optional(
-            v.union(
-              v.literal("publisher"),
-              v.literal("openai"),
-              v.literal("skill"),
-              v.literal("generated"),
-            ),
-          ),
-          icon: v.optional(v.string()),
-        }),
-      ),
+      presentation: v.optional(skillPresentationValidator),
     }),
     staticScan: staticScanValidator,
   },

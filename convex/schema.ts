@@ -28,6 +28,7 @@ import {
   staticScanValidator,
   vtAnalysisValidator,
 } from "./lib/securityAnalysisValidators";
+import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 
 export { skillSpectorAnalysisValidator } from "./lib/securityAnalysisValidators";
 
@@ -1140,29 +1141,7 @@ const skillVersions = defineTable({
     clawdis: v.optional(v.any()),
     moltbot: v.optional(v.any()),
     license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-    presentation: v.optional(
-      v.object({
-        displayName: v.string(),
-        displayNameSource: v.optional(
-          v.union(
-            v.literal("publisher"),
-            v.literal("openai"),
-            v.literal("skill"),
-            v.literal("slug"),
-          ),
-        ),
-        summary: v.optional(v.string()),
-        summarySource: v.optional(
-          v.union(
-            v.literal("publisher"),
-            v.literal("openai"),
-            v.literal("skill"),
-            v.literal("generated"),
-          ),
-        ),
-        icon: v.optional(v.string()),
-      }),
-    ),
+    presentation: v.optional(skillPresentationValidator),
   }),
   createdBy: v.id("users"),
   createdAt: v.number(),
@@ -2158,29 +2137,7 @@ const skillScanRequests = defineTable({
       clawdis: v.optional(v.any()),
       moltbot: v.optional(v.any()),
       license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-      presentation: v.optional(
-        v.object({
-          displayName: v.string(),
-          displayNameSource: v.optional(
-            v.union(
-              v.literal("publisher"),
-              v.literal("openai"),
-              v.literal("skill"),
-              v.literal("slug"),
-            ),
-          ),
-          summary: v.optional(v.string()),
-          summarySource: v.optional(
-            v.union(
-              v.literal("publisher"),
-              v.literal("openai"),
-              v.literal("skill"),
-              v.literal("generated"),
-            ),
-          ),
-          icon: v.optional(v.string()),
-        }),
-      ),
+      presentation: v.optional(skillPresentationValidator),
     }),
   ),
   sha256hash: v.optional(v.string()),
