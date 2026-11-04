@@ -58,6 +58,138 @@ const { __handlers } = await import("./httpApiV1");
 
 type ActionCtx = import("./_generated/server").ActionCtx;
 
+function makeVersionDetailQuery<TSkill, TVersion>(
+  selectedSkill: TSkill,
+  selectedVersion0: TVersion,
+) {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+      return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+    }
+
+    if ("slug" in args) {
+      return {
+        skill: selectedSkill,
+        latestVersion: null,
+        owner: { handle: "owner", displayName: "Owner", image: null },
+      };
+    }
+
+    return null;
+  });
+}
+
+function makeSkillFileQuery<TSkill, TVersion>(selectedSkill: TSkill, selectedVersion0: TVersion) {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+      return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+    }
+
+    if ("slug" in args) {
+      return {
+        skill: selectedSkill,
+        latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+        owner: null,
+      };
+    }
+
+    return null;
+  });
+}
+
+function makeNpmMirrorQuery() {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if ("name" in args && !("paginationOpts" in args)) {
+      return {
+        package: {
+          _id: "packages:demo-plugin",
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          tags: { latest: "packageReleases:1" },
+          latestReleaseId: "packageReleases:1",
+          channel: "community",
+          isOfficial: false,
+          summary: "Demo package",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        latestRelease: null,
+        owner: null,
+      };
+    }
+    if ("paginationOpts" in args) {
+      return {
+        page: [
+          {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "npm-pack",
+            clawpackStorageId: "storage:clawpack",
+            npmIntegrity: "sha512-demo",
+            npmShasum: "d".repeat(40),
+            npmTarballName: "demo-plugin-1.0.0.tgz",
+          },
+        ],
+        isDone: true,
+        continueCursor: null,
+      };
+    }
+    return null;
+  });
+}
+
+function makePackageDownloadQuery() {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
+      return {
+        package: {
+          _id: "packages:1",
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          tags: {},
+          latestReleaseId: "packageReleases:1",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        latestRelease: null,
+        owner: { _id: "users:owner", handle: "owner" },
+      };
+    }
+    if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+      expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
+      return {
+        package: { _id: "packages:1", name: "demo-plugin" },
+        release: {
+          packageId: "packages:1",
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          files: [
+            {
+              path: "package.json",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:1",
+              contentType: "application/json",
+            },
+          ],
+        },
+      };
+    }
+    return null;
+  });
+}
+
 function isRateLimitArgs(args: unknown): args is RateLimitArgs {
   if (!args || typeof args !== "object") return false;
   const value = args as Record<string, unknown>;
@@ -5615,21 +5747,7 @@ describe("httpApiV1 handlers", () => {
         },
       ],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -5725,21 +5843,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -5782,21 +5886,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -5842,21 +5932,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -5889,21 +5965,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -5939,21 +6001,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -6838,21 +6886,7 @@ describe("httpApiV1 handlers", () => {
       latestVersionId: "skillVersions:1",
     };
     const selectedVersion0 = internalVersion;
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
-          owner: null,
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const terraform = 'resource "null_resource" "demo" {}\n';
     const storage = {
@@ -6936,21 +6970,7 @@ describe("httpApiV1 handlers", () => {
       latestVersionId: "skillVersions:1",
     };
     const selectedVersion0 = internalVersion;
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
-          owner: null,
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const storage = {
       get: vi.fn(async (storageId: string) => {
         if (storageId === "storage:bom") return new Blob([bomBytes], { type: "text/plain" });
@@ -7037,21 +7057,7 @@ describe("httpApiV1 handlers", () => {
       latestVersionId: "skillVersions:1",
     };
     const selectedVersion0 = internalVersion;
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
-          owner: null,
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({
         runQuery,
@@ -8816,21 +8822,7 @@ describe("httpApiV1 handlers", () => {
       latestVersionId: "skillVersions:1",
     };
     const selectedVersion0 = internalVersion;
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
-          owner: null,
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({
@@ -16694,50 +16686,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("npm mirror uses the public host when requests arrive through Convex rewrites", async () => {
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args && !("paginationOpts" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            summary: "Demo package",
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: null,
-        };
-      }
-      if ("paginationOpts" in args) {
-        return {
-          page: [
-            {
-              _id: "packageReleases:1",
-              packageId: "packages:demo-plugin",
-              version: "1.0.0",
-              createdAt: 1,
-              changelog: "Initial release",
-              distTags: ["latest"],
-              files: [],
-              artifactKind: "npm-pack",
-              clawpackStorageId: "storage:clawpack",
-              npmIntegrity: "sha512-demo",
-              npmShasum: "d".repeat(40),
-              npmTarballName: "demo-plugin-1.0.0.tgz",
-            },
-          ],
-          isDone: true,
-          continueCursor: null,
-        };
-      }
-      return null;
-    });
+    const runQuery = makeNpmMirrorQuery();
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.npmMirrorGetHandler(
@@ -16764,50 +16713,7 @@ describe("httpApiV1 handlers", () => {
 
   it("npm mirror falls back to clawhub.ai for production Convex artifact URLs", async () => {
     vi.stubEnv("CONVEX_DEPLOYMENT", "prod:wry-manatee-359");
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args && !("paginationOpts" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            summary: "Demo package",
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: null,
-        };
-      }
-      if ("paginationOpts" in args) {
-        return {
-          page: [
-            {
-              _id: "packageReleases:1",
-              packageId: "packages:demo-plugin",
-              version: "1.0.0",
-              createdAt: 1,
-              changelog: "Initial release",
-              distTags: ["latest"],
-              files: [],
-              artifactKind: "npm-pack",
-              clawpackStorageId: "storage:clawpack",
-              npmIntegrity: "sha512-demo",
-              npmShasum: "d".repeat(40),
-              npmTarballName: "demo-plugin-1.0.0.tgz",
-            },
-          ],
-          isDone: true,
-          continueCursor: null,
-        };
-      }
-      return null;
-    });
+    const runQuery = makeNpmMirrorQuery();
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.npmMirrorGetHandler(
@@ -17454,49 +17360,7 @@ describe("httpApiV1 handlers", () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:viewer" as never);
 
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
-        return {
-          package: {
-            _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "users:owner", handle: "owner" },
-        };
-      }
-      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
-        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
-        return {
-          package: { _id: "packages:1", name: "demo-plugin" },
-          release: {
-            packageId: "packages:1",
-            _id: "packageReleases:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "init",
-            files: [
-              {
-                path: "package.json",
-                size: 2,
-                sha256: "a".repeat(64),
-                storageId: "storage:1",
-                contentType: "application/json",
-              },
-            ],
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makePackageDownloadQuery();
 
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({
@@ -17528,49 +17392,7 @@ describe("httpApiV1 handlers", () => {
   it("package downloads succeed and record download metrics", async () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
-        return {
-          package: {
-            _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "users:owner", handle: "owner" },
-        };
-      }
-      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
-        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
-        return {
-          package: { _id: "packages:1", name: "demo-plugin" },
-          release: {
-            packageId: "packages:1",
-            _id: "packageReleases:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "init",
-            files: [
-              {
-                path: "package.json",
-                size: 2,
-                sha256: "a".repeat(64),
-                storageId: "storage:1",
-                contentType: "application/json",
-              },
-            ],
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makePackageDownloadQuery();
 
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({
