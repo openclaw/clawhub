@@ -28,6 +28,40 @@ function repoEntries(entries: Record<string, string | Uint8Array>) {
   );
 }
 
+async function buildUnchangedCurrentContentPlan(
+  githubScanStatus: "pending" | "malicious" | "failed",
+) {
+  const snapshot = await buildGitHubSkillSourceSnapshot({
+    repo: "NVIDIA/skills",
+    defaultBranch: "main",
+    commit: "3".repeat(40),
+    entries: repoEntries({
+      "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
+    }),
+  });
+  const contentHash = snapshot.skills[0]?.contentHash ?? "";
+
+  const plan = buildGitHubSkillSyncPlan({
+    sourceId: "githubSkillSources:nvidia",
+    ownerUserId: "users:nvidia",
+    ownerPublisherId: "publishers:nvidia",
+    existingSkills: [
+      {
+        _id: "skills:aiq-deploy",
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        githubPath: "skills/aiq-deploy",
+        githubCurrentStatus: "present",
+        githubCurrentContentHash: contentHash,
+        githubScanStatus,
+      },
+    ],
+    snapshot,
+    now: 123,
+  });
+  return { plan, contentHash };
+}
+
 describe("parseSkillsShDisplayManifest", () => {
   it("keeps the supported skills.sh rendering fields and drops invalid groups", () => {
     const result = parseSkillsShDisplayManifest(
@@ -390,34 +424,7 @@ describe("buildGitHubSkillSyncPlan", () => {
   });
 
   it("preserves pending scan status for unchanged pending content", async () => {
-    const snapshot = await buildGitHubSkillSourceSnapshot({
-      repo: "NVIDIA/skills",
-      defaultBranch: "main",
-      commit: "3".repeat(40),
-      entries: repoEntries({
-        "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
-      }),
-    });
-    const contentHash = snapshot.skills[0]?.contentHash ?? "";
-
-    const plan = buildGitHubSkillSyncPlan({
-      sourceId: "githubSkillSources:nvidia",
-      ownerUserId: "users:nvidia",
-      ownerPublisherId: "publishers:nvidia",
-      existingSkills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          githubPath: "skills/aiq-deploy",
-          githubCurrentStatus: "present",
-          githubCurrentContentHash: contentHash,
-          githubScanStatus: "pending",
-        },
-      ],
-      snapshot,
-      now: 123,
-    });
+    const { plan, contentHash } = await buildUnchangedCurrentContentPlan("pending");
 
     expect(plan.skillPatches[0]?.patch).toMatchObject({
       githubCurrentCommit: "3".repeat(40),
@@ -429,73 +436,8 @@ describe("buildGitHubSkillSyncPlan", () => {
     expect(plan.stats.unchanged).toBe(1);
   });
 
-  it("preserves terminal scan status for unchanged current content", async () => {
-    const snapshot = await buildGitHubSkillSourceSnapshot({
-      repo: "NVIDIA/skills",
-      defaultBranch: "main",
-      commit: "3".repeat(40),
-      entries: repoEntries({
-        "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
-      }),
-    });
-    const contentHash = snapshot.skills[0]?.contentHash ?? "";
-
-    const plan = buildGitHubSkillSyncPlan({
-      sourceId: "githubSkillSources:nvidia",
-      ownerUserId: "users:nvidia",
-      ownerPublisherId: "publishers:nvidia",
-      existingSkills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          githubPath: "skills/aiq-deploy",
-          githubCurrentStatus: "present",
-          githubCurrentContentHash: contentHash,
-          githubScanStatus: "malicious",
-        },
-      ],
-      snapshot,
-      now: 123,
-    });
-
-    expect(plan.skillPatches[0]?.patch).toMatchObject({
-      githubCurrentContentHash: contentHash,
-      githubScanStatus: "malicious",
-      moderationStatus: "hidden",
-      moderationReason: "scanner.llm.malicious",
-    });
-  });
-
   it("preserves terminal scan status for unchanged current bytes", async () => {
-    const snapshot = await buildGitHubSkillSourceSnapshot({
-      repo: "NVIDIA/skills",
-      defaultBranch: "main",
-      commit: "3".repeat(40),
-      entries: repoEntries({
-        "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
-      }),
-    });
-    const contentHash = snapshot.skills[0]?.contentHash ?? "";
-
-    const plan = buildGitHubSkillSyncPlan({
-      sourceId: "githubSkillSources:nvidia",
-      ownerUserId: "users:nvidia",
-      ownerPublisherId: "publishers:nvidia",
-      existingSkills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          githubPath: "skills/aiq-deploy",
-          githubCurrentStatus: "present",
-          githubCurrentContentHash: contentHash,
-          githubScanStatus: "malicious",
-        },
-      ],
-      snapshot,
-      now: 123,
-    });
+    const { plan, contentHash } = await buildUnchangedCurrentContentPlan("malicious");
 
     expect(plan.skillPatches[0]?.patch).toMatchObject({
       githubCurrentContentHash: contentHash,
@@ -508,34 +450,7 @@ describe("buildGitHubSkillSyncPlan", () => {
   });
 
   it("preserves failed scan status for unchanged current bytes", async () => {
-    const snapshot = await buildGitHubSkillSourceSnapshot({
-      repo: "NVIDIA/skills",
-      defaultBranch: "main",
-      commit: "3".repeat(40),
-      entries: repoEntries({
-        "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
-      }),
-    });
-    const contentHash = snapshot.skills[0]?.contentHash ?? "";
-
-    const plan = buildGitHubSkillSyncPlan({
-      sourceId: "githubSkillSources:nvidia",
-      ownerUserId: "users:nvidia",
-      ownerPublisherId: "publishers:nvidia",
-      existingSkills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          githubPath: "skills/aiq-deploy",
-          githubCurrentStatus: "present",
-          githubCurrentContentHash: contentHash,
-          githubScanStatus: "failed",
-        },
-      ],
-      snapshot,
-      now: 123,
-    });
+    const { plan, contentHash } = await buildUnchangedCurrentContentPlan("failed");
 
     expect(plan.skillPatches[0]?.patch).toMatchObject({
       githubCurrentContentHash: contentHash,
