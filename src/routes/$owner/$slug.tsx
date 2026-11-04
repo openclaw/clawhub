@@ -15,26 +15,16 @@ import {
   isOwnerRouteScopeSegment,
 } from "../../lib/ownerRoute";
 import { consumePostPublishFlash } from "../../lib/postPublishFlash";
+import {
+  hasPostPublishSearch,
+  isPostPublishFlag,
+  parsePostPublishSearch,
+} from "../../lib/postPublishSearch";
 import { fetchSkillPageData } from "../../lib/skillPage";
 import { resolveOpenClawPluginSlug } from "../../lib/slugRoute";
 
-function isPostPublishFlag(value: unknown) {
-  const normalized = typeof value === "string" ? value.trim().replace(/^"|"$/g, "") : value;
-  return normalized === "1" || normalized === "true" || normalized === 1 || normalized === true;
-}
-
-function hasPostPublishSearch(searchStr: string) {
-  return isPostPublishFlag(new URLSearchParams(searchStr).get("published"));
-}
-
 export const Route = createFileRoute("/$owner/$slug")({
-  validateSearch: (search) => {
-    const parsed: { published?: true } = {};
-    if (isPostPublishFlag(search.published)) {
-      parsed.published = true;
-    }
-    return parsed;
-  },
+  validateSearch: parsePostPublishSearch,
   beforeLoad: ({ params }) => {
     if (!isOwnerRouteHandleOrIdSegment(params.owner) && !isOwnerRouteScopeSegment(params.owner)) {
       throw notFound();
