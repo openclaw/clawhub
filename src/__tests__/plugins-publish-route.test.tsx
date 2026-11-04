@@ -86,6 +86,7 @@ function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
 function uploadCodePluginPackage(
   packageJsonOverrides: Record<string, unknown>,
   directory = "demo-plugin",
+  readmeText?: string,
 ) {
   const packageJson = withRelativePath(
     new File([makeCodePluginPackageJson(packageJsonOverrides)], "package.json", {
@@ -97,7 +98,16 @@ function uploadCodePluginPackage(
     new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
     `${directory}/openclaw.plugin.json`,
   );
-  fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest] } });
+  const files = [packageJson, manifest];
+  if (readmeText !== undefined) {
+    files.push(
+      withRelativePath(
+        new File([readmeText], "README.md", { type: "text/markdown" }),
+        `${directory}/README.md`,
+      ),
+    );
+  }
+  fireEvent.change(getFileInput(), { target: { files } });
 }
 
 function makeVintageAyuMembership(
@@ -594,32 +604,16 @@ describe("plugins publish route", () => {
 
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [
-          makeCodePluginPackageJson({
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            version: "1.2.4",
-            repository: "https://github.com/openclaw/demo-plugin.git",
-          }),
-        ],
-        "package.json",
-        { type: "application/json" },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      {
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        version: "1.2.4",
+        repository: "https://github.com/openclaw/demo-plugin.git",
+      },
+      "demo-plugin",
+      "# Demo Plugin\n\nAdds install guidance.",
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(["# Demo Plugin\n\nAdds install guidance."], "README.md", {
-        type: "text/markdown",
-      }),
-      "demo-plugin/README.md",
-    );
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(generateChangelogPreview).toHaveBeenCalledWith({
@@ -658,32 +652,16 @@ describe("plugins publish route", () => {
 
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [
-          makeCodePluginPackageJson({
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            version: "1.2.4",
-            repository: "https://github.com/openclaw/demo-plugin.git",
-          }),
-        ],
-        "package.json",
-        { type: "application/json" },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      {
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        version: "1.2.4",
+        repository: "https://github.com/openclaw/demo-plugin.git",
+      },
+      "demo-plugin",
+      "# Demo Plugin\n\nAdds install guidance.",
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(["# Demo Plugin\n\nAdds install guidance."], "README.md", {
-        type: "text/markdown",
-      }),
-      "demo-plugin/README.md",
-    );
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(generateChangelogPreview).toHaveBeenCalledTimes(1);
@@ -719,32 +697,16 @@ describe("plugins publish route", () => {
 
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [
-          makeCodePluginPackageJson({
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            version: "1.2.4",
-            repository: "https://github.com/openclaw/demo-plugin.git",
-          }),
-        ],
-        "package.json",
-        { type: "application/json" },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      {
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        version: "1.2.4",
+        repository: "https://github.com/openclaw/demo-plugin.git",
+      },
+      "demo-plugin",
+      "# Demo Plugin\n\nAdds install guidance.",
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(["# Demo Plugin\n\nAdds install guidance."], "README.md", {
-        type: "text/markdown",
-      }),
-      "demo-plugin/README.md",
-    );
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(generateChangelogPreview).toHaveBeenCalledTimes(1);
