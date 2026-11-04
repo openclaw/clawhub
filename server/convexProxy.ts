@@ -7,6 +7,7 @@ import {
   ARCHIVE_MANIFEST_AUDIENCE,
   ARCHIVE_MANIFEST_CONTENT_TYPE,
   ARCHIVE_MANIFEST_JWS_TYPE,
+  readBoundedArchiveText,
   type SkillArchiveManifest,
   type SkillExportArchiveManifest,
   type SkillExportArchiveManifestEntry,
@@ -244,7 +245,7 @@ async function streamArchive(
 ) {
   let value: unknown;
   try {
-    const token = await readBoundedArchiveManifest(manifestResponse);
+    const token = await readBoundedArchiveText(manifestResponse, MAX_ARCHIVE_MANIFEST_BYTES);
     if (!token) return new Response("Invalid or expired archive manifest", { status: 502 });
     value = await verifyArchiveManifest(token, target);
   } catch {
@@ -530,39 +531,6 @@ function addDeploymentProofHeader(response: Response, env: ProxyEnv, target: str
       response.headers.set("X-ClawHub-Staging-Build-SHA", buildSha);
     }
   }
-}
-
-async function readBoundedArchiveManifest(response: Response) {
-  const contentLength = response.headers.get("content-length");
-  if (contentLength) {
-    const declaredBytes = Number.parseInt(contentLength, 10);
-    if (Number.isFinite(declaredBytes) && declaredBytes > MAX_ARCHIVE_MANIFEST_BYTES) return null;
-  }
-  const reader = response.body?.getReader();
-  if (!reader) return null;
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  try {
-    for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      totalBytes += chunk.value.byteLength;
-      if (totalBytes > MAX_ARCHIVE_MANIFEST_BYTES) {
-        await reader.cancel().catch(() => undefined);
-        return null;
-      }
-      chunks.push(chunk.value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
 }
 
 function parseSkillArchiveManifest(
