@@ -146,7 +146,8 @@ describe("curated plugin discovery", () => {
     });
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(response.headers.get("RateLimit-Limit")).toBe("12000");
+    // Admitted requests carry no rate-limit headers.
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
     expect((await response.json()).items.map((item: { name: string }) => item.name)).toEqual([
       "public",
     ]);

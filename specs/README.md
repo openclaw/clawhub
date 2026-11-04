@@ -26,6 +26,8 @@ into `docs/` and leave only the design record here.
 - `og-routes.md`: public OG card metadata fetches and hang timeouts.
 - `catalog-taxonomy.md`: stored category, author topic, browse ordering, and correction contract.
 - `ci.md`: PR check and production deploy audit-tag policy.
+- `rate-limiting.md`: HTTP quota buckets, batching, switches, and truthful rate-limit headers.
+- `http-error-semantics.md`: publish-path 4xx/503 mapping for transient Convex failures and the CLI retry contract.
 - `manual-testing.md`: maintainer CLI smoke checklist.
 - `dev-worktrees.md`: disposable Worktrunk/Codex worktree lifecycle contract.
 - `dev-seeding.md`: local development fixture seeding ownership rules.

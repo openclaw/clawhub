@@ -48,11 +48,7 @@ import {
 } from "../lib/githubHandoff";
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import {
-  isConvexWritePressureError,
-  parseBooleanQueryParam,
-  resolveBooleanQueryParam,
-} from "../lib/httpUtils";
+import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
 import {
   buildSkillInstallResolution,
   type InstallResolverSkill,
@@ -116,6 +112,7 @@ import {
   softDeleteErrorToResponse,
   text,
   toOptionalNumber,
+  transientConvexErrorResponse,
 } from "./shared";
 import {
   parseSkillsShCatalogReference,
@@ -2664,6 +2661,9 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
   if (!auth.ok) return auth.response;
 
   const contentType = request.headers.get("content-type") ?? "";
+  // Ticketed JSON publishes consume their upload tickets once files persist; a
+  // later failure cannot be fixed by resending the same request.
+  let ticketedFilesPersisted = false;
   try {
     if (contentType.includes("application/json")) {
       const body = await request.json();
@@ -2678,7 +2678,9 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
           rate.headers,
         );
       }
-      const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload);
+      const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload, () => {
+        ticketedFilesPersisted = true;
+      });
       return json({ ok: true, ...result }, 200, rate.headers);
     }
 
@@ -2700,6 +2702,10 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       }
     }
   } catch (error) {
+    const transient = transientConvexErrorResponse(error, rate.headers, {
+      restartRequired: ticketedFilesPersisted,
+    });
+    if (transient) return transient;
     const message = error instanceof Error ? error.message : "Publish failed";
     return text(message, 400, rate.headers);
   }
@@ -3046,6 +3052,8 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       ).toString();
       return json({ uploadUrl, uploadTicket }, 200, rate.headers);
     } catch (error) {
+      const transient = transientConvexErrorResponse(error, rate.headers);
+      if (transient) return transient;
       const message = error instanceof Error ? error.message : "Invalid skill upload request";
       return text(message, 400, rate.headers);
     }
@@ -3079,16 +3087,9 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       if (sha256 !== expected.sha256) {
         return text("Uploaded file SHA-256 does not match its upload ticket", 400, rate.headers);
       }
-      try {
-        storageId = await ctx.storage.store(
-          new Blob([bytes], expected.contentType ? { type: expected.contentType } : undefined),
-        );
-      } catch (error) {
-        // Retry only a typed rejection before this action has a blob ID.
-        // Attachment failures must not trigger a fresh storage upload.
-        if (isConvexWritePressureError(error)) return text(error.message, 503, rate.headers);
-        throw error;
-      }
+      storageId = await ctx.storage.store(
+        new Blob([bytes], expected.contentType ? { type: expected.contentType } : undefined),
+      );
       await ctx.runMutation(internal.skillPublishUploads.attachSkillPublishUploadInternal, {
         userId: auth.userId,
         uploadTicket,
@@ -3097,6 +3098,12 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       return json({ storageId }, 200, rate.headers);
     } catch (error) {
       if (storageId) await ctx.storage.delete(storageId).catch(() => undefined);
+      // A transient platform failure (store rejection or attachment) leaves the
+      // ticket unattached once this blob is reclaimed, so a retry with the same
+      // ticket attaches exactly one blob. If an attachment committed despite the
+      // error, the retry is rejected as a used ticket instead of adding a blob.
+      const transient = transientConvexErrorResponse(error, rate.headers);
+      if (transient) return transient;
       const message = error instanceof Error ? error.message : "Skill upload failed";
       return text(message, 400, rate.headers);
     }

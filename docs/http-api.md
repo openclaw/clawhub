@@ -37,20 +37,19 @@ Enforcement model:
 - Write: 300/min per IP, 3000/min per key
 - Download: 1200/min per IP, 6000/min per key (download endpoints)
 
-Headers:
+Headers are sent only on a `429` the limiter actually denied. Admitted requests,
+including ones that later fail for another reason, carry no rate-limit headers:
 
-- Legacy compatibility: `X-RateLimit-Limit`, `X-RateLimit-Reset`
-- Standardized: `RateLimit-Limit`, `RateLimit-Reset`
-- On `429`: `X-RateLimit-Remaining: 0` and `RateLimit-Remaining: 0`
-- On `429`: `Retry-After`
+- Legacy compatibility: `X-RateLimit-Limit`, `X-RateLimit-Reset`, `X-RateLimit-Remaining: 0`
+- Standardized: `RateLimit-Limit`, `RateLimit-Reset`, `RateLimit-Remaining: 0`
+- `Retry-After`
 
 Header semantics:
 
 - `X-RateLimit-Reset`: absolute Unix epoch seconds
 - `RateLimit-Reset`: seconds until reset (delay)
-- `X-RateLimit-Remaining` / `RateLimit-Remaining`: exact remaining budget when present.
-  Sharded successful requests omit this header instead of returning an approximate global value.
-- `Retry-After`: seconds to wait before retry (delay) on `429`
+- `X-RateLimit-Remaining` / `RateLimit-Remaining`: `0` on a denied request
+- `Retry-After`: seconds to wait before retry (delay)
 
 Example `429` response:
 
@@ -88,8 +87,11 @@ IP source:
 
 Public v1 error responses are plain text with `content-type: text/plain; charset=utf-8`.
 This includes validation failures (`400`), missing public resources (`404`), auth and
-permission failures (`401`/`403`), rate limits (`429`), and blocked downloads. Clients
-should read the response body as a human-readable string. Unknown query parameters are
+permission failures (`401`/`403`), rate limits (`429`), temporary backend failures
+(`503`), and blocked downloads. Clients should read the response body as a
+human-readable string. A `503` with `Retry-After` is a transient backend failure
+(overload, internal error, or write contention), not a validation or rate-limit
+failure: retry after the hinted delay with jitter. Unknown query parameters are
 ignored for compatibility, but recognized query parameters with invalid values return
 `400`.
 

@@ -540,7 +540,12 @@ describe("httpApi handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("RateLimit-Limit")).toBe("300");
+    expect(runMutation.mock.calls[0]?.[1]).toMatchObject({
+      name: "writeIp",
+      config: expect.objectContaining({ rate: 300 }),
+    });
+    // Admitted requests carry no rate-limit headers.
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
     expect(await response.json()).toEqual(result);
     expect(runMutation).toHaveBeenLastCalledWith(expect.anything(), {
       scope: "read write",
@@ -686,6 +691,95 @@ describe("httpApi handlers", () => {
     expect(response.status).toBe(400);
   });
 
+  const legacyPublishBody = () =>
+    JSON.stringify({
+      slug: "cool-skill",
+      displayName: "Cool Skill",
+      version: "1.2.3",
+      changelog: "c",
+      acceptLicenseTerms: true,
+      files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
+    });
+
+  it.each([
+    "[Request ID: 0123456789abcdef] Server Error\nUncaught Error: InternalServerError: Transient error while running mutation",
+    "Your request couldn't be completed. Try again later.",
+    "CommitterFullError: Too many writes in a short period of time. (reset in 12s)",
+  ])("cliPublishHttp maps a transient Convex failure to a retryable 503: %s", async (message) => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    vi.mocked(publishVersionForUser).mockRejectedValueOnce(new Error(message));
+    const response = await __handlers.cliPublishHandler(
+      makeCtx({}),
+      new Request("https://x/api/cli/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: legacyPublishBody(),
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(Number(response.headers.get("Retry-After"))).toBeGreaterThanOrEqual(2);
+    expect(response.headers.get("RateLimit-Reset")).toBeNull();
+    expect(await response.text()).toMatch(/^ClawHub backend is temporarily unavailable\./);
+  });
+
+  it("cliPublishHttp answers 409 when the failure follows persisted files", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    vi.mocked(publishVersionForUser).mockImplementationOnce(
+      async (_ctx, _userId, _args, options) => {
+        options?.onFilesPersisted?.();
+        throw new Error("Your request couldn't be completed. Try again later.");
+      },
+    );
+    const response = await __handlers.cliPublishHandler(
+      makeCtx({}),
+      new Request("https://x/api/cli/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: legacyPublishBody(),
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(response.headers.get("Retry-After")).toBeNull();
+    expect(await response.text()).toContain("cannot be retried");
+  });
+
+  it("cliPublishHttp keeps an application error quoting platform text as 400", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    const { ConvexError } = await import("convex/values");
+    vi.mocked(publishVersionForUser).mockRejectedValueOnce(
+      new ConvexError("Skill file InternalServerError: notes.md is not allowed"),
+    );
+    const response = await __handlers.cliPublishHandler(
+      makeCtx({}),
+      new Request("https://x/api/cli/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: legacyPublishBody(),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Retry-After")).toBeNull();
+  });
+
+  it("cliUploadUrlHttp reports a transient Convex failure as 503, not 401", async () => {
+    vi.mocked(requirePackagePublishAuth).mockResolvedValueOnce({
+      kind: "user",
+      userId: "user1",
+    } as never);
+    const runMutation = vi
+      .fn()
+      .mockRejectedValue(
+        new Error("InternalServerError: Transient error while running generate upload url"),
+      );
+    const response = await __handlers.cliUploadUrlHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/upload-url", { method: "POST" }),
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("2");
+    expect(await response.text()).not.toMatch(/unauthorized/i);
+  });
+
   it("cliPublishHttp returns 200 on success", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
     vi.mocked(publishVersionForUser).mockResolvedValueOnce({
@@ -800,7 +894,7 @@ describe("httpApi handlers", () => {
       expect.anything(),
       "user1",
       expect.not.objectContaining({ ownerHandle: expect.anything() }),
-      { ownerPublisherId: "publishers:openclaw" },
+      { ownerPublisherId: "publishers:openclaw", onFilesPersisted: expect.any(Function) },
     );
   });
 

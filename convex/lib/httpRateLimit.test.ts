@@ -210,7 +210,7 @@ describe("applyRateLimit headers", () => {
     expect(result.response.headers.get("RateLimit-Reset")).toBe("31");
   });
 
-  it("includes rate-limit headers without Retry-After when allowed", async () => {
+  it("sends no rate-limit headers when the request is allowed", async () => {
     vi.spyOn(Date, "now").mockReturnValue(2_000_000);
     const ctx = makeRateLimitCtx({
       ip: {
@@ -227,14 +227,7 @@ describe("applyRateLimit headers", () => {
     const result = await applyRateLimit(ctx, request, "download");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const headers = new Headers(result.headers);
-    expect(headers.get("X-RateLimit-Limit")).toBe(String(RATE_LIMITS.download.ip));
-    expect(headers.get("X-RateLimit-Remaining")).toBeNull();
-    expect(headers.get("X-RateLimit-Reset")).toBe("2040");
-    expect(headers.get("RateLimit-Limit")).toBe(String(RATE_LIMITS.download.ip));
-    expect(headers.get("RateLimit-Remaining")).toBeNull();
-    expect(headers.get("RateLimit-Reset")).toBe("40");
-    expect(headers.get("Retry-After")).toBeNull();
+    expect([...new Headers(result.headers).keys()]).toEqual([]);
   });
 
   it("returns retryable unavailable response when component counter writes conflict", async () => {
@@ -256,6 +249,10 @@ describe("applyRateLimit headers", () => {
     if (result.ok) return;
     expect(result.response.status).toBe(503);
     expect(result.response.headers.get("Retry-After")).toBe("1");
+    // Limiter contention is not a rate limit: no quota or reset hints.
+    expect(result.response.headers.get("RateLimit-Limit")).toBeNull();
+    expect(result.response.headers.get("RateLimit-Reset")).toBeNull();
+    expect(result.response.headers.get("X-RateLimit-Remaining")).toBeNull();
     await expect(result.response.text()).resolves.toBe("Rate limit temporarily unavailable");
   });
 
@@ -462,10 +459,7 @@ describe("applyRateLimit headers", () => {
     const result = await applyRateLimit(ctx, request, "download");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const headers = new Headers(result.headers);
-    expect(headers.get("X-RateLimit-Limit")).toBe(String(RATE_LIMITS.download.key));
-    expect(headers.get("X-RateLimit-Remaining")).toBeNull();
-    expect(headers.get("Retry-After")).toBeNull();
+    expect([...new Headers(result.headers).keys()]).toEqual([]);
   });
 
   it("does not consume ip bucket for authenticated requests", async () => {
@@ -535,9 +529,7 @@ describe("applyRateLimit headers", () => {
       }),
     );
     if (!result.ok) return;
-    expect(new Headers(result.headers).get("X-RateLimit-Limit")).toBe(
-      String(RATE_LIMITS.write.adminKey),
-    );
+    expect(new Headers(result.headers).get("X-RateLimit-Limit")).toBeNull();
   });
 
   it("denies authenticated users when user bucket is exhausted even if ip bucket is healthy", async () => {
@@ -1053,6 +1045,8 @@ describe("batched quota accounting", () => {
         const { ctx, runMutation, runQuery } = makeBatchedCtx({ bucketOpen: false });
         const result = await applyRateLimit(ctx, new Request("https://example.com/api/v1/x"), kind);
         expect(result.ok).toBe(true);
+        // Nothing was limited, so nothing may claim a limit or reset window.
+        if (result.ok) expect([...new Headers(result.headers).keys()]).toEqual([]);
         expect(runMutation).not.toHaveBeenCalled();
         expect(runQuery.mock.calls.filter(([, args]) => "config" in (args as object))).toHaveLength(
           0,

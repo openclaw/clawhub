@@ -625,3 +625,238 @@ describe("node http client", () => {
     expect(longTimeouts.setTimeoutImpl.mock.calls[0]?.[1]).toBe(300_000);
   });
 });
+
+describe("truthful retryable publish errors", () => {
+  const REQUEST_TIMEOUT_MS = 15_000;
+  const UPLOAD_TIMEOUT_MS = 120_000;
+
+  function createRecordingClient(responses: Array<() => Response>, random = () => 0) {
+    const delays: number[] = [];
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      const next = responses[Math.min(call, responses.length - 1)];
+      call += 1;
+      return next();
+    });
+    const client = createHttpClient({
+      runtime: "node",
+      configureDispatcher: false,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      setTimeoutImpl: ((callback: () => void, ms: number) => {
+        // Request deadlines are cleared by completed responses; record retry sleeps only.
+        if (ms !== REQUEST_TIMEOUT_MS && ms !== UPLOAD_TIMEOUT_MS) {
+          delays.push(ms);
+          callback();
+        }
+        return 1;
+      }) as unknown as typeof setTimeout,
+      clearTimeoutImpl: vi.fn(),
+      random,
+    });
+    return { client, fetchImpl, delays };
+  }
+
+  const publish = (client: ReturnType<typeof createHttpClient>, retryCount?: number) =>
+    client.apiRequestForm("https://clawhub.example", {
+      method: "POST",
+      path: "/api/v1/packages",
+      form: new FormData(),
+      ...(retryCount === undefined ? {} : { retryCount }),
+    });
+
+  const unavailable =
+    (headers: Record<string, string> = { "Retry-After": "2" }) =>
+    () =>
+      new Response(
+        "ClawHub backend is temporarily unavailable. The request was not rejected for validation; retrying usually succeeds. InternalServerError: Transient error while running mutation",
+        { status: 503, headers },
+      );
+  const ok = () => Response.json({ ok: true });
+
+  it("retries a 503 after its Retry-After hint with jitter, then succeeds", async () => {
+    const { client, fetchImpl, delays } = createRecordingClient(
+      [unavailable(), unavailable(), ok],
+      () => 0.5,
+    );
+    await expect(publish(client, 5)).resolves.toEqual({ ok: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    // 2s hint + half of a max(250ms, 2s/4) jitter window.
+    expect(delays).toEqual([2_250, 2_250]);
+  });
+
+  it("reports an exhausted 503 without rate-limit hints even when stale headers are present", async () => {
+    const { client, fetchImpl, delays } = createRecordingClient([
+      unavailable({
+        "Retry-After": "2",
+        "RateLimit-Limit": "3000",
+        "RateLimit-Remaining": "0",
+        "RateLimit-Reset": "41",
+        "X-RateLimit-Reset": "1771404540",
+      }),
+    ]);
+    const error = await publish(client, 2).catch((caught: unknown) => caught);
+    expect(getHttpErrorStatus(error)).toBe(503);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    // No sleep after the final attempt.
+    expect(delays).toEqual([2_000, 2_000]);
+    const message = (error as Error).message;
+    expect(message).toMatch(/^ClawHub backend is temporarily unavailable\./);
+    expect(message).toContain("(retry in 2s)");
+    expect(message).not.toMatch(/reset in|remaining:|rate limit/i);
+  });
+
+  it("keeps exponential backoff as the floor under a short Retry-After", async () => {
+    const { client, delays } = createRecordingClient([unavailable({ "Retry-After": "1" })]);
+    await publish(client, 5).catch(() => undefined);
+    expect(delays).toEqual([1_000, 1_000, 1_200, 2_400, 4_800]);
+  });
+
+  it("retries a real 429 within the bound and shows its reset hint", async () => {
+    const limited = () =>
+      new Response("Rate limit exceeded", {
+        status: 429,
+        headers: {
+          "Retry-After": "20",
+          "RateLimit-Limit": "3000",
+          "RateLimit-Remaining": "0",
+          "RateLimit-Reset": "20",
+        },
+      });
+    const { client, fetchImpl, delays } = createRecordingClient([limited]);
+    const error = await publish(client, 2).catch((caught: unknown) => caught);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(delays).toEqual([20_000, 20_000]);
+    expect((error as Error).message).toBe(
+      "Rate limit exceeded (retry in 20s, remaining: 0/3000, reset in 20s)",
+    );
+  });
+
+  it("fails fast instead of waiting past the retry bound", async () => {
+    const limited = () =>
+      new Response("Rate limit exceeded", {
+        status: 429,
+        headers: { "Retry-After": "600", "RateLimit-Limit": "10", "RateLimit-Remaining": "0" },
+      });
+    const { client, fetchImpl, delays } = createRecordingClient([limited]);
+    const error = await publish(client, 5).catch((caught: unknown) => caught);
+    expect(getHttpErrorStatus(error)).toBe(429);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(delays).toEqual([]);
+    expect((error as Error).message).toMatch(/retry in 600s.*reset in 600s/);
+  });
+
+  it.each([
+    "[Request ID: 0123456789abcdef] Server Error\nUncaught Error: InternalServerError: Transient error while running generate upload url",
+    "Your request couldn't be completed. Try again later.",
+    "CommitterFullError: Too many writes in a short period of time. (reset in 43s)",
+  ])(
+    "retries and labels a transient Convex failure that an older server sent as 400: %s",
+    async (body) => {
+      const badRequest = () =>
+        new Response(body, { status: 400, headers: { "RateLimit-Reset": "41" } });
+      const { client, fetchImpl } = createRecordingClient([badRequest, ok]);
+      await expect(publish(client, 2)).resolves.toEqual({ ok: true });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+      const failing = createRecordingClient([badRequest]);
+      const error = await publish(failing.client, 0).catch((caught: unknown) => caught);
+      expect((error as Error).message).toMatch(/^ClawHub backend is temporarily unavailable/);
+      expect((error as Error).message).not.toMatch(/\(reset in 41s\)/);
+    },
+  );
+
+  it("does not mistake a validation message quoting a platform code for an outage", async () => {
+    const invalid = () =>
+      new Response("Skill file InternalServerError: notes.md is not allowed", { status: 400 });
+    const { client, fetchImpl, delays } = createRecordingClient([invalid]);
+    const error = await publish(client, 5).catch((caught: unknown) => caught);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(delays).toEqual([]);
+    expect((error as Error).message).toBe(
+      "Skill file InternalServerError: notes.md is not allowed",
+    );
+  });
+
+  it("keeps an ambiguous temporary failure in the final error when a retry is then rejected", async () => {
+    const outcomeUnknown = () =>
+      new Response(
+        "ClawHub backend is temporarily unavailable. The request was not rejected for validation, but it may have completed before the failure.",
+        { status: 503, headers: { "Retry-After": "2" } },
+      );
+    const exists = () =>
+      new Response("Version 1.0.0 already exists. Increment the version number and try again.", {
+        status: 400,
+      });
+    const { client, fetchImpl } = createRecordingClient([outcomeUnknown, exists]);
+    const error = await publish(client, 5).catch((caught: unknown) => caught);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(getHttpErrorStatus(error)).toBe(400);
+    expect((error as Error).message).toBe(
+      "Version 1.0.0 already exists. Increment the version number and try again. (after retrying an earlier temporary failure: ClawHub backend is temporarily unavailable. The request was not rejected for validation, but it may have completed before the failure. (retry in 2s))",
+    );
+  });
+
+  it("notes an earlier network failure without echoing transport details", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        throw new Error("Request timed out at https://upload.invalid/private?token=secret");
+      }
+      return new Response(
+        "Version 1.0.0 already exists. Increment the version number and try again.",
+        {
+          status: 400,
+        },
+      );
+    });
+    const client = createHttpClient({
+      runtime: "node",
+      configureDispatcher: false,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      setTimeoutImpl: ((callback: () => void, ms: number) => {
+        if (ms !== REQUEST_TIMEOUT_MS && ms !== UPLOAD_TIMEOUT_MS) callback();
+        return 1;
+      }) as unknown as typeof setTimeout,
+      clearTimeoutImpl: vi.fn(),
+      random: () => 0,
+    });
+    const error = await publish(client, 5).catch((caught: unknown) => caught);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect((error as Error).message).toBe(
+      "Version 1.0.0 already exists. Increment the version number and try again. (after retrying an earlier network failure or timeout)",
+    );
+  });
+
+  it("does not retry a 409 restart-required publish failure", async () => {
+    const restart = () =>
+      new Response(
+        "ClawHub backend is temporarily unavailable. The request was not rejected for validation, but the failure happened after it saved its uploaded files, so the same request cannot be retried. InternalServerError: Transient error while running mutation",
+        { status: 409 },
+      );
+    const { client, fetchImpl, delays } = createRecordingClient([restart]);
+    const error = await publish(client, 5).catch((caught: unknown) => caught);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(delays).toEqual([]);
+    expect(getHttpErrorStatus(error)).toBe(409);
+    expect((error as Error).message).toMatch(
+      /^ClawHub backend is temporarily unavailable\. .*cannot be retried/,
+    );
+    expect((error as Error).message).not.toMatch(/retrying usually succeeds/);
+  });
+
+  it("does not retry genuine validation errors", async () => {
+    const invalid = () =>
+      new Response("Version 1.0.0 already exists. Increment the version number and try again.", {
+        status: 400,
+        headers: { "RateLimit-Reset": "41" },
+      });
+    const { client, fetchImpl, delays } = createRecordingClient([invalid]);
+    const error = await publish(client, 5).catch((caught: unknown) => caught);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(delays).toEqual([]);
+    expect((error as Error).message).toBe(
+      "Version 1.0.0 already exists. Increment the version number and try again.",
+    );
+  });
+});
