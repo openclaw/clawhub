@@ -29,7 +29,7 @@ import {
 } from "clawhub-schema";
 import { getPage, type IndexKey } from "convex-helpers/server/pagination";
 import { paginationOptsValidator, type PaginationOptions } from "convex/server";
-import { ConvexError, v, type Value } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -76,6 +76,12 @@ import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
+import {
+  decodeIndexCursor as decodePackageIndexCursor,
+  decodeIndexKeyValue as decodePackageIndexKeyValue,
+  encodeIndexCursor as encodePackageIndexCursor,
+  encodeIndexKeyValue as encodePackageIndexKeyValue,
+} from "./lib/indexCursor";
 import {
   readInitialPluginFamilyPage,
   canReadInitialPluginFamilyPage,
@@ -256,7 +262,6 @@ const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
 const MAX_STORED_PACKAGE_METADATA_DEPTH = 10;
 const CURRENT_TEMPLATE_PROFILE_POLICY_VERSION = 1;
 const PLUGIN_EXPORT_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
-const GET_PAGE_TIEBREAKER_FIELD_COUNT = 2;
 
 function computePackageRecommendationScore(
   stats: Doc<"packages">["stats"],
@@ -3376,17 +3381,6 @@ function emptyPluginExportMergedCursor(): PluginExportMergedCursor {
   };
 }
 
-function encodePackageIndexKeyValue(val: Value | undefined): Value {
-  return val === undefined ? { __undef: 1 } : val;
-}
-
-function decodePackageIndexKeyValue(val: unknown): Value | undefined {
-  if (val !== null && typeof val === "object" && "__undef" in (val as Record<string, unknown>)) {
-    return undefined;
-  }
-  return val as Value;
-}
-
 function emptyStablePackageDiscoveryCursor(
   sort: StablePackageDiscoveryCursorState["sort"],
 ): StablePackageDiscoveryCursorState {
@@ -3470,58 +3464,6 @@ function decodeStablePackageDiscoveryCursor(
     return decoded;
   } catch {
     return fallback;
-  }
-}
-
-function encodePackageIndexCursor(indexName: string, key: IndexKey): string {
-  return JSON.stringify({
-    v: 1,
-    index: indexName,
-    key: key.map(encodePackageIndexKeyValue),
-  });
-}
-
-function packageIndexKeyStartsWithPrefix(key: IndexKey, prefix: IndexKey): boolean {
-  if (key.length < prefix.length) return false;
-  return prefix.every((value, index) => key[index] === value);
-}
-
-function decodePackageIndexCursor({
-  cursor,
-  indexName,
-  maxIndexKeyLength,
-  eqPrefix,
-}: {
-  cursor?: string | null;
-  indexName: string;
-  maxIndexKeyLength: number;
-  eqPrefix: IndexKey;
-}): IndexKey | null {
-  if (!cursor) return null;
-  try {
-    const parsed = JSON.parse(cursor) as unknown;
-    const isSelfDescribingCursor =
-      parsed !== null &&
-      typeof parsed === "object" &&
-      !Array.isArray(parsed) &&
-      (parsed as { v?: unknown }).v === 1 &&
-      (parsed as { index?: unknown }).index === indexName &&
-      Array.isArray((parsed as { key?: unknown }).key);
-    const arr = Array.isArray(parsed)
-      ? parsed
-      : isSelfDescribingCursor
-        ? (parsed as { key: unknown[] }).key
-        : null;
-    if (!Array.isArray(arr)) return null;
-    const key = arr.map(decodePackageIndexKeyValue);
-    const maxLength = isSelfDescribingCursor
-      ? maxIndexKeyLength + GET_PAGE_TIEBREAKER_FIELD_COUNT
-      : maxIndexKeyLength;
-    if (key.length > maxLength) return null;
-    if (!packageIndexKeyStartsWithPrefix(key, eqPrefix)) return null;
-    return key;
-  } catch {
-    return null;
   }
 }
 

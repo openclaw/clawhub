@@ -13,7 +13,7 @@ import {
 } from "clawhub-schema";
 import { getPage, type IndexKey, paginator } from "convex-helpers/server/pagination";
 import { paginationOptsValidator } from "convex/server";
-import { ConvexError, v, type Value } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -63,6 +63,10 @@ import {
   isPublicSkillDoc,
   readGlobalPublicSkillsCount,
 } from "./lib/globalStats";
+import {
+  decodeIndexCursor as decodePublicListCursor,
+  encodeIndexCursor as encodeIndexKey,
+} from "./lib/indexCursor";
 import {
   TRENDING_LEADERBOARD_KIND,
   TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
@@ -4613,27 +4617,7 @@ const NONSUSPICIOUS_SORT_INDEX_FIELD_COUNTS: Record<PublicListSort, number> = {
   stars: 4,
   installs: 4,
 };
-const GET_PAGE_TIEBREAKER_FIELD_COUNT = 2;
 const PUBLIC_API_PREFIX_CURSOR_PREFIX = "skillprefix:";
-
-function encodeIndexKeyValue(val: Value | undefined): Value {
-  return val === undefined ? { __undef: 1 } : val;
-}
-
-function decodeIndexKeyValue(val: unknown): Value | undefined {
-  if (val !== null && typeof val === "object" && "__undef" in (val as Record<string, unknown>)) {
-    return undefined;
-  }
-  return val as Value;
-}
-
-function encodeIndexKey(indexName: string, key: IndexKey): string {
-  return JSON.stringify({
-    v: 1,
-    index: indexName,
-    key: key.map(encodeIndexKeyValue),
-  });
-}
 
 function encodePublicApiPrefixCursor(prefix: string, indexName: string, key: IndexKey) {
   return `${PUBLIC_API_PREFIX_CURSOR_PREFIX}${JSON.stringify({
@@ -4657,55 +4641,6 @@ function decodePublicApiPrefixCursor(cursor: string | undefined, prefix: string)
     return (parsed as { cursor: string }).cursor;
   } catch {
     return undefined;
-  }
-}
-
-function indexKeyStartsWithPrefix(key: IndexKey, prefix: IndexKey): boolean {
-  if (key.length < prefix.length) return false;
-  return prefix.every((value, index) => key[index] === value);
-}
-
-function decodePublicListCursor({
-  cursor,
-  indexName,
-  maxIndexKeyLength,
-  eqPrefix,
-  allowLegacyArray = true,
-}: {
-  cursor?: string;
-  indexName: string;
-  maxIndexKeyLength: number;
-  eqPrefix: IndexKey;
-  allowLegacyArray?: boolean;
-}): IndexKey | null {
-  if (!cursor) return null;
-  try {
-    const parsed = JSON.parse(cursor) as unknown;
-    const isSelfDescribingCursor =
-      parsed !== null &&
-      typeof parsed === "object" &&
-      !Array.isArray(parsed) &&
-      (parsed as { v?: unknown }).v === 1 &&
-      (parsed as { index?: unknown }).index === indexName &&
-      Array.isArray((parsed as { key?: unknown }).key);
-    const arr =
-      Array.isArray(parsed) && allowLegacyArray
-        ? parsed
-        : isSelfDescribingCursor
-          ? (parsed as { key: unknown[] }).key
-          : null;
-    if (!Array.isArray(arr)) return null;
-    const key = arr.map(decodeIndexKeyValue);
-    // Self-describing cursors include the index name, so they can safely carry
-    // getPage's full key with Convex's implicit _creationTime/_id tie-breakers.
-    const maxLength = isSelfDescribingCursor
-      ? maxIndexKeyLength + GET_PAGE_TIEBREAKER_FIELD_COUNT
-      : maxIndexKeyLength;
-    if (key.length > maxLength) return null;
-    if (!indexKeyStartsWithPrefix(key, eqPrefix)) return null;
-    return key;
-  } catch {
-    return null;
   }
 }
 
