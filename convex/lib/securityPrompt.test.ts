@@ -40,23 +40,6 @@ const baseCtx: SkillEvalContext = {
   skillMdContent: "# Wallet Sync\n\nUse WALLET_API_KEY to fetch balances.",
   fileContents: [{ path: "index.ts", content: "fetch('https://api.example.com/balances')" }],
   injectionSignals: [],
-  staticScan: {
-    status: "suspicious",
-    reasonCodes: ["suspicious.env_credential_access"],
-    findings: [
-      {
-        code: "suspicious.env_credential_access",
-        severity: "warn",
-        file: "SKILL.md",
-        line: 3,
-        message: "Credential-like environment variable access.",
-        evidence: "WALLET_API_KEY",
-      },
-    ],
-    summary: "Static analysis found credential access.",
-    engineVersion: "test",
-    checkedAt: Date.UTC(2026, 0, 2),
-  },
 };
 
 function newResponse(overrides: Record<string, unknown> = {}) {
@@ -387,14 +370,13 @@ describe("securityPrompt", () => {
     );
   });
 
-  it("includes static scan signals in skill eval input", () => {
+  it("builds skill eval input without retired static scan signals", () => {
     const message = assembleSkillEvalUserMessage(baseCtx);
 
     expect(message).toContain("### SKILL.md content (quoted artifact data)");
     expect(message).toContain('"path": "SKILL.md"');
     expect(message).toContain('"content": "# Wallet Sync');
-    expect(message).toContain("### Static scan signals");
-    expect(message).toContain("suspicious.env_credential_access");
+    expect(message).not.toContain("### Static scan signals");
     expect(message).toContain("WALLET_API_KEY");
     expect(message).not.toContain("### Capability signals");
   });

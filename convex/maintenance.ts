@@ -1502,7 +1502,6 @@ export async function repairLegacyPluginSkillSpectorBatchInternalHandler(
           releaseId: item.releaseId,
           source: "backfill",
           priority: 40,
-          waitForVtMs: 0,
         },
       )) as { alreadyQueued?: boolean; jobId?: Id<"securityScanJobs"> };
       if (queued.alreadyQueued) {

@@ -3,7 +3,6 @@ import { basename, join, relative, resolve, sep } from "node:path";
 import { decodeUtf8Text } from "clawhub-schema";
 import ignore from "ignore";
 import mime from "mime";
-import { runStaticModerationScan, type StaticScanResult } from "../convex/lib/moderationEngine";
 import { extractResponseText } from "../convex/lib/openaiResponse";
 import {
   applyInjectionSignalFloor,
@@ -75,7 +74,6 @@ export type LocalClawScanDryRunResult = {
   displayName: string;
   version: string;
   files: Array<{ path: string; size: number }>;
-  staticScan: StaticScanResult;
   llmAnalysis: LocalLlmAnalysis;
 };
 
@@ -140,7 +138,6 @@ export async function runLocalClawScanDryRun(
     displayName: artifact.displayName,
     version: artifact.version,
     files: artifact.evalCtx.files,
-    staticScan: artifact.staticScan,
     llmAnalysis,
   };
 }
@@ -161,15 +158,6 @@ async function buildSkillArtifact(source: string, now: () => number) {
   const summary =
     getFrontmatterDescription(metadata) ?? getFrontmatterValue(frontmatter, "description");
   const textFiles = decodeTextFiles(files);
-  const staticScan = runStaticModerationScan({
-    slug,
-    displayName,
-    summary,
-    frontmatter,
-    metadata,
-    files: files.map((file) => ({ path: file.path, size: file.bytes.byteLength })),
-    fileContents: textFiles,
-  });
   const injectionSignals = detectInjectionPatterns(
     [skillMdContent, ...textFiles.map((file) => file.content)].join("\n"),
   );
@@ -178,7 +166,6 @@ async function buildSkillArtifact(source: string, now: () => number) {
     name: slug,
     displayName,
     version: "local",
-    staticScan,
     evalCtx: {
       slug,
       displayName,
@@ -195,7 +182,6 @@ async function buildSkillArtifact(source: string, now: () => number) {
       skillMdContent,
       fileContents: textFiles.filter((file) => file.path !== skillMd.path),
       injectionSignals,
-      staticScan,
     } satisfies SkillEvalContext,
   };
 }
@@ -243,16 +229,6 @@ async function buildPluginArtifact(source: string, now: () => number) {
   const version = readString(packageJson, "version") ?? "local";
   const summary = readString(packageJson, "description");
   const fileSummaries = files.map((file) => ({ path: file.path, size: file.bytes.byteLength }));
-  const metadata = { packageJson, pluginManifest };
-  const staticScan = runStaticModerationScan({
-    slug: name,
-    displayName,
-    summary,
-    frontmatter: {},
-    metadata,
-    files: fileSummaries,
-    fileContents: textFiles,
-  });
   const injectionSignals = detectInjectionPatterns(
     [readmeContent, ...textFiles.map((file) => file.content)].join("\n"),
   );
@@ -261,7 +237,6 @@ async function buildPluginArtifact(source: string, now: () => number) {
     name,
     displayName,
     version,
-    staticScan,
     evalCtx: {
       slug: name,
       displayName,
@@ -274,14 +249,12 @@ async function buildPluginArtifact(source: string, now: () => number) {
         metadata: {
           packageJson,
           pluginManifest,
-          staticScan,
         },
       },
       files: fileSummaries,
       skillMdContent: readmeContent,
       fileContents: textFiles,
       injectionSignals,
-      staticScan,
     } satisfies SkillEvalContext,
   };
 }
@@ -503,22 +476,6 @@ function printHuman(result: LocalClawScanDryRunResult) {
   console.log(`Display: ${result.displayName}`);
   console.log(`Version: ${result.version}`);
   console.log(`Files: ${result.files.length}`);
-  console.log("");
-  console.log(`Static: ${result.staticScan.status}`);
-  console.log(`Static summary: ${result.staticScan.summary}`);
-  console.log(`Static engine: ${result.staticScan.engineVersion}`);
-  if (result.staticScan.reasonCodes.length > 0) {
-    console.log(`Static reason codes: ${result.staticScan.reasonCodes.join(", ")}`);
-  }
-  if (result.staticScan.findings.length > 0) {
-    console.log("Static findings:");
-    for (const finding of result.staticScan.findings) {
-      console.log(
-        `  ${finding.severity} ${finding.code} ${finding.file}:${finding.line} - ${finding.message}`,
-      );
-      console.log(`    ${finding.evidence}`);
-    }
-  }
   console.log("");
   console.log(`LLM: ${result.llmAnalysis.status}`);
   console.log(`LLM verdict: ${result.llmAnalysis.verdict}`);

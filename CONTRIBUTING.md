@@ -178,7 +178,6 @@ These features degrade gracefully without their keys:
 | Variable              | Purpose                                                   |
 | --------------------- | --------------------------------------------------------- |
 | `OPENAI_API_KEY`      | Embeddings and vector search (falls back to zero vectors) |
-| `VT_API_KEY`          | VirusTotal malware scanning                               |
 | `DISCORD_WEBHOOK_URL` | Discord notifications                                     |
 
 ## CLI Development

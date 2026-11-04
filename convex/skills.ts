@@ -71,7 +71,6 @@ import { deriveModerationFlags } from "./lib/moderation";
 import { buildModerationSnapshot } from "./lib/moderationEngine";
 import {
   legacyFlagsFromVerdict,
-  MODERATION_ENGINE_VERSION,
   summarizeReasonCodes,
   verdictFromCodes,
 } from "./lib/moderationReasonCodes";
@@ -127,10 +126,8 @@ import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./l
 import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
-  staticScanValidator,
-  vtAnalysisValidator,
 } from "./lib/securityAnalysisValidators";
-import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "./lib/skillCards";
+import { selectGeneratedSkillCardFile } from "./lib/skillCards";
 import {
   isPublishedSkillVersion,
   isPublicSkillVersionAvailableForSkill,
@@ -183,7 +180,6 @@ import {
 import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import { readCanonicalStat, readPublicDownloads, readSkillMetricSources } from "./lib/skillStats";
 import { normalizeSkillTags } from "./lib/skillTags";
-import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { fetchText } from "./lib/storageText";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 import schema from "./schema";
@@ -241,10 +237,7 @@ const USER_MODERATION_REASON = "user.moderation";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 
 function buildStructuredModerationPatch(params: {
-  staticScan?: Doc<"skillVersions">["staticScan"];
-  vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
-  vtStatus?: string;
   llmStatus?: string;
   sourceVersionId?: Id<"skillVersions">;
 }): Pick<
@@ -258,9 +251,6 @@ function buildStructuredModerationPatch(params: {
   | "moderationSourceVersionId"
 > {
   const snapshot = buildModerationSnapshot({
-    staticScan: params.staticScan,
-    vtAnalysis: params.vtAnalysis,
-    vtStatus: params.vtStatus,
     llmStatus: params.llmStatus,
     llmAnalysis: params.llmAnalysis,
     sourceVersionId: params.sourceVersionId,
@@ -294,16 +284,13 @@ function normalizeAnalysisStatus(status: string | undefined) {
   return status?.trim().toLowerCase();
 }
 
-function hasCompletedScannerResult(
-  version: Pick<Doc<"skillVersions">, "staticScan" | "vtAnalysis" | "llmAnalysis">,
-) {
+// ClawScan is the only scanner whose result can settle a version's moderation.
+// Retired VirusTotal and static publish-scan results are never consulted.
+function hasCompletedScannerResult(version: Pick<Doc<"skillVersions">, "llmAnalysis">) {
   const completedStatuses = new Set(["clean", "benign", "safe", "suspicious", "malicious"]);
-  return [
-    version.staticScan?.status,
-    version.vtAnalysis?.status,
-    version.llmAnalysis?.status,
-    version.llmAnalysis?.verdict,
-  ].some((status) => completedStatuses.has(normalizeAnalysisStatus(status) ?? ""));
+  return [version.llmAnalysis?.status, version.llmAnalysis?.verdict].some((status) =>
+    completedStatuses.has(normalizeAnalysisStatus(status) ?? ""),
+  );
 }
 
 function hasReviewReasonCode(codes: readonly string[] | undefined) {
@@ -338,42 +325,21 @@ function isObviousJunkSkill(
 }
 
 function resolveScannerModerationReason(params: {
-  vtStatus?: string;
   llmStatus?: string;
   verdict?: Doc<"skills">["moderationVerdict"];
 }) {
-  const vtStatus = normalizeAnalysisStatus(params.vtStatus);
   const llmStatus = normalizeAnalysisStatus(params.llmStatus);
 
-  if (params.verdict === "clean" && (vtStatus === "suspicious" || llmStatus === "suspicious")) {
+  if (params.verdict === "clean" && llmStatus === "suspicious") {
     return "scanner.aggregate.clean";
   }
-  if (vtStatus === "malicious") return "scanner.vt.malicious";
   if (llmStatus === "malicious") return "scanner.llm.malicious";
-  if (vtStatus === "suspicious") return "scanner.vt.suspicious";
   if (llmStatus === "suspicious") return "scanner.llm.suspicious";
-  if (vtStatus === "pending" || vtStatus === "loading" || vtStatus === "not_found") {
-    return "scanner.vt.pending";
-  }
   if (llmStatus === "pending" || llmStatus === "loading") return "scanner.llm.pending";
-  if (vtStatus === "clean") return "scanner.vt.clean";
   if (llmStatus === "clean") return "scanner.llm.clean";
   if (params.verdict === "malicious") return "scanner.aggregate.malicious";
   if (params.verdict === "suspicious") return "scanner.aggregate.suspicious";
   return "scanner.aggregate.clean";
-}
-
-function scannerStatusFromReasonCodes(params: {
-  scanner: "vt" | "llm";
-  status?: string;
-  reasonCodes: readonly string[];
-}) {
-  const scanner = params.scanner;
-  if (params.reasonCodes.includes(`malicious.${scanner}_malicious`)) return "malicious";
-  if (params.reasonCodes.includes(`suspicious.${scanner}_suspicious`)) return "suspicious";
-
-  const status = normalizeAnalysisStatus(params.status);
-  return status === "malicious" || status === "suspicious" ? undefined : status;
 }
 
 function isClawScanMaliciousAnalysis(analysis: Doc<"skillVersions">["llmAnalysis"] | undefined) {
@@ -382,34 +348,18 @@ function isClawScanMaliciousAnalysis(analysis: Doc<"skillVersions">["llmAnalysis
 
 export function buildScannerModerationPatchFromVersion(params: {
   owner: Doc<"users"> | null | undefined;
-  version: Pick<Doc<"skillVersions">, "_id" | "staticScan" | "vtAnalysis" | "llmAnalysis">;
+  version: Pick<Doc<"skillVersions">, "_id" | "llmAnalysis">;
   now: number;
 }): SkillModerationPatch {
   const structuredPatch = buildStructuredModerationPatch({
-    staticScan: params.version.staticScan,
-    vtAnalysis: params.version.vtAnalysis,
     llmAnalysis: params.version.llmAnalysis,
-    vtStatus: params.version.vtAnalysis?.status,
     llmStatus: params.version.llmAnalysis?.status,
     sourceVersionId: params.version._id,
   });
 
   const sourceReasonCodes = structuredPatch.moderationReasonCodes ?? [];
-  const vtStatusForReason = scannerStatusFromReasonCodes({
-    scanner: "vt",
-    status: params.version.vtAnalysis?.status,
-    reasonCodes: sourceReasonCodes,
-  });
-  const rawVtStatus = normalizeAnalysisStatus(params.version.vtAnalysis?.status);
-  const llmStatusForReason =
-    !vtStatusForReason &&
-    (rawVtStatus === "malicious" || rawVtStatus === "suspicious") &&
-    normalizeAnalysisStatus(params.version.llmAnalysis?.status) === "clean"
-      ? undefined
-      : params.version.llmAnalysis?.status;
   const sourceReason = resolveScannerModerationReason({
-    vtStatus: vtStatusForReason,
-    llmStatus: llmStatusForReason,
+    llmStatus: params.version.llmAnalysis?.status,
     verdict: structuredPatch.moderationVerdict,
   });
   const bypassSuspicious =
@@ -456,10 +406,7 @@ export function buildScannerModerationPatchFromVersion(params: {
 async function patchStructuredModerationFromVersion(
   ctx: MutationCtx,
   skill: Doc<"skills">,
-  version: Pick<
-    Doc<"skillVersions">,
-    "_id" | "version" | "staticScan" | "vtAnalysis" | "llmAnalysis" | "sha256hash"
-  >,
+  version: Pick<Doc<"skillVersions">, "_id" | "version" | "llmAnalysis" | "sha256hash">,
 ) {
   const now = Date.now();
   const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
@@ -523,14 +470,9 @@ function skillIconFromSkillVersion(version: Pick<Doc<"skillVersions">, "icon"> |
   return version && "icon" in version ? version.icon : undefined;
 }
 
-function isKnownMaliciousSkillVersion(
-  version: Pick<Doc<"skillVersions">, "_id" | "staticScan" | "vtAnalysis" | "llmAnalysis">,
-) {
+function isKnownMaliciousSkillVersion(version: Pick<Doc<"skillVersions">, "_id" | "llmAnalysis">) {
   const patch = buildStructuredModerationPatch({
-    staticScan: version.staticScan,
-    vtAnalysis: version.vtAnalysis,
     llmAnalysis: version.llmAnalysis,
-    vtStatus: version.vtAnalysis?.status,
     llmStatus: version.llmAnalysis?.status,
     sourceVersionId: version._id,
   });
@@ -539,14 +481,7 @@ function isKnownMaliciousSkillVersion(
 
 type SkillVersionOwnerDeleteAvailability = Pick<
   Doc<"skillVersions">,
-  | "_id"
-  | "skillId"
-  | "softDeletedAt"
-  | "ownerDeletedAt"
-  | "manualRevocation"
-  | "staticScan"
-  | "vtAnalysis"
-  | "llmAnalysis"
+  "_id" | "skillId" | "softDeletedAt" | "ownerDeletedAt" | "manualRevocation" | "llmAnalysis"
 >;
 
 function isSkillVersionAvailableForOwnerDeleteSafety(
@@ -941,8 +876,16 @@ function isScannerManagedReason(reason: string | undefined) {
   );
 }
 
-function isLegacyStaticScannerReason(reason: string | undefined) {
-  return reason === "scanner.static.malicious" || reason === "scanner.static.suspicious";
+// Reasons stamped by scanners that no longer run (the static publish scan and
+// VirusTotal). The latest-version moderation backfill rebuilds these rows from
+// ClawScan so retired scanner reasons do not linger as pending or clean states.
+function isRetiredScannerReason(reason: string | undefined) {
+  return (
+    reason === "scanner.static.malicious" ||
+    reason === "scanner.static.suspicious" ||
+    (reason?.startsWith("scanner.vt.") ?? false) ||
+    (reason?.startsWith("scanner.vt-rescan.") ?? false)
+  );
 }
 
 function shouldPreserveExistingModerationLock(
@@ -1003,7 +946,7 @@ function shouldBackfillLatestSkillModeration(
 ) {
   if (!shouldSyncModerationFromLatestVersion(skill)) return false;
   if (!skill.latestVersionId) return false;
-  if (isLegacyStaticScannerReason(skill.moderationReason as string | undefined)) return true;
+  if (isRetiredScannerReason(skill.moderationReason as string | undefined)) return true;
   if (skill.moderationSourceVersionId === skill.latestVersionId) return false;
   return isScannerManagedReason(skill.moderationReason as string | undefined);
 }
@@ -1812,9 +1755,7 @@ type DashboardSkillListItem = {
   latestVersion: {
     version: string;
     createdAt: number;
-    vtStatus: string | null;
     llmStatus: string | null;
-    staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   } | null;
   createdAt: number;
   updatedAt: number;
@@ -2008,12 +1949,6 @@ function toPublicGitHubSkillScan(
     aigAnalysis: scan.aigAnalysis,
     skillSpectorAnalysis: scan.skillSpectorAnalysis,
     llmAnalysis: scan.llmAnalysis,
-    staticScan: scan.staticScan
-      ? {
-          ...scan.staticScan,
-          findings: scan.staticScan.findings.map((finding) => ({ ...finding, evidence: "" })),
-        }
-      : undefined,
     completedAt: scan.completedAt,
     createdAt: scan.createdAt,
     updatedAt: scan.updatedAt,
@@ -2149,9 +2084,7 @@ async function toDashboardSkillListItem(
         ? {
             version: latestVersion.version,
             createdAt: latestVersion.createdAt,
-            vtStatus: latestVersion.vtAnalysis?.status ?? null,
             llmStatus: latestVersion.llmAnalysis?.status ?? null,
-            staticScanStatus: latestVersion.staticScan?.status ?? null,
           }
         : null,
     createdAt: skill.createdAt,
@@ -2876,17 +2809,6 @@ function compactSecurityVerdictVersion(version: Doc<"skillVersions">) {
     createdAt: version.createdAt,
     softDeletedAt: version.softDeletedAt,
     publicationStatus: version.publicationStatus,
-    ...(version.staticScan
-      ? {
-          staticScan: {
-            status: version.staticScan.status,
-            reasonCodes: version.staticScan.reasonCodes,
-            summary: version.staticScan.summary,
-            engineVersion: version.staticScan.engineVersion,
-            checkedAt: version.staticScan.checkedAt,
-          },
-        }
-      : {}),
     ...(version.llmAnalysis
       ? {
           llmAnalysis: {
@@ -2904,20 +2826,6 @@ function compactSecurityVerdictVersion(version: Doc<"skillVersions">) {
               ? { model: version.llmAnalysis.model }
               : {}),
             checkedAt: version.llmAnalysis.checkedAt,
-          },
-        }
-      : {}),
-    ...(version.vtAnalysis
-      ? {
-          vtAnalysis: {
-            status: version.vtAnalysis.status,
-            ...(version.vtAnalysis.verdict !== undefined
-              ? { verdict: version.vtAnalysis.verdict }
-              : {}),
-            ...(version.vtAnalysis.source !== undefined
-              ? { source: version.vtAnalysis.source }
-              : {}),
-            checkedAt: version.vtAnalysis.checkedAt,
           },
         }
       : {}),
@@ -3141,13 +3049,6 @@ export const getStatsPageInternal = internalQuery({
     const byStatus: Record<string, number> = {};
     const byReason: Record<string, number> = {};
     const byFlags: Record<string, number> = {};
-    const vtStats = {
-      clean: 0,
-      suspicious: 0,
-      malicious: 0,
-      pending: 0,
-      noAnalysis: 0,
-    };
 
     for (const skill of page) {
       if (skill.softDeletedAt) continue;
@@ -3163,35 +3064,12 @@ export const getStatsPageInternal = internalQuery({
       for (const flag of skill.moderationFlags ?? []) {
         byFlags[flag] = (byFlags[flag] ?? 0) + 1;
       }
-
-      if (status === "active") {
-        const reason = skill.moderationReason;
-        if (!reason) {
-          vtStats.noAnalysis++;
-        } else if (reason === "scanner.vt.clean") {
-          vtStats.clean++;
-        } else if (reason === "scanner.vt.malicious") {
-          vtStats.malicious++;
-        } else if (reason === "scanner.vt.suspicious") {
-          vtStats.suspicious++;
-        } else if (reason === "scanner.vt.pending" || reason === "pending.scan") {
-          vtStats.pending++;
-        } else if (reason.startsWith("scanner.vt-rescan.")) {
-          const suffix = reason.slice("scanner.vt-rescan.".length);
-          if (suffix === "clean") vtStats.clean++;
-          else if (suffix === "malicious") vtStats.malicious++;
-          else if (suffix === "suspicious") vtStats.suspicious++;
-          else vtStats.pending++;
-        } else {
-          vtStats.noAnalysis++;
-        }
-      }
     }
 
     const nextCursor = page.length > 0 ? page[page.length - 1]._creationTime : null;
     const done = page.length < PAGE_SIZE;
 
-    return { total, byStatus, byReason, byFlags, vtStats, nextCursor, done };
+    return { total, byStatus, byReason, byFlags, nextCursor, done };
   },
 });
 
@@ -3216,13 +3094,6 @@ type StatsResult = {
   byStatus: Record<string, number>;
   byReason: Record<string, number>;
   byFlags: Record<string, number>;
-  vtStats: {
-    clean: number;
-    suspicious: number;
-    malicious: number;
-    pending: number;
-    noAnalysis: number;
-  };
 };
 
 export const getStatsInternal = internalAction({
@@ -3232,13 +3103,6 @@ export const getStatsInternal = internalAction({
     const byStatus: Record<string, number> = {};
     const byReason: Record<string, number> = {};
     const byFlags: Record<string, number> = {};
-    const vtStats = {
-      clean: 0,
-      suspicious: 0,
-      malicious: 0,
-      pending: 0,
-      noAnalysis: 0,
-    };
 
     let cursor: number | undefined;
     let done = false;
@@ -3249,13 +3113,6 @@ export const getStatsInternal = internalAction({
         byStatus: Record<string, number>;
         byReason: Record<string, number>;
         byFlags: Record<string, number>;
-        vtStats: {
-          clean: number;
-          suspicious: number;
-          malicious: number;
-          pending: number;
-          noAnalysis: number;
-        };
         nextCursor: number | null;
         done: boolean;
       } = await ctx.runQuery(internal.skills.getStatsPageInternal, { cursor });
@@ -3270,11 +3127,6 @@ export const getStatsInternal = internalAction({
       for (const [k, cnt] of Object.entries(page.byFlags)) {
         byFlags[k] = (byFlags[k] ?? 0) + cnt;
       }
-      vtStats.clean += page.vtStats.clean;
-      vtStats.suspicious += page.vtStats.suspicious;
-      vtStats.malicious += page.vtStats.malicious;
-      vtStats.pending += page.vtStats.pending;
-      vtStats.noAnalysis += page.vtStats.noAnalysis;
 
       done = page.done;
       if (page.nextCursor !== null) {
@@ -3284,7 +3136,7 @@ export const getStatsInternal = internalAction({
 
     const highlighted: number = await ctx.runQuery(internal.skills.getHighlightedCountInternal, {});
 
-    return { total, highlighted, byStatus, byReason, byFlags, vtStats };
+    return { total, highlighted, byStatus, byReason, byFlags };
   },
 });
 
@@ -5583,25 +5435,7 @@ export const listAuditPage = query({
           ? {
               version: latestVersion.version,
               createdAt: latestVersion.createdAt,
-              vtAnalysis: latestVersion.vtAnalysis,
               llmAnalysis: latestVersion.llmAnalysis,
-              staticScan: latestVersion.staticScan
-                ? {
-                    status: latestVersion.staticScan.status,
-                    reasonCodes: latestVersion.staticScan.reasonCodes,
-                    findings: (latestVersion.staticScan.findings ?? []).map((finding) => ({
-                      code: finding.code,
-                      severity: finding.severity,
-                      file: finding.file,
-                      line: finding.line,
-                      message: finding.message,
-                      evidence: "",
-                    })),
-                    summary: latestVersion.staticScan.summary,
-                    engineVersion: latestVersion.staticScan.engineVersion,
-                    checkedAt: latestVersion.staticScan.checkedAt,
-                  }
-                : null,
             }
           : null,
       });
@@ -7398,103 +7232,6 @@ export const getSkillByIdInternal = internalQuery({
   handler: async (ctx, args) => ctx.db.get(args.skillId),
 });
 
-export const getPendingScanSkillsInternal = internalQuery({
-  args: {
-    limit: v.optional(v.number()),
-    skipRecentMinutes: v.optional(v.number()),
-    exhaustive: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    const exhaustive = args.exhaustive ?? false;
-    const limit = exhaustive
-      ? Math.max(1, Math.floor(args.limit ?? 10000))
-      : clampInt(args.limit ?? 10, 1, 100);
-    const skipRecentMinutes = exhaustive ? 0 : (args.skipRecentMinutes ?? 60);
-    const skipThreshold = Date.now() - skipRecentMinutes * 60 * 1000;
-
-    let allSkills: Doc<"skills">[] = [];
-    if (exhaustive) {
-      // Used by manual/backfill tooling where fairness matters more than query cost.
-      allSkills = await ctx.db
-        .query("skills")
-        .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-        .collect();
-    } else {
-      // Mix "most recently updated" with "oldest created" slices so older pending
-      // items don't starve behind high-churn records.
-      const poolSize = Math.min(Math.max(limit * 20, 200), 1000);
-      const [recentSkills, oldestSkills] = await Promise.all([
-        ctx.db
-          .query("skills")
-          .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-          .order("desc")
-          .take(poolSize),
-        ctx.db
-          .query("skills")
-          .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
-          .order("asc")
-          .take(poolSize),
-      ]);
-
-      const deduped = new Map<Id<"skills">, Doc<"skills">>();
-      for (const skill of [...recentSkills, ...oldestSkills]) {
-        deduped.set(skill._id, skill);
-      }
-      allSkills = [...deduped.values()];
-    }
-
-    const candidates = allSkills.filter((skill) => {
-      const reason = skill.moderationReason;
-      if (skill.moderationStatus === "hidden" && reason === "pending.scan") return true;
-      if (skill.moderationStatus === "hidden" && reason === "quality.low") return true;
-      if (skill.moderationStatus === "active" && reason === "pending.scan") return true;
-      if (skill.moderationStatus === "active" && reason === "scanner.vt.pending") return true;
-      return (
-        reason === "scanner.llm.clean" ||
-        reason === "scanner.llm.suspicious" ||
-        reason === "scanner.llm.malicious"
-      );
-    });
-
-    // Filter out recently checked skills unless caller explicitly disables recency filtering.
-    const skills =
-      skipRecentMinutes <= 0
-        ? candidates
-        : candidates.filter((s) => !s.scanLastCheckedAt || s.scanLastCheckedAt < skipThreshold);
-
-    // Shuffle and take the requested limit (Fisher-Yates)
-    for (let i = skills.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [skills[i], skills[j]] = [skills[j], skills[i]];
-    }
-    const selected = skills.slice(0, limit);
-
-    const results: Array<{
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions"> | null;
-      sha256hash: string | null;
-      checkCount: number;
-    }> = [];
-
-    const FINAL_VT_STATUSES = new Set(["clean", "malicious", "suspicious"]);
-    for (const skill of selected) {
-      const version = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
-      if (!version?.sha256hash) continue;
-      const vtStatus = version.vtAnalysis?.status?.trim().toLowerCase();
-      // Keep retrying unresolved VT results (pending/stale/error), but skip finalized outcomes.
-      if (vtStatus && FINAL_VT_STATUSES.has(vtStatus)) continue;
-      results.push({
-        skillId: skill._id,
-        versionId: version?._id ?? null,
-        sha256hash: version?.sha256hash ?? null,
-        checkCount: skill.scanCheckCount ?? 0,
-      });
-    }
-
-    return results;
-  },
-});
-
 /**
  * Health check query to monitor scan queue status
  */
@@ -7530,175 +7267,6 @@ export const getScanQueueHealthInternal = internalQuery({
       oldestAgeMinutes: Math.round((now - oldestTimestamp) / 60000),
       healthy: pending.length < 50 && veryStaleCount === 0,
     };
-  },
-});
-
-/**
- * Get active skills that have a version hash but no vtAnalysis cached.
- * Used to backfill VT results for skills approved before VT integration.
- */
-export const getActiveSkillsMissingVTCacheInternal = internalQuery({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const limit = args.limit ?? 100;
-    const poolSize = limit * 2; // Take more to account for some having vtAnalysis
-
-    // Skills waiting for VT + LLM-evaluated skills that still need VT cache
-    const vtPending = await ctx.db
-      .query("skills")
-      .withIndex("by_moderation", (q) =>
-        q.eq("moderationStatus", "active").eq("moderationReason", "scanner.vt.pending"),
-      )
-      .take(poolSize);
-    const [llmClean, llmSuspicious, llmMalicious] = await Promise.all([
-      ctx.db
-        .query("skills")
-        .withIndex("by_moderation", (q) =>
-          q.eq("moderationStatus", "active").eq("moderationReason", "scanner.llm.clean"),
-        )
-        .take(poolSize),
-      ctx.db
-        .query("skills")
-        .withIndex("by_moderation", (q) =>
-          q.eq("moderationStatus", "active").eq("moderationReason", "scanner.llm.suspicious"),
-        )
-        .take(poolSize),
-      ctx.db
-        .query("skills")
-        .withIndex("by_moderation", (q) =>
-          q.eq("moderationStatus", "active").eq("moderationReason", "scanner.llm.malicious"),
-        )
-        .take(poolSize),
-    ]);
-    const llmEvaluated = [...llmClean, ...llmSuspicious, ...llmMalicious];
-
-    // Dedup across pools
-    const seen = new Set<string>();
-    const allSkills: typeof vtPending = [];
-    for (const skill of [...vtPending, ...llmEvaluated]) {
-      if (!seen.has(skill._id)) {
-        seen.add(skill._id);
-        allSkills.push(skill);
-      }
-    }
-
-    const results: Array<{
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      sha256hash: string;
-      slug: string;
-    }> = [];
-
-    for (const skill of allSkills) {
-      if (results.length >= limit) break;
-      if (!skill.latestVersionId) continue;
-      const version = await ctx.db.get(skill.latestVersionId);
-      if (!version) continue;
-      // Include if version has hash but no vtAnalysis
-      if (version.sha256hash && !version.vtAnalysis) {
-        results.push({
-          skillId: skill._id,
-          versionId: version._id,
-          sha256hash: version.sha256hash,
-          slug: skill.slug,
-        });
-      }
-    }
-
-    return results;
-  },
-});
-
-/**
- * Get all active skills with VT analysis for daily re-scan.
- */
-export const getAllActiveSkillsForRescanInternal = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const activeSkills = await ctx.db
-      .query("skills")
-      .withIndex("by_moderation", (q) => q.eq("moderationStatus", "active"))
-      .collect();
-
-    const results: Array<{
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      sha256hash: string;
-      slug: string;
-    }> = [];
-
-    for (const skill of activeSkills) {
-      if (!skill.latestVersionId) continue;
-      const version = await ctx.db.get(skill.latestVersionId);
-      if (!version?.sha256hash) continue;
-
-      results.push({
-        skillId: skill._id,
-        versionId: version._id,
-        sha256hash: version.sha256hash,
-        slug: skill.slug,
-      });
-    }
-
-    return results;
-  },
-});
-
-/**
- * Cursor-based batch query for daily rescan. Uses _creationTime for stable pagination.
- * Returns a batch of active skills with sha256hash, plus a cursor and done flag.
- */
-export const getActiveSkillBatchForRescanInternal = internalQuery({
-  args: {
-    cursor: v.optional(v.number()),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = args.batchSize ?? 100;
-    const cursor = args.cursor ?? 0;
-
-    // Use built-in by_creation_time index for stable cursor-based pagination
-    const candidates = await ctx.db
-      .query("skills")
-      .withIndex("by_creation_time", (q) => q.gt("_creationTime", cursor))
-      .order("asc")
-      .take(batchSize * 3); // Over-fetch to account for filtering
-
-    const results: Array<{
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      sha256hash: string;
-      slug: string;
-      wasFlagged: boolean;
-    }> = [];
-    let nextCursor = cursor;
-
-    for (const skill of candidates) {
-      nextCursor = skill._creationTime;
-      if (results.length >= batchSize) break;
-
-      // Filter out soft-deleted and non-active
-      if (skill.softDeletedAt) continue;
-      if ((skill.moderationStatus ?? "active") !== "active") continue;
-      if (!skill.latestVersionId) continue;
-
-      const version = await ctx.db.get(skill.latestVersionId);
-      if (!version?.sha256hash) continue;
-
-      results.push({
-        skillId: skill._id,
-        versionId: version._id,
-        sha256hash: version.sha256hash,
-        slug: skill.slug,
-        wasFlagged:
-          (skill.moderationFlags as string[] | undefined)?.includes("flagged.suspicious") ?? false,
-      });
-    }
-
-    // Done when we got fewer candidates than our over-fetch limit
-    const done = candidates.length < batchSize * 3;
-
-    return { skills: results, nextCursor, done };
   },
 });
 
@@ -7779,275 +7347,6 @@ export const hideObviousJunkSuspiciousSkillsInternal = internalMutation({
 });
 
 /**
- * Get active latest skill versions whose static scan is missing or uses an older engine version.
- * Used to backfill new static rules onto already-published skills.
- */
-export const getActiveSkillBatchForStaticScanBackfillInternal = internalQuery({
-  args: {
-    cursor: v.optional(v.number()),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = args.batchSize ?? 25;
-    const cursor = args.cursor ?? 0;
-
-    const candidates = await ctx.db
-      .query("skills")
-      .withIndex("by_creation_time", (q) => q.gt("_creationTime", cursor))
-      .order("asc")
-      .take(batchSize * 4);
-
-    const results: Array<{
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      slug: string;
-    }> = [];
-    let nextCursor = cursor;
-
-    for (const skill of candidates) {
-      nextCursor = skill._creationTime;
-      if (results.length >= batchSize) break;
-
-      if (skill.softDeletedAt) continue;
-      if ((skill.moderationStatus ?? "active") !== "active") continue;
-      if (!skill.latestVersionId) continue;
-
-      const version = await ctx.db.get(skill.latestVersionId);
-      if (!version) continue;
-      if (version.staticScan?.engineVersion === MODERATION_ENGINE_VERSION) continue;
-
-      results.push({
-        skillId: skill._id,
-        versionId: version._id,
-        slug: skill.slug,
-      });
-    }
-
-    const done = candidates.length < batchSize * 4;
-    return { skills: results, nextCursor, done };
-  },
-});
-
-/**
- * Get skills with stale moderationReason that have vtAnalysis cached.
- * Used to sync moderationReason with cached VT results.
- */
-export const getSkillsWithStaleModerationReasonInternal = internalQuery({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const limit = args.limit ?? 100;
-
-    // Over-fetch from each bucket since some will be filtered out (no vtAnalysis).
-    const poolSize = limit * 2;
-    // Find skills with pending-like moderationReason using indexed queries
-    const [vtPending, pendingScan] = await Promise.all([
-      ctx.db
-        .query("skills")
-        .withIndex("by_moderation", (q) =>
-          q.eq("moderationStatus", "active").eq("moderationReason", "scanner.vt.pending"),
-        )
-        .take(poolSize),
-      ctx.db
-        .query("skills")
-        .withIndex("by_moderation", (q) =>
-          q.eq("moderationStatus", "active").eq("moderationReason", "pending.scan"),
-        )
-        .take(poolSize),
-    ]);
-
-    const results: Array<{
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      slug: string;
-      currentReason: string;
-      vtStatus: string | null;
-      sha256hash: string | null;
-    }> = [];
-
-    for (const skill of [...vtPending, ...pendingScan]) {
-      if (results.length >= limit) break;
-      if (!skill.moderationReason) continue;
-      if (!skill.latestVersionId) continue;
-
-      const version = await ctx.db.get(skill.latestVersionId);
-      if (!version?.vtAnalysis?.status) continue; // Skip if no vtAnalysis
-
-      results.push({
-        skillId: skill._id,
-        versionId: version._id,
-        slug: skill.slug,
-        currentReason: skill.moderationReason,
-        vtStatus: version.vtAnalysis.status,
-        sha256hash: version.sha256hash ?? null,
-      });
-    }
-
-    return results;
-  },
-});
-
-/**
- * Get skill versions with pending VT cache rows that need reanalysis.
- */
-export const getPendingVTSkillsInternal = internalQuery({
-  args: { limit: v.optional(v.number()), cursor: v.optional(v.union(v.string(), v.null())) },
-  handler: async (ctx, args) => {
-    const limit = args.limit ?? 100;
-
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skillVersions")
-      .withIndex("by_active_vt_status_created", (q) =>
-        q.eq("softDeletedAt", undefined).eq("vtAnalysis.status", "pending"),
-      )
-      .paginate({ cursor: args.cursor ?? null, numItems: limit });
-
-    const results: Array<{
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      slug: string;
-      sha256hash: string;
-      isLatest: boolean;
-    }> = [];
-
-    for (const version of page) {
-      if (!version.sha256hash) continue;
-      const skill = await ctx.db.get(version.skillId);
-      if (!skill || skill.softDeletedAt) continue;
-
-      results.push({
-        skillId: skill._id,
-        versionId: version._id,
-        slug: skill.slug,
-        sha256hash: version.sha256hash,
-        isLatest: skill.latestVersionId === version._id,
-      });
-    }
-
-    return { skills: results, cursor: continueCursor, done: isDone };
-  },
-});
-
-export const updateSkillVersionStaticScanInternal = internalMutation({
-  args: {
-    skillId: v.id("skills"),
-    versionId: v.id("skillVersions"),
-    staticScan: staticScanValidator,
-  },
-  handler: async (ctx, args) => {
-    const version = await ctx.db.get(args.versionId);
-    if (!version || version.skillId !== args.skillId)
-      return { ok: true as const, skipped: "missing" as const };
-
-    await ctx.db.patch(version._id, {
-      staticScan: args.staticScan,
-    });
-    await ctx.scheduler?.runAfter(0, internal.skillCards.enqueueForVersionInternal, {
-      versionId: version._id,
-      source: "scan",
-    });
-
-    return { ok: true as const, status: args.staticScan.status };
-  },
-});
-
-export const scanSkillVersionStaticallyInternal: ReturnType<typeof internalAction> = internalAction(
-  {
-    args: {
-      skillId: v.id("skills"),
-      versionId: v.id("skillVersions"),
-    },
-    handler: async (ctx, args) => {
-      const [skill, version] = await Promise.all([
-        ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId: args.skillId }),
-        ctx.runQuery(internal.skills.getVersionByIdInternal, { versionId: args.versionId }),
-      ]);
-
-      if (!skill || !version) {
-        return { ok: true as const, skipped: "missing" as const };
-      }
-
-      const fingerprintEntries = (await ctx.runQuery(
-        internal.skills.listVersionFingerprintsInternal,
-        {
-          skillVersionId: version._id,
-        },
-      )) as Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>;
-      const generatedBundleFingerprints = fingerprintEntries
-        .filter((entry) => entry.kind === "generated-bundle")
-        .map((entry) => entry.fingerprint);
-      const staticScan = await runStaticPublishScan(ctx, {
-        slug: skill.slug,
-        displayName: skill.displayName,
-        summary: skill.summary ?? undefined,
-        frontmatter: version.parsed?.frontmatter ?? {},
-        metadata: version.parsed?.metadata,
-        files: sourceSkillVersionFiles(version.files, { generatedBundleFingerprints }),
-      });
-
-      return await ctx.runMutation(internal.skills.updateSkillVersionStaticScanInternal, {
-        skillId: skill._id,
-        versionId: version._id,
-        staticScan,
-      });
-    },
-  },
-);
-
-export const backfillSkillStaticScansInternal: ReturnType<typeof internalAction> = internalAction({
-  args: {
-    cursor: v.optional(v.number()),
-    batchSize: v.optional(v.number()),
-    rescanned: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = Math.max(1, Math.min(args.batchSize ?? 25, 100));
-    const batch = await ctx.runQuery(
-      internal.skills.getActiveSkillBatchForStaticScanBackfillInternal,
-      {
-        cursor: args.cursor,
-        batchSize,
-      },
-    );
-
-    let rescanned = args.rescanned ?? 0;
-    for (const skill of batch.skills) {
-      await ctx.scheduler.runAfter(0, internal.skills.scanSkillVersionStaticallyInternal, {
-        skillId: skill.skillId,
-        versionId: skill.versionId,
-      });
-      rescanned += 1;
-    }
-
-    if (!batch.done) {
-      await ctx.scheduler.runAfter(0, internal.skills.backfillSkillStaticScansInternal, {
-        cursor: batch.nextCursor,
-        batchSize,
-        rescanned,
-      });
-    }
-
-    return {
-      rescanned,
-      nextCursor: batch.nextCursor,
-      done: batch.done,
-    };
-  },
-});
-
-export const backfillSkillStaticScans: ReturnType<typeof action> = action({
-  args: {
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUserFromAction(ctx);
-    assertAdmin(user);
-    return await ctx.runAction(internal.skills.backfillSkillStaticScansInternal, {
-      batchSize: args.batchSize,
-    });
-  },
-});
-
-/**
  * Emergency escalation by skillId for legacy rows without sha256hash.
  * Rebuilds the full moderation snapshot so legacy rows stay in sync with structured fields.
  */
@@ -8066,33 +7365,16 @@ export const escalateSkillByIdInternal = internalMutation({
     const version = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
     const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
     const normalizedReason = args.moderationReason.trim().toLowerCase();
-    const reasonMatch = /^scanner\.(vt|llm)\.([^.]+)$/.exec(normalizedReason);
-    const vtStatus = reasonMatch?.[1] === "vt" ? reasonMatch[2] : version?.vtAnalysis?.status;
-    const llmStatus = reasonMatch?.[1] === "llm" ? reasonMatch[2] : version?.llmAnalysis?.status;
+    const reasonMatch = /^scanner\.llm\.([^.]+)$/.exec(normalizedReason);
+    const llmStatus = reasonMatch ? reasonMatch[1] : version?.llmAnalysis?.status;
     const snapshot = buildModerationSnapshot({
-      staticScan: version?.staticScan,
-      vtAnalysis: version?.vtAnalysis,
-      vtStatus,
       llmStatus,
       llmAnalysis: version?.llmAnalysis,
       sourceVersionId: version?._id,
     });
     const sourceReasonCodes = snapshot.reasonCodes;
-    const vtStatusForReason = scannerStatusFromReasonCodes({
-      scanner: "vt",
-      status: vtStatus,
-      reasonCodes: sourceReasonCodes,
-    });
-    const rawVtStatus = normalizeAnalysisStatus(vtStatus);
-    const llmStatusForReason =
-      !vtStatusForReason &&
-      (rawVtStatus === "malicious" || rawVtStatus === "suspicious") &&
-      normalizeAnalysisStatus(llmStatus) === "clean"
-        ? undefined
-        : llmStatus;
     const sourceReason = resolveScannerModerationReason({
-      vtStatus: vtStatusForReason,
-      llmStatus: llmStatusForReason,
+      llmStatus,
       verdict: snapshot.verdict,
     });
     const bypassSuspicious =
@@ -8166,47 +7448,6 @@ export const updateSkillModerationReasonInternal = internalMutation({
         moderationReason: args.moderationReason,
       }),
     });
-  },
-});
-
-/**
- * Get skills with null moderationStatus that need to be normalized.
- */
-export const getSkillsWithNullModerationStatusInternal = internalQuery({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const limit = args.limit ?? 100;
-    const skills = await ctx.db
-      .query("skills")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("moderationStatus"), undefined),
-          q.eq(q.field("softDeletedAt"), undefined),
-        ),
-      )
-      .take(limit);
-
-    return skills.map((s) => ({
-      skillId: s._id,
-      slug: s.slug,
-      moderationReason: s.moderationReason,
-    }));
-  },
-});
-
-/**
- * Set moderationStatus to 'active' for a skill.
- */
-export const setSkillModerationStatusActiveInternal = internalMutation({
-  args: { skillId: v.id("skills") },
-  handler: async (ctx, args) => {
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill) return;
-
-    const patch: Partial<Doc<"skills">> = { moderationStatus: "active" };
-    const nextSkill = { ...skill, ...patch };
-    await ctx.db.patch(args.skillId, patch);
-    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
   },
 });
 
@@ -8643,11 +7884,19 @@ export const restoreOwnedSkillsForModerationLiftBatchInternal = internalMutation
 
       const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
 
-      // Restore from the current structured scanner result. VirusTotal is no
-      // longer guaranteed to run, so checking only vtAnalysis would leave
-      // clean ClawScan versions hidden as pending forever.
+      // Restore from the current ClawScan result. A version without one stays
+      // pending and gets a ClawScan job, whose completion re-derives moderation;
+      // nothing else (retired VirusTotal polling included) would resolve it.
+      const hasClawScanResult = Boolean(latestVersion && hasCompletedScannerResult(latestVersion));
+      if (latestVersion && !hasClawScanResult) {
+        await ctx.scheduler.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
+          versionId: latestVersion._id,
+          source: "backfill",
+          preserveActiveJob: true,
+        });
+      }
       const patch: Partial<Doc<"skills">> =
-        latestVersion && hasCompletedScannerResult(latestVersion)
+        latestVersion && hasClawScanResult
           ? {
               ...buildScannerModerationPatchFromVersion({
                 owner: user,
@@ -8686,115 +7935,6 @@ export const restoreOwnedSkillsForModerationLiftBatchInternal = internalMutation
   },
 });
 
-/**
- * Get legacy skills that are active but still have "pending.scan" reason.
- * These need to be scanned through VT to get proper verdicts.
- */
-export const getLegacyPendingScanSkillsInternal = internalQuery({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const limit = args.limit ?? 1000;
-    const skills = await ctx.db
-      .query("skills")
-      .withIndex("by_moderation", (q) =>
-        q.eq("moderationStatus", "active").eq("moderationReason", "pending.scan"),
-      )
-      .take(limit);
-
-    const results: Array<{
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      slug: string;
-      hasHash: boolean;
-    }> = [];
-
-    for (const skill of skills) {
-      if (!skill.latestVersionId) continue;
-      const version = await ctx.db.get(skill.latestVersionId);
-      results.push({
-        skillId: skill._id,
-        versionId: version?._id ?? ("" as Id<"skillVersions">),
-        slug: skill.slug,
-        hasHash: Boolean(version?.sha256hash),
-      });
-    }
-
-    return results;
-  },
-});
-
-/**
- * Get active skills that bypassed VT entirely (null moderationReason).
- */
-export const getUnscannedActiveSkillsInternal = internalQuery({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const limit = args.limit ?? 1000;
-    const skills = await ctx.db
-      .query("skills")
-      .withIndex("by_moderation", (q) =>
-        q.eq("moderationStatus", "active").eq("moderationReason", undefined),
-      )
-      .take(limit);
-
-    const results: Array<{
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      slug: string;
-    }> = [];
-
-    for (const skill of skills) {
-      if (skill.softDeletedAt) continue;
-      if (!skill.latestVersionId) continue;
-      const version = await ctx.db.get(skill.latestVersionId);
-      results.push({
-        skillId: skill._id,
-        versionId: version?._id ?? ("" as Id<"skillVersions">),
-        slug: skill.slug,
-      });
-    }
-
-    return results;
-  },
-});
-
-/**
- * Update scan tracking for a skill (called after each VT check)
- */
-export const updateScanCheckInternal = internalMutation({
-  args: { skillId: v.id("skills") },
-  handler: async (ctx, args) => {
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill) return;
-
-    await ctx.db.patch(args.skillId, {
-      scanLastCheckedAt: Date.now(),
-      scanCheckCount: (skill.scanCheckCount ?? 0) + 1,
-    });
-  },
-});
-
-/**
- * Mark a skill as stale after too many failed scan checks
- * TODO: Setup webhook/notification when skills are marked stale for manual review
- */
-export const markScanStaleInternal = internalMutation({
-  args: { skillId: v.id("skills") },
-  handler: async (ctx, args) => {
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill) return;
-
-    await ctx.db.patch(args.skillId, {
-      moderationReason: "pending.scan.stale",
-      isSuspicious: computeIsSuspicious({
-        moderationFlags: skill.moderationFlags,
-        moderationReason: "pending.scan.stale",
-      }),
-      updatedAt: Date.now(),
-    });
-  },
-});
-
 export const listVersionsInternal = internalQuery({
   args: { skillId: v.id("skills") },
   handler: async (ctx, args) => {
@@ -8805,27 +7945,15 @@ export const listVersionsInternal = internalQuery({
   },
 });
 
-export const updateVersionScanResultsInternal = internalMutation({
+export const updateVersionSha256HashInternal = internalMutation({
   args: {
     versionId: v.id("skillVersions"),
-    sha256hash: v.optional(v.string()),
-    vtAnalysis: v.optional(vtAnalysisValidator),
+    sha256hash: v.string(),
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
-    if (!version) return;
-
-    const patch: Partial<Doc<"skillVersions">> = {};
-    if (args.sha256hash !== undefined) {
-      patch.sha256hash = args.sha256hash;
-    }
-    if (args.vtAnalysis !== undefined) {
-      patch.vtAnalysis = args.vtAnalysis;
-    }
-
-    if (Object.keys(patch).length > 0) {
-      await ctx.db.patch(args.versionId, patch);
-    }
+    if (!version || version.sha256hash === args.sha256hash) return;
+    await ctx.db.patch(args.versionId, { sha256hash: args.sha256hash });
   },
 });
 
@@ -8970,257 +8098,6 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
       return;
     }
     await patchStructuredModerationFromVersion(ctx, skill, nextVersion);
-  },
-});
-
-export const approveSkillByHashInternal = internalMutation({
-  args: {
-    sha256hash: v.string(),
-    scanner: v.string(),
-    status: v.string(),
-    moderationStatus: v.optional(v.union(v.literal("active"), v.literal("hidden"))),
-  },
-  handler: async (ctx, args) => {
-    const version = await ctx.db
-      .query("skillVersions")
-      .withIndex("by_sha256hash", (q) => q.eq("sha256hash", args.sha256hash))
-      .unique();
-
-    if (!version) throw new Error("Version not found for hash");
-
-    // Update the skill's moderation status based on scan result
-    const skill = await ctx.db.get(version.skillId);
-    if (skill) {
-      if (skill.latestVersionId && skill.latestVersionId !== version._id) {
-        return { ok: true, skillId: version.skillId, versionId: version._id };
-      }
-
-      const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
-      const isMalicious = args.status === "malicious";
-      const isSuspicious = args.status === "suspicious";
-      const isClean = !isMalicious && !isSuspicious;
-
-      // Defense-in-depth: read existing flags to merge scanner results.
-      // The stricter verdict always wins across scanners.
-      const existingFlags: string[] = (skill.moderationFlags as string[] | undefined) ?? [];
-      const existingReason: string | undefined = skill.moderationReason as string | undefined;
-      const alreadyBlocked = existingFlags.includes("blocked.malware");
-      const bypassSuspicious =
-        isSuspicious && !alreadyBlocked && isPrivilegedOwnerForSuspiciousBypass(owner);
-
-      // Determine new flags based on multi-scanner merge
-      let newFlags: string[] | undefined;
-      if (isMalicious || alreadyBlocked) {
-        // Malicious from ANY scanner → blocked.malware (upgrade from suspicious)
-        newFlags = ["blocked.malware"];
-      } else if (isSuspicious && !bypassSuspicious) {
-        // Suspicious from this scanner → flagged.suspicious
-        newFlags = ["flagged.suspicious"];
-      } else if (isClean) {
-        // Clean from this scanner — only clear if no other scanner has flagged
-        const otherScannerFlagged =
-          existingReason?.startsWith("scanner.") &&
-          !existingReason.startsWith(`scanner.${args.scanner}.`) &&
-          !existingReason.endsWith(".clean") &&
-          !existingReason.endsWith(".pending");
-        newFlags = otherScannerFlagged ? existingFlags : undefined;
-      }
-      if (!alreadyBlocked && isPrivilegedOwnerForSuspiciousBypass(owner)) {
-        newFlags = stripSuspiciousFlag(newFlags ?? existingFlags);
-      }
-
-      const now = Date.now();
-      const qualityLocked = skill.moderationReason === "quality.low" && !isMalicious;
-      const nextModerationNotes = qualityLocked
-        ? (skill.moderationNotes ??
-          "Quality gate quarantine is still active. Manual moderation review required.")
-        : undefined;
-      const scanner = args.scanner.trim().toLowerCase();
-      const snapshot = buildModerationSnapshot({
-        staticScan: version.staticScan,
-        vtAnalysis: version.vtAnalysis,
-        vtStatus: scanner === "vt" ? args.status : version.vtAnalysis?.status,
-        llmStatus: scanner === "llm" ? args.status : version.llmAnalysis?.status,
-        llmAnalysis: version.llmAnalysis,
-        sourceVersionId: version._id,
-      });
-      const nextReasonCodes =
-        bypassSuspicious && !isMalicious
-          ? snapshot.reasonCodes.filter((code) => !code.startsWith("suspicious."))
-          : snapshot.reasonCodes;
-      const nextVerdict = verdictFromCodes(nextReasonCodes);
-      const nextLegacyFlags = legacyFlagsFromVerdict(nextVerdict);
-      const isReviewOnlyVerdict = nextVerdict === "clean" && hasReviewReasonCode(nextReasonCodes);
-      if (nextVerdict === "clean") {
-        newFlags = isReviewOnlyVerdict ? ["flagged.review"] : undefined;
-      }
-      const nextModerationReason = qualityLocked
-        ? "quality.low"
-        : isReviewOnlyVerdict
-          ? "scanner.llm.review"
-          : bypassSuspicious
-            ? `scanner.${args.scanner}.clean`
-            : nextVerdict === "clean"
-              ? "scanner.aggregate.clean"
-              : `scanner.${args.scanner}.${args.status}`;
-      const nextModerationStatus =
-        nextVerdict === "malicious" || qualityLocked ? "hidden" : "active";
-
-      const basePatch: SkillModerationPatch = {
-        moderationStatus: nextModerationStatus,
-        moderationReason: nextModerationReason,
-        moderationFlags: newFlags ?? nextLegacyFlags,
-        moderationVerdict: nextVerdict,
-        moderationReasonCodes: nextReasonCodes.length ? nextReasonCodes : undefined,
-        moderationEvidence: snapshot.evidence.length ? snapshot.evidence : undefined,
-        moderationSummary: summarizeReasonCodes(nextReasonCodes),
-        moderationEngineVersion: snapshot.engineVersion,
-        moderationEvaluatedAt: snapshot.evaluatedAt,
-        moderationSourceVersionId: version._id,
-        moderationNotes: nextModerationNotes,
-        isSuspicious: computeIsSuspicious({
-          moderationFlags: (newFlags ?? nextLegacyFlags) as string[] | undefined,
-          moderationReason: nextModerationReason,
-        }),
-        hiddenAt: nextModerationStatus === "hidden" ? now : undefined,
-        hiddenBy: undefined,
-        unpublishedSlugReservedUntil: undefined,
-        unpublishedSlugReleasedAt: undefined,
-        unpublishedOriginalSlug: undefined,
-        lastReviewedAt: nextModerationStatus === "hidden" ? now : undefined,
-      };
-      const patch = basePatch;
-      const nextSkill = { ...skill, ...patch };
-      await ctx.db.patch(skill._id, patch);
-      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-    }
-
-    return { ok: true, skillId: version.skillId, versionId: version._id };
-  },
-});
-
-/**
- * Lighter VT-only escalation: adds moderation flags and hides/bans for malicious,
- * but never touches moderationReason (preserves the LLM verdict).
- */
-export const escalateByVtInternal = internalMutation({
-  args: {
-    sha256hash: v.string(),
-    status: v.union(v.literal("malicious"), v.literal("suspicious")),
-  },
-  handler: async (ctx, args) => {
-    const version = await ctx.db
-      .query("skillVersions")
-      .withIndex("by_sha256hash", (q) => q.eq("sha256hash", args.sha256hash))
-      .unique();
-
-    if (!version) throw new Error("Version not found for hash");
-
-    const skill = await ctx.db.get(version.skillId);
-    if (!skill) return;
-    if (skill.latestVersionId && skill.latestVersionId !== version._id) return;
-
-    const isMalicious = args.status === "malicious";
-    const existingFlags: string[] = (skill.moderationFlags as string[] | undefined) ?? [];
-    const alreadyBlocked = existingFlags.includes("blocked.malware");
-    const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
-    const bypassSuspicious =
-      !isMalicious && !alreadyBlocked && isPrivilegedOwnerForSuspiciousBypass(owner);
-
-    const snapshot = buildModerationSnapshot({
-      staticScan: version.staticScan,
-      vtAnalysis: version.vtAnalysis,
-      vtStatus: args.status,
-      llmStatus: version.llmAnalysis?.status,
-      llmAnalysis: version.llmAnalysis,
-      sourceVersionId: version._id,
-    });
-    const nextReasonCodes =
-      bypassSuspicious && !isMalicious
-        ? snapshot.reasonCodes.filter((code) => !code.startsWith("suspicious."))
-        : snapshot.reasonCodes;
-    const nextVerdict = verdictFromCodes(nextReasonCodes);
-    const nextLegacyFlags = legacyFlagsFromVerdict(nextVerdict);
-
-    // Determine new flags — stricter structured verdict wins.
-    let newFlags: string[];
-    if (nextVerdict === "malicious" || alreadyBlocked) {
-      newFlags = ["blocked.malware"];
-    } else if (bypassSuspicious) {
-      newFlags = stripSuspiciousFlag(existingFlags) ?? [];
-    } else {
-      newFlags = ["flagged.suspicious"];
-    }
-
-    const isReviewOnlyVerdict = nextVerdict === "clean" && hasReviewReasonCode(nextReasonCodes);
-    const nextModerationFlags = isReviewOnlyVerdict
-      ? ["flagged.review"]
-      : nextVerdict === "clean"
-        ? undefined
-        : newFlags.length
-          ? newFlags
-          : nextLegacyFlags;
-    const now = Date.now();
-    const basePatch: SkillModerationPatch = {
-      moderationFlags: nextModerationFlags,
-      moderationVerdict: nextVerdict,
-      moderationReasonCodes: nextReasonCodes.length ? nextReasonCodes : undefined,
-      moderationEvidence: snapshot.evidence.length ? snapshot.evidence : undefined,
-      moderationSummary: summarizeReasonCodes(nextReasonCodes),
-      moderationEngineVersion: snapshot.engineVersion,
-      moderationEvaluatedAt: snapshot.evaluatedAt,
-      moderationSourceVersionId: version._id,
-    };
-    if (bypassSuspicious) {
-      basePatch.moderationReason = normalizeScannerSuspiciousReason(
-        skill.moderationReason as string | undefined,
-      );
-    } else if (isReviewOnlyVerdict) {
-      basePatch.moderationReason = "scanner.llm.review";
-    } else if (nextVerdict === "clean") {
-      const existingReason = skill.moderationReason as string | undefined;
-      if (
-        existingReason?.startsWith("scanner.") &&
-        (existingReason.endsWith(".suspicious") || existingReason.endsWith(".malicious"))
-      ) {
-        basePatch.moderationReason = normalizeScannerSuspiciousReason(existingReason);
-      }
-    }
-
-    // Only hide for malicious — suspicious stays visible with a flag
-    if (nextVerdict === "malicious") {
-      basePatch.moderationStatus = "hidden";
-      // Security: reset hide provenance so the owner-undelete gate cannot
-      // mistake prior owner-initiated soft-deletes (hiddenBy === owner,
-      // moderationReason === undefined) for self-service state. The
-      // moderationReason is intentionally NOT overwritten here to preserve
-      // the aggregate LLM verdict (see function doc), but `blocked.malware`
-      // is stamped into moderationFlags above and `moderationVerdict` is
-      // "malicious", both of which the undelete gate also enforces.
-      basePatch.hiddenAt = now;
-      basePatch.hiddenBy = undefined;
-      basePatch.unpublishedSlugReservedUntil = undefined;
-      basePatch.unpublishedSlugReleasedAt = undefined;
-      basePatch.unpublishedOriginalSlug = undefined;
-      basePatch.lastReviewedAt = now;
-    } else if (nextVerdict === "clean") {
-      basePatch.moderationStatus = "active";
-      basePatch.hiddenAt = undefined;
-      basePatch.hiddenBy = undefined;
-      basePatch.lastReviewedAt = undefined;
-    }
-
-    basePatch.isSuspicious = computeIsSuspicious({
-      moderationFlags: nextModerationFlags,
-      moderationReason: (basePatch.moderationReason ?? skill.moderationReason) as
-        | string
-        | undefined,
-    });
-
-    const patch = basePatch;
-    const nextSkill = { ...skill, ...patch };
-    await ctx.db.patch(skill._id, patch);
-    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
   },
 });
 
@@ -11884,7 +10761,6 @@ type SkillPendingPublishArgs = {
       cjkChars?: number;
     };
   };
-  staticScan: NonNullable<Doc<"skillVersions">["staticScan"]>;
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
   embedding: number[];
 };
@@ -11974,7 +10850,9 @@ export const insertVersion = internalMutation({
         }),
       }),
     ),
-    staticScan: staticScanValidator,
+    // Retired static publish scan. Still accepted so stored insert args from
+    // publish attempts staged before its removal can finalize; never persisted.
+    staticScan: v.optional(v.any()),
     llmAnalysis: v.optional(v.any()),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     embedding: v.array(v.number()),
@@ -12492,7 +11370,7 @@ export const insertVersion = internalMutation({
       version: args.version,
       publicationStatus: args.publicationStatus ?? "published",
       pendingPublication: isPendingPublication
-        ? stripUndefinedForStoredPublish({ skillInsertArgs: args })
+        ? stripUndefinedForStoredPublish({ skillInsertArgs: { ...args, staticScan: undefined } })
         : undefined,
       fingerprint: args.fingerprint,
       sourceProvenance: args.sourceProvenance,
@@ -12501,7 +11379,6 @@ export const insertVersion = internalMutation({
       icon: args.icon,
       files: args.files,
       parsed: args.parsed,
-      staticScan: args.staticScan,
       llmAnalysis: args.llmAnalysis,
       skillSpectorAnalysis: args.skillSpectorAnalysis,
       createdBy: userId,
@@ -12589,8 +11466,6 @@ export const insertVersion = internalMutation({
             owner: null,
             version: {
               _id: versionId,
-              staticScan: args.staticScan,
-              vtAnalysis: undefined,
               llmAnalysis: args.llmAnalysis,
             },
             now,
@@ -12884,7 +11759,6 @@ export const publishPendingVersionInternal = internalMutation({
     );
     const versionForModeration = {
       ...version,
-      staticScan: publishArgs.staticScan,
       llmAnalysis: publishArgs.llmAnalysis ?? version.llmAnalysis,
     };
     const scannerModerationPatch =
@@ -13273,8 +12147,7 @@ async function setSkillSoftDeletedByActor(
     // scanner has marked malicious. This closes a class of bugs where a
     // stale owner-initiated hide is left in place while a later scanner
     // escalation upgrades the verdict to malicious without rewriting
-    // provenance fields (e.g. the VT-only escalation path intentionally
-    // does not overwrite `moderationReason` to preserve the LLM verdict).
+    // provenance fields.
     if (isMalwareBlocked) {
       throw new ConvexError(
         "Forbidden: This skill was blocked by automated malware detection and cannot be restored by the owner. Please contact a moderator.",

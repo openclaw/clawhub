@@ -10,7 +10,6 @@ function assertIsolatedProof() {
     process.env.CLAWHUB_DISABLE_CRONS !== "1" ||
     process.env.CLAW_HUB_ENABLE_DEV_IMPERSONATION === "1" ||
     process.env.CLAW_HUB_DEV_IMPERSONATE_USER_HANDLE ||
-    process.env.VT_API_KEY ||
     process.env.SECURITY_SCAN_EVENT_DISPATCH_ENABLED === "1"
   ) {
     throw new Error(
@@ -83,15 +82,6 @@ export const seed = internalMutation({
           integritySha256: `${phase}-${index}`.padEnd(64, "0"),
           compatibility: {},
           verification: { tier: "structural", scope: "artifact-only", scanStatus: "pending" },
-          vtAnalysis: { status: "clean", checkedAt: now },
-          staticScan: {
-            status: "clean",
-            reasonCodes: [],
-            findings: [],
-            summary: "fixture",
-            engineVersion: "fixture",
-            checkedAt: now,
-          },
           source: {},
           createdBy: userId,
           publishActor: { kind: "user", userId },
@@ -126,11 +116,7 @@ export const state = internalQuery({
       releases: await Promise.all(releaseIds.map((id) => ctx.db.get(id))),
       packages: await ctx.db.query("packages").take(3),
       queues,
-      scheduled: scheduled.filter((job) =>
-        /backfillPackageReleaseScansInternal|scanPackageReleaseStaticallyInternal|scanPackageReleaseWithVirusTotal/.test(
-          job.name,
-        ),
-      ),
+      scheduled: scheduled.filter((job) => /backfillPackageReleaseScansInternal/.test(job.name)),
     };
   },
 });

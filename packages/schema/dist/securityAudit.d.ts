@@ -21,8 +21,5 @@ export declare function isVisibleAgenticRiskFinding(finding: AuditRiskFinding): 
 export declare function getClawScanDisplayStatus(analysis?: AuditLlmAnalysis | null): string;
 export declare function aggregateAuditVerdict(signals: {
     llmAnalysis?: AuditLlmAnalysis | null;
-    staticScan?: {
-        status?: string | null;
-    } | null;
 }): string;
 export {};

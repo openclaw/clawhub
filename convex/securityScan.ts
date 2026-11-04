@@ -19,7 +19,6 @@ import {
 import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
-  staticScanValidator,
 } from "./lib/securityAnalysisValidators";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
 import { skillPresentationValidator } from "./lib/skillPresentationValidator";
@@ -49,7 +48,6 @@ import { redactWorkerPublicText } from "./lib/workerTextRedaction";
 import { llmAnalysisValidator } from "./schema";
 import { requestSecurityScanDispatch } from "./securityScanDispatch";
 
-const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const MAX_TARGETED_TEST_GITHUB_SYNC_JOBS = 32;
 const MAX_ATTEMPTS = 3;
@@ -59,8 +57,6 @@ const MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES = 512;
 const DEFAULT_FAILED_SCAN_RECOVERY_LIMIT = 250;
 const MAX_FAILED_SCAN_RECOVERY_LIMIT = 1000;
 const FAILED_SCAN_RECOVERY_SAMPLE_LIMIT = 20;
-const DEFAULT_CANCEL_SCAN_LIMIT = 1000;
-const DEFAULT_CANCEL_DELETE_LIMIT = 500;
 const MAX_CANCEL_SCAN_LIMIT = 5000;
 const CANCEL_SAMPLE_LIMIT = 20;
 const DEFAULT_PRUNE_SKILL_SCAN_REQUEST_LIMIT = 10;
@@ -79,7 +75,6 @@ const MAX_SECURITY_SCAN_QUEUE_HEALTH_READS = 512;
 const GITHUB_SKILL_SCAN_ACTION_LEASE_MS = 15 * 60 * 1000;
 const SKILL_SCAN_ASYNC_NOTE = "Scans are asynchronous and may take time to complete.";
 
-const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
 const artifactBackedLlmAnalysisStatuses = new Set(["clean", "benign", "suspicious", "malicious"]);
 
 async function isGitHubSkillScanAllowed(
@@ -99,17 +94,6 @@ async function assertGitHubSkillScanAllowed(
     throw new ConvexError("GitHub Skill Sync rollout is disabled");
   }
 }
-
-type CancelSkipReason =
-  | "not-queued"
-  | "not-vt-update"
-  | "not-queued-vt-update"
-  | "malicious-signal"
-  | "missing-target-id"
-  | "missing-target"
-  | "missing-llm-analysis"
-  | "non-final-llm-analysis"
-  | "delete-limit-reached";
 
 type JobTarget = {
   job: Doc<"securityScanJobs">;
@@ -184,13 +168,18 @@ type StoredScanArtifactKind = "skill" | "plugin";
 
 const jobSourceValidator = v.union(
   v.literal("publish"),
-  v.literal("vt-update"),
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
   v.literal("skills-sh-catalog-test"),
 );
 
+// Claim reads still accept the retired "vt-update" source so queued legacy rows
+// drain through the normal claim path; enqueue arguments no longer accept it.
+const claimJobSourceValidator = v.union(jobSourceValidator, v.literal("vt-update"));
+
+// "vt-update" is a retired source: nothing enqueues it anymore, but queued legacy
+// rows still drain through the normal claim path at their original priority.
 type SecurityScanJobSource =
   | "publish"
   | "vt-update"
@@ -242,7 +231,6 @@ type EnqueueSkillVersionScanArgs = {
   versionId: Id<"skillVersions">;
   source: SecurityScanJobSource;
   priority?: number;
-  waitForVtMs?: number;
   preserveActiveJob?: boolean;
   preserveExistingJob?: boolean;
 };
@@ -252,7 +240,6 @@ type EnqueuePackageReleaseScanArgs = {
   releaseId: Id<"packageReleases">;
   source: SecurityScanJobSource;
   priority?: number;
-  waitForVtMs?: number;
 };
 
 const scanRequestFileValidator = v.object({
@@ -339,14 +326,6 @@ async function runMutationRef<T>(
 function assertWorkerToken(token: string) {
   const expected = process.env.SECURITY_SCAN_WORKER_TOKEN;
   if (!expected || token !== expected) throw new ConvexError("Unauthorized");
-}
-
-function defaultVtWaitMs() {
-  const raw = process.env.SECURITY_SCAN_DEFAULT_VT_WAIT_MS?.trim();
-  if (!raw) return DEFAULT_VT_WAIT_MS;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return DEFAULT_VT_WAIT_MS;
-  return Math.max(0, Math.min(parsed, DEFAULT_VT_WAIT_MS));
 }
 
 function githubSkillScanStatusFromLlmAnalysis(
@@ -520,25 +499,6 @@ async function getBulkSkillRescanBatchStatus(ctx: QueryCtx, jobIds: Id<"security
   };
 }
 
-function normalizeMaintenanceScanLimit(limit: number | undefined) {
-  const normalized = Number.isFinite(limit) ? Math.floor(limit ?? DEFAULT_CANCEL_SCAN_LIMIT) : null;
-  return Math.max(1, Math.min(normalized ?? DEFAULT_CANCEL_SCAN_LIMIT, MAX_CANCEL_SCAN_LIMIT));
-}
-
-function normalizeMaintenanceDeleteLimit(limit: number | undefined, scanLimit: number) {
-  const normalized = Number.isFinite(limit)
-    ? Math.floor(limit ?? DEFAULT_CANCEL_DELETE_LIMIT)
-    : null;
-  return Math.max(0, Math.min(normalized ?? DEFAULT_CANCEL_DELETE_LIMIT, scanLimit));
-}
-
-function incrementSkip(
-  skippedByReason: Partial<Record<CancelSkipReason, number>>,
-  reason: CancelSkipReason,
-) {
-  skippedByReason[reason] = (skippedByReason[reason] ?? 0) + 1;
-}
-
 function isOpenClawPluginPackage(
   pkg: Doc<"packages"> | null | undefined,
   ownerPublisher: Pick<Doc<"publishers">, "handle" | "deletedAt"> | null | undefined,
@@ -554,7 +514,6 @@ export const enqueueSkillVersionScanInternal = internalMutation({
     versionId: v.id("skillVersions"),
     source: jobSourceValidator,
     priority: v.optional(v.number()),
-    waitForVtMs: v.optional(v.number()),
     preserveActiveJob: v.optional(v.boolean()),
     preserveExistingJob: v.optional(v.boolean()),
   },
@@ -672,7 +631,6 @@ export const enqueueBulkSkillRescanBatchForAdminInternal = internalMutation({
         versionId: version._id,
         source: "bulk-rescan",
         priority: 0,
-        waitForVtMs: 0,
         preserveActiveJob: true,
       });
       if (!result.jobId) {
@@ -849,7 +807,6 @@ export const enqueueBulkPackageRescanBatchForAdminInternal = internalMutation({
           releaseId: version._id,
           source: "bulk-rescan",
           priority: 0,
-          waitForVtMs: 0,
           preserveActiveJob: true,
         },
         version,
@@ -949,7 +906,6 @@ export const enqueueSkillRescanForModeratorInternal = internalMutation({
       versionId: version._id,
       source: "manual",
       priority: 100,
-      waitForVtMs: 0,
     });
     if (!queued.jobId) throw new ConvexError("Skill version not found");
 
@@ -1018,7 +974,6 @@ async function requestSkillRescanForActor(
       await ctx.db.patch(activeJob._id, {
         source: "manual",
         priority: Math.max(activeJob.priority, 100),
-        waitForVtUntil: Math.min(activeJob.waitForVtUntil, now),
         nextRunAt: Math.min(activeJob.nextRunAt, now),
         updatedAt: now,
       });
@@ -1107,7 +1062,6 @@ async function requestSkillRescanForActor(
     versionId: version._id,
     source: "manual",
     priority: 100,
-    waitForVtMs: 0,
   });
   if (!queued.jobId) throw new ConvexError("Skill version not found");
 
@@ -1216,19 +1170,12 @@ function skillScanReportFromRequest(request: Doc<"skillScanRequests">) {
     aig: request.aigAnalysis ?? null,
     clawscan: request.llmAnalysis ?? null,
     skillspector: request.skillSpectorAnalysis ?? null,
-    staticAnalysis: request.staticScan ?? null,
-    virustotal: request.vtAnalysis
-      ? {
-          ...request.vtAnalysis,
-          ...request.vtAnalysis.engineStats,
-        }
-      : null,
   };
 }
 
 type StoredScanArtifact = Pick<
   Doc<"skillVersions"> | Doc<"packageReleases">,
-  "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
+  "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis"
 > & {
   endorAnalysis?: EndorAnalysis;
 };
@@ -1239,13 +1186,6 @@ function storedScanReportFromArtifact(artifact: StoredScanArtifact) {
     clawscan: artifact.llmAnalysis ?? null,
     endor: artifact.endorAnalysis ?? null,
     skillspector: artifact.skillSpectorAnalysis ?? null,
-    staticAnalysis: artifact.staticScan ?? null,
-    virustotal: artifact.vtAnalysis
-      ? {
-          ...artifact.vtAnalysis,
-          ...artifact.vtAnalysis.engineStats,
-        }
-      : null,
   };
 }
 
@@ -1254,9 +1194,7 @@ function hasStoredScanReport(artifact: StoredScanArtifact) {
     artifact.aigAnalysis ||
     artifact.llmAnalysis ||
     artifact.endorAnalysis ||
-    artifact.skillSpectorAnalysis ||
-    artifact.staticScan ||
-    artifact.vtAnalysis,
+    artifact.skillSpectorAnalysis,
   );
 }
 
@@ -1266,8 +1204,6 @@ function completedAtFromStoredScanReport(artifact: StoredScanArtifact) {
     artifact.llmAnalysis?.checkedAt,
     artifact.endorAnalysis?.checkedAt,
     artifact.skillSpectorAnalysis?.checkedAt,
-    artifact.staticScan?.checkedAt,
-    artifact.vtAnalysis?.checkedAt,
   ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   return checkedAtValues.length > 0 ? Math.max(...checkedAtValues) : undefined;
 }
@@ -1466,7 +1402,6 @@ async function enqueueSkillScanRequestJob(
     source: options?.source ?? "manual",
     priority: options?.priority ?? 100,
     hasMaliciousSignal: false,
-    waitForVtUntil: now,
     nextRunAt: now,
     attempts: 0,
     createdAt: now,
@@ -1559,7 +1494,9 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
       frontmatter: v.record(v.string(), v.any()),
       presentation: v.optional(skillPresentationValidator),
     }),
-    staticScan: staticScanValidator,
+    // Retired static publish scan. Accepted and ignored so GitHub verify actions
+    // already running during deploy still validate; remove in a follow-up.
+    staticScan: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);
@@ -1586,7 +1523,6 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
         githubSourceId: target.githubSourceId,
         commit: args.commit,
         path: target.githubPath,
-        staticScan: args.staticScan,
         updatedAt: Date.now(),
       });
       return {
@@ -1632,7 +1568,6 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
         commit: args.commit,
         path: target.githubPath,
         status: "pending",
-        staticScan: args.staticScan,
         createdAt: now,
         updatedAt: now,
       }));
@@ -1642,7 +1577,6 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
         commit: args.commit,
         path: target.githubPath,
         status: "pending",
-        staticScan: args.staticScan,
         aigAnalysis: undefined,
         skillSpectorAnalysis: undefined,
         llmAnalysis: undefined,
@@ -1668,7 +1602,6 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
       fileChunkCount: 0,
       fileManifestBytes: 0,
       parsed: args.parsed,
-      staticScan: args.staticScan,
       expiresAt: skillScanRequestExpiresAt(now),
       createdAt: now,
       updatedAt: now,
@@ -1943,8 +1876,6 @@ export const createPublishedSkillScanRequestInternal = internalMutation({
       files,
       parsed: version.parsed,
       sha256hash: version.sha256hash,
-      vtAnalysis: version.vtAnalysis,
-      staticScan: version.staticScan,
       expiresAt: skillScanRequestExpiresAt(now),
       createdAt: now,
       updatedAt: now,
@@ -2627,7 +2558,6 @@ async function requestPackageRescanForActor(
     releaseId: release._id,
     source: "manual",
     priority: 100,
-    waitForVtMs: 0,
   });
   if (!queued.jobId) throw new ConvexError("Package release not found");
 
@@ -2699,8 +2629,7 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
   const version = await ctx.db.get(args.versionId);
   if (!version || version.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
   const now = Date.now();
-  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? defaultVtWaitMs());
-  const nextRunAt = args.waitForVtMs === 0 || version.vtAnalysis ? now : waitForVtUntil;
+  const nextRunAt = now;
   const hasMaliciousSignal = false;
 
   const existing = await ctx.db
@@ -2716,7 +2645,6 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
       source: higherPrioritySource(active.source, args.source),
       priority: Math.max(active.priority, args.priority ?? 0),
       hasMaliciousSignal,
-      waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
       nextRunAt: Math.min(active.nextRunAt, nextRunAt),
       updatedAt: now,
     });
@@ -2739,7 +2667,6 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
     source: args.source,
     priority: args.priority ?? 0,
     hasMaliciousSignal,
-    waitForVtUntil,
     nextRunAt,
     attempts: 0,
     createdAt: now,
@@ -2754,7 +2681,6 @@ export const enqueuePackageReleaseScanInternal = internalMutation({
     releaseId: v.id("packageReleases"),
     source: jobSourceValidator,
     priority: v.optional(v.number()),
-    waitForVtMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     return enqueuePackageReleaseScan(ctx, args);
@@ -2769,8 +2695,7 @@ async function enqueuePackageReleaseScan(
   const release = knownRelease ?? (await ctx.db.get(args.releaseId));
   if (!release || release.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
   const now = Date.now();
-  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
-  const nextRunAt = args.waitForVtMs === 0 || release.vtAnalysis ? now : waitForVtUntil;
+  const nextRunAt = now;
   const hasMaliciousSignal = false;
 
   const existing = await ctx.db
@@ -2786,7 +2711,6 @@ async function enqueuePackageReleaseScan(
       source: higherPrioritySource(active.source, args.source),
       priority: Math.max(active.priority, args.priority ?? 0),
       hasMaliciousSignal,
-      waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
       nextRunAt: Math.min(active.nextRunAt, nextRunAt),
       updatedAt: now,
     });
@@ -2801,7 +2725,6 @@ async function enqueuePackageReleaseScan(
     source: args.source,
     priority: args.priority ?? 0,
     hasMaliciousSignal,
-    waitForVtUntil,
     nextRunAt,
     attempts: 0,
     createdAt: now,
@@ -2810,102 +2733,6 @@ async function enqueuePackageReleaseScan(
   await requestSecurityScanDispatch(ctx);
   return { ok: true as const, jobId, alreadyQueued: false as const };
 }
-
-export const cancelQueuedVtUpdateJobsInternal = internalMutation({
-  args: {
-    dryRun: v.boolean(),
-    createdBefore: v.number(),
-    scanLimit: v.optional(v.number()),
-    deleteLimit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const scanLimit = normalizeMaintenanceScanLimit(args.scanLimit);
-    const deleteLimit = normalizeMaintenanceDeleteLimit(args.deleteLimit, scanLimit);
-    const jobs = await ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_status_source_created_at", (q) =>
-        q.eq("status", "queued").eq("source", "vt-update").lt("createdAt", args.createdBefore),
-      )
-      .order("asc")
-      .take(scanLimit);
-
-    const skippedByReason: Partial<Record<CancelSkipReason, number>> = {};
-    const sampleMatchedJobIds: string[] = [];
-    const sampleDeletedJobIds: string[] = [];
-    let matched = 0;
-    let deleted = 0;
-
-    for (const job of jobs) {
-      if (job.status !== "queued") {
-        incrementSkip(
-          skippedByReason,
-          job.source === "vt-update" ? "not-queued-vt-update" : "not-queued",
-        );
-        continue;
-      }
-      if (job.source !== "vt-update") {
-        incrementSkip(skippedByReason, "not-vt-update");
-        continue;
-      }
-      if (job.hasMaliciousSignal) {
-        incrementSkip(skippedByReason, "malicious-signal");
-        continue;
-      }
-
-      const targetId =
-        job.targetKind === "skillVersion" ? job.skillVersionId : job.packageReleaseId;
-      if (!targetId) {
-        incrementSkip(skippedByReason, "missing-target-id");
-        continue;
-      }
-      const target = await ctx.db.get(targetId);
-      if (!target || target.softDeletedAt) {
-        incrementSkip(skippedByReason, "missing-target");
-        continue;
-      }
-      const rawLlmStatus = target.llmAnalysis?.status?.trim();
-      if (!rawLlmStatus) {
-        incrementSkip(skippedByReason, "missing-llm-analysis");
-        continue;
-      }
-      if (!finalLlmAnalysisStatuses.has(rawLlmStatus.toLowerCase())) {
-        incrementSkip(skippedByReason, "non-final-llm-analysis");
-        continue;
-      }
-
-      // Emergency cleanup: source may have been overwritten by a VT update, but this
-      // intentionally cancels old VT-origin work once ClawScan has a final result.
-      matched += 1;
-      if (sampleMatchedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleMatchedJobIds.push(job._id);
-      if (matched > deleteLimit) {
-        incrementSkip(skippedByReason, "delete-limit-reached");
-        continue;
-      }
-      if (args.dryRun) continue;
-
-      await ctx.db.delete(job._id);
-      deleted += 1;
-      if (sampleDeletedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleDeletedJobIds.push(job._id);
-    }
-
-    const oldestScannedJob = jobs[0];
-    const newestScannedJob = jobs.at(-1);
-    return {
-      dryRun: args.dryRun,
-      scanned: jobs.length,
-      matched,
-      wouldDelete: Math.min(matched, deleteLimit),
-      deleted,
-      skippedByReason,
-      oldestScannedCreatedAt: oldestScannedJob?.createdAt ?? null,
-      newestScannedCreatedAt: newestScannedJob?.createdAt ?? null,
-      oldestScannedNextRunAt: oldestScannedJob?.nextRunAt ?? null,
-      newestScannedNextRunAt: newestScannedJob?.nextRunAt ?? null,
-      sampleMatchedJobIds,
-      sampleDeletedJobIds,
-    };
-  },
-});
 
 export const clearQueuedBackfillJobsForLocalDev = internalMutation({
   args: {
@@ -2989,7 +2816,7 @@ function readySourceJobsForClaimQuery(
 
 export const listReadySourceJobsForClaimInternal = internalQuery({
   args: {
-    source: jobSourceValidator,
+    source: claimJobSourceValidator,
     now: v.number(),
     cursor: v.union(v.string(), v.null()),
     numItems: v.number(),

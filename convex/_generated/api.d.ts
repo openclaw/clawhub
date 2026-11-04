@@ -234,7 +234,6 @@ import type * as lib_skillsShCatalogFixtures from "../lib/skillsShCatalogFixture
 import type * as lib_skillsShCatalogPublication from "../lib/skillsShCatalogPublication.js";
 import type * as lib_skillsShMirrorPublic from "../lib/skillsShMirrorPublic.js";
 import type * as lib_skillsShPublicVisibility from "../lib/skillsShPublicVisibility.js";
-import type * as lib_staticPublishScan from "../lib/staticPublishScan.js";
 import type * as lib_storageDigests from "../lib/storageDigests.js";
 import type * as lib_storageText from "../lib/storageText.js";
 import type * as lib_templateCategoryClassification from "../lib/templateCategoryClassification.js";
@@ -309,6 +308,7 @@ import type * as skillPublishUploads from "../skillPublishUploads.js";
 import type * as skillReadme from "../skillReadme.js";
 import type * as skillStatEvents from "../skillStatEvents.js";
 import type * as skillTransfers from "../skillTransfers.js";
+import type * as skillVersionArtifactHash from "../skillVersionArtifactHash.js";
 import type * as skills from "../skills.js";
 import type * as skillsShCatalog from "../skillsShCatalog.js";
 import type * as skillsShClaims from "../skillsShClaims.js";
@@ -317,13 +317,11 @@ import type * as skillsShMirrorPublic from "../skillsShMirrorPublic.js";
 import type * as skillsShMirrorVisibility from "../skillsShMirrorVisibility.js";
 import type * as skillsShPublicTestFixtures from "../skillsShPublicTestFixtures.js";
 import type * as stars from "../stars.js";
-import type * as staticPublishScanNode from "../staticPublishScanNode.js";
 import type * as statsMaintenance from "../statsMaintenance.js";
 import type * as telemetry from "../telemetry.js";
 import type * as tokens from "../tokens.js";
 import type * as uploads from "../uploads.js";
 import type * as users from "../users.js";
-import type * as vt from "../vt.js";
 import type * as webhooks from "../webhooks.js";
 
 import type {
@@ -559,7 +557,6 @@ declare const fullApi: ApiFromModules<{
   "lib/skillsShCatalogPublication": typeof lib_skillsShCatalogPublication;
   "lib/skillsShMirrorPublic": typeof lib_skillsShMirrorPublic;
   "lib/skillsShPublicVisibility": typeof lib_skillsShPublicVisibility;
-  "lib/staticPublishScan": typeof lib_staticPublishScan;
   "lib/storageDigests": typeof lib_storageDigests;
   "lib/storageText": typeof lib_storageText;
   "lib/templateCategoryClassification": typeof lib_templateCategoryClassification;
@@ -634,6 +631,7 @@ declare const fullApi: ApiFromModules<{
   skillReadme: typeof skillReadme;
   skillStatEvents: typeof skillStatEvents;
   skillTransfers: typeof skillTransfers;
+  skillVersionArtifactHash: typeof skillVersionArtifactHash;
   skills: typeof skills;
   skillsShCatalog: typeof skillsShCatalog;
   skillsShClaims: typeof skillsShClaims;
@@ -642,13 +640,11 @@ declare const fullApi: ApiFromModules<{
   skillsShMirrorVisibility: typeof skillsShMirrorVisibility;
   skillsShPublicTestFixtures: typeof skillsShPublicTestFixtures;
   stars: typeof stars;
-  staticPublishScanNode: typeof staticPublishScanNode;
   statsMaintenance: typeof statsMaintenance;
   telemetry: typeof telemetry;
   tokens: typeof tokens;
   uploads: typeof uploads;
   users: typeof users;
-  vt: typeof vt;
   webhooks: typeof webhooks;
 }>;
 

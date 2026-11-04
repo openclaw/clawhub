@@ -190,7 +190,7 @@ Publication rejects:
 - floating skill/plugin versions and resolved MCP credentials.
 
 Accepted packages continue through ClawHub's existing ownership, moderation,
-static scanning, release, and artifact storage pipeline. The stored release
+security scanning, release, and artifact storage pipeline. The stored release
 retains the exact artifact plus a non-sensitive summary for later search and
 detail surfaces; downloads return those same bytes and digest, and ClawHub does
 not duplicate the full manifest into Convex storage.

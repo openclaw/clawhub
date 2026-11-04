@@ -81,7 +81,6 @@ import {
   canReadInitialPluginFamilyPage,
 } from "./lib/initialPluginFamilyRead";
 import { toDayKey } from "./lib/leaderboards";
-import type { StaticScanResult } from "./lib/moderationEngine";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
@@ -209,8 +208,6 @@ import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./l
 import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
-  staticScanValidator,
-  vtAnalysisValidator,
 } from "./lib/securityAnalysisValidators";
 import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
@@ -424,7 +421,6 @@ function isTrustedOpenClawPluginPackage(params: {
 const internalRefs = internal as unknown as {
   packages: {
     backfillPackageReleaseScansInternal: unknown;
-    scanPackageReleaseStaticallyInternal: unknown;
     insertReleaseInternal: unknown;
     getPackageByNameInternal: unknown;
     findPackagePublishResultInternal: unknown;
@@ -439,7 +435,6 @@ const internalRefs = internal as unknown as {
     getVersionByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
     insertAuditLogInternal: unknown;
-    updateReleaseStaticScanInternal: unknown;
     backfillLatestPackageScanStatusInternal: unknown;
     normalizeOfficialPublisherPackagesInternal: unknown;
     insertPackageInspectorWarningsInternal: unknown;
@@ -454,9 +449,6 @@ const internalRefs = internal as unknown as {
   };
   packageInspectorNode: {
     runPackageInspectorForPublishInternal: unknown;
-  };
-  staticPublishScanNode: {
-    runStaticPublishScanInternal: unknown;
   };
   packagePublishTokens: {
     createInternal: unknown;
@@ -483,9 +475,6 @@ const internalRefs = internal as unknown as {
   };
   securityScan: {
     enqueuePackageReleaseScanInternal: unknown;
-  };
-  vt: {
-    scanPackageReleaseWithVirusTotal: unknown;
   };
 };
 
@@ -829,38 +818,6 @@ async function runActionRef<T>(
   return (await ctx.runAction(ref as never, args as never)) as T;
 }
 
-// The moderation scan decodes every package file; large ClawPacks exceed the
-// Convex runtime's 64 MiB action ceiling, so it runs in the Node runtime.
-async function runStaticPublishScanInNode(
-  ctx: { runAction: (ref: never, args: never) => Promise<unknown> },
-  input: {
-    slug: string;
-    displayName: string;
-    summary?: string;
-    metadata?: unknown;
-    files: ReadonlyArray<{ path: string; size: number; storageId: string; contentType?: string }>;
-  },
-): Promise<StaticScanResult> {
-  return await runActionRef<StaticScanResult>(
-    ctx,
-    internalRefs.staticPublishScanNode.runStaticPublishScanInternal,
-    stripUndefinedForStoredPublish({
-      slug: input.slug,
-      displayName: input.displayName,
-      summary: input.summary,
-      // JSON string, not a Convex object: manifests carry `$schema` keys, which
-      // Convex values reject, and the scan must see the metadata unchanged.
-      metadataJson: input.metadata === undefined ? undefined : JSON.stringify(input.metadata),
-      files: input.files.map(({ path, size, storageId, contentType }) => ({
-        path,
-        size,
-        storageId: storageId as Id<"_storage">,
-        contentType,
-      })),
-    }),
-  );
-}
-
 async function runAfterRef(
   ctx: {
     scheduler: {
@@ -930,9 +887,7 @@ type DashboardPackageListItem = {
   latestRelease: {
     version: string;
     createdAt: number;
-    vtStatus: string | null;
     llmStatus: string | null;
-    staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   } | null;
 };
 
@@ -1090,12 +1045,10 @@ function toPublicPackageRelease(release: Doc<"packageReleases">, family: Package
           ? { ...release.verification, sourcePath }
           : release.verification,
       sha256hash: release.sha256hash,
-      vtAnalysis: release.vtAnalysis,
       aigAnalysis: release.aigAnalysis,
       skillSpectorAnalysis: release.skillSpectorAnalysis,
       endorAnalysis: release.endorAnalysis,
       llmAnalysis: release.llmAnalysis,
-      staticScan: release.staticScan,
       createdAt: release.createdAt,
     };
   }
@@ -1304,9 +1257,7 @@ async function toDashboardPackageListItem(
         ? {
             version: latestRelease.version,
             createdAt: latestRelease.createdAt,
-            vtStatus: latestRelease.vtAnalysis?.status ?? null,
             llmStatus: latestRelease.llmAnalysis?.status ?? null,
-            staticScanStatus: latestRelease.staticScan?.status ?? null,
           }
         : null,
   };
@@ -3364,26 +3315,8 @@ export const listAuditPage = query({
           ? {
               version: latestRelease.version,
               createdAt: latestRelease.createdAt,
-              vtAnalysis: latestRelease.vtAnalysis,
               endorAnalysis: latestRelease.endorAnalysis,
               llmAnalysis: latestRelease.llmAnalysis,
-              staticScan: latestRelease.staticScan
-                ? {
-                    status: latestRelease.staticScan.status,
-                    reasonCodes: latestRelease.staticScan.reasonCodes,
-                    findings: (latestRelease.staticScan.findings ?? []).map((finding) => ({
-                      code: finding.code,
-                      severity: finding.severity,
-                      file: finding.file,
-                      line: finding.line,
-                      message: finding.message,
-                      evidence: "",
-                    })),
-                    summary: latestRelease.staticScan.summary,
-                    engineVersion: latestRelease.staticScan.engineVersion,
-                    checkedAt: latestRelease.staticScan.checkedAt,
-                  }
-                : null,
             }
           : null,
       });
@@ -8105,9 +8038,6 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
     const results: Array<{
       releaseId: Id<"packageReleases">;
       packageId: Id<"packages">;
-      needsVt: boolean;
-      needsLlm: boolean;
-      needsStatic: boolean;
     }> = [];
     let nextCursor = cursor;
 
@@ -8120,17 +8050,12 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
       const pkg = await ctx.db.get(release.packageId);
       if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
 
-      const needsVt = !release.vtAnalysis;
       const needsLlm = !release.llmAnalysis || release.llmAnalysis.status === "error";
-      const needsStatic = !release.staticScan;
-      if (!needsVt && !needsLlm && !needsStatic) continue;
+      if (!needsLlm) continue;
 
       results.push({
         releaseId: release._id,
         packageId: release.packageId,
-        needsVt,
-        needsLlm,
-        needsStatic,
       });
     }
 
@@ -8896,19 +8821,6 @@ async function publishPackageImpl(
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
   }
   const topics = normalizedTopics.length ? normalizedTopics : undefined;
-  const staticScan = await runStaticPublishScanInNode(ctx, {
-    slug: name,
-    displayName,
-    summary,
-    metadata: {
-      packageJson,
-      pluginManifest,
-      bundleManifest,
-      templateManifest: validatedTemplate?.manifest,
-      source: effectiveSource,
-    },
-    files,
-  });
   const inspectorResult =
     family === "code-plugin" || family === "bundle-plugin"
       ? await runPackageInspectorPublishGate(ctx, {
@@ -8977,7 +8889,6 @@ async function publishPackageImpl(
     channel: payload.channel,
     compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
     verification,
-    staticScan,
     files,
     integritySha256,
     sha256hash: legacyZipSha256,
@@ -9610,7 +9521,6 @@ function buildPackagePublishAttemptScanContext(insertArgs: Record<string, unknow
     trustedOpenClawPlugin: verification.trustedOpenClawPlugin === true ? true : undefined,
     package: { family: insertArgs.family },
     release: {
-      staticScan: insertArgs.staticScan,
       pluginManifestSummary: insertArgs.pluginManifestSummary,
       verification: insertArgs.verification,
       artifactKind: insertArgs.artifactKind,
@@ -11595,6 +11505,8 @@ export const insertReleaseInternal = internalMutation({
     ),
     compatibility: v.optional(v.any()),
     verification: v.optional(v.any()),
+    // Retired static publish scan. Still accepted so stored insert args from
+    // publish attempts staged before its removal can finalize; never persisted.
     staticScan: v.optional(v.any()),
     llmAnalysis: v.optional(v.any()),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
@@ -11963,7 +11875,6 @@ export const insertReleaseInternal = internalMutation({
       runtimeId: args.runtimeId,
       sourceRepo: args.sourceRepo,
       verification: releaseVerification,
-      staticScan: args.staticScan,
       llmAnalysis: args.llmAnalysis,
       skillSpectorAnalysis: args.skillSpectorAnalysis,
       source: args.source,
@@ -12274,25 +12185,6 @@ async function syncLatestPackageVerification(
   });
 }
 
-export const updateReleaseScanResultsInternal = internalMutation({
-  args: {
-    releaseId: v.id("packageReleases"),
-    vtAnalysis: v.optional(vtAnalysisValidator),
-  },
-  handler: async (ctx, args) => {
-    const release = await ctx.db.get(args.releaseId);
-    if (!release || release.softDeletedAt) return;
-
-    const patch: Partial<Doc<"packageReleases">> = {};
-    if (args.vtAnalysis !== undefined) {
-      patch.vtAnalysis = args.vtAnalysis;
-    }
-    if (Object.keys(patch).length > 0) {
-      await ctx.db.patch(args.releaseId, patch);
-    }
-  },
-});
-
 export const updateReleaseSkillSpectorAnalysisInternal = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
@@ -12584,91 +12476,6 @@ export const normalizeOfficialPublisherPackages = action({
   },
 });
 
-export const updateReleaseStaticScanInternal = internalMutation({
-  args: {
-    releaseId: v.id("packageReleases"),
-    staticScan: staticScanValidator,
-  },
-  handler: async (ctx, args) => {
-    const release = await ctx.db.get(args.releaseId);
-    if (!release || release.softDeletedAt) return;
-    const activeRelease = release;
-
-    const patch: Partial<Doc<"packageReleases">> = {
-      staticScan: args.staticScan,
-    };
-    if (activeRelease.verification) {
-      const nextScanStatus = resolvePackageReleaseScanStatus({
-        ...activeRelease,
-        staticScan: args.staticScan,
-      });
-      patch.verification = activeRelease.verification
-        ? {
-            ...activeRelease.verification,
-            scanStatus: nextScanStatus,
-          }
-        : activeRelease.verification;
-    }
-
-    await ctx.db.patch(args.releaseId, patch);
-
-    const updatedRelease = {
-      ...activeRelease,
-      ...patch,
-    } as Doc<"packageReleases">;
-    await syncLatestPackageVerification(ctx, updatedRelease);
-  },
-});
-
-export const scanPackageReleaseStaticallyInternal = internalAction({
-  args: {
-    releaseId: v.id("packageReleases"),
-  },
-  handler: async (ctx, args) => {
-    const release = await runQueryRef<Doc<"packageReleases"> | null>(
-      ctx,
-      internalRefs.packages.getReleaseByIdInternal,
-      { releaseId: args.releaseId },
-    );
-    if (!release || release.softDeletedAt) {
-      return { ok: true as const, skipped: "missing_release" as const };
-    }
-    const activeRelease = release;
-
-    const pkg = await runQueryRef<Doc<"packages"> | null>(
-      ctx,
-      internalRefs.packages.getPackageByIdInternal,
-      { packageId: activeRelease.packageId },
-    );
-    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
-      return { ok: true as const, skipped: "missing_package" as const };
-    }
-
-    const staticScan = await runStaticPublishScanInNode(ctx, {
-      slug: pkg.name,
-      displayName: pkg.displayName,
-      summary: pkg.summary,
-      metadata: {
-        packageJson: activeRelease.extractedPackageJson,
-        pluginManifest: activeRelease.extractedPluginManifest,
-        bundleManifest: activeRelease.normalizedBundleManifest,
-        source: activeRelease.source,
-      },
-      files: activeRelease.files,
-    });
-
-    await runMutationRef(ctx, internalRefs.packages.updateReleaseStaticScanInternal, {
-      releaseId: args.releaseId,
-      staticScan,
-    });
-
-    return {
-      ok: true as const,
-      status: staticScan.status,
-    };
-  },
-});
-
 export const backfillPackageReleaseScansInternal = internalAction({
   args: {
     cursor: v.optional(v.number()),
@@ -12688,33 +12495,17 @@ export const backfillPackageReleaseScansInternal = internalAction({
     )) as {
       releases: Array<{
         releaseId: Id<"packageReleases">;
-        needsVt: boolean;
-        needsLlm: boolean;
-        needsStatic: boolean;
       }>;
       nextCursor: number;
       done: boolean;
     };
 
     let scheduled = args.scheduled ?? 0;
-    const vtEnabled = Boolean(process.env.VT_API_KEY);
     for (const release of batch.releases) {
-      if (release.needsVt && vtEnabled) {
-        await runAfterRef(ctx, 0, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
-          releaseId: release.releaseId,
-        });
-      }
-      if (release.needsLlm) {
-        await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
-          releaseId: release.releaseId,
-          source: "backfill",
-        });
-      }
-      if (release.needsStatic) {
-        await runAfterRef(ctx, 0, internalRefs.packages.scanPackageReleaseStaticallyInternal, {
-          releaseId: release.releaseId,
-        });
-      }
+      await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
+        releaseId: release.releaseId,
+        source: "backfill",
+      });
       scheduled += 1;
     }
 

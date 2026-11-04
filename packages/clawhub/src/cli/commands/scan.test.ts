@@ -64,6 +64,7 @@ function completedScan(overrides: Record<string, unknown> = {}) {
         issues: [],
         checkedAt: 1_700_000_000_000,
       },
+      // Older registries may still send these retired sections; the CLI ignores them.
       staticAnalysis: {
         status: "clean",
         reasonCodes: [],
@@ -136,6 +137,10 @@ describe("cmdScan", () => {
       },
     });
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("Written back: yes"));
+    const printed = mockLog.mock.calls.map(([line]) => String(line)).join("\n");
+    expect(printed).toContain("ClawScan");
+    expect(printed).not.toContain("Static Analysis");
+    expect(printed).not.toContain("VirusTotal");
   });
 
   it.each([

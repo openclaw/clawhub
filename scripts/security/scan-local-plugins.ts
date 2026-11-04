@@ -107,7 +107,6 @@ for (const [index, input] of positionals.entries()) {
       targetKind: "packageRelease",
       source: "local-report",
       hasMaliciousSignal: false,
-      waitForVtUntil: 0,
     },
     target: {
       trustedOpenClawPlugin: values["trusted-openclaw"] === true,

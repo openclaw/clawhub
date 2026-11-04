@@ -199,7 +199,6 @@ async function seedBackfillPublicationStates(t: ReturnType<typeof convexTest>) {
       status: "failed",
       priority: 0,
       hasMaliciousSignal: false,
-      waitForVtUntil: 0,
       nextRunAt: 0,
       attempts: 3,
       lastError: "skillspector timed out",

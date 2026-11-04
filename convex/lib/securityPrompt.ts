@@ -95,21 +95,6 @@ export type SkillEvalContext = {
   skillMdContent: string;
   fileContents: Array<{ path: string; content: string }>;
   injectionSignals: string[];
-  staticScan?: {
-    status: string;
-    reasonCodes: string[];
-    findings: Array<{
-      code: string;
-      severity: string;
-      file: string;
-      line: number;
-      message: string;
-      evidence: string;
-    }>;
-    summary: string;
-    engineVersion: string;
-    checkedAt: number;
-  };
 };
 
 export type LlmEvalDimension = {
@@ -367,27 +352,6 @@ const DIMENSION_META: Record<string, string> = {
 
 const MAX_SKILL_MD_CHARS = 6000;
 
-function formatStaticScanForPrompt(staticScan: SkillEvalContext["staticScan"]) {
-  if (!staticScan) return "No static scan result was provided.";
-  const findings = staticScan.findings.length
-    ? staticScan.findings
-        .map(
-          (finding) =>
-            `- ${finding.code} (${finding.severity}) at ${finding.file}:${finding.line}: ${finding.message}\n  Evidence: ${finding.evidence}`,
-        )
-        .join("\n")
-    : "No static findings.";
-  return [
-    `Status: ${staticScan.status}`,
-    `Reason codes: ${staticScan.reasonCodes.length ? staticScan.reasonCodes.join(", ") : "none"}`,
-    `Summary: ${staticScan.summary}`,
-    `Engine version: ${staticScan.engineVersion}`,
-    `Checked at: ${new Date(staticScan.checkedAt).toISOString()}`,
-    "Findings:",
-    findings,
-  ].join("\n");
-}
-
 export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
   const fm = ctx.parsed.frontmatter ?? {};
   const rawClawdis = (ctx.parsed.clawdis ?? {}) as Record<string, unknown>;
@@ -511,10 +475,6 @@ export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
     );
   } else {
     sections.push("### Pre-scan injection signals\nNone detected.");
-  }
-
-  if (ctx.staticScan) {
-    sections.push(`### Static scan signals\n${formatStaticScanForPrompt(ctx.staticScan)}`);
   }
 
   // SKILL.md content

@@ -572,7 +572,6 @@ async function main() {
     DEV_AUTH_ENABLED: "1",
     JWKS: authKeys.JWKS,
     JWT_PRIVATE_KEY: authKeys.JWT_PRIVATE_KEY,
-    SECURITY_SCAN_DEFAULT_VT_WAIT_MS: "0",
     SECURITY_SCAN_WORKER_TOKEN: process.env.SECURITY_SCAN_WORKER_TOKEN ?? DEFAULT_E2E_WORKER_TOKEN,
     SITE_URL: appUrl,
     VITE_CONVEX_SITE_URL: convexSiteUrl,
@@ -600,7 +599,6 @@ async function main() {
       "DEV_AUTH_ENABLED=1",
       `JWKS=${authKeys.JWKS}`,
       `JWT_PRIVATE_KEY=${authKeys.JWT_PRIVATE_KEY}`,
-      "SECURITY_SCAN_DEFAULT_VT_WAIT_MS=0",
       `SECURITY_SCAN_WORKER_TOKEN=${e2eEnv.SECURITY_SCAN_WORKER_TOKEN}`,
       `SITE_URL=${appUrl}`,
       `VITE_CONVEX_SITE_URL=${convexSiteUrl}`,
@@ -651,7 +649,6 @@ async function main() {
     { name: "DEV_AUTH_ENABLED", value: "1" },
     { name: "JWKS", value: authKeys.JWKS },
     { name: "JWT_PRIVATE_KEY", value: authKeys.JWT_PRIVATE_KEY },
-    { name: "SECURITY_SCAN_DEFAULT_VT_WAIT_MS", value: "0" },
     {
       name: "SECURITY_SCAN_WORKER_TOKEN",
       value: e2eEnv.SECURITY_SCAN_WORKER_TOKEN ?? DEFAULT_E2E_WORKER_TOKEN,

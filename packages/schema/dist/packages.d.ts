@@ -556,13 +556,6 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             version?: string | undefined;
         } | null | undefined;
         sha256hash?: string | null | undefined;
-        vtAnalysis?: {
-            status: string;
-            verdict?: string | undefined;
-            analysis?: string | undefined;
-            source?: string | undefined;
-            checkedAt: number;
-        } | null | undefined;
         skillSpectorAnalysis?: {
             status: string;
             inspectionStatus?: "completed" | "partial" | undefined;
@@ -637,21 +630,6 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             agenticRiskFindings?: unknown[] | undefined;
             riskSummary?: unknown;
             model?: string | undefined;
-            checkedAt: number;
-        } | null | undefined;
-        staticScan?: {
-            status: string;
-            reasonCodes: string[];
-            findings: {
-                code: string;
-                severity: string;
-                file: string;
-                line: number;
-                message: string;
-                evidence: string;
-            }[];
-            summary: string;
-            engineVersion: string;
             checkedAt: number;
         } | null | undefined;
     } | null;
@@ -889,13 +867,6 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
             version?: string | undefined;
         } | null | undefined;
         sha256hash?: string | null | undefined;
-        vtAnalysis?: {
-            status: string;
-            verdict?: string | undefined;
-            analysis?: string | undefined;
-            source?: string | undefined;
-            checkedAt: number;
-        } | null | undefined;
         skillSpectorAnalysis?: {
             status: string;
             inspectionStatus?: "completed" | "partial" | undefined;
@@ -970,21 +941,6 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
             agenticRiskFindings?: unknown[] | undefined;
             riskSummary?: unknown;
             model?: string | undefined;
-            checkedAt: number;
-        } | null | undefined;
-        staticScan?: {
-            status: string;
-            reasonCodes: string[];
-            findings: {
-                code: string;
-                severity: string;
-                file: string;
-                line: number;
-                message: string;
-                evidence: string;
-            }[];
-            summary: string;
-            engineVersion: string;
             checkedAt: number;
         } | null | undefined;
     } | null;

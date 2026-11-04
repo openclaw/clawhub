@@ -451,7 +451,7 @@ Query params:
 Returns version metadata + files list.
 
 - `version.security` includes normalized scan verification status and scanner details
-  (VirusTotal + LLM), when available.
+  (SkillSpector + ClawScan), when available.
 
 ### `GET /api/v1/skills/{slug}/versions/{version}/publication`
 
@@ -537,7 +537,7 @@ Authenticated poll endpoint for a submitted scan.
 
 - Returns queued/running/succeeded/failed status.
 - Returns `queue.queuedAhead` and `queue.position` while queued so clients can show how many prioritized manual scans are ahead of the request. Very large queues are bounded and reported with `queuedAheadIsEstimate: true`.
-- When available, `report` contains `clawscan`, `skillspector`, `staticAnalysis`, and `virustotal` sections.
+- When available, `report` contains `aig`, `clawscan`, and `skillspector` sections.
 - Failed scan jobs return `status: "failed"` with `lastError`.
 
 ### `GET /api/v1/skills/-/scan/{scanId}/download`
@@ -545,7 +545,7 @@ Authenticated poll endpoint for a submitted scan.
 Authenticated report archive endpoint.
 
 - Requires a succeeded scan; non-terminal scans return `409`.
-- Returns a ZIP with `manifest.json`, `clawscan.json`, `skillspector.json`, `static-analysis.json`, `virustotal.json`, and `README.md`.
+- Returns a ZIP with `manifest.json`, `clawscan.json`, `endor.json`, `skillspector.json`, and `README.md`.
 
 ### `GET /api/v1/skills/-/scan/download/{name}?version=<version>&kind=skill|plugin`
 
@@ -688,8 +688,6 @@ Response:
         "status": "clean",
         "passed": true,
         "signals": {
-          "staticScan": { "status": "clean", "reasonCodes": [] },
-          "virusTotal": null,
           "skillSpector": null,
           "dependencyRegistry": null
         }
@@ -1076,7 +1074,7 @@ Notes:
   hashes the exact ZIP bytes returned by `/api/v1/packages/{name}/download`.
   Modern clients should use `version.artifact.sha256`, which identifies the
   canonical release artifact.
-- `version.vtAnalysis`, `version.llmAnalysis`, and `version.staticScan` are
+- `version.llmAnalysis` (ClawScan) and the other supporting scanner analyses are
   included when scan data exists.
 - Private packages return `404` unless the caller can read the owning publisher.
 
@@ -1170,7 +1168,7 @@ Response fields:
 - `overview` is the canonical summary-and-guidance text shown by the package
   security-audit page. Install clients may present it without reconstructing
   audit text from scanner fields.
-- `verdict` is the combined display verdict used by the package security-audit page, including static analysis and visible agentic-risk findings. It can differ from the download-policy `trust.scanStatus`. Older registries may omit it; clients should treat that as unavailable display metadata.
+- `verdict` is the display verdict used by the package security-audit page, derived from ClawScan including visible agentic-risk findings. It can differ from the download-policy `trust.scanStatus`. Older registries may omit it; clients should treat that as unavailable display metadata.
 - `securityAuditUrl` links to the exact release's package security-audit page.
 - `package.name`, `package.displayName`, and `package.family` identify the
   resolved registry package.
@@ -1581,7 +1579,7 @@ Notes:
 - Uses the read rate bucket, not the download bucket.
 - Raw download limit: 10MB.
 - Text preview limit: 200KB; opaque files return `415` only for preview requests.
-- Pending VirusTotal scans do not block reads; malicious releases may still be withheld elsewhere.
+- Pending security scans do not block reads; malicious releases may still be withheld elsewhere.
 - Private packages return `404` unless the caller can read the owning publisher.
 
 ### `GET /api/v1/packages/{name}/download`
@@ -1603,7 +1601,7 @@ Notes:
 - Responses include `ETag`, `Digest`, `X-ClawHub-Artifact-Type`, and
   `X-ClawHub-Artifact-Sha256` headers for resolver integrity checks.
 - Registry-only metadata is not injected into the downloaded archive.
-- Pending VirusTotal scans do not block downloads; malicious releases return `403`.
+- Pending security scans do not block downloads; malicious releases return `403`.
 - Private packages return `404` unless the caller is the owner.
 
 ### `GET /api/npm/{package}`

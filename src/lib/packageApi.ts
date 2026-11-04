@@ -83,13 +83,6 @@ export type PackageVersionDetail = {
     } | null;
     /** @deprecated Compatibility hash for exact /download ZIP bytes. Use artifact.sha256. */
     sha256hash?: string | null;
-    vtAnalysis?: {
-      status: string;
-      verdict?: string;
-      analysis?: string;
-      source?: string;
-      checkedAt: number;
-    } | null;
     skillSpectorAnalysis?: {
       status: string;
       inspectionStatus?: "completed" | "partial";
@@ -184,21 +177,6 @@ export type PackageVersionDetail = {
         };
       };
       model?: string;
-      checkedAt: number;
-    } | null;
-    staticScan?: {
-      status: string;
-      reasonCodes: string[];
-      findings: Array<{
-        code: string;
-        severity: string;
-        file: string;
-        line: number;
-        message: string;
-        evidence: string;
-      }>;
-      summary: string;
-      engineVersion: string;
       checkedAt: number;
     } | null;
   } | null;

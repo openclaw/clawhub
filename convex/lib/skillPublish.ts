@@ -58,7 +58,6 @@ import {
 import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSkillSummary } from "./skillSummary";
 import { normalizeSkillTags } from "./skillTags";
-import { runStaticPublishScan } from "./staticPublishScan";
 import { fetchText } from "./storageText";
 import { getWebhookConfig, type WebhookSkillPayload } from "./webhooks";
 
@@ -401,15 +400,6 @@ export async function publishVersionForUser(
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
   }
 
-  const staticScan = await runStaticPublishScan(ctx, {
-    slug,
-    displayName,
-    summary,
-    frontmatter,
-    metadata,
-    files: publishFiles,
-  });
-
   const fingerprint = await buildPublishSourceFingerprint(
     publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
   );
@@ -458,7 +448,6 @@ export async function publishVersionForUser(
     },
     summary,
     icon,
-    staticScan,
     embedding: [] as number[],
     deferredAiEnrichment: {
       summary:
@@ -752,7 +741,6 @@ function buildSkillPublishAttemptScanContext(insertArgs: unknown) {
       : {};
   return stripUndefinedForStoredPublish({
     version: {
-      staticScan: record.staticScan,
       parsed: {
         metadata: parsed.metadata,
         clawdis: parsed.clawdis,

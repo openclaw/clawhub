@@ -42,9 +42,7 @@ export type DashboardSkill = Pick<
   latestVersion: {
     version: string;
     createdAt: number;
-    vtStatus: string | null;
     llmStatus: string | null;
-    staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   } | null;
 };
 
@@ -81,9 +79,7 @@ export type DashboardPackage = {
   latestRelease: {
     version: string;
     createdAt: number;
-    vtStatus: string | null;
     llmStatus: string | null;
-    staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   } | null;
 };
 

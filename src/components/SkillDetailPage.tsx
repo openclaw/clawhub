@@ -847,7 +847,6 @@ export function SkillDetailPage({
     latestVersion || githubScanStatus ? (
       <DetailSecuritySummary
         auditHref={buildSkillSecurityAuditHref(ownerParam ?? ownerHandle ?? "unknown", skill.slug)}
-        vtAnalysis={latestVersion?.vtAnalysis ?? null}
         llmAnalysis={latestVersion?.llmAnalysis ?? null}
         githubScanStatus={githubScanStatus}
       />

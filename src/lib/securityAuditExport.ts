@@ -4,7 +4,6 @@ import type {
   AigAnalysis,
   LlmAnalysis,
   SkillSpectorAnalysis,
-  VtAnalysis,
 } from "../components/SkillSecurityScanResults";
 
 type SecurityAuditExportEntity = {
@@ -15,33 +14,13 @@ type SecurityAuditExportEntity = {
   detailPath: string;
 };
 
-type StaticScanFinding = {
-  code: string;
-  severity: string;
-  file: string;
-  line: number;
-  message: string;
-  evidence: string;
-};
-
-export type StaticScan = {
-  status: string;
-  reasonCodes: string[];
-  findings: StaticScanFinding[];
-  summary: string;
-  engineVersion: string;
-  checkedAt: number;
-};
-
 type SecurityAuditExportInput = {
   entity: SecurityAuditExportEntity;
   sha256hash?: string | null;
-  vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   aigAnalysis?: AigAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
   endorAnalysis?: PackageEndorAnalysis | null;
-  staticScan?: StaticScan | null;
   exportedAt?: string;
 };
 
@@ -59,8 +38,6 @@ This archive contains stored scanner outcomes for one ClawHub artifact version.
 - aig.json: Tencent Zhuque Lab AI-Infra-Guard SARIF findings normalized by ClawHub
 - skillspector.json: SkillSpector agentic-risk findings
 - endor.json: reachable vulnerable functions reported by Endor, when available
-- static-analysis.json: deterministic static scan context
-- virustotal.json: VirusTotal engine telemetry
 `;
 
 function sanitizeFilenameSegment(value: string) {
@@ -105,16 +82,12 @@ export function buildSecurityAuditExportEntries(input: SecurityAuditExportInput)
           clawscan: input.llmAnalysis?.status ?? null,
           skillspector: input.skillSpectorAnalysis?.status ?? null,
           ...(input.endorAnalysis ? { endor: input.endorAnalysis.status } : {}),
-          staticAnalysis: input.staticScan?.status ?? null,
-          virustotal: input.vtAnalysis?.status ?? null,
         },
       },
     },
     { path: "clawscan.json", value: input.llmAnalysis ?? null },
     { path: "aig.json", value: input.aigAnalysis ?? null },
     { path: "skillspector.json", value: input.skillSpectorAnalysis ?? null },
-    { path: "static-analysis.json", value: input.staticScan ?? null },
-    { path: "virustotal.json", value: input.vtAnalysis ?? null },
   ];
 
   if (input.endorAnalysis) entries.push({ path: "endor.json", value: input.endorAnalysis });

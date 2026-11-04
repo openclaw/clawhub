@@ -599,29 +599,6 @@ export const ApiV1PackageScanBatchStatusResponseSchema = type({
     done: "boolean",
     failedJobIds: "string[]",
 });
-export const ApiV1SkillRepairVtPendingRequestSchema = type({
-    cursor: "string|null?",
-    batchSize: "number?",
-    concurrency: "number?",
-    dryRun: "boolean?",
-});
-export const ApiV1SkillRepairVtPendingResponseSchema = type({
-    ok: "true",
-    dryRun: "boolean",
-    total: "number",
-    wouldUpdate: "number",
-    updated: "number",
-    noResults: "number",
-    noDecisiveStats: "number",
-    errors: "number",
-    done: "boolean",
-    cursor: "string|null",
-    statusCounts: { "[string]": "number" },
-    sampleUpdated: type({
-        slug: "string",
-        status: "string",
-    }).array(),
-});
 export const ApiV1SkillVersionListResponseSchema = type({
     items: type({
         version: "string",

@@ -117,14 +117,6 @@ export declare const PackagePublishArtifactSchema: import("arktype/internal/vari
     npmFileCount: number;
 }, {}>;
 export type PackagePublishArtifact = (typeof PackagePublishArtifactSchema)[inferred];
-export declare const PackageVtAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    status: string;
-    verdict?: string | undefined;
-    analysis?: string | undefined;
-    source?: string | undefined;
-    checkedAt: number;
-}, {}>;
-export type PackageVtAnalysis = (typeof PackageVtAnalysisSchema)[inferred];
 export declare const PackageSkillSpectorIssueSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     issueId: string;
     category?: string | undefined;
@@ -212,31 +204,6 @@ export declare const PackageLlmAnalysisSchema: import("arktype/internal/variants
     checkedAt: number;
 }, {}>;
 export type PackageLlmAnalysis = (typeof PackageLlmAnalysisSchema)[inferred];
-export declare const PackageStaticFindingSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    code: string;
-    severity: string;
-    file: string;
-    line: number;
-    message: string;
-    evidence: string;
-}, {}>;
-export type PackageStaticFinding = (typeof PackageStaticFindingSchema)[inferred];
-export declare const PackageStaticScanSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    status: string;
-    reasonCodes: string[];
-    findings: {
-        code: string;
-        severity: string;
-        file: string;
-        line: number;
-        message: string;
-        evidence: string;
-    }[];
-    summary: string;
-    engineVersion: string;
-    checkedAt: number;
-}, {}>;
-export type PackageStaticScan = (typeof PackageStaticScanSchema)[inferred];
 export declare const BundlePublishMetadataSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     id?: string | undefined;
     format?: string | undefined;

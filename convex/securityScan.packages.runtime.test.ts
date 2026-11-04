@@ -67,7 +67,6 @@ describe("package bulk rescan runtime", () => {
       releaseId: rows[0].releaseId,
       source: "publish",
       priority: 100,
-      waitForVtMs: 60_000,
     });
     const before = await t.run((ctx) => ctx.db.get(activeId.jobId!));
     const dry = await t.mutation(enqueue, { actorUserId, dryRun: true });
