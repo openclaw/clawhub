@@ -14,6 +14,52 @@ export declare const PackageCompatibilitySchema: import("arktype/internal/varian
     minGatewayVersion?: string | undefined;
 }, {}>;
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
+export declare const PluginManifestSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    schemaVersion: number;
+    contracts?: {
+        [x: string]: string[];
+    } | undefined;
+    providers?: string[] | undefined;
+    channels?: string[] | undefined;
+    categories?: string[] | undefined;
+    icon?: string | undefined;
+    compatibility?: {
+        pluginApiRange?: string | undefined;
+        builtWithOpenClawVersion?: string | undefined;
+        pluginSdkVersion?: string | undefined;
+        minGatewayVersion?: string | undefined;
+    } | undefined;
+    manifestIdentity?: {
+        name?: string | undefined;
+        description?: string | undefined;
+        version?: string | undefined;
+        family?: string | undefined;
+    } | undefined;
+    configFields: {
+        name: string;
+        description?: string | undefined;
+        required: boolean;
+        sensitive: boolean;
+    }[];
+    mcpServers: {
+        name: string;
+        url?: string | undefined;
+        transport?: "sse" | "stdio" | "streamable-http" | undefined;
+        auth?: "api-key" | "none" | "oauth" | undefined;
+        scope?: string | undefined;
+        setup?: string | undefined;
+        endpointRedacted?: boolean | undefined;
+    }[];
+    bundledSkills: {
+        name: string;
+        description?: string | undefined;
+        rootPath: string;
+        skillMdPath: string;
+        sha256: string;
+        size: number;
+    }[];
+}, {}>;
+export type PluginManifestSummary = (typeof PluginManifestSummarySchema)[inferred];
 export declare const PackageStatsSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     downloads: number;
     installs: number;

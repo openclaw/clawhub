@@ -6,52 +6,6 @@ export declare const PACKAGE_CATEGORY_BATCH_LIMIT = 200;
 export { normalizePackageOwnerHandle, inferPackageNameScope, getPackageScopeOwnerMismatch, } from "./packageNames.js";
 export declare const PackagePublishFamilySchema: import("arktype/internal/variants/string.ts").StringType<"bundle-plugin" | "code-plugin" | "skill" | "template", {}>;
 export type PackagePublishFamily = (typeof PackagePublishFamilySchema)[inferred];
-export declare const PluginManifestSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    schemaVersion: number;
-    contracts?: {
-        [x: string]: string[];
-    } | undefined;
-    providers?: string[] | undefined;
-    channels?: string[] | undefined;
-    categories?: string[] | undefined;
-    icon?: string | undefined;
-    compatibility?: {
-        pluginApiRange?: string | undefined;
-        builtWithOpenClawVersion?: string | undefined;
-        pluginSdkVersion?: string | undefined;
-        minGatewayVersion?: string | undefined;
-    } | undefined;
-    manifestIdentity?: {
-        name?: string | undefined;
-        description?: string | undefined;
-        version?: string | undefined;
-        family?: string | undefined;
-    } | undefined;
-    configFields: {
-        name: string;
-        description?: string | undefined;
-        required: boolean;
-        sensitive: boolean;
-    }[];
-    mcpServers: {
-        name: string;
-        url?: string | undefined;
-        transport?: "sse" | "stdio" | "streamable-http" | undefined;
-        auth?: "api-key" | "none" | "oauth" | undefined;
-        scope?: string | undefined;
-        setup?: string | undefined;
-        endpointRedacted?: boolean | undefined;
-    }[];
-    bundledSkills: {
-        name: string;
-        description?: string | undefined;
-        rootPath: string;
-        skillMdPath: string;
-        sha256: string;
-        size: number;
-    }[];
-}, {}>;
-export type PluginManifestSummary = (typeof PluginManifestSummarySchema)[inferred];
 export declare const ApiV1PackageCategoriesBatchRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     packages: {
         name: string;
