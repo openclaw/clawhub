@@ -28,6 +28,7 @@ import {
   staticScanValidator,
   vtAnalysisValidator,
 } from "./lib/securityAnalysisValidators";
+import { skillEvaluationMetricsValidator } from "./lib/skillEvaluationMetrics";
 import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 
 export { skillSpectorAnalysisValidator } from "./lib/securityAnalysisValidators";
@@ -2071,30 +2072,7 @@ const skillEvaluationRuns = defineTable({
   evalDatasetPath: v.optional(v.string()),
   evalConfigPath: v.optional(v.string()),
   nativeResultStorageId: v.optional(v.id("_storage")),
-  metrics: v.optional(
-    v.object({
-      sampleCount: v.number(),
-      overall: v.object({
-        withSkill: v.number(),
-        withoutSkill: v.number(),
-        delta: v.number(),
-      }),
-      cases: v.object({
-        withSkillPassed: v.number(),
-        withSkillTotal: v.number(),
-        withoutSkillPassed: v.number(),
-        withoutSkillTotal: v.number(),
-      }),
-      dimensions: v.array(
-        v.object({
-          id: v.string(),
-          withSkill: v.number(),
-          withoutSkill: v.number(),
-          delta: v.number(),
-        }),
-      ),
-    }),
-  ),
+  metrics: v.optional(skillEvaluationMetricsValidator),
   startedAt: v.optional(v.number()),
   completedAt: v.optional(v.number()),
   createdAt: v.number(),
