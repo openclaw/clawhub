@@ -45,6 +45,7 @@ import { chunkSkillScanRequestFiles } from "./lib/skillScanRequestFiles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug } from "./lib/skillSlugValidator";
 import { getSkillsShFixtureEnvironmentPolicy } from "./lib/skillsShCatalogEnvironment";
+import { createInitialSkillStats } from "./lib/skillStats";
 import { enqueueNvidiaSkillEvaluation } from "./skillEvaluations";
 import {
   isDecodableSkillPresentationRaster,
@@ -1310,18 +1311,7 @@ async function applyGenericGitHubSkillSourceSyncHandler(
         githubScanStatus: "pending",
         latestVersionSummary: latestGitHubVersionSummary(discovered.upstreamVersion, args.now),
         tags: {},
-        statsDownloads: 0,
-        statsStars: 0,
-        statsInstallsCurrent: 0,
-        statsInstallsAllTime: 0,
-        stats: {
-          downloads: 0,
-          stars: 0,
-          installsCurrent: 0,
-          installsAllTime: 0,
-          versions: 0,
-          comments: 0,
-        },
+        ...createInitialSkillStats(),
         ...moderation,
         createdAt: args.now,
         updatedAt: args.now,

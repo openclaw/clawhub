@@ -12,6 +12,7 @@ import {
   validateSkillPresentationIcon,
 } from "./skillPresentation";
 import { getFrontmatterValue, parseFrontmatter } from "./skills";
+import { createInitialSkillStats } from "./skillStats";
 
 export type GitHubSkillScanStatus = SourceBackedSkillScanStatus;
 export type GitHubCurrentStatus = "present" | "missing" | "unknown";
@@ -408,18 +409,7 @@ export function buildGitHubSkillSyncPlan({
           tags: {},
           softDeletedAt: undefined,
           badges: undefined,
-          statsDownloads: 0,
-          statsStars: 0,
-          statsInstallsCurrent: 0,
-          statsInstallsAllTime: 0,
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-            comments: 0,
-          },
+          ...createInitialSkillStats(),
           ...moderation,
           createdAt: now,
           updatedAt: now,

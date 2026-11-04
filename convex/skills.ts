@@ -183,7 +183,12 @@ import {
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
-import { readCanonicalStat, readPublicDownloads, readSkillMetricSources } from "./lib/skillStats";
+import {
+  createInitialSkillStats,
+  readCanonicalStat,
+  readPublicDownloads,
+  readSkillMetricSources,
+} from "./lib/skillStats";
 import { normalizeSkillTags } from "./lib/skillTags";
 import { fetchText } from "./lib/storageText";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
@@ -11182,18 +11187,7 @@ export const insertVersion = internalMutation({
         }),
         reportCount: 0,
         lastReportedAt: undefined,
-        statsDownloads: 0,
-        statsStars: 0,
-        statsInstallsCurrent: 0,
-        statsInstallsAllTime: 0,
-        stats: {
-          downloads: 0,
-          installsCurrent: 0,
-          installsAllTime: 0,
-          stars: 0,
-          versions: 0,
-          comments: 0,
-        },
+        ...createInitialSkillStats(),
         createdAt: now,
         updatedAt: now,
       });
