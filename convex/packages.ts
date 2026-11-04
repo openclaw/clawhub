@@ -48,6 +48,7 @@ import {
   assertModerator,
   assertRole,
   getOptionalActiveAuthUserId,
+  requireActiveUserById,
   requireUserFromAction,
   requireUser,
 } from "./lib/access";
@@ -5639,8 +5640,7 @@ export const hardDeleteForAdminInternal = internalMutation({
     confirmationToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const name = normalizePackageName(args.name);
@@ -6563,8 +6563,7 @@ export const deleteOwnedReleaseForUserInternal = internalMutation({
     version: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const version = args.version.trim();
     if (!version) throw new ConvexError("Version required");
@@ -6663,8 +6662,7 @@ export const restoreOwnedReleaseForUserInternal = internalMutation({
     version: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const version = args.version.trim();
     if (!version) throw new ConvexError("Version required");
@@ -6693,8 +6691,7 @@ export const moderatePackageReleaseForUserInternal = internalMutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const normalizedName = normalizePackageName(args.name);
@@ -7034,8 +7031,7 @@ export const listPackageReportsInternal = internalQuery({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -7078,8 +7074,7 @@ export const triagePackageReportForUserInternal = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const report = await ctx.db.get(args.reportId);
@@ -7176,8 +7171,7 @@ export const getPackageModerationStatusForUserInternal = internalQuery({
     name: v.string(),
   },
   handler: async (ctx, args): Promise<PackageModerationStatus> => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
     if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package not found");
@@ -7237,8 +7231,7 @@ export const submitPackageAppealForUserInternal = internalMutation({
     message: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
     if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package not found");
@@ -7367,8 +7360,7 @@ export const listPackageAppealsInternal = internalQuery({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -7409,8 +7401,7 @@ export const resolvePackageAppealForUserInternal = internalMutation({
     finalAction: v.optional(v.union(v.literal("none"), v.literal("approve"))),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const appeal = await ctx.db.get(args.appealId);
@@ -7491,8 +7482,7 @@ export const listPackageModerationEventLogsInternal = internalQuery({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 50), 100));
@@ -7579,8 +7569,7 @@ export const listOfficialPluginMigrationsInternal = internalQuery({
     phase: v.optional(v.union(packageOfficialMigrationPhaseValidator, v.literal("all"))),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -7622,8 +7611,7 @@ export const upsertOfficialPluginMigrationForUserInternal = internalMutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const bundledPluginId = normalizeOfficialMigrationId(args.bundledPluginId);
@@ -7723,8 +7711,7 @@ export const listPackageModerationQueueInternal = internalQuery({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -9490,8 +9477,7 @@ export const reservePackageNameInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const owner = await ctx.db.get(args.ownerUserId);
@@ -9675,8 +9661,7 @@ async function transferPackageOwnerForUser(
     reason?: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
 
   const normalizedName = normalizePackageName(args.name);
   const pkg = await getPackageByNormalizedName(ctx, normalizedName);
@@ -9801,8 +9786,7 @@ export const transferPackageOwnerInternal = internalMutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const owner = await ctx.db.get(args.ownerUserId);
@@ -9845,8 +9829,7 @@ export const repairPackageIdentityInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const normalizedName = normalizePackageName(args.name);
@@ -11451,8 +11434,7 @@ export const insertReleaseInternal = internalMutation({
     } else if (args.trustedPublishInventoryDigest) {
       throw new ConvexError("Trusted publish inventory requires a publish token");
     }
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     const owner = await ctx.db.get(args.ownerUserId);
     if (!owner || owner.deletedAt || owner.deactivatedAt) {
       throw new ConvexError("Package owner is unavailable");
@@ -12434,8 +12416,7 @@ export const setPackageFeaturedForUserInternal = internalMutation({
     featured: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
@@ -12454,8 +12435,7 @@ export const removeBetaLatestPackageTagsInternal = internalMutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const results = [];
