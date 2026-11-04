@@ -210,7 +210,10 @@ describe("cmdInspect", () => {
     expect(mockLog).not.toHaveBeenCalled();
   });
 
-  it("passes owner when inspecting an owner-named skill", async () => {
+  it.each([
+    ["@openclaw/demo", "openclaw", "demo"],
+    [" @@OpenClaw / Demo ", "OpenClaw", "Demo"],
+  ])("passes the published owner and slug from %s unchanged", async (ref, ownerHandle, slug) => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       skill: {
         slug: "demo",
@@ -225,12 +228,24 @@ describe("cmdInspect", () => {
       owner: { handle: "openclaw" },
     });
 
-    await cmdInspect(makeGlobalOpts(), "@openclaw/demo");
+    await cmdInspect(makeGlobalOpts(), ref);
 
     const args = httpMocks.apiRequest.mock.calls[0]?.[1];
     const url = new URL(String(args?.url));
-    expect(url.pathname).toBe("/api/v1/skills/demo");
-    expect(url.searchParams.get("ownerHandle")).toBe("openclaw");
+    expect(url.pathname).toBe(`/api/v1/skills/${slug}`);
+    expect(url.searchParams.get("ownerHandle")).toBe(ownerHandle);
+  });
+
+  it.each([
+    ["  ", "Skill required"],
+    [" /Demo ", "Invalid skill: /Demo"],
+    [" @ /Demo ", "Invalid skill: @ /Demo"],
+    [" @Owner/ ", "Invalid skill: @Owner/"],
+    [" @Owner/Demo/extra ", "Invalid skill: @Owner/Demo/extra"],
+  ])("rejects malformed published reference %j before fetching", async (ref, message) => {
+    await expect(cmdInspect(makeGlobalOpts(), ref)).rejects.toThrow(message);
+    expect(uiMocks.fail).toHaveBeenCalledWith(message);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 
   it("uses tag param when fetching a file", async () => {
