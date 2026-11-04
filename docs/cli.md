@@ -283,7 +283,7 @@ clawhub sync --root ./skills --owner openclaw --bump minor
 - Scans are asynchronous and may take time to complete. While queued, the terminal spinner shows the current prioritized scan position and how many scans are ahead.
 - Published scans require ownership or publisher management access. Moderators/admins can use the same backend through `clawhub-admin`.
 - `--update` is valid only with `--slug`; it writes successful published scan results back to the selected version.
-- `--output <file.zip>` downloads the full report archive with `manifest.json`, `clawscan.json`, `skillspector.json`, `static-analysis.json`, `virustotal.json`, and `README.md`.
+- `--output <file.zip>` downloads the full report archive with `manifest.json`, `clawscan.json`, `endor.json`, `skillspector.json`, and `README.md`.
 - `--json` prints the full poll response for automation.
 - Local path scans are no longer supported. Upload a new version, then use `scan download` to retrieve the stored scan results for that submitted version.
 

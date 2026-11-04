@@ -1913,18 +1913,6 @@ code {
   text-underline-offset: 3px;
 }
 
-.vt-advisory-finding {
-  display: grid;
-  max-width: 980px;
-}
-
-.vt-advisory-finding p {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.95rem;
-  line-height: 1.55;
-}
-
 .endor-audit-header {
   display: grid;
   gap: var(--space-2);

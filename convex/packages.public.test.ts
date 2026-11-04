@@ -66,7 +66,6 @@ import {
   listVersionsForViewerInternal,
   listVersionsForManager,
   updateReleaseLlmAnalysisInternal,
-  updateReleaseStaticScanInternal,
   applyAccountDeletionToOwnedPackagesBatchInternal,
   applyPublisherDeletionToOwnedPackagesBatchInternal,
   applyBanToOwnedPackagesBatchInternal,
@@ -81,7 +80,6 @@ import {
   searchPublic,
 } from "./packages";
 import { preview as previewPluginCategoryRefresh } from "./pluginCategoryRefresh";
-import { runStaticPublishScanInternal } from "./staticPublishScanNode";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -120,10 +118,7 @@ const listHandler = (
       name: string;
       pendingReview?: boolean;
       scanStatus?: string;
-      latestRelease: {
-        vtStatus: string | null;
-        staticScanStatus: string | null;
-      } | null;
+      latestRelease: {} | null;
     }>
   >
 )._handler;
@@ -525,32 +520,7 @@ function makePackageManifestStorage() {
   };
 }
 
-type PublishScanStorage = { storage: { get: (storageId: string) => Promise<Blob | null> } };
-
-// Convex rejects action arguments whose object keys start with `$` (package.json
-// `$schema` is the production case); mirror that rule so the mock fails the way
-// the real boundary would.
-function assertConvexValueKeys(value: unknown, path = "args"): void {
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => assertConvexValueKeys(item, `${path}[${index}]`));
-    return;
-  }
-  if (value && typeof value === "object") {
-    for (const [key, nested] of Object.entries(value)) {
-      if (key.startsWith("$")) {
-        throw new Error(`Field name ${key} at ${path} starts with a '$', which is reserved.`);
-      }
-      assertConvexValueKeys(nested, `${path}.${key}`);
-    }
-  }
-}
-
-type StaticScanHandler = (ctx: unknown, args: unknown) => Promise<unknown>;
-
-// Publish actions hop to the Node runtime for the moderation scan; run the real
-// action handler against the calling ctx's storage (`ctx.runAction(...)` binds
-// `this`) so scan verdicts stay observable, and answer every other action (the
-// package inspector) with the supplied result.
+// Publish actions answer every action (the package inspector) with the supplied result.
 const STAGED_PACKAGE_ATTEMPT = { attemptId: "publishAttempts:package", status: "pending_checks" };
 
 function isPackagePublishAttemptArgs(args: unknown) {
@@ -560,16 +530,7 @@ function isPackagePublishAttemptArgs(args: unknown) {
 function makePublishRunActionMock(
   inspectorResult: () => unknown = makeCleanPackageInspectorResult,
 ) {
-  return vi.fn(async function (this: PublishScanStorage, ref: unknown, args: unknown) {
-    const name = getFunctionName(ref as FunctionReference<"action">);
-    if (name === "staticPublishScanNode:runStaticPublishScanInternal") {
-      assertConvexValueKeys(args);
-      const handler = (runStaticPublishScanInternal as unknown as { _handler: StaticScanHandler })
-        ._handler;
-      return await handler(this, args);
-    }
-    return inspectorResult();
-  });
+  return vi.fn(async () => inspectorResult());
 }
 
 function makeCleanPackageInspectorResult() {
@@ -933,9 +894,6 @@ const getPackageReleaseScanBackfillBatchInternalHandler = (
       releases: Array<{
         releaseId: string;
         packageId: string;
-        needsVt: boolean;
-        needsLlm: boolean;
-        needsStatic: boolean;
       }>;
       nextCursor: number;
       done: boolean;
@@ -1045,29 +1003,6 @@ const listPackageModerationQueueInternalHandler = (
       nextCursor: string | null;
       done: boolean;
     }
-  >
-)._handler;
-const updateReleaseStaticScanInternalHandler = (
-  updateReleaseStaticScanInternal as unknown as WrappedHandler<
-    {
-      releaseId: string;
-      staticScan: {
-        status: "clean" | "suspicious" | "malicious";
-        reasonCodes: string[];
-        findings: Array<{
-          code: string;
-          severity: string;
-          file: string;
-          line: number;
-          message: string;
-          evidence: string;
-        }>;
-        summary: string;
-        engineVersion: string;
-        checkedAt: number;
-      };
-    },
-    unknown
   >
 )._handler;
 const updateReleaseLlmAnalysisInternalHandler = (
@@ -11420,9 +11355,12 @@ describe("packages public queries", () => {
       expect.objectContaining({
         distTags: ["beta"],
         verification: expect.objectContaining({ scanStatus: "suspicious" }),
-        staticScan: expect.objectContaining({ status: "suspicious" }),
       }),
     );
+    // Legacy staged insert args may still carry a retired static scan; it is not persisted.
+    expect(
+      (ctx.insert.mock.calls as unknown[][]).find(([table]) => table === "packageReleases")?.[1],
+    ).not.toHaveProperty("staticScan");
     expect(ctx.patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
@@ -13981,14 +13919,10 @@ describe("packages public queries", () => {
             linkedUserId: "users:owner",
           }),
         runMutation,
-        runAction: vi.fn(async function (
-          this: PublishScanStorage,
-          ref: FunctionReference<"action">,
-          args: unknown,
-        ) {
+        runAction: vi.fn(async (ref: FunctionReference<"action">) => {
           return getFunctionName(ref) === "skillPresentationImageNode:validateRasterInternal"
             ? true
-            : makePublishRunActionMock().call(this, ref, args);
+            : makePublishRunActionMock()();
         }),
         scheduler: {
           runAfter: vi.fn(),
@@ -14396,17 +14330,13 @@ describe("packages public queries", () => {
     expect(result.topics).toBeUndefined();
     expect(result.sha256hash).toBe(expectedLegacyZipSha256);
     expect(result.verification).toEqual(expect.objectContaining({ scanStatus: "pending" }));
-    expect(result.staticScan).toEqual(
-      expect.objectContaining({
-        status: "suspicious",
-        reasonCodes: expect.arrayContaining(["suspicious.dangerous_exec"]),
-      }),
-    );
+    // The retired static publish scan no longer runs during publish.
+    expect(result).not.toHaveProperty("staticScan");
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ name: "demo-plugin", artifactFingerprint: expect.any(String) }),
     );
-    // VirusTotal and post-publication scans are scheduled by finalization, not publish.
+    // Post-publication scans are scheduled by finalization, not publish.
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
@@ -17341,10 +17271,7 @@ describe("packages public queries", () => {
         pendingReview: true,
         scanStatus: "pending",
         inspectorWarningCount: 1,
-        latestRelease: expect.objectContaining({
-          vtStatus: "pending",
-          staticScanStatus: "clean",
-        }),
+        latestRelease: expect.objectContaining({}),
       }),
     ]);
   });
@@ -19267,7 +19194,7 @@ describe("package scan backfill", () => {
     ]);
   });
 
-  it("includes releases missing static scan in the backfill batch", async () => {
+  it("only backfills releases missing a usable ClawScan result", async () => {
     const result = await getPackageReleaseScanBackfillBatchInternalHandler(
       {
         db: {
@@ -19281,22 +19208,28 @@ describe("package scan backfill", () => {
                 order: vi.fn(() => ({
                   take: vi.fn().mockResolvedValue([
                     {
-                      _id: "packageReleases:missing-static",
+                      // Missing retired VirusTotal/static results no longer trigger work.
+                      _id: "packageReleases:missing-retired-scanners",
                       _creationTime: 10,
                       packageId: "packages:demo",
                       sha256hash: "hash",
-                      vtAnalysis: { status: "clean" },
+                      vtAnalysis: undefined,
                       llmAnalysis: { status: "clean" },
                       staticScan: undefined,
                     },
                     {
-                      _id: "packageReleases:fully-scanned",
+                      _id: "packageReleases:missing-clawscan",
                       _creationTime: 11,
                       packageId: "packages:demo",
                       sha256hash: "hash",
-                      vtAnalysis: { status: "clean" },
-                      llmAnalysis: { status: "clean" },
-                      staticScan: { status: "clean" },
+                      llmAnalysis: undefined,
+                    },
+                    {
+                      _id: "packageReleases:errored-clawscan",
+                      _creationTime: 12,
+                      packageId: "packages:demo",
+                      sha256hash: "hash",
+                      llmAnalysis: { status: "error" },
                     },
                   ]),
                 })),
@@ -19313,13 +19246,8 @@ describe("package scan backfill", () => {
     );
 
     expect(result.releases).toEqual([
-      {
-        releaseId: "packageReleases:missing-static",
-        packageId: "packages:demo",
-        needsVt: false,
-        needsLlm: false,
-        needsStatic: true,
-      },
+      { releaseId: "packageReleases:missing-clawscan", packageId: "packages:demo" },
+      { releaseId: "packageReleases:errored-clawscan", packageId: "packages:demo" },
     ]);
   });
 
@@ -19425,13 +19353,11 @@ describe("package scan backfill", () => {
               order: vi.fn(() => ({
                 take: vi.fn().mockResolvedValue([
                   {
-                    _id: "packageReleases:recent-vt",
+                    _id: "packageReleases:recent-unscanned",
                     _creationTime: 200,
                     packageId: "packages:demo",
                     sha256hash: "hash",
-                    vtAnalysis: undefined,
-                    llmAnalysis: { status: "clean" },
-                    staticScan: { status: "clean" },
+                    llmAnalysis: undefined,
                   },
                 ]),
               })),
@@ -19439,13 +19365,11 @@ describe("package scan backfill", () => {
                 order: vi.fn(() => ({
                   take: vi.fn().mockResolvedValue([
                     {
-                      _id: "packageReleases:old-static",
+                      _id: "packageReleases:old-unscanned",
                       _creationTime: 10,
                       packageId: "packages:demo",
                       sha256hash: "hash",
-                      vtAnalysis: { status: "clean" },
-                      llmAnalysis: { status: "clean" },
-                      staticScan: undefined,
+                      llmAnalysis: undefined,
                     },
                   ]),
                 })),
@@ -19464,11 +19388,8 @@ describe("package scan backfill", () => {
     expect(result).toEqual({
       releases: [
         {
-          releaseId: "packageReleases:recent-vt",
+          releaseId: "packageReleases:recent-unscanned",
           packageId: "packages:demo",
-          needsVt: true,
-          needsLlm: false,
-          needsStatic: false,
         },
       ],
       nextCursor: 0,
@@ -19500,45 +19421,30 @@ describe("package scan backfill", () => {
     });
   });
 
-  it("schedules static rescans for releases missing only static scan data", async () => {
-    const originalVtApiKey = process.env.VT_API_KEY;
-    process.env.VT_API_KEY = "vt-test-key";
+  it("queues a ClawScan backfill job for each batch release without other scanners", async () => {
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+    const result = await backfillPackageReleaseScansInternalHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          releases: [{ releaseId: "packageReleases:unscanned", packageId: "packages:demo" }],
+          nextCursor: 123,
+          done: true,
+        }),
+        runMutation,
+        scheduler: { runAfter },
+      } as never,
+      { batchSize: 10 },
+    );
 
-    try {
-      const runAfter = vi.fn().mockResolvedValue(undefined);
-      const result = await backfillPackageReleaseScansInternalHandler(
-        {
-          runQuery: vi.fn().mockResolvedValue({
-            releases: [
-              {
-                releaseId: "packageReleases:static-only",
-                needsVt: false,
-                needsLlm: false,
-                needsStatic: true,
-              },
-            ],
-            nextCursor: 123,
-            done: true,
-          }),
-          scheduler: { runAfter },
-        } as never,
-        { batchSize: 10 },
-      );
-
-      expect(result).toEqual({ scheduled: 1, nextCursor: 123, done: true });
-      expect(runAfter).toHaveBeenCalledTimes(1);
-      expect(runAfter).toHaveBeenCalledWith(
-        0,
-        expect.anything(),
-        expect.objectContaining({ releaseId: "packageReleases:static-only" }),
-      );
-    } finally {
-      if (originalVtApiKey === undefined) {
-        delete process.env.VT_API_KEY;
-      } else {
-        process.env.VT_API_KEY = originalVtApiKey;
-      }
-    }
+    expect(result).toEqual({ scheduled: 1, nextCursor: 123, done: true });
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      releaseId: "packageReleases:unscanned",
+      source: "backfill",
+    });
+    // No static scan or VirusTotal upload is scheduled.
+    expect(runAfter).not.toHaveBeenCalled();
   });
 
   it("backfills legacy static-only package scan status into the package search digest", async () => {
@@ -19742,115 +19648,6 @@ describe("package scan backfill", () => {
         ownerHandle: "tongfei11",
         ownerKind: "user",
       }),
-    );
-  });
-
-  it("stores static package scan results without promoting malware status", async () => {
-    const patch = vi.fn().mockResolvedValue(undefined);
-    const release = {
-      _id: "packageReleases:demo-1",
-      packageId: "packages:demo",
-      verification: {
-        tier: "source-linked",
-        scope: "artifact-only",
-        scanStatus: "pending",
-      },
-      softDeletedAt: undefined,
-    };
-    const pkg = {
-      ...makePackageDoc(),
-      _id: "packages:demo",
-      latestReleaseId: "packageReleases:demo-1",
-      verification: {
-        tier: "source-linked",
-        scope: "artifact-only",
-        scanStatus: "pending",
-      },
-      latestVersionSummary: {
-        version: "1.0.0",
-        verification: {
-          tier: "source-linked",
-          scope: "artifact-only",
-          scanStatus: "pending",
-        },
-      },
-    };
-
-    await updateReleaseStaticScanInternalHandler(
-      {
-        db: {
-          get: vi.fn(async (id: string) => {
-            if (id === "packageReleases:demo-1") return release;
-            if (id === "packages:demo") return pkg;
-            return null;
-          }),
-          query: vi.fn((table: string) => {
-            if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                    scanStatus: "pending",
-                  }),
-                })),
-              };
-            }
-            if (
-              table === "packageCapabilitySearchDigest" ||
-              table === "packageTopicSearchDigest" ||
-              table === "packagePluginCategorySearchDigest"
-            ) {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([]),
-                })),
-              };
-            }
-            throw new Error(`Unexpected query table: ${table}`);
-          }),
-          insert: vi.fn(),
-          patch,
-          replace: vi.fn(),
-          delete: vi.fn(),
-          normalizeId: vi.fn(),
-        },
-      } as never,
-      {
-        releaseId: "packageReleases:demo-1",
-        staticScan: {
-          status: "malicious",
-          reasonCodes: ["malware.test"],
-          findings: [],
-          summary: "Malware detected",
-          engineVersion: "test",
-          checkedAt: 1,
-        },
-      },
-    );
-
-    expect(patch).toHaveBeenNthCalledWith(
-      1,
-      "packageReleases:demo-1",
-      expect.objectContaining({
-        staticScan: expect.objectContaining({ status: "malicious" }),
-        verification: expect.objectContaining({ scanStatus: "pending" }),
-      }),
-    );
-    expect(patch).toHaveBeenNthCalledWith(
-      2,
-      "packages:demo",
-      expect.objectContaining({
-        scanStatus: "pending",
-        verification: expect.objectContaining({ scanStatus: "pending" }),
-        latestVersionSummary: expect.objectContaining({
-          verification: expect.objectContaining({ scanStatus: "pending" }),
-        }),
-      }),
-    );
-    expect(patch).toHaveBeenCalledWith(
-      "packageSearchDigest:demo",
-      expect.objectContaining({ scanStatus: "pending" }),
     );
   });
 

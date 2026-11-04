@@ -145,11 +145,9 @@ export function SkillSecurityAuditRoutePage({
         detailPath: buildSkillDetailHref(ownerSegment, slug),
       }}
       sha256hash={latestVersion?.sha256hash ?? null}
-      vtAnalysis={latestVersion?.vtAnalysis ?? null}
       aigAnalysis={audit.aigAnalysis ?? null}
       llmAnalysis={audit.llmAnalysis ?? null}
       skillSpectorAnalysis={audit.skillSpectorAnalysis ?? null}
-      staticScan={audit.staticScan ?? null}
       canManageArtifact={canManageArtifact}
       onRequestRescan={
         canManageArtifact

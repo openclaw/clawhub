@@ -5243,10 +5243,10 @@ describe("verifyGitHubSkillHandler", () => {
             summary: "OpenAI-specific summary.",
           },
         },
-        staticScan: expect.objectContaining({ status: "clean" }),
       }),
     );
     expect(prepareArgs).not.toHaveProperty("files");
+    expect(prepareArgs).not.toHaveProperty("staticScan");
     expect(Object.values(prepareArgs ?? {})).not.toContain(undefined);
     const [appendMutation, appendArgs] = runMutation.mock.calls[1] ?? [];
     expect(getFunctionName(appendMutation as Parameters<typeof getFunctionName>[0])).toBe(

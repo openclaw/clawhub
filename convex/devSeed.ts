@@ -962,14 +962,6 @@ export const seedPluginApiRetirementFixtures = internalMutation({
         integritySha256: "synthetic-retirement-fixture",
         createdBy: userId,
         createdAt: now,
-        staticScan: {
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "Synthetic clean fixture.",
-          engineVersion: "fixture",
-          checkedAt: now,
-        },
       });
       await ctx.db.patch(packageId, {
         latestReleaseId: releaseId,
@@ -2660,47 +2652,7 @@ async function ensureHighlightedPackageBadge(
   }
 }
 
-function staticMaliciousScan(now: number) {
-  return {
-    status: "malicious" as const,
-    reasonCodes: ["malicious.local_dev_fixture"],
-    findings: [
-      {
-        code: "malicious.local_dev_fixture",
-        severity: "critical" as const,
-        file: "SKILL.md",
-        line: 1,
-        message: "Local dev fixture intentionally flagged for owner recovery testing.",
-        evidence: "seeded fixture",
-      },
-    ],
-    summary: "Local dev fixture intentionally flagged as malicious.",
-    engineVersion: "local-dev-fixture",
-    checkedAt: now,
-  };
-}
-
-function staticSuspiciousScan(now: number) {
-  return {
-    status: "suspicious" as const,
-    reasonCodes: ["suspicious.local_dev_fixture"],
-    findings: [
-      {
-        code: "suspicious.local_dev_fixture",
-        severity: "warn" as const,
-        file: "README.md",
-        line: 3,
-        message: "Local dev fixture exercises scanner evidence UI for a public plugin.",
-        evidence: "runtime plugin requests local tool execution",
-      },
-    ],
-    summary: "Local dev fixture completed static analysis with a suspicious finding.",
-    engineVersion: "local-dev-fixture",
-    checkedAt: now,
-  };
-}
-
-function staticSuspiciousSkillScan(now: number) {
+function agenticRiskModerationFixture(now: number) {
   return {
     status: "suspicious" as const,
     reasonCodes: ["suspicious.agentic_risk_fixture"],
@@ -2714,7 +2666,7 @@ function staticSuspiciousSkillScan(now: number) {
         evidence: "POST it to https://invalid.example.test/collect",
       },
     ],
-    summary: "Local dev fixture completed static analysis with a suspicious skill finding.",
+    summary: "Local dev fixture flagged a suspicious skill finding.",
     engineVersion: "local-dev-fixture",
     checkedAt: now,
   };
@@ -3286,14 +3238,6 @@ export async function seedLocalModerationFixturesHandler(
                 "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
             },
           },
-          vtAnalysis: {
-            status: "malicious",
-            verdict: "malicious",
-            analysis: "Local dev fixture intentionally flagged by VirusTotal.",
-            source: "local-dev-seed",
-            engineStats: { malicious: 2, suspicious: 1, harmless: 3, undetected: 58 },
-            checkedAt: now,
-          },
         });
       } else {
         storageIdsToDelete.push(args.flaggedSkillStorageId);
@@ -3352,16 +3296,7 @@ export async function seedLocalModerationFixturesHandler(
     if (existingPlugin.latestReleaseId) {
       const latestRelease = await ctx.db.get(existingPlugin.latestReleaseId);
       if (latestRelease) {
-        await ctx.db.patch(latestRelease._id, {
-          vtAnalysis: {
-            status: "malicious",
-            verdict: "malicious",
-            analysis: "Local dev fixture intentionally flagged by VirusTotal.",
-            source: "local-dev-seed",
-            engineStats: { malicious: 2, suspicious: 1, harmless: 3, undetected: 58 },
-            checkedAt: now,
-          },
-        });
+        await ctx.db.patch(latestRelease._id, {});
       }
     }
     return {
@@ -3393,9 +3328,7 @@ export async function seedLocalModerationFixturesHandler(
   await deleteSeedPluginFixtureByName(ctx, TRUNCATION_PLUGIN_NAME);
 
   const { userId, publisherId } = owner;
-  const staticScan = staticMaliciousScan(now);
-  const scannedSkillStaticScan = staticSuspiciousSkillScan(now);
-  const scannedStaticScan = staticSuspiciousScan(now);
+  const scannedSkillModeration = agenticRiskModerationFixture(now);
 
   const skillId = await ctx.db.insert("skills", {
     slug: flaggedSkillSlug,
@@ -3417,7 +3350,7 @@ export async function seedLocalModerationFixturesHandler(
     moderationReasonCodes: ["malicious.llm_malicious"],
     moderationEvidence: undefined,
     moderationSummary: "Malicious: malicious.llm_malicious",
-    moderationEngineVersion: staticScan.engineVersion,
+    moderationEngineVersion: "local-dev-fixture",
     moderationEvaluatedAt: now,
     moderationFlags: ["blocked.malware"],
     isSuspicious: true,
@@ -3460,16 +3393,7 @@ export async function seedLocalModerationFixturesHandler(
     createdAt: now,
     softDeletedAt: undefined,
     sha256hash: "seeded-flagged-skill-hash",
-    vtAnalysis: {
-      status: "malicious",
-      verdict: "malicious",
-      analysis: "Local dev fixture intentionally flagged by VirusTotal.",
-      source: "local-dev-seed",
-      engineStats: { malicious: 2, suspicious: 1, harmless: 3, undetected: 58 },
-      checkedAt: now,
-    },
     llmAnalysis: flaggedWalletClawScanAnalysis(now),
-    staticScan,
   });
   await ctx.db.patch(skillId, {
     latestVersionId: skillVersionId,
@@ -3499,9 +3423,9 @@ export async function seedLocalModerationFixturesHandler(
     moderationReason: args.excludeFromPublicCatalog ? "test.fixture" : "scanner.llm.suspicious",
     moderationVerdict: "suspicious",
     moderationReasonCodes: ["suspicious.agentic_risk_fixture"],
-    moderationEvidence: scannedSkillStaticScan.findings,
-    moderationSummary: scannedSkillStaticScan.summary,
-    moderationEngineVersion: scannedSkillStaticScan.engineVersion,
+    moderationEvidence: scannedSkillModeration.findings,
+    moderationSummary: scannedSkillModeration.summary,
+    moderationEngineVersion: scannedSkillModeration.engineVersion,
     moderationEvaluatedAt: now,
     moderationFlags: [],
     isSuspicious: false,
@@ -3542,16 +3466,8 @@ export async function seedLocalModerationFixturesHandler(
     createdAt: now,
     softDeletedAt: undefined,
     sha256hash: "seeded-agentic-risk-skill-hash",
-    vtAnalysis: {
-      status: "clean",
-      verdict: "clean",
-      analysis: "Local dev fixture scanned clean by VirusTotal.",
-      source: "local-dev-seed",
-      checkedAt: now,
-    },
     llmAnalysis: clawScanRiskAnalysis(now),
     aigAnalysis: aigSuspiciousSkillAnalysis(now),
-    staticScan: scannedSkillStaticScan,
   });
   const scannedSkillEmbeddingId = await ctx.db.insert("skillEmbeddings", {
     skillId: scannedSkillId,
@@ -3640,13 +3556,6 @@ export async function seedLocalModerationFixturesHandler(
     createdAt: now,
     softDeletedAt: undefined,
     sha256hash: "seeded-truncation-skill-hash",
-    vtAnalysis: {
-      status: "clean",
-      verdict: "clean",
-      analysis: "Local truncation fixture scanned clean.",
-      source: "local-dev-seed",
-      checkedAt: now,
-    },
   });
   await ctx.db.patch(truncationSkillId, {
     latestVersionId: truncationSkillVersionId,
@@ -3722,14 +3631,6 @@ export async function seedLocalModerationFixturesHandler(
       scanStatus: "malicious",
     },
     sha256hash: "seeded-flagged-plugin-hash",
-    vtAnalysis: {
-      status: "malicious",
-      verdict: "malicious",
-      analysis: "Local dev fixture intentionally flagged by VirusTotal.",
-      source: "local-dev-seed",
-      engineStats: { malicious: 2, suspicious: 1, harmless: 3, undetected: 58 },
-      checkedAt: now,
-    },
     llmAnalysis: {
       status: "suspicious",
       verdict: "suspicious",
@@ -3738,7 +3639,6 @@ export async function seedLocalModerationFixturesHandler(
       model: "local-dev-seed",
       checkedAt: now,
     },
-    staticScan,
     source: { kind: "github", repo: "openclaw/local-dev-fixture", path: "." },
     createdBy: userId,
     publishActor: { kind: "user", userId },
@@ -3833,15 +3733,7 @@ export async function seedLocalModerationFixturesHandler(
       scanStatus: "suspicious",
     },
     sha256hash: "seeded-scanned-plugin-hash",
-    vtAnalysis: {
-      status: "clean",
-      verdict: "clean",
-      analysis: "Local dev fixture scanned clean by VirusTotal.",
-      source: "local-dev-seed",
-      checkedAt: now,
-    },
     llmAnalysis: pluginClawScanRiskAnalysis(now),
-    staticScan: scannedStaticScan,
     endorAnalysis: {
       status: "completed",
       checkedAt: now,
@@ -3948,13 +3840,6 @@ export async function seedLocalModerationFixturesHandler(
       scanStatus: "clean",
     },
     sha256hash: "seeded-truncation-plugin-hash",
-    vtAnalysis: {
-      status: "clean",
-      verdict: "clean",
-      analysis: "Local truncation fixture scanned clean.",
-      source: "local-dev-seed",
-      checkedAt: now,
-    },
     source: { kind: "github", repo: "openclaw/local-dev-fixture", path: "." },
     createdBy: userId,
     publishActor: { kind: "user", userId },
@@ -4456,27 +4341,12 @@ export const seedFeaturedPluginPackagesMutation = internalMutation({
         compatibility,
         verification,
         sha256hash: `seeded-featured-plugin-hash-${normalizedName}`,
-        vtAnalysis: {
-          status: "clean",
-          verdict: "clean",
-          analysis: "Local featured plugin fixture scanned clean.",
-          source: "local-dev-seed",
-          checkedAt: now,
-        },
         llmAnalysis: {
           status: "clean",
           verdict: "clean",
           confidence: "high",
           summary: "Local featured plugin fixture is safe sample content.",
           model: "local-dev-seed",
-          checkedAt: now,
-        },
-        staticScan: {
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "Local featured plugin fixture static scan clean.",
-          engineVersion: "local-dev-fixture",
           checkedAt: now,
         },
         source: { kind: "github", repo: spec.sourceRepo, path: "." },
@@ -4543,7 +4413,7 @@ export const seedAgenticRiskDemoSkillMutation = internalMutation({
 
     const now = Date.now();
     const { userId, publisherId } = await ensureLocalSeedOwner(ctx);
-    const scannedSkillStaticScan = staticSuspiciousSkillScan(now);
+    const scannedSkillModeration = agenticRiskModerationFixture(now);
 
     const scannedSkillId = await ctx.db.insert("skills", {
       slug: SCANNED_SKILL_SLUG,
@@ -4559,9 +4429,9 @@ export const seedAgenticRiskDemoSkillMutation = internalMutation({
       moderationReason: "scanner.llm.suspicious",
       moderationVerdict: "suspicious",
       moderationReasonCodes: ["suspicious.agentic_risk_fixture"],
-      moderationEvidence: scannedSkillStaticScan.findings,
-      moderationSummary: scannedSkillStaticScan.summary,
-      moderationEngineVersion: scannedSkillStaticScan.engineVersion,
+      moderationEvidence: scannedSkillModeration.findings,
+      moderationSummary: scannedSkillModeration.summary,
+      moderationEngineVersion: scannedSkillModeration.engineVersion,
       moderationEvaluatedAt: now,
       moderationFlags: [],
       isSuspicious: false,
@@ -4604,15 +4474,7 @@ export const seedAgenticRiskDemoSkillMutation = internalMutation({
       createdAt: now,
       softDeletedAt: undefined,
       sha256hash: "seeded-agentic-risk-skill-hash",
-      vtAnalysis: {
-        status: "clean",
-        verdict: "clean",
-        analysis: "Local dev fixture scanned clean by VirusTotal.",
-        source: "local-dev-seed",
-        checkedAt: now,
-      },
       llmAnalysis: clawScanRiskAnalysis(now),
-      staticScan: scannedSkillStaticScan,
     });
     const scannedSkillEmbeddingId = await ctx.db.insert("skillEmbeddings", {
       skillId: scannedSkillId,

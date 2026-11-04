@@ -39,7 +39,6 @@ function isPendingSkillModerationReason(reason: string | null | undefined) {
   return (
     normalized === "pending.scan" ||
     normalized === "pending.scan.stale" ||
-    normalized === "scanner.vt.pending" ||
     normalized === "scanner.llm.pending"
   );
 }

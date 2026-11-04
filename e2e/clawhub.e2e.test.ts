@@ -1164,8 +1164,6 @@ describe("clawhub e2e", () => {
               model: "gpt-5.5",
               checkedAt: 1780082252374,
               signals: {
-                staticScan: { status: "clean", rawStatus: "clean", reasonCodes: [] },
-                virusTotal: { status: "clean", rawStatus: "clean", source: "engines" },
                 skillSpector: {
                   status: "clean",
                   rawStatus: "clean",

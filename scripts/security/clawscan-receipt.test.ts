@@ -550,7 +550,6 @@ describe("versioned ClawScan receipt consumer", () => {
             leaseToken: "fixture-lease",
             source: "test",
             hasMaliciousSignal: false,
-            waitForVtUntil: 0,
             targetKind,
           },
           target: { package: { family: "code-plugin" } },

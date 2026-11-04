@@ -120,10 +120,6 @@ vi.mock("./_generated/api", () => ({
     prepublicationObservability: {
       logPrePublicationQueueHealthInternal: mocks.prepublicationQueueHealthRef,
     },
-    vt: {
-      pollPendingScans: Symbol("vt-pending-scans"),
-      backfillActiveSkillsVTCache: Symbol("vt-cache-backfill"),
-    },
     securityScan: {
       pruneExpiredSkillScanRequestsInternal: Symbol("skill-scan-request-prune"),
       requeueExpiredCodexScanJobsInternal: mocks.securityScanExpiredLeaseRecoveryRef,

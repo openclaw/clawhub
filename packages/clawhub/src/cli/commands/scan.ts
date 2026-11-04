@@ -206,8 +206,6 @@ function printScanReport(status: ApiV1SkillScanStatusResponse) {
   const report = asRecord(status.report) ?? {};
   const clawscan = asRecord(report.clawscan) ?? {};
   const skillspector = asRecord(report.skillspector) ?? {};
-  const staticAnalysis = asRecord(report.staticAnalysis) ?? {};
-  const virustotal = asRecord(report.virustotal);
 
   console.log("");
   console.log("ClawHub Scan Report");
@@ -238,25 +236,6 @@ function printScanReport(status: ApiV1SkillScanStatusResponse) {
   printOptional("Severity", stringValue(skillspector.severity));
   printOptional("Issue count", numberValue(skillspector.issueCount));
   printIssueList(skillspector.issues);
-
-  console.log("");
-  console.log("Static Analysis");
-  printOptional("Status", upperValue(staticAnalysis.status));
-  printOptional("Reason codes", arrayValue(staticAnalysis.reasonCodes));
-  printOptional("Summary", stringValue(staticAnalysis.summary));
-  printIssueList(staticAnalysis.findings);
-
-  console.log("");
-  console.log("VirusTotal");
-  if (!virustotal) {
-    console.log("Status: not available");
-  } else {
-    printOptional("Status", stringValue(virustotal.status));
-    printOptional("Malicious", numberValue(virustotal.malicious));
-    printOptional("Suspicious", numberValue(virustotal.suspicious));
-    printOptional("Harmless", numberValue(virustotal.harmless));
-    printOptional("Undetected", numberValue(virustotal.undetected));
-  }
 }
 
 function printOptional(label: string, value: string | undefined) {
@@ -321,12 +300,6 @@ function upperValue(value: unknown) {
 
 function numberValue(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? String(value) : undefined;
-}
-
-function arrayValue(value: unknown) {
-  return Array.isArray(value) && value.length > 0
-    ? value.map((item) => String(item)).join(", ")
-    : undefined;
 }
 
 function dateValue(value: unknown) {

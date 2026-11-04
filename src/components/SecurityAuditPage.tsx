@@ -8,7 +8,6 @@ import { getRuntimeEnv } from "../lib/runtimeEnv";
 import {
   buildSecurityAuditExportFilename,
   buildSecurityAuditExportZip,
-  type StaticScan,
 } from "../lib/securityAuditExport";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { ScannerInfoTooltip } from "./ScannerInfoTooltip";
@@ -31,7 +30,6 @@ import {
   type LlmAnalysis,
   type SkillSpectorAnalysis,
   type SkillSpectorIssue,
-  type VtAnalysis,
 } from "./SkillSecurityScanResults";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
@@ -55,13 +53,11 @@ type EntityRef = {
 type SecurityAuditPageProps = {
   entity: EntityRef;
   sha256hash?: string | null;
-  vtAnalysis?: VtAnalysis | null;
   aigAnalysis?: AigAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
   endorAnalysis?: PackageEndorAnalysis | null;
   skillSpectorApplicable?: boolean;
-  staticScan?: StaticScan | null;
   source?: Record<string, unknown> | null;
   canManageArtifact?: boolean;
   onRequestRescan?: (() => Promise<unknown>) | null;
@@ -455,11 +451,7 @@ function SecurityAuditOverview(props: SecurityAuditPageProps) {
   );
 }
 
-function hasStaticScanDetails(staticScan?: StaticScan | null): staticScan is StaticScan {
-  return Boolean(staticScan?.summary?.trim() || staticScan?.findings?.length);
-}
-
-function formatStaticScanSeverity(value: string) {
+function formatSeverityLabel(value: string) {
   return value
     .trim()
     .split(/[-_\s]+/)
@@ -507,7 +499,7 @@ function EndorFinding({
   const badge = (
     <ScanResultBadge
       status={finding.severity}
-      label={formatStaticScanSeverity(finding.severity)}
+      label={formatSeverityLabel(finding.severity)}
       className="endor-audit-severity"
     />
   );
@@ -562,65 +554,6 @@ function EndorFinding({
       </div>
     </>
   );
-}
-
-function StaticScanDetails({ staticScan }: { staticScan: StaticScan }) {
-  const findings = staticScan.findings ?? [];
-  return (
-    <div className="security-report-panel-body security-report-panel-body-findings">
-      {staticScan.summary?.trim() ? (
-        <div className="security-report-overview-body">
-          <p>{staticScan.summary}</p>
-        </div>
-      ) : null}
-      {findings.length ? (
-        <div className="static-analysis-findings">
-          {findings.map((finding, index) => (
-            <article
-              key={`${finding.code}-${finding.file}-${finding.line}-${index}`}
-              className="static-analysis-finding"
-            >
-              <div className="static-analysis-finding-header">
-                <h3 className="agentic-risk-finding-title">{finding.message}</h3>
-                <div className="agentic-risk-finding-badges">
-                  <ScanResultBadge
-                    status={finding.severity}
-                    label={formatStaticScanSeverity(finding.severity)}
-                  />
-                </div>
-              </div>
-              <dl className="static-analysis-finding-details">
-                <div>
-                  <dt>Code</dt>
-                  <dd>{finding.code}</dd>
-                </div>
-                <div>
-                  <dt>Location</dt>
-                  <dd>
-                    {finding.file}:{finding.line}
-                  </dd>
-                </div>
-                {finding.evidence?.trim() ? (
-                  <div>
-                    <dt>Evidence</dt>
-                    <dd>
-                      <pre className="agentic-risk-evidence-snippet">{finding.evidence}</pre>
-                    </dd>
-                  </div>
-                ) : null}
-              </dl>
-            </article>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function StaticScanSection(props: SecurityAuditPageProps) {
-  const staticScan = hasStaticScanDetails(props.staticScan) ? props.staticScan : null;
-  if (!staticScan) return null;
-  return <StaticScanDetails staticScan={staticScan} />;
 }
 
 function AigSection(props: SecurityAuditPageProps) {
@@ -733,7 +666,7 @@ function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] 
           {rule ? ` · ${rule.name}` : ""}
         </h3>
         <div className="agentic-risk-finding-badges">
-          <ScanResultBadge status={finding.level} label={formatStaticScanSeverity(finding.level)} />
+          <ScanResultBadge status={finding.level} label={formatSeverityLabel(finding.level)} />
         </div>
       </div>
       <dl className="static-analysis-finding-details aig-finding-details">
@@ -1041,7 +974,6 @@ function SecurityAuditScannerSection({
           {kind === "aig" ? <AigAttribution /> : null}
         </div>
       </div>
-      {kind === "static" ? <StaticScanSection {...props} /> : null}
       {kind === "aig" ? <AigSection {...props} /> : null}
       {kind === "skillspector" ? <SkillSpectorSection {...props} /> : null}
     </section>

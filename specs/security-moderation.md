@@ -400,9 +400,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   artifact-level and must not link to account appeals. Account-level autoban,
   token revocation, and appeal email only happen after the silent escalation
   thresholds: two distinct malicious artifacts or three malicious attempts on
-  the same artifact. Static scan findings are ClawScan input context only and
-  must not schedule account autobans or set public/install-blocking trust by
-  themselves.
+  the same artifact.
 - Pending skill ownership transfers must not be accepted when the requesting
   owner is deleted/deactivated or when the skill is malicious, hidden, or
   removed. The accept path is the final shared gate before ownership changes,
@@ -423,15 +421,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   as it is stored, descriptor metadata is capped at 4 MiB, and worker claims
   hydrate one signed-URL-heavy job at a time. A recently prepared request remains
   leased until finalization so concurrent syncs cannot replace it. Unlike
-  user-submitted upload scans, its completed ClawScan, SkillSpector, and static
-  context are persisted on `githubSkillScans` by skill and content hash so the
+  user-submitted upload scans, its completed ClawScan and SkillSpector results
+  are persisted on `githubSkillScans` by skill and content hash so the
   public Security audit remains available after request files are pruned through
   bounded continuation batches. Cleanup cancels the linked worker job before
   deleting the first chunk. Legacy source-backed statuses without a durable
   `githubSkillScans` result must return to pending on sync rather than remain
   trusted. Explicit owner/moderator rescans use the manual worker queue.
   GitHub-backed verification must not create or patch a hosted `skillVersions`
-  row, and static findings remain input context rather than a blocking verdict.
+  row.
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.
@@ -606,14 +604,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   Inspection completeness (`completed` or `partial`) remains independent of
   risk status and never bypasses existing judge, receipt, scanner, or publication
   gates. Ship the worker policy layer only after the backend deployment.
-- New skill publishes now persist a deterministic static scan result on the version.
-- Static delimiter scanning is a quote/escape-aware heuristic. It tracks the
-  requested parentheses or braces, returns an exclusive closing offset, and
-  treats unclosed groups as extending to the end of the source. Refactors must
-  preserve existing rule matches; expanding the parser is separate behavior work.
-- Static findings are internal evidence for Codex-backed ClawScan only. They do
-  not hide, block, set public security status, affect installability, or trigger
-  user autobans.
+- ClawHub's in-publish static scan is retired. It ran out of memory on large
+  (~1,800-file) plugin packages and duplicated the ClawScan pre-publication gate.
+  Skill, package, package-backfill and GitHub-backed publishes no longer compute
+  or store `staticScan`, ClawScan workers no longer receive it as context, and no
+  UI, CLI, verification, scan-report, or audit-export surface displays it.
+  Historical `staticScan` rows remain in the database but are not read, with
+  one legacy exception: the package trust resolver still ignores a
+  `verification.scanStatus` that only mirrors a stored static result, so old
+  static-derived statuses cannot start acting as trust verdicts. The fields stay
+  optional in the schema until a migration clears historical rows.
+- Skill Card generation waits only for a settled ClawScan verdict; it no longer
+  waits for a static scan.
 - Public artifact pages present SkillSpector findings, A.I.G findings for skills,
   and ClawScan-powered risk review as one consolidated Security audit page.
   This is a product-facing model only; scanner storage, moderation decisions,
@@ -630,7 +632,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   until requested; disclosure does not alter the stored report or scanner verdict.
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
   hosted LLM call. Codex reviews the materialized artifact workspace with
-  SkillSpector, A.I.G, and static scan evidence as context.
+  SkillSpector and A.I.G evidence as context.
 - Workers preserve explicitly configured model and reasoning settings through
   restricted scanner subprocess environments. Workflow defaults and pinned
   scanner versions define the active policy; forwarding optional settings
@@ -685,10 +687,36 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   result. This is not a prepublication-worker contract.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
-- VirusTotal is not displayed in the UI: audit pages, the audit directory, version
-  scan badges, and pending-scan notices omit its results, links, and placeholders.
-  Stored telemetry and machine-readable audit exports remain available; it is
-  not an input to the production ClawScan profile or judge.
+- VirusTotal is retired. ClawHub no longer uploads skill ZIPs or package
+  artifacts to VirusTotal, polls or backfills VirusTotal results, re-queues
+  ClawScan from VirusTotal updates (`vt-update`), delays ClawScan jobs waiting
+  for VirusTotal, or looks up VirusTotal credentials. No UI, CLI, public API,
+  verification, scan-report, or audit-export surface shows VirusTotal data, and
+  VirusTotal status never affects moderation reasons, listing, or trust.
+  Historical `vtAnalysis`, `vtScanLogs`, `scanLastCheckedAt`/`scanCheckCount`
+  and `securityScanJobs.waitForVtUntil` values remain in the database only until a
+  follow-up migration narrows the schema. Queued legacy `vt-update` jobs still
+  drain through the normal claim path. ClawScan workers keep stripping
+  `VIRUSTOTAL_API_KEY` from scanner subprocesses so the OSS ClawScan VirusTotal
+  scanner can never activate from a stray runner secret.
+- The skill-version `sha256hash` (deterministic ZIP hash used for hosted catalog
+  integrity, Skill Cards, and verification) used to be computed by the VirusTotal
+  upload. Publish finalization now schedules a dedicated hash action with the same
+  ZIP inputs, so the value stays byte-identical to historical hashes.
+- Legacy moderation reasons stamped by retired scanners (`scanner.vt.*`,
+  `scanner.vt-rescan.*`, `scanner.static.*`) no longer mean "pending" anywhere.
+  The latest-version moderation backfill treats them as stale and rebuilds those
+  rows from ClawScan.
+- ClawScan is the only scanner result that gates public listing of a skill version
+  (pending/not-run holds, malicious blocks). Stored VirusTotal or static results on
+  older versions no longer hold or block listing.
+- Lifting a publisher moderation hold restores a skill from its latest version's
+  ClawScan result. A latest version without a completed ClawScan result stays
+  `pending.scan` and gets a ClawScan `backfill` job; retired VirusTotal results no
+  longer count as a completed scan.
+- The offline security-dataset export still serializes historical `vtAnalysis` and
+  `staticScan` columns from stored rows. Changing that public dataset schema is a
+  separate follow-up; it does not call VirusTotal or the static scanner.
 - The worker's explicit artifact-only OSS ClawScan route accepts every claimed
   target kind and source through the same completion/failure contract. Skill
   versions and scan requests use the isolated `artifact` root; extracted
@@ -861,9 +889,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   write permission. GitHub Actions concurrency is scoped per worker shard so a
   delayed runner allocation cannot block every shard; each shard still keeps at
   most one running and one pending drain wave.
-- Queue source priority is `manual`, `backfill`, `publish`, `vt-update`, then
-  `bulk-rescan`. A later VirusTotal update may make a waiting publish job
-  claimable immediately, but it must not demote that job from publish priority.
+- Queue source priority is `manual`, `backfill`, `publish`, the retired legacy
+  `vt-update`, then `bulk-rescan`. New jobs are claimable immediately; nothing
+  waits for an external reputation result.
 - Bulk rescans stay lowest priority and use the bounded operator campaign flow,
   which enqueues one page at a time and waits for that page before continuing.
 - The plugin bulk rescan command scans only the latest active release of code/bundle
@@ -937,18 +965,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   suspicious verdict. Medium-only material concerns are visible
   `flagged.review` guidance and must not set `isSuspicious`; high or critical
   concerns remain `flagged.suspicious` and are hidden by the suspicious filter.
-- VirusTotal is telemetry only. It is included in the Codex workspace as signal,
-  but VT alone must never hide, block, or set malicious/suspicious public status.
-  The public Security audit UI may summarize vendor engine counts, including
-  non-zero malicious or suspicious counts, but that display does not make VT a
-  blocking verdict source.
-- VirusTotal engine stats with zero malicious and zero suspicious detections and
-  one or more undetected engines are resolved no-detections telemetry, not an
-  in-progress scan. ClawHub should cache them as clean VT results instead of
-  leaving public badges pending.
-- All-active daily VirusTotal sweeps are disabled. Any future recurring VT
-  freshness job must be bounded or delta-driven, and must not starve
-  publish-triggered ClawScan jobs.
 - Prompt-injection pre-scan hits are also context for Codex, not a deterministic
   post-Codex veto. The release worker must not downgrade a benign Codex verdict
   solely from regex telemetry.
@@ -981,26 +997,23 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   replacement jobs. Conflicting reuse fails. Optional ordered version baselines
   reject page drift atomically. Legacy batches without receipt IDs require
   read-only, fully paginated exact-version job reconciliation before admission.
-- Package/plugin scan backfills may recompute deterministic static scan results for older releases,
-  but those results remain ClawScan context and are not public trust status.
+- The package/plugin scan backfill only queues ClawScan for published releases with a missing or
+  errored ClawScan result. It no longer schedules static scans or VirusTotal uploads.
 - `packages.backfillLatestPackageScanStatus` is an admin-only catalog maintenance entry point.
   Anonymous callers and signed-in non-admins are rejected before any package, release, or
   search-digest write. An admin call runs the internal paged mutation, which patches drifted
   scan status and schedules the next batch until the catalog page is done.
 - ClawPack package releases materialize parsed npm-pack artifact entries into the release file
-  surface. Static scan, LLM review, package inspect/file APIs, and Codex package ClawScan use those
+  surface. LLM review, package inspect/file APIs, and Codex package ClawScan use those
   stored artifact entries instead of metadata-only `package.json` / `openclaw.plugin.json` rows.
-  VirusTotal still scans the exact uploaded `.tgz`; ClawHub also retains the stored ClawPack artifact
-  so scanner workers can download/extract it for artifact-backed review.
+  ClawHub retains the stored ClawPack artifact so scanner workers can download/extract it for
+  artifact-backed review.
 - Package publication verifies every stored file's bytes, size and SHA-256 before admission.
   Verification reads and hashing run in batches of at most 16, preserving manifest order and
   legacy ZIP input bytes. If a file is missing or a read/hash fails, drain the already-started
   batch and reject before starting another batch; never accept caller-supplied hashes as a
   fallback. This bounds verification I/O, not total retained archive memory, and does not
   retry publication or bypass ownership, inventory authorization or security scans.
-- Packages cache VirusTotal undetected-only engine results as clean VT telemetry.
-  ClawHub does not request or consume VirusTotal AI/code-insight results; VT is
-  engine/vendor telemetry only.
 - Skill moderation state stores a structured ClawScan moderation snapshot:
   - `moderationVerdict`: `clean | suspicious | malicious`
   - `moderationReasonCodes[]`: canonical machine-readable reasons
@@ -1014,15 +1027,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Operators can force-rebuild skill moderation from the latest version to clear stale aggregate rows
   after ClawScan policy changes. Conservative cleanup may soft-hide exact test/placeholder
   suspicious skills, but broad duplicate-looking families require separate human review.
-- Static scan evidence must identify a concrete risky source/sink, not just adjacent primitives:
-  - declared provider credentials and declared provider base URLs are not credential-harvest findings by themselves.
-  - user-directed provider uploads are not exfiltration unless the source is broad/private/sensitive, automatic, or sent to an unrelated/hidden destination.
-  - Basic Auth/base64 credential encoding and provider-response base64 decoding are normal integration behavior.
-  - scoped uninstall cleanup under a skill-owned `.openclaw` path is not a destructive-delete finding unless it deletes a broad/protected path or hides impact.
-  - Browser automation, stealth browsing, and anti-bot/crawling behavior are not classified by ClawHub's static scanner. SkillSpector owns that browser-automation analysis lane; ClawHub static rules should only preserve non-browser-specific concrete source/sink evidence.
-- Static malware detection still records deterministic findings such as
-  obfuscated shell payload prompts, but those findings are context for ClawScan,
-  not a standalone hard block or uploader moderation trigger.
 
 ## Bans
 

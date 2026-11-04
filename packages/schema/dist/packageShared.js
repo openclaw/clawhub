@@ -91,13 +91,6 @@ export const PackagePublishArtifactSchema = type({
     npmUnpackedSize: "number",
     npmFileCount: "number",
 });
-export const PackageVtAnalysisSchema = type({
-    status: "string",
-    verdict: "string?",
-    analysis: "string?",
-    source: "string?",
-    checkedAt: "number",
-});
 export const PackageSkillSpectorIssueSchema = type({
     issueId: "string",
     category: "string?",
@@ -164,22 +157,6 @@ export const PackageLlmAnalysisSchema = type({
     agenticRiskFindings: "unknown[]?",
     riskSummary: "unknown?",
     model: "string?",
-    checkedAt: "number",
-});
-export const PackageStaticFindingSchema = type({
-    code: "string",
-    severity: "string",
-    file: "string",
-    line: "number",
-    message: "string",
-    evidence: "string",
-});
-export const PackageStaticScanSchema = type({
-    status: "string",
-    reasonCodes: "string[]",
-    findings: PackageStaticFindingSchema.array(),
-    summary: "string",
-    engineVersion: "string",
     checkedAt: "number",
 });
 export const BundlePublishMetadataSchema = type({

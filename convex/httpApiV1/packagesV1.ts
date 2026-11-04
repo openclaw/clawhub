@@ -92,7 +92,6 @@ import {
 import { tryNormalizePackageName } from "../lib/packageRegistry";
 import {
   getPackageDownloadSecurityBlock,
-  isPackageReleaseTrustStale,
   getPackageTrustReasons,
   resolvePackageReleaseScanStatus,
 } from "../lib/packageSecurity";
@@ -632,7 +631,8 @@ function toPackageReleaseSecurityResponse(params: {
         packageBlockedFromDownload || getPackageDownloadSecurityBlock(params.release) !== null,
       reasons,
       pending: scanStatus === "pending" || scanStatus === "not-run",
-      stale: isPackageReleaseTrustStale(params.release),
+      // Staleness came only from retired VirusTotal telemetry; kept for API shape.
+      stale: false,
     },
   };
 }

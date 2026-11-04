@@ -542,6 +542,7 @@ const githubSkillScans = defineTable({
   path: v.string(),
   status: githubSkillScanStatusValidator,
   skillScanRequestId: v.optional(v.id("skillScanRequests")),
+  // Retired static publish scan. Historical rows only: no longer written or displayed.
   staticScan: v.optional(staticScanValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
@@ -792,6 +793,7 @@ const skillEvaluationRunStatusValidator = v.union(
 const skillEvaluationRunSourceValidator = v.union(v.literal("sync"), v.literal("backfill"));
 const securityScanJobSourceValidator = v.union(
   v.literal("publish"),
+  // Retired: VirusTotal re-queue source. Nothing enqueues it; legacy rows remain valid.
   v.literal("vt-update"),
   v.literal("backfill"),
   v.literal("bulk-rescan"),
@@ -963,7 +965,8 @@ const skills = defineTable({
   isSuspicious: v.optional(v.boolean()),
   moderationFlags: v.optional(v.array(v.string())),
   lastReviewedAt: v.optional(v.number()),
-  // VT scan tracking
+  // Retired VirusTotal polling bookkeeping. No longer written or read; kept
+  // optional until existing rows are cleared and the fields can be dropped.
   scanLastCheckedAt: v.optional(v.number()),
   scanCheckCount: v.optional(v.number()),
   hiddenAt: v.optional(v.number()),
@@ -1158,12 +1161,14 @@ const skillVersions = defineTable({
   ),
   sha256hash: v.optional(v.string()),
   scannerReportsStorageId: v.optional(v.id("_storage")),
+  // Retired VirusTotal telemetry. Historical rows only: no longer written or read.
   vtAnalysis: v.optional(vtAnalysisValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(llmAnalysisValidator),
   depRegistryAnalysis: v.optional(depRegistryAnalysisValidator),
   depRegistryScanStatus: v.optional(depRegistryStatusValidator),
+  // Retired static publish scan. Historical rows only: no longer written or displayed.
   staticScan: v.optional(staticScanValidator),
 })
   .index("by_skill", ["skillId"])
@@ -1171,7 +1176,6 @@ const skillVersions = defineTable({
   .index("by_skill_active_created", ["skillId", "softDeletedAt", "createdAt"])
   .index("by_skill_owner_deleted_created", ["skillId", "ownerDeletedBy", "createdAt"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
-  .index("by_active_vt_status_created", ["softDeletedAt", "vtAnalysis.status", "createdAt"])
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 
@@ -1816,11 +1820,15 @@ const packageReleases = defineTable({
   verification: packageVerificationValidator,
   // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
   sha256hash: v.optional(v.string()),
+  // Retired VirusTotal telemetry. Historical rows only: no longer written or read.
   vtAnalysis: v.optional(vtAnalysisValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   endorAnalysis: v.optional(endorAnalysisValidator),
   llmAnalysis: v.optional(llmAnalysisValidator),
+  // Retired static publish scan. Historical rows only: no longer written or displayed.
+  // The package trust resolver still reads it to neutralize legacy static-derived
+  // verification statuses (see resolvePackageReleaseScanStatus).
   staticScan: v.optional(staticScanValidator),
   manualModeration: v.optional(packageReleaseModerationOverrideValidator),
   source: v.optional(v.any()),
@@ -2002,7 +2010,9 @@ const securityScanJobs = defineTable({
   source: securityScanJobSourceValidator,
   priority: v.number(),
   hasMaliciousSignal: v.boolean(),
-  waitForVtUntil: v.number(),
+  // Retired VirusTotal wait deadline. No longer written or read; optional until
+  // existing rows are migrated and the field can be dropped.
+  waitForVtUntil: v.optional(v.number()),
   nextRunAt: v.number(),
   attempts: v.number(),
   leaseToken: v.optional(v.string()),
@@ -2119,6 +2129,7 @@ const skillScanRequests = defineTable({
     }),
   ),
   sha256hash: v.optional(v.string()),
+  // Retired VirusTotal / static publish scan results. Historical rows only.
   vtAnalysis: v.optional(vtAnalysisValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
@@ -4163,6 +4174,8 @@ const publisherAbuseSignalReviewEvents = defineTable({
   createdAt: v.number(),
 });
 
+// Kept only so existing VirusTotal scan log rows remain valid. No active function
+// reads or writes this table after the VirusTotal retirement.
 const vtScanLogs = defineTable({
   type: v.union(v.literal("daily_rescan"), v.literal("backfill"), v.literal("pending_poll")),
   total: v.number(),

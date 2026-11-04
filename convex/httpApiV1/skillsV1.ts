@@ -4,7 +4,6 @@ import {
   ApiV1SkillBulkRescanBatchRequestSchema,
   ApiV1SkillBulkRescanStatusRequestSchema,
   ApiV1SkillHardDeleteRequestSchema,
-  ApiV1SkillRepairVtPendingRequestSchema,
   ApiV1SkillScanBatchRequestSchema,
   ApiV1SkillScanBatchStatusRequestSchema,
   ApiV1SkillScanJobHistoryRequestSchema,
@@ -217,11 +216,6 @@ type SkillSetupEntry = {
   required: boolean;
 };
 
-type PublicSkillVersionStaticScan = Pick<
-  NonNullable<Doc<"skillVersions">["staticScan"]>,
-  "status" | "reasonCodes" | "summary" | "engineVersion" | "checkedAt"
->;
-
 type PublicSkillVersionResponse = {
   _id: Id<"skillVersions">;
   skillId?: Id<"skills">;
@@ -233,10 +227,8 @@ type PublicSkillVersionResponse = {
   parsed?: PublicSkillVersionParsed;
   softDeletedAt?: number;
   sha256hash?: string;
-  vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   skillSpectorAnalysis?: Doc<"skillVersions">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
-  staticScan?: PublicSkillVersionStaticScan;
 };
 
 type ModerationEvidence = {
@@ -357,16 +349,7 @@ type SkillSecuritySnapshot = {
   model: string | null;
   hasScanResult: boolean;
   sha256hash: string | null;
-  virustotalUrl: string | null;
   scanners: {
-    vt: {
-      status: string;
-      verdict: string | null;
-      normalizedStatus: NormalizedSecurityStatus;
-      analysis: string | null;
-      source: string | null;
-      checkedAt: number | null;
-    } | null;
     skillspector: {
       status: string;
       normalizedStatus: NormalizedSecurityStatus;
@@ -406,9 +389,6 @@ const internalRefs = internal as unknown as {
     getBulkSkillRescanBatchStatusForAdminInternal: unknown;
     requestSkillRescanForUserInternal: unknown;
   };
-  vt: {
-    repairPendingSkillVtAnalysis: unknown;
-  };
   skills: {
     deleteOwnedVersionForUserInternal: unknown;
     setSkillTagForUserInternal: unknown;
@@ -437,10 +417,6 @@ async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Prom
 
 async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runMutation(ref as never, args as never)) as T;
-}
-
-async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runAction(ref as never, args as never)) as T;
 }
 
 function isMultipartRequest(request: Request) {
@@ -493,7 +469,6 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
     "- `suspicious` means ClawHub found behavior that needs review before users should rely on it.",
     "- `clean` means ClawHub did not find blocking security issues in this scan.",
     "",
-    "VirusTotal results are supporting reputation telemetry. They can help explain a risk signal, but they are not the sole source of ClawHub's final verdict.",
     "Endor results summarize reachable dependency findings. They supplement the ClawScan verdict; a missing or skipped Endor result is not a clean result.",
     "",
     "## Files",
@@ -502,8 +477,6 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
     "- `clawscan.json`: final ClawScan verdict, summary, guidance, and findings.",
     "- `endor.json`: bounded Endor reachability summary when available.",
     "- `skillspector.json`: SkillSpector structure and agentic-risk signals when available.",
-    "- `static-analysis.json`: deterministic scanner findings, reason codes, and static summary.",
-    "- `virustotal.json`: external reputation counts and status when available.",
     "- `README.md`: this interpretation guide.",
     "",
   ].join("\n");
@@ -513,11 +486,6 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
     { path: "clawscan.json", bytes: encodeJsonEntry(scanReportPart(status, "clawscan")) },
     { path: "endor.json", bytes: encodeJsonEntry(scanReportPart(status, "endor")) },
     { path: "skillspector.json", bytes: encodeJsonEntry(scanReportPart(status, "skillspector")) },
-    {
-      path: "static-analysis.json",
-      bytes: encodeJsonEntry(scanReportPart(status, "staticAnalysis")),
-    },
-    { path: "virustotal.json", bytes: encodeJsonEntry(scanReportPart(status, "virustotal")) },
     { path: "README.md", bytes: encodeTextEntry(readme) },
   ]);
 }
@@ -651,21 +619,16 @@ function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
 }
 
 function buildSkillSecuritySnapshot(
-  version: Pick<
-    PublicSkillVersionResponse,
-    "sha256hash" | "vtAnalysis" | "skillSpectorAnalysis" | "llmAnalysis"
-  >,
+  version: Pick<PublicSkillVersionResponse, "sha256hash" | "skillSpectorAnalysis" | "llmAnalysis">,
 ): SkillSecuritySnapshot | null {
   const sha256hash = version.sha256hash ?? null;
-  const vt = version.vtAnalysis;
   const skillSpector = version.skillSpectorAnalysis;
   const llm = version.llmAnalysis;
 
-  if (!sha256hash && !vt && !skillSpector && !llm) {
+  if (!sha256hash && !skillSpector && !llm) {
     return null;
   }
 
-  const vtStatus = vt ? normalizeSecurityStatus(vt.verdict ?? vt.status) : null;
   const skillSpectorStatus = skillSpector ? normalizeSecurityStatus(skillSpector.status) : null;
   const llmStatus = llm ? normalizeSecurityStatus(llm.verdict ?? llm.status) : null;
 
@@ -677,7 +640,7 @@ function buildSkillSecuritySnapshot(
   const hasWarnings =
     status === "suspicious" || status === "malicious" || hasLlmDimensionWarnings(llm?.dimensions);
 
-  const checkedAtCandidates = [vt?.checkedAt, skillSpector?.checkedAt, llm?.checkedAt].filter(
+  const checkedAtCandidates = [skillSpector?.checkedAt, llm?.checkedAt].filter(
     (value): value is number => typeof value === "number",
   );
   const checkedAt = checkedAtCandidates.length > 0 ? Math.max(...checkedAtCandidates) : null;
@@ -689,18 +652,7 @@ function buildSkillSecuritySnapshot(
     model: llm?.model ?? null,
     hasScanResult,
     sha256hash,
-    virustotalUrl: sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null,
     scanners: {
-      vt: vt
-        ? {
-            status: vt.status,
-            verdict: vt.verdict ?? null,
-            normalizedStatus: vtStatus ?? "pending",
-            analysis: vt.analysis ?? null,
-            source: vt.source ?? null,
-            checkedAt: vt.checkedAt ?? null,
-          }
-        : null,
       skillspector: skillSpector
         ? {
             status: skillSpector.status,
@@ -747,17 +699,9 @@ type SecurityVerdictRequestItem = {
 };
 
 type VerifySecurityVersion = {
-  staticScan?: Pick<
-    NonNullable<Doc<"skillVersions">["staticScan"]>,
-    "status" | "reasonCodes" | "summary" | "engineVersion" | "checkedAt"
-  >;
   llmAnalysis?: Pick<
     NonNullable<Doc<"skillVersions">["llmAnalysis"]>,
     "status" | "verdict" | "confidence" | "summary" | "guidance" | "model" | "checkedAt"
-  >;
-  vtAnalysis?: Pick<
-    NonNullable<Doc<"skillVersions">["vtAnalysis"]>,
-    "status" | "verdict" | "source" | "checkedAt"
   >;
   skillSpectorAnalysis?: Pick<
     NonNullable<Doc<"skillVersions">["skillSpectorAnalysis"]>,
@@ -826,10 +770,6 @@ function buildVerifySecurity(version: VerifySecurityVersion) {
 }
 
 function buildSecurityVerdictSummary(version: VerifySecurityVersion) {
-  const staticStatus = normalizeVerificationStatus(version.staticScan?.status);
-  const vtStatus = version.vtAnalysis
-    ? normalizeVerificationStatus(version.vtAnalysis.verdict ?? version.vtAnalysis.status)
-    : null;
   const skillSpectorStatus = version.skillSpectorAnalysis
     ? normalizeVerificationStatus(version.skillSpectorAnalysis.status)
     : null;
@@ -837,32 +777,6 @@ function buildSecurityVerdictSummary(version: VerifySecurityVersion) {
   return {
     ...buildVerifySecurity(version),
     signals: {
-      staticScan: version.staticScan
-        ? {
-            status: staticStatus,
-            rawStatus: version.staticScan.status,
-            reasonCodes: version.staticScan.reasonCodes ?? [],
-            summary: version.staticScan.summary ?? null,
-            engineVersion: version.staticScan.engineVersion ?? null,
-            checkedAt: version.staticScan.checkedAt ?? null,
-          }
-        : {
-            status: "pending" as const,
-            rawStatus: null,
-            reasonCodes: [],
-            summary: null,
-            engineVersion: null,
-            checkedAt: null,
-          },
-      virusTotal: version.vtAnalysis
-        ? {
-            status: vtStatus ?? "pending",
-            rawStatus: version.vtAnalysis.status,
-            verdict: version.vtAnalysis.verdict ?? null,
-            source: version.vtAnalysis.source ?? null,
-            checkedAt: version.vtAnalysis.checkedAt ?? null,
-          }
-        : null,
       skillSpector: version.skillSpectorAnalysis
         ? {
             status: skillSpectorStatus ?? "pending",
@@ -939,12 +853,9 @@ function buildSecurityVerdictReasons(args: {
 }
 
 function getVerifySecurityCheckedAt(security: ReturnType<typeof buildSecurityVerdictSummary>) {
-  const candidates = [
-    security.checkedAt,
-    security.signals.staticScan?.checkedAt,
-    security.signals.virusTotal?.checkedAt,
-    security.signals.skillSpector?.checkedAt,
-  ].filter((value): value is number => typeof value === "number");
+  const candidates = [security.checkedAt, security.signals.skillSpector?.checkedAt].filter(
+    (value): value is number => typeof value === "number",
+  );
   return candidates.length > 0 ? Math.max(...candidates) : null;
 }
 
@@ -1695,10 +1606,7 @@ async function describeOwnerVisibleSkillState(
   }
 
   if (skill.moderationStatus === "hidden") {
-    if (
-      skill.moderationReason === "pending.scan" ||
-      skill.moderationReason === "scanner.vt.pending"
-    ) {
+    if (skill.moderationReason === "pending.scan") {
       return {
         status: 423,
         message: "Skill is hidden while security scan is pending. Try again in a few minutes.",
@@ -3163,50 +3071,6 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     } catch (error) {
       if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
       return skillVersionModerationErrorToResponse(error, rate.headers);
-    }
-  }
-
-  if (segments[0] === "-" && segments[1] === "repair-vt-pending" && segments.length === 2) {
-    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
-    if (!auth.ok) return auth.response;
-    const admin = requireAdminOrResponse(auth.user, rate.headers);
-    if (!admin.ok) return admin.response;
-    try {
-      const body = parseArk(
-        ApiV1SkillRepairVtPendingRequestSchema,
-        await request.json(),
-        "Skill VT pending repair payload",
-      );
-      const result = await runActionRef<
-        | {
-            dryRun: boolean;
-            total: number;
-            wouldUpdate: number;
-            updated: number;
-            noResults: number;
-            noDecisiveStats: number;
-            errors: number;
-            done: boolean;
-            cursor: string | null;
-            statusCounts: Record<string, number>;
-            sampleUpdated: Array<{ slug: string; status: string }>;
-          }
-        | { error: string }
-      >(ctx, internalRefs.vt.repairPendingSkillVtAnalysis, {
-        dryRun: body.dryRun !== false,
-        cursor: body.cursor ?? null,
-        ...(body.batchSize !== undefined ? { batchSize: body.batchSize } : {}),
-        ...(body.concurrency !== undefined ? { concurrency: body.concurrency } : {}),
-      });
-      if ("error" in result) return text(result.error, 400, rate.headers);
-      return json({ ok: true, ...result }, 200, rate.headers);
-    } catch (error) {
-      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
-      return text(
-        error instanceof Error ? error.message : "Skill VT pending repair failed",
-        400,
-        rate.headers,
-      );
     }
   }
 

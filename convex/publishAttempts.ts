@@ -21,7 +21,6 @@ const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 const CHECK_RETRY_BACKOFF_MS = 5 * 60 * 1000;
 const CLAIM_STORAGE_URL_CONCURRENCY = 8;
 const MAX_CONSECUTIVE_SCANNER_FAILURES = 3;
-const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
 const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
 const FINALIZATION_CLAIM_LEASE_MS = 10 * 60 * 1000;
 const MISSING_AIG_EVIDENCE_ERROR = "A.I.G evidence is required before a skill can be published.";
@@ -619,7 +618,6 @@ function buildSkillAttemptScanContext(attempt: {
   const parsed = asRecord(skillInsertArgs.parsed);
   return withoutUndefined({
     version: withoutUndefined({
-      staticScan: skillInsertArgs.staticScan,
       parsed: withoutUndefined({
         metadata: parsed.metadata,
         clawdis: parsed.clawdis,
@@ -658,7 +656,6 @@ function buildPackageAttemptScanContext(
     trustedOpenClawPlugin: verification.trustedOpenClawPlugin === true ? true : undefined,
     package: withoutUndefined({ family }),
     release: withoutUndefined({
-      staticScan: packageInsertArgs.staticScan,
       pluginManifestSummary: packageInsertArgs.pluginManifestSummary,
       verification: packageInsertArgs.verification,
       artifactKind: packageInsertArgs.artifactKind,
@@ -1389,9 +1386,11 @@ export const recordSkillPublishAttemptFinalizedInternal = internalMutation({
 
     // Scheduler writes in a mutation commit with its receipt. Action-side enqueues
     // could survive a later enqueue/receipt failure and accumulate on every retry.
-    await ctx.scheduler.runAfter(0, internal.vt.scanWithVirusTotal, {
-      versionId: expected.versionId,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.skillVersionArtifactHash.computeSkillVersionArtifactHashInternal,
+      { versionId: expected.versionId },
+    );
     await ctx.scheduler.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
       versionId: expected.versionId,
       source: "publish",
@@ -1476,11 +1475,6 @@ export const recordPackagePublishAttemptFinalizedInternal = internalMutation({
       throw new ConvexError("Publish attempt public result does not match.");
     }
 
-    await ctx.scheduler.runAfter(
-      INITIAL_PACKAGE_VT_SCAN_DELAY_MS,
-      internal.vt.scanPackageReleaseWithVirusTotal,
-      { releaseId: release._id },
-    );
     // Keep the immediate package enqueue in this transaction, including its job
     // identity/deduplication logic, rather than introducing a new async boundary.
     await ctx.runMutation(internal.securityScan.enqueuePackageReleaseScanInternal, {

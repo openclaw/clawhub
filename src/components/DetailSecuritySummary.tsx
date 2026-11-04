@@ -1,11 +1,10 @@
 import { Info } from "lucide-react";
 import { aggregateAuditVerdict, SECURITY_AUDIT_SUBTEXT } from "./securityAuditModel";
-import { getScanStatusInfo, type LlmAnalysis, type VtAnalysis } from "./SkillSecurityScanResults";
+import { getScanStatusInfo, type LlmAnalysis } from "./SkillSecurityScanResults";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 type DetailSecuritySummaryProps = {
   auditHref: string;
-  vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   githubScanStatus?: string | null;
 };
@@ -29,12 +28,10 @@ export function auditVerdictMeterLevel(status: string) {
 
 export function DetailSecuritySummary({
   auditHref,
-  vtAnalysis,
   llmAnalysis,
   githubScanStatus,
 }: DetailSecuritySummaryProps) {
-  const hasVersionScanResult = Boolean(vtAnalysis || llmAnalysis);
-  const auditVerdict = hasVersionScanResult
+  const auditVerdict = llmAnalysis
     ? aggregateAuditVerdict({ llmAnalysis })
     : (githubScanStatus ?? "pending");
   const auditVerdictInfo = getScanStatusInfo(auditVerdict);

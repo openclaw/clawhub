@@ -51,25 +51,9 @@ type PublicSkillVersion = {
   createdAt?: number;
   softDeletedAt?: number;
   sha256hash?: string;
-  vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   aigAnalysis?: Doc<"skillVersions">["aigAnalysis"];
   skillSpectorAnalysis?: Doc<"skillVersions">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
-  staticScan?: {
-    status: NonNullable<Doc<"skillVersions">["staticScan"]>["status"];
-    reasonCodes: NonNullable<Doc<"skillVersions">["staticScan"]>["reasonCodes"];
-    findings: Array<{
-      code: string;
-      severity: "info" | "warn" | "critical";
-      file: string;
-      line: number;
-      message: string;
-      evidence: string;
-    }>;
-    summary: NonNullable<Doc<"skillVersions">["staticScan"]>["summary"];
-    engineVersion: NonNullable<Doc<"skillVersions">["staticScan"]>["engineVersion"];
-    checkedAt: NonNullable<Doc<"skillVersions">["staticScan"]>["checkedAt"];
-  };
   generatedSkillCard?: {
     path: string;
     size: number;
@@ -142,27 +126,9 @@ export function toPublicSkillVersion(
     createdAt: version.createdAt,
     softDeletedAt: version.softDeletedAt,
     sha256hash: version.sha256hash,
-    vtAnalysis: version.vtAnalysis,
     aigAnalysis: version.aigAnalysis,
     skillSpectorAnalysis: version.skillSpectorAnalysis,
     llmAnalysis: version.llmAnalysis,
-    staticScan: version.staticScan
-      ? {
-          status: version.staticScan.status,
-          reasonCodes: version.staticScan.reasonCodes,
-          findings: (version.staticScan.findings ?? []).map((finding) => ({
-            code: finding.code,
-            severity: finding.severity,
-            file: finding.file,
-            line: finding.line,
-            message: finding.message,
-            evidence: "",
-          })),
-          summary: version.staticScan.summary,
-          engineVersion: version.staticScan.engineVersion,
-          checkedAt: version.staticScan.checkedAt,
-        }
-      : undefined,
   };
 }
 

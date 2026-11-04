@@ -53,21 +53,14 @@ export function getClawScanDisplayStatus(analysis) {
 }
 export function aggregateAuditVerdict(signals) {
     const clawScanStatus = getClawScanDisplayStatus(signals.llmAnalysis);
-    const staticStatus = signals.staticScan?.status?.trim().toLowerCase();
-    if (clawScanStatus === "malicious" || staticStatus === "malicious")
+    if (clawScanStatus === "malicious")
         return "malicious";
     if (clawScanStatus === "review" ||
         clawScanStatus === "suspicious" ||
         clawScanStatus === "warn" ||
-        clawScanStatus === "warning" ||
-        staticStatus === "suspicious" ||
-        staticStatus === "review" ||
-        staticStatus === "warn" ||
-        staticStatus === "warning") {
+        clawScanStatus === "warning") {
         return "review";
     }
-    if (clawScanStatus !== "pending")
-        return clawScanStatus;
-    return staticStatus || clawScanStatus;
+    return clawScanStatus;
 }
 //# sourceMappingURL=securityAudit.js.map

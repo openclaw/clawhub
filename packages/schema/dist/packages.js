@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { ApiV1PackageSecurityResponseSchema, ApiV1PackageVersionListResponseSchema, BundlePublishMetadataSchema, PackageAigAnalysisSchema, PackageArtifactSummarySchema, PackageChannelSchema, PackageCompatibilitySchema, PackageEndorAnalysisSchema, PackageFamilySchema, PackageLlmAnalysisSchema, PackagePublishArtifactSchema, PackageSkillSpectorIssueSchema, PackageStaticScanSchema, PackageStatsSchema, PackageVerificationScopeSchema, PackageVerificationTierSchema, PackageVtAnalysisSchema, PluginManifestSummarySchema, } from "./packageShared.js";
+import { ApiV1PackageSecurityResponseSchema, ApiV1PackageVersionListResponseSchema, BundlePublishMetadataSchema, PackageAigAnalysisSchema, PackageArtifactSummarySchema, PackageChannelSchema, PackageCompatibilitySchema, PackageEndorAnalysisSchema, PackageFamilySchema, PackageLlmAnalysisSchema, PackagePublishArtifactSchema, PackageSkillSpectorIssueSchema, PackageStatsSchema, PackageVerificationScopeSchema, PackageVerificationTierSchema, PluginManifestSummarySchema, } from "./packageShared.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 import { TemplateManifestSummarySchema } from "./templates.js";
 export * from "./packageShared.js";
@@ -197,12 +197,10 @@ export const ApiV1PackageVersionResponseSchema = type({
         artifact: PackageArtifactSummarySchema.or("null").optional(),
         // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
         sha256hash: "string|null?",
-        vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
         skillSpectorAnalysis: PackageSkillSpectorAnalysisSchema.or("null").optional(),
         endorAnalysis: PackageEndorAnalysisSchema.or("null").optional(),
         aigAnalysis: PackageAigAnalysisSchema.or("null").optional(),
         llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
-        staticScan: PackageStaticScanSchema.or("null").optional(),
     }).or("null"),
 });
 export const ApiV1PackageVersionPublicationResponseSchema = type({

@@ -71,7 +71,6 @@ export type ClaimedJob = {
     targetKind: "skillVersion" | "packageRelease" | "skillScanRequest";
     source: string;
     hasMaliciousSignal: boolean;
-    waitForVtUntil: number;
     attempts?: number;
   };
   target: Record<string, unknown> & {
@@ -737,9 +736,8 @@ function artifactMetadata(job: ClaimedJob) {
     job: sanitizedJobForArtifactContext(job.job),
     target: sanitizedTargetForArtifactContext(job.target),
     policy: {
-      virusTotal: "telemetry-only; never final classifier; do not hide solely from VT",
       maliciousSignalHold:
-        "if non-VT malicious signals held the artifact, Codex decides whether to release or hide",
+        "if malicious signals held the artifact, Codex decides whether to release or hide",
       openclawPluginTrust:
         "plugins under @openclaw owned by the OpenClaw publisher are trusted unless artifact evidence proves malicious behavior",
     },
@@ -844,7 +842,6 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
       id: input.job.job._id,
       source: input.job.job.source,
       targetKind: input.job.job.targetKind,
-      waitForVtUntil: input.job.job.waitForVtUntil,
     },
     llmAnalysis: redactDiagnosticValue(input.llmAnalysis, ["llmAnalysis"]),
     aigAnalysis: redactDiagnosticValue(input.aigAnalysis, ["aigAnalysis"]),
@@ -2262,6 +2259,8 @@ export async function runClawScan(
   try {
     const output = await runCommand(command, args, {
       cwd: workspace,
+      // Defense in depth: ClawHub retired VirusTotal, so a stray runner key must
+      // never let the OSS ClawScan VirusTotal scanner upload artifact bytes.
       omitEnv: ["VIRUSTOTAL_API_KEY"],
       timeoutMs: clawScanTimeoutMs(),
       onStderrChunk: progress.write,

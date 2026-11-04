@@ -514,8 +514,6 @@ describe("httpApiV1 handlers", () => {
         report: {
           clawscan: { status: "malicious", checkedAt: 1 },
           skillspector: null,
-          staticAnalysis: null,
-          virustotal: null,
         },
         createdAt: 1,
         updatedAt: 1,
@@ -538,8 +536,10 @@ describe("httpApiV1 handlers", () => {
     const readme = entries["README.md"] ? strFromU8(entries["README.md"]) : "";
     expect(readme).toContain("ClawScan is the primary security verdict");
     expect(readme).toContain("`malicious` means ClawHub blocked the submitted version");
-    expect(readme).toContain("VirusTotal results are supporting reputation telemetry");
+    expect(readme).not.toMatch(/VirusTotal|static-analysis/);
     expect(readme).toContain("`clawscan.json`: final ClawScan verdict");
+    expect(Object.keys(entries)).not.toContain("virustotal.json");
+    expect(Object.keys(entries)).not.toContain("static-analysis.json");
   });
 
   it("includes the bounded Endor summary in stored plugin report downloads", async () => {
@@ -5708,7 +5708,7 @@ describe("httpApiV1 handlers", () => {
     expect(body).toContain("/api/v1/skills/demo/versions/1.0.0?ownerHandle=<owner>");
   });
 
-  it("returns version detail security from vt analysis", async () => {
+  it("omits retired VirusTotal data from version detail security", async () => {
     const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
     const selectedVersion0 = {
       _id: "skillVersions:1",
@@ -5748,8 +5748,9 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.version.security.status).toBe("pending");
-    expect(json.version.security.scanners.vt.normalizedStatus).toBe("suspicious");
-    expect(json.version.security.virustotalUrl).toContain("virustotal.com/gui/file/");
+    expect(json.version.security.scanners.vt).toBeUndefined();
+    expect(json.version.security).not.toHaveProperty("virustotalUrl");
+    expect(json.version).not.toHaveProperty("vtAnalysis");
   });
 
   it("keeps static-scan suspicious status out of version security snapshot verdicts", async () => {
@@ -5807,7 +5808,8 @@ describe("httpApiV1 handlers", () => {
     expect(json.version.security.hasWarnings).toBe(false);
     expect(json.version.security.hasScanResult).toBe(true);
     expect(json.version.security.scanners.static).toBeUndefined();
-    expect(json.version.security.scanners.vt.normalizedStatus).toBe("clean");
+    expect(json.version.security.scanners.vt).toBeUndefined();
+    expect(json.version).not.toHaveProperty("staticScan");
     expect(json.version.security.scanners.llm.normalizedStatus).toBe("clean");
   });
 
@@ -6541,7 +6543,7 @@ describe("httpApiV1 handlers", () => {
     expect(json.moderation.matchesRequestedVersion).toBe(true);
   });
 
-  it("keeps hasScanResult true when one scanner returns a definitive verdict", async () => {
+  it("reports an errored ClawScan without a definitive scan result", async () => {
     const selectedSkill = {
       _id: "skills:1",
       slug: "demo",
@@ -6601,7 +6603,8 @@ describe("httpApiV1 handlers", () => {
     const json = await response.json();
     expect(json.security.status).toBe("error");
     expect(json.security.hasScanResult).toBe(false);
-    expect(json.security.scanners.vt.normalizedStatus).toBe("clean");
+    // Stored VirusTotal telemetry is retired and never surfaced.
+    expect(json.security.scanners.vt).toBeUndefined();
     expect(json.security.scanners.llm.normalizedStatus).toBe("error");
   });
 
@@ -7715,7 +7718,6 @@ describe("httpApiV1 handlers", () => {
             rawStatus: "clean",
             verdict: "clean",
             signals: {
-              staticScan: { status: "clean", rawStatus: "clean" },
               dependencyRegistry: null,
             },
           },
@@ -7724,10 +7726,7 @@ describe("httpApiV1 handlers", () => {
     });
     expect(json.items[0].card).toBeUndefined();
     expect(json.items[0].artifact).toBeUndefined();
-    expect(json.items[0].security.signals.staticScan.findings).toBeUndefined();
     expect(Object.keys(json.items[0].security.signals)).toEqual([
-      "staticScan",
-      "virusTotal",
       "skillSpector",
       "dependencyRegistry",
     ]);
@@ -10970,75 +10969,6 @@ describe("httpApiV1 handlers", () => {
       {
         actorUserId: "users:admin",
         jobIds: ["securityScanJobs:1", "securityScanJobs:2"],
-      },
-    );
-  });
-
-  it("VT pending repair requires admin role", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      throw new Error("should not repair");
-    });
-
-    const response = await __handlers.skillsPostRouterV1Handler(
-      makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills/-/repair-vt-pending", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ batchSize: 25, dryRun: true }),
-      }),
-    );
-
-    expect(response.status).toBe(403);
-    await expect(response.text()).resolves.toBe("Admin role required.");
-    expect(runMutation).toHaveBeenCalledTimes(1);
-  });
-
-  it("VT pending repair invokes the internal repair action via admin API", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
-    const runAction = vi.fn(async () => ({
-      dryRun: true,
-      total: 2,
-      wouldUpdate: 2,
-      updated: 0,
-      noResults: 0,
-      noDecisiveStats: 0,
-      errors: 0,
-      done: false,
-      cursor: "cursor-2",
-      statusCounts: { clean: 2 },
-      sampleUpdated: [{ slug: "demo", status: "clean" }],
-    }));
-
-    const response = await __handlers.skillsPostRouterV1Handler(
-      makeCtx({ runAction }),
-      new Request("https://example.com/api/v1/skills/-/repair-vt-pending", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ batchSize: 25, cursor: null, dryRun: true }),
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      ok: true,
-      dryRun: true,
-      wouldUpdate: 2,
-      cursor: "cursor-2",
-    });
-    expect(runAction).toHaveBeenCalledWith(
-      (internal as unknown as { vt: Record<string, unknown> }).vt.repairPendingSkillVtAnalysis,
-      {
-        dryRun: true,
-        cursor: null,
-        batchSize: 25,
       },
     );
   });
@@ -15105,7 +15035,11 @@ describe("httpApiV1 handlers", () => {
     );
 
     if (response.status !== 200) throw new Error(await response.text());
-    await expect(response.json()).resolves.toMatchObject({
+    const body = await response.json();
+    // Stored VirusTotal and static scan rows are retired and no longer exposed.
+    expect(body.version).not.toHaveProperty("vtAnalysis");
+    expect(body.version).not.toHaveProperty("staticScan");
+    expect(body).toMatchObject({
       package: {
         name: "demo-plugin",
         family: "code-plugin",
@@ -15113,10 +15047,6 @@ describe("httpApiV1 handlers", () => {
       version: {
         version: "1.0.0",
         sha256hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        vtAnalysis: {
-          status: "clean",
-          verdict: "benign",
-        },
         llmAnalysis: {
           status: "clean",
           verdict: "clean",
@@ -15128,10 +15058,6 @@ describe("httpApiV1 handlers", () => {
         },
         verification: {
           scanStatus: "clean",
-        },
-        staticScan: {
-          status: "malicious",
-          summary: "Static fixture only.",
         },
       },
     });
@@ -15764,14 +15690,15 @@ describe("httpApiV1 handlers", () => {
       },
     },
     {
-      name: "stale",
+      // Staleness came only from retired VirusTotal telemetry and is never reported now.
+      name: "retired VirusTotal stale",
       release: { sha256hash: "b".repeat(64), vtAnalysis: { status: "stale", checkedAt: 123 } },
       expected: {
         scanStatus: "pending",
         blockedFromDownload: false,
         reasons: ["scan:pending"],
         pending: true,
-        stale: true,
+        stale: false,
       },
     },
     {

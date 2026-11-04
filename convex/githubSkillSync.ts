@@ -5,7 +5,6 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./functions";
 import { assertAdmin, requireUserFromAction } from "./lib/access";
-import { decodeBoundedUtf8Text } from "./lib/artifactText";
 import { buildGitHubApiHeaders } from "./lib/githubAuth";
 import { getGitHubProviderAccountId } from "./lib/githubIdentity";
 import {
@@ -28,7 +27,6 @@ import {
 } from "./lib/githubSkillSync";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
 import { sha256Hex } from "./lib/hash";
-import { runStaticModerationScan } from "./lib/moderationEngine";
 import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
 import { requirePublisherRole } from "./lib/publishers";
 import {
@@ -68,8 +66,6 @@ const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
 // exceeds Convex's 1s mutation budget, so the sync action applies it in bounded batches.
 const LEGACY_SYNC_MAX_OPERATIONS_PER_MUTATION = 50;
 const LEGACY_SYNC_MAX_BATCHES = 200;
-const MAX_STATIC_SCAN_TEXT_FILES = 200;
-const MAX_STATIC_SCAN_TEXT_FILE_BYTES = 256 * 1024;
 const DEFAULT_SOURCE_SYNC_BATCH_SIZE = 20;
 const MAX_SOURCE_SYNC_BATCH_SIZE = 50;
 
@@ -2576,14 +2572,6 @@ export async function verifyGitHubSkillHandler(
     });
   }
 
-  const staticScan = runStaticModerationScan({
-    slug: target.skill.slug,
-    displayName: target.skill.displayName,
-    summary: target.skill.summary,
-    frontmatter: parseFrontmatter(discovered.skillMarkdown),
-    files: listGitHubSkillFiles(entries, discovered.path),
-    fileContents: listGitHubSkillTextContents(entries, discovered.path),
-  });
   const presentationIcon = iconForDiscoveredGitHubSkill(discovered);
 
   const prepared = (await ctx.runMutation(
@@ -2601,7 +2589,6 @@ export async function verifyGitHubSkillHandler(
           ...(presentationIcon ? { icon: presentationIcon } : {}),
         },
       },
-      staticScan,
     },
   )) as GitHubSkillVerificationResult | undefined;
 
@@ -3124,27 +3111,6 @@ async function fetchGitHubSkillSourceSnapshotWithEntries(
     validateRasterIcon: (args) => isDecodableSkillPresentationRaster(ctx, args),
   });
   return { snapshot, entries };
-}
-
-function listGitHubSkillFiles(entries: Record<string, Uint8Array>, folderPath: string) {
-  return listGitHubSkillFolderEntries(entries, folderPath).map(([path, bytes]) => ({
-    path,
-    size: bytes.byteLength,
-  }));
-}
-
-function listGitHubSkillTextContents(entries: Record<string, Uint8Array>, folderPath: string) {
-  const textFiles = [];
-  for (const [path, bytes] of listGitHubSkillFolderEntries(entries, folderPath)) {
-    if (textFiles.length >= MAX_STATIC_SCAN_TEXT_FILES) break;
-    const content = decodeBoundedUtf8Text(bytes, MAX_STATIC_SCAN_TEXT_FILE_BYTES);
-    if (content === null) continue;
-    textFiles.push({
-      path,
-      content,
-    });
-  }
-  return textFiles;
 }
 
 function listGitHubSkillFolderEntries(entries: Record<string, Uint8Array>, folderPath: string) {
