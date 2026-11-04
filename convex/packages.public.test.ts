@@ -14447,12 +14447,12 @@ describe("packages public queries", () => {
           })
           .mockResolvedValueOnce(null),
         runMutation,
-        runAction: vi.fn(async function (this: PublishScanStorage, ref: unknown, args: unknown) {
+        runAction: vi.fn(async (ref: unknown, args: unknown) => {
           const name = getFunctionName(ref as FunctionReference<"action">);
           if (name === "packageInspectorNode:runPackageInspectorForPublishInternal") {
             return await inspectorRunAction(ref, args);
           }
-          return await makePublishRunActionMock().call(this, ref, args);
+          return await makePublishRunActionMock()();
         }),
         scheduler: { runAfter: vi.fn() },
         storage: {
