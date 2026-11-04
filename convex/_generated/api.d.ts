@@ -171,6 +171,7 @@ import type * as lib_publicRouteReservations from "../lib/publicRouteReservation
 import type * as lib_publishAttemptOperationalRecovery from "../lib/publishAttemptOperationalRecovery.js";
 import type * as lib_publishLimits from "../lib/publishLimits.js";
 import type * as lib_publishStorage from "../lib/publishStorage.js";
+import type * as lib_publisherAbuseBenchmark from "../lib/publisherAbuseBenchmark.js";
 import type * as lib_publisherAbuseOwnerSynchrony from "../lib/publisherAbuseOwnerSynchrony.js";
 import type * as lib_publisherAbuseScoring from "../lib/publisherAbuseScoring.js";
 import type * as lib_publisherCatalogDisplay from "../lib/publisherCatalogDisplay.js";
@@ -498,6 +499,7 @@ declare const fullApi: ApiFromModules<{
   "lib/publishAttemptOperationalRecovery": typeof lib_publishAttemptOperationalRecovery;
   "lib/publishLimits": typeof lib_publishLimits;
   "lib/publishStorage": typeof lib_publishStorage;
+  "lib/publisherAbuseBenchmark": typeof lib_publisherAbuseBenchmark;
   "lib/publisherAbuseOwnerSynchrony": typeof lib_publisherAbuseOwnerSynchrony;
   "lib/publisherAbuseScoring": typeof lib_publisherAbuseScoring;
   "lib/publisherCatalogDisplay": typeof lib_publisherCatalogDisplay;
