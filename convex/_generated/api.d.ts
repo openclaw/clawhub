@@ -201,6 +201,7 @@ import type * as lib_skillCardClaims from "../lib/skillCardClaims.js";
 import type * as lib_skillCards from "../lib/skillCards.js";
 import type * as lib_skillDownloadBackfill from "../lib/skillDownloadBackfill.js";
 import type * as lib_skillEvaluationConfig from "../lib/skillEvaluationConfig.js";
+import type * as lib_skillEvaluationMetrics from "../lib/skillEvaluationMetrics.js";
 import type * as lib_skillEvaluationResult from "../lib/skillEvaluationResult.js";
 import type * as lib_skillFileAccess from "../lib/skillFileAccess.js";
 import type * as lib_skillFileReadAccess from "../lib/skillFileReadAccess.js";
@@ -525,6 +526,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillCards": typeof lib_skillCards;
   "lib/skillDownloadBackfill": typeof lib_skillDownloadBackfill;
   "lib/skillEvaluationConfig": typeof lib_skillEvaluationConfig;
+  "lib/skillEvaluationMetrics": typeof lib_skillEvaluationMetrics;
   "lib/skillEvaluationResult": typeof lib_skillEvaluationResult;
   "lib/skillFileAccess": typeof lib_skillFileAccess;
   "lib/skillFileReadAccess": typeof lib_skillFileReadAccess;
