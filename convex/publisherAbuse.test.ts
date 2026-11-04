@@ -506,6 +506,59 @@ function makeNomination(
   };
 }
 
+function makeOfficialPublisherLookupQuery() {
+  return {
+    withIndex: (
+      indexName: string,
+      build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+    ) => {
+      expect(indexName).toBe("by_publisher");
+      const constraints: Record<string, unknown> = {};
+      const q = {
+        eq(field: string, value: unknown) {
+          constraints[field] = value;
+          return q;
+        },
+      };
+      build(q);
+      return {
+        unique: async () =>
+          constraints.publisherId === "publishers:official"
+            ? { _id: "officialPublishers:official" }
+            : null,
+      };
+    },
+  };
+}
+
+function makeOfficialPublisherAbuseSignal() {
+  return {
+    _id: "publisherAbuseSignals:official",
+    _creationTime: 100,
+    signalType: "high_install_download_ratio",
+    ownerKey: "publisher:publishers:official",
+    ownerPublisherId: "publishers:official",
+    ownerUserId: "users:official",
+    handleSnapshot: "official",
+    skillId: "skills:official",
+    skillSlug: "official-skill",
+    skillDisplayName: "Official Skill",
+    latestRunId: "publisherAbuseScoreRuns:temporal",
+    firstSeenAt: 100,
+    lastSeenAt: 300,
+    seenCount: 1,
+    recent7Downloads: 500,
+    recent7Installs: 75,
+    recent7InstallDownloadRatio: 0.15,
+    recent30Downloads: 1_000,
+    recent30Installs: 150,
+    recent30InstallDownloadRatio: 0.15,
+    allTimeDownloads: 1_000,
+    allTimeInstalls: 150,
+    allTimeInstallDownloadRatio: 0.15,
+  };
+}
+
 function makeEmptyOfficialPublishersQuery() {
   return {
     withIndex: (indexName: string) => {
@@ -1331,28 +1384,7 @@ describe("publisher abuse dry-run persistence", () => {
         }
         if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery(signals);
         if (table === "officialPublishers") {
-          return {
-            withIndex: (
-              indexName: string,
-              build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-            ) => {
-              expect(indexName).toBe("by_publisher");
-              const constraints: Record<string, unknown> = {};
-              const q = {
-                eq(field: string, value: unknown) {
-                  constraints[field] = value;
-                  return q;
-                },
-              };
-              build(q);
-              return {
-                unique: async () =>
-                  constraints.publisherId === "publishers:official"
-                    ? { _id: "officialPublishers:official" }
-                    : null,
-              };
-            },
-          };
+          return makeOfficialPublisherLookupQuery();
         }
         throw new Error(`unexpected table ${table}`);
       }),
@@ -4250,31 +4282,7 @@ describe("publisher abuse dry-run persistence", () => {
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
     } as never);
-    const signal = {
-      _id: "publisherAbuseSignals:official",
-      _creationTime: 100,
-      signalType: "high_install_download_ratio",
-      ownerKey: "publisher:publishers:official",
-      ownerPublisherId: "publishers:official",
-      ownerUserId: "users:official",
-      handleSnapshot: "official",
-      skillId: "skills:official",
-      skillSlug: "official-skill",
-      skillDisplayName: "Official Skill",
-      latestRunId: "publisherAbuseScoreRuns:temporal",
-      firstSeenAt: 100,
-      lastSeenAt: 300,
-      seenCount: 1,
-      recent7Downloads: 500,
-      recent7Installs: 75,
-      recent7InstallDownloadRatio: 0.15,
-      recent30Downloads: 1_000,
-      recent30Installs: 150,
-      recent30InstallDownloadRatio: 0.15,
-      allTimeDownloads: 1_000,
-      allTimeInstalls: 150,
-      allTimeInstallDownloadRatio: 0.15,
-    };
+    const signal = makeOfficialPublisherAbuseSignal();
     const signalPaginate = vi.fn(async () => ({
       page: [signal],
       isDone: true,
@@ -4309,28 +4317,7 @@ describe("publisher abuse dry-run persistence", () => {
             };
           }
           if (table === "officialPublishers") {
-            return {
-              withIndex: (
-                indexName: string,
-                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-              ) => {
-                expect(indexName).toBe("by_publisher");
-                const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
-                build(q);
-                return {
-                  unique: async () =>
-                    constraints.publisherId === "publishers:official"
-                      ? { _id: "officialPublishers:official" }
-                      : null,
-                };
-              },
-            };
+            return makeOfficialPublisherLookupQuery();
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -4354,31 +4341,7 @@ describe("publisher abuse dry-run persistence", () => {
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
     } as never);
-    const officialSignal = {
-      _id: "publisherAbuseSignals:official",
-      _creationTime: 100,
-      signalType: "high_install_download_ratio",
-      ownerKey: "publisher:publishers:official",
-      ownerPublisherId: "publishers:official",
-      ownerUserId: "users:official",
-      handleSnapshot: "official",
-      skillId: "skills:official",
-      skillSlug: "official-skill",
-      skillDisplayName: "Official Skill",
-      latestRunId: "publisherAbuseScoreRuns:temporal",
-      firstSeenAt: 100,
-      lastSeenAt: 300,
-      seenCount: 1,
-      recent7Downloads: 500,
-      recent7Installs: 75,
-      recent7InstallDownloadRatio: 0.15,
-      recent30Downloads: 1_000,
-      recent30Installs: 150,
-      recent30InstallDownloadRatio: 0.15,
-      allTimeDownloads: 1_000,
-      allTimeInstalls: 150,
-      allTimeInstallDownloadRatio: 0.15,
-    };
+    const officialSignal = makeOfficialPublisherAbuseSignal();
     const signalPaginate = vi.fn(
       async (paginationOpts: { numItems: number; cursor: string | null }) => {
         expect(paginationOpts).toEqual({ numItems: 1, cursor: null });
@@ -4422,28 +4385,7 @@ describe("publisher abuse dry-run persistence", () => {
             };
           }
           if (table === "officialPublishers") {
-            return {
-              withIndex: (
-                indexName: string,
-                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-              ) => {
-                expect(indexName).toBe("by_publisher");
-                const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
-                build(q);
-                return {
-                  unique: async () =>
-                    constraints.publisherId === "publishers:official"
-                      ? { _id: "officialPublishers:official" }
-                      : null,
-                };
-              },
-            };
+            return makeOfficialPublisherLookupQuery();
           }
           throw new Error(`unexpected table ${table}`);
         }),
