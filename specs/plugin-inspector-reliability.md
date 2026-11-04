@@ -18,28 +18,35 @@ preparation errors. Those were reported to publishers as plugin breakage.
   and a JavaScript entry must exist itself. Entries that resolve outside the
   package are rejected. The CLI runs the same function before upload, so the
   author sees the error locally. Undeclared entrypoints stay out of scope.
-- Publish-time Inspector results carry an outcome: `clean`, `findings`,
-  `tool_failure`, or `timeout`. Failures carry `{ stage, reason, message }`
-  with reason `out_of_memory`, `target_unavailable`, `timeout`, or `error`.
-  A tool failure never becomes a finding, an email, or a publish error; the
-  Node action no longer fabricates a P0 `plugin-inspector-error` breakage.
-- The publishing action races the Inspector action against
-  `PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS` (120 s). The deadline lives in the
-  caller because Inspector's heaviest work is synchronous TypeScript analysis
-  that would starve an in-action timer, and because an OOM kills the Node
-  action outright; the caller sees a rejected `runAction` and records
-  `tool_failure` with reason `out_of_memory`. A timed-out action may still run
-  to completion; its result is discarded.
-- Real findings, breakages included, are returned in `inspectorFindings`,
-  staged with the attempt, and stored at finalization with `scanSource:
-  "publish"`. Publish-time findings never email owners: owner email stays with
-  reviewed notification runs of the bulk scan.
+- Plugin Inspector does not run in the publish request. Once a plugin
+  release is accepted (`finalizePackagePublishAttemptInternal` has published
+  it and recorded the attempt finalized), the production deployment schedules
+  `pluginInspectorDispatch:dispatchPluginInspectorReleaseScanInternal`, which
+  sends the `clawhub-plugin-inspector-release-scan` repository_dispatch event.
+  `plugin-inspector-bulk-scan.yml` runs a targeted, persisted, email-free scan
+  of that package (`PLUGIN_INSPECTOR_PACKAGE_NAMES`). The nightly sweep covers
+  any release whose dispatch failed or was skipped. Dispatch reuses the
+  deployment's `SECURITY_SCAN_EVENT_DISPATCH_ENABLED` switch and GitHub App
+  credentials, and only the production deployment dispatches because the
+  workflow scans the production site. Release scans queue per package; the
+  nightly run keeps its own concurrency group and lease.
+- Targeted scans inspect the package's latest public release, so only the
+  latest public plugin release dispatches. Monitoring has no publish-time
+  budget: it runs on a GitHub runner, not the 512 MiB Convex Node action,
+  with a 30-minute job timeout for release scans.
+- Inspector results carry an outcome: `clean`, `findings`, `tool_failure`, or
+  `timeout`. Failures carry `{ stage, reason, message }` with reason
+  `out_of_memory`, `target_unavailable`, `timeout`, or `error`. A tool failure
+  never becomes a finding, an email, or a publish error.
 - Outcomes are recorded on `packageInspectorScanStates` (`outcome`, `failure`,
-  `scanSource`). A publish-time failure that never resolved its target uses
-  `targetOpenClawVersion: "unresolved"`, which matches no real target. Rows
-  written before outcomes existed have no `outcome` and are completed scans;
-  a pre-outcome bulk-scan failure therefore still reads as a completed scan
-  until the next scan of that identity rewrites it.
+  `scanSource`). Rows written before outcomes existed have no `outcome` and
+  are completed scans; a pre-outcome bulk-scan failure therefore still reads
+  as a completed scan until the next scan of that identity rewrites it.
+  Attempts staged while Inspector still ran at publish (before this cutover,
+  within the 30-day attempt TTL) still apply their staged findings and outcome
+  at finalization with `scanSource: "publish"`, never emailing owners; a
+  publish-time failure without a resolved target used
+  `targetOpenClawVersion: "unresolved"`, which matches no real target.
 - A failed rescan never replaces a completed verdict for the same release,
   Inspector version, and target: the row keeps its `outcome`, `completedAt`,
   and findings and records only the latest `failure`. A later completed scan
@@ -50,39 +57,20 @@ preparation errors. Those were reported to publishers as plugin breakage.
   inspected the release. A release with only failed scans reports
   `status: "skipped"` with `skipReason` `inspector-timeout` or
   `inspector-tool-failure`, never `error`.
-- The bulk scan reports its own failures with the same classification so a
-  timeout is distinguishable from other tool failures.
+- Owner email stays with reviewed notification runs of the bulk scan;
+  release scans never notify.
 
-Running Inspector inside the publish request at all is transitional. The next
-step moves it to monitoring after the release is accepted: the existing bulk
-scan workflow, dispatched per accepted release plus the nightly sweep.
+The earlier publish-time design (a 512 MiB Convex Node action, a ClawHub
+prepared OpenClaw `latest` target cache, and a 120 s caller budget) is retired.
+Its history matters for one rule: anything heavy that inspects plugin packages
+belongs outside the Convex publish request.
 
-## Workspace and logging
+## Bulk scan and logging
 
-Publish-time inspection owns one disposable workspace containing submitted
-files and reports. Every owned operation finishes before recursive cleanup.
-Cleanup never converts a failure into a pass or replaces the original findings.
-A cleanup error is logged as an operational problem and never becomes a
-finding. Stage logs contain package identity
-and a fixed stage name, with Convex's action request id providing correlation.
-They must not log credentials, file contents, or scratch paths.
-
-The OpenClaw target is prepared by ClawHub, not by the dependency's
-`openClawTargets.prepare`. That helper buffers the full npm packument and the
-whole OpenClaw archive, then extracts every file. From 2026.9.6 (311 MB
-unpacked) it peaks near or above the 512 MiB Node action limit on its own
-(measured 607 MB max RSS for 2026.9.7), so every plugin publish, regardless of
-plugin size, could die with "Node.js action execution ran out of memory"; the
-2026.9.7 release lost ten small and large plugins that way. ClawHub resolves
-`openclaw/latest` from the single-version document, streams the archive through
-native zlib while verifying npm integrity, and keeps only `package/package.json`
-and `package/dist/**/*.d.ts`, the inputs of the packed-package surface reader
-(`reports.readOpenClawTargetSurface`). Nothing is written until the whole
-archive verifies. The verified surface lives in a process-stable temp cache
-keyed by version and integrity, is renamed into place atomically, and is shared
-by concurrent or warm invocations. Targets are not pruned, because another
-process may still read an older one; each is about 18 MB. The prepared
-target must stay field-for-field identical to the dependency's output.
+The bulk scan prepares its OpenClaw target with the dependency's
+`openClawTargets.prepare` on the GitHub runner, owns one disposable workspace
+per release, and removes it after each scan. Logs contain package identity and
+fixed stage names, never credentials, file contents, or scratch paths.
 
 The static publish scan runs in its own Node action and must import only leaf
 modules. Loading the `clawhub-schema` barrel (ArkType schemas) costs about
@@ -90,20 +78,12 @@ modules. Loading the `clawhub-schema` barrel (ArkType schemas) costs about
 files, 22 MB) that measured 390 MB peak locally versus 252 MB with the
 `clawhub-schema/textFiles` import, and the production action hit 512 MiB.
 
-The publish gate does not request a Plugin SDK usage inventory. Inspector
-0.4.1+ builds that inventory as a TypeScript program and type checker over
-every packed source file, bundled `node_modules` included, plus the target's
-declarations. With Inspector 0.4.3 against OpenClaw 2026.10.5 that measured
-783 MB max RSS for the discord ClawPack (105 files), 783 MB for matrix (1,854
-files) and 1,003 MB for whatsapp (1,680 files), versus 249/222/204 MB with
-Inspector 0.4.0; matrix and whatsapp also exhaust a 384 MB V8 heap. Every
-2026.10.5 publish of those three failed with a 512 MiB Node action OOM or a
-five-minute CLI timeout. Compatibility findings are identical with and without
-the artifact inventory, so publication gates on findings only and discards the
-source-kind inventory Inspector 0.4.x always returns. Artifact inventories are
-owned by the daily Package Inspector scan, which runs outside Convex and fills
-releases whose inventory is missing or stale; a new release reports `missing`
-until then. Attempts staged before this cutover still apply their stored
+Artifact SDK usage inventories are owned by the bulk scan. Inspector 0.4.1+
+builds that inventory as a TypeScript program over every packed file; with
+Inspector 0.4.3 against OpenClaw 2026.10.5 it measured 783 MB to 1,003 MB max
+RSS for the discord, matrix, and whatsapp ClawPacks, which is why it never ran
+inside Convex. A new release reports `missing` until its scan completes.
+Attempts staged before inventories left publication still apply their stored
 inventory at finalization until the 30-day attempt TTL expires.
 
 Isolated successful retries establish recovery only, not a concurrency,
@@ -114,9 +94,9 @@ limits or retry policy.
 Browser warning fixtures use missing manifest display metadata, a supported
 non-blocking warning. Removed runtime hooks are hard incompatibilities and must
 not stand in for warnings. The browser proof must retain staged privacy,
-malicious-scan rejection, and visible warning/remediation assertions.
-Scanner claims begin only after the UI acknowledges that publication was
-received; inspector target preparation happens before that staged attempt exists.
+malicious-scan rejection, the missing-entrypoint rejection, and visible
+warning/remediation assertions; warnings appear only after the proof runs the
+targeted monitoring scan for the accepted release.
 
 The local-auth runner waits for the initial Convex CLI push to finish before
 checking function readiness. Listening HTTP alone does not mean modules and

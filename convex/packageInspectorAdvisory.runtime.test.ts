@@ -101,6 +101,28 @@ async function fixture() {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("advisory Plugin Inspector outcomes", () => {
+  it("schedules targeted Inspector monitoring only after the release is accepted", async () => {
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "1");
+    vi.stubEnv("GITHUB_APP_ID", "configured");
+    vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "configured");
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "configured");
+    const { t, packageId, releaseId, finalizeWithFollowup, scanStates } = await fixture();
+
+    const { result } = await finalizeWithFollowup({});
+
+    expect(result).toMatchObject({ ok: true, packageId, releaseId });
+    expect(await t.run((ctx) => ctx.db.get(releaseId))).toMatchObject({
+      publicationStatus: "published",
+    });
+    const scheduled = await t.run((ctx) => ctx.db.system.query("_scheduled_functions").collect());
+    expect(
+      scheduled.filter((job) => job.name.includes("dispatchPluginInspectorReleaseScanInternal")),
+    ).toEqual([expect.objectContaining({ args: [{ releaseId, retryCount: 0 }] })]);
+    // Monitoring has not run yet, so nothing is recorded against the release.
+    expect(await scanStates()).toEqual([]);
+  });
+
+  // Attempts staged before Inspector left the publish request still carry its result.
   it("finalizes a release whose publish-time Inspector ran out of memory and records a tool failure", async () => {
     const { t, packageId, releaseId, finalizeWithFollowup, scanStates, findings } = await fixture();
 

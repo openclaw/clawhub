@@ -38,6 +38,31 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("actions/upload-artifact");
   });
 
+  it("scans each accepted plugin release as persisted, email-free monitoring", () => {
+    const workflow = readFileSync(
+      resolve(".github/workflows/plugin-inspector-bulk-scan.yml"),
+      "utf8",
+    );
+    const parsedWorkflow = parseYaml(workflow) as {
+      on?: { repository_dispatch?: { types?: string[] } };
+    };
+    const dispatch = readFileSync(resolve("convex/lib/pluginInspectorReleaseScan.ts"), "utf8");
+
+    expect(parsedWorkflow.on?.repository_dispatch?.types).toEqual([
+      "clawhub-plugin-inspector-release-scan",
+    ]);
+    expect(dispatch).toContain('"clawhub-plugin-inspector-release-scan"');
+    expect(workflow).toContain(
+      "PLUGIN_INSPECTOR_PACKAGE_NAMES: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.package_name || inputs.package_names || '' }}",
+    );
+    // A repository_dispatch has no inputs: release scans persist results and never email owners.
+    expect(workflow).toContain("PLUGIN_INSPECTOR_DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}");
+    expect(workflow).toContain(
+      "PLUGIN_INSPECTOR_NOTIFICATION_ONLY: ${{ github.event_name == 'schedule' && '0' || (inputs.notification_only && '1' || '0') }}",
+    );
+    expect(workflow).toContain("client_payload.package_name is required");
+  });
+
   it("runs nightly beta plugin scans while preserving manual dispatch", () => {
     const workflow = readFileSync(
       resolve(".github/workflows/plugin-inspector-bulk-scan.yml"),
@@ -68,7 +93,7 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("source_pr:");
     expect(workflow).toContain("source_sha:");
     expect(workflow).toContain(
-      "concurrency:\n  group: clawhub-plugin-inspector-bulk-scan\n  cancel-in-progress: false",
+      "concurrency:\n  group: ${{ github.event_name == 'repository_dispatch' && format('clawhub-plugin-inspector-release-scan-{0}', github.event.client_payload.package_name) || 'clawhub-plugin-inspector-bulk-scan' }}\n  cancel-in-progress: false",
     );
     expect(workflow).toContain("PLUGIN_INSPECTOR_OPENCLAW_VERSION: beta");
     expect(workflow).toContain("notify_owners:");
