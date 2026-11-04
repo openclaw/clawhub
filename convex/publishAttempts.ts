@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
+import { storedFilesValidator } from "./lib/fileValidators";
 import { manualPackageRecovery } from "./lib/packagePublishRecovery";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
@@ -249,15 +250,7 @@ export const createSkillPublishAttemptInternal = internalMutation({
     version: v.string(),
     idempotencyKey: v.string(),
     artifactFingerprint: v.string(),
-    files: v.array(
-      v.object({
-        path: v.string(),
-        size: v.number(),
-        storageId: v.id("_storage"),
-        sha256: v.string(),
-        contentType: v.optional(v.string()),
-      }),
-    ),
+    files: storedFilesValidator,
     scanContext: v.optional(v.any()),
     followup: v.object({
       skipWebhook: v.optional(v.boolean()),
@@ -423,15 +416,7 @@ export const createPackagePublishAttemptInternal = internalMutation({
     version: v.string(),
     idempotencyKey: v.string(),
     artifactFingerprint: v.string(),
-    files: v.array(
-      v.object({
-        path: v.string(),
-        size: v.number(),
-        storageId: v.id("_storage"),
-        sha256: v.string(),
-        contentType: v.optional(v.string()),
-      }),
-    ),
+    files: storedFilesValidator,
     clawpackStorageId: v.optional(v.id("_storage")),
     scanContext: v.optional(v.any()),
     packageInsertArgs: v.optional(v.any()),

@@ -100,6 +100,7 @@ import type * as lib_experimentalTemplates from "../lib/experimentalTemplates.js
 import type * as lib_featuredIntelligence from "../lib/featuredIntelligence.js";
 import type * as lib_featuredPolicy from "../lib/featuredPolicy.js";
 import type * as lib_featuredSelections from "../lib/featuredSelections.js";
+import type * as lib_fileValidators from "../lib/fileValidators.js";
 import type * as lib_githubAccount from "../lib/githubAccount.js";
 import type * as lib_githubActionsOidc from "../lib/githubActionsOidc.js";
 import type * as lib_githubAuth from "../lib/githubAuth.js";
@@ -424,6 +425,7 @@ declare const fullApi: ApiFromModules<{
   "lib/featuredIntelligence": typeof lib_featuredIntelligence;
   "lib/featuredPolicy": typeof lib_featuredPolicy;
   "lib/featuredSelections": typeof lib_featuredSelections;
+  "lib/fileValidators": typeof lib_fileValidators;
   "lib/githubAccount": typeof lib_githubAccount;
   "lib/githubActionsOidc": typeof lib_githubActionsOidc;
   "lib/githubAuth": typeof lib_githubAuth;

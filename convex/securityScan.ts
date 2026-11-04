@@ -7,6 +7,7 @@ import { applyGitHubSkillVerificationResultHandler } from "./githubSkillSync";
 import { assertAdmin, assertModerator, requireUser } from "./lib/access";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { endorAnalysisValidator, type EndorAnalysis } from "./lib/endorAnalysis";
+import { storedFileValidator } from "./lib/fileValidators";
 import { Events, logEvent } from "./lib/observabilityEvents";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
@@ -242,13 +243,7 @@ type EnqueuePackageReleaseScanArgs = {
   priority?: number;
 };
 
-const scanRequestFileValidator = v.object({
-  path: v.string(),
-  size: v.number(),
-  storageId: v.id("_storage"),
-  sha256: v.string(),
-  contentType: v.optional(v.string()),
-});
+const scanRequestFileValidator = storedFileValidator;
 
 const githubSkillScanStatusValidator = v.union(
   v.literal("clean"),
