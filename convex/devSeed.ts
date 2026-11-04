@@ -4516,6 +4516,153 @@ export const seedOrgDeletionFixture: ReturnType<typeof rawInternalMutation> = ra
   },
 });
 
+async function seedDeletionFixtureArtifacts(
+  ctx: MutationCtx,
+  args: AccountDeletionFixtureArgs,
+  userId: Id<"users">,
+  publisherId: Id<"publishers">,
+  normalizedName: string,
+  now: number,
+  kind: "org" | "account",
+) {
+  const skillId = await ctx.db.insert("skills", {
+    slug: args.skillSlug,
+    displayName: args.skillDisplayName,
+    summary:
+      kind === "org"
+        ? "Disposable local-auth fixture skill owned by an organization."
+        : "Disposable local-auth fixture skill owned by a personal publisher.",
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    latestVersionId: undefined,
+    latestVersionSummary: undefined,
+    tags: {},
+    softDeletedAt: undefined,
+    badges: { highlighted: undefined, redactionApproved: undefined },
+    moderationStatus: "active",
+    moderationReason: "clean",
+    isSuspicious: false,
+    statsDownloads: 0,
+    statsStars: 0,
+    statsInstallsCurrent: 0,
+    statsInstallsAllTime: 0,
+    stats: {
+      downloads: 0,
+      installsCurrent: 0,
+      installsAllTime: 0,
+      stars: 0,
+      versions: 0,
+      comments: 0,
+    },
+    createdAt: now,
+    updatedAt: now,
+  });
+  const skillVersionId = await ctx.db.insert("skillVersions", {
+    skillId,
+    version: "1.0.0",
+    changelog: `Seeded local-auth ${kind} deletion fixture.`,
+    changelogSource: "user",
+    files: [],
+    parsed: {
+      frontmatter: {
+        name: args.skillSlug,
+        description: `Disposable local-auth ${kind} deletion fixture skill.`,
+      },
+      metadata: {},
+    },
+    createdBy: userId,
+    createdAt: now,
+    softDeletedAt: undefined,
+  });
+  await ctx.db.patch(skillId, {
+    latestVersionId: skillVersionId,
+    latestVersionSummary: {
+      version: "1.0.0",
+      createdAt: now,
+      changelog: `Seeded local-auth ${kind} deletion fixture.`,
+      changelogSource: "user",
+    },
+    tags: { latest: skillVersionId },
+    stats: {
+      downloads: 0,
+      installsCurrent: 0,
+      installsAllTime: 0,
+      stars: 0,
+      versions: 1,
+      comments: 0,
+    },
+    updatedAt: now,
+  });
+
+  const compatibility = { pluginApiRange: ">=0.1.0" };
+  const verification = {
+    tier: "structural" as const,
+    scope: "artifact-only" as const,
+    summary: `Seeded local-auth ${kind} deletion fixture.`,
+    scanStatus: "clean" as const,
+  };
+  const packageId = await ctx.db.insert("packages", {
+    name: args.packageName,
+    normalizedName,
+    displayName: args.packageDisplayName,
+    summary:
+      kind === "org"
+        ? "Disposable local-auth fixture plugin owned by an organization."
+        : "Disposable local-auth fixture plugin owned by a personal publisher.",
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    family: "code-plugin",
+    channel: "community",
+    isOfficial: false,
+    runtimeId: normalizedName,
+    latestReleaseId: undefined,
+    latestVersionSummary: undefined,
+    tags: {},
+    compatibility,
+    verification,
+    scanStatus: "clean",
+    stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+    ...seededPackageRecommendationPatch({ downloads: 0, installs: 0, stars: 0 }),
+    softDeletedAt: undefined,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const packageReleaseId = await ctx.db.insert("packageReleases", {
+    packageId,
+    version: "1.0.0",
+    changelog: `Seeded local-auth ${kind} deletion fixture.`,
+    summary: "Disposable local-auth fixture plugin release.",
+    distTags: ["latest"],
+    files: [],
+    integritySha256: `${kind}-delete-fixture-${normalizedName}`,
+    extractedPackageJson: {
+      name: args.packageName,
+      version: "1.0.0",
+    },
+    compatibility,
+    verification,
+    sha256hash: `${kind}-delete-fixture-${normalizedName}`,
+    createdBy: userId,
+    publishActor: { kind: "user", userId },
+    createdAt: now,
+    softDeletedAt: undefined,
+  });
+  await ctx.db.patch(packageId, {
+    latestReleaseId: packageReleaseId,
+    latestVersionSummary: {
+      version: "1.0.0",
+      createdAt: now,
+      changelog: `Seeded local-auth ${kind} deletion fixture.`,
+      compatibility,
+      verification,
+    },
+    tags: { latest: packageReleaseId },
+    stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+    updatedAt: now,
+  });
+  return { skillId, skillVersionId, packageId, packageReleaseId };
+}
+
 export const seedOrgDeletionFixtureMutation = internalMutation({
   args: {
     handle: v.string(),
@@ -4568,135 +4715,16 @@ export const seedOrgDeletionFixtureMutation = internalMutation({
       updatedAt: now,
     });
 
-    const skillId = await ctx.db.insert("skills", {
-      slug: args.skillSlug,
-      displayName: args.skillDisplayName,
-      summary: "Disposable local-auth fixture skill owned by an organization.",
-      ownerUserId: userId,
-      ownerPublisherId: publisherId,
-      latestVersionId: undefined,
-      latestVersionSummary: undefined,
-      tags: {},
-      softDeletedAt: undefined,
-      badges: { highlighted: undefined, redactionApproved: undefined },
-      moderationStatus: "active",
-      moderationReason: "clean",
-      isSuspicious: false,
-      statsDownloads: 0,
-      statsStars: 0,
-      statsInstallsCurrent: 0,
-      statsInstallsAllTime: 0,
-      stats: {
-        downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
-        stars: 0,
-        versions: 0,
-        comments: 0,
-      },
-      createdAt: now,
-      updatedAt: now,
-    });
-    const skillVersionId = await ctx.db.insert("skillVersions", {
-      skillId,
-      version: "1.0.0",
-      changelog: "Seeded local-auth org deletion fixture.",
-      changelogSource: "user",
-      files: [],
-      parsed: {
-        frontmatter: {
-          name: args.skillSlug,
-          description: "Disposable local-auth org deletion fixture skill.",
-        },
-        metadata: {},
-      },
-      createdBy: userId,
-      createdAt: now,
-      softDeletedAt: undefined,
-    });
-    await ctx.db.patch(skillId, {
-      latestVersionId: skillVersionId,
-      latestVersionSummary: {
-        version: "1.0.0",
-        createdAt: now,
-        changelog: "Seeded local-auth org deletion fixture.",
-        changelogSource: "user",
-      },
-      tags: { latest: skillVersionId },
-      stats: {
-        downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
-        stars: 0,
-        versions: 1,
-        comments: 0,
-      },
-      updatedAt: now,
-    });
-
-    const compatibility = { pluginApiRange: ">=0.1.0" };
-    const verification = {
-      tier: "structural" as const,
-      scope: "artifact-only" as const,
-      summary: "Seeded local-auth org deletion fixture.",
-      scanStatus: "clean" as const,
-    };
-    const packageId = await ctx.db.insert("packages", {
-      name: args.packageName,
-      normalizedName,
-      displayName: args.packageDisplayName,
-      summary: "Disposable local-auth fixture plugin owned by an organization.",
-      ownerUserId: userId,
-      ownerPublisherId: publisherId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      runtimeId: normalizedName,
-      latestReleaseId: undefined,
-      latestVersionSummary: undefined,
-      tags: {},
-      compatibility,
-      verification,
-      scanStatus: "clean",
-      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-      ...seededPackageRecommendationPatch({ downloads: 0, installs: 0, stars: 0 }),
-      softDeletedAt: undefined,
-      createdAt: now,
-      updatedAt: now,
-    });
-    const packageReleaseId = await ctx.db.insert("packageReleases", {
-      packageId,
-      version: "1.0.0",
-      changelog: "Seeded local-auth org deletion fixture.",
-      summary: "Disposable local-auth fixture plugin release.",
-      distTags: ["latest"],
-      files: [],
-      integritySha256: `org-delete-fixture-${normalizedName}`,
-      extractedPackageJson: {
-        name: args.packageName,
-        version: "1.0.0",
-      },
-      compatibility,
-      verification,
-      sha256hash: `org-delete-fixture-${normalizedName}`,
-      createdBy: userId,
-      publishActor: { kind: "user", userId },
-      createdAt: now,
-      softDeletedAt: undefined,
-    });
-    await ctx.db.patch(packageId, {
-      latestReleaseId: packageReleaseId,
-      latestVersionSummary: {
-        version: "1.0.0",
-        createdAt: now,
-        changelog: "Seeded local-auth org deletion fixture.",
-        compatibility,
-        verification,
-      },
-      tags: { latest: packageReleaseId },
-      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-      updatedAt: now,
-    });
+    const { skillId, skillVersionId, packageId, packageReleaseId } =
+      await seedDeletionFixtureArtifacts(
+        ctx,
+        args,
+        userId,
+        publisherId,
+        normalizedName,
+        now,
+        "org",
+      );
     return {
       ok: true,
       publisherId,
@@ -5253,135 +5281,16 @@ export const seedAccountDeletionFixtureMutation = internalMutation({
       throw new Error("Account deletion fixture names must be unique per run");
     }
 
-    const skillId = await ctx.db.insert("skills", {
-      slug: args.skillSlug,
-      displayName: args.skillDisplayName,
-      summary: "Disposable local-auth fixture skill owned by a personal publisher.",
-      ownerUserId: userId,
-      ownerPublisherId: publisherId,
-      latestVersionId: undefined,
-      latestVersionSummary: undefined,
-      tags: {},
-      softDeletedAt: undefined,
-      badges: { highlighted: undefined, redactionApproved: undefined },
-      moderationStatus: "active",
-      moderationReason: "clean",
-      isSuspicious: false,
-      statsDownloads: 0,
-      statsStars: 0,
-      statsInstallsCurrent: 0,
-      statsInstallsAllTime: 0,
-      stats: {
-        downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
-        stars: 0,
-        versions: 0,
-        comments: 0,
-      },
-      createdAt: now,
-      updatedAt: now,
-    });
-    const skillVersionId = await ctx.db.insert("skillVersions", {
-      skillId,
-      version: "1.0.0",
-      changelog: "Seeded local-auth account deletion fixture.",
-      changelogSource: "user",
-      files: [],
-      parsed: {
-        frontmatter: {
-          name: args.skillSlug,
-          description: "Disposable local-auth account deletion fixture skill.",
-        },
-        metadata: {},
-      },
-      createdBy: userId,
-      createdAt: now,
-      softDeletedAt: undefined,
-    });
-    await ctx.db.patch(skillId, {
-      latestVersionId: skillVersionId,
-      latestVersionSummary: {
-        version: "1.0.0",
-        createdAt: now,
-        changelog: "Seeded local-auth account deletion fixture.",
-        changelogSource: "user",
-      },
-      tags: { latest: skillVersionId },
-      stats: {
-        downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
-        stars: 0,
-        versions: 1,
-        comments: 0,
-      },
-      updatedAt: now,
-    });
-
-    const compatibility = { pluginApiRange: ">=0.1.0" };
-    const verification = {
-      tier: "structural" as const,
-      scope: "artifact-only" as const,
-      summary: "Seeded local-auth account deletion fixture.",
-      scanStatus: "clean" as const,
-    };
-    const packageId = await ctx.db.insert("packages", {
-      name: args.packageName,
-      normalizedName,
-      displayName: args.packageDisplayName,
-      summary: "Disposable local-auth fixture plugin owned by a personal publisher.",
-      ownerUserId: userId,
-      ownerPublisherId: publisherId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      runtimeId: normalizedName,
-      latestReleaseId: undefined,
-      latestVersionSummary: undefined,
-      tags: {},
-      compatibility,
-      verification,
-      scanStatus: "clean",
-      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-      ...seededPackageRecommendationPatch({ downloads: 0, installs: 0, stars: 0 }),
-      softDeletedAt: undefined,
-      createdAt: now,
-      updatedAt: now,
-    });
-    const packageReleaseId = await ctx.db.insert("packageReleases", {
-      packageId,
-      version: "1.0.0",
-      changelog: "Seeded local-auth account deletion fixture.",
-      summary: "Disposable local-auth fixture plugin release.",
-      distTags: ["latest"],
-      files: [],
-      integritySha256: `account-delete-fixture-${normalizedName}`,
-      extractedPackageJson: {
-        name: args.packageName,
-        version: "1.0.0",
-      },
-      compatibility,
-      verification,
-      sha256hash: `account-delete-fixture-${normalizedName}`,
-      createdBy: userId,
-      publishActor: { kind: "user", userId },
-      createdAt: now,
-      softDeletedAt: undefined,
-    });
-    await ctx.db.patch(packageId, {
-      latestReleaseId: packageReleaseId,
-      latestVersionSummary: {
-        version: "1.0.0",
-        createdAt: now,
-        changelog: "Seeded local-auth account deletion fixture.",
-        compatibility,
-        verification,
-      },
-      tags: { latest: packageReleaseId },
-      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-      updatedAt: now,
-    });
+    const { skillId, skillVersionId, packageId, packageReleaseId } =
+      await seedDeletionFixtureArtifacts(
+        ctx,
+        args,
+        userId,
+        publisherId,
+        normalizedName,
+        now,
+        "account",
+      );
     await ctx.db.patch(publisherId, {
       publishedSkills: 1,
       publishedPackages: 1,

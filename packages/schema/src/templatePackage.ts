@@ -381,18 +381,7 @@ function issue(code: string, path: string, message: string): TemplatePackageVali
   return { code, path, message };
 }
 
-function parseJsonCompatibleYaml(raw: string, path: string) {
-  const document = parseDocument(raw.startsWith("\uFEFF") ? raw.slice(1) : raw, {
-    prettyErrors: false,
-    uniqueKeys: true,
-  });
-  if (document.errors.length > 0) {
-    return {
-      issues: document.errors.map((error) =>
-        issue("invalid_openclaw_profile", path, error.message),
-      ),
-    };
-  }
+function findUnsupportedYamlFeature(document: ReturnType<typeof parseDocument>) {
   let unsupportedFeature: string | undefined;
   visit(document, {
     Alias() {
@@ -413,6 +402,22 @@ function parseJsonCompatibleYaml(raw: string, path: string) {
       }
     },
   });
+  return unsupportedFeature;
+}
+
+function parseJsonCompatibleYaml(raw: string, path: string) {
+  const document = parseDocument(raw.startsWith("\uFEFF") ? raw.slice(1) : raw, {
+    prettyErrors: false,
+    uniqueKeys: true,
+  });
+  if (document.errors.length > 0) {
+    return {
+      issues: document.errors.map((error) =>
+        issue("invalid_openclaw_profile", path, error.message),
+      ),
+    };
+  }
+  const unsupportedFeature = findUnsupportedYamlFeature(document);
   if (unsupportedFeature) {
     return {
       issues: [
@@ -711,26 +716,7 @@ function parseManifestDocument(
       ),
     };
   }
-  let unsupportedFeature: string | undefined;
-  visit(document, {
-    Alias() {
-      unsupportedFeature ??= "aliases";
-    },
-    Node(_key, node) {
-      if (node.anchor) {
-        unsupportedFeature ??= "anchors";
-      } else if (node.tag) {
-        unsupportedFeature ??= "explicit tags";
-      }
-    },
-    Pair(_key, pair) {
-      if (!isScalar(pair.key) || typeof pair.key.value !== "string") {
-        unsupportedFeature ??= "non-string mapping keys";
-      } else if (pair.key.value === "<<") {
-        unsupportedFeature ??= "merge keys";
-      }
-    },
-  });
+  const unsupportedFeature = findUnsupportedYamlFeature(document);
   if (unsupportedFeature) {
     return {
       issues: [

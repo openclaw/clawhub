@@ -23,7 +23,6 @@ import {
   publishRelease,
   publishPackageForTrustedPublisherInternal,
   publishPackageForUserInternal,
-  PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS,
   generateChangelogPreview,
   assertCanGenerateChangelogPreviewInternal,
   listPackageReportsInternal,
@@ -14323,7 +14322,7 @@ describe("packages public queries", () => {
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  describe("advisory Plugin Inspector", () => {
+  describe("Plugin Inspector stays out of the publish request", () => {
     const pluginPackageJson = (openclaw: Record<string, unknown> = {}) =>
       JSON.stringify({
         name: "demo-plugin",
@@ -14425,116 +14424,31 @@ describe("packages public queries", () => {
       return attemptCall?.[1].packageFollowup as Record<string, unknown> | undefined;
     }
 
-    it("publishes when the Inspector action runs out of memory and records a tool failure", async () => {
-      const { ctx, runMutation } = makeAdvisoryPublishCtx({
-        runAction: async () => {
-          throw new Error("Node.js action execution ran out of memory");
-        },
+    it("publishes without invoking Plugin Inspector or staging Inspector results", async () => {
+      // Any Inspector invocation fails the test instead of returning a stub result.
+      const inspector = vi.fn(async () => {
+        throw new Error("Plugin Inspector must not run in the publish request");
       });
+      const { ctx, runMutation } = makeAdvisoryPublishCtx({ runAction: inspector });
 
       const result = await publishDemoPlugin(ctx);
 
       expect(result).toMatchObject({ ok: true, status: "pending", publicationStatus: "pending" });
       expect(result).not.toHaveProperty("inspectorFindings");
+      expect(inspector).not.toHaveBeenCalled();
+      expect(
+        ctx.runAction.mock.calls.some(([ref]) =>
+          getFunctionName(ref as FunctionReference<"action">).startsWith("packageInspectorNode:"),
+        ),
+      ).toBe(false);
       const followup = stagedFollowup(runMutation);
-      expect(followup).toMatchObject({
-        inspectorWarnings: [],
-        inspectorOutcome: {
-          outcome: "tool_failure",
-          failure: { stage: "action", reason: "out_of_memory" },
-        },
-      });
+      expect(followup).toBeDefined();
+      expect(followup).not.toHaveProperty("inspectorWarnings");
+      expect(followup).not.toHaveProperty("inspectorOutcome");
+      expect(followup).not.toHaveProperty("inspectorMetadata");
     });
 
-    it("publishes when the Inspector reports it could not prepare its OpenClaw target", async () => {
-      const { ctx, runMutation } = makeAdvisoryPublishCtx({
-        runAction: async () => ({
-          ...makeCleanPackageInspectorResult(),
-          outcome: "tool_failure",
-          failure: {
-            stage: "OpenClaw target preparation",
-            reason: "target_unavailable",
-            message: "npm registry returned 503",
-          },
-        }),
-      });
-
-      const result = await publishDemoPlugin(ctx);
-
-      expect(result).toMatchObject({ ok: true, publicationStatus: "pending" });
-      expect(result).not.toHaveProperty("inspectorFindings");
-      expect(stagedFollowup(runMutation)).toMatchObject({
-        inspectorWarnings: [],
-        inspectorOutcome: {
-          outcome: "tool_failure",
-          failure: { reason: "target_unavailable" },
-        },
-      });
-    });
-
-    it("publishes when the Inspector exceeds its publish budget and records a timeout", async () => {
-      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-      try {
-        let markStarted = () => {};
-        const started = new Promise<void>((resolve) => {
-          markStarted = resolve;
-        });
-        const { ctx, runMutation } = makeAdvisoryPublishCtx({
-          runAction: () => {
-            markStarted();
-            return new Promise(() => undefined);
-          },
-        });
-
-        const publish = publishDemoPlugin(ctx);
-        await started;
-        await vi.advanceTimersByTimeAsync(PACKAGE_INSPECTOR_PUBLISH_BUDGET_MS);
-        const result = await publish;
-
-        expect(result).toMatchObject({ ok: true, publicationStatus: "pending" });
-        expect(stagedFollowup(runMutation)).toMatchObject({
-          inspectorWarnings: [],
-          inspectorOutcome: { outcome: "timeout", failure: { reason: "timeout" } },
-        });
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("publishes and reports real Inspector breakages as advisory findings", async () => {
-      const breakage = {
-        code: "unknown-hook-name",
-        severity: "P0",
-        level: "breakage",
-        message: "plugin registers an unknown hook",
-        authorRemediation: { summary: "Register a supported hook name." },
-      };
-      const { ctx, runMutation } = makeAdvisoryPublishCtx({
-        runAction: async () => ({
-          ...makeCleanPackageInspectorResult(),
-          outcome: "findings",
-          summary: { breakageCount: 1, warningCount: 0, deprecationWarningCount: 0, issueCount: 1 },
-          breakages: [breakage],
-          metadata: { inspectorVersion: "0.4.3", targetOpenClawVersion: "2026.10.5" },
-        }),
-      });
-
-      const result = await publishDemoPlugin(ctx);
-
-      expect(result).toMatchObject({
-        ok: true,
-        publicationStatus: "pending",
-        inspectorFindings: [
-          expect.objectContaining({ findingKind: "error", code: "unknown-hook-name" }),
-        ],
-      });
-      expect(stagedFollowup(runMutation)).toMatchObject({
-        inspectorWarnings: [expect.objectContaining({ code: "unknown-hook-name" })],
-        inspectorOutcome: { outcome: "findings" },
-      });
-    });
-
-    it("rejects a publish whose declared entrypoint is missing before running the Inspector", async () => {
+    it("rejects a publish whose declared entrypoint is missing", async () => {
       const { ctx, runMutation } = makeAdvisoryPublishCtx({
         packageJson: pluginPackageJson({ extensions: ["./dist/plugin.js"] }),
       });
@@ -14542,194 +14456,19 @@ describe("packages public queries", () => {
       await expect(publishDemoPlugin(ctx)).rejects.toThrow(
         "demo-plugin declares openclaw.extensions entry ./dist/plugin.js, but that file is missing from the package.",
       );
-      expect(
-        ctx.runAction.mock.calls.some(
-          ([ref]) =>
-            getFunctionName(ref as FunctionReference<"action">) ===
-            "packageInspectorNode:runPackageInspectorForPublishInternal",
-        ),
-      ).toBe(false);
       expect(stagedFollowup(runMutation)).toBeUndefined();
     });
 
-    it("publishes a valid plugin with a clean Inspector outcome", async () => {
+    it("publishes a valid plugin", async () => {
       const { ctx, runMutation } = makeAdvisoryPublishCtx({});
 
       const result = await publishDemoPlugin(ctx);
 
       expect(result).toMatchObject({ ok: true, publicationStatus: "pending" });
       expect(stagedFollowup(runMutation)).toMatchObject({
-        inspectorWarnings: [],
-        inspectorOutcome: { outcome: "clean" },
-      });
-    });
-  });
-
-  it("defers author warnings and leaves SDK inventories to the Package Inspector scan", async () => {
-    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
-      if ("minimumRole" in args) return null;
-      if ("warnings" in args) return { ok: true, inserted: 1 };
-      return { ok: true, packageId: "packages:demo", releaseId: "packageReleases:demo-1" };
-    });
-    const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce(null),
-      runMutation,
-      runAction: makePublishRunActionMock(() => ({
-        outcome: "findings",
-        breakages: [],
-        summary: {
-          breakageCount: 0,
-          warningCount: 1,
-          deprecationWarningCount: 1,
-          issueCount: 1,
-        },
-        warnings: [
-          {
-            id: "demo:legacy-before-agent-start",
-            code: "legacy-before-agent-start",
-            severity: "P2",
-            issueClass: "deprecation-warning",
-            compatStatus: "deprecated",
-            message: "legacy before_agent_start hook is deprecated",
-            evidence: ["src/index.ts:4"],
-            authorRemediation: {
-              summary: "Move prompt mutation work to before_prompt_build.",
-              docsUrl:
-                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-            },
-          },
-        ],
-        metadata: {
-          inspectorVersion: "0.3.19",
-          targetOpenClawVersion: "2026.7.1-2",
-        },
-      })),
-      scheduler: {
-        runAfter: vi.fn(),
-      },
-      storage: {
-        get: vi.fn(async (storageId: string) => {
-          const files = new Map<string, string>([
-            [
-              "storage:package",
-              JSON.stringify({
-                name: "demo-plugin",
-                openclaw: {
-                  extensions: ["./dist/index.js"],
-                  compat: { pluginApi: "^1.0.0" },
-                  build: { openclawVersion: "2026.3.14" },
-                  configSchema: { type: "object" },
-                },
-              }),
-            ],
-            ["storage:manifest", JSON.stringify({ id: "demo.plugin" })],
-            ["storage:code", "export const demo = true;\n"],
-          ]);
-          const content = files.get(storageId);
-          return content ? new Blob([content]) : null;
-        }),
-        store: vi.fn(async (blob: Blob) =>
-          blob.type === "application/json" ? "storage:inventory" : "storage:legacy-zip",
-        ),
-      },
-    };
-
-    await publishPackageForUserInternalHandler(ctx as never, {
-      actorUserId: "users:owner",
-      payload: {
-        name: "demo-plugin",
-        displayName: "Demo Plugin",
-        family: "code-plugin",
-        version: "1.0.0",
-        changelog: "init",
-        source: {
-          kind: "github",
-          url: "https://github.com/openclaw/demo-plugin",
-          repo: "openclaw/demo-plugin",
-          ref: "refs/tags/v1.0.0",
-          commit: "abc123",
-          path: ".",
-          importedAt: Date.now(),
-        },
-        files: [
-          {
-            path: "package.json",
-            size: 1,
-            storageId: "storage:package",
-            sha256: "package",
-            contentType: "application/json",
-          },
-          {
-            path: "openclaw.plugin.json",
-            size: 1,
-            storageId: "storage:manifest",
-            sha256: "manifest",
-            contentType: "application/json",
-          },
-          {
-            path: "dist/index.js",
-            size: 1,
-            storageId: "storage:code",
-            sha256: "code",
-            contentType: "application/javascript",
-          },
-        ],
-      },
-    });
-
-    // Warnings are stored for the release only after it passes the pre-publication checks.
-    expect(
-      runMutation.mock.calls.some(
-        ([, args]) =>
-          typeof args === "object" &&
-          args !== null &&
-          Array.isArray((args as { findings?: unknown[] }).findings),
-      ),
-    ).toBe(false);
-    const attemptCall = runMutation.mock.calls.find(([, args]) =>
-      isPackagePublishAttemptArgs(args),
-    );
-    const followup = attemptCall?.[1].packageFollowup as Record<string, unknown>;
-    expect(followup.inspectorSdkUsage).toBeUndefined();
-    expect(followup.inspectorSdkUsageStorageId).toBeUndefined();
-    expect(ctx.storage.store.mock.calls.some(([value]) => value.type === "application/json")).toBe(
-      false,
-    );
-    expect(attemptCall?.[1]).toMatchObject({
-      packageId: "packages:demo",
-      packageReleaseId: "packageReleases:demo-1",
-      packageFollowup: {
         packageName: "demo-plugin",
         version: "1.0.0",
-        inspectorMetadata: {
-          inspectorVersion: "0.3.19",
-          targetOpenClawVersion: "2026.7.1-2",
-        },
-        inspectorWarnings: [
-          expect.objectContaining({
-            code: "legacy-before-agent-start",
-            issueClass: "deprecation-warning",
-            message: "legacy before_agent_start hook is deprecated",
-            authorRemediation: {
-              summary: "Move prompt mutation work to before_prompt_build.",
-              docsUrl:
-                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-            },
-          }),
-        ],
-      },
+      });
     });
   });
 
