@@ -87,3 +87,69 @@ Full local unit coverage after integration: 8939 passed, 5 skipped. Types/build,
 packages, full lint and full installed formatter passed. Independent narrative
 read-only review of the integration found no actionable P0–P3 findings.
 No helper-owned isolation or production readiness claim is conferred.
+
+## Supervisor custody and target disambiguation repairs
+
+An exact-head review after ac583161 identified two missing native contracts.
+First, a root directory containing both SKILL.md and a plugin manifest is
+ambiguous to the native resolver. Workers now retain their claimed-family
+manifest selection; that selects plugin identity, not a sub-artifact or separate
+skill scan. Native ClawScan still scans the full parent artifact. The exact
+source56 binary reproduces the ambiguous directory rejection, while explicit
+openclaw.plugin.json passes target resolution and reaches credential preflight.
+No model call or duplicate corpus is needed for that regression.
+
+Second, killing a local Docker CLI/process group does not establish daemon-side
+container disappearance. Both qualified worker paths now use the existing
+shared process supervisor plus a per-run cleanup helper following upstream
+docs/sandbox.md. Each invocation receives a fresh CLAWSCAN_SANDBOX_RUN_ID; the
+helper enumerates by that exact run label, independently verifies immutable
+container ID/run label/random command label, removes every owned scanner/judge/
+overview container by ID, verifies each disappearance and checks final residue.
+Foreign/mismatched ownership is never deleted. Cleanup forwards only the Docker
+destination environment, not scanner/provider credentials.
+
+A zero-exit host is insufficient: native ClawScan can contain an optional
+overview timeout. Before accepting normal completion, the supervisor also
+requires completed native child-finality evidence. A started overview must be
+completed without an error; absent or explicitly never-started overview is
+safe. A failed/timed-out started overview, malformed evidence, failed/nonzero/
+unknown host termination or missing proof uses the bounded cancellation sweep.
+Empty polls cannot certify that unseen daemon creates were cancelled. After the
+bounded window it fails closed, preserving the mounted workspace and stopping
+further claims even if currently visible containers were removed. This custody
+decision does not relabel a valid Decisions verdict or fabricate overview prose.
+A failed optional overview that never started remains compatible with a valid
+verdict.
+
+Prepublication does not swallow this error as ordinary scan failure; it retains
+workspace custody, emits workerMustStop, and stops after already-active batch
+work settles. Manual scan workers similarly stop, including when recording the
+backend failure itself is unavailable. Legacy/nonqualified command paths are
+unchanged. Real process-supervisor tests and executable mocked-daemon tests
+cover multiple/late containers, ownership mismatches, daemon/removal failures,
+unknown finality and contained overview cancellation. There is no real local
+Docker-daemon claim; native image qualification remains the upstream evidence.
+
+Repair validation: four cleanup/worker seam suites passed 213 tests; full unit
+coverage with serialized file execution passed 8993 tests, 5 skipped. Full
+TypeScript/build, lint and installed formatter passed. A prior parallel run
+had two unchanged test timing failures: the Skill Card immediate-claim class
+reproduced on frozen ac583161 baseline, and the tight SkillSpector subprocess
+budget passed in isolation. No unrelated Skill Card or capacity changes.
+
+The qualified Docker runner deliberately omits positive commandStarted metadata:
+starting a Docker client is not proof that its shell started. Completed validated
+judge/attempt/overview output is accepted with that omitted flag; explicitly
+false completed attempts and malformed supplied flags are rejected. A completed
+overview without the flag retains its prose and is finality-safe. Failed or
+timed-out overview with unknown start remains custody-unknown. Failed unknown-
+start judge attempts retain null invocation/failure counts; no receipt recovery
+is invented. Regressions use this actual native Docker JSON shape.
+
+Final repair verification supersedes the earlier test count: serialized full
+unit coverage passed 8995 tests, 5 skipped. Full types/build, lint and installed
+formatter passed; final cleanup/Decisions predicate suites passed 81 tests.
+Independent narrative read-only review of all repair source/tests and owning
+loops found no actionable P0–P3 findings. No real-daemon/corpus/UI rerun or
+production-readiness claim is implied by these compatibility/custody tests.

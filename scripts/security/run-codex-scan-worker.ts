@@ -33,6 +33,11 @@ import {
 import { writeClawHubEndorProfile } from "./clawHubEndorProfile";
 import { isDecisionsRun, validateDecisionsRun, validateAigMcpReport } from "./clawscan-decisions";
 import {
+  withClawScanDockerCleanup,
+  ClawScanContainerCleanupError,
+  hasKnownClawScanChildFinality,
+} from "./clawscan-docker-cleanup";
+import {
   clawScanExposure,
   type ClawScanExposure,
   noClawScanExposure,
@@ -2316,16 +2321,35 @@ export async function runClawScan(
   };
 
   try {
-    const output = await runCommand(command, args, {
-      cwd: workspace,
-      // Defense in depth: ClawHub retired VirusTotal, so a stray runner key must
-      // never let the OSS ClawScan VirusTotal scanner upload artifact bytes.
-      omitEnv: ["VIRUSTOTAL_API_KEY"],
-      timeoutMs: clawScanTimeoutMs(),
-      onStderrChunk: progress.write,
-      onTermination: (termination) => onDiagnostic({ termination }),
-      cleanupProcessGroup: true,
-    });
+    const output = wholePlugin
+      ? await withClawScanDockerCleanup({
+          workspace,
+          confirmChildFinality: async () =>
+            hasKnownClawScanChildFinality(JSON.parse(await readFile(artifactPath, "utf8"))),
+          env: { ...codexEnv(workspace), VIRUSTOTAL_API_KEY: undefined },
+          run: (env, onTermination) =>
+            runWorkerCommand(command, args, {
+              cwd: workspace,
+              env,
+              timeoutMs: clawScanTimeoutMs(),
+              onStderrChunk: progress.write,
+              cleanupProcessGroup: true,
+              onTermination: (termination) => {
+                onTermination(termination);
+                onDiagnostic({ termination });
+              },
+            }),
+        })
+      : await runCommand(command, args, {
+          cwd: workspace,
+          // Defense in depth: ClawHub retired VirusTotal, so a stray runner key must
+          // never let the OSS ClawScan VirusTotal scanner upload artifact bytes.
+          omitEnv: ["VIRUSTOTAL_API_KEY"],
+          timeoutMs: clawScanTimeoutMs(),
+          onStderrChunk: progress.write,
+          onTermination: (termination) => onDiagnostic({ termination }),
+          cleanupProcessGroup: true,
+        });
     onDiagnostic({
       exitCode: 0,
       stderr: sanitizedProgressStderr(output.stderr),
@@ -2377,7 +2401,8 @@ export async function resolveClawScanTarget(workspace: string, job: ClaimedJob) 
     job.job.targetKind === "packageRelease" && job.target.release?.artifactKind === "legacy-zip"
       ? "./artifact"
       : await resolveScanArtifactRoot(workspace, job);
-  if (await usesWholePluginScanForTarget(job.job.targetKind, job.target.package)) return root;
+  // Manifest selection disambiguates target kind; native ClawScan still
+  // scans its entire parent artifact, including all embedded skills.
   const manifests = [
     "SKILL.md",
     "openclaw.plugin.json",
@@ -2481,7 +2506,7 @@ export async function processJob(
   let aigAnalysis: AigAnalysis | undefined;
   let skillSpectorAnalysis: SkillSpectorAnalysis | undefined;
   let endorAnalysis: EndorAnalysis | undefined;
-  let preserveWorkspaceForEndorCleanup = false;
+  let preserveWorkspaceForContainerCleanup = false;
   let status: JobDiagnosticInput["status"] = "failed";
   try {
     await writeArtifactWorkspace(job, workspace);
@@ -2553,7 +2578,7 @@ export async function processJob(
         reason instanceof Error ? reason.message : String(reason),
       );
       if (reason instanceof EndorContainerCleanupError) {
-        preserveWorkspaceForEndorCleanup = true;
+        preserveWorkspaceForContainerCleanup = true;
         throw reason;
       }
       endorAnalysis = {
@@ -2633,19 +2658,27 @@ export async function processJob(
     });
     return { completed: true, hardFailed: false, retryableFailed: false };
   } catch (error) {
-    const workerMustStop = error instanceof EndorContainerCleanupError;
+    const workerMustStop =
+      error instanceof EndorContainerCleanupError || error instanceof ClawScanContainerCleanupError;
     // Both report-only and adjudication paths must retain the mounted source
     // while container removal is unconfirmed. A hard stop is not cleanup proof.
-    if (workerMustStop) preserveWorkspaceForEndorCleanup = true;
+    if (workerMustStop) preserveWorkspaceForContainerCleanup = true;
     errorMessage = sanitizeWorkerErrorMessage(
       error instanceof Error ? error.message : String(error),
     );
-    const failResult = (await client.action(api.securityScan.failCodexScanJob, {
-      token,
-      jobId: job.job._id as Id<"securityScanJobs">,
-      leaseToken: job.job.leaseToken,
-      error: errorMessage,
-    })) as { retry?: boolean } | undefined;
+    let failResult: { retry?: boolean } | undefined;
+    try {
+      failResult = (await client.action(api.securityScan.failCodexScanJob, {
+        token,
+        jobId: job.job._id as Id<"securityScanJobs">,
+        leaseToken: job.job.leaseToken,
+        error: errorMessage,
+      })) as { retry?: boolean } | undefined;
+    } catch (failureRecordError) {
+      // Backend availability cannot turn an unconfirmed live container into a
+      // retryable failure or allow another claim. Workspace custody is retained.
+      if (!workerMustStop) throw failureRecordError;
+    }
     logger.error(
       {
         durationMs: Date.now() - startedAt,
@@ -2705,13 +2738,13 @@ export async function processJob(
         "security scan diagnostic write failed",
       );
     }
-    if (preserveWorkspaceForEndorCleanup) {
+    if (preserveWorkspaceForContainerCleanup) {
       logger.error(
         {
-          event: "security_scan_endor_workspace_preserved_after_cleanup_failure",
+          event: "security_scan_workspace_preserved_after_container_cleanup_failure",
           jobId: job.job._id,
         },
-        "preserving Endor workspace because container removal was not confirmed",
+        "preserving scan workspace because container removal was not confirmed",
       );
     } else {
       await rm(workspace, { recursive: true, force: true });

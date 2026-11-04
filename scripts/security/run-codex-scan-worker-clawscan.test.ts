@@ -8,6 +8,8 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
+import * as dockerCleanup from "./clawscan-docker-cleanup";
+import * as pluginRuntime from "./clawscan-plugin-runtime";
 import completeReport from "./fixtures/skillspector-completed.json";
 import partialReport from "./fixtures/skillspector-usable-partial.json";
 import type { ClaimedJob, ClawScanCommandDiagnostic } from "./run-codex-scan-worker";
@@ -540,6 +542,43 @@ async function configureEndorFakeCommands(input: {
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
+  it.each([false, true])(
+    "stops and preserves the MCP workspace after cleanup failure (backend unavailable: %s)",
+    async (backendUnavailable) => {
+      vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "0");
+      vi.spyOn(pluginRuntime, "usesWholePluginScanForTarget").mockResolvedValue(true);
+      vi.spyOn(pluginRuntime, "qualifiedPluginCommand").mockResolvedValue("/qualified/clawscan");
+      let preserved: string | undefined;
+      vi.spyOn(dockerCleanup, "withClawScanDockerCleanup").mockImplementation(async (input) => {
+        preserved = input.workspace;
+        throw new dockerCleanup.ClawScanContainerCleanupError(
+          "ClawScan Docker cleanup unconfirmed",
+        );
+      });
+      const client = {
+        action: vi.fn(async (..._args: unknown[]) => {
+          if (backendUnavailable) throw new Error("backend transport unavailable");
+          return { retry: true };
+        }),
+      };
+      await expect(
+        processJob(client, "fixture", pluginPackageJob("securityScanJobs:owned-mcp"), undefined),
+      ).resolves.toMatchObject({
+        completed: false,
+        workerMustStop: true,
+        hardFailed: true,
+        retryableFailed: false,
+      });
+      expect(preserved).toBeTruthy();
+      tempDirs.push(preserved!);
+      expect(
+        await readFile(join(preserved!, "artifact/package/openclaw.plugin.json"), "utf8"),
+      ).toContain("fixture-plugin");
+      expect(client.action).toHaveBeenCalledTimes(1);
+      expect(client.action.mock.calls[0]?.[1]).toHaveProperty("error");
+    },
+  );
+
   it("completes automatic Endor-only work without launching ClawScan or bundled scanners", async () => {
     vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "0");
     vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", "/missing/must-not-launch-clawscan");

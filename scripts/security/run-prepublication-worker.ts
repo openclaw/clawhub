@@ -12,6 +12,7 @@ import {
   prepublicationReportSchema,
   type PrepublicationReport,
 } from "../../convex/lib/prepublicationReports";
+import { runWorkerCommand, CommandFailure } from "../lib/runWorkerCommand";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskKnownWorkerSecrets,
@@ -20,6 +21,11 @@ import {
 } from "../lib/workerRedaction";
 import { isDecisionsRun } from "./clawscan-decisions";
 import { projectSkillSpectorReport } from "./clawscan-diagnostic-skillspector";
+import {
+  withClawScanDockerCleanup,
+  ClawScanContainerCleanupError,
+  hasKnownClawScanChildFinality,
+} from "./clawscan-docker-cleanup";
 import {
   clawScanExposure,
   type ClawScanExposure,
@@ -86,6 +92,7 @@ type WorkerCheckResult = {
 type ProcessAttemptResult = {
   completed: boolean;
   result?: unknown;
+  workerMustStop?: boolean;
 };
 
 type PrePublicationWorkerClient = Pick<ConvexHttpClient, "action">;
@@ -709,17 +716,44 @@ export async function runNativeClawScan(
     "missing";
   let failure: NativeExecutionReport["failure"] = null;
   try {
-    output = await runCommand(command, args, {
-      cwd: workspace,
-      env: {
-        ...restrictedChildEnvironment(workspace),
-        ...securityScannerEnvironment(process.env),
-      },
-      timeoutMs: clawScanTimeoutMs(),
-      onOutput: (captured) => {
-        output = captured;
-      },
-    });
+    output = wholePlugin
+      ? await withClawScanDockerCleanup({
+          workspace,
+          confirmChildFinality: async () =>
+            hasKnownClawScanChildFinality(JSON.parse(await readFile(artifactPath, "utf8"))),
+          env: {
+            ...restrictedChildEnvironment(workspace),
+            ...securityScannerEnvironment(process.env),
+          },
+          run: async (env, onTermination) => {
+            try {
+              const captured = await runWorkerCommand(command, args, {
+                cwd: workspace,
+                env,
+                timeoutMs: clawScanTimeoutMs(),
+                cleanupProcessGroup: true,
+                onTermination,
+              });
+              output = { code: 0, ...captured };
+              return output;
+            } catch (error) {
+              if (error instanceof CommandFailure)
+                output = { code: error.exitCode, stdout: error.stdout, stderr: error.stderr };
+              throw error;
+            }
+          },
+        })
+      : await runCommand(command, args, {
+          cwd: workspace,
+          env: {
+            ...restrictedChildEnvironment(workspace),
+            ...securityScannerEnvironment(process.env),
+          },
+          timeoutMs: clawScanTimeoutMs(),
+          onOutput: (captured) => {
+            output = captured;
+          },
+        });
     const durationMs = Date.now() - startedAt;
     let artifact: unknown;
     try {
@@ -1055,6 +1089,7 @@ export async function processPrePublicationAttempt(
   let truffleHogBlocked = false;
   let completionStarted = false;
   let executionReport: NativeExecutionReport | undefined;
+  let preserveWorkspace = false;
   try {
     const job = buildSyntheticScanJob(attempt);
     await writeWorkspace(job, workspace);
@@ -1137,6 +1172,7 @@ export async function processPrePublicationAttempt(
         skillSpectorAnalysis = review.skillSpectorAnalysis;
         clawscan = review.check;
       } catch (error) {
+        if (error instanceof ClawScanContainerCleanupError) throw error;
         clawscan = {
           status: "failed",
           summary: publicText(error instanceof Error ? error.message : String(error)),
@@ -1178,6 +1214,14 @@ export async function processPrePublicationAttempt(
     const status = (result as { status?: string })?.status;
     return { completed: status === "finalized" || status === "blocked", result };
   } catch (error) {
+    if (error instanceof ClawScanContainerCleanupError) {
+      preserveWorkspace = true;
+      logger.error(
+        { event: "prepublication_container_cleanup_unconfirmed", attemptId: attempt.attemptId },
+        "ClawScan container removal unconfirmed; preserving workspace and stopping worker",
+      );
+      return { completed: false, result: undefined, workerMustStop: true };
+    }
     if (truffleHogBlocked) {
       logger.error(
         {
@@ -1236,7 +1280,7 @@ export async function processPrePublicationAttempt(
     return { completed: false, result };
   } finally {
     reportExposure();
-    await rm(workspace, { force: true, recursive: true });
+    if (!preserveWorkspace) await rm(workspace, { force: true, recursive: true });
   }
 }
 
@@ -1248,7 +1292,9 @@ export async function processPrePublicationBatch(
     attempts.map(async (attempt) => {
       try {
         return await processAttempt(attempt);
-      } catch {
+      } catch (error) {
+        if (error instanceof ClawScanContainerCleanupError)
+          return { completed: false, result: undefined, workerMustStop: true };
         logger.warn(
           {
             attemptId: attempt.attemptId,
@@ -1364,6 +1410,9 @@ async function main() {
       }),
     );
     totalCompleted += results.filter((result) => result.completed).length;
+    if (results.some((result) => result.workerMustStop)) {
+      throw new Error("ClawScan Docker cleanup could not be confirmed; refusing further claims");
+    }
     if (claimBatchDrainedQueue(claimFailures, attempts.length, claimLimit)) break;
   }
 

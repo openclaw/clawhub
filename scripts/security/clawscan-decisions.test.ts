@@ -109,6 +109,15 @@ async function runFixture(
   dirs.push(workspace);
   await mkdir(join(workspace, "artifact"));
   await writeFile(join(workspace, "artifact", "openclaw.plugin.json"), '{"id":"fixture"}');
+  await writeFile(join(workspace, "artifact", "SKILL.md"), "# Embedded skill at plugin root\n");
+  if (qualified) {
+    const bin = join(workspace, "bin");
+    await mkdir(bin);
+    const docker = join(bin, "docker");
+    await writeFile(docker, '#!/bin/sh\n[ "$1 $2" = "container ls" ] || exit 91\nexit 0\n');
+    await chmod(docker, 0o755);
+    vi.stubEnv("PATH", bin + ":" + process.env.PATH);
+  }
   const command = join(workspace, "clawscan-fixture");
   await writeFile(
     command,
@@ -135,7 +144,7 @@ async function runFixture(
     const mapped = await runClawScan(job, workspace, (diagnostic) => {
       if (diagnostic.args) invocation = diagnostic.args;
     });
-    expect(invocation).toContain("./artifact");
+    expect(invocation).toContain("./artifact/openclaw.plugin.json");
     expect(invocation).toContain(QUALIFIED_PLUGIN_IMAGE);
     expect(invocation).not.toContain("--scanner-result");
     return { analysis: mapped.llmAnalysis, check: { status: "rescan", summary: undefined } };
@@ -155,6 +164,68 @@ async function runFixture(
   );
 }
 describe("Decisions publication consumer", () => {
+  it("validates native Docker output recovery without inventing unknown-start invocation counts", () => {
+    const artifact = fixture() as Record<string, any>;
+    delete artifact.judge.commandStarted;
+    delete artifact.judge.attempts[0].commandStarted;
+    artifact.judge.attempts.unshift({
+      status: "failed",
+      error: "Judge did not return a JSON object",
+      result: null,
+      durationMs: 10,
+    });
+    expect(() => validateClawScanArtifactForClawHubProfile(artifact, ["aig-mcp"])).not.toThrow();
+    expect(clawScanExposure(artifact)).toMatchObject({
+      judgeInvocations: null,
+      judgeOperationalFailures: null,
+      recoveredReceiptRetries: 0,
+    });
+  });
+
+  it("accepts the actual native Docker omitted-start shape and keeps its optional overview", async () => {
+    const artifact = fixture() as Record<string, any>;
+    artifact.sandbox = { mode: "docker", image: QUALIFIED_PLUGIN_IMAGE };
+    delete artifact.judge.commandStarted;
+    delete artifact.judge.attempts[0].commandStarted;
+    artifact.overview = {
+      status: "completed",
+      error: "",
+      result: {
+        summary: "Native Docker overview.",
+        user_guidance: "Native guidance.",
+        scan_findings_in_context: [],
+        dimensions: Object.fromEntries(
+          Object.keys(artifact.judge.result.dimensions).map((key) => [key, "Native detail."]),
+        ),
+      },
+    };
+    const result = await runFixture(artifact, "packageRelease", true);
+    expect(result.check.status).toBe("clean");
+    expect(result.analysis).toMatchObject({
+      verdict: "benign",
+      summary: "Native Docker overview.",
+      guidance: "Native guidance.",
+    });
+    expect(clawScanExposure(artifact)).toMatchObject({
+      judgeInvocations: 1,
+      judgeOperationalFailures: 0,
+    });
+  });
+
+  it("keeps the verdict publishable when optional overview failed before any child command started", async () => {
+    const artifact = fixture() as Record<string, any>;
+    artifact.sandbox = { mode: "docker", image: QUALIFIED_PLUGIN_IMAGE };
+    artifact.overview = {
+      status: "failed",
+      commandStarted: false,
+      error: "Overview could not start",
+    };
+    const result = await runFixture(artifact, "packageRelease", true);
+    expect(result.check.status).toBe("clean");
+    expect(result.analysis).toMatchObject({ verdict: "benign" });
+    expect(result.analysis?.summary).toBeUndefined();
+  });
+
   it.each(["benign", "suspicious", "malicious"])(
     "uses the qualified verdict mapper for manual %s rescan",
     async (verdict) => {

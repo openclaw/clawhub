@@ -104,14 +104,14 @@ export function decisionsJudgeAccounting(run: Record<string, unknown>) {
     attempts.some(
       (attempt) =>
         !attempt ||
-        typeof attempt.commandStarted !== "boolean" ||
+        (attempt.commandStarted !== undefined && typeof attempt.commandStarted !== "boolean") ||
         !["completed", "failed"].includes(String(attempt.status)) ||
         typeof attempt.error !== "string" ||
         !Object.hasOwn(attempt, "result") ||
         !Number.isSafeInteger(attempt.durationMs) ||
         (attempt.durationMs as number) < 0 ||
         (attempt.status === "completed" &&
-          (attempt.commandStarted !== true || attempt.error !== "" || !object(attempt.result))) ||
+          (attempt.commandStarted === false || attempt.error !== "" || !object(attempt.result))) ||
         (attempt.status === "failed" && !attempt.error.trim()),
     )
   )
@@ -127,15 +127,27 @@ export function decisionsJudgeAccounting(run: Record<string, unknown>) {
   if (
     attempts.length === 2 &&
     (attempts[0]!.status !== "failed" ||
-      attempts[0]!.commandStarted !== true ||
+      attempts[0]!.commandStarted === false ||
       !String(attempts[0]!.error).includes("JSON"))
   )
     return;
+  // Native Docker deliberately omits positive shell-start flags. Completed
+  // validated output proves an invocation; a failed unknown-start attempt does
+  // not justify inventing execution/failure counts. Preserve that uncertainty.
+  const unknownFailedStart = attempts.some(
+    (attempt) => attempt!.status === "failed" && attempt!.commandStarted === undefined,
+  );
   return {
-    judgeInvocations: attempts.filter((attempt) => attempt!.commandStarted === true).length,
-    judgeOperationalFailures: attempts.filter(
-      (attempt) => attempt!.commandStarted === true && attempt!.status === "failed",
-    ).length,
+    judgeInvocations: unknownFailedStart
+      ? null
+      : attempts.filter(
+          (attempt) => attempt!.commandStarted === true || attempt!.status === "completed",
+        ).length,
+    judgeOperationalFailures: unknownFailedStart
+      ? null
+      : attempts.filter(
+          (attempt) => attempt!.commandStarted === true && attempt!.status === "failed",
+        ).length,
     recoveredReceiptRetries: 0,
   };
 }
@@ -217,7 +229,7 @@ export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: r
     !judge ||
     judge.status !== "completed" ||
     judge.error !== "" ||
-    judge.commandStarted !== true ||
+    judge.commandStarted === false ||
     typeof judge.command !== "string" ||
     !judge.command.includes("clawscan-decisions-judge") ||
     !/^[a-f0-9]{64}$/.test(String(judge.outputSchemaSha256)) ||
@@ -238,7 +250,9 @@ export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: r
   }
   const overview = object(run.overview);
   const prose =
-    overview?.status === "completed" && overview.error === "" && overview.commandStarted === true
+    overview?.status === "completed" &&
+    overview.error === "" &&
+    (overview.commandStarted === undefined || overview.commandStarted === true)
       ? overviewSchema.safeParse(overview.result)
       : undefined;
   const details = prose?.success ? prose.data : undefined;
