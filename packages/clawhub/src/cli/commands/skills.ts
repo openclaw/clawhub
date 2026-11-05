@@ -31,6 +31,7 @@ import {
   writeSkillOrigin,
 } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
 import {
   parseSkillsShCliReference,
@@ -308,7 +309,7 @@ export async function cmdSearch(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Searching");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const effectiveLimit =
       typeof searchOptions.limit === "number" && Number.isFinite(searchOptions.limit)
         ? searchOptions.limit
@@ -367,10 +368,7 @@ export async function cmdSearch(
         )}  ${styleText(row.name.padEnd(nameWidth), "strong")}  ${styleText(row.metric, "muted")}`,
       );
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function maxColumnWidth(values: string[]) {
@@ -447,7 +445,7 @@ export async function cmdInstall(
   }
 
   const spinner = createCrabLoader(`Resolving ${trimmed}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     if (requested.sourceRef && requested.skillsSh) {
       const { resolution: resolvedInstall, state } = await resolveSkillsShCatalogInstall(
         registry,
@@ -625,10 +623,7 @@ export async function cmdInstall(
         "muted",
       )} -> ${styleText(target, "muted")}`,
     );
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdUpdate(
@@ -1211,7 +1206,7 @@ export async function cmdUninstall(
   const localRef =
     lockKey === skillIdentity(requested) ? requested : parseStoredSkillRefOrFail(lockKey);
   const spinner = createCrabLoader(`Uninstalling ${skillIdentity(localRef)}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const target = skillTarget(opts.dir, localRef);
 
     await rm(target, { recursive: true, force: true });
@@ -1222,10 +1217,7 @@ export async function cmdUninstall(
     spinner.succeed(
       `${styleText("Uninstalled", "brand")} ${styleText(skillIdentity(localRef), "strong")}`,
     );
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 type ExploreSort = "newest" | "rating" | "downloads" | "installs" | "trending";
@@ -1238,7 +1230,7 @@ export async function cmdExplore(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching latest skills");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const url = registryUrl(ApiRoutes.skills, registry);
     const boundedLimit = clampLimit(options.limit ?? 25);
     const { apiSort } = resolveExploreSort(options.sort);
@@ -1263,10 +1255,7 @@ export async function cmdExplore(
     for (const item of result.items) {
       console.log(formatExploreLine(item));
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export function formatExploreLine(item: {
