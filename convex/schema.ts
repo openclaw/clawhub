@@ -1131,6 +1131,9 @@ const skillVersions = defineTable({
   .index("by_skill_active_created", ["skillId", "softDeletedAt", "createdAt"])
   .index("by_skill_owner_deleted_created", ["skillId", "ownerDeletedBy", "createdAt"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
+  // Retain the existing production index until a separately approved cleanup.
+  // No active VirusTotal reader uses it; removing it blocks non-destructive deploys.
+  .index("by_active_vt_status_created", ["softDeletedAt", "vtAnalysis.status", "createdAt"])
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 
