@@ -1,10 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import ignore from "ignore";
 import mime from "mime";
 import semver from "semver";
 import { parseClawPack } from "../../clawpack.js";
@@ -19,6 +18,7 @@ import {
   uploadBinary,
 } from "../../http.js";
 import { LEGACY_AUTHOR_REMEDIATION_SUMMARIES } from "../../packageInspectorRemediation.js";
+import { forEachPublishFile } from "../../publishFiles.js";
 import {
   ApiCliUploadUrlResponseSchema,
   ApiRoutes,
@@ -81,10 +81,6 @@ import {
   resolveSourceInput,
 } from "./github.js";
 
-const DOT_DIR = ".clawhub";
-const LEGACY_DOT_DIR = ".clawdhub";
-const DOT_IGNORE = ".clawhubignore";
-const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const PACKAGE_PUBLISH_RETRY_COUNT = 5;
 const PACKAGE_PUBLISH_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_PACKAGE_PUBLISH_WAIT_TIMEOUT_SECONDS = 30 * 60;
@@ -3006,50 +3002,17 @@ function formatByteCount(value: number) {
 
 async function listPackageFiles(root: string) {
   const files: PackageFile[] = [];
-  const absRoot = resolve(root);
-  const ig = ignore();
-  ig.add([".git/", "node_modules/", `${DOT_DIR}/`, `${LEGACY_DOT_DIR}/`]);
-  await addIgnoreFile(ig, join(absRoot, DOT_IGNORE));
-  await addIgnoreFile(ig, join(absRoot, LEGACY_DOT_IGNORE));
-  await walk(absRoot, async (absPath) => {
-    const relPath = normalizePath(relative(absRoot, absPath));
-    if (!relPath || ig.ignores(relPath)) return;
-    const bytes = new Uint8Array(await readFile(absPath));
-    files.push({
-      relPath,
-      bytes,
-      contentType: mime.getType(relPath) ?? "application/octet-stream",
-    });
-  });
+  await forEachPublishFile(
+    root,
+    { includeDotfiles: true, respectGitignore: false },
+    async (absPath, relPath) => {
+      const bytes = new Uint8Array(await readFile(absPath));
+      files.push({
+        relPath,
+        bytes,
+        contentType: mime.getType(relPath) ?? "application/octet-stream",
+      });
+    },
+  );
   return files;
-}
-
-function normalizePath(path: string) {
-  return path
-    .split(sep)
-    .join("/")
-    .replace(/^\.\/+/, "");
-}
-
-async function walk(dir: string, onFile: (path: string) => Promise<void>) {
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name === ".git" || entry.name === "node_modules") continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await walk(full, onFile);
-      continue;
-    }
-    if (!entry.isFile()) continue;
-    await onFile(full);
-  }
-}
-
-async function addIgnoreFile(ig: ReturnType<typeof ignore>, path: string) {
-  try {
-    const raw = await readFile(path, "utf8");
-    ig.add(raw.split(/\r?\n/));
-  } catch {
-    // optional
-  }
 }
