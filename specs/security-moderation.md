@@ -695,7 +695,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   VirusTotal status never affects moderation reasons, listing, or trust.
   Historical `vtAnalysis`, `vtScanLogs`, `scanLastCheckedAt`/`scanCheckCount`
   and `securityScanJobs.waitForVtUntil` values remain in the database only until a
-  follow-up migration narrows the schema. Queued legacy `vt-update` jobs still
+  follow-up migration narrows the schema. The unused production
+  `skillVersions.by_active_vt_status_created` index is retained as deployment
+  compatibility until a separately approved cleanup; this does not re-enable
+  any VirusTotal reader, writer, scheduler, or trust decision. Queued legacy `vt-update` jobs still
   drain through the normal claim path. ClawScan workers keep stripping
   `VIRUSTOTAL_API_KEY` from scanner subprocesses so the OSS ClawScan VirusTotal
   scanner can never activate from a stray runner secret.
