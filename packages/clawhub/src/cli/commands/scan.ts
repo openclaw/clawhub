@@ -8,10 +8,11 @@ import {
   type ApiV1SkillScanStatusResponse,
 } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
 import { parsePublishedSkillRef } from "../skillReference.js";
 import type { GlobalOpts } from "../types.js";
-import { createCrabLoader, fail, formatError } from "../ui.js";
+import { createCrabLoader, fail } from "../ui.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
 const MAX_POLL_ATTEMPTS = 900;
@@ -40,7 +41,7 @@ export async function cmdScan(opts: GlobalOpts, pathArg: string | undefined, opt
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Submitting scan");
 
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const submitted = await submitPublishedScan(registry, token, options);
 
     spinner.text = formatScanProgress("queued", submitted.scanId, submitted.queue);
@@ -67,10 +68,7 @@ export async function cmdScan(opts: GlobalOpts, pathArg: string | undefined, opt
       await writeFile(resolve(opts.workdir, options.output), bytes);
       if (!options.json) console.log(`Report ZIP: ${resolve(opts.workdir, options.output)}`);
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdScanDownload(

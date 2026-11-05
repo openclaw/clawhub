@@ -61,6 +61,7 @@ import {
 } from "../../schema/index.js";
 import { buildGitHubFolderContentHash, hashSkillFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
 import { titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
@@ -353,7 +354,7 @@ export async function cmdExplorePackages(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader(trimmedQuery ? "Searching packages" : "Listing packages");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const limit = clampLimit(options.limit ?? 25, 100);
     if (trimmedQuery) {
       const url = registryUrl(`${ApiRoutes.packages}/search`, registry);
@@ -410,10 +411,7 @@ export async function cmdExplorePackages(
     for (const item of result.items) {
       console.log(formatPackageLine(item));
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdInspectPackage(
@@ -427,7 +425,7 @@ export async function cmdInspectPackage(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching package");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const detail = await apiRequestPackageDetail(registry, trimmed, token);
     if (!detail.package) {
       spinner.fail("Package not found");
@@ -538,10 +536,7 @@ export async function cmdInspectPackage(
       process.stdout.write(fileContent);
       if (!fileContent.endsWith("\n")) process.stdout.write("\n");
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdGetPackageTrustedPublisher(
@@ -553,7 +548,7 @@ export async function cmdGetPackageTrustedPublisher(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching trusted publisher");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequestPackageTrustedPublisher(registry, trimmed, token);
     spinner.stop();
     if (options.json) {
@@ -565,10 +560,7 @@ export async function cmdGetPackageTrustedPublisher(
       return;
     }
     printTrustedPublisher(result.trustedPublisher);
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdSetPackageTrustedPublisher(
@@ -586,7 +578,7 @@ export async function cmdSetPackageTrustedPublisher(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Saving trusted publisher");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -610,10 +602,7 @@ export async function cmdSetPackageTrustedPublisher(
     if (result.trustedPublisher) {
       printTrustedPublisher(result.trustedPublisher);
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdDeletePackageTrustedPublisher(
@@ -625,7 +614,7 @@ export async function cmdDeletePackageTrustedPublisher(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Deleting trusted publisher");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -641,10 +630,7 @@ export async function cmdDeletePackageTrustedPublisher(
       return;
     }
     console.log(`Trusted publisher deleted for ${trimmed}.`);
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdPackPackage(
@@ -684,7 +670,7 @@ export async function cmdPackPackage(
   const spinner = options.json
     ? null
     : createCrabLoader(`Packing ${packageName}@${packageVersion}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const packed = await createClawPackFromFolder({
       sourcePath,
       packDestination,
@@ -719,10 +705,7 @@ export async function cmdPackPackage(
       console.log(`SHA-256: ${packed.identity.sha256}`);
       console.log(`npm integrity: ${packed.identity.npmIntegrity}`);
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdValidatePackage(
@@ -1156,7 +1139,7 @@ export async function cmdRecoverPackage(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json ? null : createCrabLoader("Recovering staged publication");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1195,10 +1178,7 @@ export async function cmdRecoverPackage(
         `Recovery submitted for ${result.name}@${result.version}; pending security checks. Attempt ${result.attemptId}.`,
       );
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function revalidateTrustedToolingIdentityAtMutationBoundary() {
@@ -1475,7 +1455,7 @@ export async function cmdDownloadPackage(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json ? null : createCrabLoader("Resolving package artifact");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const targetVersion = await resolvePackageVersion(registry, trimmed, {
       token,
       version: options.version,
@@ -1518,10 +1498,7 @@ export async function cmdDownloadPackage(
       console.log(`npm integrity: ${identity.npmIntegrity}`);
       console.log(`npm shasum: ${identity.npmShasum}`);
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdVerifyPackage(
@@ -1536,7 +1513,7 @@ export async function cmdVerifyPackage(
   }
 
   const spinner = options.json ? null : createCrabLoader("Reading artifact");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const bytes = new Uint8Array(await readFile(targetFile));
     const identity = computeArtifactIdentity(bytes);
     let artifactResult: PackageArtifactResponse | null = null;
@@ -1595,10 +1572,7 @@ export async function cmdVerifyPackage(
     } else {
       console.log("Computed artifact digests. Pass --package or expected digests to verify.");
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdDeletePackage(
@@ -1625,7 +1599,7 @@ export async function cmdDeletePackage(
   const registry = await getRegistry(opts, { cache: true });
   const target = version ? `${name} version ${version}` : name;
   const spinner = createCrabLoader(`Deleting ${target}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1643,10 +1617,7 @@ export async function cmdDeletePackage(
       console.log(JSON.stringify(result, null, 2));
     }
     return result;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function normalizeDeleteVersion(value: string | undefined) {
@@ -1680,7 +1651,7 @@ export async function cmdUndeletePackage(
   const registry = await getRegistry(opts, { cache: true });
   const target = version ? `${name} version ${version}` : name;
   const spinner = createCrabLoader(`Restoring ${target}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1698,10 +1669,7 @@ export async function cmdUndeletePackage(
       console.log(JSON.stringify(result, null, 2));
     }
     return result;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdTransferPackage(
@@ -1717,7 +1685,7 @@ export async function cmdTransferPackage(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader(`Transferring ${name} to @${toOwner}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1736,10 +1704,7 @@ export async function cmdTransferPackage(
       console.log(JSON.stringify(result, null, 2));
     }
     return result;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdReportPackage(
@@ -1755,7 +1720,7 @@ export async function cmdReportPackage(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json ? null : createCrabLoader(`Reporting ${trimmed}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1780,10 +1745,7 @@ export async function cmdReportPackage(
     }
     const versionSuffix = version ? `@${version}` : "";
     console.log(`OK. Reported ${trimmed}${versionSuffix} for moderator review.`);
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdPackageModerationStatus(
