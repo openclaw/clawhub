@@ -113,7 +113,19 @@ jobs:
           fi
 
       - name: Unit coverage
+        env:
+          CLAWHUB_CI_TEST_OBSERVATIONS: "1"
         run: bun run ci:unit
+
+      - name: Upload test observations
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-observations-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ci-test-observations/observations.json
+          if-no-files-found: ignore
+          retention-days: 7
 
   packages:
     name: packages
