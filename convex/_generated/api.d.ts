@@ -325,6 +325,7 @@ import type * as skillsShPublicTestFixtures from "../skillsShPublicTestFixtures.
 import type * as stars from "../stars.js";
 import type * as statsMaintenance from "../statsMaintenance.js";
 import type * as telemetry from "../telemetry.js";
+import type * as templateOverviewHttp from "../templateOverviewHttp.js";
 import type * as tokens from "../tokens.js";
 import type * as uploads from "../uploads.js";
 import type * as users from "../users.js";
@@ -654,6 +655,7 @@ declare const fullApi: ApiFromModules<{
   stars: typeof stars;
   statsMaintenance: typeof statsMaintenance;
   telemetry: typeof telemetry;
+  templateOverviewHttp: typeof templateOverviewHttp;
   tokens: typeof tokens;
   uploads: typeof uploads;
   users: typeof users;
