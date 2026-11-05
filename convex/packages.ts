@@ -9,6 +9,7 @@ import {
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
   isTemplateCategorySlug,
+  TEMPLATE_CATEGORY_DEFINITIONS,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   normalizePluginCategories,
@@ -3765,6 +3766,83 @@ export const listPluginValidationReportPageInternal = internalQuery({
   },
 });
 
+// The overview replaces fourteen independently paginated category reads with
+// one consistent public snapshot. Larger catalogs explicitly retain the paginated
+// path rather than silently returning a partial popularity ranking.
+export const templateOverviewInternal = internalQuery({
+  args: { limit: v.number() },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(Math.floor(args.limit), 8));
+    const maximumRows = 1000;
+    const [digests, badges] = await Promise.all([
+      ctx.db
+        .query("packageSearchDigest")
+        .withIndex("by_active_family_channel_updated", (q) =>
+          q.eq("softDeletedAt", undefined).eq("family", "claw"),
+        )
+        .order("desc")
+        .take(maximumRows + 1),
+      ctx.db
+        .query("packageBadges")
+        .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))
+        .order("desc")
+        .take(maximumRows + 1),
+    ]);
+    if (digests.length > maximumRows || badges.length > maximumRows) {
+      return { complete: false, featured: [], sections: [] };
+    }
+    const cache = {
+      publishers: new Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>(),
+      officialPublishers: new Map<Id<"publishers">, Promise<boolean>>(),
+    };
+    const candidates = digests.filter((digest) => digestMatchesFilters(digest, {}));
+    // Each projection may open several independent reads. Bound both phases well
+    // below Convex's concurrent-I/O ceiling even at the full 1,000-row cap.
+    const visible: PackageDigestLike[] = [];
+    const items: PublicPackageListItem[] = [];
+    const batchSize = 16;
+    for (let offset = 0; offset < candidates.length; offset += batchSize) {
+      const batch = candidates.slice(offset, offset + batchSize);
+      const available = await Promise.all(
+        batch.map((digest) => isTemplateCatalogPublisherAvailable(ctx, digest, cache.publishers)),
+      );
+      const selected = batch.filter((_, index) => available[index]);
+      visible.push(...selected);
+      items.push(
+        ...(await Promise.all(
+          selected.map((digest) => toPublicPackageListItem(ctx, digest, undefined, cache)),
+        )),
+      );
+    }
+    const byId = new Map(
+      visible.map((digest, index) => [String(digest.packageId), { digest, item: items[index] }]),
+    );
+    const featured: PublicPackageListItem[] = [];
+    for (const badge of badges) {
+      const entry = byId.get(String(badge.packageId));
+      if (
+        !entry ||
+        getPluginDiscoveryExclusion(entry.digest.categories) ||
+        !isEnglishPluginListing(entry.digest)
+      )
+        continue;
+      featured.push({ ...entry.item, featuredAt: badge.at });
+      if (featured.length >= limit) break;
+    }
+    const ranked = [...items].sort(
+      (left, right) =>
+        right.stats.installs - left.stats.installs || left.name.localeCompare(right.name),
+    );
+    const sections = [...TEMPLATE_CATEGORY_DEFINITIONS.map(({ slug }) => slug), "other"]
+      .map((category) => ({
+        category,
+        items: ranked.filter((item) => item.categories?.includes(category)).slice(0, limit),
+      }))
+      .filter((section) => section.items.length > 0);
+    return { complete: true, featured, sections };
+  },
+});
+
 export const listPageForViewerInternal = internalQuery({
   args: {
     family: v.optional(
@@ -4369,8 +4447,19 @@ async function listPackagePageImpl(
         .order("desc")
         .paginate({ cursor: currentCursor, numItems: scanPageSize });
 
+      const selected: PackageDigestLike[] = [];
+      const projectSelected = async () => {
+        const cache = { publishers: templatePublisherCache, officialPublishers: new Map() };
+        collected.push(
+          ...(await Promise.all(
+            selected.map((digest) => toPublicPackageListItem(ctx, digest, undefined, cache)),
+          )),
+        );
+      };
       for (let index = pageOffset; index < page.page.length; index += 1) {
         const digest = page.page[index] as PackageDigestLike;
+        // Avoid owner reads for unrelated categories in the shared Template page.
+        if (!digestMatchesFilters(digest, { ...args, category, topic })) continue;
         if (!(await canViewPackage(digest))) continue;
         if (family && digest.family !== family) continue;
         if (channel && digest.channel !== channel) continue;
@@ -4379,9 +4468,9 @@ async function listPackagePageImpl(
         }
         if (!(await isTemplateCatalogPublisherAvailable(ctx, digest, templatePublisherCache)))
           continue;
-        if (!digestMatchesFilters(digest, { ...args, category, topic })) continue;
-        collected.push(await toPublicPackageListItem(ctx, digest));
-        if (collected.length >= targetCount) {
+        selected.push(digest);
+        if (selected.length >= targetCount) {
+          await projectSelected();
           const nextOffset = index + 1;
           const hasMoreInPage = nextOffset < page.page.length;
           const nextState = {
@@ -4400,6 +4489,7 @@ async function listPackagePageImpl(
         }
       }
 
+      await projectSelected();
       done = page.isDone;
       cursor = page.continueCursor;
       pageOffset = 0;
