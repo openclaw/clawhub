@@ -160,6 +160,10 @@ import {
   queueHighlightedWebhook,
   type SkillPublishResult,
 } from "./lib/skillPublish";
+import {
+  qualityAssessmentValidator,
+  type StoredQualityAssessment,
+} from "./lib/skillQualityContract";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { getPublicSkillMetadataOwner } from "./lib/skills/publicVersions";
 import {
@@ -10597,23 +10601,7 @@ type SkillPendingPublishArgs = {
   files: Doc<"skillVersions">["files"];
   parsed: Doc<"skillVersions">["parsed"];
   summary?: string;
-  qualityAssessment?: {
-    decision: "pass" | "quarantine" | "reject";
-    score: number;
-    reason: string;
-    trustTier: "low" | "medium" | "trusted";
-    similarRecentCount: number;
-    signals: {
-      bodyChars: number;
-      bodyWords: number;
-      uniqueWordRatio: number;
-      headingCount: number;
-      bulletCount: number;
-      templateMarkerHits: number;
-      genericSummary: boolean;
-      cjkChars?: number;
-    };
-  };
+  qualityAssessment?: StoredQualityAssessment;
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
   embedding: number[];
 };
@@ -10676,25 +10664,7 @@ export const insertVersion = internalMutation({
       presentation: v.optional(skillPresentationValidator),
     }),
     summary: v.optional(v.string()),
-    qualityAssessment: v.optional(
-      v.object({
-        decision: v.union(v.literal("pass"), v.literal("quarantine"), v.literal("reject")),
-        score: v.number(),
-        reason: v.string(),
-        trustTier: v.union(v.literal("low"), v.literal("medium"), v.literal("trusted")),
-        similarRecentCount: v.number(),
-        signals: v.object({
-          bodyChars: v.number(),
-          bodyWords: v.number(),
-          uniqueWordRatio: v.number(),
-          headingCount: v.number(),
-          bulletCount: v.number(),
-          templateMarkerHits: v.number(),
-          genericSummary: v.boolean(),
-          cjkChars: v.optional(v.number()),
-        }),
-      }),
-    ),
+    qualityAssessment: v.optional(qualityAssessmentValidator),
     // Retired static publish scan. Still accepted so stored insert args from
     // publish attempts staged before its removal can finalize; never persisted.
     staticScan: v.optional(v.any()),
