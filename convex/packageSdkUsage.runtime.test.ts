@@ -737,6 +737,63 @@ describe("public SDK usage from serialized Inspector reports", () => {
     });
   });
 
+  it.each(["missing", "malformed"])(
+    "clears an earlier timeout diagnostic when the next failed attempt has a %s failure payload",
+    async (payload) => {
+      const { t, releaseId, ingest } = await fixture();
+      const identity = {
+        inspectorVersion: "0.4.3",
+        targetOpenClawVersion: "2026.10.16",
+        inspectionFailed: true,
+      };
+      const read = () =>
+        t.run((ctx) =>
+          ctx.db
+            .query("packageInspectorScanStates")
+            .withIndex("by_release_and_inspector_version_and_target_openclaw_version", (q) =>
+              q
+                .eq("releaseId", releaseId)
+                .eq("inspectorVersion", "0.4.3")
+                .eq("targetOpenClawVersion", "2026.10.16"),
+            )
+            .unique(),
+        );
+      expect(
+        (
+          await ingest(failedSdkUsageReport("timeout"), {
+            ...identity,
+            failure: {
+              stage: "inspection",
+              reason: "timeout",
+              message: "Previous attempt timed out",
+            },
+          })
+        ).status,
+      ).toBe(200);
+      expect(await read()).toMatchObject({ outcome: "timeout", failure: { reason: "timeout" } });
+      expect(
+        (
+          await ingest(failedSdkUsageReport("different attempt failed"), {
+            ...identity,
+            ...(payload === "malformed" ? { failure: "invalid diagnostic" } : {}),
+          })
+        ).status,
+      ).toBe(200);
+      const latest = await read();
+      expect(latest?.outcome).toBe("tool_failure");
+      expect(latest?.inspectionFailed).toBe(true);
+      expect(latest?.failure).toBeUndefined();
+      expect(
+        (
+          await t.query(internal.packages.previewPackageInspectorScanBatchInternal, {
+            inspectorVersion: "0.4.3",
+            targetOpenClawVersion: "2026.10.16",
+          })
+        ).items,
+      ).toEqual([expect.objectContaining({ releaseId })]);
+    },
+  );
+
   it.each(["clean", "findings"] as const)(
     "retains a pre-marker verified %s verdict and time when that exact tuple crashes",
     async (outcome) => {

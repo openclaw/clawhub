@@ -149,6 +149,7 @@ export async function recordPackageInspectorScan(
     ? {
         ...identity,
         inspectionFailed: true as const,
+        failure: args.failure,
         // Source describes the retained verdict, not this failed attempt.
         ...(existing ? { scanSource: existing.scanSource } : {}),
         // A failed retry changes the attempt, never the last verified findings.
