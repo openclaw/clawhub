@@ -78,7 +78,43 @@ describe("reviewed ClawScan installation", () => {
         job.steps.find(
           (step: { name?: string }) => step.name === "Prepare qualified plugin Docker runtime",
         )?.run,
-      ).toBe("sh scripts/security/install-clawscan-scanners.sh aig-mcp");
+      ).toContain("sh scripts/security/install-clawscan-scanners.sh aig-mcp");
+    },
+  );
+
+  it.each(["prepublication-publish-checks", "security-scan-codex"])(
+    "does not prepare MCP for an unqualified default in %s",
+    async (name) => {
+      const workflow = parseYaml(await readFile(".github/workflows/" + name + ".yml", "utf8"));
+      const steps = (
+        Object.values(workflow.jobs) as Array<{ steps?: Array<{ name?: string; run?: string }> }>
+      ).flatMap((job) => job.steps ?? []);
+      const step = steps.find(
+        (step: any) => step.name === "Prepare qualified plugin Docker runtime",
+      );
+      const root = await mkdtemp(join(tmpdir(), "legacy-workflow-mcp-"));
+      try {
+        const dir = join(root, "scripts/security");
+        await mkdir(dir, { recursive: true });
+        await writeFile(
+          join(dir, "clawscan-install-source.sh"),
+          "qualified_source_commit=" + "b".repeat(40) + "\n",
+        );
+        await writeFile(join(dir, "clawscan-source-commit.txt"), "a".repeat(40) + "\n");
+        await writeFile(
+          join(dir, "install-clawscan-scanners.sh"),
+          '#!/bin/sh\necho "$*" >> calls\nexit 91\n',
+        );
+        await run("sh", ["-c", step.run!], { cwd: root, env: { PATH: process.env.PATH } });
+        await expect(readFile(join(root, "calls"), "utf8")).rejects.toThrow();
+        await writeFile(join(dir, "clawscan-source-commit.txt"), "b".repeat(40) + "\n");
+        await expect(
+          run("sh", ["-c", step.run!], { cwd: root, env: { PATH: process.env.PATH } }),
+        ).rejects.toThrow();
+        expect(await readFile(join(root, "calls"), "utf8")).toBe("aig-mcp\n");
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
     },
   );
 

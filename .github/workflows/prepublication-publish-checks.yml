@@ -232,7 +232,14 @@ jobs:
           sh scripts/security/install-clawscan-scanners.sh aig
 
       - name: Prepare qualified plugin Docker runtime
-        run: sh scripts/security/install-clawscan-scanners.sh aig-mcp
+        run: |
+          set -eu
+          . scripts/security/clawscan-install-source.sh
+          if [ "$(cat scripts/security/clawscan-source-commit.txt)" != "$qualified_source_commit" ]; then
+            echo 'Default source has no qualified plugin Docker runtime; retaining legacy setup.'
+            exit 0
+          fi
+          sh scripts/security/install-clawscan-scanners.sh aig-mcp
 
       - name: Run Test pre-publication publish worker
         timeout-minutes: 75
