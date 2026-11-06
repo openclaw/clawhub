@@ -5,14 +5,17 @@ import {
   SecurityAuditPage,
   SecurityAuditPageSkeleton,
 } from "../../../components/SecurityAuditPage";
-import { buildSkillMeta } from "../../../lib/og";
 import {
   buildSkillDetailHref,
   buildSkillSecurityAuditHref,
   isOwnerRouteHandleOrIdSegment,
 } from "../../../lib/ownerRoute";
 import { isModerator } from "../../../lib/roles";
-import { fetchSkillPageData } from "../../../lib/skillPage";
+import {
+  buildSkillRouteMeta,
+  createSkillRouteLoader,
+  type SkillRouteHeadArgs,
+} from "../../../lib/skillRoute";
 import { useAuthStatus } from "../../../lib/useAuthStatus";
 
 export const Route = createFileRoute("/$owner/$slug/security-audit")({
@@ -25,50 +28,12 @@ export const Route = createFileRoute("/$owner/$slug/security-audit")({
   },
 });
 
-export async function loadSkillSecurityAuditRouteData(params: { owner: string; slug: string }) {
-  const data = await fetchSkillPageData(params.slug, params.owner);
-  const canonicalOwner = data.initialData?.result?.owner?.handle ?? null;
-  const canonicalSlug = data.initialData?.result?.resolvedSlug ?? params.slug;
+export const loadSkillSecurityAuditRouteData = createSkillRouteLoader(
+  "/$owner/skills/$slug/security-audit",
+);
 
-  if (canonicalOwner && (canonicalOwner !== params.owner || canonicalSlug !== params.slug)) {
-    throw redirect({
-      to: "/$owner/skills/$slug/security-audit",
-      params: {
-        owner: canonicalOwner,
-        slug: canonicalSlug,
-      },
-      replace: true,
-    });
-  }
-
-  return {
-    owner: data?.owner ?? params.owner,
-    displayName: data?.displayName ?? null,
-    summary: data?.summary ?? null,
-    version: data?.version ?? null,
-    initialData: data.initialData,
-  };
-}
-
-export function skillSecurityAuditRouteHead({
-  params,
-  loaderData,
-}: {
-  params: { owner: string; slug: string };
-  loaderData?: {
-    owner?: string | null;
-    displayName?: string | null;
-    summary?: string | null;
-    version?: string | null;
-  };
-}) {
-  const meta = buildSkillMeta({
-    slug: params.slug,
-    owner: loaderData?.owner ?? params.owner,
-    displayName: loaderData?.displayName,
-    summary: loaderData?.summary,
-    version: loaderData?.version ?? null,
-  });
+export function skillSecurityAuditRouteHead({ params, loaderData }: SkillRouteHeadArgs) {
+  const meta = buildSkillRouteMeta({ params, loaderData });
   return {
     meta: [
       { title: `Security audit · ${meta.title}` },
@@ -145,11 +110,9 @@ export function SkillSecurityAuditRoutePage({
         detailPath: buildSkillDetailHref(ownerSegment, slug),
       }}
       sha256hash={latestVersion?.sha256hash ?? null}
-      vtAnalysis={latestVersion?.vtAnalysis ?? null}
       aigAnalysis={audit.aigAnalysis ?? null}
       llmAnalysis={audit.llmAnalysis ?? null}
       skillSpectorAnalysis={audit.skillSpectorAnalysis ?? null}
-      staticScan={audit.staticScan ?? null}
       canManageArtifact={canManageArtifact}
       onRequestRescan={
         canManageArtifact

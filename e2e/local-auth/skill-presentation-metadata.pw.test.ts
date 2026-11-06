@@ -114,7 +114,7 @@ function markLatestVersionDownloadableForLocalFeed(ownerHandle: string, slug: st
   };
   const versionId = result.latestVersion?._id;
   if (!versionId) throw new Error("Published skill version was not available");
-  runLocalConvex("skills:updateVersionScanResultsInternal", {
+  runLocalConvex("skills:updateVersionSha256HashInternal", {
     versionId,
     sha256hash: "a".repeat(64),
   });

@@ -137,7 +137,6 @@ function skillVersionJob(jobId: string): ClaimedJob {
     hasMaliciousSignal: false,
     source: "publish",
     targetKind: "skillVersion" as const,
-    waitForVtUntil: 0,
     [leaseField]: "lease-fixture",
   } as ClaimedJob["job"];
 
@@ -175,7 +174,6 @@ function claimedJob(input: {
     hasMaliciousSignal: false,
     source: input.source,
     targetKind: input.targetKind,
-    waitForVtUntil: 0,
     [leaseField]: "lease-fixture",
   } as ClaimedJob["job"];
   return {

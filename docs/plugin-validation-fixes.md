@@ -109,7 +109,9 @@ entrypoint.
 ### package-entrypoint-missing
 
 The package declares an OpenClaw entrypoint, but the referenced file is missing
-from the package being validated.
+from the package being validated. ClawHub rejects a code plugin publish with
+this problem, because OpenClaw cannot install or load it; the publish error
+names the missing file.
 
 - Check each path in `openclaw.extensions`, `openclaw.runtimeExtensions`,
   `openclaw.setupEntry`, and `openclaw.runtimeSetupEntry`.

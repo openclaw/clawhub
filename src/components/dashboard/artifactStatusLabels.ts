@@ -32,7 +32,7 @@ export function skillSecurityStatus(skill: DashboardSkill): StatusChip {
   ) {
     return { label: "Needs review", tone: "warning" };
   }
-  if (skill.latestVersion?.staticScanStatus === "clean" || skill.moderationVerdict === "clean") {
+  if (skill.latestVersion?.llmStatus === "clean" || skill.moderationVerdict === "clean") {
     return { label: "Scan passed", tone: "success" };
   }
   return { label: "Not scanned", tone: "muted" };

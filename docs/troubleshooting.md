@@ -40,6 +40,21 @@ If many users share one egress IP, anonymous IP limits can be hit even when each
 person only sends a few requests. Sign in where possible and retry after the
 reported delay.
 
+Only a real `429` carries these headers, and the CLI shows a reset hint only for
+a `429`. Other failures are not rate limiting.
+
+## Publish returns `ClawHub backend is temporarily unavailable` (503)
+
+The registry hit a temporary backend failure, such as overload or write
+contention. The request was not rejected for validation. The CLI already retried
+it with backoff, honoring the server's `Retry-After`. Run the command again
+shortly. If a retry reports that the version already exists, an earlier attempt
+completed; check the published version before bumping it.
+
+If the same failure arrives as `409` saying the request cannot be retried, it
+happened after the publish saved its uploaded files. Check whether the version
+was published; if not, run `clawhub publish` again to upload the files again.
+
 ## Search or install fails behind a proxy
 
 The CLI respects standard proxy variables:

@@ -8,7 +8,6 @@ import {
   ApiV1SearchResponseSchema,
   ApiV1SkillListResponseSchema,
   ApiV1SkillReportListResponseSchema,
-  ApiV1SkillReportResponseSchema,
   ApiV1SkillReportTriageResponseSchema,
   ApiV1SkillResolveResponseSchema,
   ApiV1SkillResponseSchema,
@@ -32,6 +31,7 @@ import {
   writeSkillOrigin,
 } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
 import {
   parseSkillsShCliReference,
@@ -52,12 +52,6 @@ import {
 } from "../ui.js";
 import { reportInstalledSkillsTelemetryIfEnabled } from "./installTelemetry.js";
 import { presentModerationPlan, reportModerationPlan } from "./moderationPlan.js";
-
-type SkillReportOptions = {
-  version?: string;
-  reason?: string;
-  json?: boolean;
-};
 
 type SkillReportListOptions = {
   status?: SkillReportListStatus;
@@ -315,7 +309,7 @@ export async function cmdSearch(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Searching");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const effectiveLimit =
       typeof searchOptions.limit === "number" && Number.isFinite(searchOptions.limit)
         ? searchOptions.limit
@@ -374,10 +368,7 @@ export async function cmdSearch(
         )}  ${styleText(row.name.padEnd(nameWidth), "strong")}  ${styleText(row.metric, "muted")}`,
       );
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function maxColumnWidth(values: string[]) {
@@ -454,7 +445,7 @@ export async function cmdInstall(
   }
 
   const spinner = createCrabLoader(`Resolving ${trimmed}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     if (requested.sourceRef && requested.skillsSh) {
       const { resolution: resolvedInstall, state } = await resolveSkillsShCatalogInstall(
         registry,
@@ -632,10 +623,7 @@ export async function cmdInstall(
         "muted",
       )} -> ${styleText(target, "muted")}`,
     );
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdUpdate(
@@ -918,6 +906,32 @@ export async function cmdUpdate(
         }
       }
 
+      const recordUpdatedSkill = async (targetVersion: string) => {
+        const installedFiles = await listSkillFiles(target);
+        const installedFingerprint =
+          installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
+
+        const installedAt = existingOrigin?.installedAt ?? Date.now();
+        await writeSkillOrigin(target, {
+          version: 1,
+          registry: existingOrigin?.registry ?? registry,
+          slug: remoteSlug,
+          ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
+          installedVersion: targetVersion,
+          installedAt,
+          fingerprint: installedFingerprint,
+        });
+
+        lock.skills[entry] = withOwnerMetadata(
+          targetVersion,
+          installedAt,
+          resolvedOwnerHandle,
+          lock.skills[entry],
+        );
+        markLockDirty();
+        await flushLockfile();
+      };
+
       let latestInstall: ApiV1SkillInstallResolveResponse | null = null;
       if (!skillMeta.latestVersion && !options.version) {
         latestInstall = await resolveLatestSkillInstall(
@@ -977,29 +991,7 @@ export async function cmdUpdate(
           await installSkillWithOptionalStaging(target, exists, (installTarget) =>
             installGitHubSkill(registry, githubResolution, installTarget),
           );
-          const installedFiles = await listSkillFiles(target);
-          const installedFingerprint =
-            installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
-
-          const installedAt = existingOrigin?.installedAt ?? Date.now();
-          await writeSkillOrigin(target, {
-            version: 1,
-            registry: existingOrigin?.registry ?? registry,
-            slug: remoteSlug,
-            ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
-            installedVersion: targetVersion,
-            installedAt,
-            fingerprint: installedFingerprint,
-          });
-
-          lock.skills[entry] = withOwnerMetadata(
-            targetVersion,
-            installedAt,
-            resolvedOwnerHandle,
-            lock.skills[entry],
-          );
-          markLockDirty();
-          await flushLockfile();
+          await recordUpdatedSkill(targetVersion);
           spinner.succeed(`${entry}: updated -> ${formatGitHubVersion(targetVersion)}`);
           continue;
         }
@@ -1097,29 +1089,7 @@ export async function cmdUpdate(
         });
         await extractZipToDir(zip, installTarget);
       });
-      const installedFiles = await listSkillFiles(target);
-      const installedFingerprint =
-        installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
-
-      const installedAt = existingOrigin?.installedAt ?? Date.now();
-      await writeSkillOrigin(target, {
-        version: 1,
-        registry: existingOrigin?.registry ?? registry,
-        slug: remoteSlug,
-        ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
-        installedVersion: targetVersion,
-        installedAt,
-        fingerprint: installedFingerprint,
-      });
-
-      lock.skills[entry] = withOwnerMetadata(
-        targetVersion,
-        installedAt,
-        resolvedOwnerHandle,
-        lock.skills[entry],
-      );
-      markLockDirty();
-      await flushLockfile();
+      await recordUpdatedSkill(targetVersion);
       spinner.succeed(
         `${styleText("Updated", "brand")} ${styleText(entry, "strong")} -> ${styleText(
           `v${targetVersion}`,
@@ -1236,7 +1206,7 @@ export async function cmdUninstall(
   const localRef =
     lockKey === skillIdentity(requested) ? requested : parseStoredSkillRefOrFail(lockKey);
   const spinner = createCrabLoader(`Uninstalling ${skillIdentity(localRef)}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const target = skillTarget(opts.dir, localRef);
 
     await rm(target, { recursive: true, force: true });
@@ -1247,10 +1217,7 @@ export async function cmdUninstall(
     spinner.succeed(
       `${styleText("Uninstalled", "brand")} ${styleText(skillIdentity(localRef), "strong")}`,
     );
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 type ExploreSort = "newest" | "rating" | "downloads" | "installs" | "trending";
@@ -1263,7 +1230,7 @@ export async function cmdExplore(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching latest skills");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const url = registryUrl(ApiRoutes.skills, registry);
     const boundedLimit = clampLimit(options.limit ?? 25);
     const { apiSort } = resolveExploreSort(options.sort);
@@ -1288,10 +1255,7 @@ export async function cmdExplore(
     for (const item of result.items) {
       console.log(formatExploreLine(item));
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export function formatExploreLine(item: {
@@ -1314,42 +1278,6 @@ export function formatExploreLine(item: {
 export function clampLimit(limit: number, fallback = 25) {
   if (!Number.isFinite(limit)) return fallback;
   return Math.min(Math.max(1, limit), 200);
-}
-
-export async function cmdReportSkill(
-  opts: GlobalOpts,
-  slug: string,
-  options: SkillReportOptions = {},
-) {
-  const trimmed = normalizeSkillSlugOrFail(slug);
-  const reason = options.reason?.trim();
-  if (!reason) fail("--reason required");
-
-  const token = await requireAuthToken();
-  const registry = await getRegistry(opts, { cache: true });
-  const result = await apiRequest(
-    registry,
-    {
-      method: "POST",
-      path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/report`,
-      token,
-      body: {
-        reason,
-        ...(options.version?.trim() ? { version: options.version.trim() } : {}),
-      },
-    },
-    ApiV1SkillReportResponseSchema,
-  );
-
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
-  if (result.alreadyReported) {
-    console.log(`Already reported ${trimmed}.`);
-  } else {
-    console.log(`OK. Reported ${trimmed} (${result.reportId}).`);
-  }
 }
 
 export async function cmdListSkillReports(opts: GlobalOpts, options: SkillReportListOptions = {}) {

@@ -8,7 +8,7 @@ import {
 } from "../../server/skillsShCatalogSource";
 import {
   buildMirrorStepRequest,
-  buildMirrorProofHeaders,
+  createMirrorProofClient,
   capturedMirrorSourceRunId,
   findRecoverableMirrorRun,
   mirrorRateLimitRetryDelayMs,
@@ -26,50 +26,7 @@ const MAX_RATE_LIMIT_RETRIES_PER_RUN = 30;
 const MAX_RATE_LIMIT_WAIT_MS_PER_RUN = 30 * 60 * 1_000;
 const MAX_DETAIL_PAGE_ROWS = 50;
 
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-}
-
-const targetUrl = requireEnv("CLAWHUB_TEST_MIRROR_GATE_URL");
-const operatorAuthorization = requireEnv("CLAWHUB_TEST_OPERATOR_TOKEN");
-const vercelAutomationBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
-
-async function callRaw(body: Record<string, unknown>) {
-  const startedAt = performance.now();
-  const response = await fetch(targetUrl, {
-    method: "POST",
-    headers: buildMirrorProofHeaders(operatorAuthorization, vercelAutomationBypassSecret),
-    body: JSON.stringify(body),
-  });
-  const text = await response.text();
-  let payload: Record<string, unknown>;
-  try {
-    payload = JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    payload = { text };
-  }
-  return {
-    ok: response.ok,
-    status: response.status,
-    elapsedMs: performance.now() - startedAt,
-    payload,
-    retryAfter: response.headers.get("retry-after"),
-  };
-}
-
-function callFailure(body: Record<string, unknown>, result: Awaited<ReturnType<typeof callRaw>>) {
-  return new Error(
-    `${String(body.operation)} returned HTTP ${result.status}: ${JSON.stringify(result.payload)}`,
-  );
-}
-
-async function call(body: Record<string, unknown>) {
-  const result = await callRaw(body);
-  if (!result.ok) throw callFailure(body, result);
-  return result;
-}
+const { targetUrl, callRaw, call, callFailure } = createMirrorProofClient();
 
 function requireRunId(payload: Record<string, unknown>) {
   if (typeof payload.runId !== "string") throw new Error("mirror start did not return runId");

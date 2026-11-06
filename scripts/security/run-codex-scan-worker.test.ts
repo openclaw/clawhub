@@ -690,7 +690,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -740,7 +739,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "test-auth-token",
             source: "skills-sh-catalog-test",
             targetKind: "skillScanRequest",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -769,7 +767,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "pre-publication",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -815,7 +812,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "pre-publication",
           targetKind: "packageRelease",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -856,7 +852,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "lease-secret",
             source: "publish",
             targetKind: "skillVersion",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -881,7 +876,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -915,7 +909,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -954,7 +947,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -1005,7 +997,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "packageRelease",
-          waitForVtUntil: 0,
         },
         target: {
           clawpackUrl:
@@ -1046,7 +1037,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "lease-secret",
             source: "publish",
             targetKind: "skillVersion",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -1113,7 +1103,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "lease-secret",
             source: "publish",
             targetKind: "skillVersion",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -1242,7 +1231,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "placeholder",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {},
       },
@@ -1358,7 +1346,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "placeholder",
           source: "publish",
           targetKind: "packageRelease",
-          waitForVtUntil: 0,
         },
         target: {},
       },

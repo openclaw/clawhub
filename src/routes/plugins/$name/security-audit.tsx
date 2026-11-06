@@ -171,7 +171,6 @@ export function PluginSecurityAuditPage({
         detailPath: buildPluginDetailHref(name, { ownerHandle: detail.owner?.handle }),
       }}
       sha256hash={release.artifact?.sha256 ?? null}
-      vtAnalysis={release.vtAnalysis ?? null}
       aigAnalysis={release.aigAnalysis ?? null}
       llmAnalysis={release.llmAnalysis ?? null}
       skillSpectorAnalysis={release.skillSpectorAnalysis ?? null}
@@ -181,7 +180,6 @@ export function PluginSecurityAuditPage({
           ? release.pluginManifestSummary.bundledSkills.length > 0
           : true
       }
-      staticScan={release.staticScan ?? null}
       canManageArtifact={Boolean(manageContext)}
       onRequestRescan={
         manageContext

@@ -11,8 +11,6 @@ node_modules
 bin/docs-list
 dist
 dist-ssr
-!packages/schema/dist
-!packages/schema/dist/**
 *.local
 .vercel
 count.txt

@@ -775,11 +775,11 @@ describe("validateTemplatePackageContents", () => {
 
     expect(result).toEqual({
       ok: false,
-      issues: [expect.objectContaining({ code: "invalid_template_json" })],
+      issues: [expect.objectContaining({ code: "invalid_template_manifest_path" })],
     });
   });
 
-  it("accepts the JSON compatibility manifest", () => {
+  it("rejects the retired JSON compatibility manifest", () => {
     const jsonManifest = {
       ...manifest,
       workspace: {
@@ -797,8 +797,10 @@ describe("validateTemplatePackageContents", () => {
       ],
     });
 
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).not.toHaveProperty("implicitWorkspaceFile");
+    expect(result).toMatchObject({
+      ok: false,
+      issues: [{ code: "invalid_template_manifest_path", path: "package.json.openclaw.template" }],
+    });
   });
 
   it("requires package identity to match the publication", () => {

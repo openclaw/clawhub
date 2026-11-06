@@ -221,7 +221,7 @@ fetch so a transfer cannot race source activation.
 ClawHub owns the sync loop. Upstream repositories do not push payloads into
 ClawHub.
 
-The production cron runs every 15 minutes:
+The production cron runs once per day:
 
 ```text
 github-skill-source-sync -> githubSkillSyncNode.syncGitHubSkillSourcesInternal

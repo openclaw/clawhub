@@ -83,10 +83,10 @@ the Template from its manifest and documentation and uses `Other` if classificat
 is unavailable. To correct an inferred category, add `categories` to `CLAW.md`
 and publish a new release.
 
-JSON manifests remain compatible. Set `openclaw.template` to a package-relative
-JSON file such as `openclaw.template.json`; JSON has no Markdown body, so declare
-`workspace.bootstrapFiles.SOUL.md` explicitly when it needs the equivalent
-prompt.
+Template packages use `openclaw.template` pointing to a safe package-relative
+`CLAW.md`. The retired `openclaw.claw` selector and JSON package manifests are
+rejected, including metadata that declares both selectors. Regenerate first-party
+packages as new versions rather than rewriting any published archive or digest.
 
 Do not combine a non-empty `CLAW.md` body with an explicit workspace file whose
 portable destination is `SOUL.md`. ClawHub rejects that ambiguous dual source.
@@ -190,7 +190,7 @@ Publication rejects:
 - floating skill/plugin versions and resolved MCP credentials.
 
 Accepted packages continue through ClawHub's existing ownership, moderation,
-static scanning, release, and artifact storage pipeline. The stored release
+security scanning, release, and artifact storage pipeline. The stored release
 retains the exact artifact plus a non-sensitive summary for later search and
 detail surfaces; downloads return those same bytes and digest, and ClawHub does
 not duplicate the full manifest into Convex storage.

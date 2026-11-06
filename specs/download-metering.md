@@ -8,6 +8,36 @@ rewriting historical download counts.
 New skill and package downloads use one shared metering path. The path records
 one counted download per target, identity kind, identity hash, and UTC day.
 
+## Committed Template download events
+
+A newly counted package download for a public, undeleted Template schedules an
+internal emitter in the same transaction as its existing `packageStatEvents`
+insert. A rolled-back transaction therefore cannot emit a counted event. A
+repeated download in the same target/identity/UTC-day bucket creates neither a
+new stat nor a new scheduled emission. Counting paused before the stat mutation
+runs leaves archive serving unchanged and creates neither; already committed
+counts can still finish emitting after counting is paused.
+
+The emitter reads the committed stat and rechecks that the package still exists,
+is a Template, is not private, and is not soft-deleted. A queued event becomes a
+no-op if those conditions no longer hold. Skill and non-Template package
+downloads do not emit this event.
+
+The log payload is an explicit eight-field allowlist: `event`
+(`template_download_counted`), `schemaVersion` (`1`), `eventId` (the committed
+package stat ID), `packageId`, `packageName`, `family` (`template`), `occurredAt`
+(from the stat), and `dayStart` (the UTC dedupe bucket). Never include IPs, user
+IDs, identity hashes, credentials, or other listing fields. This event is
+recorded download telemetry, not an installation or unique-person count.
+
+Delivery through the existing console log stream is best-effort, not exactly
+once or guaranteed lossless. Retrying/replaying the emitter preserves
+`eventId`; consumers must deduplicate that ID rather than count log lines.
+Visibility suppression or missing logs can make observed events lower than
+committed historical counters. Do not infer or backfill past events from those
+counters. This adds no public telemetry endpoint, external scheduler, or new
+counter pipeline.
+
 ## Identity Hashing
 
 The identity hash input includes the identity kind:

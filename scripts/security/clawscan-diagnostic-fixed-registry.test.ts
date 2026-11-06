@@ -22,7 +22,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-it("binds exactly twenty skill identities, their retained manifests and source records", () => {
+it("binds exactly thirty skill identities, their retained manifests and source records", () => {
   expect(validateFixedSkillRegistry(registry)).toEqual(registry);
   expect(FIXED_ORIGINAL_SELECTORS).toEqual([
     "original-038-encrypted",
@@ -47,11 +47,21 @@ it("binds exactly twenty skill identities, their retained manifests and source r
     "original-005-encrypted",
     "original-006-encrypted",
     "original-015-encrypted",
+    "original-071-encrypted",
+    "original-007-encrypted",
+    "original-009-encrypted",
+    "original-014-encrypted",
+    "original-013-encrypted",
+    "original-029-encrypted",
+    "original-030-encrypted",
+    "original-002-encrypted",
+    "original-003-encrypted",
+    "original-067-encrypted",
   ]);
-  expect(registry.originals.flatMap((row) => row.files)).toHaveLength(84);
+  expect(registry.originals.flatMap((row) => row.files)).toHaveLength(264);
   expect(
     registry.originals.flatMap((row) => row.files).reduce((sum, file) => sum + file.size, 0),
-  ).toBe(1093507);
+  ).toBe(2574304);
   for (const row of registry.originals) {
     const selected = selectFixedSkill(row.fixture);
     expect(selected.identity).toEqual(row);
@@ -264,15 +274,23 @@ it("reuses exact ZIP validation with honest generated-container identity", async
   }
 });
 
-it("verifies Python custody and real proxy boundaries for all approved skills without models or credentials", () => {
-  expect(() =>
-    execFileSync("python3", ["-B", "scripts/security/diagnostic-capture/test_fixed_originals.py"], {
-      env: { PATH: process.env.PATH },
-      timeout: 20000,
-      stdio: "pipe",
-    }),
-  ).not.toThrow();
-});
+it.each(["0", "1"])(
+  "verifies Python custody and real proxy boundaries without credentials (shard %s)",
+  (shard) => {
+    expect(() =>
+      execFileSync(
+        "python3",
+        ["-B", "scripts/security/diagnostic-capture/test_fixed_originals.py"],
+        {
+          env: { PATH: process.env.PATH, CLAWSCAN_TEST_PROXY_SHARD: shard },
+          timeout: 20000,
+          stdio: "pipe",
+        },
+      ),
+    ).not.toThrow();
+  },
+  25000,
+);
 
 const followingFive = [
   {
@@ -501,4 +519,174 @@ it("keeps both Xiapan versions bound to their own instructions and publication a
   expect(earlier.identity.attemptId).not.toBe(later.identity.attemptId);
   expect(earlier.identity.versionId).not.toBe(later.identity.versionId);
   expect(earlier.identity.fingerprint).not.toBe(later.identity.fingerprint);
+});
+
+const nextTen = [
+  {
+    fixture: "071",
+    package: "second-read",
+    version: "0.3.1",
+    owner: "c-kapsalis",
+    kind: "skill",
+    attemptId: "zx7begmqj11wxkyjwjgp6a3qzh8h41cq",
+    fingerprint: "c8d68fd0f6b596a04b89f1e77b48c6227ba092235eed1a9b1b2835d961d79ad8",
+    versionId: "k978wewzk6t20m5cc8xqgyhyzn8h5sjc",
+    sourceManifestSha256: "ba45daa10420f82974b61f80d91a292545145f7a09624c83b320d8cb286cc279",
+    manifestSha256: "5930a4f208818dd4fbd0adbbde6711c2b38965505a463eb8a3afc811f10b0d00",
+    fileCount: 34,
+  },
+  {
+    fixture: "007",
+    package: "stella-selfie",
+    version: "1.4.1",
+    owner: "tower1229",
+    kind: "skill",
+    attemptId: "zx78f5dhed5n9g4h1y36dbff618h9abe",
+    fingerprint: "f0091ae805d185a18449618a6e5d8a59104d7714fb7ea4f622eb1527e411e8eb",
+    versionId: "k97avh2p20zbv2tgzjhjyxgyxn8h8je9",
+    sourceManifestSha256: "469b39cfe73e5456b23ea7515c40bacedabcdfb9c48db13befb36a429fbc5219",
+    manifestSha256: "346ff87cb6e7d4f66faf19ede2fafec52e0d54c9037ec0ccf743dc6cdcf14bd7",
+    fileCount: 14,
+  },
+  {
+    fixture: "009",
+    package: "javis-todo-spend-tracker",
+    version: "0.1.1",
+    owner: "samuel-wei",
+    kind: "skill",
+    attemptId: "zx75g2dh7jxbj327wnsmkmrrk98h5tm3",
+    fingerprint: "e99a2d2b360cf1ec7e85bc483b1998f1b859ae44552d2ac82eed7013a022b534",
+    versionId: "k97cepknqgp888bqr6m44mwzvn8h4qvh",
+    sourceManifestSha256: "1408c808563188e3eb71ac861a41d956dfeef9807164de4320fe0bb6ce0c9abc",
+    manifestSha256: "99da6f6513c80b9f78633892e09055dbcdf3821b6f81212312b3fa68e4bc5f6c",
+    fileCount: 18,
+  },
+  {
+    fixture: "014",
+    package: "ego-browser",
+    version: "2.1.0",
+    owner: "citrolabs",
+    kind: "skill",
+    attemptId: "zx7e05pa472tst2nc2y5dyp95n8h589n",
+    fingerprint: "6c2a8bf3e3f61168ef9e7e4f050d45fb7ea7586bfbdd82b08270ab9d82874717",
+    versionId: "k97fvynkxx3emdpgkctnt7jvk98h4ph4",
+    sourceManifestSha256: "95487f3040827babc0477c96a172a33d7d589382be72026d74ee949b86ba5bd5",
+    manifestSha256: "fe14f86e0c27f92c946d52cf6685445d49ef934eb3c99b05fc8a026b2f003827",
+    fileCount: 22,
+  },
+  {
+    fixture: "013",
+    package: "whetstone",
+    version: "0.1.1",
+    owner: "ricardodpalmeida",
+    kind: "skill",
+    attemptId: "zx738dpm6vphkdkz4wc31aac1h8gzk7g",
+    fingerprint: "e82055128b8bd5b314be35715ff60cc2555aeb7b09148c6dea755209837b5efe",
+    versionId: "k97bgry95535vztt8xfkbp122n8gyew8",
+    sourceManifestSha256: "fe447d70b3bd0f1596b3ae7bfd2bfd6bad89d538003ed615940cef1b554c658a",
+    manifestSha256: "f8c91902ec4e11b9f37b707c8aa3f41533e8523b1c3b93a0f0eed9ef2a887619",
+    fileCount: 34,
+  },
+  {
+    fixture: "029",
+    package: "yahoo-mail",
+    version: "1.0.0",
+    owner: "maton",
+    kind: "skill",
+    attemptId: "zx71zpctz443jh91tshwkna8px8h9ep1",
+    fingerprint: "8776c5e01b49d6d08c4d66f97a9266785e235d4ae92d6044cb708d8307071a28",
+    versionId: "k97bvee0nymw2g6atk628b37hs8h92y1",
+    sourceManifestSha256: "d3166e90d656da760cacecd1e30c675340365d544920c7dc3becb1e5fe1afbee",
+    manifestSha256: "4436da1c54229f40a0fda62a99c1776c13fdfb5b04234790bcd5374ec7eb8cf9",
+    fileCount: 10,
+  },
+  {
+    fixture: "030",
+    package: "icloud-mail",
+    version: "1.0.0",
+    owner: "maton",
+    kind: "skill",
+    attemptId: "zx7bqs3576c9ckmbhs9hj35shd8h8g6p",
+    fingerprint: "8e34bdb229674fe06e2fd21639b18b07b9fd1b9486b8d78b2035c748327558ce",
+    versionId: "k97drcmnczhx59kwefaev8vyys8h8ya4",
+    sourceManifestSha256: "05baa806c9600a43a574d9f4704ce6fe80db3901178df1bba0f618d118b6719b",
+    manifestSha256: "d086594ee374bc302b3cf3a7d7fc84633aab99c992a78757d65d5d2d6201eb9f",
+    fileCount: 10,
+  },
+  {
+    fixture: "002",
+    package: "klingai",
+    version: "2.0.1",
+    owner: "klingai-dev",
+    kind: "skill",
+    attemptId: "zx70z24x7bf2vt0hb78ktbjhys8h5zhs",
+    fingerprint: "a47e127a42e858cf3d6f94d39fa521214aa7dda84f195863b3e816eb08e523b1",
+    versionId: "k97c5zbe807qeazd7jctgje8ed8h4nx6",
+    sourceManifestSha256: "317db3304c4b01134c5f9e2867fd90d0e4a38a78d0a17842fc0b65c205b4bdc8",
+    manifestSha256: "41e405c5314abc623e59a3588a936a3e1f370ffa01f80080f894eab7e219eadb",
+    fileCount: 13,
+  },
+  {
+    fixture: "003",
+    package: "klingai",
+    version: "2.0.2",
+    owner: "klingai-dev",
+    kind: "skill",
+    attemptId: "zx73x0m0h1bb6bznzkjfm2asx18h5jd3",
+    fingerprint: "a47e127a42e858cf3d6f94d39fa521214aa7dda84f195863b3e816eb08e523b1",
+    versionId: "k9718tmwhtqj7zmx99mmqk18f18h5jg5",
+    sourceManifestSha256: "51717e742340f503c10782f6d30f87a18c98461b9627c9167799145c77297fae",
+    manifestSha256: "41e405c5314abc623e59a3588a936a3e1f370ffa01f80080f894eab7e219eadb",
+    fileCount: 13,
+  },
+  {
+    fixture: "067",
+    package: "mochi-diff-review",
+    version: "1.0.0",
+    owner: "hznetnewpower",
+    kind: "skill",
+    attemptId: "zx7ag4zdmjyr59trspxsxxnqxn8h1y3f",
+    fingerprint: "96b2c77b1834e5524e84a9d55d1266cff577808059ed94fbcdf62f2a936bbcdd",
+    versionId: "k973xvpm76j8d4dmmwc0aq026d8h0hpy",
+    sourceManifestSha256: "e3acf6670301960741823162f3debbf1c0ab50d2d90026bdf7f640d3766a6d12",
+    manifestSha256: "e38a9a41f95bd47289ee7f23be7d910d7fa2365c98ec9326e603985079349c11",
+    fileCount: 12,
+  },
+] as const;
+
+it.each(nextTen)(
+  "binds next original $fixture to its reported version, attempt and retained manifest",
+  (expected) => {
+    const { fileCount, ...identity } = expected;
+    const selected = selectFixedSkill(expected.fixture);
+    expect(selected.identity).toMatchObject(identity);
+    expect(selected.manifest.files).toHaveLength(fileCount);
+    expect(hash(JSON.stringify(selected.manifest.files))).toBe(expected.manifestSha256);
+  },
+);
+
+it.each(nextTen)(
+  "rejects identity, provenance and file substitutions for next original $fixture",
+  (expected) => {
+    const index = registry.originals.findIndex((row) => row.fixture === expected.fixture);
+    expect(index).toBeGreaterThanOrEqual(0);
+    for (const key of Object.keys(registry.originals[index])) {
+      const changed = structuredClone(registry);
+      Object.assign(changed.originals[index], { [key]: "substituted" });
+      expect(() => validateFixedSkillRegistry(changed)).toThrow("registry identity");
+    }
+  },
+);
+
+it("keeps both KlingAI release obligations separate even when every retained byte matches", () => {
+  const earlier = selectFixedSkill("002");
+  const later = selectFixedSkill("003");
+  expect(earlier.manifest.files).toEqual(later.manifest.files);
+  expect(earlier.manifest.manifestSha256).toBe(later.manifest.manifestSha256);
+  expect(earlier.identity.fingerprint).toBe(later.identity.fingerprint);
+  expect(earlier.version).toBe("2.0.1");
+  expect(later.version).toBe("2.0.2");
+  expect(earlier.identity.attemptId).not.toBe(later.identity.attemptId);
+  expect(earlier.identity.versionId).not.toBe(later.identity.versionId);
+  expect(earlier.id).not.toBe(later.id);
 });

@@ -9,6 +9,7 @@ import {
   NVIDIA_SKILL_EVALUATION_CONFIG,
   NVIDIA_SKILL_EVALUATION_CONFIG_KEY,
 } from "./lib/skillEvaluationConfig";
+import { skillEvaluationMetricsValidator } from "./lib/skillEvaluationMetrics";
 import { parseSkillEvaluatorResultJson } from "./lib/skillEvaluationResult";
 import { requestSkillEvaluationDispatch } from "./skillEvaluationDispatch";
 
@@ -286,28 +287,7 @@ export const completeSkillEvaluationInternal = internalMutation({
     runId: v.id("skillEvaluationRuns"),
     leaseToken: v.string(),
     nativeResultStorageId: v.id("_storage"),
-    metrics: v.object({
-      sampleCount: v.number(),
-      overall: v.object({
-        withSkill: v.number(),
-        withoutSkill: v.number(),
-        delta: v.number(),
-      }),
-      cases: v.object({
-        withSkillPassed: v.number(),
-        withSkillTotal: v.number(),
-        withoutSkillPassed: v.number(),
-        withoutSkillTotal: v.number(),
-      }),
-      dimensions: v.array(
-        v.object({
-          id: v.string(),
-          withSkill: v.number(),
-          withoutSkill: v.number(),
-          delta: v.number(),
-        }),
-      ),
-    }),
+    metrics: skillEvaluationMetricsValidator,
     runIdFromEvaluator: v.optional(v.string()),
     durationMs: v.optional(v.number()),
     taskSource: v.union(v.literal("evals_json"), v.literal("native_harbor")),

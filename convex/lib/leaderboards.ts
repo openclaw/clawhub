@@ -14,12 +14,6 @@ export type LeaderboardEntry = {
   downloads: number;
 };
 
-type DailyTrendingRow = {
-  skillId: Id<"skills">;
-  installs: number;
-  downloads: number;
-};
-
 export function toDayKey(timestamp: number) {
   return Math.floor(timestamp / DAY_MS);
 }
@@ -35,29 +29,6 @@ export async function queryDailyStats(ctx: QueryCtx | MutationCtx, day: number) 
     .query("skillDailyStats")
     .withIndex("by_day", (q) => q.eq("day", day))
     .collect();
-}
-
-export function buildTrendingEntriesFromDailyRows(perDayRows: DailyTrendingRow[][]) {
-  const totals = new Map<Id<"skills">, { installs: number; downloads: number }>();
-  for (const rows of perDayRows) {
-    for (const row of rows) {
-      const current = totals.get(row.skillId) ?? { installs: 0, downloads: 0 };
-      current.installs += row.installs;
-      current.downloads += row.downloads;
-      totals.set(row.skillId, current);
-    }
-  }
-
-  const entries = Array.from(totals, ([skillId, totalsEntry]) => ({
-    skillId,
-    installs: totalsEntry.installs,
-    downloads: totalsEntry.downloads,
-    score: totalsEntry.installs,
-  }));
-
-  entries.sort((a, b) => compareTrendingEntries(b, a));
-
-  return entries;
 }
 
 export function takeTopTrendingEntries(entries: LeaderboardEntry[], limit: number) {

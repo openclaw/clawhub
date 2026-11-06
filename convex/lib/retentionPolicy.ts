@@ -402,7 +402,9 @@ export const RETENTION_POLICIES = {
   publisherAbuseSignalReviewEvents: permanent(
     "Dormant abuse signal review history retained until an approved migration removes it.",
   ),
-  vtScanLogs: permanent("VirusTotal scan log history."),
+  vtScanLogs: permanent(
+    "Dormant VirusTotal scan log history retained until an approved migration removes it.",
+  ),
   apiTokens: permanent("User API tokens until revoked."),
   cliDeviceCodes: ephemeral("CLI device codes expire quickly.", {
     expirationField: "expiresAt",

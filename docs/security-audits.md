@@ -314,11 +314,8 @@ of the stored public policy output.
 
 Risk analysis is powered internally by ClawScan, ClawHub's own security audit
 system. It reviews each release as an agent-facing artifact: instructions,
-metadata, declared permissions, files, capability signals, static scan signals,
-SkillSpector findings, A.I.G findings for skills, and
-publisher-provided context.
-Static scan signals are internal context for this review; they are not a
-standalone public audit section or install-blocking verdict.
+metadata, declared permissions, files, capability signals, SkillSpector
+findings, A.I.G findings for skills, and publisher-provided context.
 
 Risk analysis uses the
 [OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/)

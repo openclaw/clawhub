@@ -16,12 +16,37 @@ def config_for(entry,root):
             'identity':copy.deepcopy(entry)}}}
 
 
+def proxy_originals():
+    # Split only trusted proxy subprocesses; registry/custody checks stay whole.
+    entries=load_registry()['originals']
+    shard=os.environ.get('CLAWSCAN_TEST_PROXY_SHARD')
+    if shard is None:return entries
+    if shard not in ('0','1'):raise ValueError('unknown test proxy shard')
+    return entries[int(shard)::2]
+
+
 class FixedSkills(unittest.TestCase):
+    def test_proxy_shards_cover_every_closed_original_once_and_refuse_unknown_shards(self):
+        complete=load_registry()['originals']
+        groups=[]
+        for shard in ('0','1'):
+            with patch.dict(os.environ,{'CLAWSCAN_TEST_PROXY_SHARD':shard}):
+                groups.append(proxy_originals())
+        self.assertEqual([len(group)for group in groups],[15,15])
+        identities=[[entry['id']for entry in group]for group in groups]
+        self.assertFalse(set(identities[0])&set(identities[1]))
+        self.assertCountEqual(identities[0]+identities[1],[entry['id']for entry in complete])
+        with patch.dict(os.environ,{},clear=True):
+            self.assertEqual(proxy_originals(),complete)
+        for shard in ('','2','-1','all','0,1'):
+            with self.subTest(shard=shard),patch.dict(os.environ,{'CLAWSCAN_TEST_PROXY_SHARD':shard}):
+                with self.assertRaisesRegex(ValueError,'proxy shard'):proxy_originals()
+
     def test_registry_is_exact_and_rejects_changed_or_added_entries(self):
         registry=load_registry()
-        self.assertEqual([row['fixture']for row in registry['originals']],['004','016','017','026','027','074','008','011','036','033','065','073','042','055','039','010','019','005','006','015'])
-        self.assertEqual(sum(len(row['files'])for row in registry['originals']),84)
-        self.assertEqual(sum(file['size']for row in registry['originals']for file in row['files']),1093507)
+        self.assertEqual([row['fixture']for row in registry['originals']],['004','016','017','026','027','074','008','011','036','033','065','073','042','055','039','010','019','005','006','015','071','007','009','014','013','029','030','002','003','067'])
+        self.assertEqual(sum(len(row['files'])for row in registry['originals']),264)
+        self.assertEqual(sum(file['size']for row in registry['originals']for file in row['files']),2574304)
         for mutation in ('source','identity','duplicate','unknown'):
             with self.subTest(mutation=mutation),tempfile.TemporaryDirectory()as name:
                 root=Path(name);value=copy.deepcopy(registry)
@@ -62,7 +87,7 @@ class FixedSkills(unittest.TestCase):
                     self.assertEqual(list(root.iterdir()),[root/'harness'])
 
     def test_actual_proxy_checks_each_skill_identity_before_trusted_control(self):
-        for entry in load_registry()['originals']:
+        for entry in proxy_originals():
             for mutation in ('valid','source','seal','identity','manifest','mixed'):
                 with self.subTest(case=entry['fixture'],mutation=mutation),tempfile.TemporaryDirectory()as name:
                     root=Path(name).resolve();harness=root/'harness';harness.mkdir();(harness/'bin').mkdir()

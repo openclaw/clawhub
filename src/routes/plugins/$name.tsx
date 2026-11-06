@@ -1513,7 +1513,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const securitySummary = latestRelease ? (
     <DetailSecuritySummary
       auditHref={buildPluginSecurityAuditHref(name, { ownerHandle: owner?.handle })}
-      vtAnalysis={latestRelease.vtAnalysis ?? null}
       llmAnalysis={latestRelease.llmAnalysis ?? null}
     />
   ) : null;

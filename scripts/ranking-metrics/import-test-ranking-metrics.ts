@@ -628,29 +628,6 @@ export async function assertRankingTablesUnchanged(baseline: string, current: st
   }
 }
 
-export async function rankingTableDigests(snapshot: string) {
-  const entries = await Promise.all(
-    RANKING_TABLES.map(
-      async (table) => [table, await digestSnapshotTable(snapshot, table)] as const,
-    ),
-  );
-  return Object.fromEntries(entries) as Record<RankingTable, string>;
-}
-
-export async function assertRankingTablesMatchDigests(
-  snapshot: string,
-  expected: Partial<Record<RankingTable, unknown>>,
-) {
-  for (const table of RANKING_TABLES) {
-    if (typeof expected[table] !== "string") {
-      throw new Error(`Backup manifest is missing the ${table} rollback source digest`);
-    }
-    if ((await digestSnapshotTable(snapshot, table)) !== expected[table]) {
-      throw new Error(`${table} no longer matches the rollback source state`);
-    }
-  }
-}
-
 export async function rankingTableLogicalDigests(snapshot: string) {
   const entries = await Promise.all(
     RANKING_TABLES.map(

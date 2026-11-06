@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import historical from "../fixtures/templates/historical-published-v1.json";
 import { internal } from "./_generated/api";
 import { getLatestPublication } from "./catalogFeed";
 import { catalogTemplatesFeedV1Handler, catalogFeedV1Handler } from "./httpApiV1/catalogFeedV1";
@@ -174,11 +173,39 @@ describe("catalogFeedV1Handler", () => {
   it("serves only a policy-stamped Template feed from a currently active publisher", async () => {
     const payload = JSON.stringify({
       schemaVersion: 1,
-      id: "clawhub-official-claws",
+      id: "clawhub-official-templates",
       sequence: publication.sequence,
       generatedAt: publication.generatedAt,
       expiresAt: publication.expiresAt,
-      entries: [historical.entry],
+      entries: [
+        {
+          type: "template",
+          id: "@openclaw/runtime-proof",
+          title: "Runtime proof",
+          version: "1.0.0",
+          state: "available",
+          publisher: { id: "openclaw", trust: "official" },
+          templateManifestSummary: {
+            schemaVersion: 1,
+            agent: { id: "runtime-proof", name: "Runtime proof" },
+            workspace: { bootstrapFiles: [], fileCount: 0 },
+            packages: { skillCount: 0, pluginCount: 0 },
+            mcpServerCount: 0,
+            cronJobCount: 0,
+          },
+          install: {
+            candidates: [
+              {
+                sourceRef: "public-clawhub",
+                package: "@openclaw/runtime-proof",
+                version: "1.0.0",
+                integrity:
+                  "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              },
+            ],
+          },
+        },
+      ],
     });
     const stored = {
       ...publication,

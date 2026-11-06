@@ -6,7 +6,13 @@ import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalQuery } from "./functions";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { getOwnerPublisher } from "./lib/publishers";
-import { redactBundleContent } from "./lib/securityDatasetRedaction";
+import {
+  isExcludedSkillBundlePath,
+  isPrimarySkillReadmePath,
+  redactBundleContent,
+  totalBundleBytes,
+  utf8Bytes,
+} from "./lib/securityDatasetRedaction";
 
 const MAX_EXPORT_PAGE_SIZE = 50;
 const MAX_EXPORT_BATCH_PAGES = 20;
@@ -334,35 +340,6 @@ async function readRedactedBundleFiles(
     remainingArtifactBytes -= contentBytes;
   }
   return bundleFiles;
-}
-
-function isExcludedSkillBundlePath(path: string) {
-  return (
-    isPrimarySkillReadmePath(path) || normalizeBundlePathForComparison(path) === "skill-card.md"
-  );
-}
-
-function isPrimarySkillReadmePath(path: string) {
-  const normalized = normalizeBundlePathForComparison(path);
-  return normalized === "skill.md" || normalized === "skills.md";
-}
-
-function normalizeBundlePathForComparison(path: string) {
-  return path
-    .trim()
-    .replace(/^\/+/, "")
-    .split("/")
-    .filter((segment) => segment && segment !== ".")
-    .join("/")
-    .toLowerCase();
-}
-
-function totalBundleBytes(files: Array<{ content: string }>) {
-  return files.reduce((sum, file) => sum + utf8Bytes(file.content), 0);
-}
-
-function utf8Bytes(value: string) {
-  return new TextEncoder().encode(value).byteLength;
 }
 
 async function readRedactedSkillMdContent(

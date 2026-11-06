@@ -42,9 +42,7 @@ function createSkill(overrides?: Partial<DashboardSkill>): DashboardSkill {
     latestVersion: {
       version: "1.0.0",
       createdAt: 1,
-      vtStatus: "clean",
       llmStatus: "clean",
-      staticScanStatus: "clean",
     },
     ...overrides,
   } as DashboardSkill;
@@ -63,9 +61,7 @@ function createPackage(overrides?: Partial<DashboardPackage>): DashboardPackage 
     latestRelease: {
       version: "1.0.0",
       createdAt: 1,
-      vtStatus: "clean",
       llmStatus: "clean",
-      staticScanStatus: "clean",
     },
     ...overrides,
   };
@@ -113,9 +109,7 @@ describe("dashboardCatalog", () => {
         latestVersion: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "suspicious",
           llmStatus: "suspicious",
-          staticScanStatus: "suspicious",
         },
       }),
       createSkill({
@@ -130,9 +124,7 @@ describe("dashboardCatalog", () => {
         latestRelease: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "malicious",
           llmStatus: "malicious",
-          staticScanStatus: "malicious",
         },
       }),
     ];
@@ -154,9 +146,7 @@ describe("dashboardCatalog", () => {
         latestVersion: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "suspicious",
           llmStatus: "suspicious",
-          staticScanStatus: "suspicious",
         },
       }),
       createSkill({
@@ -171,9 +161,7 @@ describe("dashboardCatalog", () => {
         latestRelease: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "malicious",
           llmStatus: "malicious",
-          staticScanStatus: "malicious",
         },
       }),
     ];
