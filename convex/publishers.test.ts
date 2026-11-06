@@ -3655,7 +3655,8 @@ describe("publishers membership controls", () => {
       _id: "packages:demo",
       ownerPublisherId: "publishers:openclaw",
       softDeletedAt: undefined,
-      stats: { downloads: 8, installs: 5, stars: 1 },
+      latestReleaseId: "packageReleases:demo",
+      stats: { downloads: 8, installs: 5, stars: 1, versions: 1 },
     };
     const ctx = {
       db: {
@@ -4119,6 +4120,20 @@ describe("publishers membership controls", () => {
                   stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
                   updatedAt: 2,
                 },
+                {
+                  _id: "packages:pending-plugin",
+                  ownerPublisherId: "publishers:openclaw",
+                  softDeletedAt: undefined,
+                  family: "code-plugin",
+                  name: "@openclaw/pending-plugin",
+                  displayName: "Pending Plugin",
+                  summary: "Still scanning",
+                  channel: "community",
+                  scanStatus: "pending",
+                  icon: "https://pending.example/icon.png",
+                  stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+                  updatedAt: 1,
+                },
               ]);
             }
             if (table === "officialPublishers" && indexName === "by_publisher") {
@@ -4166,6 +4181,8 @@ describe("publishers membership controls", () => {
     // A private package must not appear on the public profile at all.
     // Nulling its icon still left the name, summary, topics, and href.
     expect(byName["Private Plugin"]).toBeUndefined();
+    // A staged first publish has no public release.
+    expect(byName["Pending Plugin"]).toBeUndefined();
     expect(pluginResult.page.map((item) => item.displayName)).toEqual([
       "Example Plugin",
       "Blocked Plugin",
@@ -8031,6 +8048,15 @@ describe("publisher bootstrap", () => {
         displayName: "Plugin 1",
         stats: { downloads: 8, stars: 0, installs: 8, versions: 1 },
       },
+      {
+        _id: "packages:staged",
+        _creationTime: 11,
+        ownerPublisherId: "publishers:alice",
+        family: "plugin",
+        softDeletedAt: undefined,
+        displayName: "Staged Plugin",
+        stats: { downloads: 0, stars: 0, installs: 0, versions: 0 },
+      },
     ];
     const ctx = {
       db: {
@@ -8104,6 +8130,7 @@ describe("publisher bootstrap", () => {
       "Skill 3",
       "Skill 2",
       "Skill 1",
+      "Staged Plugin",
     ]);
   });
 

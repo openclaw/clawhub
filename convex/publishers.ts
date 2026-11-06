@@ -13,6 +13,7 @@ import {
 import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
+import { hasNoPublishedPackageVersions } from "./lib/packageReleaseVisibility";
 import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
@@ -154,8 +155,10 @@ function isPublicPublishedSkill(skill: Doc<"skills">) {
   return isPublicSkillDoc(skill);
 }
 
-function isPublicPublisherCatalogPackage(pkg: Pick<Doc<"packages">, "channel">) {
-  return pkg.channel !== "private";
+function isPublicPublisherCatalogPackage(
+  pkg: Pick<Doc<"packages">, "channel" | "latestReleaseId" | "latestVersionSummary" | "stats">,
+) {
+  return pkg.channel !== "private" && !hasNoPublishedPackageVersions(pkg);
 }
 
 function withoutPrivatePackages(rows: PublisherPublishedRows): PublisherPublishedRows {
@@ -358,6 +361,7 @@ type PublisherPublishedRows = {
 async function getPublisherPublishedRows(
   ctx: Pick<QueryCtx, "db">,
   publisherId: Id<"publishers">,
+  options?: { includeUnpublishedPackages?: boolean },
 ): Promise<PublisherPublishedRows> {
   const [skills, packages] = await Promise.all([
     ctx.db
@@ -373,7 +377,12 @@ async function getPublisherPublishedRows(
       )
       .collect(),
   ]);
-  return { skills: skills.filter(isPublicPublishedSkill), packages };
+  return {
+    skills: skills.filter(isPublicPublishedSkill),
+    packages: options?.includeUnpublishedPackages
+      ? packages
+      : packages.filter((pkg) => !hasNoPublishedPackageVersions(pkg)),
+  };
 }
 
 async function getPublisherPublishedPreviewRows(
@@ -2342,7 +2351,9 @@ async function toPublisherDeletionInventory(
   publisher: Doc<"publishers">,
 ) {
   if (!(await getPublicPublisherVisibility(ctx, publisher))) return null;
-  const rows = await getPublisherPublishedRows(ctx, publisher._id);
+  const rows = await getPublisherPublishedRows(ctx, publisher._id, {
+    includeUnpublishedPackages: true,
+  });
   const stats = getIndexedPublisherStatsFromRows(rows);
   return {
     handle: publisher.handle,
