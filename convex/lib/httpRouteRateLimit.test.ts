@@ -11,6 +11,16 @@ import { httpAction } from "../functions";
 import { applyRateLimit, RATE_LIMITS } from "./httpRateLimit";
 import { installRateLimitedRoutes, rateLimitedHttpAction } from "./httpRouteRateLimit";
 
+const RATE_LIMIT_HEADERS = [
+  "X-RateLimit-Limit",
+  "X-RateLimit-Remaining",
+  "X-RateLimit-Reset",
+  "RateLimit-Limit",
+  "RateLimit-Remaining",
+  "RateLimit-Reset",
+  "Retry-After",
+] as const;
+
 type WrappedHttpAction = {
   _handler: (ctx: ActionCtx, request: Request) => Promise<Response>;
 };
@@ -49,6 +59,10 @@ describe("rateLimitedHttpAction", () => {
 
     expect(response.status).toBe(429);
     expect(await response.text()).toBe("Rate limit exceeded");
+    // Only an actual denial carries rate-limit and reset hints.
+    expect(response.headers.get("RateLimit-Limit")).toBe(String(RATE_LIMITS.read.ip));
+    expect(response.headers.get("RateLimit-Remaining")).toBe("0");
+    expect(response.headers.get("Retry-After")).toBeTruthy();
     expect(handler).not.toHaveBeenCalled();
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
@@ -59,20 +73,59 @@ describe("rateLimitedHttpAction", () => {
     );
   });
 
-  it("merges route rate-limit headers into successful responses", async () => {
-    const action = httpAction(
-      async () => new Response("ok", { headers: { "X-App": "1" } }),
-    ) as unknown as Parameters<typeof rateLimitedHttpAction>[0];
-    const wrapped = rateLimitedHttpAction(action, {
-      resolveRateLimit: () => ({ kind: "read" }),
-    }) as unknown as WrappedHttpAction;
-    const { ctx } = makeCtx();
+  it.each([
+    { status: 200, body: "ok" },
+    { status: 400, body: "Version 1.0.0 already exists" },
+    { status: 503, body: "ClawHub backend is temporarily unavailable." },
+  ])(
+    "adds no rate-limit headers to an admitted HTTP $status response",
+    async ({ status, body }) => {
+      const action = httpAction(
+        async () => new Response(body, { status, headers: { "X-App": "1" } }),
+      ) as unknown as Parameters<typeof rateLimitedHttpAction>[0];
+      const wrapped = rateLimitedHttpAction(action, {
+        resolveRateLimit: () => ({ kind: "write" }),
+      }) as unknown as WrappedHttpAction;
+      const { ctx, runMutation } = makeCtx();
 
-    const response = await wrapped._handler(ctx, new Request("https://example.com/api/v1/skills"));
+      const response = await wrapped._handler(
+        ctx,
+        new Request("https://example.com/api/v1/skills"),
+      );
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("X-App")).toBe("1");
-    expect(response.headers.get("RateLimit-Limit")).toBe(String(RATE_LIMITS.read.ip));
+      expect(response.status).toBe(status);
+      expect(response.headers.get("X-App")).toBe("1");
+      expect(runMutation).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ name: "writeIp" }),
+      );
+      // The request was admitted: limit/reset hints would misreport a rate limit.
+      for (const header of RATE_LIMIT_HEADERS) expect(response.headers.get(header)).toBeNull();
+    },
+  );
+
+  it("adds no rate-limit headers while the limiter is switched off", async () => {
+    vi.stubEnv("CLAWHUB_RATE_LIMITER_DISABLED", "1");
+    try {
+      const action = httpAction(
+        async () => new Response("Publish failed", { status: 400 }),
+      ) as unknown as Parameters<typeof rateLimitedHttpAction>[0];
+      const wrapped = rateLimitedHttpAction(action, {
+        resolveRateLimit: () => ({ kind: "write" }),
+      }) as unknown as WrappedHttpAction;
+      const { ctx, runMutation } = makeCtx({ allowed: false });
+
+      const response = await wrapped._handler(
+        ctx,
+        new Request("https://example.com/api/v1/skills", { method: "POST" }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(runMutation).not.toHaveBeenCalled();
+      for (const header of RATE_LIMIT_HEADERS) expect(response.headers.get(header)).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("preserves multiple Set-Cookie headers on successful responses", async () => {
@@ -94,7 +147,7 @@ describe("rateLimitedHttpAction", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("X-App")).toBe("1");
-    expect(response.headers.get("RateLimit-Limit")).toBe(String(RATE_LIMITS.read.ip));
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
     expect([...response.headers.entries()].filter(([key]) => key === "set-cookie")).toEqual([
       ["set-cookie", "oauth_state=abc; HttpOnly; Path=/"],
       ["set-cookie", "redirect_to=%2Fdashboard; HttpOnly; Path=/"],
@@ -147,8 +200,7 @@ describe("rateLimitedHttpAction", () => {
         config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
       }),
     );
-    expect(response.headers.get("RateLimit-Limit")).toBe(String(RATE_LIMITS.read.ip));
-    expect(response.headers.get("RateLimit-Limit")).not.toContain(",");
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
   });
 
   it("allows explicit route opt-outs", async () => {

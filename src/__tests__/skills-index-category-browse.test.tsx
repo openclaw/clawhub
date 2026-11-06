@@ -48,6 +48,7 @@ vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
   useAction: (...args: unknown[]) => convexReactMocks.useAction(...args),
   useQuery: (...args: unknown[]) => convexReactMocks.useQuery(...args),
+  useQueries: (...args: unknown[]) => convexReactMocks.useQueries(...args),
 }));
 
 vi.mock("../../src/convex/client", () => ({

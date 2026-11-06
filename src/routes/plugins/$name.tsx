@@ -77,7 +77,7 @@ import {
   getPluginCategoryBySlug,
 } from "../../lib/categories";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
-import { buildPluginMeta } from "../../lib/og";
+import { buildPluginMeta, buildSocialMetaHead } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import { buildPublisherProfileHref } from "../../lib/ownerRoute";
 import {
@@ -237,24 +237,7 @@ export function pluginDetailHead(name: string, loaderData?: PluginDetailLoaderDa
     owner: loaderData?.detail.owner?.handle,
     latestVersion: loaderData?.detail.package?.latestVersion,
   });
-  return {
-    meta: [
-      { title: meta.title },
-      { name: "description", content: meta.description },
-      { property: "og:title", content: meta.title },
-      { property: "og:description", content: meta.description },
-      { property: "og:url", content: meta.url },
-      { property: "og:image", content: meta.image },
-      { property: "og:image:width", content: "1200" },
-      { property: "og:image:height", content: "630" },
-      { property: "og:image:alt", content: meta.title },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: meta.title },
-      { name: "twitter:description", content: meta.description },
-      { name: "twitter:image", content: meta.image },
-    ],
-    links: [{ rel: "canonical", href: meta.url }],
-  };
+  return buildSocialMetaHead(meta);
 }
 
 export const Route = createFileRoute("/plugins/$name")({
@@ -1530,7 +1513,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const securitySummary = latestRelease ? (
     <DetailSecuritySummary
       auditHref={buildPluginSecurityAuditHref(name, { ownerHandle: owner?.handle })}
-      vtAnalysis={latestRelease.vtAnalysis ?? null}
       llmAnalysis={latestRelease.llmAnalysis ?? null}
     />
   ) : null;

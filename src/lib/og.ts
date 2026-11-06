@@ -1,6 +1,5 @@
 import { buildSkillDetailHref, buildPublisherProfileHref } from "./ownerRoute";
 import { buildPluginDetailHref } from "./pluginRoutes";
-import { getRuntimeEnv } from "./runtimeEnv";
 import { getClawHubSiteUrl, SITE_DESCRIPTION } from "./site";
 
 type SkillMetaSource = {
@@ -57,34 +56,6 @@ const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "8";
 
 function getSiteUrl() {
   return getClawHubSiteUrl();
-}
-
-function getApiBase() {
-  const explicit = getRuntimeEnv("VITE_CONVEX_SITE_URL");
-  return explicit || getSiteUrl();
-}
-
-export async function fetchSkillMeta(slug: string) {
-  try {
-    const apiBase = getApiBase();
-    const url = new URL(`/api/v1/skills/${encodeURIComponent(slug)}`, apiBase);
-    const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
-    if (!response.ok) return null;
-    const payload = (await response.json()) as {
-      skill?: { displayName?: string; summary?: string | null } | null;
-      owner?: { handle?: string | null; userId?: string | null } | null;
-      latestVersion?: { version?: string | null } | null;
-    };
-    return {
-      displayName: payload.skill?.displayName ?? null,
-      summary: payload.skill?.summary ?? null,
-      owner: payload.owner?.handle ?? null,
-      ownerId: payload.owner?.userId ?? null,
-      version: payload.latestVersion?.version ?? null,
-    };
-  } catch {
-    return null;
-  }
 }
 
 export function buildSkillMeta(source: SkillMetaSource): SkillMeta {
@@ -168,6 +139,27 @@ export function buildPublisherMeta(source: PublisherMetaSource): BasicMeta {
     description: truncate(description, 200),
     image: `${siteUrl}/og/profile?${imageParams.toString()}`,
     url: `${siteUrl}${buildPublisherProfileHref(handle)}`,
+  };
+}
+
+export function buildSocialMetaHead(meta: BasicMeta) {
+  return {
+    meta: [
+      { title: meta.title },
+      { name: "description", content: meta.description },
+      { property: "og:title", content: meta.title },
+      { property: "og:description", content: meta.description },
+      { property: "og:url", content: meta.url },
+      { property: "og:image", content: meta.image },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
+      { property: "og:image:alt", content: meta.title },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: meta.title },
+      { name: "twitter:description", content: meta.description },
+      { name: "twitter:image", content: meta.image },
+    ],
+    links: [{ rel: "canonical", href: meta.url }],
   };
 }
 

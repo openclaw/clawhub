@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Begin Testbox
-        uses: useblacksmith/begin-testbox@233448af4bfdc6fca509a7f0974411ac6d8a8043
+        uses: useblacksmith/begin-testbox@22ff2ea5697369864347140857d218e42815b33c
         with:
           testbox_id: ${{ inputs.testbox_id }}
 
@@ -87,7 +87,7 @@ jobs:
           link_tool "$node_bin/npx" /usr/local/bin/npx
 
       - name: Run Testbox
-        uses: useblacksmith/run-testbox@3f60ff9ceb2c10c3feefa87dc0c6490cffae059d
+        uses: useblacksmith/run-testbox@9b976c32aa3bcbffb348889673585a5deee1b2f3
         if: always()
         env:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"

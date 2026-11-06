@@ -4,6 +4,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
+import { makeSkillDetailPageViewProps } from "../__tests__/helpers/skillDetailPageView";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { SkillDetailPageView } from "./SkillDetailPageView";
 import { TooltipProvider } from "./ui/tooltip";
@@ -122,38 +123,14 @@ describe("SkillDetailPageView", () => {
   };
 
   function renderHeader(overrides: Partial<Parameters<typeof SkillDetailPageView>[0]> = {}) {
-    const props: Parameters<typeof SkillDetailPageView>[0] = {
+    const props = makeSkillDetailPageViewProps({
       skill,
       owner,
       ownerHandle: "local",
-      latestVersion: null,
-      modInfo: null,
-      canManage: false,
-      isAuthenticated: false,
-      isStaff: false,
-      isStarred: false,
-      onToggleStar: vi.fn(),
-      onOpenReport: vi.fn(),
-      onRequireSignIn: vi.fn(),
-      forkOf: null,
-      forkOfLabel: "fork of",
-      forkOfHref: null,
-      forkOfOwnerHandle: null,
-      canonical: null,
-      canonicalHref: null,
-      canonicalOwnerHandle: null,
-      staffVisibilityTag: null,
-      isAutoHidden: false,
-      isRemoved: false,
-      nixPlugin: undefined,
-      hasPluginBundle: false,
-      configRequirements: undefined,
-      cliHelp: undefined,
-      clawdis: undefined,
       staffVisibilityAlert: null,
       settingsHref: null,
       ...overrides,
-    };
+    });
 
     return render(
       <TooltipProvider>

@@ -1,3 +1,4 @@
+import { sha256Hex } from "./hash";
 import { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
 export { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
 import {
@@ -27,6 +28,7 @@ import {
   getPublishTotalSizeError,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./publishLimits";
+import { stripUndefinedForStoredPublish } from "./publishStorage";
 import { isSkillCardPath } from "./skillCards";
 import {
   MAX_SKILL_PRESENTATION_YAML_BYTES,
@@ -56,7 +58,6 @@ import {
 import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSkillSummary } from "./skillSummary";
 import { normalizeSkillTags } from "./skillTags";
-import { runStaticPublishScan } from "./staticPublishScan";
 import { fetchText } from "./storageText";
 import { getWebhookConfig, type WebhookSkillPayload } from "./webhooks";
 
@@ -399,15 +400,6 @@ export async function publishVersionForUser(
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
   }
 
-  const staticScan = await runStaticPublishScan(ctx, {
-    slug,
-    displayName,
-    summary,
-    frontmatter,
-    metadata,
-    files: publishFiles,
-  });
-
   const fingerprint = await buildPublishSourceFingerprint(
     publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
   );
@@ -456,7 +448,6 @@ export async function publishVersionForUser(
     },
     summary,
     icon,
-    staticScan,
     embedding: [] as number[],
     deferredAiEnrichment: {
       summary:
@@ -748,9 +739,8 @@ function buildSkillPublishAttemptScanContext(insertArgs: unknown) {
     record.parsed && typeof record.parsed === "object"
       ? (record.parsed as Record<string, unknown>)
       : {};
-  return stripUndefinedForStoredAttempt({
+  return stripUndefinedForStoredPublish({
     version: {
-      staticScan: record.staticScan,
       parsed: {
         metadata: parsed.metadata,
         clawdis: parsed.clawdis,
@@ -828,17 +818,6 @@ function mergeSourceIntoMetadata(
   }
 
   return Object.keys(base).length ? base : undefined;
-}
-
-function stripUndefinedForStoredAttempt(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripUndefinedForStoredAttempt);
-  if (!value || typeof value !== "object") return value;
-
-  const result: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value)) {
-    if (nested !== undefined) result[key] = stripUndefinedForStoredAttempt(nested);
-  }
-  return result;
 }
 
 function buildFinalizationClaimId() {
@@ -993,18 +972,6 @@ async function hashStoredPublishFiles(filesWithBlobs: PublishFileBlob[]) {
     });
   }
   return publishFiles;
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const data = new Uint8Array(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return toHex(new Uint8Array(digest));
-}
-
-function toHex(bytes: Uint8Array) {
-  let out = "";
-  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
-  return out;
 }
 
 function formatEmbeddingError(error: unknown) {

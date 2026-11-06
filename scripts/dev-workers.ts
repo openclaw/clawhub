@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isCodexWorkerExecutionAllowed, localCodexWorkerOptInReason } from "./codex-worker-guard";
+import { parseEnv } from "./dev-worktree";
 
 type DevWorkerId = "security-scan" | "skill-card";
 
@@ -97,42 +98,6 @@ export function parseArgs(args: string[]): DevWorkerOptions {
     skip: csv(getArg(args, "--skip")),
     workers: csv(getArg(args, "--workers")),
   };
-}
-
-function stripInlineComment(value: string) {
-  let quote: '"' | "'" | null = null;
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index];
-    const previous = value[index - 1];
-    if ((char === '"' || char === "'") && previous !== "\\") {
-      quote = quote === char ? null : (quote ?? char);
-      continue;
-    }
-    if (char === "#" && quote === null && (index === 0 || /\s/.test(previous ?? ""))) {
-      return value.slice(0, index).trimEnd();
-    }
-  }
-  return value;
-}
-
-function parseEnv(text: string) {
-  const parsed: Record<string, string> = {};
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
-    if (!match) continue;
-    const [, key, rawValue] = match;
-    let value = stripInlineComment(rawValue.trim());
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    parsed[key] = value;
-  }
-  return parsed;
 }
 
 function resolveEnvFile(cwd: string, explicit: string | null) {

@@ -81,12 +81,13 @@ export function normalizeSkillCardSecurityStatus(value: string | null | undefine
   return normalized;
 }
 
+// Skill Cards wait for a settled ClawScan verdict. They no longer wait for the
+// retired static publish scan, which new versions never carry.
 export function hasSettledSkillCardInputs(version: {
-  staticScan?: unknown;
   llmAnalysis?: { status?: string; verdict?: string };
 }) {
   const status = normalizeSkillCardSecurityStatus(
     version.llmAnalysis?.verdict ?? version.llmAnalysis?.status,
   );
-  return Boolean(version.staticScan && ["clean", "suspicious", "malicious"].includes(status));
+  return ["clean", "suspicious", "malicious"].includes(status);
 }

@@ -3,6 +3,8 @@ import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
+import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { buildSecurityDatasetManifest } from "./manifest";
@@ -107,6 +109,47 @@ describe("security dataset snapshot merge CLI", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+  it("keeps Unicode line separators inside one readable JSONL record", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "clawhub-security-dataset-merge-"));
+    const skillContent = "before\u2028middle\u2029after";
+    try {
+      const shardsDir = join(directory, "shards");
+      await writeShardSnapshot(shardsDir, "shard-a", {
+        sourceArtifacts: 1,
+        split: "train",
+        rowId: "unicode-row",
+        createdAtGte: 100,
+        createdAtLt: 200,
+        skillContent,
+      });
+      const result = await execFileAsync("bun", [
+        "scripts/security-dataset/merge-snapshots.ts",
+        "--shards-dir",
+        shardsDir,
+        "--out-dir",
+        join(directory, "out"),
+      ]);
+      const { snapshotDir } = JSON.parse(result.stdout) as { snapshotDir: string };
+      const contents = await readFile(join(snapshotDir, "hf-dataset/data/latest.jsonl"), "utf8");
+      const rows = [];
+      for await (const line of createInterface({ input: Readable.from([contents]) })) {
+        rows.push(JSON.parse(line) as { skill_md_content: string });
+      }
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.skill_md_content).toBe(skillContent);
+      await expect(
+        execFileAsync("bun", [
+          "scripts/security-dataset/validate-guardrails.ts",
+          "--snapshot-dir",
+          snapshotDir,
+        ]),
+      ).resolves.toMatchObject({
+        stdout: expect.stringContaining("sanitized output guardrails passed"),
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 async function writeShardSnapshot(
@@ -118,6 +161,7 @@ async function writeShardSnapshot(
     rowId: string;
     createdAtGte: number;
     createdAtLt: number;
+    skillContent?: string;
   },
 ) {
   const dir = join(root, name);
@@ -140,6 +184,7 @@ async function writeShardSnapshot(
         split,
         skill_slug: "owner/sk-abcdefghijklmnopqrstuvwxyz",
         skill_md_content:
+          input.skillContent ??
           "Use this skill.\nskill secret: supersecretvalue123\nKeep this line intact.",
         skill_bundle_content: [
           {

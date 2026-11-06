@@ -562,39 +562,6 @@ export async function requirePublisherRole(
   return { publisher, membership };
 }
 
-export async function resolvePublisherForActor(
-  ctx: Pick<MutationCtx, "db">,
-  params: {
-    actor: Doc<"users">;
-    ownerHandle?: string | null;
-    allowed: PublisherRole[];
-  },
-) {
-  const personalPublisher = await ensurePersonalPublisherForUser(ctx, params.actor, {
-    actorUserId: params.actor._id,
-    source: "publisher.resolve_for_actor",
-  });
-  const requestedHandle = normalizePublisherHandle(params.ownerHandle);
-  if (!requestedHandle) {
-    return personalPublisher;
-  }
-  if (requestedHandle === personalPublisher?.handle) return personalPublisher;
-
-  const publisher = await getPublisherByHandle(ctx, requestedHandle);
-  if (!publisher || !isPublisherActive(publisher)) {
-    throw new ConvexError(`Publisher "@${requestedHandle}" not found`);
-  }
-  if (publisher.kind === "user") {
-    if (publisher.linkedUserId === params.actor._id) return publisher;
-    throw new ConvexError(`You do not have publish access for "@${requestedHandle}"`);
-  }
-  const membership = await getPublisherMembership(ctx, publisher._id, params.actor._id);
-  if (!membership || !isPublisherRoleAllowed(membership.role, params.allowed)) {
-    throw new ConvexError(`You do not have publish access for "@${requestedHandle}"`);
-  }
-  return publisher;
-}
-
 export async function getOwnerPublisher(
   ctx: DbCtx,
   params: {

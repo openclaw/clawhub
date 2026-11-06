@@ -118,7 +118,6 @@ process.exit(${exitCode});
         leaseToken: attempt.claimId,
         source: "pre-publication",
         targetKind: "skillVersion",
-        waitForVtUntil: 0,
       },
       target: {},
     },
@@ -257,6 +256,22 @@ describe("pre-publication worker", () => {
     expect(claimBatchDrainedQueue(0, 5, 6)).toBe(true);
     expect(claimBatchDrainedQueue(1, 5, 6)).toBe(false);
     expect(claimBatchDrainedQueue(0, 6, 6)).toBe(false);
+  });
+
+  it("forwards the optional source on every batch claim without changing targeting filters", async () => {
+    const client = { action: vi.fn().mockResolvedValue(null) };
+    const scannerSource = "b08e2907eb60b33bf712b07673aff565c13d9ad7";
+    await claimPrePublicationBatch(client, "fixture", 2, {}, scannerSource);
+    expect(client.action.mock.calls.map((call) => call[1])).toEqual([
+      { token: "fixture", preferRetry: true, scannerSource },
+      { token: "fixture", scannerSource },
+    ]);
+    client.action.mockClear();
+    await claimPrePublicationBatch(client, "fixture", 2);
+    expect(client.action.mock.calls.map((call) => call[1])).toEqual([
+      { token: "fixture", preferRetry: true },
+      { token: "fixture" },
+    ]);
   });
 
   it("requires the TruffleHog image to be pinned by digest", () => {
@@ -1068,7 +1083,6 @@ JSON
                 leaseToken: attempt.claimId,
                 source: "pre-publication",
                 targetKind: "skillVersion",
-                waitForVtUntil: 0,
               },
               target: {},
             },
@@ -1174,7 +1188,6 @@ JSON
                 leaseToken: attempt.claimId,
                 source: "pre-publication",
                 targetKind: "packageRelease",
-                waitForVtUntil: 0,
               },
               target: { package: { family: "code-plugin" } },
             },
@@ -1497,7 +1510,6 @@ process.exit(1);
             leaseToken: attempt.claimId,
             source: "pre-publication",
             targetKind: "skillVersion",
-            waitForVtUntil: 0,
           },
           target: {},
         },
@@ -1560,7 +1572,6 @@ JSON
               leaseToken: attempt.claimId,
               source: "pre-publication",
               targetKind: "skillVersion",
-              waitForVtUntil: 0,
             },
             target: {},
           },
@@ -1615,7 +1626,6 @@ JSON
               leaseToken: attempt.claimId,
               source: "pre-publication",
               targetKind: "skillVersion",
-              waitForVtUntil: 0,
             },
             target: {},
           },
@@ -1671,7 +1681,6 @@ JSON
               leaseToken: attempt.claimId,
               source: "pre-publication",
               targetKind: "skillVersion",
-              waitForVtUntil: 0,
             },
             target: {},
           },
@@ -1726,7 +1735,6 @@ JSON
               leaseToken: attempt.claimId,
               source: "pre-publication",
               targetKind: "skillVersion",
-              waitForVtUntil: 0,
             },
             target: {},
           },

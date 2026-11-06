@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { describe, expect, it } from "vitest";
 import {
   buildEmbeddingText,
@@ -317,6 +319,20 @@ env: RISKSTATE_API_KEY
         metadata: { openclaw: { requires: { env: ["CANONICAL_KEY"] } } },
       }),
     ).toEqual({ requires: { env: ["CANONICAL_KEY"] } });
+  });
+
+  it("preserves optional array declarations and does not merge scalar fallback into structured blocks", () => {
+    expect(
+      parseClawdisMetadata({ env: [{ name: "OPTIONAL_KEY", required: false }] })?.envVars,
+    ).toEqual([{ name: "OPTIONAL_KEY", required: false }]);
+    for (const namespace of ["openclaw", "clawdbot", "clawdis"]) {
+      expect(
+        parseClawdisMetadata({
+          env: "LEGACY_KEY",
+          metadata: { [namespace]: { envVars: [{ name: "OPTIONAL_KEY", required: false }] } },
+        })?.envVars,
+      ).toEqual([{ name: "OPTIONAL_KEY", required: false }]);
+    }
   });
 
   it("parses dependencies from clawdis block", () => {

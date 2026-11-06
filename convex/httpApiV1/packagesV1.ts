@@ -72,7 +72,6 @@ import {
 } from "../lib/githubActionsOidc";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { isConvexWritePressureError } from "../lib/httpUtils";
 import { verifyOpenClawPublishAuthorization } from "../lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "../lib/packageArtifacts";
 import {
@@ -93,7 +92,6 @@ import {
 import { tryNormalizePackageName } from "../lib/packageRegistry";
 import {
   getPackageDownloadSecurityBlock,
-  isPackageReleaseTrustStale,
   getPackageTrustReasons,
   resolvePackageReleaseScanStatus,
 } from "../lib/packageSecurity";
@@ -127,9 +125,16 @@ import { toPublicPackageFamily } from "../lib/templateStorage";
 import { generateToken, hashToken } from "../lib/tokens";
 import { managedMcpV1Handler } from "./managedMcpV1";
 import {
+  readOptionalJson,
+  optionalStringField,
+  resolveVersionPathTarget,
+  hasVersionDeleteSelector,
+  versionDeleteRouteGuidance,
+  chunkedParallel,
   MAX_RAW_FILE_BYTES,
   getPathSegments,
   json,
+  moderationDecisionResponse,
   parsePackagePathSegments,
   publicApiOrigin,
   resolvePublicSkillVersions,
@@ -137,6 +142,7 @@ import {
   requireAdminOrResponse,
   requireModeratorOrResponse,
   requirePackagePublishAuthOrResponse,
+  contentDispositionAttachment,
   safeStoredFilePreviewResponse,
   safeStoredFileResponse,
   softDeleteErrorToResponse,
@@ -146,6 +152,7 @@ import {
   formatUserFacingErrorMessage,
   text,
   toOptionalNumber,
+  transientConvexErrorResponse,
 } from "./shared";
 
 const apiRefs = api as unknown as {
@@ -248,6 +255,8 @@ function packageOperationErrorToResponse(
   headers: HeadersInit,
   fallback = "Package operation failed",
 ) {
+  const transient = transientConvexErrorResponse(error, headers);
+  if (transient) return transient;
   const message = formatUserFacingErrorMessage(error, fallback);
   const lower = message.toLowerCase();
   if (lower.includes("unauthorized"))
@@ -258,89 +267,16 @@ function packageOperationErrorToResponse(
   return text(message, 400, headers);
 }
 
-async function readOptionalJson(request: Request): Promise<unknown> {
-  const raw = await request.text();
-  if (!raw.trim()) return undefined;
-  return JSON.parse(raw) as unknown;
-}
-
-function optionalStringField(value: unknown, key: string): string | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === "string" ? field : undefined;
-}
-
-function hasOwnField(value: unknown, key: string) {
-  return Boolean(
-    value &&
-    typeof value === "object" &&
-    Object.prototype.hasOwnProperty.call(value as Record<string, unknown>, key),
-  );
-}
-
-function resolveVersionPathTarget(
-  pathVersion: string | undefined,
-  request: Request,
-  body: unknown,
-): { version?: string; error?: string } {
-  const rawBodyVersion = optionalStringField(body, "version");
-  if (hasOwnField(body, "version") && rawBodyVersion === undefined) {
-    return { error: "Version must be a non-empty string" };
-  }
-  const version = pathVersion?.trim();
-  const bodyVersion = rawBodyVersion?.trim();
-  const queryVersions = new URL(request.url).searchParams
-    .getAll("version")
-    .map((queryVersion) => queryVersion.trim());
-  if (
-    !version ||
-    (rawBodyVersion !== undefined && !bodyVersion) ||
-    queryVersions.some((queryVersion) => !queryVersion)
-  ) {
-    return { error: "Version cannot be empty" };
-  }
-  if (
-    (bodyVersion && bodyVersion !== version) ||
-    queryVersions.some((queryVersion) => queryVersion !== version)
-  ) {
-    return { error: "Version does not match request target" };
-  }
-  return { version };
-}
-
-function hasVersionDeleteSelector(request: Request, body: unknown) {
-  return hasOwnField(body, "version") || new URL(request.url).searchParams.has("version");
-}
-
-function versionDeleteRouteGuidance(basePath: string, request: Request, body: unknown) {
-  const version =
-    optionalStringField(body, "version")?.trim() ??
-    new URL(request.url).searchParams.get("version")?.trim();
-  return `Version deletion requires DELETE ${basePath}/versions/${
-    version ? encodeURIComponent(version) : "<version>"
-  }.`;
-}
-
-function isTransientConvexContentionMessage(message: string) {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes("optimistic concurrency") ||
-    lower.includes("write conflict") ||
-    (/documents read from or written to the ".+" table changed/.test(lower) &&
-      lower.includes("while this mutation was being run"))
-  );
-}
-
-function packagePublishErrorToResponse(error: unknown, headers: HeadersInit) {
-  const message = formatUserFacingErrorMessage(error, "Publish failed");
-  if (!isTransientConvexContentionMessage(message)) {
-    return text(message, 400, headers);
-  }
-  return text(
-    `Transient ClawHub write contention. Package validation was not the cause; retrying usually succeeds. ${message}`,
-    503,
-    mergeHeaders(headers, { "Retry-After": "1" }),
-  );
+function packagePublishErrorToResponse(
+  error: unknown,
+  headers: HeadersInit,
+  options: { outcomeUnknown: boolean },
+) {
+  // After dispatch the publish action may have committed before the failure
+  // surfaced; say so instead of implying nothing happened.
+  const transient = transientConvexErrorResponse(error, headers, options);
+  if (transient) return transient;
+  return text(formatUserFacingErrorMessage(error, "Publish failed"), 400, headers);
 }
 
 async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
@@ -353,20 +289,6 @@ async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Pro
 
 async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runMutation(ref as never, args as never)) as T;
-}
-
-async function chunkedParallel<T, R>(
-  items: T[],
-  chunkSize: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  for (let i = 0; i < items.length; i += chunkSize) {
-    const chunk = items.slice(i, i + chunkSize);
-    const chunkResults = await Promise.all(chunk.map(fn));
-    results.push(...chunkResults);
-  }
-  return results;
 }
 
 async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Request) {
@@ -711,7 +633,8 @@ function toPackageReleaseSecurityResponse(params: {
         packageBlockedFromDownload || getPackageDownloadSecurityBlock(params.release) !== null,
       reasons,
       pending: scanStatus === "pending" || scanStatus === "not-run",
-      stale: isPackageReleaseTrustStale(params.release),
+      // Staleness came only from retired VirusTotal telemetry; kept for API shape.
+      stale: false,
     },
   };
 }
@@ -819,7 +742,9 @@ async function streamClawPackRelease(
   }
   const headers: Record<string, string> = {
     "Content-Type": "application/octet-stream",
-    "Content-Disposition": `attachment; filename="${release.npmTarballName ?? `${pkg.name.replaceAll("/", "-")}-${release.version}.tgz`}"`,
+    "Content-Disposition": contentDispositionAttachment(
+      release.npmTarballName ?? `${pkg.name.replaceAll("/", "-")}-${release.version}.tgz`,
+    ),
     "X-ClawHub-Artifact-Type": "npm-pack-tarball",
   };
   if (release.clawpackSha256) {
@@ -1147,8 +1072,6 @@ type PackagePublishTarballPart =
 
 type StoredPackagePublishFile = ServerPackagePublishRequest["files"][number];
 
-class InlinePackagePreBlobWritePressureError extends Error {}
-
 async function storeUploadedPackageFile(
   ctx: ActionCtx,
   entry: File,
@@ -1312,20 +1235,11 @@ async function parseMultipartPackagePublish(
     const artifactBytes = new Uint8Array(await tarballEntry.arrayBuffer());
     const parsed = await parseClawPack(artifactBytes);
     assertClawPackPublicationIdentity(metadata, parsed);
-    let artifactStorageId: Id<"_storage">;
-    try {
-      artifactStorageId = await storeRequestPackageBlob(
-        ctx,
-        requestStorageIds,
-        new Blob([bytesToArrayBuffer(artifactBytes)], { type: "application/octet-stream" }),
-      );
-    } catch (error) {
-      // Only this first inline store can reject before any request blob exists.
-      if (isConvexWritePressureError(error)) {
-        throw new InlinePackagePreBlobWritePressureError(error.message);
-      }
-      throw error;
-    }
+    const artifactStorageId = await storeRequestPackageBlob(
+      ctx,
+      requestStorageIds,
+      new Blob([bytesToArrayBuffer(artifactBytes)], { type: "application/octet-stream" }),
+    );
     return await buildPackagePublishRequestFromClawPack(
       ctx,
       metadata,
@@ -2430,17 +2344,14 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
           });
     return json(result, 200, rate.headers);
   } catch (error) {
-    if (
-      !publicationOwnsCleanup &&
-      requestStorageIds.size === 0 &&
-      error instanceof InlinePackagePreBlobWritePressureError
-    ) {
-      return text(error.message, 503, rate.headers);
-    }
     if (!publicationOwnsCleanup) {
+      // Before dispatch this request owns every stored blob, so reclaiming them
+      // makes a retry of a transient failure a clean, fresh publish attempt.
       await Promise.allSettled([...requestStorageIds].map((id) => ctx.storage.delete(id)));
     }
-    return packagePublishErrorToResponse(error, rate.headers);
+    return packagePublishErrorToResponse(error, rate.headers, {
+      outcomeUnknown: publicationOwnsCleanup,
+    });
   }
 }
 
@@ -2574,14 +2485,7 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
       PublishTokenMintRequestSchema,
       parsedBody,
       "Publish token mint payload",
-    ) as {
-      packageName: string;
-      version: string;
-      githubOidcToken: string;
-      scope?: "upload" | "publish";
-      inventoryDigest?: string;
-      trustedToolingIdentityJson?: string;
-    };
+    );
     const { pkg, trustedPublisher } = await getPackageAndTrustedPublisherByName(
       ctx,
       payload.packageName,
@@ -2736,6 +2640,8 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
       throw error;
     }
   } catch (error) {
+    const transient = transientConvexErrorResponse(error, rate.headers);
+    if (transient) return transient;
     return text(error instanceof Error ? error.message : "Token mint failed", 400, rate.headers);
   }
 }
@@ -2887,35 +2793,18 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
 
-    try {
-      const body = parseArk(
-        PackageReportTriageRequestSchema,
-        await request.json(),
-        "Package report triage payload",
-      ) as {
-        status: "open" | "confirmed" | "dismissed";
-        note?: string;
-        finalAction?: "none" | "quarantine" | "revoke";
-      };
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.packages.triagePackageReportForUserInternal,
-        {
-          actorUserId: auth.userId,
-          reportId: segments[1] as Id<"packageReports">,
-          status: body.status,
-          ...(body.note ? { note: body.note } : {}),
-          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Package report triage failed",
-        400,
-        rate.headers,
-      );
-    }
+    return moderationDecisionResponse(
+      ctx,
+      request,
+      rate.headers,
+      PackageReportTriageRequestSchema,
+      "Package report triage payload",
+      "Package report triage failed",
+      () => ({
+        ref: internalRefs.packages.triagePackageReportForUserInternal,
+        args: { actorUserId: auth.userId, reportId: segments[1] as Id<"packageReports"> },
+      }),
+    );
   }
 
   if (
@@ -2929,35 +2818,18 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
 
-    try {
-      const body = parseArk(
-        PackageAppealResolveRequestSchema,
-        await request.json(),
-        "Package appeal resolve payload",
-      ) as {
-        status: "open" | "accepted" | "rejected";
-        note?: string;
-        finalAction?: "none" | "approve";
-      };
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.packages.resolvePackageAppealForUserInternal,
-        {
-          actorUserId: auth.userId,
-          appealId: segments[1] as Id<"packageAppeals">,
-          status: body.status,
-          ...(body.note ? { note: body.note } : {}),
-          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Package appeal resolve failed",
-        400,
-        rate.headers,
-      );
-    }
+    return moderationDecisionResponse(
+      ctx,
+      request,
+      rate.headers,
+      PackageAppealResolveRequestSchema,
+      "Package appeal resolve payload",
+      "Package appeal resolve failed",
+      () => ({
+        ref: internalRefs.packages.resolvePackageAppealForUserInternal,
+        args: { actorUserId: auth.userId, appealId: segments[1] as Id<"packageAppeals"> },
+      }),
+    );
   }
 
   const packageRoute = parsePackagePathSegments(segments);
@@ -2978,12 +2850,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageHardDeleteRequestSchema,
         await request.json(),
         "Package hard-delete payload",
-      ) as {
-        ownerHandle: string;
-        reason: string;
-        dryRun?: boolean;
-        confirmationToken?: string;
-      };
+      );
       const result = await runMutationRef(ctx, internalRefs.packages.hardDeleteForAdminInternal, {
         actorUserId: auth.userId,
         name: packageName,
@@ -3037,13 +2904,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageRepairNameRequestSchema,
         await request.json(),
         "Package name repair payload",
-      ) as {
-        nextName: string;
-        retireTarget?: boolean;
-        owner?: string;
-        reason: string;
-        dryRun?: boolean;
-      };
+      );
       const nextName = tryNormalizePackageName(body.nextName);
       if (!nextName) {
         return text(
@@ -3196,11 +3057,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageRepairRuntimeIdRequestSchema,
         await request.json(),
         "Package runtime id repair payload",
-      ) as {
-        nextRuntimeId: string;
-        reason: string;
-        dryRun?: boolean;
-      };
+      );
       const nextRuntimeId = body.nextRuntimeId.trim();
       if (!nextRuntimeId) return text("Runtime id required", 400, rate.headers);
       const reason = body.reason.trim();
@@ -3267,10 +3124,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageReleaseModerationRequestSchema,
         await request.json(),
         "Package release moderation payload",
-      ) as {
-        state: "approved" | "quarantined" | "revoked";
-        reason: string;
-      };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.packages.moderatePackageReleaseForUserInternal,
@@ -3334,10 +3188,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageReportRequestSchema,
         await request.json(),
         "Package report payload",
-      ) as {
-        reason: string;
-        version?: string;
-      };
+      );
       const result = await runMutationRef(ctx, internalRefs.packages.reportPackageForUserInternal, {
         actorUserId: auth.userId,
         name: packageName,
@@ -3365,10 +3216,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageAppealRequestSchema,
         await request.json(),
         "Package appeal payload",
-      ) as {
-        version: string;
-        message: string;
-      };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.packages.submitPackageAppealForUserInternal,
@@ -3444,7 +3292,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         PackageTransferRequestSchema,
         await request.json(),
         "Package transfer payload",
-      ) as { toOwner: string; reason?: string };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.packages.transferPackageOwnerForUserInternal,
@@ -3474,11 +3322,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       PackageTrustedPublisherUpsertRequestSchema,
       await request.json(),
       "Trusted publisher payload",
-    ) as {
-      repository: string;
-      workflowFilename: string;
-      environment?: string;
-    };
+    );
     const repositoryIdentity = await fetchGitHubRepositoryIdentity(body.repository);
     const trustedPublisher = await runMutationRef<PackageTrustedPublisherLike | null>(
       ctx,
@@ -4618,7 +4462,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         rate.headers,
         {
           "Content-Type": "application/zip",
-          "Content-Disposition": `attachment; filename="${publicPackage!.name.replaceAll("/", "-")}-${release.version}.zip"`,
+          "Content-Disposition": contentDispositionAttachment(
+            `${publicPackage!.name.replaceAll("/", "-")}-${release.version}.zip`,
+          ),
           ETag: `"sha256:${zipSha256}"`,
           Digest: `sha-256=${zipSha256Base64}`,
           "X-ClawHub-Artifact-Type": "legacy-plugin-zip",

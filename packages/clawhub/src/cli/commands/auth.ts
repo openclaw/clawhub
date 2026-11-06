@@ -4,6 +4,7 @@ import { discoverRegistryFromSite } from "../../discovery.js";
 import { apiRequest } from "../../http.js";
 import { ApiRoutes, ApiV1WhoamiResponseSchema } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError, promptHidden } from "../ui.js";
@@ -29,7 +30,7 @@ async function cmdLogin(opts: GlobalOpts, tokenFlag: string | undefined, inputAl
 
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Verifying token");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const whoami = await apiRequest(
       registry,
       { method: "GET", path: ApiRoutes.whoami, token },
@@ -40,10 +41,7 @@ async function cmdLogin(opts: GlobalOpts, tokenFlag: string | undefined, inputAl
     await writeGlobalConfig({ registry, token });
     const handle = whoami.user.handle ? `@${whoami.user.handle}` : "unknown user";
     spinner.succeed(`OK. Logged in as ${handle}.`);
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdLogout(opts: GlobalOpts) {
@@ -58,17 +56,14 @@ export async function cmdWhoami(opts: GlobalOpts) {
   const registry = await getRegistry(opts, { cache: true });
 
   const spinner = createCrabLoader("Checking token");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const whoami = await apiRequest(
       registry,
       { method: "GET", path: ApiRoutes.whoami, token },
       ApiV1WhoamiResponseSchema,
     );
     spinner.succeed(whoami.user.handle ?? "unknown");
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdToken() {
@@ -107,7 +102,7 @@ export async function cmdDeviceLogin(opts: GlobalOpts, options?: { label?: strin
   console.log();
 
   const pollSpinner = createCrabLoader("Waiting for authorization");
-  try {
+  return await withLoaderErrorHandling(pollSpinner, async () => {
     const tokenResponse = await pollForDeviceToken(
       { apiUrl: registry, siteUrl: authBase },
       deviceCode.device_code,
@@ -117,8 +112,5 @@ export async function cmdDeviceLogin(opts: GlobalOpts, options?: { label?: strin
 
     // Store the token
     await cmdLogin({ ...opts, registry, registrySource: "cli" }, tokenResponse.access_token, true);
-  } catch (error) {
-    pollSpinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }

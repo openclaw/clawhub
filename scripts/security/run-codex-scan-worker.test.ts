@@ -4,12 +4,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  assertCodexWorkerExecutionAllowed,
-  isCodexWorkerExecutionAllowed,
-  LOCAL_CODEX_WORKER_OPT_IN,
-  resolveCodexWorkerHome,
-} from "../codex-worker-guard";
 import { summarizeClawScanExposure } from "./clawscan-exposure";
 import {
   assertAigFilePathsHaveNoCompiledPython,
@@ -466,54 +460,6 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(sleep).not.toHaveBeenCalled();
   });
 
-  it("blocks direct local Codex security worker runs without opt-in", () => {
-    expect(isCodexWorkerExecutionAllowed({})).toBe(false);
-    expect(() => assertCodexWorkerExecutionAllowed({})).toThrow(
-      `Refusing to run local Codex workers without ${LOCAL_CODEX_WORKER_OPT_IN}=1`,
-    );
-  });
-
-  it("does not treat a bare GITHUB_ACTIONS flag as CI authorization", () => {
-    expect(isCodexWorkerExecutionAllowed({ GITHUB_ACTIONS: "true" })).toBe(false);
-    expect(() => assertCodexWorkerExecutionAllowed({ GITHUB_ACTIONS: "true" })).toThrow(
-      `Refusing to run local Codex workers without ${LOCAL_CODEX_WORKER_OPT_IN}=1`,
-    );
-  });
-
-  it("allows direct Codex security worker runs in GitHub Actions", () => {
-    const env = {
-      CI: "true",
-      GITHUB_ACTIONS: "true",
-      GITHUB_REPOSITORY: "openclaw/clawhub",
-      GITHUB_RUN_ID: "123",
-    };
-
-    expect(isCodexWorkerExecutionAllowed(env)).toBe(true);
-    expect(() => assertCodexWorkerExecutionAllowed(env)).not.toThrow();
-  });
-
-  it("allows direct local Codex security worker runs with explicit opt-in", () => {
-    expect(isCodexWorkerExecutionAllowed({ [LOCAL_CODEX_WORKER_OPT_IN]: "1" })).toBe(true);
-    expect(() =>
-      assertCodexWorkerExecutionAllowed({ [LOCAL_CODEX_WORKER_OPT_IN]: "1" }),
-    ).not.toThrow();
-  });
-
-  it("uses an isolated local Codex home for opted-in local workers by default", () => {
-    expect(
-      resolveCodexWorkerHome(
-        { [LOCAL_CODEX_WORKER_OPT_IN]: "1" },
-        "/repo/.codex/runtime/codex-workers/security-scan",
-      ),
-    ).toBe("/repo/.codex/runtime/codex-workers/security-scan");
-    expect(
-      resolveCodexWorkerHome(
-        { [LOCAL_CODEX_WORKER_OPT_IN]: "1", CODEX_HOME: "/tmp/custom-codex-home" },
-        "/repo/.codex/runtime/codex-workers/security-scan",
-      ),
-    ).toBe("/tmp/custom-codex-home");
-  });
-
   it("normalizes real SkillSpector JSON risk assessment fields", () => {
     const analysis = normalizeSkillSpectorAnalysis(
       JSON.stringify({
@@ -744,7 +690,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -794,7 +739,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "test-auth-token",
             source: "skills-sh-catalog-test",
             targetKind: "skillScanRequest",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -823,7 +767,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "pre-publication",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -869,7 +812,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "pre-publication",
           targetKind: "packageRelease",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -910,7 +852,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "lease-secret",
             source: "publish",
             targetKind: "skillVersion",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -935,7 +876,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -969,7 +909,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -1008,7 +947,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -1059,7 +997,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "packageRelease",
-          waitForVtUntil: 0,
         },
         target: {
           clawpackUrl:
@@ -1100,7 +1037,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "lease-secret",
             source: "publish",
             targetKind: "skillVersion",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -1167,7 +1103,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "lease-secret",
             source: "publish",
             targetKind: "skillVersion",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -1296,7 +1231,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "placeholder",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {},
       },
@@ -1398,8 +1332,8 @@ describe("run-codex-scan-worker diagnostics", () => {
       completedAt: 2000,
       diagnosticsRoot,
       endor: {
-        args: ["docker", "container", "create", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
-        error: "Endor Docker start timed out; see redacted stdout/stderr diagnostics",
+        args: ["docker", "run", "--rm", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
+        error: "Endor scan timed out; see redacted stdout/stderr diagnostics",
         exitCode: null,
         stderr: `ENDOR_TOKEN=fixture-token\ndependency resolution failed ${"x".repeat(21_000)}\n`,
         stdout: "",
@@ -1412,7 +1346,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "placeholder",
           source: "publish",
           targetKind: "packageRelease",
-          waitForVtUntil: 0,
         },
         target: {},
       },
@@ -1427,8 +1360,8 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(stderr).toContain("...[truncated ");
     expect(stderr).not.toContain("fixture-token");
     expect(diagnostic.endorResult).toEqual({
-      args: ["docker", "container", "create", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
-      error: "Endor Docker start timed out; see redacted stdout/stderr diagnostics",
+      args: ["docker", "run", "--rm", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
+      error: "Endor scan timed out; see redacted stdout/stderr diagnostics",
       exitCode: null,
       stderrPath: "endor.stderr.redacted.log",
       stdoutPath: "endor.stdout.redacted.log",

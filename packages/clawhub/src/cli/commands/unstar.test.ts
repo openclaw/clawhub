@@ -41,3 +41,14 @@ describe("unstar command", () => {
     expect(url.searchParams.get("ownerHandle")).toBe("openclaw");
   });
 });
+
+it.each(["", "   ", "owner/", "/slug", "owner/slug/extra"])(
+  "rejects invalid reference %j before authentication",
+  async (input) => {
+    await expect(cmdUnstarSkill(makeGlobalOpts(), input, { yes: true }, false)).rejects.toThrow(
+      input.trim() ? "Invalid skill ref: " + input : "Skill required",
+    );
+    expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  },
+);

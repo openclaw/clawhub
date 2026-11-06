@@ -32,13 +32,10 @@ if (process.env.CLAWHUB_CAPTURE_PLUGIN_INSPECTOR_PROOF === "1") {
 
 const exec = promisify(execFile);
 
-type PluginFixtureKind = "hard-error" | "warning";
+type PluginFixtureKind = "missing-entrypoint" | "warning";
 
 function pluginPackageJson(args: { name: string; displayName: string; kind: PluginFixtureKind }) {
-  const pluginInspector =
-    args.kind === "hard-error"
-      ? { version: 1, plugin: { id: "invalid.fixture.id" } }
-      : { version: 1, plugin: { id: args.name, sourceRoot: "dist" } };
+  const pluginInspector = { version: 1, plugin: { id: args.name, sourceRoot: "dist" } };
   return JSON.stringify(
     {
       name: args.name,
@@ -48,7 +45,8 @@ function pluginPackageJson(args: { name: string; displayName: string; kind: Plug
       repository: `https://github.com/openclaw/${args.name}.git`,
       pluginInspector,
       openclaw: {
-        extensions: [args.kind === "warning" ? "./src/index.ts" : "./dist/index.js"],
+        // The missing-entrypoint fixture declares a runtime file the upload does not contain.
+        extensions: [args.kind === "warning" ? "./src/index.ts" : "./dist/plugin.js"],
         ...(args.kind === "warning" ? { runtimeExtensions: ["./dist/index.js"] } : {}),
         compat: { pluginApi: ">=2026.3.24-beta.2" },
         build: { openclawVersion: "2026.3.24-beta.2" },
@@ -336,7 +334,7 @@ async function publishWarningPluginWithRetry(args: {
   throw lastError;
 }
 
-async function publishHardErrorPluginWithRetry(args: {
+async function publishMissingEntrypointPluginWithRetry(args: {
   errors: string[];
   page: Page;
   suffix: string;
@@ -358,7 +356,7 @@ async function publishHardErrorPluginWithRetry(args: {
         await writePluginZip(args.testInfo, {
           name: badName,
           displayName: "Playwright Inspector Bad Plugin",
-          kind: "hard-error",
+          kind: "missing-entrypoint",
         }),
       );
       await expect(args.page.locator("#pluginName")).toHaveValue(badName);
@@ -366,9 +364,11 @@ async function publishHardErrorPluginWithRetry(args: {
       const publishButton = args.page.getByRole("button", { name: "Publish plugin" });
       await expect(publishButton).toBeEnabled({ timeout: 60_000 });
       await publishButton.click({ timeout: 15_000 });
-      await expect(args.page.getByRole("alert")).toContainText("Plugin Inspector blocked publish", {
-        timeout: 60_000,
-      });
+      // Package validation rejects the release before any advisory Inspector run.
+      await expect(args.page.getByRole("alert")).toContainText(
+        "declares openclaw.extensions entry ./dist/plugin.js, but that file is missing from the package",
+        { timeout: 60_000 },
+      );
       return { badName };
     } catch (error) {
       lastError = error;
@@ -476,7 +476,7 @@ test("malicious ClawScan verdict keeps a staged plugin private", async ({
   await expectHealthyInspectorPage(page, errors);
 });
 
-test("plugin inspector blocks hard publish errors and publishes warning findings", async ({
+test("plugin publish rejects missing entrypoints and publishes warning findings", async ({
   page,
 }, testInfo) => {
   const errors = trackRuntimeErrors(page, { includeConsoleLocation: true });
@@ -484,13 +484,13 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
 
   await signInAsLocalPersona(page, "admin");
 
-  await publishHardErrorPluginWithRetry({
+  await publishMissingEntrypointPluginWithRetry({
     errors,
     page,
     suffix,
     testInfo,
   });
-  await captureProof(page, testInfo, "01-upload-hard-error");
+  await captureProof(page, testInfo, "01-upload-missing-entrypoint");
   const { warningName } = await publishWarningPluginWithRetry({
     errors,
     page,
@@ -498,33 +498,6 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
     testInfo,
   });
   await captureProof(page, testInfo, "02-upload-warning-success");
-
-  await expectDashboardWarningReview(page, warningName);
-  await captureProof(page, testInfo, "03-dashboard-warning-count");
-  await page.goto(buildPluginValidationHref(warningName), { waitUntil: "domcontentloaded" });
-
-  await expect(page).toHaveURL(new RegExp(`/plugins/${escapeRegExp(warningName)}#validation$`));
-  await expectValidationSectionVisible(page, warningName);
-  await expect(
-    page.locator(".plugin-warning-item-code").filter({
-      hasText: /^manifest-name-missing$/,
-    }),
-  ).toBeVisible();
-  await expect(page.getByText(/manifest-name-missing/)).toBeVisible();
-  await expect(page.getByText(/manifest display name is missing/i)).toBeVisible();
-  const deprecation = page.locator(".plugin-warning-item").filter({
-    has: page.locator(".plugin-warning-item-code", { hasText: /^sdk-load-session-store$/ }),
-  });
-  await expect(deprecation).toBeVisible();
-  await expect(deprecation).toContainText("deprecated whole-store session helper");
-  if (await deprecation.evaluate((element) => element.tagName === "DETAILS")) {
-    await deprecation.locator("summary").click();
-  }
-  await expect(deprecation.locator(".plugin-warning-fix-copy")).toBeVisible();
-  await expect(deprecation.locator(".plugin-warning-fix-copy")).toHaveText(
-    "Replace deprecated loadSessionStore whole-store access with row-scoped session helpers.",
-  );
-  await captureProof(page, testInfo, "04-plugin-public-warnings");
 
   const siteUrl = process.env.VITE_CONVEX_SITE_URL;
   if (!siteUrl) throw new Error("VITE_CONVEX_SITE_URL is required");
@@ -535,7 +508,7 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
   expect(beforeScan.scan).toMatchObject({ status: "missing" });
   expect(beforeScan.items).toEqual([]);
 
-  // Exercise the real deferred worker against this isolated backend and published artifact.
+  // Exercise the real monitoring worker against this isolated backend and published artifact.
   // Never let the test's worker token or targeted scan reach a hosted deployment.
   const deployment = process.env.CONVEX_DEPLOYMENT;
   const workerToken = process.env.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN;
@@ -566,6 +539,35 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
     body: scan.stdout + scan.stderr,
     contentType: "text/plain",
   });
+
+  // Plugin Inspector runs only as post-acceptance monitoring, so findings appear
+  // once the targeted scan for the accepted release has run.
+  await expectDashboardWarningReview(page, warningName);
+  await captureProof(page, testInfo, "03-dashboard-warning-count");
+  await page.goto(buildPluginValidationHref(warningName), { waitUntil: "domcontentloaded" });
+
+  await expect(page).toHaveURL(new RegExp(`/plugins/${escapeRegExp(warningName)}#validation$`));
+  await expectValidationSectionVisible(page, warningName);
+  await expect(
+    page.locator(".plugin-warning-item-code").filter({
+      hasText: /^manifest-name-missing$/,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText(/manifest-name-missing/)).toBeVisible();
+  await expect(page.getByText(/manifest display name is missing/i)).toBeVisible();
+  const deprecation = page.locator(".plugin-warning-item").filter({
+    has: page.locator(".plugin-warning-item-code", { hasText: /^sdk-load-session-store$/ }),
+  });
+  await expect(deprecation).toBeVisible();
+  await expect(deprecation).toContainText("deprecated whole-store session helper");
+  if (await deprecation.evaluate((element) => element.tagName === "DETAILS")) {
+    await deprecation.locator("summary").click();
+  }
+  await expect(deprecation.locator(".plugin-warning-fix-copy")).toBeVisible();
+  await expect(deprecation.locator(".plugin-warning-fix-copy")).toHaveText(
+    "Replace deprecated loadSessionStore whole-store access with row-scoped session helpers.",
+  );
+  await captureProof(page, testInfo, "04-plugin-public-warnings");
 
   const inventoryResponse = await page.request.get(inventoryUrl);
   expect(inventoryResponse.ok()).toBe(true);

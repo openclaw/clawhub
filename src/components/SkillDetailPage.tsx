@@ -23,6 +23,7 @@ import { getSkillCategoriesForSkill, getSkillCategoryForSkill } from "../lib/cat
 import { getUserFacingConvexError } from "../lib/convexError";
 import { isPublicAnalyticsSkill } from "../lib/googleAnalytics";
 import { buildSkillSecurityAuditHref } from "../lib/ownerRoute";
+import { hasPostPublishSearch } from "../lib/postPublishSearch";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { skillCardLoadKey } from "../lib/skillCards";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
@@ -91,15 +92,6 @@ function tabFromHash(hash: string): DetailTab {
     return normalized;
   }
   return "readme";
-}
-
-function isPostPublishSearchValue(value: unknown) {
-  const normalized = typeof value === "string" ? value.trim().replace(/^"|"$/g, "") : value;
-  return normalized === "1" || normalized === "true" || normalized === 1 || normalized === true;
-}
-
-function hasPostPublishSearch(searchStr: string) {
-  return isPostPublishSearchValue(new URLSearchParams(searchStr).get("published"));
 }
 
 function formatReportError(error: unknown) {
@@ -855,7 +847,6 @@ export function SkillDetailPage({
     latestVersion || githubScanStatus ? (
       <DetailSecuritySummary
         auditHref={buildSkillSecurityAuditHref(ownerParam ?? ownerHandle ?? "unknown", skill.slug)}
-        vtAnalysis={latestVersion?.vtAnalysis ?? null}
         llmAnalysis={latestVersion?.llmAnalysis ?? null}
         githubScanStatus={githubScanStatus}
       />

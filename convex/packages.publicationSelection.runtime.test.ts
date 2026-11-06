@@ -133,7 +133,6 @@ describe("checked package release selections", () => {
       releaseId: selected,
       source: "manual",
       priority: 0,
-      waitForVtMs: 0,
     });
     expect(queued.jobId).toBeDefined();
     const target = await t.query(internal.securityScan.getJobTargetInternal, {

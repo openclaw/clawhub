@@ -8,7 +8,7 @@ export const rules = [
     label: "r: support",
     close: true,
     message:
-      "Please use the OpenClaw community support server for this: https://discord.gg/clawd. If this is a concrete ClawHub bug, reopen with the ClawHub URL, account/owner handle, expected behavior, and current result.",
+      "Please use the OpenClaw community support server for this: https://openclaw.ai/discord?from=github-clawhub-support-reply. If this is a concrete ClawHub bug, reopen with the ClawHub URL, account/owner handle, expected behavior, and current result.",
   },
   {
     label: "r: openclaw-core",
@@ -145,7 +145,7 @@ const candidateLabelValues = Object.values(candidateLabels);
 const maintainerTeam = "maintainer";
 const mentionRegex = /@([A-Za-z0-9-]+)/g;
 const pingWarningMessage =
-  "Please don't spam-ping multiple maintainers at once. Be patient, or use the OpenClaw community Discord for help: https://discord.gg/clawd";
+  "Please don't spam-ping multiple maintainers at once. Be patient, or use the OpenClaw community Discord for help: https://openclaw.ai/discord?from=github-clawhub-maintainer-warning";
 const noisyPrMessage =
   "Closing this PR because it looks dirty: too many unrelated or unexpected changes. Please recreate it from a clean branch with a narrower diff.";
 

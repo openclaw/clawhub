@@ -1,3 +1,4 @@
+/* @vitest-environment node */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
@@ -137,7 +138,6 @@ describe("dev-worktree helpers", () => {
     expect(byName.DEV_AUTH_ENABLED).toBe("1");
     expect(byName.DEV_AUTH_CONVEX_DEPLOYMENT).toBe("anonymous:anonymous-agent");
     expect(byName.SECURITY_SCAN_WORKER_TOKEN).toBe("local-dev-worker-token");
-    expect(byName.SECURITY_SCAN_DEFAULT_VT_WAIT_MS).toBe("0");
     expect(byName.CLAWHUB_SKILLS_SH_ROLLOUT_MODE).toBe("test");
     expect(byName.AUTH_GITHUB_ID).toBe("local-dev");
     expect(byName.AUTH_GITHUB_SECRET).toBe("local-dev");

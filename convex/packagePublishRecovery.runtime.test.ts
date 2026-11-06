@@ -983,7 +983,8 @@ it("reports unknown and hard-deleted releases as absent despite retained attempt
     { version: "unknown", state: "absent" },
     publicationPath.replace(publicationVersion, "unknown"),
   );
-  expect(response.headers.get("X-RateLimit-Limit")).toBe("3000");
+  // Admitted requests carry no rate-limit headers.
+  expect(response.headers.get("X-RateLimit-Limit")).toBeNull();
   await t.run((ctx) => ctx.db.delete(ids.releaseId));
   await publication({ state: "absent" });
   expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).not.toBeNull();

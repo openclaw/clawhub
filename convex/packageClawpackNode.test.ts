@@ -1,5 +1,5 @@
 import { gzipSync } from "fflate";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
 import { prepareClawPackInternal } from "./packageClawpackNode";
 
@@ -14,15 +14,37 @@ const prepare = (ctx: ActionCtx, args: PrepareArgs) =>
     }
   )._handler(ctx, args);
 
-function archive() {
-  const bytes = new TextEncoder().encode(JSON.stringify({ name: "demo-plugin", version: "1.0.0" }));
-  const tar = new Uint8Array(2048);
-  tar.set(new TextEncoder().encode("package/package.json"));
-  tar.set(new TextEncoder().encode(bytes.length.toString(8).padStart(11, "0")), 124);
-  tar[156] = 48;
-  tar.set(bytes, 512);
+function archive(extraFiles: Record<string, string> = {}) {
+  const encoder = new TextEncoder();
+  const files = {
+    "package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+    ...extraFiles,
+  };
+  const blocks: Uint8Array[] = [];
+  for (const [path, contents] of Object.entries(files)) {
+    const bytes = encoder.encode(contents);
+    const header = new Uint8Array(512);
+    header.set(encoder.encode(`package/${path}`));
+    header.set(encoder.encode(bytes.length.toString(8).padStart(11, "0")), 124);
+    header[156] = 48;
+    const body = new Uint8Array(Math.ceil(bytes.length / 512) * 512);
+    body.set(bytes);
+    blocks.push(header, body);
+  }
+  blocks.push(new Uint8Array(1024));
+  const tar = new Uint8Array(blocks.reduce((total, block) => total + block.length, 0));
+  let offset = 0;
+  for (const block of blocks) {
+    tar.set(block, offset);
+    offset += block.length;
+  }
   return gzipSync(tar);
 }
+
+const transientStoreError = () =>
+  new Error(
+    "[Request ID: 60064f4c549599fd] Server Error\nUncaught Error: InternalServerError: Transient error while running generate upload url",
+  );
 
 const metadata = {
   name: "demo-plugin",
@@ -112,5 +134,82 @@ describe("prepareClawPackInternal", () => {
     ).rejects.toThrow();
     expect(store).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
+  });
+
+  describe("transient storage store failures", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function prepareWithStore(
+      bytes: ReturnType<typeof archive>,
+      store: (blob: Blob) => Promise<string>,
+      remove = vi.fn(),
+    ) {
+      // Only fake setTimeout: archive parsing/hashing still needs real I/O turns.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const result = prepare(
+        {
+          storage: { get: vi.fn(async () => new Blob([bytes])), store, delete: remove },
+        } as unknown as ActionCtx,
+        { artifactStorageId: "storage:archive", metadataJson: JSON.stringify(metadata) },
+      ).then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+      // Advance backoff timers until the store/cleanup chain settles.
+      for (;;) {
+        const settled = await Promise.race([
+          result.then(() => true),
+          new Promise<false>((resolve) => setImmediate(() => resolve(false))),
+        ]);
+        if (settled) return result;
+        await vi.advanceTimersByTimeAsync(1_000);
+      }
+    }
+
+    it("retries a transient upload-url failure and then succeeds", async () => {
+      const store = vi
+        .fn<(blob: Blob) => Promise<string>>()
+        .mockRejectedValueOnce(transientStoreError())
+        .mockResolvedValueOnce("storage:file");
+      const remove = vi.fn();
+      const outcome = await prepareWithStore(archive(), store, remove);
+      expect(outcome.ok).toBe(true);
+      if (!outcome.ok) return;
+      expect(outcome.value.requestStorageIds).toEqual(["storage:file"]);
+      expect(store).toHaveBeenCalledTimes(2);
+      expect(await store.mock.calls[1]?.[0]?.text()).toContain('"name":"demo-plugin"');
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it("fails after bounded attempts and cleans up blobs stored by sibling files", async () => {
+      const store = vi.fn(async (blob: Blob) => {
+        if ((await blob.text()).includes("demo-plugin")) throw transientStoreError();
+        return "storage:readme";
+      });
+      const remove = vi.fn(async () => undefined);
+      const outcome = await prepareWithStore(archive({ "README.md": "# demo" }), store, remove);
+      expect(outcome.ok).toBe(false);
+      if (outcome.ok) return;
+      expect(String(outcome.error)).toContain("Transient error while running generate upload url");
+      // 3 attempts for package.json, 1 for README.md.
+      expect(store).toHaveBeenCalledTimes(4);
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(remove).toHaveBeenCalledWith("storage:readme");
+    });
+
+    it("does not retry non-transient storage errors", async () => {
+      const store = vi.fn(async () => {
+        throw new Error("Storage quota exceeded");
+      });
+      const remove = vi.fn();
+      const outcome = await prepareWithStore(archive(), store, remove);
+      expect(outcome.ok).toBe(false);
+      if (outcome.ok) return;
+      expect(String(outcome.error)).toContain("Storage quota exceeded");
+      expect(store).toHaveBeenCalledTimes(1);
+      expect(remove).not.toHaveBeenCalled();
+    });
   });
 });

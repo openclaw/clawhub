@@ -3,7 +3,7 @@ node_modules
 .bun-build
 *.bun-build
 .artifacts/
-artifacts/
+/artifacts/
 .proof/
 .cache/
 .vite-temp/
@@ -11,8 +11,6 @@ artifacts/
 bin/docs-list
 dist
 dist-ssr
-!packages/schema/dist
-!packages/schema/dist/**
 *.local
 .vercel
 count.txt

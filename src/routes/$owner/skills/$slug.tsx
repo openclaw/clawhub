@@ -5,20 +5,10 @@ import {
   skillDetailRouteHead,
 } from "../../$owner/$slug";
 import { isOwnerRouteHandleOrIdSegment } from "../../../lib/ownerRoute";
-
-function isPostPublishFlag(value: unknown) {
-  const normalized = typeof value === "string" ? value.trim().replace(/^"|"$/g, "") : value;
-  return normalized === "1" || normalized === "true" || normalized === 1 || normalized === true;
-}
+import { parsePostPublishSearch } from "../../../lib/postPublishSearch";
 
 export const Route = createFileRoute("/$owner/skills/$slug")({
-  validateSearch: (search) => {
-    const parsed: { published?: true } = {};
-    if (isPostPublishFlag(search.published)) {
-      parsed.published = true;
-    }
-    return parsed;
-  },
+  validateSearch: parsePostPublishSearch,
   beforeLoad: ({ params }) => {
     if (!isOwnerRouteHandleOrIdSegment(params.owner)) throw notFound();
   },

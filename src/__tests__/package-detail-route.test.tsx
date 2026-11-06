@@ -1242,26 +1242,6 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
   });
 
-  it("renders canonical topics in the detail hero", async () => {
-    loaderDataMock = {
-      ...loaderDataMock,
-      detail: {
-        ...loaderDataMock.detail,
-        package: {
-          ...loaderDataMock.detail.package!,
-          topics: ["Web Search", "Research"],
-        },
-      },
-    };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
-  });
-
   it("renders the plugin 30-day downloads graph from a deferred activity query", async () => {
     loaderDataMock = {
       ...loaderDataMock,
@@ -1427,9 +1407,7 @@ describe("plugin detail route", () => {
           compatibility: null,
           verification: null,
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1709,22 +1687,10 @@ describe("plugin detail route", () => {
           compatibility: null,
           verification: { tier: "source-linked", scope: "artifact-only", scanStatus: "clean" },
           sha256hash: "a".repeat(64),
-          vtAnalysis: {
-            status: "clean",
-            checkedAt: 1,
-          },
           llmAnalysis: {
             status: "clean",
             verdict: "clean",
             summary: "Looks safe.",
-            checkedAt: 1,
-          },
-          staticScan: {
-            status: "clean",
-            reasonCodes: [],
-            findings: [],
-            summary: "No issues",
-            engineVersion: "1",
             checkedAt: 1,
           },
         },
@@ -1792,9 +1758,7 @@ describe("plugin detail route", () => {
           compatibility: null,
           verification: null,
           sha256hash: "a".repeat(64),
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1855,9 +1819,7 @@ describe("plugin detail route", () => {
             npmFileCount: 3,
           },
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1916,9 +1878,7 @@ describe("plugin detail route", () => {
             format: "zip",
           },
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1987,9 +1947,7 @@ describe("plugin detail route", () => {
           verification: null,
           artifact: null,
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -2096,9 +2054,7 @@ describe("plugin detail route", () => {
           verification: null,
           artifact: null,
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,

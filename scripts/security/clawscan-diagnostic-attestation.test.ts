@@ -35,6 +35,7 @@ vi.mock("../lib/runWorkerCommand", () => ({
 }));
 
 beforeEach(() => {
+  fixture.pin = "1".repeat(40);
   fixture.ubuntu = "22.04";
   fixture.go = "go1.27.3";
   for (const key of ["DEFAULT_MODEL", "SKILLSPECTOR_MODEL"]) vi.stubEnv(key, "gpt-6.1-sol");
@@ -43,6 +44,26 @@ beforeEach(() => {
   vi.stubEnv("CLAWSCAN_SOURCE_DIR", "/inert/source");
   vi.stubEnv("RUNNER_TEMP", "/inert/runtime");
   vi.stubEnv("CLAWSCAN_DIAGNOSTIC_RUNNER", "ubuntu-22.04");
+});
+
+it("permits fixed038 Ubuntu22 only at the exact merged source", async () => {
+  fixture.pin = "b08e2907eb60b33bf712b07673aff565c13d9ad7";
+  const installed = { sourceDir: "/inert/source", pin: fixture.pin, binary: "/inert/clawscan" };
+  const result = await attestRuntime("reviewed", "original038", "/inert/runtime", {}, installed);
+  expect(result.metadata.ubuntu).toBe("22.04");
+  fixture.pin = "2".repeat(40);
+  await expect(
+    attestRuntime(
+      "reviewed",
+      "original038",
+      "/inert/runtime",
+      {},
+      {
+        ...installed,
+        pin: fixture.pin,
+      },
+    ),
+  ).rejects.toThrow("required pins");
 });
 
 afterEach(() => vi.unstubAllEnvs());

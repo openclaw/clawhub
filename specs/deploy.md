@@ -457,10 +457,9 @@ before loading Test's own worker token. It uses the same worker, scanner profile
 and digest-pinned Endor image preparation as Production. Configure
 `CODEX_SECURITY_SCAN_ENDOR_ENABLED=1`, `CODEX_SECURITY_SCAN_ENDOR_IMAGE` with a
 published `@sha256:` image digest, `ENDOR_NAMESPACE`, `ENDOR_API` and the Endor
-credentials in the `Test` GitHub environment. Optional package selection and
-Endor judging use the existing `CODEX_SECURITY_SCAN_ENDOR_PACKAGES` and
-`CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED` variables. Results are saved on the
-native package release and served through its usual security views.
+credentials in the `Test` GitHub environment. Test and Production both analyze
+every code-plugin release, report-only. Results are saved on the native package
+release and served through its usual security views.
 
 Preview browser traffic is public and read-only. Nitro rejects non-GET/HEAD
 requests before proxying and adds `X-ClawHub-Preview-Backend` to proxied preview

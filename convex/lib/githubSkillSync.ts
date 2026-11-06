@@ -1,4 +1,6 @@
 import { ConvexError } from "convex/values";
+import type { DisplayManifest, DisplayManifestStatus } from "./displayManifest";
+import { sha256Hex } from "./hash";
 import {
   shouldPreserveSecurityScanStateForUnchangedContent,
   type SourceBackedSkillScanStatus,
@@ -11,19 +13,12 @@ import {
   validateSkillPresentationIcon,
 } from "./skillPresentation";
 import { getFrontmatterValue, parseFrontmatter } from "./skills";
+import { createInitialSkillStats } from "./skillStats";
+
+export type { DisplayManifest, DisplayManifestStatus } from "./displayManifest";
 
 export type GitHubSkillScanStatus = SourceBackedSkillScanStatus;
 export type GitHubCurrentStatus = "present" | "missing" | "unknown";
-export type DisplayManifestStatus = "ok" | "missing" | "invalid" | "failed";
-
-export type DisplayManifest = {
-  notGrouped?: "top" | "bottom";
-  groupings: Array<{
-    title: string;
-    description?: string;
-    skills: string[];
-  }>;
-};
 
 export type GitHubSkillSourceSnapshot = {
   repo: string;
@@ -407,18 +402,7 @@ export function buildGitHubSkillSyncPlan({
           tags: {},
           softDeletedAt: undefined,
           badges: undefined,
-          statsDownloads: 0,
-          statsStars: 0,
-          statsInstallsCurrent: 0,
-          statsInstallsAllTime: 0,
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-            comments: 0,
-          },
+          ...createInitialSkillStats(),
           ...moderation,
           createdAt: now,
           updatedAt: now,
@@ -696,7 +680,7 @@ function findSkillRelativeFilePath(
   return Object.hasOwn(entries, expected) ? expected : undefined;
 }
 
-function normalizeRepoPath(path: string) {
+export function normalizeRepoPath(path: string) {
   if (path.includes("\u0000")) return "";
   const normalized = path
     .replaceAll("\\", "/")
@@ -715,18 +699,6 @@ function parentPath(path: string) {
 
 function decodeUtf8(bytes: Uint8Array) {
   return new TextDecoder().decode(bytes);
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const safe = new Uint8Array(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", safe);
-  return toHex(new Uint8Array(digest));
-}
-
-function toHex(bytes: Uint8Array) {
-  let out = "";
-  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
-  return out;
 }
 
 function slugFromPathSegment(value: string) {
