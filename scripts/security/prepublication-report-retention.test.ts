@@ -202,7 +202,6 @@ process.exit(1);
         targetKind: "skillVersion",
         attempts: 1,
         hasMaliciousSignal: false,
-        waitForVtUntil: 0,
       },
       target: {},
     },

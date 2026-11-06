@@ -121,7 +121,6 @@ describe("bulk skill response-loss recovery", () => {
       versionId,
       source: "publish",
       priority: 100,
-      waitForVtMs: 60_000,
     });
     const before = await t.run((ctx) => ctx.db.get(active.jobId!));
     const request = { actorUserId, requestId: "preserve-publish" };

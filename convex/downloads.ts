@@ -11,6 +11,7 @@ import {
   ARCHIVE_MANIFEST_JWS_TYPE,
   ARCHIVE_METRIC_AUDIENCE,
   ARCHIVE_METRIC_JWS_TYPE,
+  readBoundedArchiveText,
   type ArchiveMetricArgs,
   type ArchiveMetricPayload,
   signArchivePayload,
@@ -289,7 +290,7 @@ function unauthorizedArchiveManifestResponse() {
 }
 
 export async function recordArchiveDownloadMetricHandler(ctx: DownloadCtx, request: Request) {
-  const token = await readBoundedRequestText(request, MAX_ARCHIVE_METRIC_TOKEN_BYTES);
+  const token = await readBoundedArchiveText(request, MAX_ARCHIVE_METRIC_TOKEN_BYTES);
   if (!token) {
     return new Response("Invalid archive metric capability", {
       status: 400,
@@ -464,39 +465,6 @@ function parseArchiveMetricPayload(
   if (typeof metric.identityHash !== "string" || metric.identityHash.length === 0) return null;
   if (!Number.isFinite(metric.dayStart) || !Number.isFinite(metric.occurredAt)) return null;
   return payload as ArchiveMetricPayload;
-}
-
-async function readBoundedRequestText(request: Request, maxBytes: number) {
-  const contentLength = request.headers.get("content-length");
-  if (contentLength) {
-    const declaredBytes = Number.parseInt(contentLength, 10);
-    if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) return null;
-  }
-  const reader = request.body?.getReader();
-  if (!reader) return null;
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  try {
-    for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      totalBytes += chunk.value.byteLength;
-      if (totalBytes > maxBytes) {
-        await reader.cancel().catch(() => undefined);
-        return null;
-      }
-      chunks.push(chunk.value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
 }
 
 async function getOptionalDownloadUserId(

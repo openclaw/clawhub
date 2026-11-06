@@ -1,24 +1,27 @@
-import { ConvexError, v } from "convex/values";
+import { ConvexError, type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
+import { storedFilesValidator } from "./lib/fileValidators";
 import { manualPackageRecovery } from "./lib/packagePublishRecovery";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
 import { assertScannerSource } from "./lib/scannerSource";
+import {
+  aigAnalysisValidator,
+  skillSpectorAnalysisValidator,
+} from "./lib/securityAnalysisValidators";
 import { isPublishedSkillVersion } from "./lib/skillFileAccess";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
-import { skillSpectorAnalysisValidator } from "./schema";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 const CHECK_RETRY_BACKOFF_MS = 5 * 60 * 1000;
 const CLAIM_STORAGE_URL_CONCURRENCY = 8;
 const MAX_CONSECUTIVE_SCANNER_FAILURES = 3;
-const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
 const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
 const FINALIZATION_CLAIM_LEASE_MS = 10 * 60 * 1000;
 const MISSING_AIG_EVIDENCE_ERROR = "A.I.G evidence is required before a skill can be published.";
@@ -75,28 +78,6 @@ const workerLlmAnalysisValidator = v.object({
   guidance: v.optional(v.string()),
   findings: v.optional(v.string()),
   model: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const workerAigAnalysisValidator = v.object({
-  status: v.string(),
-  issueCount: v.number(),
-  findings: v.array(
-    v.object({
-      ruleId: v.string(),
-      level: v.string(),
-      message: v.string(),
-      title: v.optional(v.string()),
-      description: v.optional(v.string()),
-      file: v.optional(v.string()),
-      startLine: v.optional(v.number()),
-      endLine: v.optional(v.number()),
-      remediation: v.optional(v.string()),
-    }),
-  ),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
   checkedAt: v.number(),
 });
 
@@ -269,15 +250,7 @@ export const createSkillPublishAttemptInternal = internalMutation({
     version: v.string(),
     idempotencyKey: v.string(),
     artifactFingerprint: v.string(),
-    files: v.array(
-      v.object({
-        path: v.string(),
-        size: v.number(),
-        storageId: v.id("_storage"),
-        sha256: v.string(),
-        contentType: v.optional(v.string()),
-      }),
-    ),
+    files: storedFilesValidator,
     scanContext: v.optional(v.any()),
     followup: v.object({
       skipWebhook: v.optional(v.boolean()),
@@ -443,15 +416,7 @@ export const createPackagePublishAttemptInternal = internalMutation({
     version: v.string(),
     idempotencyKey: v.string(),
     artifactFingerprint: v.string(),
-    files: v.array(
-      v.object({
-        path: v.string(),
-        size: v.number(),
-        storageId: v.id("_storage"),
-        sha256: v.string(),
-        contentType: v.optional(v.string()),
-      }),
-    ),
+    files: storedFilesValidator,
     clawpackStorageId: v.optional(v.id("_storage")),
     scanContext: v.optional(v.any()),
     packageInsertArgs: v.optional(v.any()),
@@ -638,7 +603,6 @@ function buildSkillAttemptScanContext(attempt: {
   const parsed = asRecord(skillInsertArgs.parsed);
   return withoutUndefined({
     version: withoutUndefined({
-      staticScan: skillInsertArgs.staticScan,
       parsed: withoutUndefined({
         metadata: parsed.metadata,
         clawdis: parsed.clawdis,
@@ -677,7 +641,6 @@ function buildPackageAttemptScanContext(
     trustedOpenClawPlugin: verification.trustedOpenClawPlugin === true ? true : undefined,
     package: withoutUndefined({ family }),
     release: withoutUndefined({
-      staticScan: packageInsertArgs.staticScan,
       pluginManifestSummary: packageInsertArgs.pluginManifestSummary,
       verification: packageInsertArgs.verification,
       artifactKind: packageInsertArgs.artifactKind,
@@ -761,7 +724,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     trufflehog: workerCheckResultValidator,
     clawscan: workerCheckResultValidator,
     clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
-    aigAnalysis: v.optional(workerAigAnalysisValidator),
+    aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   },
   handler: async (ctx, args) => {
@@ -1408,9 +1371,11 @@ export const recordSkillPublishAttemptFinalizedInternal = internalMutation({
 
     // Scheduler writes in a mutation commit with its receipt. Action-side enqueues
     // could survive a later enqueue/receipt failure and accumulate on every retry.
-    await ctx.scheduler.runAfter(0, internal.vt.scanWithVirusTotal, {
-      versionId: expected.versionId,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.skillVersionArtifactHash.computeSkillVersionArtifactHashInternal,
+      { versionId: expected.versionId },
+    );
     await ctx.scheduler.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
       versionId: expected.versionId,
       source: "publish",
@@ -1495,11 +1460,6 @@ export const recordPackagePublishAttemptFinalizedInternal = internalMutation({
       throw new ConvexError("Publish attempt public result does not match.");
     }
 
-    await ctx.scheduler.runAfter(
-      INITIAL_PACKAGE_VT_SCAN_DELAY_MS,
-      internal.vt.scanPackageReleaseWithVirusTotal,
-      { releaseId: release._id },
-    );
     // Keep the immediate package enqueue in this transaction, including its job
     // identity/deduplication logic, rather than introducing a new async boundary.
     await ctx.runMutation(internal.securityScan.enqueuePackageReleaseScanInternal, {
@@ -1802,7 +1762,7 @@ export const completePrePublicationChecks: ReturnType<typeof action> = action({
     trufflehog: workerCheckResultValidator,
     clawscan: workerCheckResultValidator,
     clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
-    aigAnalysis: v.optional(workerAigAnalysisValidator),
+    aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   },
   handler: async (ctx, args): Promise<unknown> => {
@@ -1889,40 +1849,26 @@ async function requireSkillPublishAttempt(
   if (!attempt || typeof attempt !== "object") {
     throw new ConvexError("Publish attempt not found.");
   }
-  const typed = attempt as {
-    _id: Id<"publishAttempts">;
-    kind: "skill" | "package";
-    status:
-      | "pending_checks"
-      | "ready_to_finalize"
-      | "finalizing"
-      | "finalized"
-      | "blocked"
-      | "failed"
-      | "expired";
+  const typed = attempt as Pick<
+    Doc<"publishAttempts">,
+    | "_id"
+    | "kind"
+    | "status"
+    | "userId"
+    | "ownerPublisherId"
+    | "slug"
+    | "version"
+    | "displayName"
+    | "artifactFingerprint"
+    | "createdAt"
+    | "finalizationClaimId"
+    | "finalizationClaimExpiresAt"
+    | "skillId"
+    | "skillVersionId"
+  > & {
     skillInsertArgs: unknown;
-    followup: { skipWebhook?: boolean; ownerHandle?: string };
-    userId: Id<"users">;
-    ownerPublisherId?: Id<"publishers">;
-    slug: string;
-    version: string;
-    displayName: string;
-    artifactFingerprint: string;
-    createdAt: number;
-    finalizationClaimId?: string;
-    finalizationClaimExpiresAt?: number;
-    result?: {
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      embeddingId?: Id<"skillEmbeddings">;
-      status?: "pending" | "published";
-      slug?: string;
-      version?: string;
-      publicationStatus?: "pending" | "published";
-      attemptId?: Id<"publishAttempts">;
-    };
-    skillId?: Id<"skills">;
-    skillVersionId?: Id<"skillVersions">;
+    followup: NonNullable<Doc<"publishAttempts">["followup"]>;
+    result?: Infer<typeof publishResultValidator>;
   };
   if (
     typed.kind !== "skill" ||
@@ -1931,13 +1877,7 @@ async function requireSkillPublishAttempt(
   ) {
     throw new ConvexError("Skill publish attempt not found.");
   }
-  return typed as typeof typed & {
-    kind: "skill";
-    skillId?: Id<"skills">;
-    skillVersionId?: Id<"skillVersions">;
-    skillInsertArgs?: unknown;
-    followup: { skipWebhook?: boolean; ownerHandle?: string };
-  };
+  return typed as typeof typed & { kind: "skill" };
 }
 
 async function requirePackagePublishAttempt(
@@ -1948,29 +1888,24 @@ async function requirePackagePublishAttempt(
   if (!attempt || typeof attempt !== "object") {
     throw new ConvexError("Publish attempt not found.");
   }
-  const typed = attempt as {
-    _id: Id<"publishAttempts">;
-    kind: "skill" | "package";
-    status:
-      | "pending_checks"
-      | "ready_to_finalize"
-      | "finalizing"
-      | "finalized"
-      | "blocked"
-      | "failed"
-      | "expired";
-    userId: Id<"users">;
-    ownerUserId?: Id<"users">;
-    ownerPublisherId?: Id<"publishers">;
-    slug: string;
-    version: string;
-    artifactFingerprint: string;
+  const typed = attempt as Pick<
+    Doc<"publishAttempts">,
+    | "_id"
+    | "kind"
+    | "status"
+    | "userId"
+    | "ownerUserId"
+    | "ownerPublisherId"
+    | "slug"
+    | "version"
+    | "artifactFingerprint"
+    | "packageId"
+    | "packageReleaseId"
+    | "finalizationClaimId"
+    | "finalizationClaimExpiresAt"
+  > & {
     packageInsertArgs?: unknown;
     packageFollowup?: unknown;
-    packageId?: Id<"packages">;
-    packageReleaseId?: Id<"packageReleases">;
-    finalizationClaimId?: string;
-    finalizationClaimExpiresAt?: number;
     result?: {
       ok: true;
       packageId: Id<"packages">;

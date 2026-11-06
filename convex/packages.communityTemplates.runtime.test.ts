@@ -133,6 +133,106 @@ async function fixture() {
 }
 
 describe("community Template discovery", () => {
+  it("returns the same public featured and category selection in one overview", async () => {
+    const { t, personalPublisherId } = await fixture();
+    const overview = await t.query(internal.packages.templateOverviewInternal, { limit: 8 });
+    expect(overview.complete).toBe(true);
+    const response = await t.fetch("/api/v1/templates/overview?limit=8");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(overview);
+    for (const limit of ["0", "9", "1.5", "invalid"]) {
+      expect((await t.fetch(`/api/v1/templates/overview?limit=${limit}`)).status).toBe(400);
+    }
+    expect(overview.featured.map((entry) => entry.name).sort()).toEqual(expectedNames);
+    expect(overview.sections).toHaveLength(1);
+    expect(overview.sections[0].category).toBe("research");
+    expect(overview.sections[0].items.map((entry) => entry.name).sort()).toEqual(expectedNames);
+    expect(
+      overview.sections[0].items.find((entry) => entry.name === expectedNames[0]),
+    ).toMatchObject({ ownerHandle: "maker", ownerOfficial: false });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(personalPublisherId, { deactivatedAt: 2 });
+    });
+    const deactivated = await t.query(internal.packages.templateOverviewInternal, { limit: 8 });
+    expect(deactivated.featured.map((entry) => entry.name)).toEqual([expectedNames[1]]);
+    expect(deactivated.sections[0].items.map((entry) => entry.name)).toEqual([expectedNames[1]]);
+  });
+
+  it("uses current install counts and official badges, without a persistent cache", async () => {
+    const { t } = await fixture();
+    await t.run(async (ctx) => {
+      const pkg = await ctx.db
+        .query("packages")
+        .withIndex("by_name", (q) => q.eq("normalizedName", expectedNames[0]))
+        .unique();
+      if (!pkg) throw Error("Missing fixture");
+      await ctx.db.patch(pkg._id, { stats: { ...pkg.stats, installs: 100 } });
+      const badge = await ctx.db.query("officialPublishers").first();
+      if (!badge) throw Error("Missing badge");
+      await ctx.db.delete(badge._id);
+    });
+    const overview = await t.query(internal.packages.templateOverviewInternal, { limit: 1 });
+    expect(overview.sections[0].items.map((entry) => entry.name)).toEqual([expectedNames[0]]);
+    expect(overview.featured.every((entry) => !entry.ownerOfficial)).toBe(true);
+  });
+
+  it("hydrates 1,000 genuinely visible templates at the supported cap", async () => {
+    const { t } = await fixture();
+    await t.run(async (ctx) => {
+      const digests = await ctx.db.query("packageSearchDigest").collect();
+      const template = digests.find((digest) => digest.name === expectedNames[0]);
+      if (!template) throw Error("Missing fixture");
+      const pkg = await ctx.db.get(template.packageId);
+      if (!pkg) throw Error("Missing package");
+      for (const digest of digests) await ctx.db.delete(digest._id);
+      const { _id, _creationTime, ...fields } = pkg;
+      for (let index = 0; index < 1000; index += 1) {
+        const name = "@maker/full-cap-" + index.toString().padStart(4, "0");
+        const packageId = await ctx.db.insert("packages", {
+          ...fields,
+          name,
+          normalizedName: name,
+        });
+        await upsertPackageSearchDigest(ctx, {
+          ...extractPackageDigestFields({ ...pkg, _id: packageId, name, normalizedName: name }),
+          ownerHandle: "maker",
+          ownerKind: "user",
+        });
+      }
+    });
+    const overview = await t.query(internal.packages.templateOverviewInternal, { limit: 8 });
+    expect(overview.complete).toBe(true);
+    expect(overview.sections[0].items.map((item) => item.name)).toEqual(
+      Array.from(
+        { length: 8 },
+        (_, index) => "@maker/full-cap-" + index.toString().padStart(4, "0"),
+      ),
+    );
+  });
+
+  it("requests legacy pagination rather than ranking an incomplete bounded catalog", async () => {
+    const { t } = await fixture();
+    await t.run(async (ctx) => {
+      const digest = await ctx.db.query("packageSearchDigest").first();
+      if (!digest) throw Error("Missing digest");
+      const { _id, _creationTime, ...fields } = digest;
+      for (let index = 0; index < 1001; index += 1) {
+        await ctx.db.insert("packageSearchDigest", {
+          ...fields,
+          family: "claw",
+          softDeletedAt: undefined,
+          name: `@maker/overflow-${index}`,
+          normalizedName: `@maker/overflow-${index}`,
+        });
+      }
+    });
+    expect(await t.query(internal.packages.templateOverviewInternal, { limit: 8 })).toEqual({
+      complete: false,
+      featured: [],
+      sections: [],
+    });
+  });
+
   it.each(["anonymous", "another user"] as const)(
     "lists and searches personal Templates with creator attribution for %s",
     async (viewer) => {

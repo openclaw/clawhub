@@ -8,6 +8,24 @@ import {
 } from "./packageSearchDigest";
 
 describe("packageSearchDigest", () => {
+  it.each([
+    { categories: ["travel", "personal"], expected: ["travel", "personal"] },
+    { categories: ["research"], expected: ["research"] },
+    { categories: ["other"], expected: ["other"] },
+    { categories: undefined, expected: ["other"] },
+  ])(
+    "preserves Template categories without plugin facets: $categories",
+    ({ categories, expected }) => {
+      const digest = extractPackageDigestFields({
+        _id: "packages:travel",
+        family: "claw",
+        categories,
+      } as never);
+      expect(digest.categories).toEqual(expected);
+      expect(digest.pluginCategoryTags).toEqual([]);
+    },
+  );
+
   it("projects stored catalog metadata and prefers a stored plugin category", () => {
     const digest = extractPackageDigestFields({
       _id: "packages:demo",

@@ -24,12 +24,44 @@ export function bytesToArrayBuffer(bytes: Uint8Array) {
   return copy.buffer;
 }
 
+// Each `ctx.storage.store` makes its own upload-URL callback to the Convex
+// backend, and Convex does not retry it. Large ClawPacks store thousands of
+// files, so one transient backend blip would otherwise fail the whole publish.
+const STORAGE_STORE_MAX_ATTEMPTS = 3;
+const STORAGE_STORE_RETRY_BASE_DELAY_MS = 200;
+const TRANSIENT_STORAGE_ERROR_PATTERN =
+  /transient error|internalservererror|econnreset|socket hang up|fetch failed|network connection was lost/i;
+
+function isTransientStorageStoreError(error: unknown) {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return TRANSIENT_STORAGE_ERROR_PATTERN.test(message);
+}
+
+function storageStoreRetryDelayMs(attempt: number) {
+  // Jitter so ~16 concurrent stores hitting the same blip do not retry in lockstep.
+  const base = STORAGE_STORE_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+  return base / 2 + Math.random() * base;
+}
+
+async function storeBlobWithTransientRetry(ctx: ActionCtx, blob: Blob) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await ctx.storage.store(blob);
+    } catch (error) {
+      if (attempt >= STORAGE_STORE_MAX_ATTEMPTS || !isTransientStorageStoreError(error)) {
+        throw error;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, storageStoreRetryDelayMs(attempt)));
+    }
+  }
+}
+
 export async function storeRequestPackageBlob(
   ctx: ActionCtx,
   requestStorageIds: Set<Id<"_storage">>,
   blob: Blob,
 ) {
-  const storageId = await ctx.storage.store(blob);
+  const storageId = await storeBlobWithTransientRetry(ctx, blob);
   requestStorageIds.add(storageId);
   return storageId;
 }

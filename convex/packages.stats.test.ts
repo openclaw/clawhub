@@ -75,6 +75,31 @@ const getActivityTrendHandler = (
   >
 )._handler;
 
+function makeActivityTrendContext<TPackageIndex, TDailyIndex>(
+  packageWithIndex: TPackageIndex,
+  dailyWithIndex: TDailyIndex,
+) {
+  return {
+    db: {
+      query: vi.fn((tableName: string) => {
+        if (tableName === "packages") return { withIndex: packageWithIndex };
+        if (tableName === "packageDailyStats") return { withIndex: dailyWithIndex };
+        throw new Error(`Unexpected table ${tableName}`);
+      }),
+      get: vi.fn(),
+      normalizeId: vi.fn(),
+      insert: vi.fn(),
+      patch: vi.fn(),
+      replace: vi.fn(),
+      delete: vi.fn(),
+      system: {
+        get: vi.fn(),
+        query: vi.fn(),
+      },
+    },
+  };
+}
+
 describe("package stat events", () => {
   afterEach(() => {
     vi.mocked(getAuthUserId).mockReset();
@@ -564,25 +589,7 @@ describe("package stat events", () => {
           return { take: takeDailyStats };
         },
       );
-      const ctx = {
-        db: {
-          query: vi.fn((tableName: string) => {
-            if (tableName === "packages") return { withIndex: packageWithIndex };
-            if (tableName === "packageDailyStats") return { withIndex: dailyWithIndex };
-            throw new Error(`Unexpected table ${tableName}`);
-          }),
-          get: vi.fn(),
-          normalizeId: vi.fn(),
-          insert: vi.fn(),
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: vi.fn(),
-          system: {
-            get: vi.fn(),
-            query: vi.fn(),
-          },
-        },
-      };
+      const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
       const trend = await getActivityTrendHandler(ctx, { name: "demo-plugin", endDay });
 
@@ -645,25 +652,7 @@ describe("package stat events", () => {
           return { take: takeDailyStats };
         },
       );
-      const ctx = {
-        db: {
-          query: vi.fn((tableName: string) => {
-            if (tableName === "packages") return { withIndex: packageWithIndex };
-            if (tableName === "packageDailyStats") return { withIndex: dailyWithIndex };
-            throw new Error(`Unexpected table ${tableName}`);
-          }),
-          get: vi.fn(),
-          normalizeId: vi.fn(),
-          insert: vi.fn(),
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: vi.fn(),
-          system: {
-            get: vi.fn(),
-            query: vi.fn(),
-          },
-        },
-      };
+      const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
       const trend = await getActivityTrendHandler(ctx, { name: "demo-plugin", endDay });
 
@@ -717,25 +706,7 @@ describe("package stat events", () => {
           return { take: takeDailyStats };
         },
       );
-      const ctx = {
-        db: {
-          query: vi.fn((tableName: string) => {
-            if (tableName === "packages") return { withIndex: packageWithIndex };
-            if (tableName === "packageDailyStats") return { withIndex: dailyWithIndex };
-            throw new Error(`Unexpected table ${tableName}`);
-          }),
-          get: vi.fn(),
-          normalizeId: vi.fn(),
-          insert: vi.fn(),
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: vi.fn(),
-          system: {
-            get: vi.fn(),
-            query: vi.fn(),
-          },
-        },
-      };
+      const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
       const trend = await getActivityTrendHandler(ctx, { name: "demo-plugin", endDay });
 
@@ -785,25 +756,7 @@ describe("package stat events", () => {
           return { take: vi.fn(async () => [{ day: serverEndDay, downloads: 1, installs: 1 }]) };
         },
       );
-      const ctx = {
-        db: {
-          query: vi.fn((tableName: string) => {
-            if (tableName === "packages") return { withIndex: packageWithIndex };
-            if (tableName === "packageDailyStats") return { withIndex: dailyWithIndex };
-            throw new Error(`Unexpected table ${tableName}`);
-          }),
-          get: vi.fn(),
-          normalizeId: vi.fn(),
-          insert: vi.fn(),
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: vi.fn(),
-          system: {
-            get: vi.fn(),
-            query: vi.fn(),
-          },
-        },
-      };
+      const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
       const trend = await getActivityTrendHandler(ctx, {
         name: "demo-plugin",

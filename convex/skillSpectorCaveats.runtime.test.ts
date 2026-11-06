@@ -53,7 +53,6 @@ it.each([false, true])(
         source: "manual",
         priority: 1,
         hasMaliciousSignal: false,
-        waitForVtUntil: 0,
         nextRunAt: 0,
         attempts: 1,
         leaseToken: "caveat-lease",

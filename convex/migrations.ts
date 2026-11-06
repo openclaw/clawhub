@@ -4,7 +4,7 @@ import {
   normalizePluginCategories,
   normalizeSkillCategories,
 } from "clawhub-schema";
-import { convexToJson, ConvexError, v } from "convex/values";
+import { convexToJson, ConvexError, type Infer, v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -1118,31 +1118,35 @@ type LatestPluginManifestSummaryCandidatePage = {
   continueCursor: string;
 };
 
-type PluginManifestSummaryBackfillSample = {
-  packageName: string;
-  displayName: string;
-  version: string;
-  releaseId: Id<"packageReleases">;
-  configFieldCount: number;
-  mcpServerCount: number;
-  bundledSkillCount: number;
-};
+const pluginManifestSummaryBackfillResultValidator = v.object({
+  ok: v.literal(true),
+  dryRun: v.boolean(),
+  confirmRequired: v.optional(v.string()),
+  scannedPackages: v.number(),
+  eligibleReleases: v.number(),
+  changedReleases: v.number(),
+  patchedReleases: v.number(),
+  unchangedReleases: v.number(),
+  skippedMissingRelease: v.number(),
+  skippedMissingManifest: v.number(),
+  skippedSkillMarkdownReadErrorReleases: v.number(),
+  skillMarkdownReadErrors: v.number(),
+  samples: v.array(
+    v.object({
+      packageName: v.string(),
+      displayName: v.string(),
+      version: v.string(),
+      releaseId: v.id("packageReleases"),
+      configFieldCount: v.number(),
+      mcpServerCount: v.number(),
+      bundledSkillCount: v.number(),
+    }),
+  ),
+});
 
-type PluginManifestSummaryBackfillResult = {
-  ok: true;
-  dryRun: boolean;
-  confirmRequired?: string;
-  scannedPackages: number;
-  eligibleReleases: number;
-  changedReleases: number;
-  patchedReleases: number;
-  unchangedReleases: number;
-  skippedMissingRelease: number;
-  skippedMissingManifest: number;
-  skippedSkillMarkdownReadErrorReleases: number;
-  skillMarkdownReadErrors: number;
-  samples: PluginManifestSummaryBackfillSample[];
-};
+type PluginManifestSummaryBackfillResult = Infer<
+  typeof pluginManifestSummaryBackfillResultValidator
+>;
 
 function isJsonRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -1290,6 +1294,94 @@ export const applyPluginManifestSummaryBackfillPatch = internalMutation({
   },
 });
 
+function createPluginManifestSummaryBackfillProgress(): Omit<
+  PluginManifestSummaryBackfillResult,
+  "ok" | "dryRun" | "confirmRequired"
+> {
+  return {
+    scannedPackages: 0,
+    eligibleReleases: 0,
+    changedReleases: 0,
+    patchedReleases: 0,
+    unchangedReleases: 0,
+    skippedMissingRelease: 0,
+    skippedMissingManifest: 0,
+    skippedSkillMarkdownReadErrorReleases: 0,
+    skillMarkdownReadErrors: 0,
+    samples: [],
+  };
+}
+
+async function processPluginManifestSummaryBackfillCandidates(
+  ctx: Pick<ActionCtx, "runMutation" | "storage">,
+  candidates: LatestPluginManifestSummaryCandidate[],
+  dryRun: boolean,
+  progress: ReturnType<typeof createPluginManifestSummaryBackfillProgress>,
+) {
+  for (const candidate of candidates) {
+    progress.scannedPackages += 1;
+    if (!candidate.release || candidate.release.softDeletedAt !== undefined) {
+      progress.skippedMissingRelease += 1;
+      continue;
+    }
+
+    const pluginManifest = await resolvePluginManifestForSummaryBackfill(ctx, candidate.release);
+    if (!isJsonRecord(pluginManifest)) {
+      progress.skippedMissingManifest += 1;
+      continue;
+    }
+
+    progress.eligibleReleases += 1;
+    const filesResult = await withSkillMarkdownTextsForPluginManifestSummaryBackfill(
+      ctx,
+      candidate.release.files,
+    );
+    progress.skillMarkdownReadErrors += filesResult.readErrors;
+    if (filesResult.readErrors > 0) {
+      progress.skippedSkillMarkdownReadErrorReleases += 1;
+      continue;
+    }
+    const summary = retainPluginSummaryPresentation(
+      derivePluginManifestSummary({
+        pluginManifest,
+        ...(isJsonRecord(candidate.release.normalizedBundleManifest)
+          ? { skillManifest: candidate.release.normalizedBundleManifest }
+          : {}),
+        compatibility: candidate.release.compatibility,
+        files: filesResult.files,
+      }),
+      candidate.release.pluginManifestSummary,
+    );
+    if (hasSamePluginManifestSummary(candidate.release, summary)) {
+      progress.unchangedReleases += 1;
+      continue;
+    }
+
+    progress.changedReleases += 1;
+    if (!dryRun) {
+      const patched: boolean = await ctx.runMutation(
+        internal.migrations.applyPluginManifestSummaryBackfillPatch,
+        {
+          releaseId: candidate.release._id,
+          pluginManifestSummary: summary,
+        },
+      );
+      if (patched) progress.patchedReleases += 1;
+    }
+    if (progress.samples.length < 10) {
+      progress.samples.push({
+        packageName: candidate.packageName,
+        displayName: candidate.displayName,
+        version: candidate.release.version,
+        releaseId: candidate.release._id,
+        configFieldCount: summary.configFields.length,
+        mcpServerCount: summary.mcpServers.length,
+        bundledSkillCount: summary.bundledSkills.length,
+      });
+    }
+  }
+}
+
 async function backfillLatestPluginManifestSummariesForFamily(
   ctx: Pick<ActionCtx, "runMutation" | "runQuery" | "storage">,
   family: PluginPackageFamily,
@@ -1297,106 +1389,28 @@ async function backfillLatestPluginManifestSummariesForFamily(
   maxPackages: number,
 ) {
   let cursor: string | null = null;
-  let scannedPackages = 0;
-  let eligibleReleases = 0;
-  let changedReleases = 0;
-  let patchedReleases = 0;
-  let unchangedReleases = 0;
-  let skippedMissingRelease = 0;
-  let skippedMissingManifest = 0;
-  let skippedSkillMarkdownReadErrorReleases = 0;
-  let skillMarkdownReadErrors = 0;
-  const samples: PluginManifestSummaryBackfillSample[] = [];
+  const progress = createPluginManifestSummaryBackfillProgress();
 
-  while (scannedPackages < maxPackages) {
+  while (progress.scannedPackages < maxPackages) {
     const page: LatestPluginManifestSummaryCandidatePage = await ctx.runQuery(
       internal.migrations.listLatestPluginManifestSummaryBackfillCandidates,
       {
         family,
         cursor,
-        limit: Math.min(PLUGIN_MANIFEST_SUMMARY_BACKFILL_PAGE_SIZE, maxPackages - scannedPackages),
+        limit: Math.min(
+          PLUGIN_MANIFEST_SUMMARY_BACKFILL_PAGE_SIZE,
+          maxPackages - progress.scannedPackages,
+        ),
       },
     );
 
-    for (const candidate of page.page) {
-      scannedPackages += 1;
-      if (!candidate.release || candidate.release.softDeletedAt !== undefined) {
-        skippedMissingRelease += 1;
-        continue;
-      }
+    await processPluginManifestSummaryBackfillCandidates(ctx, page.page, dryRun, progress);
 
-      const pluginManifest = await resolvePluginManifestForSummaryBackfill(ctx, candidate.release);
-      if (!isJsonRecord(pluginManifest)) {
-        skippedMissingManifest += 1;
-        continue;
-      }
-
-      eligibleReleases += 1;
-      const filesResult = await withSkillMarkdownTextsForPluginManifestSummaryBackfill(
-        ctx,
-        candidate.release.files,
-      );
-      skillMarkdownReadErrors += filesResult.readErrors;
-      if (filesResult.readErrors > 0) {
-        skippedSkillMarkdownReadErrorReleases += 1;
-        continue;
-      }
-      const summary = retainPluginSummaryPresentation(
-        derivePluginManifestSummary({
-          pluginManifest,
-          ...(isJsonRecord(candidate.release.normalizedBundleManifest)
-            ? { skillManifest: candidate.release.normalizedBundleManifest }
-            : {}),
-          compatibility: candidate.release.compatibility,
-          files: filesResult.files,
-        }),
-        candidate.release.pluginManifestSummary,
-      );
-      if (hasSamePluginManifestSummary(candidate.release, summary)) {
-        unchangedReleases += 1;
-        continue;
-      }
-
-      changedReleases += 1;
-      if (!dryRun) {
-        const patched: boolean = await ctx.runMutation(
-          internal.migrations.applyPluginManifestSummaryBackfillPatch,
-          {
-            releaseId: candidate.release._id,
-            pluginManifestSummary: summary,
-          },
-        );
-        if (patched) patchedReleases += 1;
-      }
-      if (samples.length < 10) {
-        samples.push({
-          packageName: candidate.packageName,
-          displayName: candidate.displayName,
-          version: candidate.release.version,
-          releaseId: candidate.release._id,
-          configFieldCount: summary.configFields.length,
-          mcpServerCount: summary.mcpServers.length,
-          bundledSkillCount: summary.bundledSkills.length,
-        });
-      }
-    }
-
-    if (page.isDone || scannedPackages >= maxPackages) break;
+    if (page.isDone || progress.scannedPackages >= maxPackages) break;
     cursor = page.continueCursor;
   }
 
-  return {
-    scannedPackages,
-    eligibleReleases,
-    changedReleases,
-    patchedReleases,
-    unchangedReleases,
-    skippedMissingRelease,
-    skippedMissingManifest,
-    skippedSkillMarkdownReadErrorReleases,
-    skillMarkdownReadErrors,
-    samples,
-  };
+  return progress;
 }
 
 export const runPluginManifestSummaryBackfill = internalAction({
@@ -1405,31 +1419,7 @@ export const runPluginManifestSummaryBackfill = internalAction({
     confirm: v.optional(v.string()),
     maxPackages: v.optional(v.number()),
   },
-  returns: v.object({
-    ok: v.literal(true),
-    dryRun: v.boolean(),
-    confirmRequired: v.optional(v.string()),
-    scannedPackages: v.number(),
-    eligibleReleases: v.number(),
-    changedReleases: v.number(),
-    patchedReleases: v.number(),
-    unchangedReleases: v.number(),
-    skippedMissingRelease: v.number(),
-    skippedMissingManifest: v.number(),
-    skippedSkillMarkdownReadErrorReleases: v.number(),
-    skillMarkdownReadErrors: v.number(),
-    samples: v.array(
-      v.object({
-        packageName: v.string(),
-        displayName: v.string(),
-        version: v.string(),
-        releaseId: v.id("packageReleases"),
-        configFieldCount: v.number(),
-        mcpServerCount: v.number(),
-        bundledSkillCount: v.number(),
-      }),
-    ),
-  }),
+  returns: pluginManifestSummaryBackfillResultValidator,
   handler: async (ctx, args): Promise<PluginManifestSummaryBackfillResult> => {
     const dryRun = args.dryRun !== false;
     if (!dryRun && args.confirm !== BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM) {
@@ -1493,33 +1483,10 @@ export const runPluginManifestSummaryBackfillPage = internalAction({
     dryRun: v.optional(v.boolean()),
     confirm: v.optional(v.string()),
   },
-  returns: v.object({
-    ok: v.literal(true),
-    dryRun: v.boolean(),
-    confirmRequired: v.optional(v.string()),
+  returns: pluginManifestSummaryBackfillResultValidator.extend({
     family: pluginPackageFamilyValidator,
     continueCursor: v.string(),
     isDone: v.boolean(),
-    scannedPackages: v.number(),
-    eligibleReleases: v.number(),
-    changedReleases: v.number(),
-    patchedReleases: v.number(),
-    unchangedReleases: v.number(),
-    skippedMissingRelease: v.number(),
-    skippedMissingManifest: v.number(),
-    skippedSkillMarkdownReadErrorReleases: v.number(),
-    skillMarkdownReadErrors: v.number(),
-    samples: v.array(
-      v.object({
-        packageName: v.string(),
-        displayName: v.string(),
-        version: v.string(),
-        releaseId: v.id("packageReleases"),
-        configFieldCount: v.number(),
-        mcpServerCount: v.number(),
-        bundledSkillCount: v.number(),
-      }),
-    ),
   }),
   handler: async (ctx, args) => {
     const dryRun = args.dryRun !== false;
@@ -1545,78 +1512,9 @@ export const runPluginManifestSummaryBackfillPage = internalAction({
       },
     );
 
-    let eligibleReleases = 0;
-    let changedReleases = 0;
-    let patchedReleases = 0;
-    let unchangedReleases = 0;
-    let skippedMissingRelease = 0;
-    let skippedMissingManifest = 0;
-    let skippedSkillMarkdownReadErrorReleases = 0;
-    let skillMarkdownReadErrors = 0;
-    const samples: PluginManifestSummaryBackfillSample[] = [];
+    const progress = createPluginManifestSummaryBackfillProgress();
 
-    for (const candidate of page.page) {
-      if (!candidate.release || candidate.release.softDeletedAt !== undefined) {
-        skippedMissingRelease += 1;
-        continue;
-      }
-
-      const pluginManifest = await resolvePluginManifestForSummaryBackfill(ctx, candidate.release);
-      if (!isJsonRecord(pluginManifest)) {
-        skippedMissingManifest += 1;
-        continue;
-      }
-
-      eligibleReleases += 1;
-      const filesResult = await withSkillMarkdownTextsForPluginManifestSummaryBackfill(
-        ctx,
-        candidate.release.files,
-      );
-      skillMarkdownReadErrors += filesResult.readErrors;
-      if (filesResult.readErrors > 0) {
-        skippedSkillMarkdownReadErrorReleases += 1;
-        continue;
-      }
-
-      const summary = retainPluginSummaryPresentation(
-        derivePluginManifestSummary({
-          pluginManifest,
-          ...(isJsonRecord(candidate.release.normalizedBundleManifest)
-            ? { skillManifest: candidate.release.normalizedBundleManifest }
-            : {}),
-          compatibility: candidate.release.compatibility,
-          files: filesResult.files,
-        }),
-        candidate.release.pluginManifestSummary,
-      );
-      if (hasSamePluginManifestSummary(candidate.release, summary)) {
-        unchangedReleases += 1;
-        continue;
-      }
-
-      changedReleases += 1;
-      if (!dryRun) {
-        const patched: boolean = await ctx.runMutation(
-          internal.migrations.applyPluginManifestSummaryBackfillPatch,
-          {
-            releaseId: candidate.release._id,
-            pluginManifestSummary: summary,
-          },
-        );
-        if (patched) patchedReleases += 1;
-      }
-      if (samples.length < 10) {
-        samples.push({
-          packageName: candidate.packageName,
-          displayName: candidate.displayName,
-          version: candidate.release.version,
-          releaseId: candidate.release._id,
-          configFieldCount: summary.configFields.length,
-          mcpServerCount: summary.mcpServers.length,
-          bundledSkillCount: summary.bundledSkills.length,
-        });
-      }
-    }
+    await processPluginManifestSummaryBackfillCandidates(ctx, page.page, dryRun, progress);
 
     return {
       ok: true as const,
@@ -1625,16 +1523,7 @@ export const runPluginManifestSummaryBackfillPage = internalAction({
       family: args.family,
       continueCursor: page.continueCursor,
       isDone: page.isDone,
-      scannedPackages: page.page.length,
-      eligibleReleases,
-      changedReleases,
-      patchedReleases,
-      unchangedReleases,
-      skippedMissingRelease,
-      skippedMissingManifest,
-      skippedSkillMarkdownReadErrorReleases,
-      skillMarkdownReadErrors,
-      samples,
+      ...progress,
     };
   },
 });

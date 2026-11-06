@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 25
     env:
       OPENCLAW_CONTRACT_REPOSITORY: openclaw/openclaw
-      OPENCLAW_CONTRACT_SHA: bad082feced849567953588d4b1bc7ffc3188839
+      OPENCLAW_CONTRACT_SHA: 522e31dbe8c5012914400d71664e9dc1343db0d2
 
     steps:
       - uses: actions/checkout@v7.0.1
@@ -113,7 +113,19 @@ jobs:
           fi
 
       - name: Unit coverage
+        env:
+          CLAWHUB_CI_TEST_OBSERVATIONS: "1"
         run: bun run ci:unit
+
+      - name: Upload test observations
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-observations-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ci-test-observations/observations.json
+          if-no-files-found: ignore
+          retention-days: 7
 
   packages:
     name: packages
@@ -228,6 +240,7 @@ jobs:
               e2e/mobile-skills.pw.test.ts
           - name: template-artifacts
             specs: |
+              e2e/local-auth/admin-download-analytics.pw.test.ts
               e2e/local-auth/exact-template-artifact.pw.test.ts
               e2e/local-auth/template-official-boundary.pw.test.ts
           - name: moderation-malicious

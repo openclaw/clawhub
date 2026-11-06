@@ -522,70 +522,11 @@ describe("public SDK usage from serialized Inspector reports", () => {
     );
     expect(stored?.inspectionFailed).toBe(true);
     expect(stored?.findingsCompletedAt).toEqual(expect.any(Number));
-    expect(stored?.completedAt).toBeGreaterThan(stored?.findingsCompletedAt ?? 0);
+    expect(stored?.completedAt).toBeGreaterThanOrEqual(stored?.findingsCompletedAt ?? 0);
     expect(report.items[0]?.scan.scannedAt).toBe(stored?.findingsCompletedAt);
   });
 
-  it("still reports a legacy findings row that has no findingsCompletedAt", async () => {
-    const { t, packageId, releaseId, ownerUserId } = await fixture();
-    await t.run(async (ctx) => {
-      await ctx.db.insert("packageSearchDigest", {
-        packageId,
-        name: "sdk-plugin",
-        normalizedName: "sdk-plugin",
-        displayName: "SDK plugin",
-        ownerUserId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        latestVersion: "1.0.0",
-        scanStatus: "clean",
-        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
-      });
-      await ctx.db.insert("packageInspectorScanStates", {
-        packageId,
-        releaseId,
-        inspectorVersion: "0.4.2",
-        targetOpenClawVersion: "2026.10.01",
-        completedAt: 100,
-      });
-      await ctx.db.insert("packageInspectorWarnings", {
-        packageId,
-        releaseId,
-        ownerUserId,
-        packageName: "sdk-plugin",
-        version: "1.0.0",
-        scanSource: "nightly",
-        inspectorVersion: "0.4.2",
-        targetOpenClawVersion: "2026.10.01",
-        findingKind: "error",
-        code: "missing-api",
-        message: "Required API is unavailable",
-        createdAt: 100,
-      });
-      for (let index = 0; index < 21; index += 1) {
-        await ctx.db.insert("packageInspectorScanStates", {
-          packageId,
-          releaseId,
-          inspectorVersion: "0.4.3",
-          targetOpenClawVersion: `2026.11.${index + 1}`,
-          completedAt: 200 + index,
-          inspectionFailed: true,
-        });
-      }
-    });
-    const report = await t.query(internal.packages.listPluginValidationReportPageInternal, {
-      numItems: 20,
-    });
-    expect(report.items[0]).toMatchObject({
-      scan: { status: "error", scannedAt: 100, inspectorVersion: "0.4.2" },
-      findings: [expect.objectContaining({ code: "missing-api", severity: "error" })],
-    });
-  });
-
-  it("keeps a legacy findings time when that same tuple crashes after the upgrade", async () => {
+  it("retains actual legacy findings without inventing a success marker after a crash", async () => {
     const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
     await t.run(async (ctx) => {
       await ctx.db.insert("packageSearchDigest", {
@@ -647,7 +588,7 @@ describe("public SDK usage from serialized Inspector reports", () => {
         .unique(),
     );
     expect(stored?.inspectionFailed).toBe(true);
-    expect(stored?.findingsCompletedAt).toBe(100);
+    expect(stored?.findingsCompletedAt).toBeUndefined();
     expect(stored?.completedAt).toBeGreaterThan(100);
     const report = await t.query(internal.packages.listPluginValidationReportPageInternal, {
       numItems: 20,
@@ -658,7 +599,7 @@ describe("public SDK usage from serialized Inspector reports", () => {
     });
   });
 
-  it("keeps a newer legacy findings row ahead of an older tuple promoted by a crash", async () => {
+  it("keeps newer actual legacy findings ahead of an older ambiguous failed tuple", async () => {
     const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
     await t.run(async (ctx) => {
       await ctx.db.insert("packageSearchDigest", {
@@ -727,7 +668,7 @@ describe("public SDK usage from serialized Inspector reports", () => {
         .unique(),
     );
     expect(stored?.inspectionFailed).toBe(true);
-    expect(stored?.findingsCompletedAt).toBe(100);
+    expect(stored?.findingsCompletedAt).toBeUndefined();
     const report = await t.query(internal.packages.listPluginValidationReportPageInternal, {
       numItems: 20,
     });
@@ -794,6 +735,88 @@ describe("public SDK usage from serialized Inspector reports", () => {
       scan: { status: "error", scannedAt: 100, inspectorVersion: "0.4.2" },
       findings: [expect.objectContaining({ code: "missing-api", severity: "error" })],
     });
+  });
+
+  it("never upgrades an ambiguous legacy attempt to clean and retries it until verified success", async () => {
+    const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("packageSearchDigest", {
+        packageId,
+        name: "sdk-plugin",
+        normalizedName: "sdk-plugin",
+        displayName: "SDK plugin",
+        ownerUserId,
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        latestVersion: "1.0.0",
+        scanStatus: "clean",
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("packageInspectorScanStates", {
+        packageId,
+        releaseId,
+        inspectorVersion: "0.4.3",
+        targetOpenClawVersion: "2026.10.16",
+        completedAt: 100,
+        notificationCompletedAt: 100,
+      });
+    });
+    const report = () =>
+      t.query(internal.packages.listPluginValidationReportPageInternal, { numItems: 20 });
+    const claim = () =>
+      t.query(internal.packages.previewPackageInspectorScanBatchInternal, {
+        inspectorVersion: "0.4.3",
+        targetOpenClawVersion: "2026.10.16",
+        notifyOwners: true,
+      });
+    expect((await report()).items[0]?.scan).toMatchObject({
+      status: "not-scanned",
+      scannedAt: null,
+    });
+    expect((await claim()).items).toHaveLength(1);
+    await ingest(failedSdkUsageReport("legacy retry crashed"), {
+      inspectorVersion: "0.4.3",
+      targetOpenClawVersion: "2026.10.16",
+      inspectionFailed: true,
+    });
+    expect((await report()).items[0]?.scan).toMatchObject({ status: "skipped", scannedAt: null });
+    expect((await claim()).items).toHaveLength(1);
+    await ingest(inventory([]), {
+      inspectorVersion: "0.4.3",
+      targetOpenClawVersion: "2026.10.16",
+      notifyOwners: true,
+    });
+    expect((await report()).items[0]?.scan.status).toBe("clean");
+    expect((await claim()).items).toHaveLength(0);
+    // Main's previous monitoring writer retained only `failure` on an earlier
+    // verified outcome; those persisted retries must not be treated as covered.
+    await t.run(async (ctx) => {
+      const state = await ctx.db
+        .query("packageInspectorScanStates")
+        .withIndex("by_release_and_inspector_version_and_target_openclaw_version", (q) =>
+          q
+            .eq("releaseId", releaseId)
+            .eq("inspectorVersion", "0.4.3")
+            .eq("targetOpenClawVersion", "2026.10.16"),
+        )
+        .unique();
+      await ctx.db.patch(state!._id, {
+        failure: { stage: "inspection", reason: "error", message: "Persisted failed retry" },
+      });
+    });
+    expect((await report()).items[0]?.scan.status).toBe("clean");
+    expect((await claim()).items).toHaveLength(1);
+
+    await ingest(failedSdkUsageReport("verified retry crashed"), {
+      inspectorVersion: "0.4.3",
+      targetOpenClawVersion: "2026.10.16",
+      inspectionFailed: true,
+    });
+    expect((await report()).items[0]?.scan.status).toBe("clean");
+    expect((await claim()).items).toHaveLength(1);
   });
 
   it("reports an unscanned new latest release as missing and ignores a late old-release scan", async () => {

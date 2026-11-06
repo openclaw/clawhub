@@ -21,6 +21,12 @@ bun install
 cp .env.local.example .env.local
 ```
 
+The root install builds the ignored schema output in `packages/schema/dist`. Install
+with development dependencies before running the app, Convex, workers, or checks.
+After editing schema sources, or when reusing copied dependencies or installing
+with `--ignore-scripts`, run `bun run --cwd packages/schema build` first.
+Do not commit generated schema files.
+
 Edit `.env.local` with the following values for **local Convex**:
 
 ```bash
@@ -178,7 +184,6 @@ These features degrade gracefully without their keys:
 | Variable              | Purpose                                                   |
 | --------------------- | --------------------------------------------------------- |
 | `OPENAI_API_KEY`      | Embeddings and vector search (falls back to zero vectors) |
-| `VT_API_KEY`          | VirusTotal malware scanning                               |
 | `DISCORD_WEBHOOK_URL` | Discord notifications                                     |
 
 ## CLI Development

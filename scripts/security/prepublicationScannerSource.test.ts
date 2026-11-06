@@ -23,6 +23,8 @@ describe("opt-in pre-publication scanner source reporting", () => {
     },
   );
 
+  // Two real Go builds plus source/binary checks need a cold-cache budget;
+  // each fixture subprocess remains bounded below. No scanner gate is relaxed.
   it("checks a real Git checkout and Go build before accepting a reported source", async () => {
     const root = await mkdtemp(join(tmpdir(), "prepublication-source-"));
     try {
@@ -48,7 +50,12 @@ describe("opt-in pre-publication scanner source reporting", () => {
         GIT_COMMITTER_EMAIL: "fixture@example.invalid",
       };
       const run = (command: string, args: string[]) =>
-        execFileSync(command, args, { cwd: sourceDir, env: commandEnv, encoding: "utf8" }).trim();
+        execFileSync(command, args, {
+          cwd: sourceDir,
+          env: commandEnv,
+          encoding: "utf8",
+          timeout: 30_000,
+        }).trim();
       run("git", ["init", "--quiet"]);
       run("git", ["add", "."]);
       run("git", ["-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Synthetic scanner"]);
@@ -121,5 +128,5 @@ describe("opt-in pre-publication scanner source reporting", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 90_000);
 });

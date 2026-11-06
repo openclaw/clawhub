@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => {
     searchWeeklyTick: Symbol("search-weekly-tick"),
     searchWeeklyPrune: Symbol("search-weekly-prune"),
     searchReportsPrune: Symbol("search-reports-prune"),
+    downloadAnalyticsRef: Symbol("template-download-analytics"),
     githubSkillSyncRef,
     installTelemetryDedupePruneRef,
     publisherAbuseAutobanRef,
@@ -72,6 +73,7 @@ vi.mock("./_generated/api", () => ({
     searchReports: {
       pruneExpiredInternal: mocks.searchReportsPrune,
     },
+    downloadAnalytics: { refreshInternal: mocks.downloadAnalyticsRef },
     searchInsights: {
       aggregateInternal: Symbol("search-insights-aggregate"),
       pruneExpiredInternal: Symbol("search-insights-retention"),
@@ -119,10 +121,6 @@ vi.mock("./_generated/api", () => ({
     },
     prepublicationObservability: {
       logPrePublicationQueueHealthInternal: mocks.prepublicationQueueHealthRef,
-    },
-    vt: {
-      pollPendingScans: Symbol("vt-pending-scans"),
-      backfillActiveSkillsVTCache: Symbol("vt-cache-backfill"),
     },
     securityScan: {
       pruneExpiredSkillScanRequestsInternal: Symbol("skill-scan-request-prune"),
@@ -225,12 +223,12 @@ describe("crons", () => {
     );
   });
 
-  it("runs GitHub skill source sync every 15 minutes", async () => {
+  it("runs GitHub skill source sync once per day", async () => {
     await import("./crons");
 
     expect(mocks.interval).toHaveBeenCalledWith(
       "github-skill-source-sync",
-      { minutes: 15 },
+      { hours: 24 },
       mocks.githubSkillSyncRef,
       {},
     );

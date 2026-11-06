@@ -179,54 +179,23 @@ export function evaluateQuality(args: {
     (signals.templateMarkerHits >= 3 && signals.bodyWords < 120) ||
     similarRecentCount >= similarityRejectThreshold;
 
+  let decision: QualityAssessment["decision"] = "pass";
+  let reason = "Quality checks passed.";
   if (hardReject) {
-    const reason =
+    decision = "reject";
+    reason =
       similarRecentCount >= similarityRejectThreshold
         ? "Skill appears to be repeated template spam from this account."
         : "Skill content is too thin or templated. Add meaningful, specific documentation.";
-    return {
-      score,
-      decision: "reject",
-      reason,
-      trustTier,
-      similarRecentCount,
-      signals: {
-        bodyChars: signals.bodyChars,
-        bodyWords: signals.bodyWords,
-        uniqueWordRatio: signals.uniqueWordRatio,
-        headingCount: signals.headingCount,
-        bulletCount: signals.bulletCount,
-        templateMarkerHits: signals.templateMarkerHits,
-        genericSummary: signals.genericSummary,
-        cjkChars: signals.cjkChars,
-      },
-    };
-  }
-
-  if (score < quarantineScoreThreshold) {
-    return {
-      score,
-      decision: "quarantine",
-      reason: "Skill quality is low and requires moderation review before being listed.",
-      trustTier,
-      similarRecentCount,
-      signals: {
-        bodyChars: signals.bodyChars,
-        bodyWords: signals.bodyWords,
-        uniqueWordRatio: signals.uniqueWordRatio,
-        headingCount: signals.headingCount,
-        bulletCount: signals.bulletCount,
-        templateMarkerHits: signals.templateMarkerHits,
-        genericSummary: signals.genericSummary,
-        cjkChars: signals.cjkChars,
-      },
-    };
+  } else if (score < quarantineScoreThreshold) {
+    decision = "quarantine";
+    reason = "Skill quality is low and requires moderation review before being listed.";
   }
 
   return {
     score,
-    decision: "pass",
-    reason: "Quality checks passed.",
+    decision,
+    reason,
     trustTier,
     similarRecentCount,
     signals: {

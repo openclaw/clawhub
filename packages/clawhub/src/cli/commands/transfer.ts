@@ -7,9 +7,10 @@ import {
   parseArk,
 } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
-import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { createCrabLoader, fail, isInteractive, promptConfirm } from "../ui.js";
 
 type ConfirmOptions = { yes?: boolean };
 
@@ -119,7 +120,7 @@ export async function cmdTransferRequest(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader(`Requesting transfer of ${slug} to @${toHandle}`);
 
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -142,10 +143,7 @@ export async function cmdTransferRequest(
       spinner.succeed(`Transfer requested for ${slug} to @${parsed.toUserHandle ?? toHandle}`);
     }
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdTransferList(opts: GlobalOpts, options: { outgoing?: boolean }) {
@@ -153,7 +151,7 @@ export async function cmdTransferList(opts: GlobalOpts, options: { outgoing?: bo
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching transfers");
 
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const path = options.outgoing
       ? `${ApiRoutes.transfers}/outgoing`
       : `${ApiRoutes.transfers}/incoming`;
@@ -181,10 +179,7 @@ export async function cmdTransferList(opts: GlobalOpts, options: { outgoing?: bo
       console.log(`  ${transfer.skill.slug} -> ${other} (expires in ${expiresInDays}d)`);
     }
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 async function runTransferDecision(
@@ -207,7 +202,7 @@ async function runTransferDecision(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader(`${spec.progress} transfer of ${slug}`);
 
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       transferRequestArgs(registry, slug, requested.ownerHandle, `/${spec.action}`, token),
@@ -216,10 +211,7 @@ async function runTransferDecision(
     const parsed = parseArk(ApiV1TransferDecisionResponseSchema, result, "Transfer response");
     spinner.succeed(`${spec.success} (${slug})`);
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export function cmdTransferAccept(

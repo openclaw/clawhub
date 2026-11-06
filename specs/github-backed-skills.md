@@ -221,7 +221,7 @@ fetch so a transfer cannot race source activation.
 ClawHub owns the sync loop. Upstream repositories do not push payloads into
 ClawHub.
 
-The production cron runs every 15 minutes:
+The production cron runs once per day:
 
 ```text
 github-skill-source-sync -> githubSkillSyncNode.syncGitHubSkillSourcesInternal
@@ -259,6 +259,14 @@ render time.
 
 Unsupported, invalid, or missing manifest data should not block the source sync.
 The catalog can still render skills in the normal fallback order.
+
+Public `sourceRepos` names a repository only when the public catalog items
+include at least one skill from that source. A valid `skills.sh.json` does
+not put the repo on the list by itself. If every skill from that source is
+hidden, deleted, or otherwise absent from the public items, the source
+contributes no section and `sourceRepos` omits it. A public skill that does
+not match a grouping still keeps its repo, because that skill is visible
+under Other skills.
 
 Repo labels such as `NVIDIA/skills` and "Source-backed" chrome are implementation
 details and should not be required visible UI copy.

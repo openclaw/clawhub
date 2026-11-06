@@ -10,7 +10,13 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { httpAction } from "./functions";
-import { ambiguousSkillSlugMessage, json, text, toOptionalNumber } from "./httpApiV1/shared";
+import {
+  ambiguousSkillSlugMessage,
+  json,
+  text,
+  toOptionalNumber,
+  transientConvexErrorResponse,
+} from "./httpApiV1/shared";
 import { requireApiTokenUser, requirePackagePublishAuth } from "./lib/apiTokenAuth";
 import { serializeCanonicalSkillSearchResults } from "./lib/canonicalSkillSearchResponse";
 import { applyRateLimit } from "./lib/httpRateLimit";
@@ -165,7 +171,7 @@ async function cliWhoamiHandler(ctx: ActionCtx, request: Request) {
       },
     });
   } catch (error) {
-    return text(formatAuthFailure(error), 401);
+    return transientConvexErrorResponse(error) ?? text(formatAuthFailure(error), 401);
   }
 }
 
@@ -184,6 +190,9 @@ async function cliUploadUrlHandler(ctx: ActionCtx, request: Request) {
           });
     return json(upload);
   } catch (error) {
+    // A platform failure while minting the ticket is not an auth failure.
+    const transient = transientConvexErrorResponse(error);
+    if (transient) return transient;
     return text(formatAuthFailure(error), 401);
   }
 }
@@ -191,6 +200,9 @@ async function cliUploadUrlHandler(ctx: ActionCtx, request: Request) {
 export const cliUploadUrlHttp = httpAction(cliUploadUrlHandler);
 
 async function cliPublishHandler(ctx: ActionCtx, request: Request) {
+  // Once files persist, a failed publish discards them, so resending the same
+  // storage IDs can never succeed.
+  let filesPersisted = false;
   let body: unknown;
   try {
     body = await request.json();
@@ -225,9 +237,16 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
       ...(target ? { ownerPublisherId: target.publisherId } : {}),
       ...(source ? { sourceOwnerPublisherId: source.publisherId } : {}),
       ...(shouldMigrateOwner ? { migrateOwner: true } : {}),
+      onFilesPersisted: () => {
+        filesPersisted = true;
+      },
     });
     return json({ ok: true, ...result });
   } catch (error) {
+    const transient = transientConvexErrorResponse(error, undefined, {
+      restartRequired: filesPersisted,
+    });
+    if (transient) return transient;
     const message = error instanceof Error ? error.message : "Publish failed";
     if (message.toLowerCase().includes("unauthorized")) return text(formatAuthFailure(error), 401);
     return text(message, 400);

@@ -1,3 +1,5 @@
+import { fail } from "./ui.js";
+
 const SKILLS_SH_PREFIX = "skills-sh:";
 const SKILLS_SH_LEGACY_PREFIX = "skills-sh/";
 export const SKILLS_SH_UNSCANNED_LABEL = "Not scanned by ClawHub";
@@ -9,6 +11,19 @@ export type SkillsShReference = {
   slug: string;
   sourceRef: string;
 };
+
+// Inspect and scan preserve published names, unlike install-time slug normalization.
+export function parsePublishedSkillRef(raw: string) {
+  const value = raw.trim();
+  if (!value) fail("Skill required");
+  const slashIndex = value.indexOf("/");
+  if (slashIndex < 0) return { slug: value };
+  if (value.indexOf("/", slashIndex + 1) >= 0) fail(`Invalid skill: ${value}`);
+  const ownerHandle = value.slice(0, slashIndex).trim().replace(/^@+/, "");
+  const slug = value.slice(slashIndex + 1).trim();
+  if (!ownerHandle || !slug) fail(`Invalid skill: ${value}`);
+  return { slug, ownerHandle };
+}
 
 export function parseSkillsShCliReference(raw: string): SkillsShReference | null {
   return parseSkillsShReference(raw, false);

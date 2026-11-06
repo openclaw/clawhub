@@ -6,7 +6,6 @@ import {
   CATALOG_TOPIC_CANDIDATE_STORAGE_LIMIT,
   CATALOG_UNKNOWN_SIGNAL_STORAGE_LIMIT,
   prepareCatalogClassificationResult,
-  selectCatalogInference,
 } from "./catalogClassification";
 
 const baseResult = {
@@ -45,65 +44,6 @@ const baseResult = {
 };
 
 describe("catalog classification persistence", () => {
-  it("applies only confidence lanes accepted by the operator threshold", () => {
-    expect(
-      selectCatalogInference({
-        currentSourceId: "version:1",
-        resultSourceId: "version:1",
-        result: baseResult,
-        minimumConfidence: "high",
-      }),
-    ).toEqual({
-      status: "applied",
-      categories: ["development"],
-      topics: undefined,
-    });
-    expect(
-      selectCatalogInference({
-        currentSourceId: "version:1",
-        resultSourceId: "version:1",
-        result: baseResult,
-        minimumConfidence: "medium",
-      }),
-    ).toEqual({
-      status: "applied",
-      categories: ["development"],
-      topics: ["TypeScript", "Code Review"],
-    });
-  });
-
-  it("never overwrites author metadata and treats explicit empty topics as authoritative", () => {
-    expect(
-      selectCatalogInference({
-        currentSourceId: "version:1",
-        resultSourceId: "version:1",
-        authorCategories: ["operations"],
-        authorTopics: [],
-        result: baseResult,
-        minimumConfidence: "medium",
-      }),
-    ).toEqual({
-      status: "skipped-author",
-      categories: undefined,
-      topics: undefined,
-    });
-  });
-
-  it("rejects stale classifications before application", () => {
-    expect(
-      selectCatalogInference({
-        currentSourceId: "version:2",
-        resultSourceId: "version:1",
-        result: baseResult,
-        minimumConfidence: "medium",
-      }),
-    ).toEqual({
-      status: "stale",
-      categories: undefined,
-      topics: undefined,
-    });
-  });
-
   it("bounds persisted candidates while retaining original counts", () => {
     const prepared = prepareCatalogClassificationResult({
       ...baseResult,

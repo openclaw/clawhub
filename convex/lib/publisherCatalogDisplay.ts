@@ -1,16 +1,9 @@
-type DisplayManifest = {
-  notGrouped?: "top" | "bottom";
-  groupings: Array<{
-    title: string;
-    description?: string;
-    skills: string[];
-  }>;
-};
+import type { DisplayManifest, DisplayManifestStatus } from "./displayManifest";
 
 export type GitHubSkillCatalogSource = {
   _id: string;
   repo: string;
-  displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
+  displayManifestStatus?: DisplayManifestStatus;
   displayManifest?: DisplayManifest;
 };
 
@@ -105,7 +98,9 @@ export function buildGitHubSkillCatalogDisplay({
   const renderableSources = sources.filter(isRenderableSource);
   if (renderableSources.length === 0) return null;
 
-  const sourceRepos = Array.from(new Set(renderableSources.map((source) => source.repo)));
+  // A valid skills.sh.json is not enough. Name a repo only when this catalog
+  // still has a public skill from it. Hidden siblings stay out of sourceRepos.
+  const publicSourceRepos: string[] = [];
   const usedItemIds = new Set<string>();
   const sections: GitHubSkillCatalogSection[] = [];
   const otherPosition = renderableSources.some(
@@ -119,6 +114,7 @@ export function buildGitHubSkillCatalogDisplay({
       (item) => item.kind === "skill" && item.sourceId === source._id,
     );
     if (sourceItems.length === 0) continue;
+    publicSourceRepos.push(source.repo);
 
     for (const [groupIndex, group] of source.displayManifest!.groupings.entries()) {
       const groupItems = group.skills
@@ -157,7 +153,7 @@ export function buildGitHubSkillCatalogDisplay({
   if (orderedSections.length === 0) return null;
   return {
     mode: "grouped",
-    sourceRepos,
+    sourceRepos: Array.from(new Set(publicSourceRepos)),
     sections: orderedSections,
   };
 }

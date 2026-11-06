@@ -11,9 +11,10 @@ export const inspectEndpointInternal = internalAction({
     url: v.string(),
     transport: v.union(v.literal("streamable-http"), v.literal("sse")),
     checkOAuth: v.optional(v.boolean()),
+    clientMetadataUrl: v.optional(v.string()),
   },
   handler: async (_ctx, args): Promise<McpPublicInspection> =>
-    inspectPublicMcp(args.url, args.transport, args.checkOAuth),
+    inspectPublicMcp(args.url, args.transport, args.checkOAuth, args.clientMetadataUrl),
 });
 
 export const inspectPackageServer = action({

@@ -2,7 +2,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -144,22 +144,14 @@ async function compactZipOfZeros(path: string, unpackedSize: number) {
   return archive;
 }
 
-async function npmPackFixture(destination: string) {
+async function npmPackFixture(destination: string, source = join(fixtureRoot, "package")) {
   const npmArgs =
     process.platform === "win32"
       ? [join(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js")]
       : [];
   const { stdout } = await execFileAsync(
     process.platform === "win32" ? process.execPath : "npm",
-    [
-      ...npmArgs,
-      "pack",
-      join(fixtureRoot, "package"),
-      "--json",
-      "--ignore-scripts",
-      "--pack-destination",
-      destination,
-    ],
+    [...npmArgs, "pack", source, "--json", "--ignore-scripts", "--pack-destination", destination],
     { cwd: destination },
   );
   const output = JSON.parse(stdout) as unknown;
@@ -394,6 +386,54 @@ describe("published Template to OpenClaw dry-run proof", () => {
     const response = new Response("", { headers: { "Content-Length": String(65 * 1024 * 1024) } });
     await expect(readResponseBytesBounded(response)).rejects.toThrow("64MB download limit");
   });
+
+  it.each(["legacy-only", "mixed", "json"])(
+    "rejects %s package selectors before invoking any consumer",
+    async (mode) => {
+      const root = await mkdtemp(join(tmpdir(), "clawhub-retired-selector-"));
+      const originalArchive = archiveBytes;
+      const originalIntegrity = integrity;
+      try {
+        const source = join(root, "source");
+        await cp(join(fixtureRoot, "package"), source, { recursive: true });
+        const packageFile = join(source, "package.json");
+        const metadata = JSON.parse(await readFile(packageFile, "utf8"));
+        metadata.openclaw.claw = "CLAW.md";
+        if (mode === "legacy-only") delete metadata.openclaw.template;
+        if (mode === "json") {
+          delete metadata.openclaw.claw;
+          metadata.openclaw.template = "openclaw.template.json";
+          await writeFile(
+            join(source, "openclaw.template.json"),
+            JSON.stringify({
+              schemaVersion: 1,
+              agent: { id: "hosted-e2e" },
+              workspace: { bootstrapFiles: {}, files: [] },
+              packages: [],
+              mcpServers: {},
+              cronJobs: [],
+            }),
+          );
+        }
+        await writeFile(packageFile, JSON.stringify(metadata));
+        archiveBytes = new Uint8Array(await readFile(await npmPackFixture(root, source)));
+        integrity = "sha256:" + createHash("sha256").update(archiveBytes).digest("hex");
+        const origin = "http://127.0.0.1:" + serverPort;
+        await expect(
+          runPublishedTemplateDryRun({
+            feedUrl: origin + "/v1/feeds/templates",
+            packageName: "@openclaw/hosted-e2e",
+            registryUrl: origin,
+            openclawRepo: join(root, "consumer-must-not-run"),
+          }),
+        ).rejects.toThrow("invalid_template_manifest_path");
+      } finally {
+        archiveBytes = originalArchive;
+        integrity = originalIntegrity;
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it.skipIf(!openclawRepo)(
     "matches the pinned consumer across every built-in profile, static group and tool grant",

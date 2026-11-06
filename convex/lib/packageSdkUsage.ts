@@ -1,6 +1,11 @@
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import {
+  isPackageInspectorFailureOutcome,
+  type PackageInspectorFailure,
+  type PackageInspectorOutcome,
+} from "./packageInspectorOutcome";
 import { isPublishedPackageRelease } from "./packageReleaseVisibility";
 import {
   MAX_SDK_USAGE_ENTRIES,
@@ -104,6 +109,9 @@ export async function recordPackageInspectorScan(
     inspectionFailed?: boolean;
     report?: SdkUsageReport;
     artifactSha256?: string;
+    outcome?: PackageInspectorOutcome;
+    failure?: PackageInspectorFailure;
+    scanSource?: "publish" | "nightly";
   },
 ) {
   const { pkg, release, inspectorVersion, targetOpenClawVersion } = args;
@@ -124,33 +132,38 @@ export async function recordPackageInspectorScan(
     targetOpenClawVersion,
     completedAt,
     ...(args.notificationComplete ? { notificationCompletedAt: completedAt } : {}),
+    ...(args.outcome ? { outcome: args.outcome } : {}),
+    ...(args.failure ? { failure: args.failure } : {}),
+    ...(args.scanSource ? { scanSource: args.scanSource } : {}),
   };
-  // A crash updates the latest attempt only. findingsCompletedAt stays so the
-  // moderator report can still select this tuple's stored findings. A row
-  // written before that field existed has only completedAt; keep that time
-  // before this crash replaces it.
+  // Only an explicit successful inspection can establish a clean verdict.
+  // Legacy completedAt-only rows may also have come from a crashed attempt.
+  const failed = args.inspectionFailed === true || isPackageInspectorFailureOutcome(args.outcome);
+  const succeeded = args.outcome === "clean" || args.outcome === "findings";
+  const existingSucceeded =
+    existing?.findingsCompletedAt !== undefined ||
+    existing?.outcome === "clean" ||
+    existing?.outcome === "findings";
   let scanId = existing?._id;
-  if (args.inspectionFailed) {
-    const preservedFindingsAt =
-      existing && existing.findingsCompletedAt === undefined && existing.inspectionFailed !== true
-        ? existing.completedAt
-        : undefined;
-    const failedAttempt = {
-      ...identity,
-      inspectionFailed: true as const,
-      ...(preservedFindingsAt !== undefined ? { findingsCompletedAt: preservedFindingsAt } : {}),
-    };
-    if (scanId) await ctx.db.patch(scanId, failedAttempt);
-    else scanId = await ctx.db.insert("packageInspectorScanStates", failedAttempt);
-  } else {
-    const findingsScan = {
-      ...identity,
-      findingsCompletedAt: completedAt,
-      ...(existing ? { inspectionFailed: undefined } : {}),
-    };
-    if (scanId) await ctx.db.patch(scanId, findingsScan);
-    else scanId = await ctx.db.insert("packageInspectorScanStates", findingsScan);
-  }
+  const values = failed
+    ? {
+        ...identity,
+        inspectionFailed: true as const,
+        // A failed retry changes the attempt, never the last verified findings.
+        ...(existingSucceeded && existing
+          ? {
+              outcome: existing.outcome,
+              findingsCompletedAt: existing.findingsCompletedAt ?? existing.completedAt,
+            }
+          : {}),
+      }
+    : {
+        ...identity,
+        ...(succeeded ? { findingsCompletedAt: completedAt } : {}),
+        ...(existing && succeeded ? { inspectionFailed: undefined, failure: undefined } : {}),
+      };
+  if (scanId) await ctx.db.patch(scanId, values);
+  else scanId = await ctx.db.insert("packageInspectorScanStates", values);
   if (args.report && args.artifactSha256) {
     return await replacePackageSdkUsage(ctx, {
       pkg,

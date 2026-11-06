@@ -36,6 +36,7 @@ import {
   getTrustTier,
   type TrustTier,
 } from "./lib/skillQuality";
+import { qualitySummaryValidator } from "./lib/skillQualityContract";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
@@ -1502,7 +1503,6 @@ export async function repairLegacyPluginSkillSpectorBatchInternalHandler(
           releaseId: item.releaseId,
           source: "backfill",
           priority: 40,
-          waitForVtMs: 0,
         },
       )) as { alreadyQueued?: boolean; jobId?: Id<"securityScanJobs"> };
       if (queued.alreadyQueued) {
@@ -2520,20 +2520,7 @@ export const applyEmptySkillCleanupInternal = internalMutation({
   args: {
     skillId: v.id("skills"),
     reason: v.string(),
-    quality: v.object({
-      score: v.number(),
-      trustTier: v.union(v.literal("low"), v.literal("medium"), v.literal("trusted")),
-      signals: v.object({
-        bodyChars: v.number(),
-        bodyWords: v.number(),
-        uniqueWordRatio: v.number(),
-        headingCount: v.number(),
-        bulletCount: v.number(),
-        templateMarkerHits: v.number(),
-        genericSummary: v.boolean(),
-        cjkChars: v.optional(v.number()),
-      }),
-    }),
+    quality: qualitySummaryValidator,
   },
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);

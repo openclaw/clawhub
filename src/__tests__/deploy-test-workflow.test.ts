@@ -66,11 +66,7 @@ describe("Test deploy workflow", () => {
     });
     expect(job?.if).toContain("github.event_name == 'workflow_dispatch'");
     expect(job?.if).toContain("github.ref == 'refs/heads/main'");
-    expect(job?.if).toContain("github.ref == 'refs/heads/codex/endor-plugin-scan-main-20261001'");
     expect(job?.if).toContain("github.actor == 'Patrick-Erichsen'");
-    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-endor-to-permanent-test'");
-    expect(job?.if).toContain("inputs.expected_sha == github.sha");
-    expect(revision).toContain('"$ENDOR_TEST_SHA" == "$deploy_sha"');
     expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k'");
     expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test'");
     expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-589-trending-rank-overlay'");

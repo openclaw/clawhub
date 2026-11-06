@@ -74,12 +74,19 @@ on:
         required: true
         options: [workflow, recovery-approved]
         default: workflow
+      lane:
+        description: "Root-coordinated diagnostic lane; a lane must be idle before dispatch"
+        type: choice
+        required: true
+        options: ["0", "1"]
+        default: "0"
 
 permissions:
   contents: read
 
 concurrency:
-  group: nonproduction-clawscan-judge-diagnostic
+  # Clamp the group even when API dispatch inputs bypass the choice control.
+  group: nonproduction-clawscan-judge-diagnostic-${{ inputs.lane == '1' && '1' || '0' }}
   cancel-in-progress: false
 
 jobs:
@@ -105,25 +112,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CONSUMER_CHOICE: ${{ inputs.consumer }}
+          LANE_CHOICE: ${{ inputs.lane }}
           FIXTURE_CHOICE: ${{ inputs.fixture }}
           SOURCE_CHOICE: ${{ inputs.source }}
           RUNNER_CHOICE: ${{ inputs.runner }}
         run: |
           set -euo pipefail
+          case "${LANE_CHOICE:-0}" in 0|1) ;; *) exit 1 ;; esac
           [[ "$GITHUB_REPOSITORY" == openclaw/clawhub ]] || exit 1
           [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$GITHUB_REF" == refs/heads/main ]] || exit 1
           [[ "$GITHUB_WORKFLOW_REF" == openclaw/clawhub/.github/workflows/clawscan-judge-diagnostic.yml@refs/heads/main ]] || exit 1
           [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ && "$GITHUB_WORKFLOW_SHA" == "$GITHUB_SHA" ]] || exit 1
           case "${CONSUMER_CHOICE:-workflow}" in
             workflow)
+              [[ "${LANE_CHOICE:-0}" == 0 ]] || exit 1
               consumer_sha="$GITHUB_SHA"
               ;;
             recovery-approved)
               [[ "$GITHUB_ACTOR" == Patrick-Erichsen && "$GITHUB_TRIGGERING_ACTOR" == Patrick-Erichsen ]] || exit 1
               [[ "$GITHUB_RUN_ATTEMPT" == 1 && "$SOURCE_CHOICE" == reviewed && "$RUNNER_CHOICE" == ubuntu-22.04 ]] || exit 1
-              [[ "$FIXTURE_CHOICE" =~ ^original-(038|079|004|016|017|026|027|074|008|011|036|033|065|073|042|055|039|010|019|005|006|015)-encrypted$ ]] || exit 1
+              [[ "$FIXTURE_CHOICE" =~ ^original-(038|079|004|016|017|026|027|074|008|011|036|033|065|073|042|055|039|010|019|005|006|015|071|007|009|014|013|029|030|002|003|067)-encrypted$ ]] || exit 1
               # Keep the consumer's reviewed code and dependencies stable as main advances.
-              consumer_sha=39c955143f13aa4ddb4c47272262e7e82e3e5340
+              consumer_sha=2db6eef5df3229741d22aa659d60057d17c8a2a2
               comparison=$(gh api --method GET "repos/openclaw/clawhub/compare/${consumer_sha}...${GITHUB_SHA}" \
                 --jq '[.base_commit.sha,.merge_base_commit.sha,(.status == "ahead" or .status == "identical")]|@tsv')
               [[ "$comparison" == "$(printf '%s\t%s\ttrue' "$consumer_sha" "$consumer_sha")" ]] || exit 1
@@ -131,7 +141,7 @@ jobs:
             *) exit 1 ;;
           esac
           printf 'consumer-sha=%s\nworkflow-sha=%s\n' "$consumer_sha" "$GITHUB_WORKFLOW_SHA" >> "$GITHUB_OUTPUT"
-          printf 'workflow_commit=%s consumer_commit=%s\n' "$GITHUB_WORKFLOW_SHA" "$consumer_sha"
+          printf 'workflow_commit=%s consumer_commit=%s diagnostic_lane=%s\n' "$GITHUB_WORKFLOW_SHA" "$consumer_sha" "${LANE_CHOICE:-0}"
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ steps.consumer.outputs.consumer-sha }}

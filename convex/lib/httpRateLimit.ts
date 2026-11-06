@@ -32,8 +32,8 @@ const HTTP_RATE_LIMIT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 
 type RateLimitResult = {
   allowed: boolean;
-  // The component does not expose an exact global remaining count for sharded
-  // buckets, so successful responses omit this instead of guessing.
+  // Only set on denial (exactly 0). The component cannot report an exact global
+  // remaining count for sharded buckets, and admitted responses send no headers.
   remaining?: number;
   limit: number;
   resetAt: number;
@@ -121,12 +121,9 @@ export async function applyRateLimit(
       combineMetadata,
       batchSize,
     );
-    const headers = {
-      ...rateHeaders(userResult),
-      ...(adminProbe
-        ? { "X-ClawHub-RateLimit-Rpc": combineMetadata ? "combined" : "separate" }
-        : {}),
-    };
+    const headers: Record<string, string> = adminProbe
+      ? { "X-ClawHub-RateLimit-Rpc": combineMetadata ? "combined" : "separate" }
+      : {};
     if (userResult.unavailable) return rateLimitUnavailable(headers);
     if (!userResult.allowed) {
       console.info("rate_limit_denied", {
@@ -147,6 +144,7 @@ export async function applyRateLimit(
               "Content-Type": "text/plain; charset=utf-8",
               "Cache-Control": "no-store",
             },
+            rateLimitedHeaders(userResult),
             headers,
             corsHeaders(),
           ),
@@ -168,8 +166,7 @@ export async function applyRateLimit(
     combineMetadata,
     batchSize,
   );
-  const headers = rateHeaders(ipResult);
-  if (ipResult.unavailable) return rateLimitUnavailable(headers);
+  if (ipResult.unavailable) return rateLimitUnavailable({});
 
   if (!ipResult.allowed) {
     console.info("rate_limit_denied", {
@@ -189,14 +186,16 @@ export async function applyRateLimit(
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-store",
           },
-          headers,
+          rateLimitedHeaders(ipResult),
           corsHeaders(),
         ),
       }),
     };
   }
 
-  return { ok: true, headers };
+  // Admitted requests carry no rate-limit headers: they were not limited, and
+  // limit/reset hints on later 4xx/5xx responses read as a rate limit.
+  return { ok: true, headers: {} };
 }
 
 function getAnonymousRateLimitKey(kind: RateLimitKind, ip: string) {
@@ -469,7 +468,11 @@ function rateLimitUnavailable(headers: HeadersInit): Extract<ApplyRateLimitResul
   };
 }
 
-function rateHeaders(result: RateLimitResult): Record<string, string> {
+// Rate-limit headers describe an actual denial. Admitted requests (including
+// every request while `CLAWHUB_RATE_LIMITER_DISABLED=1` or unmetered batching
+// skips the limiter) and limiter-unavailable 503s must not carry them: the CLI
+// and publishers read limit/reset hints as "you were rate limited".
+function rateLimitedHeaders(result: RateLimitResult): Record<string, string> {
   const nowMs = Date.now();
   const resetSeconds = Math.ceil(result.resetAt / 1000);
   const resetDelaySeconds = Math.max(1, Math.ceil((result.resetAt - nowMs) / 1000));
@@ -483,7 +486,7 @@ function rateHeaders(result: RateLimitResult): Record<string, string> {
     headers["X-RateLimit-Remaining"] = String(result.remaining);
     headers["RateLimit-Remaining"] = String(result.remaining);
   }
-  if (!result.allowed) headers["Retry-After"] = String(resetDelaySeconds);
+  headers["Retry-After"] = String(resetDelaySeconds);
   return headers;
 }
 

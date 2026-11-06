@@ -76,6 +76,8 @@ const config = {
       ],
     },
     "packages/clawhub": {
+      // Copied canonical template implementations import these at runtime; dist is ignored.
+      ignoreDependencies: ["croner", "unicode-case-folding"],
       entry: [
         "bin/clawdhub.js!",
         "scripts/build.mjs!",

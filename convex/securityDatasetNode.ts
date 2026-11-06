@@ -6,7 +6,13 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { ActionCtx } from "./_generated/server";
 import { action, internalAction } from "./functions";
-import { redactBundleContent } from "./lib/securityDatasetRedaction";
+import {
+  isExcludedSkillBundlePath,
+  isPrimarySkillReadmePath,
+  redactBundleContent,
+  totalBundleBytes,
+  utf8Bytes,
+} from "./lib/securityDatasetRedaction";
 
 const MAX_EXPORT_BATCH_PAGES = 20;
 const MAX_REDACTED_BUNDLE_FILE_BYTES = 192 * 1024;
@@ -195,35 +201,6 @@ async function readRedactedBundleFiles(
     remainingArtifactBytes -= contentBytes;
   }
   return bundleFiles;
-}
-
-function isExcludedSkillBundlePath(path: string) {
-  return (
-    isPrimarySkillReadmePath(path) || normalizeBundlePathForComparison(path) === "skill-card.md"
-  );
-}
-
-function isPrimarySkillReadmePath(path: string) {
-  const normalized = normalizeBundlePathForComparison(path);
-  return normalized === "skill.md" || normalized === "skills.md";
-}
-
-function normalizeBundlePathForComparison(path: string) {
-  return path
-    .trim()
-    .replace(/^\/+/, "")
-    .split("/")
-    .filter((segment) => segment && segment !== ".")
-    .join("/")
-    .toLowerCase();
-}
-
-function totalBundleBytes(files: Array<{ content: string }>) {
-  return files.reduce((sum, file) => sum + utf8Bytes(file.content), 0);
-}
-
-function utf8Bytes(value: string) {
-  return new TextEncoder().encode(value).byteLength;
 }
 
 async function readRedactedSkillMdContent(ctx: Pick<ActionCtx, "storage">, files: unknown[]) {

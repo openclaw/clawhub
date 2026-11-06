@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-import { readFile, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { Command } from "commander";
-import { resolveClawdbotDefaultWorkspace } from "../../clawhub/src/cli/clawdbotConfig.js";
 import { cmdLoginFlow, cmdLogout, cmdWhoami } from "../../clawhub/src/cli/commands/auth.js";
 import { cmdUnhideSkill } from "../../clawhub/src/cli/commands/delete.js";
 import {
@@ -14,12 +13,12 @@ import {
   cmdListSkillReports,
   cmdTriageSkillReport,
 } from "../../clawhub/src/cli/commands/skills.js";
+import { resolveGlobalOpts as resolveGlobalOptsFromOptions } from "../../clawhub/src/cli/globalOpts.js";
 import {
   configureCommanderHelp,
   styleEnvBlock,
   styleTitle,
 } from "../../clawhub/src/cli/helpStyle.js";
-import { DEFAULT_REGISTRY, DEFAULT_SITE } from "../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../clawhub/src/cli/types.js";
 import { fail } from "../../clawhub/src/cli/ui.js";
 import { getAdminCliBuildLabel, getAdminCliVersion } from "./buildInfo.js";
@@ -27,6 +26,7 @@ import {
   cmdGetContentRightsCase,
   cmdRecordContentRightsCorrespondence,
 } from "./commands/contentRights.js";
+import { cmdDownloads } from "./commands/downloads.js";
 import { cmdSendStaffEmail } from "./commands/email.js";
 import { cmdSetPackageFeatured, cmdSetSkillFeatured } from "./commands/featured.js";
 import { cmdFeaturedSelection } from "./commands/featuredSelections.js";
@@ -40,7 +40,6 @@ import {
   cmdLiftModerationHold,
   cmdRecoverPersonalPublisher,
   cmdReclassifyBan,
-  cmdRepairVtPendingSkills,
   cmdRevokeSkillVersion,
   cmdRescanAllSkills,
   cmdRescanAllPackages,
@@ -114,58 +113,12 @@ async function resolveGlobalOpts(): Promise<GlobalOpts> {
     site?: string;
     registry?: string;
   }>();
-  const workdir = await resolveWorkdir(raw.workdir);
-  const dir = resolve(workdir, raw.dir ?? "skills");
-  const site = raw.site ?? process.env.CLAWHUB_SITE ?? process.env.CLAWDHUB_SITE ?? DEFAULT_SITE;
-  const registrySource = raw.registry
-    ? "cli"
-    : process.env.CLAWHUB_REGISTRY || process.env.CLAWDHUB_REGISTRY
-      ? "env"
-      : "default";
-  const registry =
-    raw.registry ??
-    process.env.CLAWHUB_REGISTRY ??
-    process.env.CLAWDHUB_REGISTRY ??
-    DEFAULT_REGISTRY;
-  return { workdir, dir, site, registry, registrySource };
+  return resolveGlobalOptsFromOptions(raw);
 }
 
 function isInputAllowed() {
   const globalFlags = program.opts<{ input?: boolean }>();
   return globalFlags.input !== false;
-}
-
-async function resolveWorkdir(explicit?: string) {
-  if (explicit?.trim()) return resolve(explicit.trim());
-  const envWorkdir = process.env.CLAWHUB_WORKDIR?.trim() ?? process.env.CLAWDHUB_WORKDIR?.trim();
-  if (envWorkdir) return resolve(envWorkdir);
-
-  const cwd = resolve(process.cwd());
-  const hasMarker = await hasClawhubMarker(cwd);
-  if (hasMarker) return cwd;
-
-  const clawdbotWorkspace = await resolveClawdbotDefaultWorkspace();
-  return clawdbotWorkspace ? resolve(clawdbotWorkspace) : cwd;
-}
-
-async function hasClawhubMarker(workdir: string) {
-  const lockfile = join(workdir, ".clawhub", "lock.json");
-  if (await pathExists(lockfile)) return true;
-  const markerDir = join(workdir, ".clawhub");
-  if (await pathExists(markerDir)) return true;
-  const legacyLockfile = join(workdir, ".clawdhub", "lock.json");
-  if (await pathExists(legacyLockfile)) return true;
-  const legacyMarkerDir = join(workdir, ".clawdhub");
-  return pathExists(legacyMarkerDir);
-}
-
-async function pathExists(path: string) {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 program
@@ -194,6 +147,16 @@ program
     const opts = await resolveGlobalOpts();
     await cmdWhoami(opts);
   });
+
+program
+  .command("downloads")
+  .description("New: admin Template recorded-download analytics (rolling 24h and lifetime)")
+  .option("--json", "Output the backend summary as JSON")
+  .option(
+    "--refresh",
+    "Schedule a bounded refresh; returns current/pending report, not a completed rebuild",
+  )
+  .action(async (options) => cmdDownloads(await resolveGlobalOpts(), options));
 
 const auth = program
   .command("auth")
@@ -1011,27 +974,6 @@ function registerSkillModerationCommands(command: Command) {
     .action(async (options) => {
       const opts = await resolveGlobalOpts();
       await cmdRescanAllSkills(opts, options, isInputAllowed());
-    });
-
-  command
-    .command("repair-vt-pending")
-    .description("Repair stale pending VirusTotal skill cache by rechecking hashes")
-    .option("--batch-size <n>", "Batch size; backend caps at 500", (value) =>
-      Number.parseInt(value, 10),
-    )
-    .option(
-      "--concurrency <n>",
-      "Per-batch VirusTotal lookup concurrency; backend caps at 32",
-      (value) => Number.parseInt(value, 10),
-    )
-    .option("--cursor <cursor>", "Resume from a backend pagination cursor")
-    .option("--dry-run", "Check pending rows without writing VT cache updates")
-    .option("--all", "Continue paging until the backend reports done")
-    .option("--yes", "Skip confirmation for write runs")
-    .option("--json", "Output JSON progress events")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRepairVtPendingSkills(opts, options, isInputAllowed());
     });
 
   command
