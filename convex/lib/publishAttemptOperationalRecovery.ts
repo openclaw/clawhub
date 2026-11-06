@@ -29,6 +29,227 @@ function matchesAttemptPublisher(
   );
 }
 
+// Shared admission for scanner retries and expired finalization recovery. The
+// original attempt remains the source of artifact identity and publisher scope.
+async function validateRetainedPublishAttempt(ctx: MutationCtx, attempt: Doc<"publishAttempts">) {
+  const rejected = (reason: string) => ({ eligible: false as const, requeued: false, reason });
+  const user = await ctx.db.get(attempt.userId);
+  if (!user || user.deletedAt || user.deactivatedAt) return rejected("publisher-unavailable");
+  let ownerUserId: Id<"users">;
+  let ownerPublisherId: Id<"publishers"> | undefined;
+  let targetFiles: typeof attempt.files;
+  let priorBindings: Array<Doc<"skillVersions">["operationalRetry"]>;
+  let archive: { storageId: Id<"_storage">; size?: number; sha256?: string } | undefined;
+  if (attempt.kind === "skill") {
+    const version = attempt.skillVersionId ? await ctx.db.get(attempt.skillVersionId) : null;
+    const skill = attempt.skillId ? await ctx.db.get(attempt.skillId) : null;
+    if (
+      !version ||
+      !skill ||
+      version.skillId !== skill._id ||
+      version.version !== attempt.version ||
+      skill.slug !== attempt.slug ||
+      version.publicationStatus !== "pending" ||
+      version.softDeletedAt ||
+      version.ownerDeletedAt ||
+      version.manualRevocation ||
+      skill.softDeletedAt ||
+      (skill.moderationStatus === "hidden" && skill.moderationReason !== "pending.publication") ||
+      skill.moderationStatus === "removed" ||
+      normalizeSecurityScanStatus(version.llmAnalysis?.verdict ?? version.llmAnalysis?.status) ===
+        "malicious" ||
+      version.fingerprint !== attempt.artifactFingerprint ||
+      (version.publishAttemptId && version.publishAttemptId !== attempt._id)
+    )
+      return rejected("staged-target-unavailable");
+    ownerUserId = skill.ownerUserId;
+    ownerPublisherId = skill.ownerPublisherId;
+    targetFiles = version.files;
+    priorBindings = [version.operationalRetry, version.finalizationRecovery];
+  } else {
+    const release = attempt.packageReleaseId ? await ctx.db.get(attempt.packageReleaseId) : null;
+    const pkg = attempt.packageId ? await ctx.db.get(attempt.packageId) : null;
+    if (
+      !release ||
+      !pkg ||
+      release.packageId !== pkg._id ||
+      release.version !== attempt.version ||
+      pkg.name !== attempt.slug ||
+      release.publicationStatus !== "pending" ||
+      release.softDeletedAt ||
+      release.ownerDeletedAt ||
+      pkg.softDeletedAt ||
+      release.manualModeration?.state === "quarantined" ||
+      release.manualModeration?.state === "revoked" ||
+      resolvePackageReleaseScanStatus(release) === "malicious" ||
+      (release.clawManifestSummary ? release.clawpackSha256 : release.integritySha256) !==
+        attempt.artifactFingerprint ||
+      (release.publishAttemptId && release.publishAttemptId !== attempt._id)
+    )
+      return rejected("staged-target-unavailable");
+    ownerUserId = pkg.ownerUserId;
+    ownerPublisherId = pkg.ownerPublisherId;
+    targetFiles = release.files;
+    priorBindings = [release.operationalRetry, release.finalizationRecovery];
+    const insertArgs = attempt.packageInsertArgs as { clawpackStorageId?: unknown } | undefined;
+    const originalArchive = attempt.clawpackStorageId ?? insertArgs?.clawpackStorageId;
+    if (originalArchive !== release.clawpackStorageId) {
+      return rejected("artifact-inventory-changed");
+    }
+    if (release.clawpackStorageId) {
+      archive = {
+        storageId: release.clawpackStorageId,
+        size: release.clawpackSize,
+        sha256: release.clawpackSha256,
+      };
+    }
+  }
+  // Legacy pending targets may not have an attempt backlink. Never adopt bytes
+  // that another live or finalized attempt already owns.
+  for (const status of [
+    "pending_checks",
+    "ready_to_finalize",
+    "finalizing",
+    "finalized",
+  ] as const) {
+    const other = await ctx.db
+      .query("publishAttempts")
+      .withIndex("by_kind_status_slug_version_created", (q) =>
+        q
+          .eq("kind", attempt.kind)
+          .eq("status", status)
+          .eq("slug", attempt.slug)
+          .eq("version", attempt.version),
+      )
+      .filter((q) =>
+        q.and(
+          q.neq(q.field("_id"), attempt._id),
+          q.eq(
+            q.field(attempt.kind === "skill" ? "skillVersionId" : "packageReleaseId"),
+            attempt.kind === "skill" ? attempt.skillVersionId : attempt.packageReleaseId,
+          ),
+        ),
+      )
+      .first();
+    if (other) return rejected("another-attempt-owns-artifact");
+  }
+  // Skill attempts historically bind the publisher scope, not ownerUserId.
+  // An organization member may submit on behalf of a different resource owner.
+  const owner = await ctx.db.get(ownerUserId);
+  const publisher = ownerPublisherId ? await ctx.db.get(ownerPublisherId) : null;
+  const originalOwnerUserId =
+    attempt.ownerUserId ?? (attempt.ownerPublisherId ? undefined : attempt.userId);
+  if (
+    (originalOwnerUserId !== undefined && ownerUserId !== originalOwnerUserId) ||
+    !matchesAttemptPublisher(attempt, ownerUserId, ownerPublisherId, owner, publisher)
+  )
+    return rejected("owner-changed");
+  if (
+    priorBindings.some(
+      (binding) =>
+        binding &&
+        (binding.attemptId !== attempt._id ||
+          binding.actorUserId !== attempt.userId ||
+          binding.ownerUserId !== ownerUserId ||
+          binding.ownerPublisherId !== ownerPublisherId),
+    )
+  )
+    return rejected("retry-binding-changed");
+  if (
+    !owner ||
+    owner.deletedAt ||
+    owner.deactivatedAt ||
+    (ownerPublisherId && !isPublisherActive(publisher))
+  )
+    return rejected("publisher-unavailable");
+  try {
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId,
+      ownerPublisherId,
+      allowedPublisherRoles: ["publisher"],
+      allowPlatformAdmin: false,
+    });
+  } catch (error) {
+    if (!(error instanceof ConvexError)) throw error;
+    return rejected("publisher-authorization-revoked");
+  }
+  if (
+    targetFiles.length !== attempt.files.length ||
+    targetFiles.some((file, index) => {
+      const original = attempt.files[index];
+      return (
+        file.path !== original.path ||
+        file.size !== original.size ||
+        file.storageId !== original.storageId ||
+        file.sha256 !== original.sha256
+      );
+    })
+  )
+    return rejected("artifact-inventory-changed");
+  for (const file of [...targetFiles, ...(archive ? [archive] : [])]) {
+    const stored = await ctx.db.system.get(file.storageId);
+    if (
+      !stored ||
+      stored.size !== file.size ||
+      !file.sha256 ||
+      !matchesStorageSha256(stored.sha256, file.sha256)
+    )
+      return rejected("artifact-storage-unavailable");
+  }
+  return { eligible: true as const, ownerUserId, ownerPublisherId };
+}
+
+// Only an explicitly targeted worker may enter this path. Do not change scanner
+// outcomes or erase diagnostic history when resuming an interrupted finalizer.
+export async function bindExpiredFinalizationRecovery(
+  ctx: MutationCtx,
+  attempt: Doc<"publishAttempts">,
+) {
+  const now = Date.now();
+  if (
+    attempt.status !== "finalizing" ||
+    attempt.expiresAt <= now ||
+    (attempt.finalizationClaimExpiresAt ?? 0) > now ||
+    (attempt.checkClaimExpiresAt ?? 0) > now ||
+    attempt.checks.trufflehog.status !== "clean" ||
+    attempt.checks.clawscan.status !== "clean"
+  ) {
+    throw new ConvexError(
+      "Expired finalization recovery requires retained bytes, expired leases and passing primary checks",
+    );
+  }
+  const admission = await validateRetainedPublishAttempt(ctx, attempt);
+  if (!admission.eligible)
+    throw new ConvexError(`Expired finalization recovery rejected: ${admission.reason}`);
+  const { ownerUserId, ownerPublisherId } = admission;
+  const targetId = attempt.kind === "skill" ? attempt.skillVersionId! : attempt.packageReleaseId!;
+  await ctx.db.patch(targetId, {
+    publishAttemptId: attempt._id,
+    finalizationRecovery: {
+      attemptId: attempt._id,
+      actorUserId: attempt.userId,
+      ownerUserId,
+      ...(ownerPublisherId ? { ownerPublisherId } : {}),
+    },
+  });
+  await ctx.db.insert("auditLogs", {
+    action: "publish_attempt.finalization_recovery",
+    targetType: "publishAttempt",
+    targetId: attempt._id,
+    metadata: {
+      artifactFingerprint: attempt.artifactFingerprint,
+      previousUpdatedAt: attempt.updatedAt,
+      previousFinalizationClaimExpiresAt: attempt.finalizationClaimExpiresAt ?? null,
+      previousChecks: attempt.checks,
+      previousFailure: attempt.finalizationLastError ?? null,
+      previousCheckFailure: attempt.checkClaimLastError ?? null,
+      previousFailureCount: attempt.checkFailureCount ?? null,
+    },
+    createdAt: now,
+  });
+}
+
 // Operator maintenance, not an owner authorization or moderation override. Every
 // retry goes through the existing scanner, claim and finalization boundaries.
 export async function retryFailedPublishAttemptChecks(
@@ -77,164 +298,9 @@ export async function retryFailedPublishAttemptChecks(
   if (!Number.isSafeInteger(attempt.checkFailureCount) || (attempt.checkFailureCount ?? -1) < 0)
     return rejected("failure-history-unavailable");
 
-  const user = await ctx.db.get(attempt.userId);
-  if (!user || user.deletedAt || user.deactivatedAt) return rejected("publisher-unavailable");
-  let ownerUserId: Id<"users">;
-  let ownerPublisherId: Id<"publishers"> | undefined;
-  let targetFiles: typeof attempt.files;
-  let priorRetry: Doc<"skillVersions">["operationalRetry"];
-  let archive: { storageId: Id<"_storage">; size?: number; sha256?: string } | undefined;
-  if (attempt.kind === "skill") {
-    const version = attempt.skillVersionId ? await ctx.db.get(attempt.skillVersionId) : null;
-    const skill = attempt.skillId ? await ctx.db.get(attempt.skillId) : null;
-    if (
-      !version ||
-      !skill ||
-      version.skillId !== skill._id ||
-      version.version !== attempt.version ||
-      skill.slug !== attempt.slug ||
-      version.publicationStatus !== "pending" ||
-      version.softDeletedAt ||
-      version.ownerDeletedAt ||
-      version.manualRevocation ||
-      skill.softDeletedAt ||
-      (skill.moderationStatus === "hidden" && skill.moderationReason !== "pending.publication") ||
-      skill.moderationStatus === "removed" ||
-      normalizeSecurityScanStatus(version.llmAnalysis?.verdict ?? version.llmAnalysis?.status) ===
-        "malicious" ||
-      version.fingerprint !== attempt.artifactFingerprint ||
-      (version.publishAttemptId && version.publishAttemptId !== attempt._id)
-    )
-      return rejected("staged-target-unavailable");
-    ownerUserId = skill.ownerUserId;
-    ownerPublisherId = skill.ownerPublisherId;
-    targetFiles = version.files;
-    priorRetry = version.operationalRetry;
-  } else {
-    const release = attempt.packageReleaseId ? await ctx.db.get(attempt.packageReleaseId) : null;
-    const pkg = attempt.packageId ? await ctx.db.get(attempt.packageId) : null;
-    if (
-      !release ||
-      !pkg ||
-      release.packageId !== pkg._id ||
-      release.version !== attempt.version ||
-      pkg.name !== attempt.slug ||
-      release.publicationStatus !== "pending" ||
-      release.softDeletedAt ||
-      release.ownerDeletedAt ||
-      pkg.softDeletedAt ||
-      release.manualModeration?.state === "quarantined" ||
-      release.manualModeration?.state === "revoked" ||
-      resolvePackageReleaseScanStatus(release) === "malicious" ||
-      (release.clawManifestSummary ? release.clawpackSha256 : release.integritySha256) !==
-        attempt.artifactFingerprint ||
-      (release.publishAttemptId && release.publishAttemptId !== attempt._id)
-    )
-      return rejected("staged-target-unavailable");
-    ownerUserId = pkg.ownerUserId;
-    ownerPublisherId = pkg.ownerPublisherId;
-    targetFiles = release.files;
-    priorRetry = release.operationalRetry;
-    const insertArgs = attempt.packageInsertArgs as { clawpackStorageId?: unknown } | undefined;
-    const originalArchive = attempt.clawpackStorageId ?? insertArgs?.clawpackStorageId;
-    if (originalArchive !== release.clawpackStorageId) {
-      return rejected("artifact-inventory-changed");
-    }
-    if (release.clawpackStorageId) {
-      archive = {
-        storageId: release.clawpackStorageId,
-        size: release.clawpackSize,
-        sha256: release.clawpackSha256,
-      };
-    }
-  }
-  // Legacy pending targets may not have an attempt backlink. Never adopt bytes
-  // that another live or finalized attempt already owns.
-  for (const status of [
-    "pending_checks",
-    "ready_to_finalize",
-    "finalizing",
-    "finalized",
-  ] as const) {
-    const other = await ctx.db
-      .query("publishAttempts")
-      .withIndex("by_kind_status_slug_version_created", (q) =>
-        q
-          .eq("kind", attempt.kind)
-          .eq("status", status)
-          .eq("slug", attempt.slug)
-          .eq("version", attempt.version),
-      )
-      .filter((q) =>
-        q.eq(
-          q.field(attempt.kind === "skill" ? "skillVersionId" : "packageReleaseId"),
-          attempt.kind === "skill" ? attempt.skillVersionId : attempt.packageReleaseId,
-        ),
-      )
-      .first();
-    if (other) return rejected("another-attempt-owns-artifact");
-  }
-  // Skill attempts historically bind the publisher scope, not ownerUserId.
-  // An organization member may submit on behalf of a different resource owner.
-  const owner = await ctx.db.get(ownerUserId);
-  const publisher = ownerPublisherId ? await ctx.db.get(ownerPublisherId) : null;
-  const originalOwnerUserId =
-    attempt.ownerUserId ?? (attempt.ownerPublisherId ? undefined : attempt.userId);
-  if (
-    (originalOwnerUserId !== undefined && ownerUserId !== originalOwnerUserId) ||
-    !matchesAttemptPublisher(attempt, ownerUserId, ownerPublisherId, owner, publisher)
-  )
-    return rejected("owner-changed");
-  if (
-    priorRetry &&
-    (priorRetry.attemptId !== attempt._id ||
-      priorRetry.actorUserId !== attempt.userId ||
-      priorRetry.ownerUserId !== ownerUserId ||
-      priorRetry.ownerPublisherId !== ownerPublisherId)
-  )
-    return rejected("retry-binding-changed");
-  if (
-    !owner ||
-    owner.deletedAt ||
-    owner.deactivatedAt ||
-    (ownerPublisherId && !isPublisherActive(publisher))
-  )
-    return rejected("publisher-unavailable");
-  try {
-    await assertCanManageOwnedResource(ctx, {
-      actor: user,
-      ownerUserId,
-      ownerPublisherId,
-      allowedPublisherRoles: ["publisher"],
-      allowPlatformAdmin: false,
-    });
-  } catch (error) {
-    if (!(error instanceof ConvexError)) throw error;
-    return rejected("publisher-authorization-revoked");
-  }
-  if (
-    targetFiles.length !== attempt.files.length ||
-    targetFiles.some((file, index) => {
-      const original = attempt.files[index];
-      return (
-        file.path !== original.path ||
-        file.size !== original.size ||
-        file.storageId !== original.storageId ||
-        file.sha256 !== original.sha256
-      );
-    })
-  )
-    return rejected("artifact-inventory-changed");
-  for (const file of [...targetFiles, ...(archive ? [archive] : [])]) {
-    const stored = await ctx.db.system.get(file.storageId);
-    if (
-      !stored ||
-      stored.size !== file.size ||
-      !file.sha256 ||
-      !matchesStorageSha256(stored.sha256, file.sha256)
-    )
-      return rejected("artifact-storage-unavailable");
-  }
+  const admission = await validateRetainedPublishAttempt(ctx, attempt);
+  if (!admission.eligible) return admission;
+  const { ownerUserId, ownerPublisherId } = admission;
   const result = {
     eligible: true,
     requeued: false,
@@ -296,14 +362,14 @@ export async function retryFailedPublishAttemptChecks(
 }
 
 // Called by the owners of final publication, in the transaction that makes the
-// target public. An operational retry never freezes publisher authority or holds.
+// target public. Neither recovery path freezes publisher authority or holds.
 async function assertRetryFinalization(
   ctx: MutationCtx,
   parent: Pick<Doc<"skills">, "ownerUserId" | "ownerPublisherId">,
   target: Doc<"skillVersions"> | Doc<"packageReleases">,
   authorization: { publishAttemptId?: Id<"publishAttempts">; finalizationClaimId?: string },
 ) {
-  const retry = target.operationalRetry;
+  const retry = target.finalizationRecovery ?? target.operationalRetry;
   if (!retry) return null;
   const attempt = await ctx.db.get(retry.attemptId);
   if (
@@ -316,6 +382,7 @@ async function assertRetryFinalization(
     parent.ownerUserId !== retry.ownerUserId ||
     parent.ownerPublisherId !== retry.ownerPublisherId ||
     attempt.status !== "finalizing" ||
+    attempt.expiresAt <= Date.now() ||
     !attempt.finalizationClaimId ||
     (attempt.finalizationClaimExpiresAt ?? 0) <= Date.now() ||
     attempt.checks.trufflehog.status !== "clean" ||

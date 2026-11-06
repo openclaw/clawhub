@@ -55,11 +55,11 @@ import {
 } from "../../components/PluginVersionsPanel";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
-import { OpenClawCliInstallCommand } from "../../components/SkillInstallSurface";
+import { formatOpenClawPrompt } from "../../components/skillDetailUtils";
+import { InstallCommandCard } from "../../components/SkillInstallSurface";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -1208,9 +1208,14 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     pkg.scanStatus === "malicious" || latestRelease?.verification?.scanStatus === "malicious";
   const skillInstallOwner = owner?.handle ?? pkg.ownerHandle ?? "owner";
   const isPlugin = pkg.family === "code-plugin" || pkg.family === "bundle-plugin";
-  const installCommand = isPlugin
-    ? `openclaw plugins install clawhub:${pkg.name}`
-    : `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
+  const installTarget = isPlugin
+    ? pkg.name
+    : `@${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
+  // Bare names like `discord` match bundled plugin IDs, which OpenClaw resolves
+  // before its ClawHub default; `@latest` keeps unscoped plugins on ClawHub.
+  const cliInstallTarget =
+    isPlugin && !installTarget.includes("/") ? `${installTarget}@latest` : installTarget;
+  const installCommand = `openclaw ${isPlugin ? "plugins" : "skills"} install ${cliInstallTarget}`;
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
@@ -1809,31 +1814,13 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
               {validationPanel}
               <div className="plugin-install-stack detail-mobile-install">
                 {validationAvailabilityAlert}
-                <Card className="skill-install-command-card">
-                  <CardHeader className="detail-hero-summary-row plugin-install-card-header">
-                    <CardTitle className="skill-install-panel-title">Install</CardTitle>
-                  </CardHeader>
-                  <CardContent className="skill-install-command-wrap">
-                    <div className="skill-install-command-shell skill-install-command-shell-cli">
-                      <span className="skill-install-command-prompt" aria-hidden="true">
-                        $
-                      </span>
-                      <pre className="skill-install-command">
-                        <OpenClawCliInstallCommand command={installCommand} />
-                      </pre>
-                      <InstallCopyButton
-                        text={installCommand}
-                        ariaLabel={
-                          isPlugin ? "Copy plugin install command" : "Copy skill install command"
-                        }
-                        showLabel={false}
-                        variant="ghost"
-                        size="icon-sm"
-                        className="skill-install-command-inline-button"
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
+                <InstallCommandCard
+                  cliCommand={installCommand}
+                  prompt={formatOpenClawPrompt(installTarget, isPlugin ? "package" : "skill")}
+                  cliCopyAriaLabel={
+                    isPlugin ? "Copy plugin install command" : "Copy skill install command"
+                  }
+                />
               </div>
               <PluginDetailTabs
                 activeTab={activeTab}
