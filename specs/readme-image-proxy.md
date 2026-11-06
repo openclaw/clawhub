@@ -8,7 +8,7 @@ A protocol-relative value such as `//img.shields.io/badge/x-y-blue.svg` is the U
 
 A value that is still scheme-relative and does not parse to an external `http` or `https` URL is removed. An `img` loses `src`. One `source` `srcset` candidate is dropped, and a `srcset` that would be empty is removed. Leaving `//` or `//:` in the document would let the browser request it directly.
 
-Package-relative paths such as `./images/foo.png` still resolve only inside the commit-pinned `raw.githubusercontent.com/<owner>/<repo>/<commit>/` tree. When `assetBaseUrl` includes the package directory, resolution stays in that directory. The resolved URL then goes through the same proxy. A scheme-relative value is not joined onto that GitHub base. Without `assetBaseUrl`, a package-relative path is left as authored.
+Package-relative paths such as `./images/foo.png` resolve against `assetBaseUrl` and are proxied only when the result stays inside the commit-pinned `raw.githubusercontent.com/<owner>/<repo>/<commit>/` tree. That check is the commit root, not the package directory. A base that includes the package directory still allows a parent path such as `../shared/logo.png`, which resolves to `/<owner>/<repo>/<commit>/shared/logo.png`. A path that leaves the commit root is left as authored and is not proxied. A scheme-relative value is not joined onto that GitHub base. Without `assetBaseUrl`, a package-relative path is left as authored.
 
 These authored values stay as written: `data:` URLs, fragments, `mailto:`, `tel:`, other explicit non-http schemes, and a single leading slash such as `/site.png`. A single leading slash is the page origin, not the package. A lone backslash such as `\site.png` is not scheme-relative.
 
