@@ -48,7 +48,11 @@ async function publicationFixture() {
     connection: {
       url: "https://mcp.example.com/mcp",
       transport: "streamable-http",
-      auth: { kind: "none" },
+      auth: {
+        kind: "oauth",
+        scope: "events:read offline_access",
+        clientMetadataUrl: "https://client.example.com/oauth/client.json",
+      },
     },
   };
   const bytes = new TextEncoder().encode(JSON.stringify(definition));
