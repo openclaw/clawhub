@@ -24,12 +24,7 @@ describe("skill install commands", () => {
   it("defaults to CLI install and can copy the compact prompt tab", async () => {
     render(
       <TooltipProvider>
-        <SkillCommandLineCard
-          slug="weather"
-          displayName="Weather"
-          ownerHandle="steipete"
-          ownerId={ownerPublisherId}
-        />
+        <SkillCommandLineCard slug="weather" ownerHandle="steipete" ownerId={ownerPublisherId} />
       </TooltipProvider>,
     );
 
@@ -56,7 +51,7 @@ describe("skill install commands", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
 
-    expect(screen.getByText(/Install the skill "Weather"/i)).toBeTruthy();
+    expect(screen.getByText("install @steipete/weather from ClawHub")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Prompt" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
@@ -64,9 +59,7 @@ describe("skill install commands", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw prompt" }));
 
     await waitFor(() => {
-      expect(writeTextMock).toHaveBeenCalledWith(
-        expect.stringContaining("Before installing anything"),
-      );
+      expect(writeTextMock).toHaveBeenCalledWith("install @steipete/weather from ClawHub");
     });
   });
 

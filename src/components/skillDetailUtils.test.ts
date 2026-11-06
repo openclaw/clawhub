@@ -1,4 +1,3 @@
-import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { describe, expect, it } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
@@ -32,55 +31,14 @@ describe("skill detail install helpers", () => {
     );
   });
 
-  it("builds the install-and-setup prompt from known metadata only", () => {
-    const clawdis = {
-      requires: {
-        env: ["WEATHER_API_KEY"],
-        bins: ["curl"],
-        config: ["~/.weatherrc"],
-      },
-    } satisfies Partial<ClawdisSkillMetadata>;
-
-    const prompt = formatOpenClawPrompt({
-      mode: "install-and-setup",
-      skillName: "Weather",
-      slug: "weather",
-      ownerHandle: "steipete",
-      ownerId: ownerPublisherId,
-      clawdis: clawdis as ClawdisSkillMetadata,
-    });
-
-    expect(prompt).toContain("@steipete/weather");
-    expect(prompt).toContain("https://clawhub.ai/steipete/skills/weather");
-    expect(prompt).toContain("WEATHER_API_KEY");
-    expect(prompt).toContain("curl");
-    expect(prompt).toContain("~/.weatherrc");
-    expect(prompt.startsWith("Before installing anything")).toBe(true);
-    expect(prompt).toContain("verify its source, maintainer, and package contents");
-    expect(prompt).toContain(
-      'Install the skill "Weather" (@steipete/weather) from ClawHub only after those checks pass.',
+  it("builds a one-line ClawHub install prompt", () => {
+    expect(formatOpenClawPrompt("@steipete/weather")).toBe(
+      "install @steipete/weather from ClawHub",
     );
-    expect(prompt).toContain("After install, help me finish setup from verified skill metadata.");
-    expect(prompt).not.toContain("unknown");
+    expect(formatOpenClawPrompt(" @openclaw/luma ")).toBe("install @openclaw/luma from ClawHub");
   });
 
   it("avoids fabricating unknown owner URLs when the owner is missing", () => {
     expect(buildSkillPageUrl(null, null, "weather")).toBeNull();
-
-    const prompt = formatOpenClawPrompt({
-      mode: "install-only",
-      skillName: "Weather",
-      slug: "weather",
-      ownerHandle: null,
-      ownerId: null,
-    });
-
-    expect(prompt.startsWith("Before installing anything")).toBe(true);
-    expect(prompt).toContain(
-      'Install the skill "Weather" (weather) from ClawHub only after those checks pass.',
-    );
-    expect(prompt).toContain("verify its source, maintainer, and package contents");
-    expect(prompt).not.toContain("Skill page:");
-    expect(prompt).not.toContain("unknown");
   });
 });

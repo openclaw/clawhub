@@ -1,4 +1,3 @@
-import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useId, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { emitAnalytics } from "../lib/analyticsEvents";
@@ -12,10 +11,8 @@ import {
 } from "./skillDetailUtils";
 type SkillCommandLineCardProps = {
   slug: string;
-  displayName: string;
   ownerHandle: string | null;
   ownerId: Id<"users"> | Id<"publishers"> | null;
-  clawdis?: ClawdisSkillMetadata;
   installTarget?: string;
   skillPageUrl?: string | null;
   secondaryInstall?: {
@@ -41,21 +38,14 @@ export function OpenClawCliInstallCommand({ command }: { command: string }) {
 
 export function SkillCommandLineCard({
   slug,
-  displayName,
   ownerHandle,
   ownerId,
-  clawdis,
   installTarget: installTargetOverride,
   skillPageUrl: skillPageUrlOverride,
   secondaryInstall,
 }: SkillCommandLineCardProps) {
-  const headingId = useId();
-  type InstallTab = "cli" | "skills" | "prompt";
-  const [activeInstallTab, setActiveInstallTab] = useState<InstallTab>("cli");
-  const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
   const installTarget =
     installTargetOverride ?? buildSkillInstallTarget(ownerHandle, ownerId, slug);
-  const openClawCommand = formatOpenClawInstallCommand(installTarget);
   const skillPageUrl =
     skillPageUrlOverride === undefined
       ? buildSkillPageUrl(ownerHandle, ownerId, slug)
@@ -63,22 +53,51 @@ export function SkillCommandLineCard({
   const skillsCliCommand =
     secondaryInstall?.command ??
     (skillPageUrl ? formatSkillsCliInstallCommand(skillPageUrl) : null);
-  const promptPreview = formatOpenClawPrompt({
-    mode: "install-and-setup",
-    skillName: displayName,
-    slug,
-    ownerHandle,
-    ownerId,
-    clawdis,
-    installTarget: installTargetOverride,
-    skillPageUrl: skillPageUrlOverride,
-  });
+
+  return (
+    <InstallCommandCard
+      cliCommand={formatOpenClawInstallCommand(installTarget)}
+      prompt={formatOpenClawPrompt(installTarget)}
+      secondaryInstall={
+        skillsCliCommand
+          ? {
+              label: secondaryInstall?.label ?? "npx skills",
+              command: skillsCliCommand,
+              copyAriaLabel: secondaryInstall?.copyAriaLabel ?? "Copy npx skills command",
+            }
+          : undefined
+      }
+    />
+  );
+}
+
+type InstallCommandCardProps = {
+  cliCommand: string;
+  prompt: string;
+  cliCopyAriaLabel?: string;
+  secondaryInstall?: {
+    label: string;
+    command: string;
+    copyAriaLabel: string;
+  };
+};
+
+export function InstallCommandCard({
+  cliCommand,
+  prompt,
+  cliCopyAriaLabel = "Copy OpenClaw CLI command",
+  secondaryInstall,
+}: InstallCommandCardProps) {
+  const headingId = useId();
+  type InstallTab = "cli" | "skills" | "prompt";
+  const [activeInstallTab, setActiveInstallTab] = useState<InstallTab>("cli");
+  const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
   const activeInstallText =
     activeInstallTab === "prompt"
-      ? promptPreview
-      : activeInstallTab === "skills" && skillsCliCommand
-        ? skillsCliCommand
-        : openClawCommand;
+      ? prompt
+      : activeInstallTab === "skills" && secondaryInstall
+        ? secondaryInstall.command
+        : cliCommand;
   const installTabOrder: InstallTab[] = ["cli", "skills", "prompt"];
   const selectInstallTab = (tab: InstallTab) => {
     if (tab === activeInstallTab) {
@@ -111,14 +130,14 @@ export function SkillCommandLineCard({
           >
             CLI
           </button>
-          {skillsCliCommand ? (
+          {secondaryInstall ? (
             <button
               type="button"
               className={`skill-install-tab${activeInstallTab === "skills" ? " is-active" : ""}`}
               aria-pressed={activeInstallTab === "skills"}
               onClick={() => selectInstallTab("skills")}
             >
-              {secondaryInstall?.label ?? "npx skills"}
+              {secondaryInstall.label}
             </button>
           ) : null}
           <button
@@ -165,7 +184,7 @@ export function SkillCommandLineCard({
                 ? "Copy OpenClaw prompt"
                 : activeInstallTab === "skills"
                   ? (secondaryInstall?.copyAriaLabel ?? "Copy npx skills command")
-                  : "Copy OpenClaw CLI command"
+                  : cliCopyAriaLabel
             }
             className="skill-install-command-inline-button"
             showLabel={false}
