@@ -51,6 +51,12 @@ For a provider using **Client ID Metadata Documents (CIMD)** instead, author `co
 
 Explicit CIMD configuration does not silently fall back to another DCR identity. The operator must host and maintain the real document and align its allowed callbacks and authentication method with the consuming OpenClaw runtime. Publication does not provision hosting, register a client, verify domain control, prove callback/runtime compatibility, establish account eligibility, complete consent, or execute an authenticated tool call.
 
+### Default native client identity
+
+The public client document at `https://clawhub.ai/oauth/clients/openclaw.json` identifies OpenClaw as a public native client, without a shared secret. Its exact callback allowlist covers the CLI’s `http://localhost:8989/oauth/callback` and the default local Control UI at `http://127.0.0.1:18789/oauth/provider/callback` or `http://localhost:18789/oauth/provider/callback`. It does not grant consent or verify an account.
+
+Custom ports, remote Gateway origins, and non-OpenClaw consumers need a separately hosted client document containing their actual callbacks. Do not add customer-specific Gateway URLs or arbitrary wildcard redirects to the shared native document. A Gateway operator can override a plugin-declared connection with a complete `mcp.servers.<server-name>` entry containing the same endpoint and its own `oauth.clientMetadataUrl`. That entry replaces the bundled connection; it is not a field-by-field merge. The plugin’s account status and browser sign-in follow the override when the server name and provider endpoint still match. A standalone plugin declaration is not resolved by `openclaw mcp login`; terminal login requires the explicit server entry.
+
 Normal package validation and security gates apply, including to the OpenClaw publisher. A pending release is not installable. Scanning covers the published files and configuration; it does not certify the remote provider or its future tools.
 
 ## Install and connect
