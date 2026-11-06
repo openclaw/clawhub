@@ -2286,6 +2286,7 @@ function makePluginValidationReportCtx(
   options: {
     statesByRelease?: Record<string, Array<Record<string, unknown>>>;
     findingsByRelease?: Record<string, Array<Record<string, unknown>>>;
+    onScanStateRead?: () => void;
   } = {},
 ) {
   const base = makePluginExportCtx(digests);
@@ -2380,7 +2381,10 @@ function makePluginValidationReportCtx(
                     const rows = ordered();
                     return {
                       [Symbol.asyncIterator]: async function* scanStates() {
-                        for (const row of rows) yield row;
+                        for (const row of rows) {
+                          options.onScanStateRead?.();
+                          yield row;
+                        }
                       },
                       first: vi.fn(async () => rows[0] ?? null),
                       take: vi.fn(async (limit: number) => rows.slice(0, limit)),
@@ -3562,6 +3566,47 @@ describe("packages public queries", () => {
       nextCursor: null,
       done: true,
     });
+  });
+
+  it("finishes publish-only history within one scan page when older tuples cannot change the verdict", async () => {
+    const releaseId = "packageReleases:demo-1";
+    const reads = vi.fn();
+    const ctx = makePluginValidationReportCtx(
+      [makePluginExportDigest("demo", "code-plugin", 300)],
+      {
+        statesByRelease: {
+          [releaseId]: [
+            {
+              releaseId,
+              inspectorVersion: "latest-inspector",
+              targetOpenClawVersion: "2026.11.1",
+              completedAt: 1000,
+              findingsCompletedAt: 1000,
+              outcome: "clean",
+              scanSource: "publish",
+            },
+            ...Array.from({ length: 60 }, (_, index) => ({
+              releaseId,
+              inspectorVersion: `older-${index}`,
+              targetOpenClawVersion: "2026.10.16",
+              completedAt: 100 + index,
+              outcome: "clean",
+              scanSource: "publish",
+            })),
+          ],
+        },
+        onScanStateRead: reads,
+      },
+    );
+    const result = await listPluginValidationReportPageInternalHandler(ctx, { numItems: 20 });
+    expect(result.items[0]?.scan).toMatchObject({
+      status: "clean",
+      scannedAt: 1000,
+      inspectorVersion: "latest-inspector",
+      target: { channel: "latest", version: "2026.11.1" },
+    });
+    // getPage reads one lookahead row after its 25-row page. Later history is irrelevant.
+    expect(reads.mock.calls.length).toBeLessThanOrEqual(26);
   });
 
   it("reports Inspector tool failures as skipped scans, never as plugin errors", async () => {

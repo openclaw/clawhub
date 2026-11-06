@@ -151,6 +151,16 @@ refreshes `findingsCompletedAt`, and may establish notification completion;
 a failed run never establishes notification completion. Inspector is advisory
 plugin validation and does not change ClawScan trust or publication policy.
 
+When no stored nightly findings need selecting, the report stops once the
+overall verdict's time bounds all remaining rows. Failure-only or ambiguous
+history may still require every distinct Inspector/target tuple; retry attempts
+overwrite their tuple rather than adding rows. A new success-marker index alone
+cannot cover historical explicit outcomes and unmarked findings without a
+backfill, and no production backfill is part of this change. Publish findings
+remain visible unconditionally; without a verified scan their scan metadata
+stays unknown, while legacy nightly tuples are selected to avoid hiding their
+stored findings.
+
 The earlier generated-card browser failure included one-second execution
 timeouts in multiple unrelated queries and mutations. It is not evidence of a
 runtime-identity regression. Re-run its unchanged publish/scan/card lifecycle

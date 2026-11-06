@@ -3661,6 +3661,7 @@ async function latestCompletedFindingsScans(
     const key = tupleKey(warning);
     findingsTimes.set(key, Math.max(findingsTimes.get(key) ?? -1, warning.createdAt));
   }
+  const hasNightlyFindings = findingsTimes.size > 0;
   // Native pagination cannot run once per release in this report. Walk the
   // index with getPage so any number of newer failures cannot hide a success.
   let startIndexKey: IndexKey = [releaseId];
@@ -3702,7 +3703,15 @@ async function latestCompletedFindingsScans(
       }
     }
     const oldest = page.page.at(-1);
-    if (scanState && nightlyScanState && oldest && oldest.completedAt <= nightlyScannedAt) break;
+    // With no nightly findings to select, only the overall verdict matters.
+    const oldestNeededAt = hasNightlyFindings ? nightlyScannedAt : scannedAt;
+    if (
+      scanState &&
+      (!hasNightlyFindings || nightlyScanState) &&
+      oldest &&
+      oldest.completedAt <= oldestNeededAt
+    )
+      break;
     const nextKey = page.indexKeys.at(-1);
     if (!page.hasMore || !nextKey) break;
     startIndexKey = nextKey;
