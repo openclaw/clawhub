@@ -2252,7 +2252,11 @@ export async function runClawScan(
     assertAigFilePathsHaveNoCompiledPython(job.target.files?.map((file) => file.path) ?? []);
   }
   const args = [target, "--profile", "clawhub"];
-  if (job.job.targetKind === "packageRelease" && !wholePlugin) {
+  if (
+    job.job.targetKind === "packageRelease" &&
+    asRecord(job.target.package)?.family !== "claw" &&
+    !wholePlugin
+  ) {
     // SkillSpector only understands skills. ClawHub owns the plugin manifest
     // boundary, so never let ClawScan fall back to scanning the whole package.
     const skillSpectorResultPath =
@@ -2538,6 +2542,7 @@ export async function processJob(
           })
         : Promise.resolve(undefined),
       job.job.targetKind === "packageRelease" &&
+      asRecord(job.target.package)?.family !== "claw" &&
       !(await usesWholePluginScanForTarget(job.job.targetKind, job.target.package))
         ? prepareBundledSkillSpector(job, workspace, (next) => {
             Object.assign(clawscan, next);

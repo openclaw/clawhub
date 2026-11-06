@@ -130,6 +130,7 @@ async function runFixture(
   runtimeFixture.command = command;
   await chmod(command, 0o755);
   vi.stubEnv("PREPUBLICATION_CLAWSCAN_COMMAND", command);
+  vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", command);
   if (rescan) {
     let invocation: string[] | undefined;
     const job: ClaimedJob = {
@@ -145,8 +146,10 @@ async function runFixture(
     const mapped = await runClawScan(job, workspace, (diagnostic) => {
       if (diagnostic.args) invocation = diagnostic.args;
     });
-    expect(invocation).toContain("./artifact/openclaw.plugin.json");
-    expect(invocation).toContain(QUALIFIED_PLUGIN_IMAGE);
+    expect(invocation).toContain(
+      family === "claw" ? "./artifact" : "./artifact/openclaw.plugin.json",
+    );
+    if (family !== "claw") expect(invocation).toContain(QUALIFIED_PLUGIN_IMAGE);
     expect(invocation).not.toContain("--scanner-result");
     return { analysis: mapped.llmAnalysis, check: { status: "rescan", summary: undefined } };
   }
@@ -210,6 +213,24 @@ describe("Scanner-report-only Codex publication consumer", () => {
       expect("aigAnalysis" in result ? result.aigAnalysis : undefined).toBeUndefined();
     },
   );
+  it("runs Template rescan scanners natively instead of importing bundled evidence", async () => {
+    const artifact = fixture() as Record<string, any>;
+    delete artifact.judge.result.decision;
+    delete artifact.judge.command;
+    artifact.judge.outputSchemaPath = "evidence-judge.schema.json";
+    artifact.judge.promptPath = "evidence-judge.md";
+    artifact.scanners = {
+      skillspector: {
+        ...artifact.scanners["aig-mcp"],
+        command: ["skillspector", "scan"],
+        raw: { issues: [] },
+      },
+    };
+    expect(
+      (await runFixture(artifact, "packageRelease", true, true, "claw")).analysis?.verdict,
+    ).toBe("benign");
+  });
+
   it("rejects Template evidence with missing ordinary scanner coverage", async () => {
     const artifact = fixture() as Record<string, any>;
     delete artifact.judge.result.decision;
