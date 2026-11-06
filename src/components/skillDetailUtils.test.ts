@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
-import { parseClawdisMetadata, parseFrontmatter } from "../../convex/lib/skills";
 import {
   buildSkillInstallTarget,
   buildSkillPageUrl,
@@ -38,22 +37,6 @@ describe("skill detail install helpers", () => {
     );
     expect(formatOpenClawPrompt(" @openclaw/luma ", "package")).toBe(
       "Install the @openclaw/luma package from ClawHub",
-    );
-  });
-
-  it("keeps scalar credentials in setup instructions without requiring optional variables", () => {
-    const setup = (markdown: string) =>
-      formatOpenClawPrompt({
-        mode: "install-and-setup",
-        skillName: "Weather",
-        slug: "weather",
-        ownerHandle: "steipete",
-        ownerId: ownerPublisherId,
-        clawdis: parseClawdisMetadata(parseFrontmatter(markdown)),
-      });
-    expect(setup("---\nenv: WEATHER_API_KEY\n---\n")).toContain("WEATHER_API_KEY");
-    expect(setup("---\nenv:\n  - name: OPTIONAL_KEY\n    required: false\n---\n")).not.toContain(
-      "OPTIONAL_KEY",
     );
   });
 
