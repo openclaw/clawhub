@@ -142,6 +142,7 @@ import {
   requireAdminOrResponse,
   requireModeratorOrResponse,
   requirePackagePublishAuthOrResponse,
+  contentDispositionAttachment,
   safeStoredFilePreviewResponse,
   safeStoredFileResponse,
   softDeleteErrorToResponse,
@@ -741,7 +742,9 @@ async function streamClawPackRelease(
   }
   const headers: Record<string, string> = {
     "Content-Type": "application/octet-stream",
-    "Content-Disposition": `attachment; filename="${release.npmTarballName ?? `${pkg.name.replaceAll("/", "-")}-${release.version}.tgz`}"`,
+    "Content-Disposition": contentDispositionAttachment(
+      release.npmTarballName ?? `${pkg.name.replaceAll("/", "-")}-${release.version}.tgz`,
+    ),
     "X-ClawHub-Artifact-Type": "npm-pack-tarball",
   };
   if (release.clawpackSha256) {
@@ -4459,7 +4462,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         rate.headers,
         {
           "Content-Type": "application/zip",
-          "Content-Disposition": `attachment; filename="${publicPackage!.name.replaceAll("/", "-")}-${release.version}.zip"`,
+          "Content-Disposition": contentDispositionAttachment(
+            `${publicPackage!.name.replaceAll("/", "-")}-${release.version}.zip`,
+          ),
           ETag: `"sha256:${zipSha256}"`,
           Digest: `sha-256=${zipSha256Base64}`,
           "X-ClawHub-Artifact-Type": "legacy-plugin-zip",
