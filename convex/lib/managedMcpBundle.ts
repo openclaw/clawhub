@@ -38,7 +38,17 @@ export function buildManagedMcpBundle(raw: unknown) {
     // These bundles target OpenClaw: its OAuth runtime reads singular `scope`.
     // Do not substitute another client's `scopes` field and lose reviewed permissions.
     ...(auth.kind === "oauth"
-      ? { auth: "oauth", ...(auth.scope ? { oauth: { scope: auth.scope } } : {}) }
+      ? {
+          auth: "oauth",
+          ...(auth.scope || auth.clientMetadataUrl
+            ? {
+                oauth: {
+                  ...(auth.scope ? { scope: auth.scope } : {}),
+                  ...(auth.clientMetadataUrl ? { clientMetadataUrl: auth.clientMetadataUrl } : {}),
+                },
+              }
+            : {}),
+        }
       : {}),
     ...(auth.kind === "api-key" ? { headers: { [auth.header]: auth.placeholder } } : {}),
   };

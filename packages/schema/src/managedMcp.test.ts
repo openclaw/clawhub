@@ -75,6 +75,30 @@ describe("managed MCP definitions", () => {
     ).toThrow();
   });
 
+  it.each([
+    "",
+    "not-a-url",
+    "https://client.example.com/oauth/../client.json",
+    "https://client.example.com/oauth/./client.json",
+    "https://client.example.com/oauth/%2e%2e/client.json",
+    "https://client.example.com",
+    "https://client.example.com/?id=client",
+    "http://client.example.com/client.json",
+    "https://127.0.0.1/client.json",
+    "https://client.internal/client.json",
+    "https://user:secret@client.example.com/client.json",
+    "https://client.example.com/client.json#fragment",
+    "https://client.example.com/client.json?token=secret",
+    "https://client.example.com:8443/client.json",
+  ])("rejects unusable CIMD client identifier %s", (clientMetadataUrl) => {
+    expect(() =>
+      parseManagedMcpDefinition({
+        ...definition,
+        connection: { ...definition.connection, auth: { kind: "oauth", clientMetadataUrl } },
+      }),
+    ).toThrow("OAuth client metadata URL");
+  });
+
   it("accepts only a credential placeholder for API-key authentication", () => {
     const input = {
       ...definition,

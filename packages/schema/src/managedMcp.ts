@@ -2,7 +2,7 @@ import { type, type inferred } from "arktype";
 import { PLUGIN_CATEGORY_DEFINITIONS } from "./catalogMetadata.js";
 
 const authSchema = type({ "+": "reject", kind: '"none"' })
-  .or({ "+": "reject", kind: '"oauth"', scope: "string?" })
+  .or({ "+": "reject", kind: '"oauth"', scope: "string?", clientMetadataUrl: "string?" })
   .or({ "+": "reject", kind: '"api-key"', header: "string", placeholder: "string" });
 
 const definitionSchema = type({
@@ -80,6 +80,8 @@ export function parseManagedMcpDefinition(raw: unknown): ManagedMcpDefinition {
       auth.scope.length > 1000)
   )
     throw new Error("Invalid OAuth scope");
+  if (auth.kind === "oauth" && auth.clientMetadataUrl !== undefined)
+    assertManagedMcpClientMetadataUrl(auth.clientMetadataUrl);
   if (auth.kind === "api-key") {
     if (!/^(?:Authorization|X-[A-Za-z0-9-]+|Api-Key)$/i.test(auth.header))
       throw new Error("Unsupported credential header");
@@ -92,6 +94,22 @@ export function parseManagedMcpDefinition(raw: unknown): ManagedMcpDefinition {
   )
     throw new Error("Icon must be a PNG no larger than 512KB");
   return value;
+}
+
+/** CIMD client identifiers must be public HTTPS URLs with a non-root path. */
+export function assertManagedMcpClientMetadataUrl(raw: string): void {
+  try {
+    assertManagedMcpUrl(raw);
+    // URL parsing removes dot segments: reject them before identity normalization.
+    const path = raw.replace(/^https:\/\/[^/]+/i, "").split(/[?#]/, 1)[0];
+    if (path.split("/").some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment)))
+      throw new Error("Invalid metadata path");
+    if (new URL(raw).pathname === "/") throw new Error("Missing metadata path");
+  } catch {
+    throw new Error(
+      "OAuth client metadata URL must use public HTTPS with a non-root path and no credentials",
+    );
+  }
 }
 
 /** Syntactic authoring restriction; network callers must additionally pin public DNS addresses. */
