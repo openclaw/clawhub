@@ -30,7 +30,7 @@ case "$scanner" in
   aig-mcp)
     # No host installation or unpatched fallback. The immutable image was built
     # with the source's exact static-tools patch and its 28 static/entry-network
-    # tests plus the stdlib judge qualification. Qualify CLI availability locally
+    # tests plus the pinned Codex 0.164.0 EvidenceOnly harness. Qualify CLIs locally
     # without granting network access or mounting the host/plugin under test.
     [ "$expected_commit" = "$qualified_source_commit" ] || {
       echo 'aig-mcp requires the exact qualified source and immutable runtime image' >&2; exit 1;
@@ -41,7 +41,7 @@ case "$scanner" in
       echo 'Qualified ClawScan runtime image digest mismatch' >&2; exit 1;
     }
     docker run --rm --pull never --network none --entrypoint /bin/sh "$qualified_runtime_image" -ec \
-      'aig-mcp-scan --help >/dev/null; clawscan-decisions-judge --help >/dev/null'
+      'aig-mcp-scan --help >/dev/null; test "$(codex --version)" = "codex-cli 0.164.0"'
     # This prepares a Docker sandbox image, not a host aig-mcp-scan command.
     printf 'Qualified ClawScan aig-mcp runtime: %s\n' "$qualified_runtime_image"
     exit 0

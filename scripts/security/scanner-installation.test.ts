@@ -21,7 +21,7 @@ describe("reviewed ClawScan installation", () => {
   });
   it("ships a full immutable source lock for the workflow installers", async () => {
     expect(await readFile(join(scripts, "clawscan-source-commit.txt"), "utf8")).toBe(
-      "c3cfaf1515a47685786d72f031c714b1e5d9b34e\n",
+      "80d11a34a97a9181213c806fc3013123360f9012\n",
     );
   });
 

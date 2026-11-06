@@ -19,11 +19,11 @@ import { describe, expect, it } from "vitest";
 const run = promisify(execFile);
 const scripts = resolve("scripts/security");
 const pin = "c3cfaf1515a47685786d72f031c714b1e5d9b34e";
-const candidate = "56d17aaa423cdb1ed87aeda970b9a2b30eed7dd8";
-const candidateTree = "d860e0022e5832b76abf7c7ab6c3a679fdda1f64";
+const candidate = "80d11a34a97a9181213c806fc3013123360f9012";
+const candidateTree = "dae6e848e052bb95f60da4af98efbe579f64c0bc";
 const runtimeTree = "ddfec1285eaf19beb3043e9e5ad043a0d274cb53";
 const image =
-  "ghcr.io/openclaw/clawscan-runtime@sha256:9c765a089a034451c428d563f0f09f4004c898ac14802470bb6a58fca7755960";
+  "ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c";
 
 async function installFixture() {
   const root = await mkdtemp(join(tmpdir(), "clawscan-runtime-install-"));
@@ -352,7 +352,7 @@ describe("explicit qualified candidate installation", () => {
       expect(commands).toContain(
         "docker run --rm --pull never --network none --entrypoint /bin/sh " +
           image +
-          " -ec aig-mcp-scan --help >/dev/null; clawscan-decisions-judge --help >/dev/null\n",
+          ' -ec aig-mcp-scan --help >/dev/null; test "$(codex --version)" = "codex-cli 0.164.0"\n',
       );
       expect(commands).not.toMatch(/pip|uv |fetch |--mount|--volume/);
       await expect(readFile(fixture.env.GITHUB_PATH, "utf8")).rejects.toThrow();

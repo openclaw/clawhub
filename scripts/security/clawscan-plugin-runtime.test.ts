@@ -43,9 +43,9 @@ describe("qualified immutable plugin runtime policy", () => {
     expect(
       await usesWholePluginScanForTarget("packageRelease", { family: "bundle-plugin" }, current),
     ).toBe(true);
-    expect(
-      await usesWholePluginScanForTarget("packageRelease", { family: "template" }, current),
-    ).toBe(false);
+    expect(await usesWholePluginScanForTarget("packageRelease", { family: "claw" }, current)).toBe(
+      false,
+    );
     expect(await usesWholePluginScanForTarget("skillVersion", undefined, current)).toBe(false);
   });
   it("recognizes only the scanner-only Codex profile and rejects a receipt-free artifact-reading judge", async () => {
@@ -110,5 +110,10 @@ describe("qualified immutable plugin runtime policy", () => {
     const shell = await readFile("scripts/security/clawscan-install-source.sh", "utf8");
     expect(shell).toContain("qualified_source_commit=" + QUALIFIED_PLUGIN_SOURCE);
     expect(shell).toContain("qualified_runtime_image=" + QUALIFIED_PLUGIN_IMAGE);
+    expect((await readFile("scripts/security/clawscan-source-commit.txt", "utf8")).trim()).toBe(
+      QUALIFIED_PLUGIN_SOURCE,
+    );
+    expect(shell).toContain("qualified_source_tree=dae6e848e052bb95f60da4af98efbe579f64c0bc");
+    expect(shell).toContain("qualified_runtime_tree=ddfec1285eaf19beb3043e9e5ad043a0d274cb53");
   });
 });

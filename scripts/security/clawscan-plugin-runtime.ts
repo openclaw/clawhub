@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { verifyInstalledClawScanSource } from "./prepublicationScannerSource";
 
-// Explicitly prepared compatibility source/image; not the production source pin
-// or activation configuration. No mutable image tag or host MCP fallback.
-export const QUALIFIED_PLUGIN_SOURCE = "56d17aaa423cdb1ed87aeda970b9a2b30eed7dd8";
+// Exact merged EvidenceOnly source + native image from runtime run 42292655384.
+// No mutable image tag or host MCP fallback.
+export const QUALIFIED_PLUGIN_SOURCE = "80d11a34a97a9181213c806fc3013123360f9012";
 export const QUALIFIED_PLUGIN_IMAGE =
-  "ghcr.io/openclaw/clawscan-runtime@sha256:9c765a089a034451c428d563f0f09f4004c898ac14802470bb6a58fca7755960";
+  "ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c";
 
 // Capability discovery is followed by source/binary verification before execution.
 // The old pin has no override, so it keeps its existing scanner/target behavior.

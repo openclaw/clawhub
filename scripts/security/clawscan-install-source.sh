@@ -1,10 +1,10 @@
 # Shared installer-only qualification binding. Sourced after script_dir is set.
-# Native amd64/arm64 build + CLI smoke: openclaw/clawscan/actions/runs/41816825573.
-# This candidate does not replace clawscan-source-commit.txt or activate a worker.
-qualified_source_commit=56d17aaa423cdb1ed87aeda970b9a2b30eed7dd8
-qualified_source_tree=d860e0022e5832b76abf7c7ab6c3a679fdda1f64
+# Native amd64/arm64 build + CLI smoke: openclaw/clawscan/actions/runs/42292655384.
+# Exact merged EvidenceOnly producer source, trees and immutable native image.
+qualified_source_commit=80d11a34a97a9181213c806fc3013123360f9012
+qualified_source_tree=dae6e848e052bb95f60da4af98efbe579f64c0bc
 qualified_runtime_tree=ddfec1285eaf19beb3043e9e5ad043a0d274cb53
-qualified_runtime_image=ghcr.io/openclaw/clawscan-runtime@sha256:9c765a089a034451c428d563f0f09f4004c898ac14802470bb6a58fca7755960
+qualified_runtime_image=ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c
 
 select_clawscan_source() {
   default_commit=$(cat "$script_dir/clawscan-source-commit.txt")
