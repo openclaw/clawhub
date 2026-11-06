@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { expect, it } from "vitest";
 import { buildSearchEvidenceDigest, type DigestCatalogInput } from "./searchEvidenceDigest";
 const weekEnd = Date.parse("2026-09-07T00:00:00Z");

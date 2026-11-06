@@ -4,19 +4,22 @@ import {
   getClawHubRuntimeEnvironment,
   normalizeContentType,
   parseArk,
+  type ArkValidator,
 } from "clawhub-schema";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { assertAdmin, assertModerator } from "../lib/access";
 import { requireApiTokenUser, requirePackagePublishAuth } from "../lib/apiTokenAuth";
+import { sha256Hex } from "../lib/hash";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
+import { getTransientConvexErrorKind } from "../lib/httpUtils";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { isMacJunkPath } from "../lib/skills";
 import type { PublicSkillVersionSelection } from "../lib/skills/publicVersions";
 export { getPathSegments, parsePackagePathSegments } from "../lib/httpPathSegments";
 
-export const MAX_RAW_FILE_BYTES = 200 * 1024;
+export { MAX_RAW_FILE_BYTES } from "../lib/storageText";
 const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 
 const SAFE_TEXT_FILE_CSP =
@@ -187,6 +190,33 @@ export async function parseJsonPayload(request: Request, headers: HeadersInit) {
   }
 }
 
+export async function moderationDecisionResponse(
+  ctx: ActionCtx,
+  request: Request,
+  headers: HeadersInit,
+  schema: ArkValidator<{ status: string; note?: string; finalAction?: string }>,
+  label: string,
+  fallback: string,
+  resolveMutation: () => { ref: unknown; args: Record<string, unknown> },
+) {
+  try {
+    const body = parseArk(schema, await request.json(), label);
+    const { ref, args } = resolveMutation();
+    const result = await ctx.runMutation(
+      ref as never,
+      {
+        ...args,
+        status: body.status,
+        ...(body.note ? { note: body.note } : {}),
+        ...(body.finalAction ? { finalAction: body.finalAction } : {}),
+      } as never,
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    return text(error instanceof Error ? error.message : fallback, 400, headers);
+  }
+}
+
 function normalizeOrigin(value: string | null | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return null;
@@ -263,7 +293,7 @@ export async function requireApiTokenUserOrResponse(
       apiTokenId: auth.apiTokenId,
     };
   } catch (error) {
-    return { ok: false as const, response: text(formatAuthFailure(error), 401, headers) };
+    return { ok: false as const, response: authFailureResponse(error, headers) };
   }
 }
 
@@ -275,8 +305,16 @@ export async function requirePackagePublishAuthOrResponse(
   try {
     return { ok: true as const, auth: await requirePackagePublishAuth(ctx, request) };
   } catch (error) {
-    return { ok: false as const, response: text(formatAuthFailure(error), 401, headers) };
+    return { ok: false as const, response: authFailureResponse(error, headers) };
   }
+}
+
+// A platform failure while reading the token is not an authentication failure:
+// answering 401 would tell a valid publisher to log in again.
+function authFailureResponse(error: unknown, headers: HeadersInit) {
+  return (
+    transientConvexErrorResponse(error, headers) ?? text(formatAuthFailure(error), 401, headers)
+  );
 }
 
 export function requireAdminOrResponse(user: Doc<"users">, headers: HeadersInit) {
@@ -370,18 +408,6 @@ export async function resolvePublicSkillVersions(
       latestVersion: latest?.status === "available" ? latest.version : null,
     };
   });
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const data = new Uint8Array(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return toHex(new Uint8Array(digest));
-}
-
-function toHex(bytes: Uint8Array) {
-  let out = "";
-  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
-  return out;
 }
 
 type FileLike = {
@@ -484,71 +510,6 @@ export async function parseMultipartPublish(
   }
 }
 
-export async function parseMultipartSkillScan(
-  ctx: ActionCtx,
-  request: Request,
-  validatePayload?: (payload: Record<string, unknown>) => Record<string, unknown>,
-): Promise<{
-  payload: Record<string, unknown>;
-  files: Array<{
-    path: string;
-    size: number;
-    storageId: Id<"_storage">;
-    sha256: string;
-    contentType?: string;
-  }>;
-}> {
-  const form = await request.formData();
-  const payloadRaw = form.get("payload");
-  if (!payloadRaw || typeof payloadRaw !== "string") {
-    throw new Error("Missing payload");
-  }
-  let payload: Record<string, unknown>;
-  try {
-    payload = JSON.parse(payloadRaw) as Record<string, unknown>;
-  } catch {
-    throw new Error("Invalid JSON payload");
-  }
-  const validatedPayload = validatePayload ? validatePayload(payload) : payload;
-
-  const fileEntries = form
-    .getAll("files")
-    .map((entry) => toFileLike(entry))
-    .filter((file): file is FileLikeEntry => Boolean(file))
-    .filter((file) => !isMacJunkPath(file.name));
-  if (fileEntries.length === 0) throw new Error("files required");
-  if (!fileEntries.some((file) => file.name.trim().toLowerCase() === "skill.md")) {
-    throw new Error("SKILL.md required");
-  }
-  const oversized = fileEntries.find((file) => file.size > MAX_PUBLISH_FILE_BYTES);
-  if (oversized) throw new Error(getPublishFileSizeError(oversized.name));
-
-  const files: Array<{
-    path: string;
-    size: number;
-    storageId: Id<"_storage">;
-    sha256: string;
-    contentType?: string;
-  }> = [];
-
-  try {
-    for (const file of fileEntries) {
-      const path = file.name;
-      const size = file.size;
-      const contentType = file.type || undefined;
-      const buffer = new Uint8Array(await file.arrayBuffer());
-      const sha256 = await sha256Hex(buffer);
-      const storageId = await ctx.storage.store(file as Blob);
-      files.push({ path, size, storageId, sha256, contentType });
-    }
-  } catch (error) {
-    await deleteStoredMultipartFiles(ctx, files);
-    throw error;
-  }
-
-  return { payload: validatedPayload, files };
-}
-
 export function parsePublishBody(body: unknown) {
   const parsed = parseArk(CliPublishRequestSchema, body, "Publish payload");
   if (parsed.files.length === 0) throw new Error("files required");
@@ -646,6 +607,67 @@ export function formatUserFacingErrorMessage(error: unknown, fallback: string) {
   return cleanUserFacingErrorMessage(message) || fallback;
 }
 
+// Seconds a client should wait before retrying a request that hit a transient
+// Convex platform failure. Write conflicts clear fastest; system/overload
+// errors get a little longer so retries do not pile onto a struggling backend.
+const TRANSIENT_WRITE_CONFLICT_RETRY_AFTER_SECONDS = 1;
+const TRANSIENT_SYSTEM_ERROR_RETRY_AFTER_SECONDS = 2;
+const TRANSIENT_SYSTEM_ERROR_MAX_RETRY_AFTER_SECONDS = 30;
+// Convex write-admission errors end with "(reset in 43s)". That is backend
+// capacity, not the caller's rate limit: move it into Retry-After instead of
+// echoing text that reads like a quota reset.
+const CONVEX_CAPACITY_RESET_PATTERN = /\s*\(reset in (\d+)s\)/;
+
+/**
+ * Map a transient Convex platform failure (overload, internal/transient system
+ * error, write conflict) to a retryable 503 with `Retry-After`. Returns null for
+ * every other error so callers keep their validation/authorization mapping.
+ * Such failures are never a client error, so they must not become 4xx, and
+ * they are not rate limiting, so no rate-limit headers are added.
+ */
+export function transientConvexErrorResponse(
+  error: unknown,
+  headers?: HeadersInit,
+  options: {
+    // The request may have committed before the failure surfaced.
+    outcomeUnknown?: boolean;
+    // The request consumed one-shot state (for example upload tickets) before
+    // failing, so resending it can never succeed: answer 409 without
+    // Retry-After instead of inviting a futile automatic retry.
+    restartRequired?: boolean;
+  } = {},
+): Response | null {
+  const kind = getTransientConvexErrorKind(error);
+  if (!kind) return null;
+  const raw = (error as Error).message;
+  const capacityReset = CONVEX_CAPACITY_RESET_PATTERN.exec(raw)?.[1];
+  const detail = cleanUserFacingErrorMessage(raw.replace(CONVEX_CAPACITY_RESET_PATTERN, ""));
+  // Keep the Convex request ID so operators can correlate the failure.
+  const requestId = /\[Request ID: ([^\]]+)\]/.exec(raw)?.[1];
+  const summary =
+    kind === "write_conflict"
+      ? "Transient ClawHub write contention"
+      : "ClawHub backend is temporarily unavailable";
+  const outcome = options.restartRequired
+    ? "The request was not rejected for validation, but the failure happened after it saved its uploaded files, so the same request cannot be retried. It may have completed; check the version, and otherwise run publish again to upload the files again."
+    : options.outcomeUnknown
+      ? "The request was not rejected for validation, but it may have completed before the failure; if a retry reports a conflict such as an existing version, check the current state before changing anything."
+      : "The request was not rejected for validation; retrying usually succeeds.";
+  const body = [`${summary}.`, outcome, detail, requestId ? `[Request ID: ${requestId}]` : ""]
+    .filter(Boolean)
+    .join(" ");
+  console.warn("http_transient_convex_error", { kind, restartRequired: !!options.restartRequired });
+  if (options.restartRequired) return text(body, 409, headers);
+  const retryAfter =
+    kind === "write_conflict"
+      ? TRANSIENT_WRITE_CONFLICT_RETRY_AFTER_SECONDS
+      : Math.min(
+          TRANSIENT_SYSTEM_ERROR_MAX_RETRY_AFTER_SECONDS,
+          Math.max(TRANSIENT_SYSTEM_ERROR_RETRY_AFTER_SECONDS, Number(capacityReset ?? 0)),
+        );
+  return text(body, 503, mergeHeaders(headers, { "Retry-After": String(retryAfter) }));
+}
+
 function formatAuthFailure(error: unknown) {
   const message = formatUserFacingErrorMessage(error, "");
   if (!message || /^unauthorized$/i.test(message)) return "Unauthorized";
@@ -665,4 +687,93 @@ export function formatAuthzMessage(error: unknown, fallback: "Unauthorized" | "F
   const stripped = cleanUserFacingErrorMessage(message);
   if (!stripped || stripped.toLowerCase() === fallback.toLowerCase()) return fallback;
   return stripped;
+}
+
+/**
+ * Lets the public edge cache anonymous catalog reads briefly. Cached responses
+ * skip the batched public-version checks that dominate database reads.
+ * Requests with credentials are never marked cacheable.
+ */
+export function anonymousCatalogCacheHeaders(request: Request, headers: HeadersInit): HeadersInit {
+  if (request.headers.has("authorization") || request.headers.has("cookie")) return headers;
+  return mergeHeaders(headers, {
+    "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+  });
+}
+
+export async function readOptionalJson(request: Request): Promise<unknown> {
+  const raw = await request.text();
+  if (!raw.trim()) return undefined;
+  return JSON.parse(raw) as unknown;
+}
+
+export function optionalStringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" ? field : undefined;
+}
+
+function hasOwnField(value: unknown, key: string) {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    Object.prototype.hasOwnProperty.call(value as Record<string, unknown>, key),
+  );
+}
+
+export function resolveVersionPathTarget(
+  pathVersion: string | undefined,
+  request: Request,
+  body: unknown,
+): { version?: string; error?: string } {
+  const rawBodyVersion = optionalStringField(body, "version");
+  if (hasOwnField(body, "version") && rawBodyVersion === undefined) {
+    return { error: "Version must be a non-empty string" };
+  }
+  const version = pathVersion?.trim();
+  const bodyVersion = rawBodyVersion?.trim();
+  const queryVersions = new URL(request.url).searchParams
+    .getAll("version")
+    .map((queryVersion) => queryVersion.trim());
+  if (
+    !version ||
+    (rawBodyVersion !== undefined && !bodyVersion) ||
+    queryVersions.some((queryVersion) => !queryVersion)
+  ) {
+    return { error: "Version cannot be empty" };
+  }
+  if (
+    (bodyVersion && bodyVersion !== version) ||
+    queryVersions.some((queryVersion) => queryVersion !== version)
+  ) {
+    return { error: "Version does not match request target" };
+  }
+  return { version };
+}
+
+export function hasVersionDeleteSelector(request: Request, body: unknown) {
+  return hasOwnField(body, "version") || new URL(request.url).searchParams.has("version");
+}
+
+export function versionDeleteRouteGuidance(basePath: string, request: Request, body: unknown) {
+  const version =
+    optionalStringField(body, "version")?.trim() ??
+    new URL(request.url).searchParams.get("version")?.trim();
+  return `Version deletion requires DELETE ${basePath}/versions/${
+    version ? encodeURIComponent(version) : "<version>"
+  }.`;
+}
+
+export async function chunkedParallel<T, R>(
+  items: T[],
+  chunkSize: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
 }

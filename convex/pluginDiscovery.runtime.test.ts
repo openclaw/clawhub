@@ -135,7 +135,7 @@ it("excludes setup purposes from Trending and Featured while retaining All, sear
   ]);
 });
 
-it("continues a pre-Claw unfiltered catalog cursor instead of restarting the page", async () => {
+it("continues a pre-Template unfiltered catalog cursor instead of restarting the page", async () => {
   const { t } = await fixture();
   const first = await t.query(api.packages.listPublicNewPluginsPage, {
     createdAfter: 0,

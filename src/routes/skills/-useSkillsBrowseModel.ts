@@ -1,4 +1,4 @@
-import { getCatalogTopicSlugs, normalizeCatalogTopic } from "clawhub-schema";
+import { getCatalogTopicSlugs, normalizeCatalogTopic } from "clawhub-schema/catalogMetadata";
 import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../../convex/_generated/api";

@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { createReadStream, createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { stringifyJsonlRow } from "./jsonl";
 import { buildSecurityDatasetManifest } from "./manifest";
 import { redactBundleContent, redactSkillContent, redactText } from "./normalize";
 
@@ -159,7 +160,7 @@ async function concatenateRedactedHuggingFaceRows(writer: WriteStream, paths: st
 async function writeRedactedHuggingFaceRow(writer: WriteStream, line: string) {
   if (line.trim() === "") return;
   const row = redactHuggingFaceRow(JSON.parse(line) as Record<string, unknown>);
-  if (!writer.write(`${JSON.stringify(row)}\n`)) await once(writer, "drain");
+  if (!writer.write(`${stringifyJsonlRow(row)}\n`)) await once(writer, "drain");
 }
 
 function redactHuggingFaceRow(row: Record<string, unknown>) {

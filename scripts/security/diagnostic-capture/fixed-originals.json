@@ -1,0 +1,1866 @@
+{
+  "schemaVersion": "clawscan-fixed-skill-originals-v1",
+  "source": "b08e2907eb60b33bf712b07673aff565c13d9ad7",
+  "originals": [
+    {
+      "fixture": "004",
+      "id": "saferoute-base-swap-1.0.0",
+      "selector": "original-004-encrypted",
+      "package": "saferoute-base-swap",
+      "version": "1.0.0",
+      "owner": "crystalsignal",
+      "kind": "skill",
+      "attemptId": "zx7b9zzjgycq1gvzwk3arzc7eh8h7xn5",
+      "fingerprint": "b0a4d1502a3afa6bee9c3f40e3865c0b3af9daa99222dfee9f944d48247f6707",
+      "versionId": "k977vq181sezbrr4p2d86earn98h673s",
+      "sourceManifestSha256": "b44fedc66ac53627cca7616e3968115adf481111f6764a7a8668bc58c5f1b567",
+      "historicalOriginalManifestSha256": "d553959566d17f1a26af84658e479f04f36661e393adaee174958fc7e6a6a4bf",
+      "download": "https://clawhub.ai/api/v1/download?slug=saferoute-base-swap&version=1.0.0",
+      "manifestSha256": "0d7ed865eded9815f8ff02213b260e8a234a8a5ee2b579302ef47c6f245eb93e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "e252fe34b91b5785f1f665e2fe80542d4496a39a74dfdd777b60e5f2c42d3e33",
+          "size": 3043
+        },
+        {
+          "path": "scripts/inspect.mjs",
+          "sha256": "eee14a95422edf1ba49d9531ae6d6d1b09e9ff16c12c55b185c00ab6c85bb481",
+          "size": 3843
+        }
+      ]
+    },
+    {
+      "fixture": "016",
+      "id": "wirecat-tg-1.0.1",
+      "selector": "original-016-encrypted",
+      "package": "wirecat-tg",
+      "version": "1.0.1",
+      "owner": "wirecat",
+      "kind": "skill",
+      "attemptId": "zx7ddst6ec5gvr9cwt6b3k081d8h8ksp",
+      "fingerprint": "274d6fdc399bda26b8d481f4b42ecbbe676fe8a4e04fbbfbfa3bea36c410ee29",
+      "versionId": "k978pm3zsqzv8gbwr34s33d13d8h8hw4",
+      "sourceManifestSha256": "458c9ef24aa7c9bafac0cb7836c1dfb05f6ff68447ef6b0a221c1abcccd4aaf5",
+      "historicalOriginalManifestSha256": "9b41a7d9f8af542b904cf0a5e9868fdbf2da0e94b2d262e8bbd1f243bcd28496",
+      "download": "https://clawhub.ai/api/v1/download?slug=wirecat-tg&version=1.0.1",
+      "manifestSha256": "9cea9eb009cef61c5b45bd7066ffdc35dff59c8225a6a3cc54d11cc3088ceb59",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "274e564cdc5b415dbd7180e2ff58618894d510afab36a153ced1875be7fab657",
+          "size": 47740
+        }
+      ]
+    },
+    {
+      "fixture": "017",
+      "id": "wirecat-whatsapp-1.0.1",
+      "selector": "original-017-encrypted",
+      "package": "wirecat-whatsapp",
+      "version": "1.0.1",
+      "owner": "wirecat",
+      "kind": "skill",
+      "attemptId": "zx7es32jtpktywxzxsp5q5pd758h8aqm",
+      "fingerprint": "f1a6d78c59b17c09e13c533a235ea305d2585847541a7b7796c08f82b40541b2",
+      "versionId": "k97de87w8r06xyyqfkq6xqbbn98h9436",
+      "sourceManifestSha256": "8d4938828a4209a5d464002d940a2a844b4e67f2d0df9379b4fceac29a9097c5",
+      "historicalOriginalManifestSha256": "c5ef8ba9657d21aa34d0f31ca9dba6354ed5029036f86667a5c99a51d1914122",
+      "download": "https://clawhub.ai/api/v1/download?slug=wirecat-whatsapp&version=1.0.1",
+      "manifestSha256": "b8bbef23a384d06113710d68816b1c6a8a1a897f4f121ab4867a2f29bf75f2b9",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "4381c2c7f0e93d3ac0030cc6a6cb211c5282101382c096cba8fb3c00192bcefc",
+          "size": 27895
+        }
+      ]
+    },
+    {
+      "fixture": "026",
+      "id": "taasky-0.3.15",
+      "selector": "original-026-encrypted",
+      "package": "taasky",
+      "version": "0.3.15",
+      "owner": "marina-aronchik",
+      "kind": "skill",
+      "attemptId": "zx72f2x9k7mbs5dv89anadrh0h8gxk41",
+      "fingerprint": "bc888a0c7ae4d86ab996bd53a85cdedbfced0964a8b474803523a77f0557e581",
+      "versionId": "k979fn266rs2hhfb7r44mbcqb58gxsah",
+      "sourceManifestSha256": "dcf3ca41221682feed87f106d924ff05f4e3a2bf20833f03bdf167ba814da883",
+      "historicalOriginalManifestSha256": "53812ee854d0479a108813feb77961ae79ce3b7296209942ced401cb0d348df4",
+      "download": "https://clawhub.ai/api/v1/download?slug=taasky&version=0.3.15",
+      "manifestSha256": "6a606dbf451e96a9dc67c4907abf1714cb08f3e73a55532194ad5b9c178874a2",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "78867827a52d58e2b7ab740a0174c140696c78355efb49cc4667a3b17ec86928",
+          "size": 23105
+        }
+      ]
+    },
+    {
+      "fixture": "027",
+      "id": "betap-1.1.2",
+      "selector": "original-027-encrypted",
+      "package": "betap",
+      "version": "1.1.2",
+      "owner": "xavierabraham",
+      "kind": "skill",
+      "attemptId": "zx7by0mc7g284n7te5b20grdwx8gw9t0",
+      "fingerprint": "475ce40cd84e3d19dae201f180a9695db23bc1682c9168aaf38525b39fb96552",
+      "versionId": "k978v8xgkcet21rnnxctcxb6358gwfpf",
+      "sourceManifestSha256": "7572e9e025edba61af6a57d7c52ef6487aab2e69848ab40e658b220c6fa1923f",
+      "historicalOriginalManifestSha256": "e71361bbd238c648cba22b76c79d289e1c5083ce99282d363f093ec63926ad4f",
+      "download": "https://clawhub.ai/api/v1/download?slug=betap&version=1.1.2",
+      "manifestSha256": "c0a923bfb39e9435f28aac77d9a028d645de93665a6770bdcedf332d8927d7b1",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "11f46c75d5fc3dc200945659c1c0b29e130cbdc72066c4fe7fd5f47cca95d209",
+          "size": 8757
+        }
+      ]
+    },
+    {
+      "fixture": "074",
+      "id": "council-network-0.1.0",
+      "selector": "original-074-encrypted",
+      "package": "council-network",
+      "version": "0.1.0",
+      "owner": "docrohit",
+      "kind": "skill",
+      "attemptId": "zx7a9c1swzt9radn66b8t99vh58h1kc2",
+      "fingerprint": "113c4b22b02309fdd152ea0d8f5f58ecbfa43e3b21e1ff7ef202d58d9a6a553a",
+      "versionId": "k973t8mcx02bykzcybq6w3cjeh8h0yt4",
+      "sourceManifestSha256": "c92e03ebe0ea942d34d794abea3ea2ab1817307f9c8a84273bff62a4bc1ae55b",
+      "historicalOriginalManifestSha256": "113c4b22b02309fdd152ea0d8f5f58ecbfa43e3b21e1ff7ef202d58d9a6a553a",
+      "download": "https://clawhub.ai/api/v1/download?slug=council-network&version=0.1.0",
+      "manifestSha256": "b46c8b89bd049fc0f17eddc97b9fc0a40d4ccf152eb3ec4d37b47d84d22fdce2",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "755ae5b451fe97d8d6338c033233d6722dc640e3c9654c8662aac635b57cffc0",
+          "size": 5362
+        }
+      ]
+    },
+    {
+      "fixture": "008",
+      "id": "kritik-participate-1.0.0",
+      "selector": "original-008-encrypted",
+      "package": "kritik-participate",
+      "version": "1.0.0",
+      "owner": "icerain-cmd",
+      "kind": "skill",
+      "attemptId": "zx77x546j91dng9e1zkpwsne4h8h0zsn",
+      "fingerprint": "27b7899112a113981439b356b797411118e72c7ca2b4295ca669d4768acd0a8d",
+      "versionId": "k97ctphzh0y9shjxnazgpshfg58h1f5h",
+      "sourceManifestSha256": "76787a15f90b1cfe0b51f8056ff783bc6fa5c70779b46e3e45fccb4579e282b6",
+      "historicalOriginalManifestSha256": "31075b410cb563b04214c1e7c8b829b715f744845a1c120ac04d566f9ee4c667",
+      "download": "https://clawhub.ai/api/v1/download?slug=kritik-participate&version=1.0.0",
+      "manifestSha256": "58a0517c0b6875eaf3785b85edc86aa32ea802c89aa273cc4f023d343983e00f",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "67fcb3b5da0611a6a70f5fd463ecbb23a6bd1ceb757d666a9d00196749f066aa",
+          "size": 6131
+        },
+        {
+          "path": "scripts/kritik.mjs",
+          "sha256": "aba9f801f848cf9d12aba45f059c874e202597b51d0f227777b5d0ba0d2520e6",
+          "size": 9775
+        }
+      ]
+    },
+    {
+      "fixture": "011",
+      "id": "webly-0.14.6",
+      "selector": "original-011-encrypted",
+      "package": "webly",
+      "version": "0.14.6",
+      "owner": "tokifyi",
+      "kind": "skill",
+      "attemptId": "zx73dz082nae8mxn2jqf761qz58gxe4v",
+      "fingerprint": "c08c3b379da36c4a74a52a4fe21c8fef20b95d001c281a165af4e9cb46835722",
+      "versionId": "k97fpdxq7fxeara2cb9bza43hn8gx64a",
+      "sourceManifestSha256": "e83973fecc333861c74150ad5f186faa230cdb91185af6e81b9be323016fd42c",
+      "historicalOriginalManifestSha256": "e107456e9c0347f8342da655efd721982d75f2a56d672d25aeb84ba9873eff54",
+      "download": "https://clawhub.ai/api/v1/download?slug=webly&version=0.14.6",
+      "manifestSha256": "e26d48305b05b66fdd111e59c1a909a0ac0fa8d50e30f133e633eebe5d7f2189",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "1a184164aa4879d460bde492a6d405c25eaefd8464273c4d0bb5c062b3036ff9",
+          "size": 37905
+        },
+        {
+          "path": "scripts/webly.mjs",
+          "sha256": "3f8cccb0c807dcf862922c737a40fa6a77c488b183dca07098edd23c74f33b79",
+          "size": 79937
+        }
+      ]
+    },
+    {
+      "fixture": "036",
+      "id": "sn-ppt-dazzle-2026.10.29",
+      "selector": "original-036-encrypted",
+      "package": "sn-ppt-dazzle",
+      "version": "2026.10.29",
+      "owner": "sensenova-skills",
+      "kind": "skill",
+      "attemptId": "zx74xbck855f9hawwmrkwbvbvs8h7ash",
+      "fingerprint": "fe8e42d75bd8aebe55103ba718fbab12a4b88caf58da61083f89ecd8882dee41",
+      "versionId": "k979vrwbwc2c35qaw5z8dm2y618h7ghw",
+      "sourceManifestSha256": "8f5a649d8f609c2fd07d8151afba6c39644bbce11ff9910a875ebb948e553ed9",
+      "historicalOriginalManifestSha256": "7072889a8905c240e3b1343aeb5f381b82ca4a4837d48df91245783342035d82",
+      "download": "https://clawhub.ai/api/v1/download?slug=sn-ppt-dazzle&version=2026.10.29",
+      "manifestSha256": "035f167a29afb5e3b6c75119c1f0872e0c034c0469d7779138d6c4a4cca1d857",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "680f8c4eb578190e2ed4beffe415d7d94ce7d3bd50f160904b214c90de3fe147",
+          "size": 40820
+        },
+        {
+          "path": "references/fancy-cookbook.md",
+          "sha256": "f0e4d893898a9134db8cd817060176c1cb78cf7afd3d3dc3f0a36e01491700bc",
+          "size": 39260
+        },
+        {
+          "path": "references/style-families.md",
+          "sha256": "61723cf249ce70e93df2ea23da926194af9df86b9b622ca6604337f494a747fb",
+          "size": 10015
+        },
+        {
+          "path": "scripts/render_deck.py",
+          "sha256": "a9da9f17d15dc067724b64677ace0f9cd7bf0073954a820735c31b99667cea60",
+          "size": 26654
+        }
+      ]
+    },
+    {
+      "fixture": "033",
+      "id": "gtrk-cover-1.3.9",
+      "selector": "original-033-encrypted",
+      "package": "gtrk-cover",
+      "version": "1.3.9",
+      "owner": "gitruck",
+      "kind": "skill",
+      "attemptId": "zx79n9pnh0be24vs0jsxabcjah8h2vmh",
+      "fingerprint": "97b77c7947a69a6e6fa14ac19fb9aa1b0352118153e30ff7a3c07c08328e501b",
+      "versionId": "k9746rh4s8smhwfwbn5np2kscn8h2c7v",
+      "sourceManifestSha256": "6a0ae2d2ae7b9ece3dd8bd13289a3fd924a989ce475dea5ce903343cdb0eadb2",
+      "historicalOriginalManifestSha256": "e04dbe121a9525782d1644cd395bd63bfcf76ef667ec637203735f2994c9af5c",
+      "download": "https://clawhub.ai/api/v1/download?slug=gtrk-cover&version=1.3.9",
+      "manifestSha256": "b497cf1b721d3a337e652ac491cabe3edfcd2f5f20cd7f61370cdbcb57f96b1f",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "6c0247b9266eeba434ec7cbd752998c619cbf5981d4ff43d982267e4da44020b",
+          "size": 13288
+        },
+        {
+          "path": "assets/workbench-template.html",
+          "sha256": "d2a88df0f85000d1149db063ee3679fcdcef1abcfe32625a0a6f72138c8acdb6",
+          "size": 50025
+        },
+        {
+          "path": "references/checklist.md",
+          "sha256": "758d60053e2b04a6935c877a3beba84300b7ec2c16bab6ebe1e8c610d193e99e",
+          "size": 4531
+        },
+        {
+          "path": "references/layout-recipes.md",
+          "sha256": "7b5d64c06c847116292ced4b7e576017253216b9a07cd6ef04aed862cb417d4f",
+          "size": 15319
+        },
+        {
+          "path": "references/prompt-templates.md",
+          "sha256": "3342ee7869eed84bdb78305613ff8514da73bee703b4d74e21fbd06af8045fbb",
+          "size": 6738
+        },
+        {
+          "path": "references/workbench-guide.md",
+          "sha256": "1c66b77bfc8cae44a527f2c4b474bc3ccc17f06cedb4a10e56b09b248d42ebf8",
+          "size": 10604
+        }
+      ]
+    },
+    {
+      "fixture": "065",
+      "id": "agent-betap-1.0.0",
+      "selector": "original-065-encrypted",
+      "package": "agent-betap",
+      "version": "1.0.0",
+      "owner": "xavierabraham",
+      "kind": "skill",
+      "attemptId": "zx739kkrb6530st41qjdzyj0498gy4ac",
+      "fingerprint": "f5dcf76230e987f39f1da5be27da41459e22e383307af2ebb3a3a2eecd4acfc2",
+      "versionId": "k974s4hvs82pcm87xq4kvcd6hh8gzh4a",
+      "sourceManifestSha256": "077a78803f16befe1561a9e387e1368676850464c6bfb1006334343238955f0e",
+      "historicalOriginalManifestSha256": "f5dcf76230e987f39f1da5be27da41459e22e383307af2ebb3a3a2eecd4acfc2",
+      "download": "https://clawhub.ai/api/v1/download?slug=agent-betap&version=1.0.0",
+      "manifestSha256": "0df22e4c5e1e6ca5d1ca56d376a2a003b81b1ac392271329e3550d5beb5bb428",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "1139c5101858e49ba489543ebf22a7e3b9a04c17e3b2f5c3d58d924bf9d5b961",
+          "size": 2056
+        }
+      ]
+    },
+    {
+      "fixture": "073",
+      "id": "smartgate-1.0.0",
+      "selector": "original-073-encrypted",
+      "package": "smartgate",
+      "version": "1.0.0",
+      "owner": "smartgate.network",
+      "kind": "skill",
+      "attemptId": "zx72gtz9rezd1kcsc8q3n7e6w18h5w7c",
+      "fingerprint": "67120c9027ff61682adfde1110807d26653764c8cd0de8a04b5a0a06a2724436",
+      "versionId": "k9768gzc3ab096hhv1p435xksh8h5y3b",
+      "sourceManifestSha256": "c92e03ebe0ea942d34d794abea3ea2ab1817307f9c8a84273bff62a4bc1ae55b",
+      "historicalOriginalManifestSha256": "67120c9027ff61682adfde1110807d26653764c8cd0de8a04b5a0a06a2724436",
+      "download": "https://clawhub.ai/api/v1/download?slug=smartgate&version=1.0.0",
+      "manifestSha256": "05a9cab246f922b8dda4e3c3647df42a82e00809b7baed32a697f2b93d3d0602",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "c7ad76ce6d2f2f9eadfc97a78b86464c19b8ab6a858b46fbc4fd35dd790f7660",
+          "size": 2917
+        }
+      ]
+    },
+    {
+      "fixture": "042",
+      "id": "mochilab-skills-1.1.1",
+      "selector": "original-042-encrypted",
+      "package": "mochilab-skills",
+      "version": "1.1.1",
+      "owner": "hznetnewpower",
+      "kind": "skill",
+      "attemptId": "zx78bax1x9pyt6qg30y28xx9918h1bcx",
+      "fingerprint": "0bfcee19b731b75413a92b08b5598546267ee2801f4734a2873927fcb0b655b3",
+      "versionId": "k975k2cff6d99s8b7dng06wy9x8h1zyw",
+      "sourceManifestSha256": "e6f21d270eb1e48657459b8b5ec76d7bd02487b8354da723e89bb5fa972cf3a2",
+      "historicalOriginalManifestSha256": "0bfcee19b731b75413a92b08b5598546267ee2801f4734a2873927fcb0b655b3",
+      "download": "https://clawhub.ai/api/v1/download?slug=mochilab-skills&version=1.1.1",
+      "manifestSha256": "61573b29a052d0adbbbc06c9f5e4ac49c1d24e18e50262177a665783f29a32ee",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "b3e1655cfc75a8b798596ea4468b8119d8250c8f1b1b5e75397887d1aca93027",
+          "size": 903
+        },
+        {
+          "path": "README.md",
+          "sha256": "b8758f0eeece8452ad4f4dc1813a63448002d5d48b484a22539bbbc800c7d68a",
+          "size": 2594
+        },
+        {
+          "path": "README.zh-CN.md",
+          "sha256": "71bd70609ec2f7507099b3e1fb9f2972422437ad30df2985e443202388953a40",
+          "size": 2362
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "d06b681dc6fa75e62aefe0d453b40acd8de9bcb4b6365159bb69f6b8a7a06176",
+          "size": 4494
+        },
+        {
+          "path": "scripts/mochilab.mjs",
+          "sha256": "7ef41da8523e9b5a764d71d4eea863fd1f4d1a687f4ea63f937bd455dce705ce",
+          "size": 24366
+        }
+      ]
+    },
+    {
+      "fixture": "055",
+      "id": "gtrk-cover-1.3.10",
+      "selector": "original-055-encrypted",
+      "package": "gtrk-cover",
+      "version": "1.3.10",
+      "owner": "gitruck",
+      "kind": "skill",
+      "attemptId": "zx72jbarp0t1p4gqfx1hwq01xd8h7bzj",
+      "fingerprint": "97b77c7947a69a6e6fa14ac19fb9aa1b0352118153e30ff7a3c07c08328e501b",
+      "versionId": "k97fpbaas23y9j1gdmhzrezs6n8h7qpd",
+      "sourceManifestSha256": "f0b29790043cb4b159c162a2ee541b59fd32beaf4008d130186f44afc33c6a25",
+      "historicalOriginalManifestSha256": "b497cf1b721d3a337e652ac491cabe3edfcd2f5f20cd7f61370cdbcb57f96b1f",
+      "download": "https://clawhub.ai/api/v1/download?slug=gtrk-cover&version=1.3.10",
+      "manifestSha256": "b497cf1b721d3a337e652ac491cabe3edfcd2f5f20cd7f61370cdbcb57f96b1f",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "6c0247b9266eeba434ec7cbd752998c619cbf5981d4ff43d982267e4da44020b",
+          "size": 13288
+        },
+        {
+          "path": "assets/workbench-template.html",
+          "sha256": "d2a88df0f85000d1149db063ee3679fcdcef1abcfe32625a0a6f72138c8acdb6",
+          "size": 50025
+        },
+        {
+          "path": "references/checklist.md",
+          "sha256": "758d60053e2b04a6935c877a3beba84300b7ec2c16bab6ebe1e8c610d193e99e",
+          "size": 4531
+        },
+        {
+          "path": "references/layout-recipes.md",
+          "sha256": "7b5d64c06c847116292ced4b7e576017253216b9a07cd6ef04aed862cb417d4f",
+          "size": 15319
+        },
+        {
+          "path": "references/prompt-templates.md",
+          "sha256": "3342ee7869eed84bdb78305613ff8514da73bee703b4d74e21fbd06af8045fbb",
+          "size": 6738
+        },
+        {
+          "path": "references/workbench-guide.md",
+          "sha256": "1c66b77bfc8cae44a527f2c4b474bc3ccc17f06cedb4a10e56b09b248d42ebf8",
+          "size": 10604
+        }
+      ]
+    },
+    {
+      "fixture": "039",
+      "id": "mochi-daily-brief-1.0.1",
+      "selector": "original-039-encrypted",
+      "package": "mochi-daily-brief",
+      "version": "1.0.1",
+      "owner": "hznetnewpower",
+      "kind": "skill",
+      "attemptId": "zx76t425vw81kfrq7vvwjx3m3s8h0mmm",
+      "fingerprint": "350b3b296e59cc0c8d1fdfe6f6029347234fbfe08044fcfef2ba7b1d96256e65",
+      "versionId": "k971cbssee2wcpn7yrtd77ecf58h0sd5",
+      "sourceManifestSha256": "6a4f91be65d710522d68a7bef35cbf0de63dd87a83d1cc0b0753f0e57942ca9e",
+      "historicalOriginalManifestSha256": "350b3b296e59cc0c8d1fdfe6f6029347234fbfe08044fcfef2ba7b1d96256e65",
+      "download": "https://clawhub.ai/api/v1/download?slug=mochi-daily-brief&version=1.0.1",
+      "manifestSha256": "f11b6cb2c09eee75006e571c82b327859728b9d9ec52b770de905cd0516253f0",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "b3e1655cfc75a8b798596ea4468b8119d8250c8f1b1b5e75397887d1aca93027",
+          "size": 903
+        },
+        {
+          "path": "README.md",
+          "sha256": "1f8aac2f3ffcb2b99704afd844677056b8607f608e17fc3b602fab61ee3cbd8f",
+          "size": 2183
+        },
+        {
+          "path": "README.zh-CN.md",
+          "sha256": "bc3d22981e3a356b5e389195f7f573cf5587a1aed647903322c24975dede8c0f",
+          "size": 2547
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "68fc843c6a6457c3a39ab07767b655494718663d96190bc9e5bc50e931f70bc2",
+          "size": 6148
+        },
+        {
+          "path": "references/options.md",
+          "sha256": "dc03677ec3d7c7427beb1fca499b6beb580d6933f81f085d3f07d00296c672ae",
+          "size": 5816
+        },
+        {
+          "path": "scripts/brief.mjs",
+          "sha256": "503340a3d89cce2fee4a9d48372f618ad70d272b52eaae2a6e6eb6c966940d4c",
+          "size": 20363
+        },
+        {
+          "path": "tests/brief.test.mjs",
+          "sha256": "70337dfdc38db0e5a82ca7d02138be2fb59c6ee27f43b00dd0fdf1a2e0a6d991",
+          "size": 16311
+        }
+      ]
+    },
+    {
+      "fixture": "010",
+      "id": "brewpage-publish-1.0.8",
+      "selector": "original-010-encrypted",
+      "package": "brewpage-publish",
+      "version": "1.0.8",
+      "owner": "kochetkov-ma",
+      "kind": "skill",
+      "attemptId": "zx72qjk2b7adfc3xfketc55d7h8h2ct3",
+      "fingerprint": "0584354479d17011f38eb4122c8693e0d56ba3289c46caa4dc3226ad55266a3d",
+      "versionId": "k974szd30ckskwfma437qapfd58h34gv",
+      "sourceManifestSha256": "57f66ee901dd7ae2fbcf23954f055cc9ddff2a3ef79be8f9146a3cd342c210e3",
+      "historicalOriginalManifestSha256": "3292602370dc45f70d2d2cf815e6530f3844c6f4f12b77d83e1590d6b6c70891",
+      "download": "https://clawhub.ai/api/v1/download?slug=brewpage-publish&version=1.0.8",
+      "manifestSha256": "a37695ad0434ec3579f70705e2f5f10b73ff97317d02305c6bb7eac1dfd09160",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "4513bfc94a4eae4fe4d49f0b5727992266aa003bcfea7437d25bbf0869f04a84",
+          "size": 1142
+        },
+        {
+          "path": "README.md",
+          "sha256": "bad807de787f2b4bd4da1c2614a227c26e5f9faf7a870b46aa7a79109c8b7d98",
+          "size": 11377
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "77e0281e2fe8e4a3dcca2a4a4a975a67b317db1574f97f4a9291bdb16cef2904",
+          "size": 17656
+        },
+        {
+          "path": "scripts/brewpage-lib.sh",
+          "sha256": "904ed7bf7631a597476a493849e5ddc97b755b40a28cddeac60a264614dec655",
+          "size": 11761
+        },
+        {
+          "path": "scripts/brewpage-run.sh",
+          "sha256": "356cc62dc912ef01b46986c4cd3c170ef7543d6484e9d3ed0e123e460f61738a",
+          "size": 10356
+        },
+        {
+          "path": "scripts/history.py",
+          "sha256": "24d68381f27b13a727a5f342ae7396948a6e80123a926a627ecf956992906e61",
+          "size": 6048
+        },
+        {
+          "path": "scripts/publish.mjs",
+          "sha256": "23d15a831a4ae654b21c9ff469a17fbf3db96528a41969641ef105c2d3cf4f81",
+          "size": 17445
+        }
+      ]
+    },
+    {
+      "fixture": "019",
+      "id": "hookaido-2.15.3",
+      "selector": "original-019-encrypted",
+      "package": "hookaido",
+      "version": "2.15.3",
+      "owner": "7schmiede",
+      "kind": "skill",
+      "attemptId": "zx78v8whzmepebrr7t8489tqa58h877q",
+      "fingerprint": "aefe9b9deb288ad20fc5213557a142b059cacb9856bd97f9d5f32b5ab40f643e",
+      "versionId": "k971asg1bx11v8efjtdn554d8n8h9r4b",
+      "sourceManifestSha256": "b2039d335eebacfecd986a9f27f50899b6109bd7f427f6d2774ae6fdb16f52e6",
+      "historicalOriginalManifestSha256": "f010299b146e1943d39879aaeac28c85c57a12c539f542573c36db5ca2be7f2f",
+      "download": "https://clawhub.ai/api/v1/download?slug=hookaido&version=2.15.3",
+      "manifestSha256": "ec0a413aa333045b23a4d0e2acb195bb27b5bc110db123fccdde6c9e5380eb12",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "de9ec9fb41d0078e9ca541b57f310d57ceef1ebcd9a85b1febd03623b8365496",
+          "size": 904
+        },
+        {
+          "path": "README.md",
+          "sha256": "d874af717b76779fdc87aeb0260eed4c720656bc4d490b99ee18573e7ea0eba8",
+          "size": 2446
+        },
+        {
+          "path": "RELEASE_NOTES.md",
+          "sha256": "ff21458f172cbb239ce0a8fe366fa437ebdb4a042bfec4575af1348c5ca1fab2",
+          "size": 8826
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "c1f330191c12a3126594e720450167a3a148af3293d7b6c06ddfa0e5b15bc9c3",
+          "size": 15884
+        },
+        {
+          "path": "agents/openai.yaml",
+          "sha256": "5b6b4966f51d71c491c4e99556013d12c25acd6de68d2cca3dbabec7522f5f14",
+          "size": 353
+        },
+        {
+          "path": "references/openclaw.md",
+          "sha256": "38a2fc7276dd7057405f915c92c9ae25bf1132523349045768fc8bbeabcc600b",
+          "size": 9880
+        },
+        {
+          "path": "references/operations.md",
+          "sha256": "2217aad85e272f969fc30bee079d23583d5d8e844bcb09d47730a7973ce2f74b",
+          "size": 17287
+        },
+        {
+          "path": "scripts/install_hookaido.sh",
+          "sha256": "7efc3098434d67c9563a370f43d9dbe9364e2267fde5929ee7b4fb916b2cf0e7",
+          "size": 4712
+        },
+        {
+          "path": "scripts/openclaw_pull_relay.sh",
+          "sha256": "13348d30a5d1ab83c9b6bb64aeac74a932c5710fbc31f283a8afdbaf9cba4f26",
+          "size": 2673
+        }
+      ]
+    },
+    {
+      "fixture": "005",
+      "id": "xiapan-music-0.1.0",
+      "selector": "original-005-encrypted",
+      "package": "xiapan-music",
+      "version": "0.1.0",
+      "owner": "dongsheng123132",
+      "kind": "skill",
+      "attemptId": "zx7b487av1k20f0ctys5n9t8h58h4v9g",
+      "fingerprint": "92f5b51d896a15584a90034cf91a88d7108f0b727a009a5833b64230c40cedea",
+      "versionId": "k972v7hrpjv0ds1zwperc1yx858h43pp",
+      "sourceManifestSha256": "d22cacf3c276970c945b94509a3ba883c035863a3e05d698247a6a8a807acb55",
+      "historicalOriginalManifestSha256": "c2f30fe6f44e094e84b3aa0471635457976eaa68358fccfea2c9f6e65cd34895",
+      "download": "https://clawhub.ai/api/v1/download?slug=xiapan-music&version=0.1.0",
+      "manifestSha256": "83fa9eabb8ce424d2b2ac0daed1a671486e5740abb2e7a71da01224dc62aba59",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "479d5020bb2ac56b1dfeab33e1408bec4aa5730478fa8e19f208e1932a453b59",
+          "size": 3769
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "f089686b20d3689b05b6efe52692438f71884b5eb3e1788ba56b1bf59ead3250",
+          "size": 12484
+        },
+        {
+          "path": "references/music.md",
+          "sha256": "d14cddbba6ddca6337c9695c96586337aaf1bef754bf90257239f31ab15439a6",
+          "size": 4932
+        },
+        {
+          "path": "scripts/balance.mjs",
+          "sha256": "7e93d2243bafb2440413cc511365db45c7c18494be5d585425db929e2c033e6c",
+          "size": 1951
+        },
+        {
+          "path": "scripts/bgm.mjs",
+          "sha256": "a6f1ae8c4c89163e2e84862b5b8c1b2765990e161a4d7c9b9dd0c5677bd75eb1",
+          "size": 5182
+        },
+        {
+          "path": "scripts/lib/cli.mjs",
+          "sha256": "21fe4f514d0039d0ad6364ffb62a5e4e1dd78fb851a6ab2b36c561cf51fdf22f",
+          "size": 7897
+        },
+        {
+          "path": "scripts/lib/xiapan-music.mjs",
+          "sha256": "3984155a944a40ed2a01d859cd2228c0d158de070b3cdde759938ed4e7917ce5",
+          "size": 39151
+        },
+        {
+          "path": "scripts/lyrics.mjs",
+          "sha256": "eaadd78d7939003b0d9fc1e4119b445537bab6e48b886aab04837bc3ec429017",
+          "size": 3538
+        },
+        {
+          "path": "scripts/song.mjs",
+          "sha256": "2824181d53d69482708ea00be992d025bdecfb65e1bb9181741b6cf547e40793",
+          "size": 12536
+        }
+      ]
+    },
+    {
+      "fixture": "006",
+      "id": "xiapan-music-0.1.1",
+      "selector": "original-006-encrypted",
+      "package": "xiapan-music",
+      "version": "0.1.1",
+      "owner": "dongsheng123132",
+      "kind": "skill",
+      "attemptId": "zx7284aer96fg31dge0bs406rs8h53dc",
+      "fingerprint": "a8ce606b7131c63e7f92fb77b631096a6bf50defd75fbd73462f601af12fc27f",
+      "versionId": "k97b1ptq47bs8sjewf8xx73v898h4p75",
+      "sourceManifestSha256": "1cc155fc44227ecc4a4b3eba36321dc1f9aa959260ccb13d8b1e381f50e7f13b",
+      "historicalOriginalManifestSha256": "ab98be3bcec10ac3f83c2cb8bbdb90781f838ba126201c270e90b9dbfe26ca3e",
+      "download": "https://clawhub.ai/api/v1/download?slug=xiapan-music&version=0.1.1",
+      "manifestSha256": "121ce0a19ac22e8fbea4fed9025127429a8464fed8e82ff684d376ab961e199c",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "479d5020bb2ac56b1dfeab33e1408bec4aa5730478fa8e19f208e1932a453b59",
+          "size": 3769
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "9b83e364cbd201b9d9dbfbc900479f57c4475dd20d7c6087e2cdda6c9790ef85",
+          "size": 12484
+        },
+        {
+          "path": "references/music.md",
+          "sha256": "d14cddbba6ddca6337c9695c96586337aaf1bef754bf90257239f31ab15439a6",
+          "size": 4932
+        },
+        {
+          "path": "scripts/balance.mjs",
+          "sha256": "7e93d2243bafb2440413cc511365db45c7c18494be5d585425db929e2c033e6c",
+          "size": 1951
+        },
+        {
+          "path": "scripts/bgm.mjs",
+          "sha256": "a6f1ae8c4c89163e2e84862b5b8c1b2765990e161a4d7c9b9dd0c5677bd75eb1",
+          "size": 5182
+        },
+        {
+          "path": "scripts/lib/cli.mjs",
+          "sha256": "21fe4f514d0039d0ad6364ffb62a5e4e1dd78fb851a6ab2b36c561cf51fdf22f",
+          "size": 7897
+        },
+        {
+          "path": "scripts/lib/xiapan-music.mjs",
+          "sha256": "3984155a944a40ed2a01d859cd2228c0d158de070b3cdde759938ed4e7917ce5",
+          "size": 39151
+        },
+        {
+          "path": "scripts/lyrics.mjs",
+          "sha256": "eaadd78d7939003b0d9fc1e4119b445537bab6e48b886aab04837bc3ec429017",
+          "size": 3538
+        },
+        {
+          "path": "scripts/song.mjs",
+          "sha256": "2824181d53d69482708ea00be992d025bdecfb65e1bb9181741b6cf547e40793",
+          "size": 12536
+        }
+      ]
+    },
+    {
+      "fixture": "015",
+      "id": "agentlifeboat-1.0.2",
+      "selector": "original-015-encrypted",
+      "package": "agentlifeboat",
+      "version": "1.0.2",
+      "owner": "king-perb",
+      "kind": "skill",
+      "attemptId": "zx7f16v03prv0500fdvb092wxn8h2ejy",
+      "fingerprint": "b4a6891269bc096cc7679fcd4e44f2641b4f78867af5ffb090c52f4dd5f8cf2b",
+      "versionId": "k977873s0ct949cbq3p9etee1s8h2k4p",
+      "sourceManifestSha256": "dce8d0e7904374cb81ad51ed2cba4c23dd2f49671f74620abb6eed8c6730817c",
+      "historicalOriginalManifestSha256": "6adb03ab79fe36b34c0101b07441073133eacc1d71be5f14c315d73e0987e971",
+      "download": "https://clawhub.ai/api/v1/download?slug=agentlifeboat&version=1.0.2",
+      "manifestSha256": "1cf20d0e01a3a87af35e77e21e79ee094fdd5dedbe8ad5dc5f82800461ab4021",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "741d972ff6dfc5894edc5a7f95968002cbc5982c92e487a7f434cf1e273c9704",
+          "size": 5144
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "a7e1086bb2438aea352d0c09c4cce6a727c33d31c26cd6c41fe3058eb76b0464",
+          "size": 18393
+        },
+        {
+          "path": "package-lock.json",
+          "sha256": "722960307c7ff5fdd88c18d361cd4b87bba8358b397ceeb3555b5a467e8f8b5a",
+          "size": 15194
+        },
+        {
+          "path": "package.json",
+          "sha256": "305858f09d09d0910fb83a2f1a2ff62be3eacf9a10f5ddd7912115ec9c184068",
+          "size": 552
+        },
+        {
+          "path": "scripts/bundle.mjs",
+          "sha256": "7a1d9295ee62d045426928564ced15131fe33070b78318633708b509464c8161",
+          "size": 4297
+        },
+        {
+          "path": "scripts/check.mjs",
+          "sha256": "fdbfc5e51a53d2d38e2a8048edd90057f49da477e2598227fd97ea668993489b",
+          "size": 16131
+        },
+        {
+          "path": "scripts/environment.mjs",
+          "sha256": "ea178bd534e5418e4b41fd246aedb353fc508c67b9e43adad40d911af0808156",
+          "size": 10165
+        },
+        {
+          "path": "scripts/lib.mjs",
+          "sha256": "d57a4ff1d295e36181c8e8e29e3e4ef253ef3040fedcce9aba54ab65e6edf9f5",
+          "size": 18077
+        },
+        {
+          "path": "scripts/lifeboat.mjs",
+          "sha256": "4e27e78a6aeb07113cefcb742e8e96d742698cbccdff8dc009e0c2d9dffe525c",
+          "size": 18709
+        }
+      ]
+    },
+    {
+      "fixture": "071",
+      "id": "second-read-0.3.1",
+      "selector": "original-071-encrypted",
+      "package": "second-read",
+      "version": "0.3.1",
+      "owner": "c-kapsalis",
+      "kind": "skill",
+      "attemptId": "zx7begmqj11wxkyjwjgp6a3qzh8h41cq",
+      "fingerprint": "c8d68fd0f6b596a04b89f1e77b48c6227ba092235eed1a9b1b2835d961d79ad8",
+      "versionId": "k978wewzk6t20m5cc8xqgyhyzn8h5sjc",
+      "sourceManifestSha256": "ba45daa10420f82974b61f80d91a292545145f7a09624c83b320d8cb286cc279",
+      "historicalOriginalManifestSha256": "c8d68fd0f6b596a04b89f1e77b48c6227ba092235eed1a9b1b2835d961d79ad8",
+      "download": "https://clawhub.ai/api/v1/download?slug=second-read&version=0.3.1",
+      "manifestSha256": "5930a4f208818dd4fbd0adbbde6711c2b38965505a463eb8a3afc811f10b0d00",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "ca250723419c81b43e3376ebde2aaae47c3c951640c01c5dff343a3212e46937",
+          "size": 1078
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "85e2234284fa3e922ff75c6c382d695626f8c365bf42cd5bb35cf02fb6fdb449",
+          "size": 6849
+        },
+        {
+          "path": "agents/openai.yaml",
+          "sha256": "13075f6dfb57e46a3a4ece09b5cd1e1a03d89ba4225911fa83b257049074b757",
+          "size": 138
+        },
+        {
+          "path": "assets/project-context.example.json",
+          "sha256": "d87a589ff7615c1358c3e86b53570bb72be0c533925009b3fc23733e523de99a",
+          "size": 1139
+        },
+        {
+          "path": "assets/review.example.json",
+          "sha256": "5acd21078b4fda0c29a7a3975bab01fee2292c75869d8019800d758f0495e006",
+          "size": 9770
+        },
+        {
+          "path": "references/AD-COPY.md",
+          "sha256": "40a765892c5679badc59f981643cc7d75525c02a76bf3052d373bcf336737962",
+          "size": 3012
+        },
+        {
+          "path": "references/ANTI-FORMULAIC-PROSE.md",
+          "sha256": "8d8db0ead7b9e9c7b73c43eb1885041a6ea08d12c6e801447cc8d871605d7d4b",
+          "size": 2560
+        },
+        {
+          "path": "references/AUTHOR-RULESETS.md",
+          "sha256": "92d472bea8ed9215263545711f59c08065791aaf8429af3067ae675858908ab0",
+          "size": 2879
+        },
+        {
+          "path": "references/BRAND-POSITIONING.md",
+          "sha256": "fbd438abac2bcdcced28105111a835971d467929a9fbb353e09906f0ce3bdc6c",
+          "size": 2537
+        },
+        {
+          "path": "references/COPY-AND-BRANDING.md",
+          "sha256": "ffa5ce765dc00ac760d7128b3d76425251e55ed4bf9493287a1005309641d00b",
+          "size": 2711
+        },
+        {
+          "path": "references/DATA-STORYTELLING.md",
+          "sha256": "c645200c0d0144806473526a73e64d245466a52ddeb5f6aebaf244d4c6a450e6",
+          "size": 1963
+        },
+        {
+          "path": "references/DOCUMENTATION.md",
+          "sha256": "97d2e4a1e27e13d6dbaa6b46d4ccb417cd0686066150aed262ca11799b4e6e99",
+          "size": 3132
+        },
+        {
+          "path": "references/EDIT-OPERATIONS.md",
+          "sha256": "fe1914aeebab228a717e7dbb946c041803b17741bfc6933201c26cbeaa827e6f",
+          "size": 1664
+        },
+        {
+          "path": "references/EDITORIAL-JUDGMENT.md",
+          "sha256": "8f9292c9a5ab85b6a6384a7ffd81288cfea5a373638be6a5942747b2ad5fa307",
+          "size": 3777
+        },
+        {
+          "path": "references/EMAIL-MARKETING.md",
+          "sha256": "27d2eac63a17559b939753cf1dfb1d269d86c5648f87003e8376d3ac19f618b1",
+          "size": 4200
+        },
+        {
+          "path": "references/ESSAYS-AND-EXPLANATIONS.md",
+          "sha256": "b07a0c2956759c872996811b496d87192c45140f16f76188fb5a24d9323ad560",
+          "size": 3266
+        },
+        {
+          "path": "references/FICTION-AND-NARRATIVE.md",
+          "sha256": "535c36350a3a8232ffde1acf166f0606d32e225518b567fcf42fdeb90fa0c583",
+          "size": 2647
+        },
+        {
+          "path": "references/JOURNALISM.md",
+          "sha256": "0865b7bb1773f389ded13c7b40045a9b4928b43a06d538181ac995dc487ae9b4",
+          "size": 2625
+        },
+        {
+          "path": "references/KNOWLEDGE-BASES.md",
+          "sha256": "c7cbcd210678a3ae04fe94f175629509ee40c7c3c5fc0e3c5541de1fef57f7a0",
+          "size": 5044
+        },
+        {
+          "path": "references/LANDING-PAGES.md",
+          "sha256": "c81be4177e00370c22d31413f9662f20408627d7ee6691e5ba692e9cf59eb7b5",
+          "size": 2988
+        },
+        {
+          "path": "references/PATHWAYS.md",
+          "sha256": "145b212b5aa242ab95ea5d869eb1a888d1efc583d95de800a1d786e9e05edda0",
+          "size": 2752
+        },
+        {
+          "path": "references/POLICY-AND-ARGUMENTS.md",
+          "sha256": "2160329a79d328a8f9f19c3b9c570215c8f6d373d1f82949b330488d5ac0d8de",
+          "size": 3047
+        },
+        {
+          "path": "references/PR-AND-MEDIA-RELATIONS.md",
+          "sha256": "8736458860971fcd236bbab8dee97ae90edc18d004d223668f4f307e893e7575",
+          "size": 4639
+        },
+        {
+          "path": "references/PRODUCT-VERIFICATION.md",
+          "sha256": "5aec143030c519328892a444780a8607bd99a371e92b1a1e0fe809ea066040f6",
+          "size": 3691
+        },
+        {
+          "path": "references/PROJECT-CONTEXT.md",
+          "sha256": "ceca532943e051b911661aabf642e866f0a7fb8f1cb4ae53207e7ab610a12a85",
+          "size": 3249
+        },
+        {
+          "path": "references/PROOFREAD-AND-VERIFY.md",
+          "sha256": "c2af61f9726160a66a8372f48a85d30372d15a8b46ccb547f74cc07660484d81",
+          "size": 1254
+        },
+        {
+          "path": "references/SEO-CONTENT.md",
+          "sha256": "af879ccbdb4b0a6ca2752416df55eb2151ee3f93f2819dc83d93f6f6571b408b",
+          "size": 3379
+        },
+        {
+          "path": "references/SEQUENCE-AND-QUIZZES.md",
+          "sha256": "a000c29db62e390960d8a8f0e18edc61abaa7da6c1a845bdf195c15e59c65250",
+          "size": 5430
+        },
+        {
+          "path": "scripts/edit_review.py",
+          "sha256": "632b0b10da29c7a33b26e4894284931dddce7c6bc1007e1d13fe80ebad941ad1",
+          "size": 12025
+        },
+        {
+          "path": "scripts/editor_template.html",
+          "sha256": "59f990a467d77cf7bec935a39164da76220b2e93c88133667ed26c5e5738a12d",
+          "size": 22706
+        },
+        {
+          "path": "scripts/evaluate_editorial_cases.py",
+          "sha256": "36defbb78da1941e76067b00c3573eb35fde925d160287e8bf56cbe3f99cfb6a",
+          "size": 4886
+        },
+        {
+          "path": "scripts/knowledge_context.py",
+          "sha256": "a1c4074398a6367196c3aad848708583054498b3fa02560888c751ffc296822e",
+          "size": 10283
+        },
+        {
+          "path": "scripts/product_verify.py",
+          "sha256": "7e704e02d05ada8f3c9af8b296b072c8ce4cf54baab56ad676c0a6ba6031dc6f",
+          "size": 13153
+        },
+        {
+          "path": "scripts/project_context.py",
+          "sha256": "c122ec65b22c8f3e8495b734abfeabff25862d892a7ef7cfbbcd223f9098da1e",
+          "size": 5104
+        }
+      ]
+    },
+    {
+      "fixture": "007",
+      "id": "stella-selfie-1.4.1",
+      "selector": "original-007-encrypted",
+      "package": "stella-selfie",
+      "version": "1.4.1",
+      "owner": "tower1229",
+      "kind": "skill",
+      "attemptId": "zx78f5dhed5n9g4h1y36dbff618h9abe",
+      "fingerprint": "f0091ae805d185a18449618a6e5d8a59104d7714fb7ea4f622eb1527e411e8eb",
+      "versionId": "k97avh2p20zbv2tgzjhjyxgyxn8h8je9",
+      "sourceManifestSha256": "469b39cfe73e5456b23ea7515c40bacedabcdfb9c48db13befb36a429fbc5219",
+      "historicalOriginalManifestSha256": "c3367b4b118d107d7c9475ba17bb85f1f3e4c131d56796782f46c6ff8d7112aa",
+      "download": "https://clawhub.ai/api/v1/download?slug=stella-selfie&version=1.4.1",
+      "manifestSha256": "346ff87cb6e7d4f66faf19ede2fafec52e0d54c9037ec0ccf743dc6cdcf14bd7",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "6e023c6b2864ac56207d2a80043a5734ee8c1df21dd9ada738376533b27dd204",
+          "size": 16769
+        },
+        {
+          "path": "dist/scripts/avatars.js",
+          "sha256": "9de643731cc2a22b61e03a8d15f800231498265bd13bb6b3537fb91c5450e1fe",
+          "size": 5919
+        },
+        {
+          "path": "dist/scripts/errors.js",
+          "sha256": "4ecd94d985789ef294bc9613c6639e6e4e579e25858ccc19b3e09445340b7165",
+          "size": 20507
+        },
+        {
+          "path": "dist/scripts/identity.js",
+          "sha256": "db2e7491d2728a1bc452f404bc2c056bcdc87ffe35af3f40c5486124c1d6bc01",
+          "size": 3664
+        },
+        {
+          "path": "dist/scripts/images.js",
+          "sha256": "ea7decb86345b961165b7bee20b7133ae4cb9dbd0119657e9188173ca242b9b9",
+          "size": 6134
+        },
+        {
+          "path": "dist/scripts/media-download.js",
+          "sha256": "6905d18e34bf0ff7b22fb821987827dd1bd2857004a88234bd5b3e43067871c0",
+          "size": 5720
+        },
+        {
+          "path": "dist/scripts/providers/fal.js",
+          "sha256": "8f6b079ab2cbda15bec76c07c4a5566c6b6c1fbafacfa27f484aa48e6a534b88",
+          "size": 4611
+        },
+        {
+          "path": "dist/scripts/providers/gemini.js",
+          "sha256": "5f41106776d979491d364b421bb64c04a5498c0bcd5f5c95e61095a869efcbff",
+          "size": 7732
+        },
+        {
+          "path": "dist/scripts/providers/laozhang.js",
+          "sha256": "1444c5ff5441660108f04e8e92eab1d3ab32bb9e053ab133aadb675d6bd9e736",
+          "size": 7750
+        },
+        {
+          "path": "dist/scripts/sender.js",
+          "sha256": "5fe1a4da18f4fd68205d3236516896fb286815407eb65ab2b46ce0ce59a89065",
+          "size": 1727
+        },
+        {
+          "path": "dist/scripts/skill.js",
+          "sha256": "e3000bd5bab040f9c0366f628ab4531fcf2d5949606828984fbdd2142eeff7a2",
+          "size": 13758
+        },
+        {
+          "path": "package.json",
+          "sha256": "af5c9c91bb37e1dad3f35941055d1e675511ff60020b82621fa682ba16e633fd",
+          "size": 668
+        },
+        {
+          "path": "references/timeline-integration.md",
+          "sha256": "378bce5655e2e7f5b664e8ec395a5e88467da42a375545abc1b436027fce125f",
+          "size": 11584
+        },
+        {
+          "path": "templates/SOUL.fragment.md",
+          "sha256": "824b68d7e2a8593282d3aa3385d30ee9450bedbe62e0b98a6b882807e774593b",
+          "size": 462
+        }
+      ]
+    },
+    {
+      "fixture": "009",
+      "id": "javis-todo-spend-tracker-0.1.1",
+      "selector": "original-009-encrypted",
+      "package": "javis-todo-spend-tracker",
+      "version": "0.1.1",
+      "owner": "samuel-wei",
+      "kind": "skill",
+      "attemptId": "zx75g2dh7jxbj327wnsmkmrrk98h5tm3",
+      "fingerprint": "e99a2d2b360cf1ec7e85bc483b1998f1b859ae44552d2ac82eed7013a022b534",
+      "versionId": "k97cepknqgp888bqr6m44mwzvn8h4qvh",
+      "sourceManifestSha256": "1408c808563188e3eb71ac861a41d956dfeef9807164de4320fe0bb6ce0c9abc",
+      "historicalOriginalManifestSha256": "e211655cc1218718ecac079c1a84f6c0efe357f9efcc03317e101d58cb9b22e3",
+      "download": "https://clawhub.ai/api/v1/download?slug=javis-todo-spend-tracker&version=0.1.1",
+      "manifestSha256": "99da6f6513c80b9f78633892e09055dbcdf3821b6f81212312b3fa68e4bc5f6c",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "1bf1364323bf1563a0ee59e3e93059753aaa730f7d202064a38d65cd4a0d746a",
+          "size": 1740
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "e7c2f4e8fb6b6f886f9f5492832d0ca8ccf4d6d50912158ca093062e8e374248",
+          "size": 9402
+        },
+        {
+          "path": "package.json",
+          "sha256": "e1fddb651085a7230d4213a9803dd5a693e6c9b413104ff7a67512ba68cb9ee3",
+          "size": 996
+        },
+        {
+          "path": "run-tests.js",
+          "sha256": "e8c7b0f55c496d2561abd59b8289abff2a1927ce7a467c10052de87d874276b5",
+          "size": 1124
+        },
+        {
+          "path": "scripts/ledger.js",
+          "sha256": "eabbd3aecade913d054377c5d42d1ba83f394722be282cda16fbca3d1aa590fd",
+          "size": 14621
+        },
+        {
+          "path": "scripts/lib.js",
+          "sha256": "15a9d1612ec136e0f102608419255449969e24fb25d28c34b7970fbf1302778a",
+          "size": 6069
+        },
+        {
+          "path": "scripts/todo-spend-tracker.js",
+          "sha256": "05969713ef3e79a95c94473662c385d0ce0f314bb2dc1445473a45f1e7126766",
+          "size": 16394
+        },
+        {
+          "path": "starters.json",
+          "sha256": "9625b874d10ebc2b3eca8b2c879da983b37aa236a439062e430b82c348eeb276",
+          "size": 534
+        },
+        {
+          "path": "test/chat.test.js",
+          "sha256": "56fbe171ab466be4f6ead5bb8a597e965289db5fa0be0479676db1a8152059c7",
+          "size": 5597
+        },
+        {
+          "path": "test/fetch-open.test.js",
+          "sha256": "e394a72da8f4da5d02efaf1b9c4ce7050aa6be881126bce63e940797ca45cb55",
+          "size": 4060
+        },
+        {
+          "path": "test/fixtures/ledger-cases.json",
+          "sha256": "0a34e27b92178e386d187563596dc5369527b139f1b758c790268c677707cf04",
+          "size": 13943
+        },
+        {
+          "path": "test/fixtures/server-read-responses.json",
+          "sha256": "b9aa7fb13e5b0127e11cbae63923d697d1f4f85d13de831312eb9517fb860f68",
+          "size": 4702
+        },
+        {
+          "path": "test/ledger-shuffle.test.js",
+          "sha256": "0ce29f1c01df2fcd4253db8105dfb956c86a58938c5642b2cc268dbd28abc3ae",
+          "size": 1917
+        },
+        {
+          "path": "test/ledger.test.js",
+          "sha256": "6646e10332ee4c8cb25020d170929698b958d38228324775e3e6ba66740bf28d",
+          "size": 3946
+        },
+        {
+          "path": "test/push.test.js",
+          "sha256": "1063d905f835b1d69adbf93be51cfc0ad12eeac519edefd3bf46772927f4f684",
+          "size": 17477
+        },
+        {
+          "path": "test/run-tests.test.js",
+          "sha256": "9c7eb6a4c36b318bb6daf6afec23a5beef7b700679ec2963d88bbe93026ec329",
+          "size": 861
+        },
+        {
+          "path": "test/server-contract.test.js",
+          "sha256": "2c277e4dbf31d0e92830b6b3517830fc412e53f0bdf2892452b0526591919e03",
+          "size": 3950
+        },
+        {
+          "path": "test/skill-md.test.js",
+          "sha256": "4ee55caa4217e98bdeaff239ea3a6a6e08a7805f6b43966f991a81a87bf4fd3e",
+          "size": 4414
+        }
+      ]
+    },
+    {
+      "fixture": "014",
+      "id": "ego-browser-2.1.0",
+      "selector": "original-014-encrypted",
+      "package": "ego-browser",
+      "version": "2.1.0",
+      "owner": "citrolabs",
+      "kind": "skill",
+      "attemptId": "zx7e05pa472tst2nc2y5dyp95n8h589n",
+      "fingerprint": "6c2a8bf3e3f61168ef9e7e4f050d45fb7ea7586bfbdd82b08270ab9d82874717",
+      "versionId": "k97fvynkxx3emdpgkctnt7jvk98h4ph4",
+      "sourceManifestSha256": "95487f3040827babc0477c96a172a33d7d589382be72026d74ee949b86ba5bd5",
+      "historicalOriginalManifestSha256": "20138113e356c29f36e4b65f87e6a36eddc91829784c24c3e05b70d68ba36755",
+      "download": "https://clawhub.ai/api/v1/download?slug=ego-browser&version=2.1.0",
+      "manifestSha256": "fe14f86e0c27f92c946d52cf6685445d49ef934eb3c99b05fc8a026b2f003827",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "ae3ebd9a80c882793e7e6a52821a1ca093fdfa792460d5f62cd8d35c5f39df89",
+          "size": 1594
+        },
+        {
+          "path": "agents/openai.yaml",
+          "sha256": "81a941e83feb556827d72aa98d7bc97a909294e386ff9f6a1817de92e8767b89",
+          "size": 271
+        },
+        {
+          "path": "assets/composer-icon.png",
+          "sha256": "2822b28752520f2a5506cb0693c8db2fd1ec0345806454b5f92d999b84b5bc1f",
+          "size": 3967
+        },
+        {
+          "path": "assets/logo.png",
+          "sha256": "cec732e29ea3b03d8920b28d912306f43651186dc2f4a488800da9db0a50f993",
+          "size": 8612
+        },
+        {
+          "path": "learnings/github/browser-tools/repo-stats.js",
+          "sha256": "99f5de2388ebbd24646f43e438587a161988c54f5dab23a7ab23de6c8c8f6bd5",
+          "size": 579
+        },
+        {
+          "path": "learnings/github/manifest.json",
+          "sha256": "a5d459ccb7849a4fa9a8086a0a7452886465f7e46cf4afcce12a998d6e140e3c",
+          "size": 1664
+        },
+        {
+          "path": "learnings/github/notes/overview.md",
+          "sha256": "2f5ff75d91526b232d725a8f1c89be7f846fdb334324fa92054fcf868cbba22e",
+          "size": 880
+        },
+        {
+          "path": "learnings/github/tools/open-issues.js",
+          "sha256": "54405d5b5a213372aa2541cd8f6dc141b30ab97fc13072135e466f5f14e996a4",
+          "size": 987
+        },
+        {
+          "path": "learnings/github/tools/search-repos.js",
+          "sha256": "6fcbffbebba96d690187d9123d5226846da60e82991e9f0ec0bbf1568cd9c4be",
+          "size": 1211
+        },
+        {
+          "path": "learnings/google/browser-tools/autocomplete.js",
+          "sha256": "95ad95f370533bf56a554e7d79ac39f16f860d1ca4d8c6eb01876fd120beb146",
+          "size": 373
+        },
+        {
+          "path": "learnings/google/manifest.json",
+          "sha256": "639e61238ccdb0ee06855fb8ce2585f6f3e9fcfff86ccafc54c20a48c6e00f74",
+          "size": 1117
+        },
+        {
+          "path": "learnings/google/notes/overview.md",
+          "sha256": "78771e9a1f6960efa5e91261dfe44ec5dde7f485a1b181334912a2e45f751865",
+          "size": 667
+        },
+        {
+          "path": "learnings/google/tools/search-extract.js",
+          "sha256": "96350a2d6657f8efc79b639b397ba74d9b5af218f12b6261df1f92e0cb493d34",
+          "size": 1039
+        },
+        {
+          "path": "learnings/x-com/browser-tools/extract-post.js",
+          "sha256": "338db35bdf4d83258f5b646e67d38fb7f63bdbd243bac2e94236bb348b6ff64f",
+          "size": 458
+        },
+        {
+          "path": "learnings/x-com/manifest.json",
+          "sha256": "4eb12fecbaa37cc41e8b556e3eea1dc006d6ee587368fb318eca6dd3910fd896",
+          "size": 1453
+        },
+        {
+          "path": "learnings/x-com/notes/overview.md",
+          "sha256": "23ef996495cf14b24809e29d5bcdfb3d049bb97fa26b5eebda3e035f1ed6ed1d",
+          "size": 777
+        },
+        {
+          "path": "learnings/x-com/notes/timeline.md",
+          "sha256": "1a1cde5c3f432329b8dee566a65415c2ed5fd93ed556b541bc20e05234889278",
+          "size": 618
+        },
+        {
+          "path": "learnings/x-com/tools/search-users.js",
+          "sha256": "b780616e32761f80e9524375c144b053e920109d49e550281950d0a7fcbd0f74",
+          "size": 800
+        },
+        {
+          "path": "learnings/x-com/tools/timeline.js",
+          "sha256": "6ac5b706a3cc32ea73ffb80d766c0cd78b63489d4f985563fa78d534a28825f7",
+          "size": 934
+        },
+        {
+          "path": "references/clearing-state.md",
+          "sha256": "c9a022df55f396607ec8b7dc486ab452f1a133fd04fd954a2ff3f86c4df9458c",
+          "size": 4140
+        },
+        {
+          "path": "references/install.md",
+          "sha256": "f5f9b1d351a84ac17737fd6aa0e88b04bf1d8b28ae14218dec37fb73a8a94e67",
+          "size": 4479
+        },
+        {
+          "path": "scripts/install.sh",
+          "sha256": "0dcfb371dc37c61fb61cf31747d9c97f72f5b071147815857734d2096db9d2a3",
+          "size": 6021
+        }
+      ]
+    },
+    {
+      "fixture": "013",
+      "id": "whetstone-0.1.1",
+      "selector": "original-013-encrypted",
+      "package": "whetstone",
+      "version": "0.1.1",
+      "owner": "ricardodpalmeida",
+      "kind": "skill",
+      "attemptId": "zx738dpm6vphkdkz4wc31aac1h8gzk7g",
+      "fingerprint": "e82055128b8bd5b314be35715ff60cc2555aeb7b09148c6dea755209837b5efe",
+      "versionId": "k97bgry95535vztt8xfkbp122n8gyew8",
+      "sourceManifestSha256": "fe447d70b3bd0f1596b3ae7bfd2bfd6bad89d538003ed615940cef1b554c658a",
+      "historicalOriginalManifestSha256": "edfdf9cc4cfadabf6a0a8f34c3f43b60368555a77a9949d73c8149432a62b485",
+      "download": "https://clawhub.ai/api/v1/download?slug=whetstone&version=0.1.1",
+      "manifestSha256": "f8c91902ec4e11b9f37b707c8aa3f41533e8523b1c3b93a0f0eed9ef2a887619",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "554b1e71154ac2d8cf16f29fbe414865a2e3c0ce5ea14213cef02e967ed1b37a",
+          "size": 11390
+        },
+        {
+          "path": "references/accessibility.md",
+          "sha256": "750084e92bb31b558e2f36382335e55d6482d46aa9cc69d2bba0b8092d8a1a11",
+          "size": 9769
+        },
+        {
+          "path": "references/ai-features.md",
+          "sha256": "fd58ab94b94d2cc3ed8a380219951d6646aa971c57515febb1f7b5fbb81fdd0c",
+          "size": 14006
+        },
+        {
+          "path": "references/api-design.md",
+          "sha256": "e29130dae7e287b4c32382b29e5e2dcc0218ba07a806413ad9e4086d304bb008",
+          "size": 10845
+        },
+        {
+          "path": "references/data-and-privacy.md",
+          "sha256": "00064e6ee3f7dacdaf8bf2e8de9f955471c7f6fb1f9c5941abe1be4ab710aa8f",
+          "size": 10147
+        },
+        {
+          "path": "references/debugging.md",
+          "sha256": "f533bd36274781ff520e145202281cd8f870919c8bf1c455ba30f6fb3836b6b8",
+          "size": 9168
+        },
+        {
+          "path": "references/delivery-and-release.md",
+          "sha256": "4a8d4deca2822fff721de6fd40ac7153a2a868647b152ee852dc47ec3458f971",
+          "size": 8684
+        },
+        {
+          "path": "references/design.md",
+          "sha256": "c95d71e0b1b44ce5aef42f3e5a59691ccef9e38a2fdf59a22d558cb1589f4a5a",
+          "size": 9938
+        },
+        {
+          "path": "references/documentation.md",
+          "sha256": "83c32cf07daecdabad2559f0b875a9b3fb1ce412568267d7dfb7539fd2cf578a",
+          "size": 6961
+        },
+        {
+          "path": "references/implementation.md",
+          "sha256": "fe37484d91bc25b6080851488e09179ad2604c5dbe93f54691d42f0d38575981",
+          "size": 9721
+        },
+        {
+          "path": "references/learning-loop.md",
+          "sha256": "9d767b6e5a61ace0cabb294bc6a020c9fe353138ee32ad7b3058e46205e56e6f",
+          "size": 7765
+        },
+        {
+          "path": "references/observability.md",
+          "sha256": "a15d3b074e5446871129e0567716e8040c74620c2a0135e3ff5f6c37c5919401",
+          "size": 9721
+        },
+        {
+          "path": "references/rag-and-evals.md",
+          "sha256": "6425c0ebb100277a1ee096ec53ea51c9efa61a9759e60cca60ef606dd41e2d93",
+          "size": 10360
+        },
+        {
+          "path": "references/reliability-performance.md",
+          "sha256": "62d4fbc505dc6859eab96f00381625c3f6598abf08ccd24a94ac17e55b8e22f4",
+          "size": 10209
+        },
+        {
+          "path": "references/security.md",
+          "sha256": "d466967616f56a000c7eeb03560123661e196325149ae2b04b1c6ab36582cd44",
+          "size": 15401
+        },
+        {
+          "path": "references/stack-azure.md",
+          "sha256": "6b6f7321a89e02d7f9950ce08904a502f317b5b582928d90011316022eb7532b",
+          "size": 7393
+        },
+        {
+          "path": "references/stack-data-platforms.md",
+          "sha256": "5c12aa9d648b521ac6bed63a9dc1e22e96c87647f3c8fe139ec55de027a8512c",
+          "size": 6623
+        },
+        {
+          "path": "references/stack-dotnet.md",
+          "sha256": "73de2b89fe17ee42826bdacbf77b7ef88108ddfa4d7231d3c7dbfa991e12e7c7",
+          "size": 7262
+        },
+        {
+          "path": "references/stack-low-code.md",
+          "sha256": "50904c6b743d2a351c5089e26a3b9d80b2f74c118f9515c6f8882779defc5b3b",
+          "size": 6880
+        },
+        {
+          "path": "references/stack-python-fastapi.md",
+          "sha256": "8211a030aa408373fd9d379844bdee7cccfdce691d37af619a772e7079c17054",
+          "size": 7957
+        },
+        {
+          "path": "references/stack-typescript-react.md",
+          "sha256": "dea86eae298c537263ced8041bd3da36fe65543f88e5a8d9c3581202e4d730f1",
+          "size": 7233
+        },
+        {
+          "path": "references/supply-chain.md",
+          "sha256": "c3ff33a1d342e6e3f4ddabf869fecfaed41fc29912a8a6dd9d532d905ca57a21",
+          "size": 9939
+        },
+        {
+          "path": "references/testing.md",
+          "sha256": "c643712f65dc1dc720e06c03da7733b731438f3ce1f8786500fc37c3eb497611",
+          "size": 10894
+        },
+        {
+          "path": "references/threat-modeling.md",
+          "sha256": "dab67b4dda1349a64a1ec5d6ffee6de2e8efc7ce35f7a6cfbae0b80b0d5f28e1",
+          "size": 9221
+        },
+        {
+          "path": "references/understanding-the-ask.md",
+          "sha256": "a236b69046c30f7a9dd80d584e10922e5a2fe9f1502e2fd941ee43a7a48667f2",
+          "size": 8451
+        },
+        {
+          "path": "references/version-control-and-review.md",
+          "sha256": "43f8bccb917f75107588b24f2bb7a62cc619fbfaa9e6bc764edc87ef268a694d",
+          "size": 8700
+        },
+        {
+          "path": "scripts/change_scan.py",
+          "sha256": "6ef01c2b4bb424a452ed33c5af7c2df77e3c52393ea3a9219d2bdc8c54945e79",
+          "size": 34095
+        },
+        {
+          "path": "templates/ai-eval-plan.md",
+          "sha256": "b0bf2e0e229809317c616e26050d76f6d899e4d1f3f28b0f300df5171751814a",
+          "size": 2086
+        },
+        {
+          "path": "templates/decision-record.md",
+          "sha256": "41736ad3f9bfd75d0b4392ef4b9ab1a10faa7fb9eaeba988b1be027cde8c1142",
+          "size": 1742
+        },
+        {
+          "path": "templates/design-one-pager.md",
+          "sha256": "38907eade09ad4c3a53e466c4dcb221d1f66741a328f9babd2cf1d15aa57ef6e",
+          "size": 2393
+        },
+        {
+          "path": "templates/incident-review.md",
+          "sha256": "7b354fe1ef89410bc0f7ac90d53751a11220791f10ec6f6da67d89c75a1614c1",
+          "size": 1762
+        },
+        {
+          "path": "templates/pull-request.md",
+          "sha256": "c19d047198181852bda9ce0c944443ae071120d109192a38a3fad21b392c3d49",
+          "size": 1452
+        },
+        {
+          "path": "templates/runbook.md",
+          "sha256": "469edcc53c99817be570bc2d36e25cb3790123e52818ec352201262c270c6e14",
+          "size": 1720
+        },
+        {
+          "path": "templates/threat-model.md",
+          "sha256": "126e1d0a568be5c11e7b748d7065033a33910e0f817c646b8ddc4013b8895114",
+          "size": 2352
+        }
+      ]
+    },
+    {
+      "fixture": "029",
+      "id": "yahoo-mail-1.0.0",
+      "selector": "original-029-encrypted",
+      "package": "yahoo-mail",
+      "version": "1.0.0",
+      "owner": "maton",
+      "kind": "skill",
+      "attemptId": "zx71zpctz443jh91tshwkna8px8h9ep1",
+      "fingerprint": "8776c5e01b49d6d08c4d66f97a9266785e235d4ae92d6044cb708d8307071a28",
+      "versionId": "k97bvee0nymw2g6atk628b37hs8h92y1",
+      "sourceManifestSha256": "d3166e90d656da760cacecd1e30c675340365d544920c7dc3becb1e5fe1afbee",
+      "historicalOriginalManifestSha256": "cb9e562c8707f3e9508ad7afb1e85341de69f31d785d9fb0496d1e1f4ff49914",
+      "download": "https://clawhub.ai/api/v1/download?slug=yahoo-mail&version=1.0.0",
+      "manifestSha256": "4436da1c54229f40a0fda62a99c1776c13fdfb5b04234790bcd5374ec7eb8cf9",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "efb2d68f5ddfa4f7a9273fa89708701198bf3775b285f433eb1504ef5fb9e11b",
+          "size": 65235
+        },
+        {
+          "path": "references/calendly/triggers.md",
+          "sha256": "ae92dbfb6dd4caf628900b293d1b3c6e7d5e70cf7f6a9397407594daf50d4a48",
+          "size": 10281
+        },
+        {
+          "path": "references/github/triggers.md",
+          "sha256": "7424d3be38ec400eb8a4b0a6a94a94eeec40208c0bcee29a61caa5da48eea7f4",
+          "size": 61142
+        },
+        {
+          "path": "references/google-mail/triggers.md",
+          "sha256": "5cc5065cd7db33dc33715675bbb0ee29ed49657ad9ad4354aebd1a9efdf8d8f3",
+          "size": 2648
+        },
+        {
+          "path": "references/hubspot/triggers.md",
+          "sha256": "439d56e4d02e119e1de3caf79a0334243ae70c583a3e15847831c396f39c2837",
+          "size": 8298
+        },
+        {
+          "path": "references/linear/triggers.md",
+          "sha256": "641f6496f50e09faab921ef4c06f725122b798cb034e9f0dfaf9f838074ab377",
+          "size": 7270
+        },
+        {
+          "path": "references/notion/triggers.md",
+          "sha256": "fdaf3840d8213dbd7549426c1166f94cc94b09e022a1611ef2dad6f36db2f969",
+          "size": 5840
+        },
+        {
+          "path": "references/slack/triggers.md",
+          "sha256": "b5ee099a215223a7e5186c41a0d13fc1de68e977719304c509df105843d81f38",
+          "size": 6181
+        },
+        {
+          "path": "references/stripe/triggers.md",
+          "sha256": "ae091545396a376c7ecfe09e94b46b7bbb44fd8a72ea954bcc1239052b7959f0",
+          "size": 25651
+        },
+        {
+          "path": "references/time/triggers.md",
+          "sha256": "b8f5a523501f8d03e11e58f6426cd96b54ba0c66c8983b57c0ea31386b309e01",
+          "size": 1140
+        }
+      ]
+    },
+    {
+      "fixture": "030",
+      "id": "icloud-mail-1.0.0",
+      "selector": "original-030-encrypted",
+      "package": "icloud-mail",
+      "version": "1.0.0",
+      "owner": "maton",
+      "kind": "skill",
+      "attemptId": "zx7bqs3576c9ckmbhs9hj35shd8h8g6p",
+      "fingerprint": "8e34bdb229674fe06e2fd21639b18b07b9fd1b9486b8d78b2035c748327558ce",
+      "versionId": "k97drcmnczhx59kwefaev8vyys8h8ya4",
+      "sourceManifestSha256": "05baa806c9600a43a574d9f4704ce6fe80db3901178df1bba0f618d118b6719b",
+      "historicalOriginalManifestSha256": "70ecffe858a52c50facdcb8f2376c92039410fe598d7e842b3af8430149e50fa",
+      "download": "https://clawhub.ai/api/v1/download?slug=icloud-mail&version=1.0.0",
+      "manifestSha256": "d086594ee374bc302b3cf3a7d7fc84633aab99c992a78757d65d5d2d6201eb9f",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "651ee4101bf8babeddf1654c8dedeb7f10445377c1f2227bc2d68b0dfcf39e41",
+          "size": 67447
+        },
+        {
+          "path": "references/calendly/triggers.md",
+          "sha256": "ae92dbfb6dd4caf628900b293d1b3c6e7d5e70cf7f6a9397407594daf50d4a48",
+          "size": 10281
+        },
+        {
+          "path": "references/github/triggers.md",
+          "sha256": "7424d3be38ec400eb8a4b0a6a94a94eeec40208c0bcee29a61caa5da48eea7f4",
+          "size": 61142
+        },
+        {
+          "path": "references/google-mail/triggers.md",
+          "sha256": "5cc5065cd7db33dc33715675bbb0ee29ed49657ad9ad4354aebd1a9efdf8d8f3",
+          "size": 2648
+        },
+        {
+          "path": "references/hubspot/triggers.md",
+          "sha256": "439d56e4d02e119e1de3caf79a0334243ae70c583a3e15847831c396f39c2837",
+          "size": 8298
+        },
+        {
+          "path": "references/linear/triggers.md",
+          "sha256": "641f6496f50e09faab921ef4c06f725122b798cb034e9f0dfaf9f838074ab377",
+          "size": 7270
+        },
+        {
+          "path": "references/notion/triggers.md",
+          "sha256": "fdaf3840d8213dbd7549426c1166f94cc94b09e022a1611ef2dad6f36db2f969",
+          "size": 5840
+        },
+        {
+          "path": "references/slack/triggers.md",
+          "sha256": "b5ee099a215223a7e5186c41a0d13fc1de68e977719304c509df105843d81f38",
+          "size": 6181
+        },
+        {
+          "path": "references/stripe/triggers.md",
+          "sha256": "ae091545396a376c7ecfe09e94b46b7bbb44fd8a72ea954bcc1239052b7959f0",
+          "size": 25651
+        },
+        {
+          "path": "references/time/triggers.md",
+          "sha256": "b8f5a523501f8d03e11e58f6426cd96b54ba0c66c8983b57c0ea31386b309e01",
+          "size": 1140
+        }
+      ]
+    },
+    {
+      "fixture": "002",
+      "id": "klingai-2.0.1",
+      "selector": "original-002-encrypted",
+      "package": "klingai",
+      "version": "2.0.1",
+      "owner": "klingai-dev",
+      "kind": "skill",
+      "attemptId": "zx70z24x7bf2vt0hb78ktbjhys8h5zhs",
+      "fingerprint": "a47e127a42e858cf3d6f94d39fa521214aa7dda84f195863b3e816eb08e523b1",
+      "versionId": "k97c5zbe807qeazd7jctgje8ed8h4nx6",
+      "sourceManifestSha256": "317db3304c4b01134c5f9e2867fd90d0e4a38a78d0a17842fc0b65c205b4bdc8",
+      "historicalOriginalManifestSha256": "b2c35750ed8a63eb54df50b714aae454f226917e4c62c6d25c9d65e6a04a9868",
+      "download": "https://clawhub.ai/api/v1/download?slug=klingai&version=2.0.1",
+      "manifestSha256": "41e405c5314abc623e59a3588a936a3e1f370ffa01f80080f894eab7e219eadb",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "147fbde2c099710555edb0934f4def99dd8049bd1253bd96664849e74cfd3449",
+          "size": 837
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "27b813c87b48e3db75d162f9855348361107066db8ae302dc835052c9980e5f8",
+          "size": 35926
+        },
+        {
+          "path": "reference.md",
+          "sha256": "ceddcd44ae7c69cd26afff1696def768e26673742cb53f4b583c70a3572771ee",
+          "size": 4417
+        },
+        {
+          "path": "scripts/account.mjs",
+          "sha256": "cf51ecf2989cafe7c115d641bf94154d3fc6ee06fa06dc78bfb9bea00b9a4c79",
+          "size": 10319
+        },
+        {
+          "path": "scripts/element.mjs",
+          "sha256": "21daa00c296843f7e60f0ecfe31f546ef7a4fb0f6898ef15bdaef633b18b8ff7",
+          "size": 8862
+        },
+        {
+          "path": "scripts/image.mjs",
+          "sha256": "1945d84e5fea7397d73e420aec68521a9fecec8d24864492f82cbea759665a66",
+          "size": 14636
+        },
+        {
+          "path": "scripts/kling.mjs",
+          "sha256": "201979fcfdeb137a28c018ea13d091a74409b90316b3483d386034c65e8de3a5",
+          "size": 2823
+        },
+        {
+          "path": "scripts/shared/args.mjs",
+          "sha256": "318c62648c3d5dc50d4f0e281ea19976cfbd9d791be78630f2702c2e77389e82",
+          "size": 7380
+        },
+        {
+          "path": "scripts/shared/auth.mjs",
+          "sha256": "58bd882273fc8c9d72a24655e11b7fbcd980fe5c90fb21843c4bd2aa9d5aa83e",
+          "size": 15688
+        },
+        {
+          "path": "scripts/shared/client.mjs",
+          "sha256": "4ecc64a4c01fde9fb6e09ae054c5b85da20d9804aa785bb787f626c61096898e",
+          "size": 25206
+        },
+        {
+          "path": "scripts/shared/task.mjs",
+          "sha256": "e1725b6f1ed500139d4ec8a04b7f69cea562a8bdf4bd79b15e49c7fb99be3bdc",
+          "size": 5614
+        },
+        {
+          "path": "scripts/video.mjs",
+          "sha256": "b8a89af3472ccc937ebcb114de1d376756861e501f64afdae30451aa4c053b78",
+          "size": 38776
+        },
+        {
+          "path": "scripts/voice.mjs",
+          "sha256": "8607683053273b74b00847f935524f7fe3d578eba4a2ff8f460f7bff1414b55f",
+          "size": 7366
+        }
+      ]
+    },
+    {
+      "fixture": "003",
+      "id": "klingai-2.0.2",
+      "selector": "original-003-encrypted",
+      "package": "klingai",
+      "version": "2.0.2",
+      "owner": "klingai-dev",
+      "kind": "skill",
+      "attemptId": "zx73x0m0h1bb6bznzkjfm2asx18h5jd3",
+      "fingerprint": "a47e127a42e858cf3d6f94d39fa521214aa7dda84f195863b3e816eb08e523b1",
+      "versionId": "k9718tmwhtqj7zmx99mmqk18f18h5jg5",
+      "sourceManifestSha256": "51717e742340f503c10782f6d30f87a18c98461b9627c9167799145c77297fae",
+      "historicalOriginalManifestSha256": "b868601efdce4079477afea0bbd29ec7cf456897f5a383dcfc5c384cc3caef9a",
+      "download": "https://clawhub.ai/api/v1/download?slug=klingai&version=2.0.2",
+      "manifestSha256": "41e405c5314abc623e59a3588a936a3e1f370ffa01f80080f894eab7e219eadb",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "147fbde2c099710555edb0934f4def99dd8049bd1253bd96664849e74cfd3449",
+          "size": 837
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "27b813c87b48e3db75d162f9855348361107066db8ae302dc835052c9980e5f8",
+          "size": 35926
+        },
+        {
+          "path": "reference.md",
+          "sha256": "ceddcd44ae7c69cd26afff1696def768e26673742cb53f4b583c70a3572771ee",
+          "size": 4417
+        },
+        {
+          "path": "scripts/account.mjs",
+          "sha256": "cf51ecf2989cafe7c115d641bf94154d3fc6ee06fa06dc78bfb9bea00b9a4c79",
+          "size": 10319
+        },
+        {
+          "path": "scripts/element.mjs",
+          "sha256": "21daa00c296843f7e60f0ecfe31f546ef7a4fb0f6898ef15bdaef633b18b8ff7",
+          "size": 8862
+        },
+        {
+          "path": "scripts/image.mjs",
+          "sha256": "1945d84e5fea7397d73e420aec68521a9fecec8d24864492f82cbea759665a66",
+          "size": 14636
+        },
+        {
+          "path": "scripts/kling.mjs",
+          "sha256": "201979fcfdeb137a28c018ea13d091a74409b90316b3483d386034c65e8de3a5",
+          "size": 2823
+        },
+        {
+          "path": "scripts/shared/args.mjs",
+          "sha256": "318c62648c3d5dc50d4f0e281ea19976cfbd9d791be78630f2702c2e77389e82",
+          "size": 7380
+        },
+        {
+          "path": "scripts/shared/auth.mjs",
+          "sha256": "58bd882273fc8c9d72a24655e11b7fbcd980fe5c90fb21843c4bd2aa9d5aa83e",
+          "size": 15688
+        },
+        {
+          "path": "scripts/shared/client.mjs",
+          "sha256": "4ecc64a4c01fde9fb6e09ae054c5b85da20d9804aa785bb787f626c61096898e",
+          "size": 25206
+        },
+        {
+          "path": "scripts/shared/task.mjs",
+          "sha256": "e1725b6f1ed500139d4ec8a04b7f69cea562a8bdf4bd79b15e49c7fb99be3bdc",
+          "size": 5614
+        },
+        {
+          "path": "scripts/video.mjs",
+          "sha256": "b8a89af3472ccc937ebcb114de1d376756861e501f64afdae30451aa4c053b78",
+          "size": 38776
+        },
+        {
+          "path": "scripts/voice.mjs",
+          "sha256": "8607683053273b74b00847f935524f7fe3d578eba4a2ff8f460f7bff1414b55f",
+          "size": 7366
+        }
+      ]
+    },
+    {
+      "fixture": "067",
+      "id": "mochi-diff-review-1.0.0",
+      "selector": "original-067-encrypted",
+      "package": "mochi-diff-review",
+      "version": "1.0.0",
+      "owner": "hznetnewpower",
+      "kind": "skill",
+      "attemptId": "zx7ag4zdmjyr59trspxsxxnqxn8h1y3f",
+      "fingerprint": "96b2c77b1834e5524e84a9d55d1266cff577808059ed94fbcdf62f2a936bbcdd",
+      "versionId": "k973xvpm76j8d4dmmwc0aq026d8h0hpy",
+      "sourceManifestSha256": "e3acf6670301960741823162f3debbf1c0ab50d2d90026bdf7f640d3766a6d12",
+      "historicalOriginalManifestSha256": "96b2c77b1834e5524e84a9d55d1266cff577808059ed94fbcdf62f2a936bbcdd",
+      "download": "https://clawhub.ai/api/v1/download?slug=mochi-diff-review&version=1.0.0",
+      "manifestSha256": "e38a9a41f95bd47289ee7f23be7d910d7fa2365c98ec9326e603985079349c11",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "ca41f0b9d3fea05c9ad63ac24dd4d13a1fe7ca2034c29b094922fa781e1f69a5",
+          "size": 910
+        },
+        {
+          "path": "README.md",
+          "sha256": "f62d076f74683da2a72a77837bc53fe3bbda649135238ba04e4f6d60faa0d223",
+          "size": 519
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "5af28b66ed92c7c85dd104cd0b23059c0b5875065769a921871fdf92e885a7f1",
+          "size": 2156
+        },
+        {
+          "path": "references/input.md",
+          "sha256": "221990d6506863beccc400ee365b8f52df196c7589f6efcdc144515debab9e37",
+          "size": 832
+        },
+        {
+          "path": "samples/after.txt",
+          "sha256": "4a1253a9ee2795ae571389c796cec36f5f51d1659975d44d1220908d8b560fbb",
+          "size": 23
+        },
+        {
+          "path": "samples/before.txt",
+          "sha256": "a24b7bd1e043894e0195525321e93e6220e1806a5f1e703780a05fd2ee884337",
+          "size": 22
+        },
+        {
+          "path": "samples/request.json",
+          "sha256": "b6c8b1186516aaa595ca6e52ef4a07b94997083234cb843eb7ed1dcaaf6158bc",
+          "size": 92
+        },
+        {
+          "path": "scripts/core.py",
+          "sha256": "ca97a6596df840367b465e232537746666c0936ef7e9c8b6d16ce97b1592bf49",
+          "size": 8794
+        },
+        {
+          "path": "scripts/diff_review.py",
+          "sha256": "c3dca539834ed3a04c63ff1ef216caac9c7fd9d6c56501bb57945b6df980cb4d",
+          "size": 4654
+        },
+        {
+          "path": "scripts/requirements.txt",
+          "sha256": "3cdeb353f858c5e60ba08a2429477f01f7b887a99f1b053ec9eded2bb6c84ca6",
+          "size": 38
+        },
+        {
+          "path": "scripts/run.py",
+          "sha256": "3c257a6aecc99cef70af873116b5f7f5687a65f8d302a28662c8541033f57883",
+          "size": 132
+        },
+        {
+          "path": "tests/smoke.py",
+          "sha256": "2f02452e3a1aed3ded659da98676087bd048f6f8accf890b13af38b6f9443ec2",
+          "size": 4131
+        }
+      ]
+    }
+  ]
+}

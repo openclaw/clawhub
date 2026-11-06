@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { describe, expect, test } from "vitest";
 import type { Id } from "../_generated/dataModel";
 import { deriveModerationFlags } from "./moderation";

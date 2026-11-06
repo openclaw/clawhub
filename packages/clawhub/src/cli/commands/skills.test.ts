@@ -80,7 +80,6 @@ const {
   cmdList,
   cmdListSkillReports,
   cmdPin,
-  cmdReportSkill,
   cmdSearch,
   cmdTriageSkillReport,
   cmdUninstall,
@@ -464,31 +463,6 @@ describe("cmdSearch", () => {
 });
 
 describe("skill moderation commands", () => {
-  it("submits skill reports", async () => {
-    mockApiRequest.mockResolvedValueOnce({
-      ok: true,
-      reported: true,
-      alreadyReported: false,
-      reportId: "skillReports:1",
-      skillId: "skills:1",
-      reportCount: 1,
-    });
-
-    await cmdReportSkill(makeOpts(), "demo", { version: "1.0.0", reason: "suspicious files" });
-
-    expect(mockApiRequest).toHaveBeenCalledWith(
-      "https://clawhub.ai",
-      {
-        method: "POST",
-        path: "/api/v1/skills/demo/report",
-        token: "tkn",
-        body: { reason: "suspicious files", version: "1.0.0" },
-      },
-      expect.anything(),
-    );
-    expect(mockLog).toHaveBeenCalledWith("OK. Reported demo (skillReports:1).");
-  });
-
   it("lists skill reports", async () => {
     mockApiRequest.mockResolvedValueOnce({
       items: [
@@ -1377,10 +1351,10 @@ describe("cmdUpdate", () => {
     );
   });
 
-  it("overwrites confirmed GitHub-backed local changes even when already at latest commit", async () => {
+  it.each([true, false])("respects GitHub overwrite confirmation (%s)", async (confirmed) => {
     const commit = "b".repeat(40);
     mockIsInteractive.mockReturnValue(true);
-    mockPromptConfirm.mockResolvedValue(true);
+    mockPromptConfirm.mockResolvedValue(confirmed);
     mockApiRequest
       .mockResolvedValueOnce({
         latestVersion: null,
@@ -1413,10 +1387,10 @@ describe("cmdUpdate", () => {
     });
     vi.mocked(listSkillFiles)
       .mockResolvedValueOnce([{ relPath: "SKILL.md", bytes: new Uint8Array([9]) }])
-      .mockResolvedValueOnce([{ relPath: "SKILL.md", bytes: new Uint8Array([1]) }]);
+      .mockResolvedValue([{ relPath: "SKILL.md", bytes: new Uint8Array([1]) }]);
     vi.mocked(hashSkillFiles)
       .mockReturnValueOnce({ fingerprint: "dirty-fingerprint", files: [] })
-      .mockReturnValueOnce({ fingerprint: "clean-fingerprint", files: [] });
+      .mockReturnValue({ fingerprint: "clean-fingerprint", files: [] });
     vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
 
     await cmdUpdate(makeOpts(), "aiq-deploy", {}, true);
@@ -1424,6 +1398,15 @@ describe("cmdUpdate", () => {
     expect(mockPromptConfirm).toHaveBeenCalledWith(
       `aiq-deploy: local changes (no match). Overwrite with ${commit.slice(0, 12)}?`,
     );
+    if (!confirmed) {
+      expect(mockLog).toHaveBeenCalledWith("aiq-deploy: skipped");
+      expect(mockFetchBinary).not.toHaveBeenCalled();
+      expect(extractGitHubZipPathToDir).not.toHaveBeenCalled();
+      expect(rename).not.toHaveBeenCalled();
+      expect(rm).not.toHaveBeenCalled();
+      expect(writeSkillOrigin).not.toHaveBeenCalled();
+      return;
+    }
     expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
       url: `https://codeload.github.com/NVIDIA/skills/zip/${commit}`,
     });

@@ -1,5 +1,6 @@
 import {
   assertManagedMcpUrl,
+  bundlePluginRuntimeId,
   listMissingOpenClawExternalCodePluginFieldPaths,
   normalizeOpenClawExternalPluginCompatibility,
 } from "clawhub-schema";
@@ -17,11 +18,7 @@ import {
 } from "./publicRouteReservations";
 import { getFrontmatterValue, parseFrontmatter, sanitizePath } from "./skills";
 
-export const REAL_BUNDLE_MANIFESTS = [
-  { path: ".codex-plugin/plugin.json", format: "codex" },
-  { path: ".claude-plugin/plugin.json", format: "claude" },
-  { path: ".cursor-plugin/plugin.json", format: "cursor" },
-] as const;
+export { PLUGIN_BUNDLE_MANIFESTS as REAL_BUNDLE_MANIFESTS } from "clawhub-schema";
 
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 
@@ -442,15 +439,18 @@ export function normalizePublishFiles(files: PublishFile[]) {
 }
 
 export function assertPackageVersion(
-  family: "code-plugin" | "bundle-plugin" | "skill" | "claw",
+  family: "code-plugin" | "bundle-plugin" | "skill" | "template" | "claw",
   version: string,
 ) {
   const trimmed = version.trim();
   if (!trimmed) throw new ConvexError("Version required");
-  if ((family === "code-plugin" || family === "claw") && !semver.valid(trimmed)) {
+  if (
+    (family === "code-plugin" || family === "template" || family === "claw") &&
+    !semver.valid(trimmed)
+  ) {
     throw new ConvexError(
-      family === "claw"
-        ? "Claw versions must be valid semver"
+      family === "template" || family === "claw"
+        ? "Template versions must be valid semver"
         : "Code plugin versions must be valid semver",
     );
   }
@@ -631,15 +631,24 @@ export function extractCodePluginArtifacts(params: {
 export function extractBundlePluginArtifacts(params: {
   packageName: string;
   packageJson?: JsonRecord;
-  pluginManifest: JsonRecord;
+  pluginManifest?: JsonRecord;
   bundleManifest?: JsonRecord;
   bundleMetadata?: BundlePublishMetadata;
   source?: SourceInfo;
 }) {
-  const runtimeId =
-    (typeof params.pluginManifest.id === "string" && params.pluginManifest.id.trim()) ||
-    params.bundleMetadata?.id?.trim() ||
-    params.packageName;
+  let runtimeId: string;
+  try {
+    runtimeId = bundlePluginRuntimeId(params.bundleManifest);
+  } catch (error) {
+    throw new ConvexError(error instanceof Error ? error.message : "Invalid bundle identity");
+  }
+  if (params.bundleMetadata?.id !== undefined && params.bundleMetadata.id !== runtimeId) {
+    throw new ConvexError("Claimed bundle id does not match the bundle manifest name");
+  }
+  const openclaw = params.packageJson?.openclaw;
+  if (isRecord(openclaw) && Array.isArray(openclaw.extensions) && openclaw.extensions.length > 0) {
+    throw new ConvexError("Native package entrypoints require the code-plugin family");
+  }
 
   return {
     runtimeId,

@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery, query } from "./functions";
+import { storedFileValidator } from "./lib/fileValidators";
 import { getRuntimeRolloutCapabilities } from "./lib/rolloutCapabilities";
 import {
   assertSkillsShCatalogControlMutationAllowed,
@@ -79,13 +80,7 @@ const sourceVerificationValidator = v.object({
   githubCheckedAt: v.string(),
   githubFetches: v.number(),
 });
-const scanRequestFileValidator = v.object({
-  path: v.string(),
-  size: v.number(),
-  storageId: v.id("_storage"),
-  sha256: v.string(),
-  contentType: v.optional(v.string()),
-});
+const scanRequestFileValidator = storedFileValidator;
 const stagingLiveArtifactValidator = v.object({
   externalId: v.string(),
   artifactContentHash: v.string(),
@@ -1971,54 +1966,10 @@ export const recordRealScanResultInternal = internalMutation({
       });
       return { applied: false, reason: "run-canceled" };
     }
-    const entry = await ctx.db.get(attempt.entryId);
-    if (!entry || entry.sourceContentHash !== attempt.sourceContentHash) {
-      const now = Date.now();
-      await ctx.db.patch(attempt._id, {
-        status: "canceled",
-        completedAt: now,
-        updatedAt: now,
-      });
-      await ctx.db.patch(run._id, {
-        counts: {
-          ...run.counts,
-          scansCanceled: run.counts.scansCanceled + 1,
-        },
-        operations: addOperations(run.operations, {
-          functionCalls: 1,
-          dbReads: 3,
-          dbWrites: 2,
-        }),
-        updatedAt: now,
-      });
-      return { applied: false, reason: "stale-attempt" };
-    }
-    const now = Date.now();
-    const succeeded = args.verdict !== "failed";
-    await ctx.db.patch(attempt._id, {
-      status: succeeded ? "succeeded" : "failed",
+    return applyCatalogScanResult(ctx, attempt, run, {
+      sourceContentHash: attempt.sourceContentHash,
       verdict: args.verdict,
-      completedAt: now,
-      updatedAt: now,
     });
-    await ctx.db.patch(entry._id, {
-      scanStatus: args.verdict,
-      publicVisible: false,
-      updatedAt: now,
-    });
-    await ctx.db.patch(run._id, {
-      counts: {
-        ...run.counts,
-        scansCompleted: run.counts.scansCompleted + 1,
-      },
-      operations: addOperations(run.operations, {
-        functionCalls: 1,
-        dbReads: 3,
-        dbWrites: 3,
-      }),
-      updatedAt: now,
-    });
-    return { applied: true, publicVisible: false };
   },
 });
 
@@ -2064,57 +2015,66 @@ export const recordFixtureScanResultInternal = internalMutation({
       });
       return { applied: false, reason: "run-canceled" };
     }
-    const entry = await ctx.db.get(attempt.entryId);
-    if (!entry || entry.sourceContentHash !== args.sourceContentHash) {
-      const now = Date.now();
-      await ctx.db.patch(attempt._id, {
-        status: "canceled",
-        completedAt: now,
-        updatedAt: now,
-      });
-      await ctx.db.patch(run._id, {
-        counts: {
-          ...run.counts,
-          scansCanceled: run.counts.scansCanceled + 1,
-        },
-        operations: addOperations(run.operations, {
-          functionCalls: 1,
-          dbReads: 3,
-          dbWrites: 2,
-        }),
-        updatedAt: now,
-      });
-      return { applied: false, reason: "stale-attempt" };
-    }
+    return applyCatalogScanResult(ctx, attempt, run, args);
+  },
+});
 
+async function applyCatalogScanResult(
+  ctx: MutationCtx,
+  attempt: Doc<"skillsShCatalogScanAttempts">,
+  run: Doc<"skillsShCatalogRuns">,
+  args: { sourceContentHash: string; verdict: Infer<typeof scanVerdictValidator> },
+) {
+  const entry = await ctx.db.get(attempt.entryId);
+  if (!entry || entry.sourceContentHash !== args.sourceContentHash) {
     const now = Date.now();
-    const succeeded = args.verdict !== "failed";
     await ctx.db.patch(attempt._id, {
-      status: succeeded ? "succeeded" : "failed",
-      verdict: args.verdict,
+      status: "canceled",
       completedAt: now,
-      updatedAt: now,
-    });
-    await ctx.db.patch(entry._id, {
-      scanStatus: args.verdict,
-      publicVisible: false,
       updatedAt: now,
     });
     await ctx.db.patch(run._id, {
       counts: {
         ...run.counts,
-        scansCompleted: run.counts.scansCompleted + 1,
+        scansCanceled: run.counts.scansCanceled + 1,
       },
       operations: addOperations(run.operations, {
         functionCalls: 1,
         dbReads: 3,
-        dbWrites: 3,
+        dbWrites: 2,
       }),
       updatedAt: now,
     });
-    return { applied: true, publicVisible: false };
-  },
-});
+    return { applied: false, reason: "stale-attempt" };
+  }
+
+  const now = Date.now();
+  const succeeded = args.verdict !== "failed";
+  await ctx.db.patch(attempt._id, {
+    status: succeeded ? "succeeded" : "failed",
+    verdict: args.verdict,
+    completedAt: now,
+    updatedAt: now,
+  });
+  await ctx.db.patch(entry._id, {
+    scanStatus: args.verdict,
+    publicVisible: false,
+    updatedAt: now,
+  });
+  await ctx.db.patch(run._id, {
+    counts: {
+      ...run.counts,
+      scansCompleted: run.counts.scansCompleted + 1,
+    },
+    operations: addOperations(run.operations, {
+      functionCalls: 1,
+      dbReads: 3,
+      dbWrites: 3,
+    }),
+    updatedAt: now,
+  });
+  return { applied: true, publicVisible: false };
+}
 
 export const cancelCatalogRunInternal = internalMutation({
   args: {

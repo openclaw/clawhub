@@ -1,3 +1,4 @@
+/* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_BATCH_BYTES,

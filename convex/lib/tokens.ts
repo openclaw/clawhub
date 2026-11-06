@@ -1,11 +1,10 @@
+import { sha256Hex, toHex } from "./hash";
 const encoder = new TextEncoder();
 
 export const API_TOKEN_PREFIX = "clh_";
 
 export async function hashToken(token: string) {
-  const bytes = encoder.encode(token);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return toHex(new Uint8Array(digest));
+  return sha256Hex(encoder.encode(token));
 }
 
 export function generateToken() {
@@ -14,12 +13,6 @@ export function generateToken() {
   const token = `${API_TOKEN_PREFIX}${toBase64Url(bytes)}`;
   const prefix = token.slice(0, 12);
   return { token, prefix };
-}
-
-function toHex(bytes: Uint8Array) {
-  let out = "";
-  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
-  return out;
 }
 
 function toBase64Url(bytes: Uint8Array) {

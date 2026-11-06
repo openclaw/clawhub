@@ -1,0 +1,137 @@
+{
+  "package": "sn-ppt-workbench",
+  "version": "2026.10.29",
+  "manifestSha256": "ea3f5eb2634dffda246aacd1798f9d4915b0cd223feeb2cd7de35e9d3856c6c8",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "08843b046485304d6877d71158b2b1e2a5c5e691c8f16214952fc784009b4d2e",
+      "size": 10167
+    },
+    {
+      "path": "references/gateway-auth.md",
+      "sha256": "dfe900f7253a9247642172e49a37885242083ea7fc470e133850a3aeec253c22",
+      "size": 5518
+    },
+    {
+      "path": "scripts/open_workbench.py",
+      "sha256": "2c348a525a24bc9b65c2ef4062c09e87e8cdf9c014ed12644c649092b21d5a52",
+      "size": 21441
+    },
+    {
+      "path": "workbench-runtime/bin/sensenova-ppt-workbench.mjs",
+      "sha256": "7eebf3ade7d888fa5b7024bc108259057e23dbb245066f70fdc024e01e52b2c4",
+      "size": 19960
+    },
+    {
+      "path": "workbench-runtime/dist-server/index.mjs",
+      "sha256": "60ffff36e70d406b1b08c1fbc781d77e3f866e66e98e5ee3d83262e28e075b98",
+      "size": 1925515
+    },
+    {
+      "path": "workbench-runtime/dist/assets/MarkdownArtifactViewer-DxLTmGwT.js",
+      "sha256": "5ad807426233a513fe032fba48ea8d81d18e0adad3322349522bb53ece4540c8",
+      "size": 110452
+    },
+    {
+      "path": "workbench-runtime/dist/assets/index-DZ8oHsQz.js",
+      "sha256": "5812ccc7f8c610e0ff7d9d6fd7a50e8919d40355d4a98457bf9ff8f35a362c77",
+      "size": 516631
+    },
+    {
+      "path": "workbench-runtime/dist/assets/index-Hn-wCKPf.css",
+      "sha256": "a6942898009d2aeed5763d2ef1bac819dcdcbdbc11ea3b93148d602634313d64",
+      "size": 126086
+    },
+    {
+      "path": "workbench-runtime/dist/favicon.svg",
+      "sha256": "61bc9a161de58248288e6905425d7180f0624c2865007b97d763fdac12043a66",
+      "size": 9522
+    },
+    {
+      "path": "workbench-runtime/dist/index.html",
+      "sha256": "183a30ea50e9c863a2e6fde424a6c84800d0b14118cdc66e7a2a92730bd25742",
+      "size": 519
+    },
+    {
+      "path": "workbench-runtime/dist/sensetime-mark.png",
+      "sha256": "eeba464357e479f43a7b89d7331af27f49585ec3184e84f01a7187a0ea2a320b",
+      "size": 25072
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/asset_plan.json",
+      "sha256": "7ecf19ba9979cca41c7beb4b0680e19b8479fe848967d180eb4aa3973b2ab823",
+      "size": 2805
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/assets/echarts.min.js",
+      "sha256": "bf4a223524e40b77c304bec67e1222cf551f14880cf42c69dc046558e11c07b1",
+      "size": 1034102
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/info_pack.json",
+      "sha256": "56a2f5817bf4eee25c8e113cd4dde9fe9da28a017bc741dfa5f8836f5882c9fa",
+      "size": 384
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/outline.json",
+      "sha256": "7f18d381f2882e13d6ef845a2387460a6d121308609cca2d18c33163a83232f1",
+      "size": 4704
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/pages/page_001.html",
+      "sha256": "3f1d41be36e0b7a75d469709cd1ea373e9f5dcd1dbdf74f0f3414c5be844db11",
+      "size": 10925
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/pages/page_001.query.txt",
+      "sha256": "f11ca48d9350070bacfe901479853f37f1b5c47ea704285b18349baa52843d79",
+      "size": 1597
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/pages/page_002.html",
+      "sha256": "abfda955a0fde59728e4d21c3e2a36edde36fe44efe3b9fa702fc00cd4e42a3c",
+      "size": 9555
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/pages/page_002.query.txt",
+      "sha256": "8e182a0fc82586db70c871065384b97f1f242b6d53b2f6753d4050a3f4abe170",
+      "size": 1451
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/pages/page_003.html",
+      "sha256": "b503204b24545c626469629ee6eccb26d1c605c39c06fa1d7678255e962bf66f",
+      "size": 15426
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/pages/page_003.query.txt",
+      "sha256": "4dd8c1e2e71687908282fa23207b7cab8e2fbb1493efc39cf7049dadbdc73dc3",
+      "size": 1679
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/pages/page_004.html",
+      "sha256": "075f539a9c1d48b59a951e6714237f8e2dbca6fb31683283cf013f4a9e685b2c",
+      "size": 5737
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/pages/page_004.query.txt",
+      "sha256": "65bdce6bbffd22f52721c7eaea74bc73be987541e420edd8fbd699efaebaf280",
+      "size": 1727
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/style_spec.json",
+      "sha256": "c1fc82619b072003dd98946ef8c83eeb66158f578d19b093db00c968451cc443",
+      "size": 560
+    },
+    {
+      "path": "workbench-runtime/examples/sensenova-basic/task_pack.json",
+      "sha256": "33d36cd9e39fa983b26d64f5d89f15fa1e2e6239f6218acc35bb991eea6c5680",
+      "size": 576
+    },
+    {
+      "path": "workbench-runtime/package.json",
+      "sha256": "760fbba2f7886b50da7e49aa5ced2dce7c7b2ac5575fb4142c276f328dea8321",
+      "size": 422
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { describe, expect, it, vi } from "vitest";
 import {
   BLOCKED_API_TOKEN_ACCOUNT_MESSAGE,

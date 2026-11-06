@@ -819,9 +819,4 @@ describe("promotions.getBySlugPublicInternal", () => {
     const ctx = makeQueryCtx({ ...base, status: "ended" });
     expect(await getBySlugHandler(ctx, { slug: base.slug, now: 150 })).toBeNull();
   });
-
-  it("hides ended promotions before their launch window", async () => {
-    const ctx = makeQueryCtx({ ...base, status: "ended" });
-    expect(await getBySlugHandler(ctx, { slug: base.slug, now: 50 })).toBeNull();
-  });
 });

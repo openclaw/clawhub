@@ -85,6 +85,8 @@ export type UnifiedSearchInitialData = {
 type UnifiedSearchOptions = {
   manualCatalogSearch?: ManualCatalogSearch | null;
   detectPluginHasMore?: boolean;
+  // Suggestions can publish ready groups; full-page search keeps its loading boundary.
+  publishPartialResults?: boolean;
   debounceMs?: number;
   enabled?: boolean;
   initialData?: UnifiedSearchInitialData | null;
@@ -148,6 +150,7 @@ export function useUnifiedSearch(
   const enabled = options.enabled ?? true;
   const manualCatalogSearch = options.manualCatalogSearch;
   const detectPluginHasMore = options.detectPluginHasMore ?? true;
+  const publishPartialResults = options.publishPartialResults ?? false;
   const initialData = options.initialData ?? null;
   const skillLimit = Math.max(0, Math.min(options.limits?.skills ?? 25, MAX_UNIFIED_SEARCH_LIMIT));
   const pluginLimit = Math.max(
@@ -169,6 +172,8 @@ export function useUnifiedSearch(
     initialData.limits.creators === creatorLimit
       ? initialData
       : null;
+  const [resultsQuery, setResultsQuery] = useState(trimmedQuery);
+  const hasCurrentResults = resultsQuery === trimmedQuery;
   const [results, setResults] = useState<UnifiedResult[]>(() =>
     matchedInitialData
       ? mergeUnifiedResults(
@@ -210,6 +215,7 @@ export function useUnifiedSearch(
 
   useEffect(() => {
     if (!matchedInitialData) return;
+    setResultsQuery(matchedInitialData.query);
     setSkillResults(matchedInitialData.skillResults);
     setPluginResults(matchedInitialData.pluginResults);
     setCreatorResults(matchedInitialData.creatorResults);
@@ -315,63 +321,89 @@ export function useUnifiedSearch(
             });
           }
 
-          const settled = await Promise.allSettled(promises.map((p) => p ?? Promise.resolve(null)));
+          // Publish independent result types as they settle. Keep loading true
+          // until all finish, and never mix responses from different queries.
+          const settled: PromiseSettledResult<unknown>[] = promises.map(() => ({
+            status: "fulfilled",
+            value: null,
+          }));
+          let skillMatches: UnifiedSkillResult[] = matchedInitialData?.skillResults ?? [];
+          let pluginMatches: UnifiedPluginResult[] = [];
+          const publishSettledResults = () => {
+            if (requestId !== requestRef.current) return;
+            setResultsQuery(trimmedQuery);
+            setPluginSearchError(shouldFetchPlugins && settled[1].status === "rejected");
+            setSkillSearchError(shouldFetchSkills && settled[0].status === "rejected");
 
+            const skillsRaw = settled[0].status === "fulfilled" ? settled[0].value : null;
+            const pluginsRaw = settled[1].status === "fulfilled" ? settled[1].value : null;
+            const creatorsRaw = settled[2].status === "fulfilled" ? settled[2].value : null;
+
+            skillMatches =
+              matchedInitialData?.skillResults ??
+              ((skillsRaw as CanonicalSkillSearchResult[] | null) ?? [])
+                .map(toUnifiedSkillResult)
+                .filter((entry): entry is UnifiedSkillResult => entry !== null);
+            const nextSkillResults = skillMatches.slice(0, skillLimit);
+
+            pluginMatches = ((pluginsRaw as { items: PackageListItem[] })?.items ?? []).map(
+              (item) => ({
+                type: "plugin" as const,
+                plugin: item,
+              }),
+            );
+            const nextPluginResults = pluginMatches.slice(0, pluginLimit);
+
+            const creatorMatches: UnifiedCreatorResult[] = (
+              (creatorsRaw as { page: PublicPublisherListItem[] } | null)?.page ?? []
+            ).map((item) => ({
+              type: "creator" as const,
+              creator: item,
+            }));
+            const nextCreatorResults = creatorMatches.slice(0, creatorLimit);
+
+            setSkillCount(nextSkillResults.length);
+            setPluginCount(nextPluginResults.length);
+            setCreatorCount(nextCreatorResults.length);
+            setSkillHasMore(
+              matchedInitialData
+                ? matchedInitialData.skillHasMore
+                : skillMatches.length > skillLimit,
+            );
+            setPluginHasMore(pluginMatches.length > pluginLimit);
+            setCreatorHasMore(
+              creatorLimit < MAX_CREATOR_SEARCH_LIMIT &&
+                (creatorMatches.length > creatorLimit ||
+                  (creatorsRaw as { isDone?: boolean } | null)?.isDone === false),
+            );
+            setSkillResults(nextSkillResults);
+            setPluginResults(nextPluginResults);
+            setCreatorResults(nextCreatorResults);
+
+            setResults(
+              mergeUnifiedResults(
+                activeType,
+                nextSkillResults,
+                nextPluginResults,
+                nextCreatorResults,
+              ),
+            );
+          };
+          const publications = await Promise.allSettled(
+            promises.map(async (promise, index) => {
+              try {
+                settled[index] = { status: "fulfilled", value: await promise };
+              } catch (reason) {
+                settled[index] = { status: "rejected", reason };
+              }
+              if (publishPartialResults) publishSettledResults();
+            }),
+          );
           if (requestId !== requestRef.current) return;
-          setPluginSearchError(shouldFetchPlugins && settled[1].status === "rejected");
-          setSkillSearchError(shouldFetchSkills && settled[0].status === "rejected");
+          const failedPublication = publications.find((result) => result.status === "rejected");
+          if (failedPublication?.status === "rejected") throw failedPublication.reason;
+          if (!publishPartialResults) publishSettledResults();
 
-          const skillsRaw = settled[0].status === "fulfilled" ? settled[0].value : null;
-          const pluginsRaw = settled[1].status === "fulfilled" ? settled[1].value : null;
-          const creatorsRaw = settled[2].status === "fulfilled" ? settled[2].value : null;
-
-          const skillMatches: UnifiedSkillResult[] =
-            matchedInitialData?.skillResults ??
-            ((skillsRaw as CanonicalSkillSearchResult[] | null) ?? [])
-              .map(toUnifiedSkillResult)
-              .filter((entry): entry is UnifiedSkillResult => entry !== null);
-          const nextSkillResults = skillMatches.slice(0, skillLimit);
-
-          const pluginMatches: UnifiedPluginResult[] = (
-            (pluginsRaw as { items: PackageListItem[] })?.items ?? []
-          ).map((item) => ({
-            type: "plugin" as const,
-            plugin: item,
-          }));
-          const nextPluginResults = pluginMatches.slice(0, pluginLimit);
-
-          const creatorMatches: UnifiedCreatorResult[] = (
-            (creatorsRaw as { page: PublicPublisherListItem[] } | null)?.page ?? []
-          ).map((item) => ({
-            type: "creator" as const,
-            creator: item,
-          }));
-          const nextCreatorResults = creatorMatches.slice(0, creatorLimit);
-
-          setSkillCount(nextSkillResults.length);
-          setPluginCount(nextPluginResults.length);
-          setCreatorCount(nextCreatorResults.length);
-          setSkillHasMore(
-            matchedInitialData ? matchedInitialData.skillHasMore : skillMatches.length > skillLimit,
-          );
-          setPluginHasMore(pluginMatches.length > pluginLimit);
-          setCreatorHasMore(
-            creatorLimit < MAX_CREATOR_SEARCH_LIMIT &&
-              (creatorMatches.length > creatorLimit ||
-                (creatorsRaw as { isDone?: boolean } | null)?.isDone === false),
-          );
-          setSkillResults(nextSkillResults);
-          setPluginResults(nextPluginResults);
-          setCreatorResults(nextCreatorResults);
-
-          setResults(
-            mergeUnifiedResults(
-              activeType,
-              nextSkillResults,
-              nextPluginResults,
-              nextCreatorResults,
-            ),
-          );
           if (isManualSkillSearch && detectPluginHasMore && skillMatches.length === skillLimit) {
             void searchSkills({ query: trimmedQuery, limit: skillLimit + 1 }).then(
               (probe) => {
@@ -399,6 +431,7 @@ export function useUnifiedSearch(
         } catch (error) {
           console.error("Unified search failed:", error);
           if (requestId === requestRef.current) {
+            setResultsQuery(trimmedQuery);
             setResults([]);
             setSkillResults([]);
             setPluginResults([]);
@@ -436,21 +469,24 @@ export function useUnifiedSearch(
     matchedInitialData,
     manualCatalogSearch,
     detectPluginHasMore,
+    publishPartialResults,
   ]);
 
+  // A query can change before its effect runs. Hide the prior query's rows
+  // immediately rather than presenting them as matches for the new input.
   return {
-    results,
-    skillResults,
-    pluginResults,
-    creatorResults,
-    skillCount,
-    pluginCount,
-    creatorCount,
-    skillHasMore,
-    pluginHasMore,
-    creatorHasMore,
-    isSearching,
-    pluginSearchError,
-    skillSearchError,
+    results: hasCurrentResults ? results : [],
+    skillResults: hasCurrentResults ? skillResults : [],
+    pluginResults: hasCurrentResults ? pluginResults : [],
+    creatorResults: hasCurrentResults ? creatorResults : [],
+    skillCount: hasCurrentResults ? skillCount : 0,
+    pluginCount: hasCurrentResults ? pluginCount : 0,
+    creatorCount: hasCurrentResults ? creatorCount : 0,
+    skillHasMore: hasCurrentResults && skillHasMore,
+    pluginHasMore: hasCurrentResults && pluginHasMore,
+    creatorHasMore: hasCurrentResults && creatorHasMore,
+    isSearching: enabled && trimmedQuery.length > 0 && (!hasCurrentResults || isSearching),
+    pluginSearchError: hasCurrentResults && pluginSearchError,
+    skillSearchError: hasCurrentResults && skillSearchError,
   };
 }

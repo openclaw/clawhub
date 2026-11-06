@@ -1,12 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  applyTheme,
-  getStoredTheme,
-  getStoredThemeName,
-  getStoredThemeSelection,
-  useThemeMode,
-} from "./theme";
+import { applyTheme, getStoredThemeSelection, useThemeMode } from "./theme";
 import { THEME_MODE_COOKIE } from "./themeCookie";
 
 describe("theme", () => {
@@ -56,8 +50,8 @@ describe("theme", () => {
   });
 
   it("reads stored selection with legacy fallback", () => {
-    expect(getStoredTheme()).toBe("system");
-    expect(getStoredThemeName()).toBe("claw");
+    expect(getStoredThemeSelection().mode).toBe("system");
+    expect(getStoredThemeSelection().theme).toBe("claw");
 
     window.localStorage.setItem(
       "clawhub-theme-selection",
@@ -67,7 +61,7 @@ describe("theme", () => {
 
     window.localStorage.clear();
     window.localStorage.setItem("clawhub-theme", "dark");
-    expect(getStoredTheme()).toBe("dark");
+    expect(getStoredThemeSelection().mode).toBe("dark");
 
     window.localStorage.clear();
     window.localStorage.setItem("clawdhub-theme", "dark");

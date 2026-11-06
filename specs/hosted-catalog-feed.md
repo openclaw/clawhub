@@ -71,9 +71,9 @@ Until the skills feed has pagination or sharding, it publishes at most 1000
 eligible entries per snapshot so a large skills corpus does not block the plugin
 feed publication path.
 
-The experimental Claws feed is deliberately not an additive entry type in this
+The experimental Templates feed is deliberately not an additive entry type in this
 stable v1 contract. Its separately gated parser, serializer, and route are
-specified in [Experimental Claw Feed](experimental-claw-feed.md).
+specified in [Experimental Template Feed](experimental-template-feed.md).
 
 The promotions feed uses id `clawhub-promotions`, schema version `1`, and the
 `/v1/feeds/promotions` route. Entries are declarative promotion records, not
@@ -101,7 +101,7 @@ outside the promotion's declared provider.
 
 ## Publication
 
-`convex/catalogFeed.ts` builds the package, skill, and gated Claws feeds from
+`convex/catalogFeed.ts` builds the package, skill, and gated Templates feeds from
 indexed package/skill queries and stores one current publication row per feed
 in `catalogFeedPublications`.
 Keeping one row per feed avoids an unbounded publication log while preserving

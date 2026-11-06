@@ -13,7 +13,7 @@ const now = Date.UTC(2026, 8, 26, 12, 30);
 
 async function setup() {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   await t.mutation(internal.devSeedPackageTrending.seedInternal, {});
   return t;
 }

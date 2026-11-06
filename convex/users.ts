@@ -2071,7 +2071,7 @@ async function unbanUserWithActor(
  * Admin-only: lift the moderation hold placed on a user after a false-positive
  * malicious upload detection.
  *
- * When the static scanner flags a skill as malicious, the publisher is placed
+ * When a security scan flags a skill as malicious, the publisher is placed
  * under a moderation hold (`requiresModerationAt` set). This hides all their
  * skills and causes all future publishes to start hidden. The hold has no
  * self-service release path -- only an admin can lift it.

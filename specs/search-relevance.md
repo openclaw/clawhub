@@ -95,3 +95,18 @@ stored counts, like counts after other visibility changes, can temporarily overs
 
 Publisher diversity is a product follow-up for browse ranking. The current contract guarantees
 freshness and bounded novelty, while preserving stable cursor pagination and trust filters.
+
+## Initial browser search requests
+
+Navigation cancellation propagates through the initial manual-search request and
+must not be logged as a search failure. Keep this aligned with browse request
+cancellation. Genuine search failures still log the error and retain the existing
+client fallback; cancellation must not convert an error into successful results.
+
+## Optional catalog counts
+
+Skill and plugin heading totals are optional metadata. Observe their reactive
+queries with error-as-data handling; a missing or failed total leaves the heading
+unnumbered and must not throw the browse page into its route error screen. Keep
+healthy totals reactive, prefer the plugin catalog response total when present,
+and retain the existing failure handling for list/search results.

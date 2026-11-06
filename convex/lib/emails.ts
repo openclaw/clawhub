@@ -1,7 +1,8 @@
 export const APPEALS_URL = "https://appeals.openclaw.ai/";
 export const MODERATION_GUIDELINES_URL = "https://docs.openclaw.ai/clawhub/moderation";
 export const CLAWHUB_DASHBOARD_URL = "https://clawhub.ai/dashboard";
-export const OPENCLAW_DISCORD_URL = "https://discord.gg/clawd";
+export const OPENCLAW_DISCORD_URL =
+  "https://openclaw.ai/discord?from=clawhub-publisher-warning-email";
 export const MALICIOUS_REJECTION_ACCOUNT_WARNING =
   "Repeated malicious rejections may lead to account disablement.";
 const MAX_EMAIL_FINDING_SUMMARY_LENGTH = 280;
@@ -153,18 +154,6 @@ function summarizeBanReason(args: BanNotificationEmailArgs): BanReasonSummary {
   }
 
   if (args.source === "autoban") {
-    if (normalized.includes("virustotal") || normalized.includes("virus_total")) {
-      return {
-        scannerLabel: "VirusTotal",
-        findingSummary: "VirusTotal telemetry contributed to a malicious upload finding.",
-      };
-    }
-    if (normalized.includes("static")) {
-      return {
-        scannerLabel: "Static analysis",
-        findingSummary: "Static analysis flagged malicious upload patterns.",
-      };
-    }
     if (
       normalized.includes("clawscan") ||
       normalized.includes("llm") ||
@@ -426,11 +415,7 @@ export async function buildMaliciousArtifactEmail(args: MaliciousArtifactEmailAr
   const scanDownloadCommand = buildScanDownloadCommand(args);
   const findingSummary =
     normalizeEmailFindingSummary(args.findingSummary) ??
-    (args.trigger?.includes("static") === true
-      ? "Static analysis flagged malicious upload patterns."
-      : args.trigger?.includes("virustotal") === true || args.trigger?.includes("vt_") === true
-        ? "VirusTotal telemetry contributed to a malicious upload finding."
-        : "ClawScan classified the uploaded artifact as malicious.");
+    "ClawScan classified the uploaded artifact as malicious.";
   const subject = `ClawHub blocked a ${artifactKind} version`;
 
   const lines = [

@@ -1,0 +1,9 @@
+{
+  "status": "clean",
+  "issues": [],
+  "execution_successful": true,
+  "analysis_completeness": {
+    "execution_successful": true,
+    "is_complete": true
+  }
+}

@@ -4,6 +4,7 @@ import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import { json, parseJsonPayload, text } from "./httpApiV1/shared";
+import { packageInspectorFailureValidator } from "./lib/packageInspectorOutcome";
 import { sdkUsageReport } from "./lib/packageSdkUsageContract";
 import { buildLegacyPackageScanZip } from "./lib/skillZip";
 
@@ -242,6 +243,10 @@ export const packageInspectorResultsHttp = httpAction(async (ctx, request) => {
       ? { sdkUsage: payload.sdkUsage, artifactSha256: payload.artifactSha256 }
       : {}),
     ...(payload.inspectionFailed === true ? { inspectionFailed: true } : {}),
+    ...(payload.inspectionFailed === true &&
+    validate(packageInspectorFailureValidator, payload.failure)
+      ? { failure: payload.failure }
+      : {}),
   });
   if (payload.notifyOwners === true && result.shouldEmailOwner) {
     try {

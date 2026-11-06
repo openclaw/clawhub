@@ -37,26 +37,50 @@ paths. Environment-only changes cannot implement this policy: official GPT-6.1
 Sol function/tool calls require Responses rather than Chat Completions.
 
 `clawscan-source-commit.txt` pins merged ClawScan commit
-`e9d0e9e05506d9e9aa9725fe2f4da20e2870db9b` (upstream PR #77, including
-the bounded receipt retry from PR #76). The
+`e14f9960cc290d47f99fd3416b0589bbc0080f24`. The
 workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
 with Go 1.27.3, and retains the matching source tree for host scanner installation.
 No mutable `main`, `latest`, or unapproved public ClawScan release is consumed.
+The selected source includes bounded JavaScript value ownership and proofs for
+native validator storage, function results and effects. It retains canonical Bash
+parsing, CSV ownership and immutable preparation-cache/packing repairs. These
+preserve explicit incompleteness for unsupported value flows; they do not infer
+that an original upload is safe or complete. Diagnostic dependency locks are
+bound to each reviewed source, retaining the original incident baselines.
+Canonical Markdown prose ownership preserves continued shell operands. Complete
+raw JSON in canonically mapped inline code owns its structural quotes; payloads
+retain independent security inspection. Unsupported TypeScript and other
+constructed-value flows still report incomplete coverage. A narrow
+original-byte PCM WAVE proof admits explicit binary exclusions while preserving
+raw findings, binary line counts, integrity/YARA and reference accounting. It
+does not assert text or semantic inspection of the asset.
+The selected runtime separates OSV's 256-record cache-entry bound from its
+existing aggregate inspection budgets (1024 results, 1 MiB retained evidence,
+4 MiB responses, with unchanged request and deadline limits). Complete larger
+advisory sets are inspected without caching; caller-limited prefixes retain
+severity metadata and explicitly report incomplete coverage. Other parser
+limitations remain failures and cannot be treated as passing publication checks.
 
-Codex 0.160 normalizes its explicit `service_tier="default"` configuration by
-omitting `service_tier` from the Responses request; its protocol implementation
-intentionally tests this behavior. Therefore, keep the configured judge tier,
-wire-field presence, and provider-returned tier separate in acceptance evidence.
-Do not describe an omitted judge wire field as an explicit API request. The
-direct Python scanners do send the explicit API field.
-The workflows pin Codex CLI 0.160.0, including on runners with an ambient CLI.
+Keep the configured judge tier, wire-field presence and provider-returned tier
+separate in acceptance evidence. Do not describe an omitted judge wire field as
+an explicit API request. The direct Python scanners do send the explicit API
+field. The workflows pin Codex CLI 0.164.0, including on runners with an ambient
+CLI. The shared `setup-codex` action selects Node 24.22.1 for npm, installs the
+reviewed CLI into a job-local prefix, verifies its exact version and publishes
+that prefix through `GITHUB_PATH`. Another `codex` earlier on the runner's
+original PATH cannot remain selected merely because it was already present.
+
+The shared Bun action and standalone workflow selectors use stock Bun 1.4.4.
+This does not select or replace OpenClaw's separately maintained Bun fork.
 
 The host scanners consume **the same** source pins, Responses patches and offline
 real-adapter tests as that ClawScan revision's runtime image:
 
 - SkillSpector: NVIDIA source commit
   `95a52d89fa16f608f0b18ccee76b0918ea4b7eef`, with the maintained LangChain
-  Responses path and its upstream `uv.lock` (`uv sync --locked --no-dev`).
+  Responses path and its upstream `uv.lock` (`uv sync --locked --no-dev --python <selected interpreter>`). The installer
+  binds uv to the workflow-selected Python; another installed interpreter must
+  not silently replace the patched runtime selected by setup-python.
 - AIG: Tencent AI-Infra-Guard source commit
   `a5c5a72c2e5b88fc6e5b27e0c86110943c4d350b` (`skill-scan` package), with the
   ClawScan-owned Responses streaming adapter. The existing hash-locked AIG 0.2.2
@@ -65,11 +89,16 @@ real-adapter tests as that ClawScan revision's runtime image:
 - The source pins are read from the reviewed ClawScan Dockerfile and checked as
   full commit IDs, so host/image implementations cannot silently drift. Patch
   applicability and the real installed adapter tests are mandatory install gates.
-- The maintained resolver is pinned to uv 0.13.4. Pytest 9.0.2 is test-only. Source
+- The maintained resolver is pinned to uv 0.13.5. Pytest 9.0.2 is test-only. Source
   revisions and runtime dependencies are pinned; Python isolated-build backend
   dependencies are not claimed to be fully hash-reproducible. The AIG hash lock
   additionally admits the published macOS arm64 CPython 3.12 wheels for `jiter`
-  and `pydantic-core`, without replacing the existing Ubuntu runner hashes.
+  and `pydantic-core`, without replacing the existing Ubuntu runner hashes. Its
+  certifi dependency is 2026.10.23 with the normal published wheel hash. The
+  ClawScan-owned SkillSpector patch also refreshes its frozen upstream lock to
+  certifi 2026.10.23, retaining the published distribution hashes. Updating the
+  CA bundle does not replace the patched Python runtime required to reject
+  compromised keys when an operator supplies historical explicit roots.
 
 The adapter implementation stays upstream in ClawScan; ClawHub must not grow a
 second independent OpenAI adapter. Offline transport contracts prove serialization,
@@ -100,6 +129,13 @@ not inferred from CLI exit 0 or a workflow conclusion.
 Preparation and download failures before a new scan also leave eligibility unknown,
 even when the control flow proves that no judge was invoked. They must not be
 silently excluded as publisher-caused rejections.
+
+Bundled SkillSpector command failures count as scanner-stage failures even before
+ClawScan starts. Retain their timeout, exit and process-termination metadata without
+command output, artifact contents or paths. A shared-budget deadline has no stale
+termination receipt from a previous bundled root. Exit 1 with accepted findings
+remains a successful scanner result. This accounting does not change retry policy,
+judge exposure or Endor cleanup.
 
 The bounded native `judge.attempts` records supply invocation and operational-failure
 counts, including the first failed receipt even when the second attempt succeeds.

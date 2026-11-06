@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation } from "./functions";
+import { areDownloadMetricsPaused } from "./lib/downloadMetricsSwitch";
 import { getClientIp } from "./lib/httpRateLimit";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 import { hashToken } from "./lib/tokens";
@@ -60,6 +61,8 @@ export const recordDownloadMetricInternal = internalMutation({
     occurredAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Queued jobs become no-ops while metrics are paused for write pressure.
+    if (areDownloadMetricsPaused()) return;
     const targetId = args.target.id;
     const existing = await ctx.db
       .query("downloadMetricDedupes")
@@ -93,12 +96,46 @@ export const recordDownloadMetricInternal = internalMutation({
       return;
     }
 
-    await ctx.db.insert("packageStatEvents", {
+    const eventId = await ctx.db.insert("packageStatEvents", {
       packageId: args.target.id,
       kind: "download",
       occurredAt: args.occurredAt ?? now,
       processedAt: undefined,
     });
+    const pkg = await ctx.db.get(args.target.id);
+    if (pkg?.family === "claw" && pkg.channel !== "private" && !pkg.softDeletedAt) {
+      // Scheduling is atomic with the stat insert: a rolled-back count cannot emit.
+      await ctx.scheduler.runAfter(
+        0,
+        internal.downloadMetrics.emitTemplateDownloadCountedInternal,
+        { eventId, dayStart: args.dayStart },
+      );
+    }
+  },
+});
+
+/** Log only committed counts. Consumers dedupe delivery/OCC retries by eventId. */
+export const emitTemplateDownloadCountedInternal = internalMutation({
+  args: { eventId: v.id("packageStatEvents"), dayStart: v.number() },
+  handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId);
+    if (!event || event.kind !== "download") return;
+    const pkg = await ctx.db.get(event.packageId);
+    if (!pkg || pkg.family !== "claw" || pkg.channel === "private" || pkg.softDeletedAt) return;
+
+    // Explicit allowlist: never include download identities or other listing fields.
+    console.info(
+      JSON.stringify({
+        event: "template_download_counted",
+        schemaVersion: 1,
+        eventId: event._id,
+        packageId: pkg._id,
+        packageName: pkg.name,
+        family: "template",
+        occurredAt: event.occurredAt,
+        dayStart: args.dayStart,
+      }),
+    );
   },
 });
 

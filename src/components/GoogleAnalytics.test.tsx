@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Metric } from "web-vitals";
 import { GoogleAnalytics } from "./GoogleAnalytics";
 import { SkillPublishSuccessDialog } from "./SkillPublishSuccessDialog";
 
@@ -9,10 +10,11 @@ const state = vi.hoisted(() => ({
   loaderData: undefined as unknown,
 }));
 vi.mock("../lib/useAuthStatus", () => ({ useAuthStatus: () => state.auth }));
-vi.mock("../lib/analyticsEngagement", () => ({
-  observeAnalyticsEngagement: () => () => {},
-  observeAnalyticsPerformance: () => () => {},
-  observeAnalyticsErrors: () => () => {},
+const metricCallbacks = vi.hoisted(() => new Map<string, (metric: Metric) => void>());
+vi.mock("web-vitals", () => ({
+  onLCP: (callback: (metric: Metric) => void) => metricCallbacks.set("LCP", callback),
+  onINP: (callback: (metric: Metric) => void) => metricCallbacks.set("INP", callback),
+  onCLS: (callback: (metric: Metric) => void) => metricCallbacks.set("CLS", callback),
 }));
 const router = {
   options: { ssr: { nonce: "fixture" } },
@@ -49,6 +51,7 @@ function consent(allowed: boolean) {
   window.dispatchEvent(new Event("clawhub:analytics-preference"));
 }
 beforeEach(() => {
+  metricCallbacks.clear();
   vi.stubEnv("VITE_CLAWHUB_DEPLOY_ENV", "production");
   state.auth = { isAuthenticated: false, isLoading: true };
   state.routeId = "/";
@@ -336,5 +339,80 @@ describe("login acknowledgment consent chronology", () => {
       ui_location: "authentication",
       event_deferred: 1,
     });
+  });
+});
+
+describe("document Web Vitals delivery", () => {
+  function navigate(path: string, routeId: string) {
+    state.routeId = routeId;
+    window.history.replaceState(null, "", path);
+    act(() => consent(true));
+  }
+
+  function reportLcp() {
+    const metric: Metric = {
+      name: "LCP",
+      value: 1200,
+      delta: 1200,
+      rating: "good",
+      id: "private-metric-id",
+      navigationId: 0,
+      navigationType: "navigate",
+      entries: [{ startTime: 100, name: "private-performance-entry" } as PerformanceEntry],
+    };
+    act(() => metricCallbacks.get("LCP")!(metric));
+  }
+
+  function vitals() {
+    return (browser.dataLayer ?? [])
+      .map((entry) => Array.from(entry))
+      .filter(([kind, name]) => kind === "event" && name === "web_vital");
+  }
+
+  it.each([false, true])(
+    "attributes delayed document metrics to the initial page for signed-in=%s",
+    (isAuthenticated) => {
+      state.auth = { isAuthenticated, isLoading: false };
+      state.routeId = "/skills/";
+      window.history.replaceState(null, "", "/skills");
+      document.documentElement.dataset.analyticsAllowed = "true";
+      render(<GoogleAnalytics />);
+
+      navigate("/plugins", "/plugins/");
+      reportLcp();
+
+      expect(vitals()).toEqual([
+        [
+          "event",
+          "web_vital",
+          expect.objectContaining({
+            page_location: "https://clawhub.ai/skills",
+            page_title: "Skills - ClawHub",
+            metric_name: "LCP",
+            lcp_ms: 1200,
+            metric_rating: "good",
+            navigation_type: "navigate",
+            send_to: "G-3SK7X2YLSJ",
+          }),
+        ],
+      ]);
+      expect(JSON.stringify(vitals())).not.toContain("private-");
+    },
+  );
+
+  it("drops document aggregates after a private visit even after returning public", () => {
+    state.auth = { isAuthenticated: true, isLoading: false };
+    document.documentElement.dataset.analyticsAllowed = "true";
+    render(<GoogleAnalytics />);
+    reportLcp();
+    expect(vitals()).toHaveLength(1);
+
+    navigate("/settings", "/settings");
+    reportLcp();
+    navigate("/plugins", "/plugins/");
+    reportLcp();
+
+    expect(vitals()).toHaveLength(1);
+    expect(vitals()[0][2]).toMatchObject({ page_location: "https://clawhub.ai/" });
   });
 });

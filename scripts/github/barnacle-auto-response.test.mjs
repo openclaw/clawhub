@@ -162,6 +162,22 @@ function barnacleGithub(files) {
 }
 
 describe("barnacle-auto-response", () => {
+  it("uses the distinct registered maintainer-warning link without changing ping triage", async () => {
+    const { calls, github } = barnacleGithub([]);
+    await runBarnacleAutoResponse({
+      github,
+      context: barnacleIssueContext({ body: "Please help @openclaw/maintainer" }),
+      core: { info: () => undefined },
+    });
+    expect(calls.createComment).toEqual([
+      expect.objectContaining({
+        issue_number: 456,
+        body: "Please don't spam-ping multiple maintainers at once. Be patient, or use the OpenClaw community Discord for help: https://openclaw.ai/discord?from=github-clawhub-maintainer-warning",
+      }),
+    ]);
+    expect(calls.update).toEqual([]);
+  });
+
   it("keeps one Bun root Dependabot config with Plugin Inspector grouped first", () => {
     const config = parse(readFileSync(".github/dependabot.yml", "utf8"));
     const bunRootUpdates = (config.updates ?? []).filter(
@@ -406,7 +422,9 @@ describe("barnacle-auto-response", () => {
     expect(calls.createComment).toContainEqual(
       expect.objectContaining({
         issue_number: 456,
-        body: expect.stringContaining("community support server"),
+        body: expect.stringContaining(
+          "https://openclaw.ai/discord?from=github-clawhub-support-reply.",
+        ),
       }),
     );
     expect(calls.update).toContainEqual(

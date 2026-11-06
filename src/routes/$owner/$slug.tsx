@@ -8,33 +8,26 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { SkillDetailPage } from "../../components/SkillDetailPage";
-import { buildSkillMeta } from "../../lib/og";
 import {
   buildSkillDetailHref,
   isOwnerRouteHandleOrIdSegment,
   isOwnerRouteScopeSegment,
 } from "../../lib/ownerRoute";
 import { consumePostPublishFlash } from "../../lib/postPublishFlash";
-import { fetchSkillPageData } from "../../lib/skillPage";
+import {
+  hasPostPublishSearch,
+  isPostPublishFlag,
+  parsePostPublishSearch,
+} from "../../lib/postPublishSearch";
+import {
+  buildSkillRouteMeta,
+  createSkillRouteLoader,
+  type SkillRouteHeadArgs,
+} from "../../lib/skillRoute";
 import { resolveOpenClawPluginSlug } from "../../lib/slugRoute";
 
-function isPostPublishFlag(value: unknown) {
-  const normalized = typeof value === "string" ? value.trim().replace(/^"|"$/g, "") : value;
-  return normalized === "1" || normalized === "true" || normalized === 1 || normalized === true;
-}
-
-function hasPostPublishSearch(searchStr: string) {
-  return isPostPublishFlag(new URLSearchParams(searchStr).get("published"));
-}
-
 export const Route = createFileRoute("/$owner/$slug")({
-  validateSearch: (search) => {
-    const parsed: { published?: true } = {};
-    if (isPostPublishFlag(search.published)) {
-      parsed.published = true;
-    }
-    return parsed;
-  },
+  validateSearch: parsePostPublishSearch,
   beforeLoad: ({ params }) => {
     if (!isOwnerRouteHandleOrIdSegment(params.owner) && !isOwnerRouteScopeSegment(params.owner)) {
       throw notFound();
@@ -58,47 +51,10 @@ export const Route = createFileRoute("/$owner/$slug")({
   },
 });
 
-export async function loadSkillDetailRouteData(params: { owner: string; slug: string }) {
-  const data = await fetchSkillPageData(params.slug, params.owner);
-  const canonicalOwner = data.initialData?.result?.owner?.handle ?? null;
-  const canonicalSlug = data.initialData?.result?.resolvedSlug ?? params.slug;
+export const loadSkillDetailRouteData = createSkillRouteLoader("/$owner/skills/$slug");
 
-  if (canonicalOwner && (canonicalOwner !== params.owner || canonicalSlug !== params.slug)) {
-    throw redirect({
-      to: "/$owner/skills/$slug",
-      params: { owner: canonicalOwner, slug: canonicalSlug },
-      replace: true,
-    });
-  }
-
-  return {
-    owner: data?.owner ?? params.owner,
-    displayName: data?.displayName ?? null,
-    summary: data?.summary ?? null,
-    version: data?.version ?? null,
-    initialData: data.initialData,
-  };
-}
-
-export function skillDetailRouteHead({
-  params,
-  loaderData,
-}: {
-  params: { owner: string; slug: string };
-  loaderData?: {
-    owner?: string | null;
-    displayName?: string | null;
-    summary?: string | null;
-    version?: string | null;
-  };
-}) {
-  const meta = buildSkillMeta({
-    slug: params.slug,
-    owner: loaderData?.owner ?? params.owner,
-    displayName: loaderData?.displayName,
-    summary: loaderData?.summary,
-    version: loaderData?.version ?? null,
-  });
+export function skillDetailRouteHead({ params, loaderData }: SkillRouteHeadArgs) {
+  const meta = buildSkillRouteMeta({ params, loaderData });
   return {
     links: [
       {

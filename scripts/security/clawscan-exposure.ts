@@ -67,6 +67,23 @@ export function clawScanExposure(artifact?: unknown): ClawScanExposure {
   const staticStatus = record(record(run.scanners)?.["clawscan-static"])?.status;
   if (staticStatus === "completed" || staticStatus === "failed") unknown.eligibleScanAttempt = true;
   const judge = record(run.judge);
+  // ClawScan refuses an oversized judge prompt before starting the judge
+  // command: the judge failed, never started, and has no attempts.
+  if (
+    judge?.status === "failed" &&
+    judge.commandStarted === false &&
+    typeof judge.error === "string" &&
+    judge.error.startsWith("judge prompt too large:") &&
+    (judge.attempts === undefined || (Array.isArray(judge.attempts) && judge.attempts.length === 0))
+  ) {
+    return {
+      scanExecution: "started",
+      eligibleScanAttempt: unknown.eligibleScanAttempt,
+      judgeInvocations: 0,
+      judgeOperationalFailures: 0,
+      recoveredReceiptRetries: 0,
+    };
+  }
   if (!Array.isArray(judge?.attempts) || judge.attempts.length < 1 || judge.attempts.length > 2) {
     return unknown;
   }

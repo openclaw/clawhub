@@ -7299,52 +7299,14 @@ describe("publisher bootstrap", () => {
 
   it("lists a synthesized personal publisher when membership rows are missing", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
-    const ctx = {
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "users:alice") {
-            return {
-              _id: id,
-              _creationTime: 1,
-              handle: "alice",
-              displayName: "Alice",
-              trustedPublisher: false,
-              createdAt: 1,
-              updatedAt: 1,
-            };
-          }
-          return null;
-        }),
-        query: vi.fn((table: string) => {
-          if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn((indexName: string) => {
-                if (indexName !== "by_user") throw new Error(`unexpected index ${indexName}`);
-                return { collect: vi.fn().mockResolvedValue([]) };
-              }),
-            };
-          }
-          if (table === "publishers") {
-            return {
-              withIndex: vi.fn((indexName: string) => {
-                if (indexName === "by_handle") return { unique: vi.fn().mockResolvedValue(null) };
-                if (indexName !== "by_linked_user") {
-                  throw new Error(`unexpected index ${indexName}`);
-                }
-                return { unique: vi.fn().mockResolvedValue(null) };
-              }),
-            };
-          }
-          if (table === "skills" || table === "packages") {
-            return emptyOwnedResourcesQuery();
-          }
-          if (table === "officialPublishers") {
-            return emptyOfficialPublishersQuery();
-          }
-          throw new Error(`unexpected table ${table}`);
-        }),
-      },
-    };
+    const ctx = makeSynthesizedPublisherCtx("users:alice", {
+      _creationTime: 1,
+      handle: "alice",
+      displayName: "Alice",
+      trustedPublisher: false,
+      createdAt: 1,
+      updatedAt: 1,
+    });
 
     await expect(listMineHandler(ctx as never, {} as never)).resolves.toEqual([
       expect.objectContaining({
@@ -7360,52 +7322,14 @@ describe("publisher bootstrap", () => {
 
   it("derives route-safe handles for synthesized personal publishers", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:local" as never);
-    const ctx = {
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "users:local") {
-            return {
-              _id: id,
-              _creationTime: 1,
-              name: "Local Owner",
-              displayName: "Local Owner",
-              trustedPublisher: false,
-              createdAt: 1,
-              updatedAt: 1,
-            };
-          }
-          return null;
-        }),
-        query: vi.fn((table: string) => {
-          if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn((indexName: string) => {
-                if (indexName !== "by_user") throw new Error(`unexpected index ${indexName}`);
-                return { collect: vi.fn().mockResolvedValue([]) };
-              }),
-            };
-          }
-          if (table === "publishers") {
-            return {
-              withIndex: vi.fn((indexName: string) => {
-                if (indexName === "by_handle") return { unique: vi.fn().mockResolvedValue(null) };
-                if (indexName !== "by_linked_user") {
-                  throw new Error(`unexpected index ${indexName}`);
-                }
-                return { unique: vi.fn().mockResolvedValue(null) };
-              }),
-            };
-          }
-          if (table === "skills" || table === "packages") {
-            return emptyOwnedResourcesQuery();
-          }
-          if (table === "officialPublishers") {
-            return emptyOfficialPublishersQuery();
-          }
-          throw new Error(`unexpected table ${table}`);
-        }),
-      },
-    };
+    const ctx = makeSynthesizedPublisherCtx("users:local", {
+      _creationTime: 1,
+      name: "Local Owner",
+      displayName: "Local Owner",
+      trustedPublisher: false,
+      createdAt: 1,
+      updatedAt: 1,
+    });
 
     await expect(listMineHandler(ctx as never, {} as never)).resolves.toEqual([
       expect.objectContaining({

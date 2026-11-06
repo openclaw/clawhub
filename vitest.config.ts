@@ -3,8 +3,10 @@ import { defineConfig } from "vitest/config";
 
 const require = createRequire(import.meta.url);
 const testingLibraryRequire = createRequire(require.resolve("@testing-library/react"));
+const recordCiObservations = process.env.CLAWHUB_CI_TEST_OBSERVATIONS === "1";
 
 export default defineConfig({
+  ...(recordCiObservations ? { cacheDir: ".artifacts/ci-test-observations/cache" } : {}),
   resolve: {
     dedupe: ["react", "react-dom"],
     alias: [
@@ -22,6 +24,12 @@ export default defineConfig({
     ],
   },
   test: {
+    ...(recordCiObservations
+      ? {
+          experimental: { recordDependencies: true },
+          reporters: ["default", "./scripts/ci-test-observations.mjs"],
+        }
+      : {}),
     environment: "jsdom",
     environmentOptions: {
       jsdom: {
@@ -44,7 +52,7 @@ export default defineConfig({
       "**/convex/_generated/**",
       ".github/scripts/catalog-feed-schema-version-guard.test.cjs",
       "packages/clawhub/**",
-      "packages/clawhub-admin/test-artifact/**",
+      "packages/clawhub-admin/**",
       "e2e/**",
       "**/*.e2e.test.ts",
     ],

@@ -13,6 +13,7 @@ import { assertRole, requireUserFromAction } from "./lib/access";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { resolvePackageIcon } from "./lib/packageIcons";
 import { extractPackageDigestFields } from "./lib/packageSearchDigest";
+import { retryFailedPublishAttemptChecks } from "./lib/publishAttemptOperationalRecovery";
 import {
   derivePersonalPublisherHandle,
   ensurePersonalPublisherForUser,
@@ -35,6 +36,7 @@ import {
   getTrustTier,
   type TrustTier,
 } from "./lib/skillQuality";
+import { qualitySummaryValidator } from "./lib/skillQualityContract";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
@@ -46,6 +48,120 @@ const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 20;
 const MAX_MAX_BATCHES = 200;
+
+// Operator-only removal of one unwanted redirect left by a same-owner merge.
+// The merged parent and its retained uploads must remain hidden and untouched.
+export const removeMergedSkillSlugAliasInternal = internalMutation({
+  args: {
+    aliasId: v.id("skillSlugAliases"),
+    sourceSkillId: v.id("skills"),
+    targetSkillId: v.id("skills"),
+    expectedSlug: v.string(),
+    expectedOwnerUserId: v.id("users"),
+    expectedOwnerPublisherId: v.optional(v.id("publishers")),
+    expectedUpdatedAt: v.number(),
+    actorUserId: v.id("users"),
+    reason: v.string(),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt !== undefined || actor.deactivatedAt !== undefined) {
+      throw new ConvexError("Active admin actor is required");
+    }
+    assertRole(actor, ["admin"]);
+    const reason = args.reason.trim();
+    if (!reason || reason.length > 500 || !Number.isFinite(args.expectedUpdatedAt)) {
+      throw new ConvexError("Supply a 1–500 character reason and the observed update time");
+    }
+    const dryRun = args.dryRun !== false;
+    const rejected = (code: string) => ({ eligible: false, removed: false, dryRun, reason: code });
+    const alias = await ctx.db.get(args.aliasId);
+    if (!alias) return rejected("alias-not-found");
+    if (
+      alias.updatedAt !== args.expectedUpdatedAt ||
+      alias.slug !== args.expectedSlug ||
+      alias.skillId !== args.targetSkillId ||
+      alias.ownerUserId !== args.expectedOwnerUserId ||
+      alias.ownerPublisherId !== args.expectedOwnerPublisherId
+    ) {
+      return rejected("alias-changed");
+    }
+    const source = await ctx.db.get(args.sourceSkillId);
+    const target = await ctx.db.get(args.targetSkillId);
+    const sameOwner = (skill: Doc<"skills">) =>
+      skill.ownerUserId === alias.ownerUserId && skill.ownerPublisherId === alias.ownerPublisherId;
+    if (
+      !source ||
+      !target ||
+      source._id === target._id ||
+      source.slug !== alias.slug ||
+      target.slug === alias.slug ||
+      !sameOwner(source) ||
+      !sameOwner(target) ||
+      source.softDeletedAt === undefined ||
+      source.moderationStatus !== "hidden" ||
+      source.moderationReason !== "owner.merged" ||
+      source.canonicalSkillId !== target._id ||
+      source.forkOf?.skillId !== target._id ||
+      source.forkOf.kind !== "duplicate" ||
+      target.softDeletedAt !== undefined ||
+      target.moderationStatus !== "active"
+    ) {
+      return rejected("merge-lineage-changed");
+    }
+    const owner = await ctx.db.get(alias.ownerUserId);
+    const publisher = alias.ownerPublisherId ? await ctx.db.get(alias.ownerPublisherId) : null;
+    if (
+      !owner ||
+      owner.deletedAt !== undefined ||
+      owner.deactivatedAt !== undefined ||
+      (alias.ownerPublisherId !== undefined && !isPublisherActive(publisher))
+    ) {
+      return rejected("owner-unavailable");
+    }
+    const aliases = alias.ownerPublisherId
+      ? await ctx.db
+          .query("skillSlugAliases")
+          .withIndex("by_owner_publisher_slug", (q) =>
+            q.eq("ownerPublisherId", alias.ownerPublisherId).eq("slug", alias.slug),
+          )
+          .take(2)
+      : await ctx.db
+          .query("skillSlugAliases")
+          .withIndex("by_owner_slug", (q) =>
+            q.eq("ownerUserId", alias.ownerUserId).eq("slug", alias.slug),
+          )
+          .take(2);
+    if (aliases.length !== 1 || aliases[0]?._id !== alias._id) {
+      return rejected("alias-scope-ambiguous");
+    }
+    if (!dryRun) {
+      await ctx.db.delete(alias._id);
+      await ctx.db.insert("auditLogs", {
+        actorUserId: actor._id,
+        action: "maintenance.skill.alias.remove",
+        targetType: "skillSlugAlias",
+        targetId: alias._id,
+        metadata: { reason, alias, sourceSkillId: source._id },
+        createdAt: Date.now(),
+      });
+    }
+    return { eligible: true, removed: !dryRun, dryRun, aliasId: alias._id };
+  },
+});
+
+export const retryFailedPublishAttemptChecksInternal = internalMutation({
+  args: {
+    attemptId: v.id("publishAttempts"),
+    expectedArtifactFingerprint: v.string(),
+    expectedUpdatedAt: v.number(),
+    reason: v.string(),
+    requiredScannerSource: v.optional(v.string()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: retryFailedPublishAttemptChecks,
+});
 
 export const prioritizeQueuedSkillEvaluationsInternal = internalMutation({
   args: {
@@ -1387,7 +1503,6 @@ export async function repairLegacyPluginSkillSpectorBatchInternalHandler(
           releaseId: item.releaseId,
           source: "backfill",
           priority: 40,
-          waitForVtMs: 0,
         },
       )) as { alreadyQueued?: boolean; jobId?: Id<"securityScanJobs"> };
       if (queued.alreadyQueued) {
@@ -2405,20 +2520,7 @@ export const applyEmptySkillCleanupInternal = internalMutation({
   args: {
     skillId: v.id("skills"),
     reason: v.string(),
-    quality: v.object({
-      score: v.number(),
-      trustTier: v.union(v.literal("low"), v.literal("medium"), v.literal("trusted")),
-      signals: v.object({
-        bodyChars: v.number(),
-        bodyWords: v.number(),
-        uniqueWordRatio: v.number(),
-        headingCount: v.number(),
-        bulletCount: v.number(),
-        templateMarkerHits: v.number(),
-        genericSummary: v.boolean(),
-        cjkChars: v.optional(v.number()),
-      }),
-    }),
+    quality: qualitySummaryValidator,
   },
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);

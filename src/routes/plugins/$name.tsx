@@ -5,7 +5,7 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import {
   AlertTriangle,
   Braces,
@@ -49,7 +49,6 @@ import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
-import { PluginApiRetirementNotice } from "../../components/PluginApiRetirementNotice";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
@@ -78,7 +77,7 @@ import {
   getPluginCategoryBySlug,
 } from "../../lib/categories";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
-import { buildPluginMeta } from "../../lib/og";
+import { buildPluginMeta, buildSocialMetaHead } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import { buildPublisherProfileHref } from "../../lib/ownerRoute";
 import {
@@ -238,24 +237,7 @@ export function pluginDetailHead(name: string, loaderData?: PluginDetailLoaderDa
     owner: loaderData?.detail.owner?.handle,
     latestVersion: loaderData?.detail.package?.latestVersion,
   });
-  return {
-    meta: [
-      { title: meta.title },
-      { name: "description", content: meta.description },
-      { property: "og:title", content: meta.title },
-      { property: "og:description", content: meta.description },
-      { property: "og:url", content: meta.url },
-      { property: "og:image", content: meta.image },
-      { property: "og:image:width", content: "1200" },
-      { property: "og:image:height", content: "630" },
-      { property: "og:image:alt", content: meta.title },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: meta.title },
-      { name: "twitter:description", content: meta.description },
-      { name: "twitter:image", content: meta.image },
-    ],
-    links: [{ rel: "canonical", href: meta.url }],
-  };
+  return buildSocialMetaHead(meta);
 }
 
 export const Route = createFileRoute("/plugins/$name")({
@@ -1093,10 +1075,24 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       ? { name: manageLookupName, candidateNames: manageCandidateNames }
       : "skip",
   );
-  const validationSummary = useQuery(
-    api.packages.getPackageInspectorValidationSummaryPublic,
-    detail.package ? { name: detail.package.name } : "skip",
-  ) as PluginInspectorValidationSummary | undefined;
+  // A peripheral inspection subscription must not erase the detail page or its
+  // independently authorized owner controls when that query times out.
+  const validationSummaryName = detail.package?.name;
+  const validationSummaryQueries = useMemo<RequestForQueries>(() => {
+    const queries: RequestForQueries = {};
+    if (validationSummaryName) {
+      queries.validationSummary = {
+        query: api.packages.getPackageInspectorValidationSummaryPublic,
+        args: { name: validationSummaryName },
+      };
+    }
+    return queries;
+  }, [validationSummaryName]);
+  const validationSummaryResult = useQueries(validationSummaryQueries).validationSummary as
+    | PluginInspectorValidationSummary
+    | Error
+    | undefined;
+  const validationSummaryUnavailable = validationSummaryResult instanceof Error;
   const activityTrendEndDay = getActivityTrendEndDay();
   const { trend: activityTrend, loading: activityTrendLoading } = useDeferredPackageActivityTrend(
     detail.package ? { name: detail.package.name, endDay: activityTrendEndDay } : null,
@@ -1211,32 +1207,10 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const isDownloadBlocked =
     pkg.scanStatus === "malicious" || latestRelease?.verification?.scanStatus === "malicious";
   const skillInstallOwner = owner?.handle ?? pkg.ownerHandle ?? "owner";
-  // A tag keeps unscoped package names from matching bundled plugin shortcuts.
-  const pluginInstallTarget = pkg.name.includes("/") ? pkg.name : `${pkg.name}@latest`;
-  const installCommands =
-    pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
-      ? [
-          {
-            label: "Current stable OpenClaw · through 2026.10.4",
-            command: `openclaw plugins install clawhub:${pkg.name}`,
-            copyLabel: "Copy current stable plugin install command",
-            note: null,
-          },
-          {
-            label: "Updated OpenClaw · main/dev",
-            command: `openclaw plugins install ${pluginInstallTarget}`,
-            copyLabel: "Copy updated plugin install command",
-            note: "Requires a build with ClawHub-default support.",
-          },
-        ]
-      : [
-          {
-            label: null,
-            command: `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`,
-            copyLabel: "Copy skill install command",
-            note: null,
-          },
-        ];
+  const isPlugin = pkg.family === "code-plugin" || pkg.family === "bundle-plugin";
+  const installCommand = isPlugin
+    ? `openclaw plugins install clawhub:${pkg.name}`
+    : `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
@@ -1349,18 +1323,14 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         skills={pluginManifestSummary.bundledSkills}
       />
     ) : null;
-  const incompatibilityAlert =
-    validationSummary &&
-    validationSummary.errorCount > 0 &&
-    validationSummary.incompatibleAfterOpenClawVersion ? (
-      <Alert variant="destructive" className="plugin-validation-alert">
-        <AlertTriangle size={16} aria-hidden="true" />
-        <AlertDescription>
-          This plugin is incompatible with OpenClaw versions greater than{" "}
-          {validationSummary.incompatibleAfterOpenClawVersion}.
-        </AlertDescription>
-      </Alert>
-    ) : null;
+  const validationAvailabilityAlert = validationSummaryUnavailable ? (
+    <Alert variant="warn" className="plugin-validation-alert">
+      <AlertTriangle size={16} aria-hidden="true" />
+      <AlertDescription>
+        Compatibility details are temporarily unavailable. Please try again later.
+      </AlertDescription>
+    </Alert>
+  ) : null;
   const validationErrors = (
     displayInspectorFindings?.filter((finding) => finding.findingKind === "error") ?? []
   ).sort(compareInspectorFindings);
@@ -1543,7 +1513,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const securitySummary = latestRelease ? (
     <DetailSecuritySummary
       auditHref={buildPluginSecurityAuditHref(name, { ownerHandle: owner?.handle })}
-      vtAnalysis={latestRelease.vtAnalysis ?? null}
       llmAnalysis={latestRelease.llmAnalysis ?? null}
     />
   ) : null;
@@ -1839,43 +1808,30 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
             >
               {validationPanel}
               <div className="plugin-install-stack detail-mobile-install">
-                {incompatibilityAlert}
-                <PluginApiRetirementNotice
-                  id="api-updates"
-                  retirements={validationSummary?.apiRetirements ?? []}
-                />
+                {validationAvailabilityAlert}
                 <Card className="skill-install-command-card">
                   <CardHeader className="detail-hero-summary-row plugin-install-card-header">
                     <CardTitle className="skill-install-panel-title">Install</CardTitle>
                   </CardHeader>
-                  <CardContent className="gap-5">
-                    {installCommands.map(({ label, command, copyLabel, note }) => (
-                      <div
-                        className="skill-install-command-wrap gap-2"
-                        key={command}
-                        role="group"
-                        aria-label={label ?? undefined}
-                      >
-                        {label ? <p className="skill-install-panel-copy">{label}</p> : null}
-                        <div className="skill-install-command-shell skill-install-command-shell-cli">
-                          <span className="skill-install-command-prompt" aria-hidden="true">
-                            $
-                          </span>
-                          <pre className="skill-install-command">
-                            <OpenClawCliInstallCommand command={command} />
-                          </pre>
-                          <InstallCopyButton
-                            text={command}
-                            ariaLabel={copyLabel}
-                            showLabel={false}
-                            variant="ghost"
-                            size="icon-sm"
-                            className="skill-install-command-inline-button"
-                          />
-                        </div>
-                        {note ? <p className="skill-install-panel-copy">{note}</p> : null}
-                      </div>
-                    ))}
+                  <CardContent className="skill-install-command-wrap">
+                    <div className="skill-install-command-shell skill-install-command-shell-cli">
+                      <span className="skill-install-command-prompt" aria-hidden="true">
+                        $
+                      </span>
+                      <pre className="skill-install-command">
+                        <OpenClawCliInstallCommand command={installCommand} />
+                      </pre>
+                      <InstallCopyButton
+                        text={installCommand}
+                        ariaLabel={
+                          isPlugin ? "Copy plugin install command" : "Copy skill install command"
+                        }
+                        showLabel={false}
+                        variant="ghost"
+                        size="icon-sm"
+                        className="skill-install-command-inline-button"
+                      />
+                    </div>
                   </CardContent>
                 </Card>
               </div>

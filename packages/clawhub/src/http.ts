@@ -15,6 +15,10 @@ const RETRY_COUNT = 2;
 const RETRY_BACKOFF_BASE_MS = 300;
 const RETRY_BACKOFF_MAX_MS = 5_000;
 const RETRY_AFTER_JITTER_MS = 250;
+// Honor a server Retry-After only up to this bound. A longer wait (for example
+// a rate-limit window near its start) fails fast with the reset hint instead of
+// silently blocking the command.
+const RETRY_AFTER_MAX_MS = 60_000;
 const CURL_META_MARKER = "__CLAWHUB_CURL_META__";
 // curl 7.84+ spells response headers `%header{name}`; `%{header:name}` is an
 // unknown variable that prints nothing, which silently dropped Retry-After.
@@ -123,13 +127,30 @@ type HttpClient = {
 class HttpStatusError extends Error {
   readonly status: number;
   readonly rateLimit: RateLimitInfo;
+  readonly requestId?: string;
+  readonly diagnostic: string;
+  readonly retryable: boolean;
 
-  constructor(status: number, message: string, rateLimit: RateLimitInfo) {
+  constructor(
+    status: number,
+    message: string,
+    rateLimit: RateLimitInfo,
+    requestId: string | undefined,
+    retryable: boolean,
+  ) {
     super(message);
     this.name = "HttpStatusError";
     this.status = status;
     this.rateLimit = rateLimit;
+    this.requestId = requestId;
+    this.diagnostic = buildHttpErrorDiagnostic(status, requestId);
+    this.retryable = retryable;
   }
+}
+
+// Upload diagnostics must not echo response bodies, signed URLs, or transport traces.
+export function getHttpErrorDiagnostic(error: unknown): string | undefined {
+  return error instanceof HttpStatusError ? error.diagnostic : undefined;
 }
 
 export function getHttpErrorStatus(error: unknown) {
@@ -218,14 +239,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         headers,
         body,
       });
-      if (!response.ok && !isAcceptedStatus(response.status, args.acceptedStatuses)) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now, args.acceptedStatuses);
       return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
@@ -255,14 +269,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         },
         args.timeoutMs ?? UPLOAD_TIMEOUT_MS,
       );
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now);
       return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
@@ -297,14 +304,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
       const headers: Record<string, string> = {};
       if (args.token) headers.Authorization = `Bearer ${args.token}`;
       const response = await fetchWithTimeout(deps, url, { method: "GET", headers });
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now);
       return new Uint8Array(await response.arrayBuffer());
     });
   }
@@ -331,14 +331,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         },
         UPLOAD_TIMEOUT_MS,
       );
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
+      await ensureResponseOk(response, deps.now);
       return (await response.json()) as unknown;
     }, args.retryCount);
     if (schema) return parseArk(schema, json, "API response");
@@ -350,24 +343,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     url.searchParams.set("slug", args.slug);
     if (args.ownerHandle) url.searchParams.set("ownerHandle", args.ownerHandle);
     if (args.version) url.searchParams.set("version", args.version);
-    return await runWithRetries(async () => {
-      if (deps.runtime === "bun") {
-        return await fetchBinaryViaCurl(deps, url.toString(), args.token);
-      }
-
-      const headers: Record<string, string> = {};
-      if (args.token) headers.Authorization = `Bearer ${args.token}`;
-      const response = await fetchWithTimeout(deps, url.toString(), { method: "GET", headers });
-      if (!response.ok) {
-        throwHttpStatusError(
-          response.status,
-          await readResponseTextSafe(response),
-          response.headers,
-          deps.now,
-        );
-      }
-      return new Uint8Array(await response.arrayBuffer());
-    });
+    return await fetchBinaryRequest(registry, { url: url.toString(), token: args.token });
   }
 
   return {
@@ -459,19 +435,50 @@ function createRetryRunner(deps: Pick<HttpClientDeps, "setTimeoutImpl" | "random
     fn: () => Promise<T>,
     retryCount = RETRY_COUNT,
   ): Promise<T> {
-    return await pRetry(fn, {
-      retries: retryCount,
-      minTimeout: 0,
-      maxTimeout: 0,
-      factor: 1,
-      randomize: false,
-      onFailedAttempt: async (attemptError) => {
-        const delayMs = getRetryDelayMs(attemptError, deps.random);
-        if (delayMs <= 0) return;
-        await sleep(delayMs, deps.setTimeoutImpl);
-      },
-    });
+    let retriedFailure: HttpStatusError | "transport" | undefined;
+    try {
+      return await pRetry(fn, {
+        retries: retryCount,
+        minTimeout: 0,
+        maxTimeout: 0,
+        factor: 1,
+        randomize: false,
+        // Wait here rather than in onFailedAttempt: p-retry calls this only when
+        // another attempt will run, so the final failure is not delayed.
+        shouldRetry: async (attemptError) => {
+          const delayMs = getRetryDelayMs(attemptError, deps.random);
+          if (delayMs === null) return false;
+          const failure = getRootError(attemptError);
+          retriedFailure = failure instanceof HttpStatusError ? failure : "transport";
+          if (delayMs > 0) await sleep(delayMs, deps.setTimeoutImpl);
+          return true;
+        },
+      });
+    } catch (error) {
+      throw withRetriedFailureContext(error, retriedFailure);
+    }
   };
+}
+
+// A retry can turn an ambiguous temporary failure into a misleading final
+// rejection (for example "version already exists" after the first attempt
+// committed). Keep the earlier failure in the reported message.
+function withRetriedFailureContext(
+  error: unknown,
+  retriedFailure: HttpStatusError | "transport" | undefined,
+) {
+  if (!retriedFailure || !(error instanceof HttpStatusError) || error.retryable) return error;
+  // Transport errors can carry signed URLs; describe them with a fixed phrase.
+  error.message =
+    retriedFailure === "transport"
+      ? `${error.message} (after retrying an earlier network failure or timeout)`
+      : `${error.message} (after retrying an earlier temporary failure: ${retriedFailure.message})`;
+  return error;
+}
+
+function getRootError(attemptError: unknown) {
+  const failed = attemptError as { cause?: unknown; error?: unknown };
+  return failed.cause ?? failed.error ?? attemptError;
 }
 
 function bytesToArrayBuffer(bytes: Uint8Array) {
@@ -510,19 +517,42 @@ async function readResponseTextSafe(response: Response): Promise<string> {
   return await response.text().catch(() => "");
 }
 
-function getRetryDelayMs(attemptError: unknown, random: () => number): number {
-  const failed = attemptError as {
-    attemptNumber?: number;
-    cause?: unknown;
-    error?: unknown;
-  };
-  const attemptNumber = Math.max(1, failed.attemptNumber ?? 1);
-  const rootError = failed.cause ?? failed.error ?? attemptError;
+async function ensureResponseOk(
+  response: Response,
+  now: () => number,
+  acceptedStatuses?: number[],
+) {
+  if (response.ok || isAcceptedStatus(response.status, acceptedStatuses)) return;
+  throwHttpStatusError(
+    response.status,
+    await readResponseTextSafe(response),
+    response.headers,
+    now,
+  );
+}
+
+/**
+ * Bounded, jittered backoff. A server `Retry-After` (sent on real 429s and on
+ * retryable 503s) sets the minimum wait; jitter spreads clients that received
+ * the same hint. Returns null when the requested wait exceeds the bound.
+ */
+function getRetryDelayMs(attemptError: unknown, random: () => number): number | null {
+  const attemptNumber = Math.max(
+    1,
+    (attemptError as { attemptNumber?: number }).attemptNumber ?? 1,
+  );
+  const rootError = getRootError(attemptError);
+  const backoffMs = Math.min(
+    RETRY_BACKOFF_MAX_MS,
+    RETRY_BACKOFF_BASE_MS * 2 ** (attemptNumber - 1),
+  );
   if (rootError instanceof HttpStatusError && rootError.rateLimit.retryAfterSeconds !== undefined) {
-    return rootError.rateLimit.retryAfterSeconds * 1000 + jitterMs(RETRY_AFTER_JITTER_MS, random);
+    const retryAfterMs = rootError.rateLimit.retryAfterSeconds * 1000;
+    if (retryAfterMs > RETRY_AFTER_MAX_MS) return null;
+    const jitterWindowMs = Math.max(RETRY_AFTER_JITTER_MS, Math.floor(retryAfterMs / 4));
+    return Math.max(retryAfterMs, backoffMs) + jitterMs(jitterWindowMs, random);
   }
-  const baseMs = Math.min(RETRY_BACKOFF_MAX_MS, RETRY_BACKOFF_BASE_MS * 2 ** (attemptNumber - 1));
-  return baseMs + jitterMs(RETRY_BACKOFF_BASE_MS, random);
+  return backoffMs + jitterMs(RETRY_BACKOFF_BASE_MS, random);
 }
 
 function sleep(ms: number, setTimeoutImpl: typeof setTimeout): Promise<void> {
@@ -543,12 +573,16 @@ function throwHttpStatusError(
   now: () => number,
 ): never {
   const rateLimit = parseRateLimitInfo(headers, now);
-  const retryableTransientContention = isTransientConvexContention(text);
+  // Older servers answered some transient Convex failures with 400/401;
+  // recognize them from the body so they are still retried.
+  const retryableTransientBody = isLegacyTransientFailure(status, text);
+  // Convex request IDs are 16 lowercase hex digits. Capture before wrapper cleanup.
+  const requestId = /\[Request ID: ([0-9a-f]{16})\]/.exec(text)?.[1];
   const message = buildHttpErrorMessage(status, text, rateLimit);
-  if (status === 429 || status >= 500 || retryableTransientContention) {
-    throw new HttpStatusError(status, message, rateLimit);
-  }
-  throw new AbortError(new HttpStatusError(status, message, rateLimit));
+  const retryable = status === 429 || status >= 500 || retryableTransientBody;
+  const error = new HttpStatusError(status, message, rateLimit, requestId, retryable);
+  if (retryable) throw error;
+  throw new AbortError(error);
 }
 
 function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimitInfo): string {
@@ -557,13 +591,22 @@ function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimi
   if (rateLimit.retryAfterSeconds !== undefined) {
     details.push(`retry in ${rateLimit.retryAfterSeconds}s`);
   }
-  if (rateLimit.remaining !== undefined && rateLimit.limit !== undefined) {
-    details.push(`remaining: ${rateLimit.remaining}/${rateLimit.limit}`);
-  }
-  if (rateLimit.resetDelaySeconds !== undefined) {
-    details.push(`reset in ${rateLimit.resetDelaySeconds}s`);
+  // Quota and reset hints describe a rate limit. Only a 429 is one; older
+  // servers attached these headers to every response, which made unrelated
+  // failures read as "rate limited".
+  if (status === 429) {
+    if (rateLimit.remaining !== undefined && rateLimit.limit !== undefined) {
+      details.push(`remaining: ${rateLimit.remaining}/${rateLimit.limit}`);
+    }
+    if (rateLimit.resetDelaySeconds !== undefined) {
+      details.push(`reset in ${rateLimit.resetDelaySeconds}s`);
+    }
   }
   return details.length === 0 ? base : `${base} (${details.join(", ")})`;
+}
+
+function buildHttpErrorDiagnostic(status: number, requestId?: string): string {
+  return requestId ? `HTTP ${status} (Request ID: ${requestId})` : `HTTP ${status}`;
 }
 
 function normalizeHttpErrorBody(status: number, text: string): string {
@@ -572,8 +615,13 @@ function normalizeHttpErrorBody(status: number, text: string): string {
   if (formattedStructuredError) return formattedStructuredError;
   const lowered = body.toLowerCase();
   if (body && lowered !== "unauthorized" && lowered !== "forbidden") {
-    if (isTransientConvexContention(body)) {
+    // Current servers explain transient failures themselves (503, or 409 when
+    // the request cannot be resent); label only legacy 400/401 bodies.
+    if (isLegacyStatus(status) && isTransientConvexContention(body)) {
       return `Transient ClawHub write contention. The package artifact passed request validation; retrying usually succeeds. ${body}`;
+    }
+    if (isLegacyStatus(status) && isTransientConvexSystemError(body)) {
+      return `ClawHub backend is temporarily unavailable; this was not a validation failure and retrying usually succeeds. ${body}`;
     }
     if (status === 404 && lowered === "package not found") {
       return "Package not found or not visible to this account.";
@@ -672,6 +720,30 @@ function isTransientConvexContention(text: string) {
     lowered.includes("write conflict") ||
     (lowered.includes('documents read from or written to the "') &&
       lowered.includes("changed while this mutation was being run"))
+  );
+}
+
+// Statuses older servers used for transient Convex failures they misreported.
+function isLegacyStatus(status: number) {
+  return status === 400 || status === 401;
+}
+
+function isLegacyTransientFailure(status: number, text: string) {
+  return (
+    isLegacyStatus(status) &&
+    (isTransientConvexContention(text) || isTransientConvexSystemError(text))
+  );
+}
+
+// Older servers sent some transient Convex failures as 4xx with the raw
+// platform text. The client only sees text, not the error type the server uses
+// to exclude application `ConvexError`s, so match full platform sentences
+// rather than bare codes a validation message could quote.
+function isTransientConvexSystemError(text: string) {
+  return (
+    /\bInternalServerError: Transient error while /.test(text) ||
+    /\bCommitterFullError: Too many writes in a short period of time\./.test(text) ||
+    text.includes("Your request couldn't be completed. Try again later.")
   );
 }
 

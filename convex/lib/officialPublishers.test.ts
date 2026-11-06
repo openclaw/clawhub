@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { describe, expect, it, vi } from "vitest";
 import type { Doc } from "../_generated/dataModel";
 import { hasOfficialPublisherRow, isOfficialPublisher } from "./officialPublishers";

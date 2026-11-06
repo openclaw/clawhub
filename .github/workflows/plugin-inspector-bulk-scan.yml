@@ -3,6 +3,10 @@ name: Plugin Inspector Bulk Scan
 on:
   schedule:
     - cron: "17 7 * * *"
+  # ClawHub dispatches one targeted, persisted scan per accepted plugin release.
+  # Plugin Inspector is monitoring only; it never gates publication.
+  repository_dispatch:
+    types: [clawhub-plugin-inspector-release-scan]
   workflow_dispatch:
     inputs:
       batch_size:
@@ -50,14 +54,17 @@ permissions:
   contents: read
 
 # Side-effecting scans queue behind the active run instead of overlapping.
+# Release scans queue per package so a burst of publishes is not collapsed
+# into one pending run; the nightly sweep still covers anything missed.
 concurrency:
-  group: clawhub-plugin-inspector-bulk-scan
+  group: ${{ github.event_name == 'repository_dispatch' && format('clawhub-plugin-inspector-release-scan-{0}', github.event.client_payload.package_name) || 'clawhub-plugin-inspector-bulk-scan' }}
   cancel-in-progress: false
 
 jobs:
   scan:
     name: Scan published plugins
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && 30 || 360 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -114,6 +121,13 @@ jobs:
           run-id: ${{ inputs.notification_source_run_id }}
           github-token: ${{ github.token }}
 
+      - name: Require the released package for release scans
+        if: ${{ github.event_name == 'repository_dispatch' }}
+        env:
+          RELEASE_PACKAGE_NAME: ${{ github.event.client_payload.package_name }}
+        run: |
+          test -n "$RELEASE_PACKAGE_NAME" || { echo "client_payload.package_name is required" >&2; exit 1; }
+
       - name: Run plugin inspector bulk scan
         if: ${{ github.ref == 'refs/heads/main' }}
         env:
@@ -122,7 +136,7 @@ jobs:
           PLUGIN_INSPECTOR_BATCH_SIZE: ${{ inputs.batch_size || '25' }}
           PLUGIN_INSPECTOR_DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
           PLUGIN_INSPECTOR_DRY_RUN_MAX_BATCHES: ${{ inputs.dry_run_max_batches || '20' }}
-          PLUGIN_INSPECTOR_PACKAGE_NAMES: ${{ inputs.package_names || '' }}
+          PLUGIN_INSPECTOR_PACKAGE_NAMES: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.package_name || inputs.package_names || '' }}
           PLUGIN_INSPECTOR_OPENCLAW_VERSION: beta
           PLUGIN_INSPECTOR_NOTIFY_OWNERS: ${{ github.event_name == 'schedule' && '0' || (inputs.notify_owners && '1' || '0') }}
           PLUGIN_INSPECTOR_NOTIFICATION_ONLY: ${{ github.event_name == 'schedule' && '0' || (inputs.notification_only && '1' || '0') }}

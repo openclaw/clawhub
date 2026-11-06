@@ -22,7 +22,7 @@ const bearer = "local-catalog-visibility-fixture";
 
 async function fixture(role: "user" | "admin" = "admin", categories = ["channels"]) {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const fixtureOwnerUserId = await t.run(async (ctx) => {
     await ctx.db.insert("globalStats", {
       key: "default",
@@ -420,10 +420,10 @@ describe("normal plugin catalog visibility", () => {
     const { t, ownerUserId } = await fixture("admin", ["web"]);
 
     await t.run(async (ctx) => {
-      const clawId = await ctx.db.insert("packages", {
+      const templateId = await ctx.db.insert("packages", {
         name: "trending-claw",
         normalizedName: "trending-claw",
-        displayName: "Trending Claw",
+        displayName: "Trending Template",
         ownerUserId,
         family: "claw",
         channel: "official",
@@ -444,7 +444,7 @@ describe("normal plugin catalog visibility", () => {
       if (!leaderboard) throw new Error("Missing fixture leaderboard");
       await ctx.db.patch(leaderboard._id, {
         items: [
-          { packageId: clawId, score: 10, installs: 10, downloads: 10 },
+          { packageId: templateId, score: 10, installs: 10, downloads: 10 },
           ...leaderboard.items,
         ],
       });

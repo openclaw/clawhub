@@ -97,7 +97,7 @@ describe("Footer", () => {
       "https://community.openclaw.ai/",
     );
     expect(links.getByRole("link", { name: "Discord" }).getAttribute("href")).toBe(
-      "https://discord.gg/clawd",
+      "https://openclaw.ai/discord?from=clawhub-community-nav",
     );
     expect(links.getByRole("link", { name: "GitHub" }).getAttribute("href")).toBe(
       "https://github.com/openclaw/clawhub",

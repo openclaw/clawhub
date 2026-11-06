@@ -11,7 +11,7 @@ Welcome! ClawHub is the public skill registry for [OpenClaw](https://github.com/
 ### Prerequisites
 
 - [Bun](https://bun.sh/) (Convex CLI runs via `bunx`, no global install needed)
-- [Node.js](https://nodejs.org/) v18, 20, 22, or 24 (required by the local Convex backend; v25+ is not yet supported)
+- [Node.js](https://nodejs.org/) v22.13+ or 24 (Convex 1.49 requires Node.js 22 or newer, and Plugin Inspector requires 22.13+ on the 22.x line; v25+ is not yet supported by the local backend)
 - [Worktrunk](https://github.com/max-sixty/worktrunk) (`wt`) for `bun run dev:worktree` and disposable/Codex worktrees. On macOS, `brew install worktrunk` is the quickest path; shell integration is optional.
 
 ### Install and configure
@@ -20,6 +20,12 @@ Welcome! ClawHub is the public skill registry for [OpenClaw](https://github.com/
 bun install
 cp .env.local.example .env.local
 ```
+
+The root install builds the ignored schema output in `packages/schema/dist`. Install
+with development dependencies before running the app, Convex, workers, or checks.
+After editing schema sources, or when reusing copied dependencies or installing
+with `--ignore-scripts`, run `bun run --cwd packages/schema build` first.
+Do not commit generated schema files.
 
 Edit `.env.local` with the following values for **local Convex**:
 
@@ -178,7 +184,6 @@ These features degrade gracefully without their keys:
 | Variable              | Purpose                                                   |
 | --------------------- | --------------------------------------------------------- |
 | `OPENAI_API_KEY`      | Embeddings and vector search (falls back to zero vectors) |
-| `VT_API_KEY`          | VirusTotal malware scanning                               |
 | `DISCORD_WEBHOOK_URL` | Discord notifications                                     |
 
 ## CLI Development

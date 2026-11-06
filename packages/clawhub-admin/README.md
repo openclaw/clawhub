@@ -23,7 +23,7 @@ bun run admin -- --help
 Example:
 
 ```bash
-bun run admin -- skills unhide maxhub-pipixia --reason "VT false positive; reanalysis clean" --yes
+bun run admin -- skills unhide maxhub-pipixia --reason "Scanner false positive; reanalysis clean" --yes
 ```
 
 ## Build and Verify
