@@ -737,6 +737,76 @@ describe("public SDK usage from serialized Inspector reports", () => {
     });
   });
 
+  it("preserves publish provenance and older nightly findings when a nightly retry crashes", async () => {
+    const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("packageSearchDigest", {
+        packageId,
+        name: "sdk-plugin",
+        normalizedName: "sdk-plugin",
+        displayName: "SDK plugin",
+        ownerUserId,
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        latestVersion: "1.0.0",
+        scanStatus: "clean",
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("packageInspectorScanStates", {
+        packageId,
+        releaseId,
+        inspectorVersion: "0.4.3",
+        targetOpenClawVersion: "2026.10.15",
+        completedAt: 100,
+        outcome: "findings",
+        scanSource: "nightly",
+      });
+      await ctx.db.insert("packageInspectorWarnings", {
+        packageId,
+        releaseId,
+        ownerUserId,
+        packageName: "sdk-plugin",
+        version: "1.0.0",
+        scanSource: "nightly",
+        inspectorVersion: "0.4.3",
+        targetOpenClawVersion: "2026.10.15",
+        findingKind: "error",
+        code: "missing-api",
+        message: "Older nightly finding",
+        createdAt: 100,
+      });
+    });
+    await t.mutation(internal.packages.insertPackageInspectorWarningsInternal, {
+      packageId,
+      releaseId,
+      ownerUserId,
+      packageName: "sdk-plugin",
+      version: "1.0.0",
+      scanSource: "publish",
+      inspectorVersion: "0.4.3",
+      targetOpenClawVersion: "2026.10.16",
+      outcome: "clean",
+      findings: [],
+    });
+    await ingest(failedSdkUsageReport("nightly retry crashed"), {
+      inspectorVersion: "0.4.3",
+      targetOpenClawVersion: "2026.10.16",
+      inspectionFailed: true,
+    });
+    const report = await t.query(internal.packages.listPluginValidationReportPageInternal, {
+      numItems: 20,
+    });
+    expect(report.items[0]).toMatchObject({
+      scan: { status: "error", target: { channel: "latest", version: "2026.10.16" } },
+      findings: [
+        expect.objectContaining({ code: "missing-api", message: "Older nightly finding" }),
+      ],
+    });
+  });
+
   it("never upgrades an ambiguous legacy attempt to clean and retries it until verified success", async () => {
     const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
     await t.run(async (ctx) => {
