@@ -193,6 +193,7 @@ export const commitInternal = internalMutation({
       // Fresh authenticated recovery supersedes the operator retry's authority.
       // Its own bound final-publication guard now owns the successor lifecycle.
       operationalRetry: undefined,
+      finalizationRecovery: undefined,
       pendingPublication: { ...manualPending, manualRecovery: recovery },
     });
     await ctx.db.insert("auditLogs", {
@@ -208,6 +209,7 @@ export const commitInternal = internalMutation({
         reason,
         inventoryDigest: recovery.inventoryDigest,
         retiredOperationalRetry: release.operationalRetry ?? null,
+        retiredFinalizationRecovery: release.finalizationRecovery ?? null,
       },
       createdAt: now,
     });

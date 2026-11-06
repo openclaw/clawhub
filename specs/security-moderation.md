@@ -549,6 +549,14 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   against a live foreign lease returns no work. It preserves the existing claim
   ID and expiry without falling through to another claim path; the same claim
   may resume its own lease.
+- An explicitly targeted worker can resume an expired finalizing attempt while
+  its retained artifacts remain available and both primary checks have passed.
+  Admission validates the same current authority, original scope, inventory,
+  storage and moderation boundaries as an operator retry, then atomically adds
+  a separate typed finalization-recovery binding and audit receipt. Publication
+  revalidates that binding in its final transaction. Preserve scan/advisory
+  findings, failure history and original files; never steal a live lease.
+  Untargeted discovery is unchanged and does not adopt finalizing attempts.
 - Internal operator recovery of terminal operational failures defaults to a dry
   run and requires the observed attempt timestamp and artifact fingerprint.
   Admission rechecks the original actor's current publisher permission without
