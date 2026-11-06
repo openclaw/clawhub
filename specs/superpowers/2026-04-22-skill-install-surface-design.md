@@ -8,6 +8,11 @@ Implementation note (2026-11-03): the split prompt-menu surface described below 
 Skill and catalog pages now use `SkillCommandLineCard` for the CLI, skills CLI, and prompt tabs,
 with copy behavior shared through `InstallCopyButton`. This document retains the original design history.
 
+Implementation note (2026-11-06): skill and plugin pages share `InstallCommandCard`. The Prompt tab
+copies one line, `Install the <install-target> skill from ClawHub` (plugin pages say
+`package`); the agent's own install flow handles
+inspection and setup, so the prompt no longer carries metadata or setup instructions.
+
 ## Problem
 
 The skill detail page does not treat installation as a primary action. Plugin pages already surface a direct install command prominently, but skill pages bury install-related information inside a denser metadata block. This is weaker for users who arrive on a skill page intending to install immediately.

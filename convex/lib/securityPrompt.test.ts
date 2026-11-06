@@ -12,6 +12,7 @@ import {
   SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
   type SkillEvalContext,
 } from "./securityPrompt";
+import { parseClawdisMetadata, parseFrontmatter } from "./skills";
 
 const baseCtx: SkillEvalContext = {
   slug: "wallet-sync",
@@ -368,6 +369,15 @@ describe("securityPrompt", () => {
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).not.toContain(
       "Do not hunt for every ASI category",
     );
+  });
+
+  it("includes scalar frontmatter env declarations in scanner requirements", () => {
+    const frontmatter = parseFrontmatter("---\nenv: RISKSTATE_API_KEY\n---\n");
+    const message = assembleSkillEvalUserMessage({
+      ...baseCtx,
+      parsed: { frontmatter, clawdis: parseClawdisMetadata(frontmatter) },
+    });
+    expect(message).toContain("RISKSTATE_API_KEY (required)");
   });
 
   it("builds skill eval input without retired static scan signals", () => {

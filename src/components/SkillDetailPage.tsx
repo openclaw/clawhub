@@ -950,7 +950,6 @@ export function SkillDetailPage({
       hasPluginBundle={hasPluginBundle}
       configRequirements={configRequirements}
       cliHelp={cliHelp}
-      clawdis={clawdis}
       category={relatedCategory}
       categories={relatedCategories}
       staffVisibilityAlert={staffVisibilityAlert}

@@ -1077,6 +1077,7 @@ const skillVersions = defineTable({
   ),
   publishAttemptId: v.optional(v.id("publishAttempts")),
   operationalRetry: v.optional(operationalPublishRetryValidator),
+  finalizationRecovery: v.optional(operationalPublishRetryValidator),
   pendingPublication: v.optional(v.any()),
   fingerprint: v.optional(v.string()),
   sourceProvenance: v.optional(
@@ -1748,6 +1749,7 @@ const packageReleases = defineTable({
   ),
   publishAttemptId: v.optional(v.id("publishAttempts")),
   operationalRetry: v.optional(operationalPublishRetryValidator),
+  finalizationRecovery: v.optional(operationalPublishRetryValidator),
   pendingPublication: v.optional(v.any()),
   changelog: v.string(),
   summary: v.optional(v.string()),
