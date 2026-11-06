@@ -89,9 +89,8 @@ describe("reviewed ClawScan installation", () => {
       const steps = (
         Object.values(workflow.jobs) as Array<{ steps?: Array<{ name?: string; run?: string }> }>
       ).flatMap((job) => job.steps ?? []);
-      const step = steps.find(
-        (step: any) => step.name === "Prepare qualified plugin Docker runtime",
-      );
+      const step = steps.find((step) => step.name === "Prepare qualified plugin Docker runtime");
+      if (!step?.run) throw new Error("Missing qualified plugin preparation step");
       const root = await mkdtemp(join(tmpdir(), "legacy-workflow-mcp-"));
       try {
         const dir = join(root, "scripts/security");
