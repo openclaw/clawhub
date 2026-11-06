@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Skills: recognize a single top-level `env` name as a required variable so installation guidance and scanner metadata retain the declared credential.
+
 - CI: right-size Skill Card workers, credential canaries, and skill evaluations to four-vCPU runners while preserving resource checks.
 
 - Security: retire VirusTotal entirely. ClawHub no longer uploads skill or plugin artifacts to VirusTotal, polls or backfills its results, re-queues ClawScan from VirusTotal updates, delays ClawScan for it, or shows VirusTotal data in the UI, CLI, public API, scan reports, or audit exports. The `clawhub-admin skills repair-vt-pending` command and its API route are removed.
@@ -28,6 +30,7 @@
 - CI: escape Unicode line separators in security dataset JSONL so line readers preserve complete records during snapshot validation.
 - CI: reuse Playwright browser downloads across unrelated dependency updates by keying caches to the installed Playwright version and runner architecture.
 - CI: use a single-commit checkout for static checks instead of fetching full history.
+
 - CI: cache the pinned OpenClaw contract package store while retaining frozen installs and full contract proof on every run.
 - Tooling: use the existing pinned Bun formatter for format commands while preserving Oxfmt configuration and exclusions.
 

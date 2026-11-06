@@ -9,6 +9,7 @@ import { manualPackageRecovery } from "./lib/packagePublishRecovery";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
 import { assertPluginScanEvidence } from "./lib/pluginScanRouting";
+import { bindExpiredFinalizationRecovery } from "./lib/publishAttemptOperationalRecovery";
 import { assertScannerSource } from "./lib/scannerSource";
 import {
   aigAnalysisValidator,
@@ -1140,7 +1141,8 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
           .take(25);
 
     for (const attempt of candidates) {
-      if (attempt.status !== "ready_to_finalize") {
+      const recoveringFinalization = Boolean(args.attemptId) && attempt.status === "finalizing";
+      if (attempt.status !== "ready_to_finalize" && !recoveringFinalization) {
         if (args.attemptId) return null;
         continue;
       }
@@ -1166,19 +1168,23 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
         if (args.attemptId) return ACTIVE_CLAIM_OUTCOME;
         continue;
       }
-      if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) continue;
+      if (recoveringFinalization) {
+        if ((attempt.finalizationClaimExpiresAt ?? 0) > now) return ACTIVE_CLAIM_OUTCOME;
+        await bindExpiredFinalizationRecovery(ctx, attempt);
+      } else if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) continue;
 
       await ctx.db.patch(attempt._id, {
+        status: "ready_to_finalize",
         checkClaimId: args.claimId,
         checkClaimedAt: now,
         checkClaimExpiresAt: now + publicationCheckLeaseMs(attempt.kind, undefined),
-        checkClaimLastError: undefined,
+        ...(!recoveringFinalization ? { checkClaimLastError: undefined } : {}),
         updatedAt: now,
       });
 
       return {
         attemptId: attempt._id,
-        status: attempt.status,
+        status: "ready_to_finalize" as const,
         claimId: args.claimId,
         kind: attempt.kind,
         userId: attempt.userId,

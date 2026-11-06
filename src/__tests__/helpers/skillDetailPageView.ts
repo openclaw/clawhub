@@ -30,7 +30,6 @@ export function makeSkillDetailPageViewProps(
     hasPluginBundle: false,
     configRequirements: undefined,
     cliHelp: undefined,
-    clawdis: undefined,
     ...overrides,
   };
 }

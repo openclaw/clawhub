@@ -212,11 +212,14 @@ export async function assertPackageRecoveryEligibility(
     throw new ConvexError("Only the current failed staged publish attempt can be recovered");
   const operationalRetry = release.operationalRetry;
   if (
-    operationalRetry &&
-    (operationalRetry.attemptId !== attempt._id ||
-      operationalRetry.actorUserId !== attempt.userId ||
-      operationalRetry.ownerUserId !== pkg.ownerUserId ||
-      operationalRetry.ownerPublisherId !== pkg.ownerPublisherId)
+    [operationalRetry, release.finalizationRecovery].some(
+      (binding) =>
+        binding &&
+        (binding.attemptId !== attempt._id ||
+          binding.actorUserId !== attempt.userId ||
+          binding.ownerUserId !== pkg.ownerUserId ||
+          binding.ownerPublisherId !== pkg.ownerPublisherId),
+    )
   )
     throw new ConvexError(
       "Recovered package publication authorization operational binding changed",

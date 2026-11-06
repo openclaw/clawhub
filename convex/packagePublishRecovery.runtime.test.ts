@@ -1248,9 +1248,15 @@ it.each(["private", "deleted", "staged-first-release", "missing", "skill"] as co
   },
 );
 
-it.each(["none", "membership", "token"] as const)(
-  "preserves authenticated successor recovery after an operational retry fails: %s",
-  async (revocation) => {
+it.each(
+  (["none", "membership", "token"] as const).flatMap((revocation) =>
+    ["operationalRetry", "finalizationRecovery"].map(
+      (bindingKind) => [revocation, bindingKind] as const,
+    ),
+  ),
+)(
+  "preserves authenticated successor recovery after recovery fails: %s / %s",
+  async (revocation, bindingKind) => {
     const { t, ids, recover } = await fixture();
     const original = await t.run(async (ctx) => {
       await ctx.db.insert("publisherMembers", {
@@ -1280,6 +1286,15 @@ it.each(["none", "membership", "token"] as const)(
       }),
     ).resolves.toMatchObject({ requeued: true });
     const binding = (await t.run((ctx) => ctx.db.get(ids.releaseId)))!.operationalRetry;
+    if (bindingKind === "finalizationRecovery") {
+      // Same validated predecessor identity, retained after a finalization failure.
+      await t.run((ctx) =>
+        ctx.db.patch(ids.releaseId, {
+          operationalRetry: undefined,
+          finalizationRecovery: binding,
+        }),
+      );
+    }
     await t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
       attemptId: ids.attemptId,
       claimId: "operational-scan",
@@ -1328,6 +1343,7 @@ it.each(["none", "membership", "token"] as const)(
     const release = (await t.run((ctx) => ctx.db.get(ids.releaseId)))!;
     expect(release.publicationStatus).toBe(revocation === "none" ? "published" : "pending");
     expect(release.operationalRetry).toBeUndefined();
+    expect(release.finalizationRecovery).toBeUndefined();
     expect(release.files).toEqual(original.release.files);
     expect(release.clawpackStorageId).toBe(original.release.clawpackStorageId);
     const audit = await t.run((ctx) =>
@@ -1336,7 +1352,10 @@ it.each(["none", "membership", "token"] as const)(
         .filter((q) => q.eq(q.field("action"), "package.publish.recover"))
         .unique(),
     );
-    expect(audit?.metadata).toMatchObject({ retiredOperationalRetry: binding });
+    expect(audit?.metadata).toMatchObject({
+      retiredOperationalRetry: bindingKind === "operationalRetry" ? binding : null,
+      retiredFinalizationRecovery: bindingKind === "finalizationRecovery" ? binding : null,
+    });
     expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({
       status: "failed",
       checkFailureCount: 4,

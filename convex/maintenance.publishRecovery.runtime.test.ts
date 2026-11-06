@@ -318,26 +318,34 @@ describe("operator retry of retained publication checks", () => {
       expect((await t.run((ctx) => ctx.db.get(ids.attemptId)))!.ownerPublisherId).toBeUndefined();
     },
   );
-  it.each([
-    ["skill", "allowed"],
-    ["package", "allowed"],
-    ["package", "allowed-archive"],
-    ["package", "removed-archive"],
-    ["skill", "revoked-membership"],
-    ["package", "revoked-membership"],
-    ["skill", "security-redaction"],
-    ["skill", "stale-claim"],
-    ["package", "stale-claim"],
-    ["skill", "expired-claim"],
-    ["package", "expired-claim"],
-    ["skill", "changed-owner"],
-    ["package", "changed-owner"],
-    ["skill", "changed-inventory"],
-    ["package", "changed-inventory"],
-    ["skill", "revoked-version"],
-    ["skill", "malicious-verdict"],
-    ["package", "revoked-version"],
-  ] as const)("rechecks %s authority/holds after requeue: %s", async (kind, change) => {
+  it.each(
+    (
+      [
+        ["skill", "allowed"],
+        ["package", "allowed"],
+        ["package", "allowed-archive"],
+        ["package", "removed-archive"],
+        ["skill", "revoked-membership"],
+        ["package", "revoked-membership"],
+        ["skill", "security-redaction"],
+        ["skill", "stale-claim"],
+        ["package", "stale-claim"],
+        ["skill", "expired-claim"],
+        ["package", "expired-claim"],
+        ["skill", "changed-owner"],
+        ["package", "changed-owner"],
+        ["skill", "changed-inventory"],
+        ["package", "changed-inventory"],
+        ["skill", "revoked-version"],
+        ["skill", "malicious-verdict"],
+        ["package", "revoked-version"],
+      ] as const
+    ).flatMap(([kind, change]) =>
+      ["scanner retry", "expired finalization"].map(
+        (recovery) => [kind, change, recovery] as const,
+      ),
+    ),
+  )("rechecks %s authority/holds after requeue: %s (%s)", async (kind, change, recovery) => {
     const { t, ids, args } = await fixture(kind);
     const org = await t.run(async (ctx) => {
       const ownerUserId = await ctx.db.insert("users", { handle: "org-owner" });
@@ -372,12 +380,29 @@ describe("operator retry of retained publication checks", () => {
         });
         await ctx.db.patch(ids.attemptId, { clawpackStorageId: ids.storageId });
       });
-    await expect(
-      t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
-        ...args,
-        dryRun: false,
-      }),
-    ).resolves.toMatchObject({ eligible: true, requeued: true });
+    if (recovery === "expired finalization") {
+      await t.run((ctx) =>
+        ctx.db.patch(ids.attemptId, {
+          status: "finalizing",
+          checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+          finalizationClaimId: "interrupted-worker",
+          finalizationClaimExpiresAt: Date.now() - 1,
+        }),
+      );
+      await expect(
+        t.mutation(internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal, {
+          attemptId: ids.attemptId,
+          claimId: "replacement-worker",
+        }),
+      ).resolves.toMatchObject({ attemptId: ids.attemptId, status: "ready_to_finalize" });
+    } else {
+      await expect(
+        t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+          ...args,
+          dryRun: false,
+        }),
+      ).resolves.toMatchObject({ eligible: true, requeued: true });
+    }
     // Scanner verdicts are injected here to isolate the real final publication
     // mutations. This is authorization regression proof, not scanner proof.
     await t.run((ctx) =>
@@ -791,4 +816,139 @@ describe("operator retry of retained publication checks", () => {
       expect(await t.run((ctx) => ctx.db.query("auditLogs").take(2))).toHaveLength(1);
     },
   );
+});
+
+describe("targeted recovery of expired finalizing uploads (#4234)", () => {
+  it.each(["skill", "package"] as const)(
+    "a replacement worker resumes the original %s without changing its evidence",
+    async (kind) => {
+      const { t, ids } = await fixture(kind);
+      await t.run((ctx) =>
+        ctx.db.patch(ids.attemptId, {
+          status: "finalizing",
+          checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+          finalizationClaimId: "interrupted-worker",
+          finalizationClaimExpiresAt: Date.now() - 1,
+        }),
+      );
+      const before = (await t.run((ctx) => ctx.db.get(ids.attemptId)))!;
+      const claimed = await t.mutation(
+        internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal,
+        {
+          attemptId: ids.attemptId,
+          claimId: "replacement-worker",
+          kind,
+          slug: before.slug,
+          version: before.version,
+        },
+      );
+      expect(claimed).toMatchObject({
+        attemptId: ids.attemptId,
+        status: "ready_to_finalize",
+        files: [],
+      });
+      const after = (await t.run((ctx) => ctx.db.get(ids.attemptId)))!;
+      expect(after.files).toEqual(before.files);
+      expect(after.checks).toEqual(before.checks);
+      expect(after.checkFailureCount).toBe(before.checkFailureCount);
+      expect(after.checkClaimLastError).toBe(before.checkClaimLastError);
+      // Conflict integration: retain targeted recovery error/evidence while
+      // applying the consumer's conservative package versus skill claim budget.
+      expect(after.checkClaimExpiresAt! - after.checkClaimedAt!).toBe(
+        (kind === "package" ? 70 : 30) * 60_000,
+      );
+      const target = await t.run((ctx) =>
+        ctx.db.get((ids.skillVersionId ?? ids.packageReleaseId)!),
+      );
+      expect(target).toMatchObject({
+        publicationStatus: "pending",
+        finalizationRecovery: {
+          attemptId: ids.attemptId,
+          actorUserId: ids.userId,
+          ownerUserId: ids.userId,
+        },
+      });
+    },
+  );
+});
+
+describe.each(["skill", "package"] as const)("expired %s recovery admission", (kind) => {
+  it.each([
+    "active-finalizer",
+    "active-check",
+    "expired-retention",
+    "failed-check",
+    "missing-storage",
+    "changed-files",
+    "changed-owner",
+    "deactivated-actor",
+    "held-target",
+    "conflicting-binding",
+    "duplicate-attempt",
+  ] as const)("rejects %s without changing retained state", async (change) => {
+    const { t, ids } = await fixture(kind);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(ids.attemptId, {
+        status: "finalizing",
+        checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+        finalizationClaimId: "interrupted",
+        finalizationClaimExpiresAt: 1,
+      });
+      const targetId = (ids.skillVersionId ?? ids.packageReleaseId)!;
+      if (change === "active-finalizer")
+        await ctx.db.patch(ids.attemptId, { finalizationClaimExpiresAt: Date.now() + 60_000 });
+      if (change === "active-check")
+        await ctx.db.patch(ids.attemptId, {
+          checkClaimId: "other",
+          checkClaimExpiresAt: Date.now() + 60_000,
+        });
+      if (change === "expired-retention") await ctx.db.patch(ids.attemptId, { expiresAt: 1 });
+      if (change === "failed-check")
+        await ctx.db.patch(ids.attemptId, {
+          checks: { trufflehog: { status: "clean" }, clawscan: { status: "failed" } },
+        });
+      if (change === "missing-storage") await ctx.storage.delete(ids.storageId);
+      if (change === "changed-files") await ctx.db.patch(targetId, { files: [] });
+      if (change === "changed-owner") {
+        const other = await ctx.db.insert("users", { handle: "other" });
+        await ctx.db.patch((ids.skillId ?? ids.packageId)!, { ownerUserId: other });
+      }
+      if (change === "deactivated-actor") await ctx.db.patch(ids.userId, { deactivatedAt: 1 });
+      if (change === "held-target") await ctx.db.patch(targetId, { ownerDeletedAt: 1 });
+      if (change === "conflicting-binding") {
+        const other = await ctx.db.insert("users", { handle: "other" });
+        await ctx.db.patch(targetId, {
+          finalizationRecovery: {
+            attemptId: ids.attemptId,
+            actorUserId: other,
+            ownerUserId: ids.userId,
+          },
+        });
+      }
+      if (change === "duplicate-attempt") {
+        const attempt = (await ctx.db.get(ids.attemptId))!;
+        const { _id, _creationTime, ...copy } = attempt;
+        await ctx.db.insert("publishAttempts", { ...copy, idempotencyKey: "other" });
+      }
+    });
+    const before = await t.run(async (ctx) => ({
+      attempt: await ctx.db.get(ids.attemptId),
+      target: await ctx.db.get((ids.skillVersionId ?? ids.packageReleaseId)!),
+    }));
+    const claim = () =>
+      t.mutation(internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal, {
+        attemptId: ids.attemptId,
+        claimId: "replacement",
+      });
+    if (change === "active-finalizer" || change === "active-check")
+      await expect(claim()).resolves.toEqual({ outcome: "active_claim" });
+    else await expect(claim()).rejects.toThrow(/Expired finalization recovery/);
+    expect(
+      await t.run(async (ctx) => ({
+        attempt: await ctx.db.get(ids.attemptId),
+        target: await ctx.db.get((ids.skillVersionId ?? ids.packageReleaseId)!),
+      })),
+    ).toEqual(before);
+    expect(await t.run((ctx) => ctx.db.query("auditLogs").collect())).toEqual([]);
+  });
 });

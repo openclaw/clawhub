@@ -1,0 +1,17 @@
+{
+  "client_id": "https://clawhub.ai/oauth/clients/openclaw-fleet-jason.json",
+  "client_name": "OpenClaw Fleet — Jason Claw",
+  "client_uri": "https://fleet.openclaw.ai",
+  "application_type": "web",
+  "redirect_uris": [
+    "https://agent-f43e5cb00eaf281efca909eb7ed5c618.fleet.openclaw.ai/oauth/provider/callback"
+  ],
+  "grant_types": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "token_endpoint_auth_method": "none"
+}
