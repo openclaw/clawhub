@@ -281,6 +281,7 @@ export function buildTier3Commands(args: {
     args.evaluatorProject,
     "--extra",
     "tier3",
+    "--frozen",
     "skillevaluator",
   ];
   return {
@@ -300,7 +301,7 @@ export function buildTier3Commands(args: {
       String(args.attempts),
       "--no-stop-on-pass",
       "--n-concurrent",
-      "1",
+      "4",
       "--max-agents",
       "1",
       "--progress",

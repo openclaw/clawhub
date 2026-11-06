@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-import { stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
 import { Command, Option } from "commander";
 import { getCliBuildLabel, getCliVersion } from "./cli/buildInfo.js";
-import { resolveClawdbotDefaultWorkspace } from "./cli/clawdbotConfig.js";
 import { cmdLoginFlow, cmdLogout, cmdToken, cmdWhoami } from "./cli/commands/auth.js";
 import {
   cmdDeleteSkill,
@@ -56,8 +53,8 @@ import {
   cmdTransferRequest,
 } from "./cli/commands/transfer.js";
 import { cmdUnstarSkill } from "./cli/commands/unstar.js";
+import { resolveGlobalOpts as resolveGlobalOptsFromOptions } from "./cli/globalOpts.js";
 import { configureCommanderHelp, styleEnvBlock, styleError, styleTitle } from "./cli/helpStyle.js";
-import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./cli/registry.js";
 import type { GlobalOpts } from "./cli/types.js";
 import { fail, formatError } from "./cli/ui.js";
 
@@ -164,58 +161,12 @@ function findFirstTopLevelOperand(args: string[]) {
 
 async function resolveGlobalOpts(): Promise<GlobalOpts> {
   const raw = program.opts<{ workdir?: string; dir?: string; site?: string; registry?: string }>();
-  const workdir = await resolveWorkdir(raw.workdir);
-  const dir = resolve(workdir, raw.dir ?? "skills");
-  const site = raw.site ?? process.env.CLAWHUB_SITE ?? process.env.CLAWDHUB_SITE ?? DEFAULT_SITE;
-  const registrySource = raw.registry
-    ? "cli"
-    : process.env.CLAWHUB_REGISTRY || process.env.CLAWDHUB_REGISTRY
-      ? "env"
-      : "default";
-  const registry =
-    raw.registry ??
-    process.env.CLAWHUB_REGISTRY ??
-    process.env.CLAWDHUB_REGISTRY ??
-    DEFAULT_REGISTRY;
-  return { workdir, dir, site, registry, registrySource };
+  return resolveGlobalOptsFromOptions(raw);
 }
 
 function isInputAllowed() {
   const globalFlags = program.opts<{ input?: boolean }>();
   return globalFlags.input !== false;
-}
-
-async function resolveWorkdir(explicit?: string) {
-  if (explicit?.trim()) return resolve(explicit.trim());
-  const envWorkdir = process.env.CLAWHUB_WORKDIR?.trim() ?? process.env.CLAWDHUB_WORKDIR?.trim();
-  if (envWorkdir) return resolve(envWorkdir);
-
-  const cwd = resolve(process.cwd());
-  const hasMarker = await hasClawhubMarker(cwd);
-  if (hasMarker) return cwd;
-
-  const clawdbotWorkspace = await resolveClawdbotDefaultWorkspace();
-  return clawdbotWorkspace ? resolve(clawdbotWorkspace) : cwd;
-}
-
-async function hasClawhubMarker(workdir: string) {
-  const lockfile = join(workdir, ".clawhub", "lock.json");
-  if (await pathExists(lockfile)) return true;
-  const markerDir = join(workdir, ".clawhub");
-  if (await pathExists(markerDir)) return true;
-  const legacyLockfile = join(workdir, ".clawdhub", "lock.json");
-  if (await pathExists(legacyLockfile)) return true;
-  const legacyMarkerDir = join(workdir, ".clawdhub");
-  return pathExists(legacyMarkerDir);
-}
-
-async function pathExists(path: string) {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 registerCommand(program, ["login"])
@@ -562,7 +513,14 @@ const packageCmd = registerCommandGroup(program, ["package"]).description(
 registerCommand(packageCmd, ["package", "explore"])
   .description("Browse published packages and plugins")
   .argument("[query...]", "Optional search query")
-  .option("--family <family>", "skill|code-plugin|bundle-plugin|claw")
+  .addOption(
+    new Option("--family <family>", "Package family").choices([
+      "skill",
+      "code-plugin",
+      "bundle-plugin",
+      "template",
+    ]),
+  )
   .option("--official", "Only official packages")
   .option("--executes-code", "Only packages that execute code")
   .option("--target <target>", "Filter by host target, e.g. darwin-arm64")
@@ -740,9 +698,15 @@ registerCommand(packageCmd, ["package", "pack"])
   });
 
 registerCommand(packageCmd, ["package", "publish"])
-  .description("Publish a code plugin or bundle plugin from a folder or GitHub source")
-  .argument("<source>", "Package folder path, GitHub repo (owner/repo[@ref]), or URL")
-  .option("--family <family>", "code-plugin|bundle-plugin|claw")
+  .description("Publish a code plugin, bundle plugin, or built Template artifact")
+  .argument("<source>", "Package folder, built .tgz, GitHub repo (owner/repo[@ref]), or URL")
+  .addOption(
+    new Option("--family <family>", "Package family").choices([
+      "code-plugin",
+      "bundle-plugin",
+      "template",
+    ]),
+  )
   .option("--name <name>", "Package name")
   .option("--display-name <name>", "Display name")
   .option("--owner <handle>", "Publish under this owner/publisher handle")
@@ -755,7 +719,7 @@ registerCommand(packageCmd, ["package", "publish"])
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .option(
     "--categories <slugs>",
-    "Deprecated for plugins (ignored); declare one category in openclaw.plugin.json. Claws: comma-separated categories",
+    "Template category overrides; deprecated and ignored for plugins (use openclaw.plugin.json)",
   )
   .option("--topics <topics>", "Comma-separated topics")
   .option("--bundle-format <format>", "Bundle format")

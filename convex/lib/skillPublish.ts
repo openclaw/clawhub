@@ -1,10 +1,13 @@
+import { sha256Hex } from "./hash";
+import { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
+export { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
 import {
-  decodeUtf8Text,
   normalizeCatalogTopics,
   normalizeContentType,
   normalizeSkillCategories,
   resolveSkillCategories,
 } from "clawhub-schema";
+import { decodeUtf8Text } from "clawhub-schema/textFiles";
 import { ConvexError } from "convex/values";
 import semver from "semver";
 import { api, internal } from "../_generated/api";
@@ -25,6 +28,7 @@ import {
   getPublishTotalSizeError,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./publishLimits";
+import { stripUndefinedForStoredPublish } from "./publishStorage";
 import { isSkillCardPath } from "./skillCards";
 import {
   MAX_SKILL_PRESENTATION_YAML_BYTES,
@@ -54,7 +58,7 @@ import {
 import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSkillSummary } from "./skillSummary";
 import { normalizeSkillTags } from "./skillTags";
-import { runStaticPublishScan } from "./staticPublishScan";
+import { fetchText } from "./storageText";
 import { getWebhookConfig, type WebhookSkillPayload } from "./webhooks";
 
 const MAX_FILES_FOR_EMBEDDING = 40;
@@ -62,7 +66,6 @@ const MAX_ANALYZED_FILE_BYTES = 256 * 1024;
 const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const QUALITY_ACTIVITY_LIMIT = 60;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
-const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
 const MAX_PUBLISH_SUMMARY_LENGTH = 300;
 
 type FingerprintFile = { path: string; sha256: string };
@@ -153,49 +156,20 @@ export type PublishOptions = {
   // publishes (including older CLIs that never pass this flag) can never
   // accidentally transfer ownership.
   migrateOwner?: boolean;
-  stagePrePublicationChecks?: boolean;
   skillPublishUploadTickets?: Id<"skillPublishUploadTickets">[];
   // Called synchronously once a pending or published version owns the files.
   // Later failures belong to publication compensation, not request upload cleanup.
   onFilesPersisted?: () => void;
 };
 
-type InternalPublishOptions = PublishOptions;
-
+// Every skill publish stages a pending version and a publish attempt. The version becomes
+// public only after the pre-publication checks pass on this exact artifact; scanner failures
+// and timeouts leave it pending or failed, never published.
 export async function publishVersionForUser(
   ctx: ActionCtx,
   userId: Id<"users">,
   args: PublishVersionArgs,
   options: PublishOptions = {},
-): Promise<SkillPublishResult> {
-  return await publishVersionForUserInternal(ctx, userId, args, {
-    ...options,
-    stagePrePublicationChecks:
-      options.stagePrePublicationChecks ?? stagedPrePublicationPublishesEnabled(),
-  });
-}
-
-export async function stageSkillPublishAttemptForUser(
-  ctx: ActionCtx,
-  userId: Id<"users">,
-  args: PublishVersionArgs,
-  options: PublishOptions & { stagePrePublicationChecks?: boolean } = {},
-): Promise<SkillPublishResult> {
-  return await publishVersionForUserInternal(ctx, userId, args, {
-    ...options,
-    stagePrePublicationChecks: options.stagePrePublicationChecks ?? true,
-  });
-}
-
-function stagedPrePublicationPublishesEnabled() {
-  return process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES === "1";
-}
-
-async function publishVersionForUserInternal(
-  ctx: ActionCtx,
-  userId: Id<"users">,
-  args: PublishVersionArgs,
-  options: InternalPublishOptions,
 ): Promise<SkillPublishResult> {
   const version = args.version.trim();
   // Normalize first so we can look up the existing skill before deciding
@@ -222,7 +196,7 @@ async function publishVersionForUserInternal(
     sourceOwnerPublisherId: options.sourceOwnerPublisherId,
     migrateOwner: options.migrateOwner,
   })) as Doc<"skills"> | null;
-  if (options.stagePrePublicationChecks && existingSkill && !existingSkill.softDeletedAt) {
+  if (existingSkill && !existingSkill.softDeletedAt) {
     const existingVersion = (await ctx.runQuery(
       internal.skills.getVersionBySkillAndVersionInternal,
       {
@@ -236,22 +210,20 @@ async function publishVersionForUserInternal(
       );
     }
   }
-  if (options.stagePrePublicationChecks) {
-    const existingAttempt = (await ctx.runQuery(
-      internal.publishAttempts.findExistingPublishAttemptForArtifactInternal,
-      {
-        kind: "skill",
-        slug: normalizedSlug,
-        version,
-        userId,
-        ownerPublisherId: options.ownerPublisherId,
-      },
-    )) as { attemptId: Id<"publishAttempts"> } | null;
-    if (existingAttempt) {
-      throw new ConvexError(
-        `Version ${version} already exists. Increment the version number and try again.`,
-      );
-    }
+  const existingAttempt = (await ctx.runQuery(
+    internal.publishAttempts.findExistingPublishAttemptForArtifactInternal,
+    {
+      kind: "skill",
+      slug: normalizedSlug,
+      version,
+      userId,
+      ownerPublisherId: options.ownerPublisherId,
+    },
+  )) as { attemptId: Id<"publishAttempts"> } | null;
+  if (existingAttempt) {
+    throw new ConvexError(
+      `Version ${version} already exists. Increment the version number and try again.`,
+    );
   }
   const isNewSkill = !existingSkill;
 
@@ -364,17 +336,8 @@ async function publishVersionForUserInternal(
     slug,
   });
   displayName = presentation.displayName;
-  const shouldDeferAiEnrichment = options.stagePrePublicationChecks === true;
-  const summary =
-    publisherSummary ||
-    (shouldDeferAiEnrichment
-      ? (presentation.summary ?? existingSkill?.summary ?? "")
-      : await generateSkillSummary({
-          slug,
-          displayName,
-          readmeText,
-          currentSummary: presentation.summary ?? existingSkill?.summary ?? undefined,
-        }));
+  // AI summary, changelog, and embedding generation run at finalization, after the checks pass.
+  const summary = publisherSummary || (presentation.summary ?? existingSkill?.summary ?? "");
 
   let qualityAssessment: QualityAssessment | null = null;
   if (isNewSkill && !options.bypassQualityGate) {
@@ -426,19 +389,6 @@ async function publishVersionForUserInternal(
 
   const metadata = mergeSourceIntoMetadata(frontmatterMetadata, args.source, qualityAssessment);
 
-  const fileContents: Array<{ path: string; content: string }> = [
-    { path: readmeFile.path, content: readmeText },
-  ];
-  for (const file of publishFiles) {
-    if (!file.path || file.storageId === readmeFile.storageId) continue;
-    const content = await fetchPreviewText(ctx, file.storageId);
-    if (content === null) continue;
-    fileContents.push({ path: file.path, content });
-  }
-
-  const otherFiles = fileContents
-    .filter((file) => !file.path.toLowerCase().endsWith(".md"))
-    .slice(0, MAX_FILES_FOR_EMBEDDING);
   let categories: string[];
   let topics: string[];
   try {
@@ -450,45 +400,9 @@ async function publishVersionForUserInternal(
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
   }
 
-  const staticScan = await runStaticPublishScan(ctx, {
-    slug,
-    displayName,
-    summary,
-    frontmatter,
-    metadata,
-    files: publishFiles,
-  });
-
-  const embeddingText = buildEmbeddingText({
-    frontmatter,
-    readme: readmeText,
-    otherFiles,
-  });
-  const fingerprintPromise = buildPublishSourceFingerprint(
+  const fingerprint = await buildPublishSourceFingerprint(
     publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
   );
-
-  const changelogPromise =
-    changelogSource === "user" || shouldDeferAiEnrichment
-      ? Promise.resolve(suppliedChangelog)
-      : generateChangelogForPublish(ctx, {
-          slug,
-          version,
-          readmeText,
-          files: publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
-        });
-
-  const embeddingPromise = shouldDeferAiEnrichment
-    ? Promise.resolve([] as number[])
-    : generateEmbedding(embeddingText);
-
-  const [fingerprint, changelogText, embedding] = await Promise.all([
-    fingerprintPromise,
-    changelogPromise,
-    embeddingPromise.catch((error) => {
-      throw new ConvexError(formatEmbeddingError(error));
-    }),
-  ]);
   const icon = await hostDirectSkillPresentationIcon(ctx, publishFiles, presentation.iconPaths);
 
   const skillInsertArgs = {
@@ -500,7 +414,7 @@ async function publishVersionForUserInternal(
     slug,
     displayName,
     version,
-    changelog: changelogText,
+    changelog: suppliedChangelog,
     changelogSource,
     sourceProvenance: options.sourceProvenance,
     tags: normalizeSkillTags(args.tags),
@@ -534,23 +448,20 @@ async function publishVersionForUserInternal(
     },
     summary,
     icon,
-    staticScan,
-    embedding,
-    deferredAiEnrichment: shouldDeferAiEnrichment
-      ? ({
-          summary:
-            publisherSummary || presentation.summary
-              ? { mode: "literal", literal: publisherSummary ?? presentation.summary }
-              : {
-                  mode: "generate",
-                  currentSummary: existingSkill?.summary ?? undefined,
-                },
-          changelog: {
-            source: changelogSource,
-            supplied: suppliedChangelog,
-          },
-        } satisfies DeferredAiEnrichment)
-      : undefined,
+    embedding: [] as number[],
+    deferredAiEnrichment: {
+      summary:
+        publisherSummary || presentation.summary
+          ? { mode: "literal", literal: publisherSummary ?? presentation.summary }
+          : {
+              mode: "generate",
+              currentSummary: existingSkill?.summary ?? undefined,
+            },
+      changelog: {
+        source: changelogSource,
+        supplied: suppliedChangelog,
+      },
+    } satisfies DeferredAiEnrichment,
     qualityAssessment: qualityAssessment
       ? {
           decision: qualityAssessment.decision,
@@ -571,30 +482,6 @@ async function publishVersionForUserInternal(
     ownerHandle = targetPublisher?.handle;
   }
   ownerHandle ??= owner?.handle ?? owner?.displayName ?? owner?.name;
-
-  const followup = {
-    skipWebhook: options.skipWebhook || undefined,
-    ownerHandle,
-    slug,
-    version,
-    displayName,
-  };
-
-  if (!options.stagePrePublicationChecks) {
-    const publishResult = (await ctx.runMutation(
-      internal.skills.insertVersion,
-      skillInsertArgs,
-    )) as PublishResult;
-    options.onFilesPersisted?.();
-    await scheduleSkillPublishFollowups(ctx, publishResult, followup);
-    return {
-      ...publishResult,
-      status: "published",
-      slug,
-      version,
-      publicationStatus: "published",
-    };
-  }
 
   const pendingInsertArgs = {
     ...skillInsertArgs,
@@ -631,7 +518,7 @@ async function publishVersionForUserInternal(
       })),
       scanContext: buildSkillPublishAttemptScanContext(skillInsertArgs),
       followup: {
-        skipWebhook: followup.skipWebhook,
+        skipWebhook: options.skipWebhook || undefined,
         ownerHandle,
       },
     })
@@ -711,6 +598,8 @@ export async function finalizeSkillPublishAttempt(
       publishResult = (await ctx.runMutation(internal.skills.publishPendingVersionInternal, {
         versionId: claim.versionId,
         publishArgs: skillInsertArgs,
+        publishAttemptId: claim.attemptId,
+        finalizationClaimId: claimId,
       })) as PublishResult;
     } else {
       const skillInsertArgs = await prepareSkillInsertArgsForFinalization(
@@ -735,8 +624,6 @@ export async function finalizeSkillPublishAttempt(
   }
 
   try {
-    await scheduleSkillPublishFollowups(ctx, publishResult, claim.followup);
-
     await ctx.runMutation(internal.publishAttempts.recordSkillPublishAttemptFinalizedInternal, {
       attemptId: claim.attemptId,
       claimId,
@@ -747,6 +634,7 @@ export async function finalizeSkillPublishAttempt(
     throw error;
   }
 
+  await scheduleSkillPublishWebhook(ctx, claim.followup);
   return publishResult;
 }
 
@@ -851,9 +739,8 @@ function buildSkillPublishAttemptScanContext(insertArgs: unknown) {
     record.parsed && typeof record.parsed === "object"
       ? (record.parsed as Record<string, unknown>)
       : {};
-  return stripUndefinedForStoredAttempt({
+  return stripUndefinedForStoredPublish({
     version: {
-      staticScan: record.staticScan,
       parsed: {
         metadata: parsed.metadata,
         clawdis: parsed.clawdis,
@@ -881,36 +768,7 @@ async function releaseSkillPublishAttemptFinalizationClaim(
   );
 }
 
-async function scheduleSkillPublishFollowups(
-  ctx: ActionCtx,
-  publishResult: PublishResult,
-  followup: SkillPublishFollowup,
-) {
-  await ctx.scheduler.runAfter(0, internal.vt.scanWithVirusTotal, {
-    versionId: publishResult.versionId,
-  });
-
-  await ctx.scheduler.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
-    versionId: publishResult.versionId,
-    source: "publish",
-  });
-  await ctx.scheduler.runAfter(2_000, internal.securityScan.enqueueSkillVersionScanInternal, {
-    versionId: publishResult.versionId,
-    source: "publish",
-    preserveActiveJob: true,
-    preserveExistingJob: true,
-  });
-  await ctx.scheduler.runAfter(
-    SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS,
-    internal.securityScan.enqueueSkillVersionScanInternal,
-    {
-      versionId: publishResult.versionId,
-      source: "publish",
-      preserveActiveJob: true,
-      preserveExistingJob: true,
-    },
-  );
-
+async function scheduleSkillPublishWebhook(ctx: ActionCtx, followup: SkillPublishFollowup) {
   if (!followup.skipWebhook && getWebhookConfig().url) {
     try {
       await schedulePublishWebhook(ctx, {
@@ -962,30 +820,6 @@ function mergeSourceIntoMetadata(
   return Object.keys(base).length ? base : undefined;
 }
 
-function buildSkillPublishAttemptIdempotencyKey(args: {
-  userId: Id<"users">;
-  ownerPublisherId?: Id<"publishers">;
-  slug: string;
-  version: string;
-  fingerprint: string;
-}) {
-  const ownerScope = args.ownerPublisherId
-    ? `publisher:${args.ownerPublisherId}`
-    : `user:${args.userId}`;
-  return ["skill", ownerScope, args.slug, args.version, args.fingerprint].join(":");
-}
-
-function stripUndefinedForStoredAttempt(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripUndefinedForStoredAttempt);
-  if (!value || typeof value !== "object") return value;
-
-  const result: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value)) {
-    if (nested !== undefined) result[key] = stripUndefinedForStoredAttempt(nested);
-  }
-  return result;
-}
-
 function buildFinalizationClaimId() {
   return typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
@@ -1028,17 +862,6 @@ export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<"ski
     event: "skill.highlighted",
     skill: payload,
   });
-}
-
-export async function fetchText(
-  ctx: { storage: { get: (id: Id<"_storage">) => Promise<Blob | null> } },
-  storageId: Id<"_storage">,
-) {
-  const blob = await ctx.storage.get(storageId);
-  if (!blob) throw new Error("File missing in storage");
-  const text = decodeUtf8Text(new Uint8Array(await blob.arrayBuffer()));
-  if (text === null) throw new Error("File is not valid UTF-8 text");
-  return text;
 }
 
 async function hostDirectSkillPresentationIcon(
@@ -1149,18 +972,6 @@ async function hashStoredPublishFiles(filesWithBlobs: PublishFileBlob[]) {
     });
   }
   return publishFiles;
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const data = new Uint8Array(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return toHex(new Uint8Array(digest));
-}
-
-function toHex(bytes: Uint8Array) {
-  let out = "";
-  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
-  return out;
 }
 
 function formatEmbeddingError(error: unknown) {

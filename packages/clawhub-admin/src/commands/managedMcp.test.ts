@@ -43,6 +43,30 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 describe("managed MCP admin CLI", () => {
+  it("uploads explicit CIMD identity and scope unchanged through the normal admin endpoint", async () => {
+    const authored = {
+      ...definition,
+      connection: {
+        ...definition.connection,
+        auth: {
+          kind: "oauth",
+          scope: "events:read offline_access",
+          clientMetadataUrl: "https://client.example.com/oauth/client.json",
+        },
+      },
+    };
+    await cmdPublishManagedMcp(makeGlobalOpts(), await input(authored), {});
+    expect(http.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/packages/-/managed-mcp",
+        body: authored,
+      }),
+      undefined,
+    );
+  });
+
   it("uploads a local icon with the definition's rights metadata", async () => {
     const { pngBase64: _png, ...rights } = definition.icon;
     const file = await input({

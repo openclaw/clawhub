@@ -6,15 +6,23 @@ import { action, internalAction, internalMutation, internalQuery, mutation } fro
 import { applyGitHubSkillVerificationResultHandler } from "./githubSkillSync";
 import { assertAdmin, assertModerator, requireUser } from "./lib/access";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
+import { endorAnalysisValidator, type EndorAnalysis } from "./lib/endorAnalysis";
+import { storedFileValidator } from "./lib/fileValidators";
 import { Events, logEvent } from "./lib/observabilityEvents";
 import { normalizePackageName } from "./lib/packageRegistry";
+import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { normalizePackageScanStatus } from "./lib/packageSecurity";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 import {
   getRuntimeRolloutCapabilities,
   isLegacyNvidiaSkillSource,
 } from "./lib/rolloutCapabilities";
+import {
+  aigAnalysisValidator,
+  skillSpectorAnalysisValidator,
+} from "./lib/securityAnalysisValidators";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
+import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 import {
   getSkillBySlugForPublisher,
   resolveLegacySkillBySlugOrAlias,
@@ -26,15 +34,21 @@ import {
   MAX_SKILL_SCAN_REQUEST_MANIFEST_BYTES,
   serializedSkillScanRequestFilesBytes,
 } from "./lib/skillScanRequestFiles";
+import {
+  capSkillSpectorInspectionCaveats,
+  normalizeSkillSpectorReviewContext,
+  type SkillSpectorInspectionCaveats,
+  type SkillSpectorReviewContext,
+} from "./lib/skillSpectorEvidence";
 import { getSkillsShFixtureEnvironmentPolicy } from "./lib/skillsShCatalogEnvironment";
 import {
   isExactSkillsShCatalogAttempt,
   shouldPublishSkillsShCatalogEntry,
 } from "./lib/skillsShCatalogPublication";
 import { redactWorkerPublicText } from "./lib/workerTextRedaction";
+import { llmAnalysisValidator } from "./schema";
 import { requestSecurityScanDispatch } from "./securityScanDispatch";
 
-const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const MAX_TARGETED_TEST_GITHUB_SYNC_JOBS = 32;
 const MAX_ATTEMPTS = 3;
@@ -44,8 +58,6 @@ const MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES = 512;
 const DEFAULT_FAILED_SCAN_RECOVERY_LIMIT = 250;
 const MAX_FAILED_SCAN_RECOVERY_LIMIT = 1000;
 const FAILED_SCAN_RECOVERY_SAMPLE_LIMIT = 20;
-const DEFAULT_CANCEL_SCAN_LIMIT = 1000;
-const DEFAULT_CANCEL_DELETE_LIMIT = 500;
 const MAX_CANCEL_SCAN_LIMIT = 5000;
 const CANCEL_SAMPLE_LIMIT = 20;
 const DEFAULT_PRUNE_SKILL_SCAN_REQUEST_LIMIT = 10;
@@ -64,7 +76,6 @@ const MAX_SECURITY_SCAN_QUEUE_HEALTH_READS = 512;
 const GITHUB_SKILL_SCAN_ACTION_LEASE_MS = 15 * 60 * 1000;
 const SKILL_SCAN_ASYNC_NOTE = "Scans are asynchronous and may take time to complete.";
 
-const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
 const artifactBackedLlmAnalysisStatuses = new Set(["clean", "benign", "suspicious", "malicious"]);
 
 async function isGitHubSkillScanAllowed(
@@ -85,17 +96,6 @@ async function assertGitHubSkillScanAllowed(
   }
 }
 
-type CancelSkipReason =
-  | "not-queued"
-  | "not-vt-update"
-  | "not-queued-vt-update"
-  | "malicious-signal"
-  | "missing-target-id"
-  | "missing-target"
-  | "missing-llm-analysis"
-  | "non-final-llm-analysis"
-  | "delete-limit-reached";
-
 type JobTarget = {
   job: Doc<"securityScanJobs">;
   skill?: Doc<"skills"> | null;
@@ -112,7 +112,7 @@ type ExistingLlmAnalysis = {
   verdict?: string;
 };
 
-type SkillSpectorIssueForStorage = {
+type SkillSpectorIssueForStorage = SkillSpectorReviewContext & {
   issueId: string;
   category?: string;
   pattern?: string;
@@ -128,7 +128,9 @@ type SkillSpectorIssueForStorage = {
 };
 
 type SkillSpectorAnalysisForStorage = {
+  inspectionCaveats?: SkillSpectorInspectionCaveats;
   status: string;
+  inspectionStatus?: "completed" | "partial";
   score?: number;
   severity?: string;
   recommendation?: string;
@@ -167,13 +169,18 @@ type StoredScanArtifactKind = "skill" | "plugin";
 
 const jobSourceValidator = v.union(
   v.literal("publish"),
-  v.literal("vt-update"),
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
   v.literal("skills-sh-catalog-test"),
 );
 
+// Claim reads still accept the retired "vt-update" source so queued legacy rows
+// drain through the normal claim path; enqueue arguments no longer accept it.
+const claimJobSourceValidator = v.union(jobSourceValidator, v.literal("vt-update"));
+
+// "vt-update" is a retired source: nothing enqueues it anymore, but queued legacy
+// rows still drain through the normal claim path at their original priority.
 type SecurityScanJobSource =
   | "publish"
   | "vt-update"
@@ -225,7 +232,6 @@ type EnqueueSkillVersionScanArgs = {
   versionId: Id<"skillVersions">;
   source: SecurityScanJobSource;
   priority?: number;
-  waitForVtMs?: number;
   preserveActiveJob?: boolean;
   preserveExistingJob?: boolean;
 };
@@ -235,142 +241,9 @@ type EnqueuePackageReleaseScanArgs = {
   releaseId: Id<"packageReleases">;
   source: SecurityScanJobSource;
   priority?: number;
-  waitForVtMs?: number;
 };
 
-const llmAgenticRiskEvidenceValidator = v.object({
-  path: v.string(),
-  snippet: v.string(),
-  explanation: v.string(),
-});
-
-const llmAgenticRiskFindingValidator = v.object({
-  categoryId: v.string(),
-  categoryLabel: v.string(),
-  riskBucket: v.union(
-    v.literal("abnormal_behavior_control"),
-    v.literal("permission_boundary"),
-    v.literal("sensitive_data_protection"),
-  ),
-  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-  severity: v.string(),
-  confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
-  evidence: v.optional(llmAgenticRiskEvidenceValidator),
-  userImpact: v.string(),
-  recommendation: v.string(),
-});
-
-const llmRiskSummaryBucketValidator = v.object({
-  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-  summary: v.string(),
-  highestSeverity: v.optional(v.string()),
-});
-
-const llmAnalysisValidator = v.object({
-  status: v.string(),
-  verdict: v.optional(v.string()),
-  confidence: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  dimensions: v.optional(
-    v.array(
-      v.object({
-        name: v.string(),
-        label: v.string(),
-        rating: v.string(),
-        detail: v.string(),
-      }),
-    ),
-  ),
-  guidance: v.optional(v.string()),
-  findings: v.optional(v.string()),
-  agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
-  riskSummary: v.optional(
-    v.object({
-      abnormal_behavior_control: llmRiskSummaryBucketValidator,
-      permission_boundary: llmRiskSummaryBucketValidator,
-      sensitive_data_protection: llmRiskSummaryBucketValidator,
-    }),
-  ),
-  model: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const skillSpectorIssueValidator = v.object({
-  issueId: v.string(),
-  category: v.optional(v.string()),
-  pattern: v.optional(v.string()),
-  severity: v.string(),
-  confidence: v.optional(v.number()),
-  file: v.optional(v.string()),
-  startLine: v.optional(v.number()),
-  endLine: v.optional(v.number()),
-  explanation: v.string(),
-  remediation: v.optional(v.string()),
-  finding: v.optional(v.string()),
-  codeSnippet: v.optional(v.string()),
-});
-
-const skillSpectorAnalysisValidator = v.object({
-  status: v.string(),
-  score: v.optional(v.number()),
-  severity: v.optional(v.string()),
-  recommendation: v.optional(v.string()),
-  issueCount: v.number(),
-  // Scanner/action boundaries cap this array before storage; Convex validators cannot express max length.
-  issues: v.array(skillSpectorIssueValidator),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const aigAnalysisValidator = v.object({
-  status: v.string(),
-  issueCount: v.number(),
-  findings: v.array(
-    v.object({
-      ruleId: v.string(),
-      level: v.string(),
-      message: v.string(),
-      title: v.optional(v.string()),
-      description: v.optional(v.string()),
-      file: v.optional(v.string()),
-      startLine: v.optional(v.number()),
-      endLine: v.optional(v.number()),
-      remediation: v.optional(v.string()),
-    }),
-  ),
-  scannerVersion: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const scanRequestFileValidator = v.object({
-  path: v.string(),
-  size: v.number(),
-  storageId: v.id("_storage"),
-  sha256: v.string(),
-  contentType: v.optional(v.string()),
-});
-
-const staticScanResultValidator = v.object({
-  status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-  reasonCodes: v.array(v.string()),
-  findings: v.array(
-    v.object({
-      code: v.string(),
-      severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
-      file: v.string(),
-      line: v.number(),
-      message: v.string(),
-      evidence: v.string(),
-    }),
-  ),
-  summary: v.string(),
-  engineVersion: v.string(),
-  checkedAt: v.number(),
-});
+const scanRequestFileValidator = storedFileValidator;
 
 const githubSkillScanStatusValidator = v.union(
   v.literal("clean"),
@@ -388,6 +261,7 @@ const catalogScanVerdictValidator = v.union(
 
 const internalRefs = internal as unknown as {
   packages: {
+    completeReleaseSecurityScanInternal: unknown;
     getPackageByIdInternal: unknown;
     getReleaseByIdInternal: unknown;
     updateReleaseLlmAnalysisInternal: unknown;
@@ -449,14 +323,6 @@ function assertWorkerToken(token: string) {
   if (!expected || token !== expected) throw new ConvexError("Unauthorized");
 }
 
-function defaultVtWaitMs() {
-  const raw = process.env.SECURITY_SCAN_DEFAULT_VT_WAIT_MS?.trim();
-  if (!raw) return DEFAULT_VT_WAIT_MS;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return DEFAULT_VT_WAIT_MS;
-  return Math.max(0, Math.min(parsed, DEFAULT_VT_WAIT_MS));
-}
-
 function githubSkillScanStatusFromLlmAnalysis(
   analysis: Pick<NonNullable<Doc<"skillVersions">["llmAnalysis"]>, "status" | "verdict">,
 ) {
@@ -511,6 +377,7 @@ function capSkillSpectorIssueForStorage(
     remediation: truncateSkillSpectorStorageText(issue.remediation),
     finding: truncateSkillSpectorStorageText(issue.finding),
     codeSnippet: truncateSkillSpectorStorageText(issue.codeSnippet),
+    ...normalizeSkillSpectorReviewContext(issue),
   };
 }
 
@@ -521,6 +388,10 @@ function capSkillSpectorAnalysisForStorage(
     status:
       truncateSkillSpectorStorageText(analysis.status, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
       "error",
+    ...(analysis.inspectionStatus ? { inspectionStatus: analysis.inspectionStatus } : {}),
+    ...(analysis.inspectionCaveats
+      ? { inspectionCaveats: capSkillSpectorInspectionCaveats(analysis.inspectionCaveats) }
+      : {}),
     score: analysis.score,
     severity: truncateSkillSpectorStorageText(
       analysis.severity,
@@ -623,25 +494,6 @@ async function getBulkSkillRescanBatchStatus(ctx: QueryCtx, jobIds: Id<"security
   };
 }
 
-function normalizeMaintenanceScanLimit(limit: number | undefined) {
-  const normalized = Number.isFinite(limit) ? Math.floor(limit ?? DEFAULT_CANCEL_SCAN_LIMIT) : null;
-  return Math.max(1, Math.min(normalized ?? DEFAULT_CANCEL_SCAN_LIMIT, MAX_CANCEL_SCAN_LIMIT));
-}
-
-function normalizeMaintenanceDeleteLimit(limit: number | undefined, scanLimit: number) {
-  const normalized = Number.isFinite(limit)
-    ? Math.floor(limit ?? DEFAULT_CANCEL_DELETE_LIMIT)
-    : null;
-  return Math.max(0, Math.min(normalized ?? DEFAULT_CANCEL_DELETE_LIMIT, scanLimit));
-}
-
-function incrementSkip(
-  skippedByReason: Partial<Record<CancelSkipReason, number>>,
-  reason: CancelSkipReason,
-) {
-  skippedByReason[reason] = (skippedByReason[reason] ?? 0) + 1;
-}
-
 function isOpenClawPluginPackage(
   pkg: Doc<"packages"> | null | undefined,
   ownerPublisher: Pick<Doc<"publishers">, "handle" | "deletedAt"> | null | undefined,
@@ -657,7 +509,6 @@ export const enqueueSkillVersionScanInternal = internalMutation({
     versionId: v.id("skillVersions"),
     source: jobSourceValidator,
     priority: v.optional(v.number()),
-    waitForVtMs: v.optional(v.number()),
     preserveActiveJob: v.optional(v.boolean()),
     preserveExistingJob: v.optional(v.boolean()),
   },
@@ -775,7 +626,6 @@ export const enqueueBulkSkillRescanBatchForAdminInternal = internalMutation({
         versionId: version._id,
         source: "bulk-rescan",
         priority: 0,
-        waitForVtMs: 0,
         preserveActiveJob: true,
       });
       if (!result.jobId) {
@@ -952,7 +802,6 @@ export const enqueueBulkPackageRescanBatchForAdminInternal = internalMutation({
           releaseId: version._id,
           source: "bulk-rescan",
           priority: 0,
-          waitForVtMs: 0,
           preserveActiveJob: true,
         },
         version,
@@ -1052,7 +901,6 @@ export const enqueueSkillRescanForModeratorInternal = internalMutation({
       versionId: version._id,
       source: "manual",
       priority: 100,
-      waitForVtMs: 0,
     });
     if (!queued.jobId) throw new ConvexError("Skill version not found");
 
@@ -1121,7 +969,6 @@ async function requestSkillRescanForActor(
       await ctx.db.patch(activeJob._id, {
         source: "manual",
         priority: Math.max(activeJob.priority, 100),
-        waitForVtUntil: Math.min(activeJob.waitForVtUntil, now),
         nextRunAt: Math.min(activeJob.nextRunAt, now),
         updatedAt: now,
       });
@@ -1210,7 +1057,6 @@ async function requestSkillRescanForActor(
     versionId: version._id,
     source: "manual",
     priority: 100,
-    waitForVtMs: 0,
   });
   if (!queued.jobId) throw new ConvexError("Skill version not found");
 
@@ -1319,63 +1165,40 @@ function skillScanReportFromRequest(request: Doc<"skillScanRequests">) {
     aig: request.aigAnalysis ?? null,
     clawscan: request.llmAnalysis ?? null,
     skillspector: request.skillSpectorAnalysis ?? null,
-    staticAnalysis: request.staticScan ?? null,
-    virustotal: request.vtAnalysis
-      ? {
-          ...request.vtAnalysis,
-          ...request.vtAnalysis.engineStats,
-        }
-      : null,
   };
 }
 
-function storedScanReportFromArtifact(
-  artifact: Pick<
-    Doc<"skillVersions"> | Doc<"packageReleases">,
-    "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
-  >,
-) {
+type StoredScanArtifact = Pick<
+  Doc<"skillVersions"> | Doc<"packageReleases">,
+  "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis"
+> & {
+  endorAnalysis?: EndorAnalysis;
+};
+
+function storedScanReportFromArtifact(artifact: StoredScanArtifact) {
   return {
     aig: artifact.aigAnalysis ?? null,
     clawscan: artifact.llmAnalysis ?? null,
+    endor: artifact.endorAnalysis ?? null,
     skillspector: artifact.skillSpectorAnalysis ?? null,
-    staticAnalysis: artifact.staticScan ?? null,
-    virustotal: artifact.vtAnalysis
-      ? {
-          ...artifact.vtAnalysis,
-          ...artifact.vtAnalysis.engineStats,
-        }
-      : null,
   };
 }
 
-function hasStoredScanReport(
-  artifact: Pick<
-    Doc<"skillVersions"> | Doc<"packageReleases">,
-    "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
-  >,
-) {
+function hasStoredScanReport(artifact: StoredScanArtifact) {
   return Boolean(
     artifact.aigAnalysis ||
     artifact.llmAnalysis ||
-    artifact.skillSpectorAnalysis ||
-    artifact.staticScan ||
-    artifact.vtAnalysis,
+    artifact.endorAnalysis ||
+    artifact.skillSpectorAnalysis,
   );
 }
 
-function completedAtFromStoredScanReport(
-  artifact: Pick<
-    Doc<"skillVersions"> | Doc<"packageReleases">,
-    "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
-  >,
-) {
+function completedAtFromStoredScanReport(artifact: StoredScanArtifact) {
   const checkedAtValues = [
     artifact.aigAnalysis?.checkedAt,
     artifact.llmAnalysis?.checkedAt,
+    artifact.endorAnalysis?.checkedAt,
     artifact.skillSpectorAnalysis?.checkedAt,
-    artifact.staticScan?.checkedAt,
-    artifact.vtAnalysis?.checkedAt,
   ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   return checkedAtValues.length > 0 ? Math.max(...checkedAtValues) : undefined;
 }
@@ -1574,7 +1397,6 @@ async function enqueueSkillScanRequestJob(
     source: options?.source ?? "manual",
     priority: options?.priority ?? 100,
     hasMaliciousSignal: false,
-    waitForVtUntil: now,
     nextRunAt: now,
     attempts: 0,
     createdAt: now,
@@ -1665,31 +1487,11 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
     force: v.optional(v.boolean()),
     parsed: v.object({
       frontmatter: v.record(v.string(), v.any()),
-      presentation: v.optional(
-        v.object({
-          displayName: v.string(),
-          displayNameSource: v.optional(
-            v.union(
-              v.literal("publisher"),
-              v.literal("openai"),
-              v.literal("skill"),
-              v.literal("slug"),
-            ),
-          ),
-          summary: v.optional(v.string()),
-          summarySource: v.optional(
-            v.union(
-              v.literal("publisher"),
-              v.literal("openai"),
-              v.literal("skill"),
-              v.literal("generated"),
-            ),
-          ),
-          icon: v.optional(v.string()),
-        }),
-      ),
+      presentation: v.optional(skillPresentationValidator),
     }),
-    staticScan: staticScanResultValidator,
+    // Retired static publish scan. Accepted and ignored so GitHub verify actions
+    // already running during deploy still validate; remove in a follow-up.
+    staticScan: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);
@@ -1716,7 +1518,6 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
         githubSourceId: target.githubSourceId,
         commit: args.commit,
         path: target.githubPath,
-        staticScan: args.staticScan,
         updatedAt: Date.now(),
       });
       return {
@@ -1762,7 +1563,6 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
         commit: args.commit,
         path: target.githubPath,
         status: "pending",
-        staticScan: args.staticScan,
         createdAt: now,
         updatedAt: now,
       }));
@@ -1772,7 +1572,6 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
         commit: args.commit,
         path: target.githubPath,
         status: "pending",
-        staticScan: args.staticScan,
         aigAnalysis: undefined,
         skillSpectorAnalysis: undefined,
         llmAnalysis: undefined,
@@ -1798,7 +1597,6 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
       fileChunkCount: 0,
       fileManifestBytes: 0,
       parsed: args.parsed,
-      staticScan: args.staticScan,
       expiresAt: skillScanRequestExpiresAt(now),
       createdAt: now,
       updatedAt: now,
@@ -2073,8 +1871,6 @@ export const createPublishedSkillScanRequestInternal = internalMutation({
       files,
       parsed: version.parsed,
       sha256hash: version.sha256hash,
-      vtAnalysis: version.vtAnalysis,
-      staticScan: version.staticScan,
       expiresAt: skillScanRequestExpiresAt(now),
       createdAt: now,
       updatedAt: now,
@@ -2757,7 +2553,6 @@ async function requestPackageRescanForActor(
     releaseId: release._id,
     source: "manual",
     priority: 100,
-    waitForVtMs: 0,
   });
   if (!queued.jobId) throw new ConvexError("Package release not found");
 
@@ -2829,8 +2624,7 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
   const version = await ctx.db.get(args.versionId);
   if (!version || version.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
   const now = Date.now();
-  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? defaultVtWaitMs());
-  const nextRunAt = args.waitForVtMs === 0 || version.vtAnalysis ? now : waitForVtUntil;
+  const nextRunAt = now;
   const hasMaliciousSignal = false;
 
   const existing = await ctx.db
@@ -2846,7 +2640,6 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
       source: higherPrioritySource(active.source, args.source),
       priority: Math.max(active.priority, args.priority ?? 0),
       hasMaliciousSignal,
-      waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
       nextRunAt: Math.min(active.nextRunAt, nextRunAt),
       updatedAt: now,
     });
@@ -2869,7 +2662,6 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
     source: args.source,
     priority: args.priority ?? 0,
     hasMaliciousSignal,
-    waitForVtUntil,
     nextRunAt,
     attempts: 0,
     createdAt: now,
@@ -2884,7 +2676,6 @@ export const enqueuePackageReleaseScanInternal = internalMutation({
     releaseId: v.id("packageReleases"),
     source: jobSourceValidator,
     priority: v.optional(v.number()),
-    waitForVtMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     return enqueuePackageReleaseScan(ctx, args);
@@ -2899,8 +2690,7 @@ async function enqueuePackageReleaseScan(
   const release = knownRelease ?? (await ctx.db.get(args.releaseId));
   if (!release || release.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
   const now = Date.now();
-  const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
-  const nextRunAt = args.waitForVtMs === 0 || release.vtAnalysis ? now : waitForVtUntil;
+  const nextRunAt = now;
   const hasMaliciousSignal = false;
 
   const existing = await ctx.db
@@ -2916,7 +2706,6 @@ async function enqueuePackageReleaseScan(
       source: higherPrioritySource(active.source, args.source),
       priority: Math.max(active.priority, args.priority ?? 0),
       hasMaliciousSignal,
-      waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
       nextRunAt: Math.min(active.nextRunAt, nextRunAt),
       updatedAt: now,
     });
@@ -2931,7 +2720,6 @@ async function enqueuePackageReleaseScan(
     source: args.source,
     priority: args.priority ?? 0,
     hasMaliciousSignal,
-    waitForVtUntil,
     nextRunAt,
     attempts: 0,
     createdAt: now,
@@ -2940,102 +2728,6 @@ async function enqueuePackageReleaseScan(
   await requestSecurityScanDispatch(ctx);
   return { ok: true as const, jobId, alreadyQueued: false as const };
 }
-
-export const cancelQueuedVtUpdateJobsInternal = internalMutation({
-  args: {
-    dryRun: v.boolean(),
-    createdBefore: v.number(),
-    scanLimit: v.optional(v.number()),
-    deleteLimit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const scanLimit = normalizeMaintenanceScanLimit(args.scanLimit);
-    const deleteLimit = normalizeMaintenanceDeleteLimit(args.deleteLimit, scanLimit);
-    const jobs = await ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_status_source_created_at", (q) =>
-        q.eq("status", "queued").eq("source", "vt-update").lt("createdAt", args.createdBefore),
-      )
-      .order("asc")
-      .take(scanLimit);
-
-    const skippedByReason: Partial<Record<CancelSkipReason, number>> = {};
-    const sampleMatchedJobIds: string[] = [];
-    const sampleDeletedJobIds: string[] = [];
-    let matched = 0;
-    let deleted = 0;
-
-    for (const job of jobs) {
-      if (job.status !== "queued") {
-        incrementSkip(
-          skippedByReason,
-          job.source === "vt-update" ? "not-queued-vt-update" : "not-queued",
-        );
-        continue;
-      }
-      if (job.source !== "vt-update") {
-        incrementSkip(skippedByReason, "not-vt-update");
-        continue;
-      }
-      if (job.hasMaliciousSignal) {
-        incrementSkip(skippedByReason, "malicious-signal");
-        continue;
-      }
-
-      const targetId =
-        job.targetKind === "skillVersion" ? job.skillVersionId : job.packageReleaseId;
-      if (!targetId) {
-        incrementSkip(skippedByReason, "missing-target-id");
-        continue;
-      }
-      const target = await ctx.db.get(targetId);
-      if (!target || target.softDeletedAt) {
-        incrementSkip(skippedByReason, "missing-target");
-        continue;
-      }
-      const rawLlmStatus = target.llmAnalysis?.status?.trim();
-      if (!rawLlmStatus) {
-        incrementSkip(skippedByReason, "missing-llm-analysis");
-        continue;
-      }
-      if (!finalLlmAnalysisStatuses.has(rawLlmStatus.toLowerCase())) {
-        incrementSkip(skippedByReason, "non-final-llm-analysis");
-        continue;
-      }
-
-      // Emergency cleanup: source may have been overwritten by a VT update, but this
-      // intentionally cancels old VT-origin work once ClawScan has a final result.
-      matched += 1;
-      if (sampleMatchedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleMatchedJobIds.push(job._id);
-      if (matched > deleteLimit) {
-        incrementSkip(skippedByReason, "delete-limit-reached");
-        continue;
-      }
-      if (args.dryRun) continue;
-
-      await ctx.db.delete(job._id);
-      deleted += 1;
-      if (sampleDeletedJobIds.length < CANCEL_SAMPLE_LIMIT) sampleDeletedJobIds.push(job._id);
-    }
-
-    const oldestScannedJob = jobs[0];
-    const newestScannedJob = jobs.at(-1);
-    return {
-      dryRun: args.dryRun,
-      scanned: jobs.length,
-      matched,
-      wouldDelete: Math.min(matched, deleteLimit),
-      deleted,
-      skippedByReason,
-      oldestScannedCreatedAt: oldestScannedJob?.createdAt ?? null,
-      newestScannedCreatedAt: newestScannedJob?.createdAt ?? null,
-      oldestScannedNextRunAt: oldestScannedJob?.nextRunAt ?? null,
-      newestScannedNextRunAt: newestScannedJob?.nextRunAt ?? null,
-      sampleMatchedJobIds,
-      sampleDeletedJobIds,
-    };
-  },
-});
 
 export const clearQueuedBackfillJobsForLocalDev = internalMutation({
   args: {
@@ -3119,7 +2811,7 @@ function readySourceJobsForClaimQuery(
 
 export const listReadySourceJobsForClaimInternal = internalQuery({
   args: {
-    source: jobSourceValidator,
+    source: claimJobSourceValidator,
     now: v.number(),
     cursor: v.union(v.string(), v.null()),
     numItems: v.number(),
@@ -3278,7 +2970,7 @@ export const claimQueuedJobsInternal = internalMutation({
         if (
           job?.status === "queued" &&
           job.source === "bulk-rescan" &&
-          job.targetKind === "skillVersion" &&
+          (job.targetKind === "skillVersion" || job.targetKind === "packageRelease") &&
           !job.rolloutGate &&
           job.nextRunAt <= now
         ) {
@@ -3768,7 +3460,7 @@ export const getJobTargetInternal = internalQuery({
       const ownerPublisher = pkg?.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
       return {
         job,
-        package: pkg,
+        package: pkg ? { ...pkg, family: resolvePackageReleaseFamily(pkg.family, release) } : pkg,
         release,
         trustedOpenClawPlugin: isOpenClawPluginPackage(pkg, ownerPublisher),
       };
@@ -4150,6 +3842,7 @@ export const completeCodexScanJob = action({
     llmAnalysis: llmAnalysisValidator,
     aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+    endorAnalysis: v.optional(endorAnalysisValidator),
     scannerReportsStorageId: v.optional(v.id("_storage")),
     runId: v.optional(v.string()),
   },
@@ -4169,6 +3862,9 @@ export const completeCodexScanJob = action({
       Boolean(target.scanRequest.skillsShCatalogAttemptId);
     if (!isCatalogScanRequest && target.job.leaseToken !== args.leaseToken) {
       throw new ConvexError("Lease mismatch");
+    }
+    if (args.endorAnalysis && target.job.targetKind !== "packageRelease") {
+      throw new ConvexError("Endor analysis is only supported for package release scans");
     }
     const completedAigAnalysis = reusableAigAnalysis(args.aigAnalysis);
     if (
@@ -4207,16 +3903,36 @@ export const completeCodexScanJob = action({
     if (target.job.targetKind === "skillVersion" && target.version) {
       await updateSkillVersion(target.version._id);
     } else if (target.job.targetKind === "packageRelease" && target.release) {
-      await runMutationRef(ctx, internalRefs.packages.updateReleaseSkillSpectorAnalysisInternal, {
-        releaseId: target.release._id,
-        ...(args.skillSpectorAnalysis
-          ? { skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis) }
-          : {}),
-      });
-      await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
-        releaseId: target.release._id,
-        llmAnalysis: args.llmAnalysis,
-      });
+      const result = await runMutationRef<{ ok: true }>(
+        ctx,
+        internalRefs.packages.completeReleaseSecurityScanInternal,
+        {
+          releaseId: target.release._id,
+          jobId: args.jobId,
+          leaseToken: args.leaseToken,
+          runId: args.runId,
+          llmAnalysis: args.llmAnalysis,
+          ...(args.skillSpectorAnalysis
+            ? {
+                skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
+              }
+            : {}),
+          // The release mutation parses Endor's bounds before its first write.
+          endorAnalysis: args.endorAnalysis,
+        },
+      );
+      // Completion has committed and cleared the lease. A refill failure must
+      // not send the worker down the scan-failure path for this finished job.
+      try {
+        await runMutationRef(
+          ctx,
+          internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
+          {},
+        );
+      } catch {
+        console.warn("security scan dispatch request failed after package completion");
+      }
+      return result;
     } else if (target.job.targetKind === "skillScanRequest" && target.scanRequest) {
       let writtenBack = false;
       if (
@@ -4294,11 +4010,17 @@ export const completeCodexScanJob = action({
         runId: args.runId,
       },
     );
-    await runMutationRef(
-      ctx,
-      internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
-      {},
-    );
+    // Only the dispatch hint is best effort; all result writes and the terminal
+    // job mutation above must succeed before acknowledging completion.
+    try {
+      await runMutationRef(
+        ctx,
+        internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
+        {},
+      );
+    } catch {
+      console.warn("security scan dispatch request failed after completion");
+    }
     return result;
   },
 });

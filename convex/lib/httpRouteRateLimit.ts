@@ -35,6 +35,7 @@ const handlerAuthenticatedPaths = new Set([
   "/api/v1/package-inspector/results",
   "/api/v1/package-inspector/notify",
   "/api/internal/archive-download-metric",
+  "/api/internal/prepublication-reports",
   "/api/auth/signin/",
   "/api/auth/callback/",
 ]);

@@ -1,12 +1,11 @@
 import {
   CATALOG_FEED_ID,
   CATALOG_SKILLS_FEED_ID,
-  EXPERIMENTAL_CLAW_FEED_ID,
+  EXPERIMENTAL_TEMPLATE_FEED_ID,
   PROMOTIONS_FEED_ID,
 } from "clawhub-schema";
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
-import { experimentalClawsEnabled } from "../lib/experimentalClaws";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 
 function matchesEtag(request: Request, etag: string) {
@@ -36,21 +35,9 @@ export async function catalogFeedV1Handler(
   feedId:
     | typeof CATALOG_FEED_ID
     | typeof CATALOG_SKILLS_FEED_ID
-    | typeof EXPERIMENTAL_CLAW_FEED_ID
+    | typeof EXPERIMENTAL_TEMPLATE_FEED_ID
     | typeof PROMOTIONS_FEED_ID = CATALOG_FEED_ID,
 ) {
-  if (feedId === EXPERIMENTAL_CLAW_FEED_ID && !experimentalClawsEnabled()) {
-    return new Response("Not found", {
-      status: 404,
-      headers: mergeHeaders(
-        {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Cache-Control": "no-store",
-        },
-        corsHeaders(),
-      ),
-    });
-  }
   const publication = await ctx.runQuery(internal.catalogFeed.getLatestPublication, { feedId });
   if (!publication) {
     return new Response("Catalog feed is not published", {
@@ -67,7 +54,7 @@ export async function catalogFeedV1Handler(
 
   const etag = `"sha256:${publication.payloadSha256}"`;
   const cacheHeaders: Record<string, string> =
-    feedId === EXPERIMENTAL_CLAW_FEED_ID
+    feedId === EXPERIMENTAL_TEMPLATE_FEED_ID
       ? { "Cache-Control": "no-store" }
       : {
           "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=86400",
@@ -100,8 +87,8 @@ export async function catalogSkillsFeedV1Handler(ctx: ActionCtx, request: Reques
   return await catalogFeedV1Handler(ctx, request, CATALOG_SKILLS_FEED_ID);
 }
 
-export async function catalogClawsFeedV1Handler(ctx: ActionCtx, request: Request) {
-  return await catalogFeedV1Handler(ctx, request, EXPERIMENTAL_CLAW_FEED_ID);
+export async function catalogTemplatesFeedV1Handler(ctx: ActionCtx, request: Request) {
+  return await catalogFeedV1Handler(ctx, request, EXPERIMENTAL_TEMPLATE_FEED_ID);
 }
 
 export async function promotionsFeedV1Handler(ctx: ActionCtx, request: Request) {

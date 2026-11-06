@@ -17,7 +17,7 @@ afterEach(() => vi.unstubAllEnvs());
 it("returns complete vendor JSON through scan completion and verify, replacing stale reports", async () => {
   vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-fixture");
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const { versionId, jobId } = await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { handle: "report-owner" });
     const publisherId = await ctx.db.insert("publishers", {
@@ -57,7 +57,6 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
       source: "manual",
       priority: 1,
       hasMaliciousSignal: false,
-      waitForVtUntil: 0,
       nextRunAt: 0,
       attempts: 1,
       leaseToken: "lease-fixture",
@@ -109,7 +108,8 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
       llmAnalysis: { status: "clean", verdict: "benign", checkedAt },
       aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt },
       skillSpectorAnalysis: {
-        status: "clean",
+        status: "suspicious",
+        inspectionStatus: "partial",
         score: 0,
         recommendation: "CAUTION",
         issueCount: 0,
@@ -122,6 +122,10 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
     });
   }
   await complete(10);
+  expect((await t.run((ctx) => ctx.db.get(versionId)))?.skillSpectorAnalysis).toMatchObject({
+    status: "suspicious",
+    inspectionStatus: "partial",
+  });
   const firstId = await t.run(
     async (ctx) => (await ctx.db.get(versionId))!.scannerReportsStorageId!,
   );

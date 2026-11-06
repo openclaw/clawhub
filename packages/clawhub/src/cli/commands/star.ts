@@ -1,21 +1,11 @@
 import { apiRequest, registryUrl } from "../../http.js";
 import { ApiRoutes, ApiV1StarResponseSchema } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
+import { parseSkillRef } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
-import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
-
-function parseSkillRef(skillArg: string) {
-  const value = skillArg.trim().toLowerCase();
-  if (!value) fail("Skill required");
-  const slashIndex = value.indexOf("/");
-  if (slashIndex < 0) return { slug: value, ownerHandle: undefined };
-  if (value.indexOf("/", slashIndex + 1) >= 0) fail(`Invalid skill ref: ${skillArg}`);
-  const ownerHandle = value.slice(0, slashIndex).replace(/^@+/, "");
-  const slug = value.slice(slashIndex + 1);
-  if (!ownerHandle || !slug) fail(`Invalid skill ref: ${skillArg}`);
-  return { slug, ownerHandle };
-}
+import { createCrabLoader, fail, isInteractive, promptConfirm } from "../ui.js";
 
 function starRequestArgs(
   registry: string,
@@ -49,7 +39,7 @@ export async function cmdStarSkill(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader(`Starring ${slug}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       starRequestArgs(registry, slug, requested.ownerHandle, token),
@@ -57,8 +47,5 @@ export async function cmdStarSkill(
     );
     spinner.succeed(result.alreadyStarred ? `OK. ${slug} already starred.` : `OK. Starred ${slug}`);
     return result;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }

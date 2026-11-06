@@ -235,6 +235,104 @@ describe("HomeListingSection", () => {
     await screen.findByText("Demo Skill");
   });
 
+  it("reports kind and tab switches for the URL without reporting the initial view", async () => {
+    const onViewChange = vi.fn();
+    render(
+      <HomeListingSection
+        initialListing={initialPluginListing()}
+        requestedView={{ kind: "plugins", tab: "featured" }}
+        onViewChange={onViewChange}
+      />,
+    );
+    await screen.findByText("Demo Plugin");
+    expect(onViewChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "New" }));
+    expect(onViewChange).toHaveBeenLastCalledWith({ kind: "plugins", tab: "new" });
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    expect(onViewChange).toHaveBeenLastCalledWith({ kind: "skills", tab: "featured" });
+    fireEvent.click(screen.getByRole("tab", { name: "Trending" }));
+    expect(onViewChange).toHaveBeenLastCalledWith({ kind: "skills", tab: "trending" });
+    expect(onViewChange).toHaveBeenCalledTimes(3);
+  });
+
+  it("opens the URL-requested view instead of a loader listing for another view", async () => {
+    render(
+      <HomeListingSection
+        initialListing={initialPluginListing()}
+        requestedView={{ kind: "skills", tab: "official" }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Skills" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: "Official" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.queryByText("Demo Plugin")).toBeNull();
+    await screen.findByText("Demo Skill");
+    expect(convexQueryMock).toHaveBeenCalledWith(
+      "skills:listPublicPageV4",
+      expect.objectContaining({ officialOnly: true }),
+    );
+  });
+
+  it("follows outside URL changes without echoing them back", async () => {
+    const onViewChange = vi.fn();
+    const { rerender } = render(
+      <HomeListingSection
+        initialListing={initialPluginListing()}
+        requestedView={{ kind: "skills", tab: "new" }}
+        onViewChange={onViewChange}
+      />,
+    );
+    await screen.findByText("Demo Skill");
+
+    rerender(
+      <HomeListingSection
+        initialListing={initialPluginListing()}
+        requestedView={{ kind: "plugins", tab: "featured" }}
+        onViewChange={onViewChange}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Plugins" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    await screen.findByText("Demo Plugin");
+    expect(onViewChange).not.toHaveBeenCalled();
+  });
+
+  it("reports the Featured fallback when a requested Trending feed is unavailable", async () => {
+    const onViewChange = vi.fn();
+    render(
+      <HomeListingSection
+        initialListing={{
+          kind: "skills",
+          tab: "trending",
+          categorySlugs: [],
+          fetchLimit: 20,
+          items: [],
+          hasMore: false,
+          trendingState: "unavailable",
+        }}
+        requestedView={{ kind: "skills", tab: "trending" }}
+        onViewChange={onViewChange}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("tab", { name: "Trending" })).toBeNull();
+    expect(onViewChange).toHaveBeenCalledWith({ kind: "skills", tab: "featured" });
+    await screen.findByText("Demo Skill");
+  });
+
   it("keeps the Skills skeleton iconless after switching from Plugins", () => {
     convexQueryMock.mockReturnValue(new Promise(() => {}));
 

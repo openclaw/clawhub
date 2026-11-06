@@ -566,12 +566,12 @@ async function main() {
     CLAWHUB_DISABLE_CRONS: "1",
     CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
     CLAWHUB_EMAIL_CAPTURE_FILE: process.env.CLAWHUB_EMAIL_CAPTURE_FILE ?? emailCaptureFile,
+    CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN: DEFAULT_E2E_WORKER_TOKEN,
     CONVEX_AGENT_MODE: process.env.CONVEX_AGENT_MODE ?? "anonymous",
     CONVEX_SITE_URL: convexSiteUrl,
     DEV_AUTH_ENABLED: "1",
     JWKS: authKeys.JWKS,
     JWT_PRIVATE_KEY: authKeys.JWT_PRIVATE_KEY,
-    SECURITY_SCAN_DEFAULT_VT_WAIT_MS: "0",
     SECURITY_SCAN_WORKER_TOKEN: process.env.SECURITY_SCAN_WORKER_TOKEN ?? DEFAULT_E2E_WORKER_TOKEN,
     SITE_URL: appUrl,
     VITE_CONVEX_SITE_URL: convexSiteUrl,
@@ -590,16 +590,15 @@ async function main() {
       `AUTH_GITHUB_ID=${e2eEnv.AUTH_GITHUB_ID}`,
       `AUTH_GITHUB_SECRET=${e2eEnv.AUTH_GITHUB_SECRET}`,
       "CLAWHUB_DISABLE_CRONS=1",
-      "CLAWHUB_EXPERIMENTAL_CLAWS=1",
       "CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test",
       `CLAWHUB_EMAIL_CAPTURE_FILE=${e2eEnv.CLAWHUB_EMAIL_CAPTURE_FILE}`,
+      `CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN=${e2eEnv.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN}`,
       ...(deployment ? [`CONVEX_DEPLOYMENT=${deployment}`] : []),
       `CONVEX_SITE_URL=${convexSiteUrl}`,
       ...(deployment ? [`DEV_AUTH_CONVEX_DEPLOYMENT=${devAuthDeploymentMarker(deployment)}`] : []),
       "DEV_AUTH_ENABLED=1",
       `JWKS=${authKeys.JWKS}`,
       `JWT_PRIVATE_KEY=${authKeys.JWT_PRIVATE_KEY}`,
-      "SECURITY_SCAN_DEFAULT_VT_WAIT_MS=0",
       `SECURITY_SCAN_WORKER_TOKEN=${e2eEnv.SECURITY_SCAN_WORKER_TOKEN}`,
       `SITE_URL=${appUrl}`,
       `VITE_CONVEX_SITE_URL=${convexSiteUrl}`,
@@ -640,15 +639,16 @@ async function main() {
     { name: "AUTH_GITHUB_ID", value: e2eEnv.AUTH_GITHUB_ID ?? "local-dev" },
     { name: "AUTH_GITHUB_SECRET", value: e2eEnv.AUTH_GITHUB_SECRET ?? "local-dev" },
     { name: "CLAWHUB_DISABLE_CRONS", value: "1" },
-    { name: "CLAWHUB_EXPERIMENTAL_CLAWS", value: "1" },
     { name: "CLAWHUB_SKILLS_SH_ROLLOUT_MODE", value: "test" },
     { name: "CLAWHUB_EMAIL_CAPTURE_FILE", value: e2eEnv.CLAWHUB_EMAIL_CAPTURE_FILE ?? "" },
-    { name: "CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES", value: "1" },
+    {
+      name: "CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN",
+      value: e2eEnv.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN ?? DEFAULT_E2E_WORKER_TOKEN,
+    },
     { name: "DEV_AUTH_CONVEX_DEPLOYMENT", value: localAuthDeployment },
     { name: "DEV_AUTH_ENABLED", value: "1" },
     { name: "JWKS", value: authKeys.JWKS },
     { name: "JWT_PRIVATE_KEY", value: authKeys.JWT_PRIVATE_KEY },
-    { name: "SECURITY_SCAN_DEFAULT_VT_WAIT_MS", value: "0" },
     {
       name: "SECURITY_SCAN_WORKER_TOKEN",
       value: e2eEnv.SECURITY_SCAN_WORKER_TOKEN ?? DEFAULT_E2E_WORKER_TOKEN,
@@ -692,6 +692,17 @@ async function main() {
 
   console.log("Seeding the local skills.sh route for browser layout proof.");
   await runConvexFunctionWhenReady("devSeed:seedCanonicalSearchFixture", {}, e2eEnv);
+
+  if (e2eEnv.PLAYWRIGHT_LOCAL_AUTH_SEED_CATALOG === "1") {
+    console.log("Seeding local catalog fixtures once before browser readers start.");
+    await runConvexFunctionWhenReady("devSeed:seedLocalFixtures", {}, e2eEnv);
+    console.log("Verifying the seeded Skills catalog is readable before browser startup.");
+    await runConvexFunctionWhenReady(
+      "skills:listPublicPageV4",
+      { numItems: 20, sort: "downloads", dir: "desc" },
+      e2eEnv,
+    );
+  }
 
   console.log("Building ClawHub for local-auth Playwright e2e.");
   await runRequired("bun", ["run", "build"], e2eEnv);

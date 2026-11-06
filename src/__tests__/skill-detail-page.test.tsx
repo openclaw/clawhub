@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
@@ -47,6 +47,15 @@ const useMutationMock = vi.fn();
 const convexQueryMock = vi.fn();
 const convexClientMock = { query: convexQueryMock };
 const getReadmeMock = vi.fn();
+const getSkillCardMock = vi.fn();
+
+function createPendingTextRead() {
+  let resolve!: (value: { text: string }) => void;
+  const promise = new Promise<{ text: string }>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 function getDesktopSkillTabs() {
   return within(screen.getByRole("tablist", { name: "Skill detail tabs", hidden: true }));
@@ -64,7 +73,8 @@ vi.mock("convex/react", () => ({
     status: "Exhausted",
     loadMore: vi.fn(),
   }),
-  useAction: () => getReadmeMock,
+  useAction: (fn: never) =>
+    getFunctionName(fn) === "skills:getSkillCard" ? getSkillCardMock : getReadmeMock,
 }));
 
 vi.mock("sonner", () => ({
@@ -91,6 +101,89 @@ describe("SkillDetailPage", () => {
   const ownerPublisherId = "publishers:steipete" as Id<"publishers">;
   const versionId = "skillVersions:1" as Id<"skillVersions">;
   const storageId = "storage:1" as Id<"_storage">;
+
+  function makeMinimalWeatherSkillResult() {
+    return {
+      skill: {
+        _id: "skills:1",
+        slug: "weather",
+        displayName: "Weather",
+        summary: "Get current weather.",
+        ownerUserId: "users:1",
+        ownerPublisherId: "publishers:steipete",
+        tags: {},
+        stats: { stars: 0, downloads: 0 },
+      },
+      owner: {
+        _id: "publishers:steipete",
+        _creationTime: 0,
+        kind: "user",
+        handle: "steipete",
+        displayName: "Peter",
+        linkedUserId: "users:1",
+      },
+      latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+    };
+  }
+
+  function makeWeatherSkill() {
+    return {
+      _id: skillId,
+      _creationTime: 0,
+      slug: "weather",
+      displayName: "Weather",
+      summary: "Get current weather.",
+      ownerUserId: ownerId,
+      ownerPublisherId,
+      tags: {},
+      badges: {},
+      stats: {
+        stars: 12,
+        downloads: 34,
+        installs: 8,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 0,
+      updatedAt: 0,
+    };
+  }
+
+  function makeWeatherSkillResult() {
+    return {
+      skill: makeWeatherSkill(),
+      owner: {
+        _id: ownerPublisherId,
+        _creationTime: 0,
+        kind: "user",
+        handle: "steipete",
+        displayName: "Peter",
+        linkedUserId: ownerId,
+      },
+      latestVersion: {
+        _id: versionId,
+        _creationTime: 0,
+        skillId,
+        version: "1.0.0",
+        fingerprint: "abc",
+        changelog: "Initial release",
+        parsed: { license: "MIT-0", frontmatter: {} },
+        files: [
+          {
+            path: "SKILL.md",
+            size: 10,
+            storageId,
+            sha256: "abc",
+            contentType: "text/markdown",
+          },
+        ],
+        createdBy: ownerId,
+        createdAt: 0,
+      },
+      forkOf: null,
+      canonical: null,
+    } satisfies NonNullable<SkillPageInitialData["result"]>;
+  }
 
   function makeInitialData(githubBacked = false): SkillPageInitialData {
     return {
@@ -140,6 +233,8 @@ describe("SkillDetailPage", () => {
     useMutationMock.mockReset();
     convexQueryMock.mockReset();
     getReadmeMock.mockReset();
+    getSkillCardMock.mockReset();
+    getSkillCardMock.mockImplementation((args) => getReadmeMock(args));
     navigateMock.mockReset();
     routerInvalidateMock.mockReset();
     useAuthStatusMock.mockReset();
@@ -183,58 +278,7 @@ describe("SkillDetailPage", () => {
       <SkillDetailPage
         slug="weather"
         initialData={{
-          result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
-            owner: {
-              _id: ownerPublisherId,
-              _creationTime: 0,
-              kind: "user",
-              handle: "steipete",
-              displayName: "Peter",
-              linkedUserId: ownerId,
-            },
-            latestVersion: {
-              _id: versionId,
-              _creationTime: 0,
-              skillId,
-              version: "1.0.0",
-              fingerprint: "abc",
-              changelog: "Initial release",
-              parsed: { license: "MIT-0", frontmatter: {} },
-              files: [
-                {
-                  path: "SKILL.md",
-                  size: 10,
-                  storageId,
-                  sha256: "abc",
-                  contentType: "text/markdown",
-                },
-              ],
-              createdBy: ownerId,
-              createdAt: 0,
-            },
-            forkOf: null,
-            canonical: null,
-          },
+          result: makeWeatherSkillResult(),
           readme: "# Weather",
           readmeError: null,
         }}
@@ -659,58 +703,7 @@ describe("SkillDetailPage", () => {
       },
     };
     const initialData = {
-      result: {
-        skill: {
-          _id: skillId,
-          _creationTime: 0,
-          slug: "weather",
-          displayName: "Weather",
-          summary: "Get current weather.",
-          ownerUserId: ownerId,
-          ownerPublisherId,
-          tags: {},
-          badges: {},
-          stats: {
-            stars: 12,
-            downloads: 34,
-            installs: 8,
-            versions: 1,
-            comments: 0,
-          },
-          createdAt: 0,
-          updatedAt: 0,
-        },
-        owner: {
-          _id: ownerPublisherId,
-          _creationTime: 0,
-          kind: "user" as const,
-          handle: "steipete",
-          displayName: "Peter",
-          linkedUserId: ownerId,
-        },
-        latestVersion: {
-          _id: versionId,
-          _creationTime: 0,
-          skillId,
-          version: "1.0.0",
-          fingerprint: "abc",
-          changelog: "Initial release",
-          parsed: { license: "MIT-0" as const, frontmatter: {} },
-          files: [
-            {
-              path: "SKILL.md",
-              size: 10,
-              storageId,
-              sha256: "abc",
-              contentType: "text/markdown",
-            },
-          ],
-          createdBy: ownerId,
-          createdAt: 0,
-        },
-        forkOf: null,
-        canonical: null,
-      },
+      result: makeWeatherSkillResult(),
       readme: "# Weather",
       readmeError: null,
     };
@@ -761,49 +754,8 @@ describe("SkillDetailPage", () => {
   it("passes the loader owner id to deferred activity trends when no public owner handle is available", async () => {
     const initialData = {
       result: {
-        skill: {
-          _id: skillId,
-          _creationTime: 0,
-          slug: "weather",
-          displayName: "Weather",
-          summary: "Get current weather.",
-          ownerUserId: ownerId,
-          ownerPublisherId,
-          tags: {},
-          badges: {},
-          stats: {
-            stars: 12,
-            downloads: 34,
-            installs: 8,
-            versions: 1,
-            comments: 0,
-          },
-          createdAt: 0,
-          updatedAt: 0,
-        },
+        ...makeWeatherSkillResult(),
         owner: null,
-        latestVersion: {
-          _id: versionId,
-          _creationTime: 0,
-          skillId,
-          version: "1.0.0",
-          fingerprint: "abc",
-          changelog: "Initial release",
-          parsed: { license: "MIT-0" as const, frontmatter: {} },
-          files: [
-            {
-              path: "SKILL.md",
-              size: 10,
-              storageId,
-              sha256: "abc",
-              contentType: "text/markdown",
-            },
-          ],
-          createdBy: ownerId,
-          createdAt: 0,
-        },
-        forkOf: null,
-        canonical: null,
       },
       readme: "# Weather",
       readmeError: null,
@@ -900,58 +852,7 @@ describe("SkillDetailPage", () => {
       <SkillDetailPage
         slug="weather"
         initialData={{
-          result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
-            owner: {
-              _id: ownerPublisherId,
-              _creationTime: 0,
-              kind: "user",
-              handle: "steipete",
-              displayName: "Peter",
-              linkedUserId: ownerId,
-            },
-            latestVersion: {
-              _id: versionId,
-              _creationTime: 0,
-              skillId,
-              version: "1.0.0",
-              fingerprint: "abc",
-              changelog: "Initial release",
-              parsed: { license: "MIT-0", frontmatter: {} },
-              files: [
-                {
-                  path: "SKILL.md",
-                  size: 10,
-                  storageId,
-                  sha256: "abc",
-                  contentType: "text/markdown",
-                },
-              ],
-              createdBy: ownerId,
-              createdAt: 0,
-            },
-            forkOf: null,
-            canonical: null,
-          },
+          result: makeWeatherSkillResult(),
           readme: "# Weather\n\nOnly old body.",
           readmeError: null,
         }}
@@ -1092,26 +993,7 @@ describe("SkillDetailPage", () => {
         slug="weather"
         initialData={{
           result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
+            skill: makeWeatherSkill(),
             owner: {
               _id: ownerPublisherId,
               _creationTime: 0,
@@ -1169,58 +1051,7 @@ describe("SkillDetailPage", () => {
     });
 
     const baseInitialData = {
-      result: {
-        skill: {
-          _id: skillId,
-          _creationTime: 0,
-          slug: "weather",
-          displayName: "Weather",
-          summary: "Get current weather.",
-          ownerUserId: ownerId,
-          ownerPublisherId,
-          tags: {},
-          badges: {},
-          stats: {
-            stars: 12,
-            downloads: 34,
-            installs: 8,
-            versions: 1,
-            comments: 0,
-          },
-          createdAt: 0,
-          updatedAt: 0,
-        },
-        owner: {
-          _id: ownerPublisherId,
-          _creationTime: 0,
-          kind: "user" as const,
-          handle: "steipete",
-          displayName: "Peter",
-          linkedUserId: ownerId,
-        },
-        latestVersion: {
-          _id: versionId,
-          _creationTime: 0,
-          skillId,
-          version: "1.0.0",
-          fingerprint: "abc",
-          changelog: "Initial release",
-          parsed: { license: "MIT-0" as const, frontmatter: {} },
-          files: [
-            {
-              path: "SKILL.md",
-              size: 10,
-              storageId,
-              sha256: "abc",
-              contentType: "text/markdown",
-            },
-          ],
-          createdBy: ownerId,
-          createdAt: 0,
-        },
-        forkOf: null,
-        canonical: null,
-      },
+      result: makeWeatherSkillResult(),
       readme: "# Weather",
       readmeError: null,
     };
@@ -1269,6 +1100,78 @@ describe("SkillDetailPage", () => {
       );
     });
     expect(await screen.findByText("Generated from worker.")).toBeTruthy();
+  });
+
+  it("keeps one generated card request pending across loading-state and parent renders", async () => {
+    const data = makeInitialData();
+    if (!data.result?.latestVersion) throw new Error("Missing version fixture");
+    const card = {
+      path: "skill-card.md",
+      size: 32,
+      storageId,
+      sha256: "generated-card",
+      contentType: "text/markdown",
+    };
+    data.result.latestVersion.files = [card];
+    data.result.latestVersion.generatedSkillCard = card;
+    const pending = createPendingTextRead();
+    getSkillCardMock.mockReturnValue(pending.promise);
+
+    const { rerender } = render(<SkillDetailPage slug="weather" initialData={data} />);
+    rerender(<SkillDetailPage slug="weather" initialData={{ ...data }} />);
+    expect(getSkillCardMock).toHaveBeenCalledExactlyOnceWith({ versionId });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Skill Card" }));
+    await act(async () => {
+      pending.resolve({ text: "# Skill Card\n\nOnly one completed request." });
+      await pending.promise;
+    });
+    expect(await screen.findByText("Only one completed request.")).toBeTruthy();
+    expect(getSkillCardMock).toHaveBeenCalledOnce();
+  });
+
+  it("retires a pending generated card when the selected version changes", async () => {
+    const data = makeInitialData();
+    if (!data.result?.latestVersion) throw new Error("Missing version fixture");
+    const card = {
+      path: "skill-card.md",
+      size: 32,
+      storageId,
+      sha256: "generated-card",
+      contentType: "text/markdown",
+    };
+    data.result.latestVersion.files = [card];
+    data.result.latestVersion.generatedSkillCard = card;
+    const oldRead = createPendingTextRead();
+    const newRead = createPendingTextRead();
+    getSkillCardMock.mockReturnValueOnce(oldRead.promise).mockReturnValueOnce(newRead.promise);
+    const { rerender } = render(<SkillDetailPage slug="weather" initialData={data} />);
+    const nextVersionId = "skillVersions:2" as Id<"skillVersions">;
+    rerender(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          ...data,
+          result: {
+            ...data.result,
+            latestVersion: { ...data.result.latestVersion, _id: nextVersionId, version: "3.0.0" },
+          },
+        }}
+      />,
+    );
+    expect(getSkillCardMock.mock.calls).toEqual([[{ versionId }], [{ versionId: nextVersionId }]]);
+    fireEvent.click(screen.getByRole("tab", { name: "Skill Card" }));
+    await act(async () => {
+      oldRead.resolve({ text: "# Skill Card\n\nStale card content." });
+      await oldRead.promise;
+    });
+    expect(screen.queryByText("Stale card content.")).toBeNull();
+    await act(async () => {
+      newRead.resolve({ text: "# Skill Card\n\nCurrent card content." });
+      await newRead.promise;
+    });
+    expect(await screen.findByText("Current card content.")).toBeTruthy();
+    expect(getSkillCardMock).toHaveBeenCalledTimes(2);
   });
 
   it("renders related skills from the stored category with a browse link", async () => {
@@ -1390,26 +1293,7 @@ describe("SkillDetailPage", () => {
         slug="weather"
         initialData={{
           result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
+            skill: makeWeatherSkill(),
             owner: {
               _id: ownerPublisherId,
               _creationTime: 0,
@@ -1556,25 +1440,7 @@ describe("SkillDetailPage", () => {
               parsed: { license: "MIT-0", frontmatter: {} },
               files: [],
               sha256hash: "abc123",
-              vtAnalysis: { status: "suspicious", verdict: "suspicious", checkedAt: 1 },
               llmAnalysis: { status: "suspicious", verdict: "suspicious", checkedAt: 1 },
-              staticScan: {
-                status: "suspicious",
-                reasonCodes: ["suspicious.dynamic_code_execution"],
-                findings: [
-                  {
-                    code: "suspicious.dynamic_code_execution",
-                    severity: "critical",
-                    file: "SKILL.md",
-                    line: 1,
-                    message: "dynamic execution",
-                    evidence: "exec",
-                  },
-                ],
-                summary: "Suspicious dynamic execution.",
-                engineVersion: "v2.4.5",
-                checkedAt: 1,
-              },
               createdBy: ownerId,
               createdAt: 0,
             },
@@ -1624,26 +1490,7 @@ describe("SkillDetailPage", () => {
         mode="settings"
         initialData={{
           result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
+            skill: makeWeatherSkill(),
             owner: {
               _id: ownerPublisherId,
               _creationTime: 0,
@@ -1694,58 +1541,7 @@ describe("SkillDetailPage", () => {
       <SkillDetailPage
         slug="weather"
         initialData={{
-          result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
-            owner: {
-              _id: ownerPublisherId,
-              _creationTime: 0,
-              kind: "user",
-              handle: "steipete",
-              displayName: "Peter",
-              linkedUserId: ownerId,
-            },
-            latestVersion: {
-              _id: versionId,
-              _creationTime: 0,
-              skillId,
-              version: "1.0.0",
-              fingerprint: "abc",
-              changelog: "Initial release",
-              parsed: { license: "MIT-0", frontmatter: {} },
-              files: [
-                {
-                  path: "SKILL.md",
-                  size: 10,
-                  storageId,
-                  sha256: "abc",
-                  contentType: "text/markdown",
-                },
-              ],
-              createdBy: ownerId,
-              createdAt: 0,
-            },
-            forkOf: null,
-            canonical: null,
-          },
+          result: makeWeatherSkillResult(),
           readme: "# Weather",
           readmeError: null,
         }}
@@ -1767,6 +1563,57 @@ describe("SkillDetailPage", () => {
     expect(
       await screen.findByRole("heading", { name: /We couldn't find that page/i }),
     ).toBeTruthy();
+  });
+
+  it("shows a pending publication notice to the signed-in owner after public SSR misses", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: ownerId, role: "user" },
+    });
+    useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (getFunctionName(query as never) !== "skills:getBySlug") return undefined;
+      return {
+        skill: {
+          _id: skillId,
+          slug: "weather",
+          displayName: "Weather",
+          summary: "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          tags: {},
+          stats: { stars: 0, downloads: 0 },
+        },
+        owner: {
+          _id: ownerPublisherId,
+          _creationTime: 0,
+          kind: "user",
+          handle: "steipete",
+          displayName: "Peter",
+          linkedUserId: ownerId,
+        },
+        latestVersion: null,
+        moderationInfo: {
+          isPendingScan: false,
+          isMalwareBlocked: false,
+          isSuspicious: false,
+          isHiddenByMod: true,
+          isRemoved: false,
+          reason: "pending.publication",
+        },
+      };
+    });
+
+    render(<SkillDetailPage slug="weather" canonicalOwner="steipete" initialData={null} />);
+
+    expect((await screen.findAllByRole("heading", { name: "Weather" })).length).toBeGreaterThan(0);
+    expect(screen.getByText("Pending publication")).toBeTruthy();
+    expect(screen.getByText(/not yet public or installable/i)).toBeTruthy();
+    expect(screen.getByText("Files pending security checks")).toBeTruthy();
+    expect(screen.queryByText("No README available")).toBeNull();
+    expect(screen.queryByRole("article", { name: "Install" })).toBeNull();
+    expect(screen.queryByText("Skill hidden")).toBeNull();
   });
 
   it("redirects legacy routes to canonical owner/slug", async () => {
@@ -1908,26 +1755,7 @@ describe("SkillDetailPage", () => {
         canonicalOwner="steipete"
         initialData={{
           result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "weather",
-              displayName: "Weather",
-              summary: "Get current weather.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
+            skill: makeWeatherSkill(),
             owner: {
               _id: ownerPublisherId,
               _creationTime: 0,
@@ -2126,27 +1954,7 @@ describe("SkillDetailPage", () => {
       if (args === "skip") return undefined;
       if (args && typeof args === "object" && "skillId" in args) return [];
       if (args && typeof args === "object" && "slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: "users:1",
-            ownerPublisherId: "publishers:steipete",
-            tags: {},
-            stats: { stars: 0, downloads: 0 },
-          },
-          owner: {
-            _id: "publishers:steipete",
-            _creationTime: 0,
-            kind: "user",
-            handle: "steipete",
-            displayName: "Peter",
-            linkedUserId: "users:1",
-          },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
-        };
+        return makeMinimalWeatherSkillResult();
       }
       return undefined;
     });
@@ -2183,27 +1991,7 @@ describe("SkillDetailPage", () => {
       }
       if (args && typeof args === "object" && "skillId" in args) return [];
       if (args && typeof args === "object" && "slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: "users:1",
-            ownerPublisherId: "publishers:steipete",
-            tags: {},
-            stats: { stars: 0, downloads: 0 },
-          },
-          owner: {
-            _id: "publishers:steipete",
-            _creationTime: 0,
-            kind: "user",
-            handle: "steipete",
-            displayName: "Peter",
-            linkedUserId: "users:1",
-          },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
-        };
+        return makeMinimalWeatherSkillResult();
       }
       return undefined;
     });
@@ -2250,27 +2038,7 @@ describe("SkillDetailPage", () => {
       }
       if (args && typeof args === "object" && "skillId" in args) return [];
       if (args && typeof args === "object" && "slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: "users:1",
-            ownerPublisherId: "publishers:steipete",
-            tags: {},
-            stats: { stars: 0, downloads: 0 },
-          },
-          owner: {
-            _id: "publishers:steipete",
-            _creationTime: 0,
-            kind: "user",
-            handle: "steipete",
-            displayName: "Peter",
-            linkedUserId: "users:1",
-          },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
-        };
+        return makeMinimalWeatherSkillResult();
       }
       return undefined;
     });
@@ -2303,27 +2071,7 @@ describe("SkillDetailPage", () => {
       if (args === "skip") return undefined;
       if (args && typeof args === "object" && "skillId" in args) return [];
       if (args && typeof args === "object" && "slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: "users:1",
-            ownerPublisherId: "publishers:steipete",
-            tags: {},
-            stats: { stars: 0, downloads: 0 },
-          },
-          owner: {
-            _id: "publishers:steipete",
-            _creationTime: 0,
-            kind: "user",
-            handle: "steipete",
-            displayName: "Peter",
-            linkedUserId: "users:1",
-          },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
-        };
+        return makeMinimalWeatherSkillResult();
       }
       return undefined;
     });
@@ -2766,27 +2514,7 @@ describe("SkillDetailPage", () => {
         return [];
       }
       if (args && typeof args === "object" && "slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: "users:1",
-            ownerPublisherId: "publishers:steipete",
-            tags: {},
-            stats: { stars: 0, downloads: 0 },
-          },
-          owner: {
-            _id: "publishers:steipete",
-            _creationTime: 0,
-            kind: "user",
-            handle: "steipete",
-            displayName: "Peter",
-            linkedUserId: "users:1",
-          },
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
-        };
+        return makeMinimalWeatherSkillResult();
       }
       return undefined;
     });

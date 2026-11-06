@@ -16,6 +16,38 @@ export type HomeListingKind = "skills" | "plugins";
 export type HomeListingTab = "trending" | "new" | "featured" | "official";
 export type { TrendingFeedState } from "./trendingApi";
 
+export type HomeListingView = { kind: HomeListingKind; tab: HomeListingTab };
+// Defaults stay out of the URL so the plain homepage keeps a clean `/`.
+type HomeListingSearch = { kind?: HomeListingKind; tab?: HomeListingTab };
+
+export const DEFAULT_HOME_LISTING_VIEW: HomeListingView = { kind: "plugins", tab: "featured" };
+
+const HOME_LISTING_KINDS: readonly HomeListingKind[] = ["plugins", "skills"];
+const HOME_LISTING_TABS: readonly HomeListingTab[] = ["featured", "trending", "official", "new"];
+
+export function parseHomeListingSearch(search: Record<string, unknown>): HomeListingSearch {
+  const kind = HOME_LISTING_KINDS.find((candidate) => candidate === search.kind);
+  const tab = HOME_LISTING_TABS.find((candidate) => candidate === search.tab);
+  return homeListingSearchFromView({
+    kind: kind ?? DEFAULT_HOME_LISTING_VIEW.kind,
+    tab: tab ?? DEFAULT_HOME_LISTING_VIEW.tab,
+  });
+}
+
+export function homeListingViewFromSearch(search: HomeListingSearch): HomeListingView {
+  return {
+    kind: search.kind ?? DEFAULT_HOME_LISTING_VIEW.kind,
+    tab: search.tab ?? DEFAULT_HOME_LISTING_VIEW.tab,
+  };
+}
+
+export function homeListingSearchFromView(view: HomeListingView): HomeListingSearch {
+  return {
+    kind: view.kind === DEFAULT_HOME_LISTING_VIEW.kind ? undefined : view.kind,
+    tab: view.tab === DEFAULT_HOME_LISTING_VIEW.tab ? undefined : view.tab,
+  };
+}
+
 export type HomeNativeSkillListingEntry = {
   skill: PublicSkill;
   ownerHandle?: string | null;
@@ -501,16 +533,27 @@ export async function fetchHomeTrendingPluginListing(
   return { items: items.slice(0, limit), hasMore: items.length > limit || hasMore };
 }
 
-export async function fetchInitialHomeListing(): Promise<HomeListingInitialData> {
-  const result = await fetchHomePluginListing("featured", [], HOME_LISTING_PAGE_SIZE);
-  return {
-    kind: "plugins",
-    tab: "featured",
+export async function fetchInitialHomeListing(
+  view: HomeListingView = DEFAULT_HOME_LISTING_VIEW,
+): Promise<HomeListingInitialData> {
+  const base: HomeListingInitialDataBase = {
+    tab: view.tab,
     categorySlugs: [],
     fetchLimit: HOME_LISTING_PAGE_SIZE,
-    items: result.items,
-    hasMore: result.hasMore,
+    hasMore: false,
   };
+  if (view.kind === "skills") {
+    const result = await fetchHomeSkillListing(view.tab, [], HOME_LISTING_PAGE_SIZE);
+    return {
+      ...base,
+      kind: "skills",
+      items: result.page,
+      hasMore: result.hasMore,
+      trendingState: "trendingState" in result ? result.trendingState : undefined,
+    };
+  }
+  const result = await fetchHomePluginListing(view.tab, [], HOME_LISTING_PAGE_SIZE);
+  return { ...base, kind: "plugins", items: result.items, hasMore: result.hasMore };
 }
 
 function categoryCacheKey(categorySlugs: readonly string[]) {

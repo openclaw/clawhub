@@ -558,6 +558,7 @@ function indexedRows(rows: unknown[]) {
 function makePublicPublisherVisibilityCtx(options?: {
   linkedUser?: Record<string, unknown> | null;
   legacyPersonalPublisher?: boolean;
+  skillModerationStatus?: string;
 }) {
   const legacyPersonalPublisher = options?.legacyPersonalPublisher ?? false;
   const publisher = {
@@ -602,6 +603,7 @@ function makePublicPublisherVisibilityCtx(options?: {
     softDeletedAt: undefined,
     slug: "demo",
     displayName: "Demo Skill",
+    moderationStatus: options?.skillModerationStatus,
     summary: "Demo summary",
     icon: null,
     installKind: "github",
@@ -4603,6 +4605,17 @@ describe("publishers membership controls", () => {
     expect(result.page.map((item) => item.displayName)).toEqual(["Demo Skill"]);
   });
 
+  it("hides a starred skill that is no longer public", async () => {
+    const ctx = makePublicPublisherVisibilityCtx({ skillModerationStatus: "hidden" });
+
+    const result = await listStarredPageHandler(ctx as never, {
+      handle: "proof-banned-builder",
+      paginationOpts: { cursor: null, numItems: 12 },
+    });
+
+    expect(result.page).toEqual([]);
+  });
+
   it("hides members for a user publisher whose linked user is deleted", async () => {
     const ctx = makePublicPublisherVisibilityCtx({
       linkedUser: { _id: "users:proof-banned-builder", deletedAt: 1_700_000_000_000 },
@@ -7556,52 +7569,14 @@ describe("publisher bootstrap", () => {
 
   it("lists a synthesized personal publisher when membership rows are missing", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
-    const ctx = {
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "users:alice") {
-            return {
-              _id: id,
-              _creationTime: 1,
-              handle: "alice",
-              displayName: "Alice",
-              trustedPublisher: false,
-              createdAt: 1,
-              updatedAt: 1,
-            };
-          }
-          return null;
-        }),
-        query: vi.fn((table: string) => {
-          if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn((indexName: string) => {
-                if (indexName !== "by_user") throw new Error(`unexpected index ${indexName}`);
-                return { collect: vi.fn().mockResolvedValue([]) };
-              }),
-            };
-          }
-          if (table === "publishers") {
-            return {
-              withIndex: vi.fn((indexName: string) => {
-                if (indexName === "by_handle") return { unique: vi.fn().mockResolvedValue(null) };
-                if (indexName !== "by_linked_user") {
-                  throw new Error(`unexpected index ${indexName}`);
-                }
-                return { unique: vi.fn().mockResolvedValue(null) };
-              }),
-            };
-          }
-          if (table === "skills" || table === "packages") {
-            return emptyOwnedResourcesQuery();
-          }
-          if (table === "officialPublishers") {
-            return emptyOfficialPublishersQuery();
-          }
-          throw new Error(`unexpected table ${table}`);
-        }),
-      },
-    };
+    const ctx = makeSynthesizedPublisherCtx("users:alice", {
+      _creationTime: 1,
+      handle: "alice",
+      displayName: "Alice",
+      trustedPublisher: false,
+      createdAt: 1,
+      updatedAt: 1,
+    });
 
     await expect(listMineHandler(ctx as never, {} as never)).resolves.toEqual([
       expect.objectContaining({
@@ -7617,52 +7592,14 @@ describe("publisher bootstrap", () => {
 
   it("derives route-safe handles for synthesized personal publishers", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:local" as never);
-    const ctx = {
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "users:local") {
-            return {
-              _id: id,
-              _creationTime: 1,
-              name: "Local Owner",
-              displayName: "Local Owner",
-              trustedPublisher: false,
-              createdAt: 1,
-              updatedAt: 1,
-            };
-          }
-          return null;
-        }),
-        query: vi.fn((table: string) => {
-          if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn((indexName: string) => {
-                if (indexName !== "by_user") throw new Error(`unexpected index ${indexName}`);
-                return { collect: vi.fn().mockResolvedValue([]) };
-              }),
-            };
-          }
-          if (table === "publishers") {
-            return {
-              withIndex: vi.fn((indexName: string) => {
-                if (indexName === "by_handle") return { unique: vi.fn().mockResolvedValue(null) };
-                if (indexName !== "by_linked_user") {
-                  throw new Error(`unexpected index ${indexName}`);
-                }
-                return { unique: vi.fn().mockResolvedValue(null) };
-              }),
-            };
-          }
-          if (table === "skills" || table === "packages") {
-            return emptyOwnedResourcesQuery();
-          }
-          if (table === "officialPublishers") {
-            return emptyOfficialPublishersQuery();
-          }
-          throw new Error(`unexpected table ${table}`);
-        }),
-      },
-    };
+    const ctx = makeSynthesizedPublisherCtx("users:local", {
+      _creationTime: 1,
+      name: "Local Owner",
+      displayName: "Local Owner",
+      trustedPublisher: false,
+      createdAt: 1,
+      updatedAt: 1,
+    });
 
     await expect(listMineHandler(ctx as never, {} as never)).resolves.toEqual([
       expect.objectContaining({

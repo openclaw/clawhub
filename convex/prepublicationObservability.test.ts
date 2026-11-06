@@ -70,6 +70,7 @@ describe("prepublication observability", () => {
       {
         status: "pending_checks",
         createdAt: 200_000,
+        checkClaimId: "live-worker",
         checkClaimExpiresAt: 1_100_000,
         checks: { clawscan: { status: "pending" } },
       },
@@ -86,10 +87,41 @@ describe("prepublication observability", () => {
       pendingChecksIsEstimate: false,
       readyChecks: 1,
       activeClaims: 1,
+      retryBackoffChecks: 0,
       timeoutPending: 1,
       scannerFailurePending: 1,
       oldestPendingAgeSeconds: 900,
       oldestReadyAgeSeconds: 900,
+      oldestReadyWaitAgeSeconds: 900,
+    });
+  });
+
+  it("separates retry backoff from worker ownership and measures time ready independently of upload age", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const ctx = makeQueueHealthCtx(
+      [
+        { createdAt: 100_000, checkClaimExpiresAt: 990_000 },
+        { createdAt: 600_000, checkClaimExpiresAt: 800_000 },
+        { createdAt: 300_000, checkClaimExpiresAt: 1_100_000 },
+        { createdAt: 200_000, checkClaimId: "live", checkClaimExpiresAt: 1_100_000 },
+        { createdAt: 400_000, checkClaimId: "expired", checkClaimExpiresAt: 1_000_000 },
+        { createdAt: 900_000 },
+      ].map((attempt) => ({
+        ...attempt,
+        status: "pending_checks",
+        checks: { clawscan: { status: "pending" } },
+      })),
+    );
+
+    await expect(getQueueHealthHandler(ctx, {})).resolves.toMatchObject({
+      pendingChecks: 6,
+      readyChecks: 4,
+      activeClaims: 1,
+      retryBackoffChecks: 1,
+      oldestPendingAgeSeconds: 900,
+      oldestReadyAgeSeconds: 900,
+      oldestReadyWaitAgeSeconds: 200,
     });
   });
 

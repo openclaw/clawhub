@@ -5,6 +5,11 @@ on:
     types: [clawhub-security-scan]
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Deployment to scan"
+        type: choice
+        options: [Production, Test]
+        default: Production
       limit:
         description: "Deprecated alias for batch-limit"
         required: false
@@ -32,6 +37,7 @@ on:
         default: "12"
 permissions:
   contents: read
+  packages: read
 
 jobs:
   dispatch-staging:
@@ -58,28 +64,32 @@ jobs:
   codex-security-scan:
     if: >-
       github.repository == 'openclaw/clawhub' &&
-      ((github.ref == 'refs/heads/main' && github.event.client_payload.environment != 'staging') ||
-       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging'))
+      ((github.event_name == 'repository_dispatch' &&
+        github.ref == 'refs/heads/main' &&
+        (!github.event.client_payload.environment || github.event.client_payload.environment == 'Production' ||
+         github.event.client_payload.environment == 'test')) ||
+       (github.event_name == 'workflow_dispatch' &&
+        github.ref == 'refs/heads/main' &&
+        (inputs.environment == 'Test' || inputs.environment == 'Production')))
     name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
-    runs-on: blacksmith-16vcpu-ubuntu-2404
-    timeout-minutes: 40
-    environment: ${{ github.ref == 'refs/heads/staging' && 'Staging' || 'Production' }}
+    # Match the qualified recovery image; Ubuntu24.04 AppArmor blocks judge bwrap setup.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    environment: ${{ (inputs.environment == 'Test' || github.event.client_payload.environment == 'test') && 'Test' || 'Production' }}
     concurrency:
       # Bulk assignments must not wait behind ordinary queue workers on the same shard.
       # Priority remains one reserved lane shared by every dispatch mode.
-      group: ${{ github.ref == 'refs/heads/staging' && 'staging-' || '' }}clawhub-security-scan-${{ matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '' }}${{ matrix.shard }}
+      group: ${{ (inputs.environment == 'Test' || github.event.client_payload.environment == 'test') && 'test-' || '' }}${{ format('clawhub-security-scan-{0}{1}', matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '', matrix.shard) }}
       cancel-in-progress: false
     strategy:
       fail-fast: false
       max-parallel: 19
       matrix:
         lane: [shared]
-        shard: ${{ fromJSON(github.ref == 'refs/heads/staging' && '["shared-0"]' || inputs['assigned-jobs'] && inputs['shared-workers'] == '18' && '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8","shared-9","shared-10","shared-11","shared-12","shared-13","shared-14","shared-15","shared-16","shared-17"]' || '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8"]') }}
-        include:
-          - lane: priority
-            shard: priority-0
+        shard: ${{ fromJSON((inputs.environment == 'Test' || github.event.client_payload.environment == 'test') && '["shared-0"]' || inputs['assigned-jobs'] && inputs['shared-workers'] == '18' && '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8","shared-9","shared-10","shared-11","shared-12","shared-13","shared-14","shared-15","shared-16","shared-17"]' || '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8"]') }}
+        include: ${{ fromJSON((inputs.environment == 'Test' || github.event.client_payload.environment == 'test') && '[]' || '[{"lane":"priority","shard":"priority-0"}]') }}
     env:
-      CONVEX_URL: ${{ github.ref == 'refs/heads/staging' && 'https://cheery-civet-733.convex.cloud' || vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      CONVEX_URL: ${{ (inputs.environment == 'Test' || github.event.client_payload.environment == 'test') && 'https://academic-chihuahua-392.convex.cloud' || vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       CODEX_SECURITY_SCAN_LIMIT: ${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}
       CODEX_SECURITY_SCAN_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
       CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}
@@ -87,7 +97,10 @@ jobs:
       CODEX_SECURITY_SCAN_ASSIGNED_JOBS: ${{ inputs['assigned-jobs'] || '' }}
       CODEX_SECURITY_SCAN_LANE: ${{ matrix.lane }}
       CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '900000' }}
-      # The runner is disposable and installs the reviewed, hash-locked host scanners above.
+      # Report-only Endor analysis for code-plugin releases; set to 0 to stop it.
+      CODEX_SECURITY_SCAN_ENDOR_ENABLED: ${{ vars.CODEX_SECURITY_SCAN_ENDOR_ENABLED || '0' }}
+      CODEX_SECURITY_SCAN_ENDOR_IMAGE: ${{ vars.CODEX_SECURITY_SCAN_ENDOR_IMAGE }}
+      # The runner is disposable and installs the reviewed, source-pinned host scanners below.
       CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX: "off"
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
       CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: codex-security-scan-diagnostics-${{ matrix.shard }}
@@ -97,47 +110,72 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
+      - name: Check Test scan target
+        if: inputs.environment == 'Test' || github.event.client_payload.environment == 'test'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/heads/main ||
+                "$CONVEX_URL" != https://academic-chihuahua-392.convex.cloud ||
+                "$CONVEX_DEPLOY_KEY" != prod:academic-chihuahua-392\|* ]]; then
+            echo '::error::Test security workers must use academic-chihuahua-392 from main'
+            exit 1
+          fi
+
       - uses: ./.github/actions/setup-bun
 
-      - name: Verify staging worker target
-        if: github.ref == 'refs/heads/staging'
-        run: bun scripts/security/check-staging-worker-target.ts
+      - name: Prepare Test scan authentication
+        id: test-auth
+        if: inputs.environment == 'Test' || github.event.client_payload.environment == 'test'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$(bunx convex env get CLAWHUB_ENV --prod)" == test ]] || {
+            echo '::error::Target Convex deployment is not marked Test'
+            exit 1
+          }
+          worker_token="$(bunx convex env get SECURITY_SCAN_WORKER_TOKEN --prod)"
+          [[ -n "$worker_token" ]] || { echo '::error::Test SECURITY_SCAN_WORKER_TOKEN is missing'; exit 1; }
+          printf '::add-mask::%s\n' "$worker_token"
+          printf 'token=%s\n' "$worker_token" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
 
       - name: Install Codex CLI
-        run: |
-          set -euo pipefail
-          if ! command -v codex >/dev/null 2>&1; then
-            npm install -g @openai/codex@0.142.3
-          fi
-          codex --version
+        uses: ./.github/actions/setup-codex
 
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          npm install -g @openclaw/clawscan@0.1.8
-          clawscan --version
+          sh scripts/security/install-clawscan.sh
+
+      - name: Prepare Endor scanner
+        if: env.CODEX_SECURITY_SCAN_ENDOR_ENABLED == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$CODEX_SECURITY_SCAN_ENDOR_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]] || { echo 'Endor requires a Docker image pinned by SHA-256 digest'; exit 1; }
+          export DOCKER_CONFIG
+          DOCKER_CONFIG=$(mktemp -d)
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker pull "$CODEX_SECURITY_SCAN_ENDOR_IMAGE"
+          docker run --rm --network none "$CODEX_SECURITY_SCAN_ENDOR_IMAGE" test -x /usr/local/bin/clawhub-endor-scan
 
       - name: Install A.I.G scanner
         run: |
           set -euo pipefail
-          python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt
-          python -c 'from importlib.metadata import version; assert version("aig-skill-scan") == "0.2.2"'
-          python -c 'import inspect; from skill_scan.utils.llm import LLM; assert "temperature=" not in inspect.getsource(LLM.chat_stream)'
-          aig-skill-scan --help >/dev/null
+          sh scripts/security/install-clawscan-scanners.sh aig
 
       - name: Install SkillSpector
         run: |
           set -euo pipefail
-          python -m venv "$RUNNER_TEMP/skillspector-venv"
-          source "$RUNNER_TEMP/skillspector-venv/bin/activate"
-          python -m pip install --upgrade pip
-          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc'
-          echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
-          skillspector --help >/dev/null
+          sh scripts/security/install-clawscan-scanners.sh skillspector
 
       - name: Authenticate Codex CLI
         env:
@@ -148,10 +186,17 @@ jobs:
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           DEFAULT_BASE_URL: https://api.openai.com/v1
-          DEFAULT_MODEL: gpt-5.6
+          DEFAULT_MODEL: ${{ vars.DEFAULT_MODEL || 'gpt-6.1-sol' }}
+          REASONING_EFFORT: ${{ vars.REASONING_EFFORT || 'medium' }}
+          SKILLSPECTOR_MODEL: ${{ vars.SKILLSPECTOR_MODEL || 'gpt-6.1-sol' }}
+          SKILLSPECTOR_REASONING_EFFORT: ${{ vars.SKILLSPECTOR_REASONING_EFFORT || 'medium' }}
           LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+          SECURITY_SCAN_WORKER_TOKEN: ${{ (inputs.environment != 'Test' && github.event.client_payload.environment != 'test') && secrets.SECURITY_SCAN_WORKER_TOKEN || steps.test-auth.outputs.token }}
+          ENDOR_NAMESPACE: ${{ vars.ENDOR_NAMESPACE }}
+          ENDOR_API: ${{ vars.ENDOR_API }}
+          ENDOR_API_CREDENTIALS_KEY: ${{ secrets.ENDOR_API_CREDENTIALS_KEY }}
+          ENDOR_API_CREDENTIALS_SECRET: ${{ secrets.ENDOR_API_CREDENTIALS_SECRET }}
         run: |
           bun scripts/security/run-codex-scan-worker.ts \
             --batch-limit "$CODEX_SECURITY_SCAN_LIMIT" \

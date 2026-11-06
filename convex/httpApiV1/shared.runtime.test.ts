@@ -1,10 +1,30 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { publicApiOrigin } from "./shared";
+import { contentDispositionAttachment, publicApiOrigin } from "./shared";
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe("archive attachment filenames", () => {
+  it.each([
+    [
+      "plugin-1\r\nX-Injected: yes.zip",
+      "plugin-1_X-Injected_yes.zip",
+      "plugin-1%0D%0AX-Injected%3A%20yes.zip",
+    ],
+    ["plugin-café.tgz", "plugin-caf.tgz", "plugin-caf%C3%A9.tgz"],
+    ["!!!.zip", "download.zip", "!!!.zip"],
+  ])("serializes %j as one valid attachment header", (filename, fallback, encoded) => {
+    const response = new Response("archive", {
+      headers: { "Content-Disposition": contentDispositionAttachment(filename) },
+    });
+    expect(response.headers.get("Content-Disposition")).toBe(
+      `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`,
+    );
+    expect(response.headers.has("X-Injected")).toBe(false);
+  });
 });
 
 describe("public API origin by Convex runtime", () => {

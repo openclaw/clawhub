@@ -186,7 +186,7 @@ export const RETENTION_POLICIES = {
       expirationIndex: "by_expires_at",
       prune: "future publishAttempts cleanup in CLAW-467 staged-publish follow-up",
       retention:
-        "Pending/finalized attempt TTL; later secret and moderation slices refine blocked retention.",
+        "Pending/finalized attempt TTL; later secret and moderation slices refine blocked retention. Temporary SDK inventory files are deleted on finalization/secret blocking, with a scheduled 30-day expiry for abandoned attempts.",
     },
   ),
   catalogClassificationResults: derived(
@@ -204,6 +204,10 @@ export const RETENTION_POLICIES = {
   packageInspectorScanStates: derived(
     "Successful beta scan identities used to skip unchanged release/target/inspector combinations.",
     "packageReleases and successful Plugin Inspector runs",
+  ),
+  packageSdkUsage: derived(
+    "Current plugin/API relationships replaced by Inspector scans; public reads check current release and visibility.",
+    "packageReleases and Plugin Inspector SDK usage reports",
   ),
   securityScanJobs: permanent("Security scan job history and current processing state."),
   securityScanDispatchState: permanent("Security scan worker dispatch coordination state."),
@@ -238,6 +242,10 @@ export const RETENTION_POLICIES = {
       prune: "pluginSearchObservations.pruneExpiredInternal",
       retention: "30 days after observation.",
     },
+  ),
+  downloadAnalyticsReports: derived(
+    "Single replaceable admin report plus bounded build cursor; no per-download writes or report history.",
+    "packageStatEvents and canonical packages.stats.downloads",
   ),
   packageDailyStats: permanent("Daily aggregate package stats are product analytics."),
   packageLeaderboards: derived(
@@ -398,7 +406,9 @@ export const RETENTION_POLICIES = {
   publisherAbuseSignalReviewEvents: permanent(
     "Dormant abuse signal review history retained until an approved migration removes it.",
   ),
-  vtScanLogs: permanent("VirusTotal scan log history."),
+  vtScanLogs: permanent(
+    "Dormant VirusTotal scan log history retained until an approved migration removes it.",
+  ),
   apiTokens: permanent("User API tokens until revoked."),
   cliDeviceCodes: ephemeral("CLI device codes expire quickly.", {
     expirationField: "expiresAt",
@@ -406,7 +416,7 @@ export const RETENTION_POLICIES = {
     prune: "usage-time expiry plus pending retention cleanup",
     retention: "Device code TTL.",
   }),
-  httpRateLimitKeys: ephemeral(
+  httpRateLimitKeysV2: ephemeral(
     "Component-backed HTTP rate-limit key metadata is operational cleanup state.",
     {
       expirationField: "expiresAt",

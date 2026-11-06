@@ -27,6 +27,8 @@ declare module "@openclaw/plugin-inspector" {
       configPath?: string;
       generatedAt?: string;
       targetOpenClaw?: unknown;
+      sdkUsageInputKind?: "source" | "artifact";
+      sdkUsageTargetPath?: string;
     }): Promise<{ report: PluginInspectorReport; paths: PluginInspectorPaths }>;
   };
 

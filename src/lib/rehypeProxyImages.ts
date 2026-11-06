@@ -1,4 +1,5 @@
 import { visit } from "unist-util-visit";
+import { parseSrcset } from "./srcset";
 
 type HastElementLike = {
   tagName?: string;
@@ -26,11 +27,6 @@ const ABSOLUTE_HTTP = /^https?:\/\//i;
 const EXPLICIT_SCHEME = /^[a-z][a-z0-9+\-.]*:/i;
 const PROTOCOL_RELATIVE = /^\/\//;
 const IMAGE_PROXY_WIDTH = 1024;
-
-type SrcsetCandidate = {
-  url: string;
-  descriptors: string;
-};
 
 function getRawGitHubCommitRoot(assetBaseUrl: string): URL | null {
   try {
@@ -83,58 +79,6 @@ function rewriteImageSrc(src: string, assetBaseUrl: string | undefined): string 
   }
   if (!absoluteSrc) return null;
   return proxyImageSrc(absoluteSrc);
-}
-
-function isAsciiWhitespace(char: string): boolean {
-  return char === " " || char === "\n" || char === "\t" || char === "\r" || char === "\f";
-}
-
-function parseSrcset(srcset: string): SrcsetCandidate[] {
-  const candidates: SrcsetCandidate[] = [];
-  let index = 0;
-
-  while (index < srcset.length) {
-    while (index < srcset.length) {
-      const char = srcset[index];
-      if (isAsciiWhitespace(char) || char === ",") {
-        index += 1;
-        continue;
-      }
-      break;
-    }
-    if (index >= srcset.length) break;
-
-    const urlStart = index;
-    while (index < srcset.length && !isAsciiWhitespace(srcset[index])) {
-      index += 1;
-    }
-    let url = srcset.slice(urlStart, index);
-    const endedWithComma = url.endsWith(",");
-    if (endedWithComma) {
-      url = url.slice(0, -1);
-    }
-
-    while (index < srcset.length && isAsciiWhitespace(srcset[index])) {
-      index += 1;
-    }
-
-    let descriptors = "";
-    if (!endedWithComma) {
-      const descriptorsStart = index;
-      while (index < srcset.length && srcset[index] !== ",") {
-        index += 1;
-      }
-      descriptors = srcset.slice(descriptorsStart, index).trim();
-    }
-
-    candidates.push({ url, descriptors });
-
-    if (srcset[index] === ",") {
-      index += 1;
-    }
-  }
-
-  return candidates;
 }
 
 function rewriteSrcset(srcset: string, assetBaseUrl: string | undefined): string | null {

@@ -66,6 +66,42 @@ export type ArchiveMetricPayload = {
   metric: ArchiveMetricArgs;
 };
 
+export async function readBoundedArchiveText(
+  source: Pick<Request, "headers" | "body">,
+  maxBytes: number,
+) {
+  const contentLength = source.headers.get("content-length");
+  if (contentLength) {
+    const declaredBytes = Number.parseInt(contentLength, 10);
+    if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) return null;
+  }
+  const reader = source.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      totalBytes += chunk.value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(chunk.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
 export async function signArchivePayload(
   payload: SkillArchiveManifest | SkillExportArchiveManifest | ArchiveMetricPayload,
   type: typeof ARCHIVE_MANIFEST_JWS_TYPE | typeof ARCHIVE_METRIC_JWS_TYPE,

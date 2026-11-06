@@ -23,7 +23,7 @@ bun run admin -- --help
 Example:
 
 ```bash
-bun run admin -- skills unhide maxhub-pipixia --reason "VT false positive; reanalysis clean" --yes
+bun run admin -- skills unhide maxhub-pipixia --reason "Scanner false positive; reanalysis clean" --yes
 ```
 
 ## Build and Verify
@@ -294,3 +294,57 @@ Search intelligence → Featured selection. Do not invoke delivery, backfill req
 logs, or change Featured. Review usefulness, quality, security and category coverage
 with Patrick before publishing a selection. An empty search window can still have
 adoption candidates; missing evidence is never replaced with sample recommendations.
+
+## New: Template download analytics
+
+The new `clawhub-admin downloads` command reads the admin-only native Convex
+report; it is not a previously shipped command or an Axiom log count.
+
+```sh
+clawhub-admin downloads
+clawhub-admin downloads --json
+clawhub-admin downloads --refresh
+```
+
+Uses the existing stored API token and registry selection. The token's current
+user must be an active platform admin; moderator and ordinary-user tokens are
+rejected. GET /api/v1/admin/download-analytics reads the report; POST at the same
+path requests a refresh and returns the same current/pending summary.
+
+- Last 24 hours is a real rolling [start, end) interval, not UTC daily buckets
+  or completed hours. Downloads remain deduplicated per identity/Template/UTC
+  day; they are not installs or unique people.
+- Lifetime sums canonical package download counters across **all** public,
+  undeleted Templates (family claw), not a top-N list or retained-event count.
+  Eligibility is observed while scanning: removing/privatizing a listing can
+  reduce this scoped total. Counters normally process every 15 minutes; backlog
+  and report cadence add lag.
+- A bounded background refresh runs every 15 minutes. --refresh schedules work,
+  does not wait for its completion, and coalesces concurrent refreshes (with a
+  one-minute cooldown after success). Run the command again to read completion.
+- Pending means counts are unavailable (null), not zero. A previous completed
+  report remains visible if refresh fails. Human output labels errors, stale
+  reports (30 minutes after the rolling-window end), and currently paused
+  counting. Paused downloads are not reconstructed.
+- The multi-page report is an eventual observation, **not an atomic snapshot**.
+  Eligibility, late events, and counter processing can change during the scan.
+  windowEndAt fixes the event-time upper bound, not a lifetime counter cutoff.
+- JSON includes timestamps, refresh lease/error metadata and scan work counters
+  (events, packages, eligibility reads, pages) for freshness and cost checks.
+  Processed raw events retain the existing seven-day retention; lifetime
+  counters survive that retention.
+
+For disposable local browser proof only, after pushing this function/schema
+code to the explicitly selected non-production deployment:
+
+    bunx convex run devSeedDownloadAnalytics:seedInternal '{}'
+    bunx convex run downloadAnalytics:refreshInternal '{}'
+
+The owner-guarded, repeatable fixture contributes 17 rolling downloads and
+19,134 lifetime downloads from two public Templates, plus deliberately excluded
+private/deleted/plugin fixtures and old/install events. Existing eligible
+Templates add to those global totals. All fixture events are synthetic and
+already processed; this is not historical reconstruction. Remote development
+and production seeding are rejected; the local-auth harness sets the required
+local deployment marker. The refresh call schedules bounded work; use the authenticated
+admin command/dashboard to observe completion.

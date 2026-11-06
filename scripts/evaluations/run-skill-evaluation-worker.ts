@@ -5,7 +5,7 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import {
   NVIDIA_SKILL_EVALUATION_CONFIG,
-  NVIDIA_SKILL_EVALUATION_CONFIG_KEY,
+  resolveSkillEvaluationRecipe,
 } from "../../convex/lib/skillEvaluationConfig";
 import { createWorkerLogger } from "../lib/workerLogger";
 import { maskKnownWorkerSecrets, redactWorkerPublicText } from "../lib/workerRedaction";
@@ -25,6 +25,9 @@ type WorkerClient = Pick<ConvexHttpClient, "action">;
 const logger = createWorkerLogger({ name: "skill-evaluation-worker" });
 const EVALUATION_TIMEOUT_MS = 160 * 60 * 1000;
 const VALIDATION_TIMEOUT_MS = 5 * 60 * 1000;
+// Recycle workers between evaluations instead of claiming late in an aging
+// runner's lifetime. An already claimed skill keeps its full timeout and lease.
+const CLAIM_WINDOW_MS = 60 * 60 * 1000;
 
 function requireEnv(name: string) {
   const value = process.env[name]?.trim();
@@ -66,6 +69,8 @@ export function evaluationEnvironment(
   const env = commandEnvironment(source);
   env.OPENAI_API_KEY = capability.token;
   env.OPENAI_BASE_URL = capability.baseUrl;
+  env.SKILL_EVAL_LLM_API_KEY = capability.token;
+  env.SKILL_EVAL_LLM_BASE_URL = capability.baseUrl;
   env.SKILL_EVAL_LLM_PROVIDER = run.judgeProvider;
   env.SKILL_EVAL_LLM_MODEL = run.judgeModel;
   env.SKILL_EVAL_JUDGE_MODEL = run.judgeModel;
@@ -85,23 +90,6 @@ async function dockerBridgeGateway() {
   return gateway;
 }
 
-function pinnedConfigurationMatches(run: ClaimedEvaluation) {
-  const config = NVIDIA_SKILL_EVALUATION_CONFIG;
-  return (
-    run.sourceRepo === config.sourceRepo &&
-    run.configKey === NVIDIA_SKILL_EVALUATION_CONFIG_KEY &&
-    run.evaluatorRepository === config.evaluatorRepository &&
-    run.evaluatorRelease === config.evaluatorRelease &&
-    run.evaluatorCommit === config.evaluatorCommit &&
-    run.agent === config.agent &&
-    run.agentModel === config.agentModel &&
-    run.judgeProvider === config.judgeProvider &&
-    run.judgeModel === config.judgeModel &&
-    run.environment === config.environment &&
-    run.attemptsPerCase === config.attemptsPerCase
-  );
-}
-
 async function verifyEvaluatorCheckout(evaluatorProject: string) {
   const head = await runCommand(["git", "-C", evaluatorProject, "rev-parse", "HEAD"]);
   if (
@@ -119,9 +107,36 @@ async function verifyEvaluatorCheckout(evaluatorProject: string) {
   }
 }
 
-function commandFailure(prefix: string, result: { stdout: string; stderr: string }) {
-  const detail = (result.stderr || result.stdout).trim().slice(-4_000);
-  return redactWorkerPublicText(`${prefix}${detail ? `: ${detail}` : ""}`, 4_500);
+export function commandFailure(
+  prefix: string,
+  result: { stdout: string; stderr: string },
+  resultJson?: string,
+) {
+  if (resultJson) {
+    try {
+      const native = JSON.parse(resultJson) as { execution_errors?: unknown; error?: unknown };
+      const messages = [
+        ...new Set(
+          [native?.execution_errors, native?.error]
+            .flat()
+            .filter((error): error is string => typeof error === "string" && Boolean(error.trim())),
+        ),
+      ].slice(0, 5);
+      if (messages.length) {
+        return redactWorkerPublicText(`${prefix}: ${messages.join("; ")}`, 1_800);
+      }
+    } catch {
+      // Fall back to both command streams when the native report is incomplete.
+    }
+  }
+  // Progress is written to stderr while the final failure report may be on stdout.
+  // Keep both tails within failRun's limit instead of truncating the useful ending.
+  const stdout = redactWorkerPublicText(result.stdout, Number.MAX_SAFE_INTEGER).trim().slice(-750);
+  const stderr = redactWorkerPublicText(result.stderr, Number.MAX_SAFE_INTEGER).trim().slice(-750);
+  const detail = [stdout && `stdout: ${stdout}`, stderr && `stderr: ${stderr}`]
+    .filter(Boolean)
+    .join("\n");
+  return redactWorkerPublicText(`${prefix}${detail ? `: ${detail}` : ""}`, 1_800);
 }
 
 async function skipRun(
@@ -156,7 +171,12 @@ async function failRun(
     error: message,
   });
   logger.error(
-    { event: "skill_evaluation_failed", retry: result.retry, runId: run._id },
+    {
+      event: "skill_evaluation_failed",
+      publicReason: message,
+      retry: result.retry,
+      runId: run._id,
+    },
     "skill evaluation failed",
   );
 }
@@ -172,7 +192,8 @@ export async function processClaimedEvaluation(args: {
   const startedAt = Date.now();
   let snapshotRoot: string | undefined;
   try {
-    if (!pinnedConfigurationMatches(run)) {
+    const recipe = resolveSkillEvaluationRecipe(run);
+    if (!recipe) {
       await skipRun(client, token, run, "unsupported-config: worker configuration changed");
       return { outcome: "skipped" as const };
     }
@@ -219,6 +240,18 @@ export async function processClaimedEvaluation(args: {
     const broker = await startOpenAiCapabilityBroker({
       allowedModels: [run.agentModel, run.judgeModel],
       apiKey: openAiApiKey,
+      // The pinned evaluator emits Responses for the agent and Chat for judges.
+      // Apply role policy here because upstream pins agent effort to high and
+      // does not expose a judge reasoning setting. Legacy recipes stay unchanged.
+      ...("recipeVersion" in recipe
+        ? {
+            reasoningEffort: {
+              responses: recipe.agentReasoningEffort,
+              chat: recipe.judgeReasoningEffort,
+            },
+            serviceTier: recipe.serviceTier,
+          }
+        : {}),
     });
     let evaluation;
     try {
@@ -232,11 +265,29 @@ export async function processClaimedEvaluation(args: {
       });
     } finally {
       await broker.close();
-    }
-    if (evaluation.exitCode !== 0) {
-      throw new Error(commandFailure("SkillEvaluator Tier 3 evaluation failed", evaluation));
+      logger.info(
+        { event: "skill_evaluation_provider_usage", runId: run._id, ...broker.usage() },
+        "evaluation provider usage",
+      );
     }
     const resultPath = await findLatestResultJson(resultsDirectory);
+    if (evaluation.exitCode !== 0) {
+      const resultJson = resultPath
+        ? await readFile(resultPath, "utf8").catch(() => undefined)
+        : undefined;
+      const usage = broker.usage();
+      const requestFailures =
+        usage.budgetRejections || usage.providerRateLimitResponses
+          ? ` (request limit=${usage.requestLimit}, broker budget rejections=${usage.budgetRejections}, provider HTTP 429 responses=${usage.providerRateLimitResponses})`
+          : "";
+      throw new Error(
+        commandFailure(
+          `SkillEvaluator Tier 3 evaluation failed${requestFailures}`,
+          evaluation,
+          resultJson,
+        ),
+      );
+    }
     if (!resultPath) throw new Error("SkillEvaluator completed without producing result.json");
     const resultJson = await readFile(resultPath, "utf8");
     await client.action(api.skillEvaluations.completeSkillEvaluation, {
@@ -293,25 +344,36 @@ export async function runSkillEvaluationWorker(options?: {
   }
   const evaluatorProject = resolve(options?.evaluatorProject ?? requireEnv("SKILL_EVALUATOR_DIR"));
   await verifyEvaluatorCheckout(evaluatorProject);
-  const claimed = await client.action(api.skillEvaluations.claimSkillEvaluationJobs, {
-    token,
-    workerId: options?.workerId ?? workerId(),
-    limit: 1,
-    leaseMs: 3 * 60 * 60 * 1000,
-  });
-  const run = claimed[0] as ClaimedEvaluation | undefined;
-  if (!run) {
-    logger.info({ event: "skill_evaluation_queue_empty" }, "no skill evaluation jobs available");
-    return { claimed: 0, failed: 0 };
+  const claimDeadline = Date.now() + CLAIM_WINDOW_MS;
+  const id = options?.workerId ?? workerId();
+  const totals = { claimed: 0, failed: 0 };
+  while (Date.now() < claimDeadline) {
+    const claimed = await client.action(api.skillEvaluations.claimSkillEvaluationJobs, {
+      token,
+      workerId: id,
+      limit: 1,
+      leaseMs: 3 * 60 * 60 * 1000,
+    });
+    const run = claimed[0] as ClaimedEvaluation | undefined;
+    if (!run) {
+      logger.info({ event: "skill_evaluation_queue_empty" }, "no skill evaluation jobs available");
+      break;
+    }
+    totals.claimed += 1;
+    const result = await processClaimedEvaluation({
+      client,
+      evaluatorProject,
+      openAiApiKey,
+      run,
+      token,
+    });
+    if (result.outcome === "failed") totals.failed += 1;
   }
-  const result = await processClaimedEvaluation({
-    client,
-    evaluatorProject,
-    openAiApiKey,
-    run,
-    token,
-  });
-  return { claimed: 1, failed: result.outcome === "failed" ? 1 : 0 };
+  logger.info(
+    { event: "skill_evaluation_worker_finished", ...totals },
+    "evaluation worker finished",
+  );
+  return totals;
 }
 
 if (import.meta.main) {

@@ -11,6 +11,7 @@ import {
   fetchHomeSkillListing as fetchSkillListing,
   searchHomeTrendingSkillListing,
   fetchHomeFeaturedSkillListing,
+  DEFAULT_HOME_LISTING_VIEW,
   HOME_LISTING_PAGE_SIZE,
   HOME_NEW_WINDOW_MS,
   homeListingCacheKey as listingCacheKey,
@@ -21,6 +22,7 @@ import {
   type HomeSkillListingEntry as SkillPageEntry,
   type HomeListingKind as ListingKind,
   type HomeListingTab as ListingTab,
+  type HomeListingView,
   type TrendingFeedState,
 } from "../lib/homeListingData";
 import { consumeManualCatalogSearch, type ManualCatalogSearch } from "../lib/manualCatalogSearch";
@@ -181,6 +183,10 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
 
 type HomeListingSectionProps = {
   initialListing?: HomeListingInitialData | null;
+  /** Kind and tab requested by the URL; defaults to the loader listing's view. */
+  requestedView?: HomeListingView;
+  /** Called after the visible kind or tab changes so the route can mirror it in the URL. */
+  onViewChange?: (view: HomeListingView) => void;
 };
 
 function createInitialListingCache(initialListing: HomeListingInitialData | null) {
@@ -209,7 +215,11 @@ function createInitialListingCache(initialListing: HomeListingInitialData | null
   return cache;
 }
 
-export function HomeListingSection({ initialListing = null }: HomeListingSectionProps = {}) {
+export function HomeListingSection({
+  initialListing = null,
+  requestedView,
+  onViewChange,
+}: HomeListingSectionProps = {}) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchRequestRef = useRef(0);
   const manualSearchRef = useRef<ManualCatalogSearch | null>(null);
@@ -217,35 +227,50 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   listingCacheRef.current ??= createInitialListingCache(initialListing);
   const listingCache = listingCacheRef.current;
 
-  const [kind, setKind] = useState<ListingKind>(initialListing?.kind ?? "plugins");
-  const initialTab =
-    initialListing?.kind === "skills" && initialListing.trendingState === "unavailable"
-      ? "featured"
-      : (initialListing?.tab ?? "featured");
-  const [tab, setTab] = useState<ListingTab>(initialTab);
+  const startView =
+    requestedView ??
+    (initialListing
+      ? { kind: initialListing.kind, tab: initialListing.tab }
+      : DEFAULT_HOME_LISTING_VIEW);
+  // A cached loader listing can belong to another view after client navigation;
+  // only show it when it answers the requested view.
+  const matchingListing =
+    initialListing?.kind === startView.kind && initialListing.tab === startView.tab
+      ? initialListing
+      : null;
+  const initialTrendingUnavailable =
+    matchingListing?.kind === "skills" && matchingListing.trendingState === "unavailable";
+  const shownListing = initialTrendingUnavailable ? null : matchingListing;
+  // Last view both sides agree on; distinguishes our own URL updates from outside navigation.
+  const syncedViewRef = useRef<HomeListingView>(startView);
+
+  const [kind, setKind] = useState<ListingKind>(startView.kind);
+  const [tab, setTab] = useState<ListingTab>(
+    initialTrendingUnavailable ? "featured" : startView.tab,
+  );
   const [categorySlug, setCategorySlug] = useState<string | undefined>();
   const [searchQuery, setSearchQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(LISTING_PAGE_SIZE);
   const [fetchLimit, setFetchLimit] = useState(LISTING_PAGE_SIZE);
   const [skills, setSkills] = useState<SkillPageEntry[]>(
-    initialListing?.kind === "skills" ? initialListing.items : [],
+    shownListing?.kind === "skills" ? shownListing.items : [],
   );
   const [plugins, setPlugins] = useState<PackageListItem[]>(
-    initialListing?.kind === "plugins" ? initialListing.items : [],
+    shownListing?.kind === "plugins" ? shownListing.items : [],
   );
   const [status, setStatus] = useState<"loading" | "idle" | "error">(
-    initialListing ? "idle" : "loading",
+    shownListing ? "idle" : "loading",
   );
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchSkills, setSearchSkills] = useState<SkillPageEntry[]>([]);
   const [searchPlugins, setSearchPlugins] = useState<PackageListItem[]>([]);
   const [searchStatus, setSearchStatus] = useState<"loading" | "idle" | "error">("idle");
-  const [listingHasMore, setListingHasMore] = useState(initialListing?.hasMore ?? false);
+  const [listingHasMore, setListingHasMore] = useState(shownListing?.hasMore ?? false);
   const [trendingState, setTrendingState] = useState<TrendingFeedState | undefined>(
-    initialListing?.kind === "skills" ? initialListing.trendingState : undefined,
+    shownListing?.kind === "skills" ? shownListing.trendingState : undefined,
   );
   const [canonicalTrendingUnavailable, setCanonicalTrendingUnavailable] = useState(
-    initialListing?.kind === "skills" && initialListing.trendingState === "unavailable",
+    initialTrendingUnavailable,
   );
   const clearSearch = useCallback(() => {
     manualSearchRef.current = null;
@@ -500,6 +525,29 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     setVisibleCount(LISTING_PAGE_SIZE);
     setFetchLimit(LISTING_PAGE_SIZE);
   }, [categorySlug, isSearchMode, kind, tab, trimmedSearch]);
+
+  // Follow URL changes made outside this section, such as the header logo link.
+  const requestedKind = requestedView?.kind;
+  const requestedTab = requestedView?.tab;
+  useEffect(() => {
+    if (!requestedKind || !requestedTab) return;
+    const synced = syncedViewRef.current;
+    if (synced.kind === requestedKind && synced.tab === requestedTab) return;
+    syncedViewRef.current = { kind: requestedKind, tab: requestedTab };
+    // Outside navigation starts a fresh view, like choosing the kind and tab here.
+    manualSearchRef.current = null;
+    setCategorySlug(undefined);
+    setKind(requestedKind);
+    setTab(requestedTab);
+  }, [requestedKind, requestedTab]);
+
+  // Report every visible view change, including the Trending-unavailable fallback.
+  useEffect(() => {
+    const synced = syncedViewRef.current;
+    if (synced.kind === kind && synced.tab === tab) return;
+    syncedViewRef.current = { kind, tab };
+    onViewChange?.({ kind, tab });
+  }, [kind, onViewChange, tab]);
 
   const visibleSkills = (isSearchMode ? searchSkills : skills).slice(0, visibleCount);
   const visiblePlugins = (isSearchMode ? searchPlugins : plugins).slice(0, visibleCount);

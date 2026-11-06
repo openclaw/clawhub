@@ -377,6 +377,7 @@ export function createSkillsShMirrorRoute(target: keyof typeof ROUTE_CONFIG) {
           ...result,
           sourceTotal,
           sourceCatalogTotal: source.catalogTotal,
+          sourceUpstreamTotal: source.upstreamTotal,
           controlledOverlayTotal: controlledOverlayExternalIds.length,
           controlledSupplementTotal: controlledSupplementExternalIds.length,
           sourceMeasurementRequests: source.sourceRequests,
@@ -462,6 +463,7 @@ export function createSkillsShMirrorRoute(target: keyof typeof ROUTE_CONFIG) {
         return jsonResponse({
           ...result,
           sourceTotal: source.catalogTotal,
+          sourceUpstreamTotal: source.upstreamTotal,
           sourceMeasuredAt: source.observedAt,
           sourcePageSize: source.pageSize,
           sourceMeasurementRequests: source.sourceRequests,

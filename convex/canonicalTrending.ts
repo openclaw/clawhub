@@ -16,6 +16,7 @@ import {
   decodeCanonicalTrendingCursor,
   encodeCanonicalTrendingCursor,
   isFreshExternalTrendingRun,
+  SKILLS_SH_TRENDING_RUN_MAX_AGE_MS,
   retainCanonicalTrendingLaneCandidates,
   type CanonicalTrendingMaterializationCandidate,
 } from "./lib/canonicalTrending";
@@ -38,7 +39,6 @@ const NATIVE_SOURCE_BATCH_SIZE = 100;
 const SNAPSHOT_RETENTION_MS = 48 * 60 * 60 * 1_000;
 const SNAPSHOT_MAX_SERVING_AGE_MS = 2 * 60 * 60 * 1_000;
 const NATIVE_POOL_MAX_AGE_MS = SNAPSHOT_MAX_SERVING_AGE_MS;
-const EXTERNAL_SOURCE_MAX_AGE_MS = 2 * 60 * 60 * 1_000;
 const RISING_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
 const PRUNE_BATCH_SIZE = 500;
 const PRUNE_MAX_BATCHES = 20;
@@ -978,7 +978,9 @@ export const materializeInternal = internalAction({
         )) as TrendingRun;
         documentsRead += candidateRun.documentsRead;
         functionCalls += 1;
-        if (isFreshExternalTrendingRun(candidateRun, startedAt, EXTERNAL_SOURCE_MAX_AGE_MS)) {
+        if (
+          isFreshExternalTrendingRun(candidateRun, startedAt, SKILLS_SH_TRENDING_RUN_MAX_AGE_MS)
+        ) {
           latestTrendingRun = candidateRun;
           externalSource = await forEachCanonicalTrendingSourcePage(
             ctx,

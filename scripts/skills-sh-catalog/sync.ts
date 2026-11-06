@@ -598,7 +598,7 @@ if (import.meta.main) {
         requestUrl: requireEnv("ACTIONS_ID_TOKEN_REQUEST_URL"),
         requestToken: requireEnv("ACTIONS_ID_TOKEN_REQUEST_TOKEN"),
       });
-    const reason = process.env.CLAWHUB_SKILLS_SH_SYNC_REASON?.trim() || "hourly skills.sh sync";
+    const reason = process.env.CLAWHUB_SKILLS_SH_SYNC_REASON?.trim() || "scheduled skills.sh sync";
     proof = await runSkillsShSync({ targetUrl, authorization, reason });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -38,7 +38,8 @@ vi.mock("../lib/slugRoute", () => ({
 async function loadRoute() {
   return (await import("../routes/$owner/skills/$slug")).Route as unknown as {
     __config: {
-      beforeLoad?: (args: { params: { owner: string; slug: string } }) => unknown;
+      beforeLoad: (args: { params: { owner: string; slug: string } }) => unknown;
+      validateSearch: (search: Record<string, unknown>) => { published?: true };
       loader?: (args: { params: { owner: string; slug: string } }) => Promise<unknown>;
       head?: (args: {
         params: { owner: string; slug: string };
@@ -57,6 +58,7 @@ async function loadLegacyRoute() {
   return (await import("../routes/$owner/$slug")).Route as unknown as {
     __config: {
       beforeLoad?: (args: { params: { owner: string; slug: string } }) => unknown;
+      validateSearch: (search: Record<string, unknown>) => { published?: true };
       loader?: (args: { params: { owner: string; slug: string } }) => Promise<unknown>;
     };
   };
@@ -64,10 +66,7 @@ async function loadLegacyRoute() {
 
 async function runBeforeLoad(params: { owner: string; slug: string }) {
   const route = await loadRoute();
-  const beforeLoad = route.__config.beforeLoad as
-    | ((args: { params: { owner: string; slug: string } }) => unknown)
-    | undefined;
-  return beforeLoad?.({ params });
+  return route.__config.beforeLoad({ params });
 }
 
 async function runLoader(params: { owner: string; slug: string }) {
@@ -109,22 +108,21 @@ function runHead(
 }
 
 describe("skill route loader", () => {
-  it("allows numeric owner handles in beforeLoad", () => {
-    expect(() => runBeforeLoad({ owner: "123abc", slug: "weather" })).not.toThrow();
+  it("keeps legacy and canonical post-publish search validation compatible", async () => {
+    for (const route of [await loadLegacyRoute(), await loadRoute()]) {
+      expect(route.__config.validateSearch({ published: ' "true" ', tab: "files" })).toEqual({
+        published: true,
+      });
+      expect(route.__config.validateSearch({ published: "false", tab: "files" })).toEqual({});
+    }
   });
 
-  it("allows npm-compatible dotted and underscored owner handles in beforeLoad", () => {
-    expect(() => runBeforeLoad({ owner: "example.tools", slug: "weather" })).not.toThrow();
-    expect(() => runBeforeLoad({ owner: "studio_tools", slug: "weather" })).not.toThrow();
-  });
-
-  it("allows raw owner ids in beforeLoad", () => {
-    expect(() => runBeforeLoad({ owner: "users:abc123", slug: "weather" })).not.toThrow();
-  });
-
-  it("allows raw publisher ids in beforeLoad", () => {
-    expect(() => runBeforeLoad({ owner: "publishers:abc123", slug: "weather" })).not.toThrow();
-  });
+  it.each(["123abc", "example.tools", "studio_tools", "users:abc123", "publishers:abc123"])(
+    "allows owner %s in beforeLoad",
+    async (owner) => {
+      await expect(runBeforeLoad({ owner, slug: "weather" })).resolves.toBeUndefined();
+    },
+  );
 
   it("rejects npm-style scopes on canonical skill routes", async () => {
     await expect(runBeforeLoad({ owner: "@openclaw", slug: "codex" })).rejects.toEqual({

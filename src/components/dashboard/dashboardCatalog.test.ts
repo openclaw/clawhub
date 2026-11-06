@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { collectAttentionItems } from "./dashboardAttention";
 import {
-  computeDashboardStats,
   filterByAttention,
   filterByKind,
   mergeDashboardItems,
@@ -43,9 +42,7 @@ function createSkill(overrides?: Partial<DashboardSkill>): DashboardSkill {
     latestVersion: {
       version: "1.0.0",
       createdAt: 1,
-      vtStatus: "clean",
       llmStatus: "clean",
-      staticScanStatus: "clean",
     },
     ...overrides,
   } as DashboardSkill;
@@ -64,27 +61,18 @@ function createPackage(overrides?: Partial<DashboardPackage>): DashboardPackage 
     latestRelease: {
       version: "1.0.0",
       createdAt: 1,
-      vtStatus: "clean",
       llmStatus: "clean",
-      staticScanStatus: "clean",
     },
     ...overrides,
   };
 }
 
 describe("dashboardCatalog", () => {
-  it("merges skills and plugins with aggregate stats", () => {
+  it("merges skills and plugins", () => {
     const skills = [createSkill()];
     const packages = [createPackage()];
 
     expect(mergeDashboardItems(skills, packages)).toHaveLength(2);
-    expect(computeDashboardStats(skills, packages)).toEqual({
-      skillsCount: 1,
-      pluginsCount: 1,
-      totalInstalls: 32,
-      totalDownloads: 60,
-      needsAttentionCount: 0,
-    });
   });
 
   it("filters, searches, and sorts catalog items", () => {
@@ -121,9 +109,7 @@ describe("dashboardCatalog", () => {
         latestVersion: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "suspicious",
           llmStatus: "suspicious",
-          staticScanStatus: "suspicious",
         },
       }),
       createSkill({
@@ -138,9 +124,7 @@ describe("dashboardCatalog", () => {
         latestRelease: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "malicious",
           llmStatus: "malicious",
-          staticScanStatus: "malicious",
         },
       }),
     ];
@@ -162,9 +146,7 @@ describe("dashboardCatalog", () => {
         latestVersion: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "suspicious",
           llmStatus: "suspicious",
-          staticScanStatus: "suspicious",
         },
       }),
       createSkill({
@@ -179,9 +161,7 @@ describe("dashboardCatalog", () => {
         latestRelease: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "malicious",
           llmStatus: "malicious",
-          staticScanStatus: "malicious",
         },
       }),
     ];

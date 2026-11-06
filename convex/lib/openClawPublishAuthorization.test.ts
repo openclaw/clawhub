@@ -117,7 +117,10 @@ function oidc(): VerifiedGitHubActionsIdentity {
 }
 
 function artifact(filename: string, value: unknown) {
-  const bytes = zipSync({ [filename]: strToU8(JSON.stringify(value)) });
+  const bytes = zipSync(
+    { [filename]: strToU8(JSON.stringify(value)) },
+    { mtime: new Date("2026-01-01T00:00:00Z") },
+  );
   return {
     bytes,
     digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
@@ -253,6 +256,7 @@ function verify(
 
 afterEach(() => {
   delete process.env.GITHUB_TOKEN;
+  vi.useRealTimers();
 });
 
 describe("OpenClaw package publish authorization", () => {
@@ -381,6 +385,38 @@ describe("OpenClaw package publish authorization", () => {
   });
 
   it.each([
+    ["submission", "in_progress", null],
+    ["terminal", "completed", "failure"],
+  ] as const)(
+    "authorizes a sealed release milestone in %s mode after parent %s/%s",
+    async (requiredParentState, parentStatus, parentConclusion) => {
+      await expect(
+        verify(
+          githubFetch({
+            parentStatus,
+            parentConclusion,
+            parentReceipt: parentReceipt({ authorizationRoute: "automated-sealed" }),
+          }),
+          requiredParentState,
+        ),
+      ).resolves.toMatchObject({ authorizationRoute: "automated-sealed" });
+    },
+  );
+
+  it("withholds sealed public finalization while the parent is active", async () => {
+    await expect(
+      verify(
+        githubFetch({
+          parentStatus: "in_progress",
+          parentConclusion: null,
+          parentReceipt: parentReceipt({ authorizationRoute: "automated-sealed" }),
+        }),
+        "terminal",
+      ),
+    ).rejects.toThrow("public publication remains pending");
+  });
+
+  it.each([
     { login: "github-actions[bot]", type: "Bot" },
     { login: "release-service", type: "App" },
     { login: "release-app[bot]", type: "User" },
@@ -401,8 +437,11 @@ describe("OpenClaw package publish authorization", () => {
   it.each(["submission", "terminal"] as const)(
     "authorizes human recovery through the original bot child receipt in %s mode",
     async (mode) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
       const fetchImpl = recoveryFetch();
       const result = await verify(fetchImpl, mode);
+      vi.setSystemTime(new Date("2026-01-01T00:00:02Z"));
       expect(result).toMatchObject({ authorizationRoute: "explicit-recovery", artifactId: "101" });
       expect(result.artifactDigest).toBe(
         artifact(

@@ -5,7 +5,7 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import {
   AlertTriangle,
   Braces,
@@ -29,6 +29,10 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
+import {
+  pluginApiRetirement,
+  type PluginApiRetirement,
+} from "../../../convex/lib/pluginApiRetirements";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
 import {
   DetailHero,
@@ -73,7 +77,7 @@ import {
   getPluginCategoryBySlug,
 } from "../../lib/categories";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
-import { buildPluginMeta } from "../../lib/og";
+import { buildPluginMeta, buildSocialMetaHead } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import { buildPublisherProfileHref } from "../../lib/ownerRoute";
 import {
@@ -118,7 +122,7 @@ type PluginDetailTab =
   | "mcpServers"
   | "skills";
 
-type PluginInspectorFinding = {
+type PluginInspectorFinding = Partial<PluginApiRetirement> & {
   packageName: string;
   version: string;
   findingKind?: "warning" | "error";
@@ -126,6 +130,7 @@ type PluginInspectorFinding = {
   severity?: string;
   level?: string;
   issueClass?: string;
+  deprecated?: boolean;
   message: string;
   evidence?: string[];
   authorRemediation?: {
@@ -139,6 +144,7 @@ type PluginInspectorFinding = {
 };
 
 type PluginInspectorValidationSummary = {
+  apiRetirements?: PluginApiRetirement[];
   findingCount: number;
   errorCount: number;
   warningCount: number;
@@ -191,11 +197,18 @@ export async function loadPluginDetail(requestedName: string): Promise<PluginDet
   }
 
   try {
+    let releaseVersion = detail.package.latestVersion;
+    let cursor: string | undefined;
+    // Beta-only packages have published releases but no stable/latest pointer.
+    while (!releaseVersion) {
+      const releases = await fetchPackageVersions(resolvedName, { limit: 1, cursor });
+      releaseVersion = releases.items[0]?.version;
+      if (releaseVersion || !releases.nextCursor) break;
+      cursor = releases.nextCursor;
+    }
     const [version, readme] = await Promise.all([
-      detail.package.latestVersion
-        ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
-        : Promise.resolve(null),
-      fetchPackageReadme(resolvedName),
+      releaseVersion ? fetchPackageVersion(resolvedName, releaseVersion) : Promise.resolve(null),
+      releaseVersion ? fetchPackageReadme(resolvedName, releaseVersion) : Promise.resolve(null),
     ]);
 
     return { detail, version, versions: undefined, readme, rateLimited: null };
@@ -224,24 +237,7 @@ export function pluginDetailHead(name: string, loaderData?: PluginDetailLoaderDa
     owner: loaderData?.detail.owner?.handle,
     latestVersion: loaderData?.detail.package?.latestVersion,
   });
-  return {
-    meta: [
-      { title: meta.title },
-      { name: "description", content: meta.description },
-      { property: "og:title", content: meta.title },
-      { property: "og:description", content: meta.description },
-      { property: "og:url", content: meta.url },
-      { property: "og:image", content: meta.image },
-      { property: "og:image:width", content: "1200" },
-      { property: "og:image:height", content: "630" },
-      { property: "og:image:alt", content: meta.title },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: meta.title },
-      { name: "twitter:description", content: meta.description },
-      { name: "twitter:image", content: meta.image },
-    ],
-    links: [{ rel: "canonical", href: meta.url }],
-  };
+  return buildSocialMetaHead(meta);
 }
 
 export const Route = createFileRoute("/plugins/$name")({
@@ -389,6 +385,7 @@ function PluginDetailTabs({
         className={`skill-readme-preview${
           isReadmeLong && !isReadmeExpanded ? " is-collapsed" : ""
         }`}
+        data-analytics-public-detail=""
       >
         <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
       </div>
@@ -1078,10 +1075,24 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       ? { name: manageLookupName, candidateNames: manageCandidateNames }
       : "skip",
   );
-  const validationSummary = useQuery(
-    api.packages.getPackageInspectorValidationSummaryPublic,
-    detail.package ? { name: detail.package.name } : "skip",
-  ) as PluginInspectorValidationSummary | undefined;
+  // A peripheral inspection subscription must not erase the detail page or its
+  // independently authorized owner controls when that query times out.
+  const validationSummaryName = detail.package?.name;
+  const validationSummaryQueries = useMemo<RequestForQueries>(() => {
+    const queries: RequestForQueries = {};
+    if (validationSummaryName) {
+      queries.validationSummary = {
+        query: api.packages.getPackageInspectorValidationSummaryPublic,
+        args: { name: validationSummaryName },
+      };
+    }
+    return queries;
+  }, [validationSummaryName]);
+  const validationSummaryResult = useQueries(validationSummaryQueries).validationSummary as
+    | PluginInspectorValidationSummary
+    | Error
+    | undefined;
+  const validationSummaryUnavailable = validationSummaryResult instanceof Error;
   const activityTrendEndDay = getActivityTrendEndDay();
   const { trend: activityTrend, loading: activityTrendLoading } = useDeferredPackageActivityTrend(
     detail.package ? { name: detail.package.name, endDay: activityTrendEndDay } : null,
@@ -1096,7 +1107,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     manageContext ? { name: manageContext.package.name, limit: 100 } : "skip",
   ) as PluginInspectorFinding[] | undefined;
   const authorInspectorFindings = Array.isArray(inspectorFindings)
-    ? inspectorFindings.filter((finding) => finding.authorRemediation?.summary)
+    ? inspectorFindings.filter(
+        (finding) => finding.authorRemediation?.summary && !pluginApiRetirement(finding),
+      )
     : undefined;
   const displayInspectorFindings =
     authorInspectorFindings && shouldShowDevValidationFindingMocks()
@@ -1194,12 +1207,10 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const isDownloadBlocked =
     pkg.scanStatus === "malicious" || latestRelease?.verification?.scanStatus === "malicious";
   const skillInstallOwner = owner?.handle ?? pkg.ownerHandle ?? "owner";
-  const installSnippet =
-    pkg.family === "code-plugin"
-      ? `openclaw plugins install clawhub:${pkg.name}`
-      : pkg.family === "bundle-plugin"
-        ? `openclaw plugins install clawhub:${pkg.name}`
-        : `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
+  const isPlugin = pkg.family === "code-plugin" || pkg.family === "bundle-plugin";
+  const installCommand = isPlugin
+    ? `openclaw plugins install clawhub:${pkg.name}`
+    : `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
@@ -1312,18 +1323,14 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         skills={pluginManifestSummary.bundledSkills}
       />
     ) : null;
-  const incompatibilityAlert =
-    validationSummary &&
-    validationSummary.errorCount > 0 &&
-    validationSummary.incompatibleAfterOpenClawVersion ? (
-      <Alert variant="destructive" className="plugin-validation-alert">
-        <AlertTriangle size={16} aria-hidden="true" />
-        <AlertDescription>
-          This plugin is incompatible with OpenClaw versions greater than{" "}
-          {validationSummary.incompatibleAfterOpenClawVersion}.
-        </AlertDescription>
-      </Alert>
-    ) : null;
+  const validationAvailabilityAlert = validationSummaryUnavailable ? (
+    <Alert variant="warn" className="plugin-validation-alert">
+      <AlertTriangle size={16} aria-hidden="true" />
+      <AlertDescription>
+        Compatibility details are temporarily unavailable. Please try again later.
+      </AlertDescription>
+    </Alert>
+  ) : null;
   const validationErrors = (
     displayInspectorFindings?.filter((finding) => finding.findingKind === "error") ?? []
   ).sort(compareInspectorFindings);
@@ -1476,7 +1483,13 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           .replace(/^https?:\/\//, "")
           .replace(/\/$/, "");
         return (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="plugin-external-link">
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="plugin-external-link"
+            data-analytics-public-detail=""
+          >
             <GitHubIcon />
             {display}
           </a>
@@ -1500,7 +1513,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const securitySummary = latestRelease ? (
     <DetailSecuritySummary
       auditHref={buildPluginSecurityAuditHref(name, { ownerHandle: owner?.handle })}
-      vtAnalysis={latestRelease.vtAnalysis ?? null}
       llmAnalysis={latestRelease.llmAnalysis ?? null}
     />
   ) : null;
@@ -1716,6 +1728,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   className={`section-subtitle skill-summary-line${
                     hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
                   }`}
+                  data-analytics-public-detail=""
                 >
                   <InlineMarkdownSummary>{headerSummary}</InlineMarkdownSummary>
                 </p>
@@ -1731,7 +1744,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 ) : null}
               </div>
               {pluginHeroCreator ? (
-                <div className="skill-hero-creator">{pluginHeroCreator}</div>
+                <div className="skill-hero-creator" data-analytics-public-detail="">
+                  {pluginHeroCreator}
+                </div>
               ) : null}
 
               {rateLimited?.scope === "metadata" ? (
@@ -1793,29 +1808,29 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
             >
               {validationPanel}
               <div className="plugin-install-stack detail-mobile-install">
-                {incompatibilityAlert}
+                {validationAvailabilityAlert}
                 <Card className="skill-install-command-card">
                   <CardHeader className="detail-hero-summary-row plugin-install-card-header">
                     <CardTitle className="skill-install-panel-title">Install</CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <div className="skill-install-command-wrap">
-                      <div className="skill-install-command-shell skill-install-command-shell-cli">
-                        <span className="skill-install-command-prompt" aria-hidden="true">
-                          $
-                        </span>
-                        <pre className="skill-install-command">
-                          <OpenClawCliInstallCommand command={installSnippet} />
-                        </pre>
-                        <InstallCopyButton
-                          text={installSnippet}
-                          ariaLabel="Copy plugin install command"
-                          showLabel={false}
-                          variant="ghost"
-                          size="icon-sm"
-                          className="skill-install-command-inline-button"
-                        />
-                      </div>
+                  <CardContent className="skill-install-command-wrap">
+                    <div className="skill-install-command-shell skill-install-command-shell-cli">
+                      <span className="skill-install-command-prompt" aria-hidden="true">
+                        $
+                      </span>
+                      <pre className="skill-install-command">
+                        <OpenClawCliInstallCommand command={installCommand} />
+                      </pre>
+                      <InstallCopyButton
+                        text={installCommand}
+                        ariaLabel={
+                          isPlugin ? "Copy plugin install command" : "Copy skill install command"
+                        }
+                        showLabel={false}
+                        variant="ghost"
+                        size="icon-sm"
+                        className="skill-install-command-inline-button"
+                      />
                     </div>
                   </CardContent>
                 </Card>

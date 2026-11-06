@@ -7,9 +7,11 @@ import {
   parseArk,
 } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
+import { normalizeOwnerHandle } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
-import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { createCrabLoader, fail, isInteractive, promptConfirm } from "../ui.js";
 
 type ConfirmOptions = { yes?: boolean };
 
@@ -17,15 +19,6 @@ type SkillRef = {
   slug: string;
   ownerHandle?: string;
 };
-
-function normalizeOwnerHandle(raw: string | null | undefined) {
-  const handle = raw?.trim().replace(/^@+/, "").toLowerCase();
-  if (!handle) return undefined;
-  if (handle.includes("/") || handle.includes("\\") || handle.includes("..")) {
-    fail(`Invalid owner handle: ${raw}`);
-  }
-  return handle;
-}
 
 function normalizeSlug(slugArg: string, label = "Skill") {
   const slug = slugArg.trim().toLowerCase();
@@ -85,7 +78,7 @@ export async function cmdRenameSkill(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader(`Renaming ${formatSkillRef(source)} to ${newSlug}`);
 
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -102,10 +95,7 @@ export async function cmdRenameSkill(
     const parsed = parseArk(ApiV1SkillRenameResponseSchema, result, "Rename skill response");
     spinner.succeed(`Renamed ${parsed.previousSlug} to ${parsed.slug}`);
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdMergeSkill(
@@ -137,7 +127,7 @@ export async function cmdMergeSkill(
     `Merging ${formatSkillRef(source)} into ${formatSkillRef(target)}`,
   );
 
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -157,10 +147,7 @@ export async function cmdMergeSkill(
     const parsed = parseArk(ApiV1SkillMergeResponseSchema, result, "Merge skill response");
     spinner.succeed(`Merged ${parsed.sourceSlug} into ${parsed.targetSlug}`);
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdSetSkillTag(
@@ -192,7 +179,7 @@ export async function cmdSetSkillTag(
     `Setting ${tag} for ${formatSkillRef(skill)} to version ${version}`,
   );
 
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -209,8 +196,5 @@ export async function cmdSetSkillTag(
     const parsed = parseArk(ApiV1SkillTagResponseSchema, result, "Set skill tag response");
     spinner.succeed(`Set ${parsed.tag} for ${formatSkillRef(skill)} to ${parsed.version}`);
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }

@@ -1,7 +1,7 @@
 import { ApiRoutes } from "clawhub-schema/routes";
 import { ArrowUpRight, Gift, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { emitAnalytics } from "../lib/analyticsEvents";
+import { analyticsExternalLinkParameters, emitAnalytics } from "../lib/analyticsEvents";
 import { publicApiUrl } from "../lib/publicApiUrl";
 
 type PublicPromotion = {
@@ -73,11 +73,13 @@ function PromotionBarItem({
         {ctaUrl ? (
           <a
             className="promotion-bar-link"
-            onClick={() =>
+            data-analytics-selection-owner="promotion"
+            onClick={(event) =>
               emitAnalytics("select_content", {
                 content_type: "navigation",
                 content_id: `promotion:${promotion.slug}`,
                 ui_location: "promotion",
+                ...analyticsExternalLinkParameters(event.currentTarget, window.location.origin),
               })
             }
             href={ctaUrl}

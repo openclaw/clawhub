@@ -25,7 +25,7 @@ describe("playwright local-auth workflow", () => {
     };
     const job = workflow.jobs["playwright-local-auth-shard"];
 
-    expect(job["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");
+    expect(job["runs-on"]).toBe("ubuntu-24.04");
     expect(job.strategy?.["max-parallel"]).toBe(8);
     expect(job.strategy?.matrix?.include?.map((entry) => entry.name)).toEqual(
       expect.arrayContaining(["moderation-malicious", "star-sync"]),

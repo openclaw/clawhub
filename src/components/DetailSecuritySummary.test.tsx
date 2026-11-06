@@ -9,7 +9,6 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
-        vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{
           status: "clean",
           summary: "ClawScan found the declared purpose aligned with the artifact.",
@@ -50,7 +49,6 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/suka233/kmind-markdown-to-mindmap/security-audit"
-        vtAnalysis={{ status: "suspicious", verdict: "suspicious", checkedAt: 1 }}
         llmAnalysis={{ status: "suspicious", verdict: "suspicious", checkedAt: 1 }}
       />,
     );
@@ -62,7 +60,6 @@ describe("DetailSecuritySummary", () => {
     const { rerender } = render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
-        vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{
           status: "suspicious",
           verdict: "suspicious",
@@ -94,7 +91,6 @@ describe("DetailSecuritySummary", () => {
     rerender(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
-        vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{
           status: "suspicious",
           verdict: "suspicious",
@@ -130,7 +126,6 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
-        vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{ status: "clean", summary: "No mismatches found.", checkedAt: 1 }}
       />,
     );
@@ -144,7 +139,6 @@ describe("DetailSecuritySummary", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
-        vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{
           status: "malicious",
           verdict: "malicious",
@@ -158,70 +152,10 @@ describe("DetailSecuritySummary", () => {
     expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("1");
   });
 
-  it("keeps legacy non-engine VirusTotal fields neutral in the aggregate verdict", () => {
-    render(
-      <DetailSecuritySummary
-        auditHref="/tokauthai/skillscan/security-audit"
-        vtAnalysis={{
-          status: "suspicious",
-          source: "legacy-ai",
-          scanner: "legacy-ai",
-          analysis: "Legacy AI advisory context.",
-          checkedAt: 1,
-        }}
-        llmAnalysis={{ status: "clean", summary: "No ClawScan issues.", checkedAt: 1 }}
-      />,
-    );
-
-    expect(screen.getByText("Pass")).toBeTruthy();
-    expect(screen.queryByText("Advisory")).toBeNull();
-    expect(screen.queryByText("Warn")).toBeNull();
-  });
-
-  it("renders legacy VirusTotal AI fields without engine stats as neutral", () => {
-    render(
-      <DetailSecuritySummary
-        auditHref="/tokauthai/skillscan/security-audit"
-        vtAnalysis={{
-          status: "suspicious",
-          source: "legacy-ai",
-          scanner: "legacy-ai",
-          analysis: "Legacy AI advisory context.",
-          checkedAt: 1,
-        }}
-        llmAnalysis={{ status: "clean", checkedAt: 1 }}
-      />,
-    );
-
-    expect(screen.getByText("Pass")).toBeTruthy();
-    expect(screen.queryByText("Warn")).toBeNull();
-  });
-
-  it("renders VirusTotal undetected-only fallback as pass", () => {
-    render(
-      <DetailSecuritySummary
-        auditHref="/plugins/@opik/opik-openclaw/security-audit"
-        vtAnalysis={{
-          status: "clean",
-          verdict: "undetected-only-fallback",
-          analysis:
-            "VirusTotal reported no malicious or suspicious engine hits. ClawHub promoted this source-linked package after clean LLM and clean static scans.",
-          source: "engines-undetected-fallback",
-          checkedAt: 1,
-        }}
-        llmAnalysis={{ status: "clean", checkedAt: 1 }}
-      />,
-    );
-
-    expect(screen.getByText("Pass")).toBeTruthy();
-    expect(screen.queryByText("undetected-only-fallback")).toBeNull();
-  });
-
-  it("keeps ClawScan clean summaries passing while static findings remain internal", () => {
+  it("keeps ClawScan clean summaries passing", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
-        vtAnalysis={{ status: "clean", checkedAt: 1 }}
         llmAnalysis={{ status: "clean", checkedAt: 1 }}
       />,
     );
@@ -231,17 +165,10 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("Warn")).toBeNull();
   });
 
-  it("does not let supporting scanner operational errors drive the compact verdict", () => {
-    render(
-      <DetailSecuritySummary
-        auditHref="/steipete/weather/security-audit"
-        vtAnalysis={{ status: "failed", checkedAt: 1 }}
-        llmAnalysis={{ status: "clean", summary: "No ClawScan issues.", checkedAt: 1 }}
-      />,
-    );
+  it("stays pending until ClawScan reports a verdict", () => {
+    render(<DetailSecuritySummary auditHref="/steipete/weather/security-audit" />);
 
-    expect(screen.getByText("Pass")).toBeTruthy();
-    expect(screen.queryByText("Error")).toBeNull();
-    expect(screen.queryByText("Malicious")).toBeNull();
+    expect(screen.getByText("Pending")).toBeTruthy();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("0");
   });
 });

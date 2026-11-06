@@ -68,27 +68,12 @@ function emptySkillStats() {
 
 function cleanVersionScans(now: number) {
   return {
-    vtAnalysis: {
-      status: "clean",
-      verdict: "clean",
-      analysis: "Owned CLAW-590 permanent-Test fixture.",
-      source: SOURCE_FIXTURE_ID,
-      checkedAt: now,
-    },
     llmAnalysis: {
       status: "clean",
       verdict: "clean",
       confidence: "high",
       summary: "Owned CLAW-590 permanent-Test fixture.",
       model: SOURCE_FIXTURE_ID,
-      checkedAt: now,
-    },
-    staticScan: {
-      status: "clean" as const,
-      reasonCodes: [],
-      findings: [],
-      summary: "Owned CLAW-590 permanent-Test fixture.",
-      engineVersion: SOURCE_FIXTURE_ID,
       checkedAt: now,
     },
   };
@@ -127,9 +112,7 @@ function assertOwnedVersion(
     version.version !== "1.0.0" ||
     version.changelog !== SOURCE_FIXTURE_ID ||
     version.files.length !== 0 ||
-    version.vtAnalysis?.source !== SOURCE_FIXTURE_ID ||
-    version.llmAnalysis?.model !== SOURCE_FIXTURE_ID ||
-    version.staticScan?.engineVersion !== SOURCE_FIXTURE_ID
+    version.llmAnalysis?.model !== SOURCE_FIXTURE_ID
   ) {
     throw new Error("CLAW-590 source fixture version ownership mismatch");
   }

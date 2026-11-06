@@ -16,7 +16,9 @@ Telemetry is only sent when:
 - You are logged in in the CLI.
 - You complete `clawhub install <skill>`, an update that replaces a skills.sh
   catalog skill through `clawhub update`, or an authenticated
-  `openclaw plugins install clawhub:<package>` install.
+  `openclaw plugins install clawhub:<package>` install. Updated main/dev builds
+  with ClawHub-default support can omit the prefix and still report the ClawHub
+  install.
 - Telemetry is **not disabled** (see “How to disable” below).
 
 If you are not logged in, nothing is reported.

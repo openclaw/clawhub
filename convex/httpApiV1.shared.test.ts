@@ -6,8 +6,7 @@ import type { ActionCtx } from "./_generated/server";
 import {
   formatUserFacingErrorMessage,
   parseMultipartPublish,
-  parseMultipartSkillScan,
-  resolveTagsBatch,
+  resolvePublicSkillVersions,
   softDeleteErrorToResponse,
 } from "./httpApiV1/shared";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
@@ -84,7 +83,7 @@ describe("http API v1 shared helpers", () => {
     await expect(response.text()).resolves.toBe("Internal Server Error");
   });
 
-  it("checks latest tags against current version documents", async () => {
+  it("checks a selected latest version even when it has no tag", async () => {
     const ctx = makeCtx();
     const versionId = "skillVersions:latest" as Id<"skillVersions">;
     const skillId = "skills:demo" as Id<"skills">;
@@ -95,15 +94,15 @@ describe("http API v1 shared helpers", () => {
         version: { version: "2.0.0" },
       },
     ]);
-    expect(await resolveTagsBatch(ctx, [{ latest: versionId }], [skillId])).toEqual([
-      { latest: "2.0.0" },
-    ]);
+    expect(
+      await resolvePublicSkillVersions(ctx, [{ skillId, tags: {}, latestVersionId: versionId }]),
+    ).toEqual([{ tags: {}, latestVersion: { version: "2.0.0" } }]);
     expect(ctx.runQuery).toHaveBeenCalledWith(internal.skills.getPublicVersionSelectionsInternal, {
       selections: [{ skillId, versionId }],
     });
   });
 
-  it("deduplicates tag targets in the checked batch", async () => {
+  it("deduplicates latest and tag targets in the checked batch", async () => {
     const ctx = makeCtx();
     const versionId = "skillVersions:latest" as Id<"skillVersions">;
     const skillId = "skills:demo" as Id<"skills">;
@@ -115,8 +114,12 @@ describe("http API v1 shared helpers", () => {
       },
     ]);
     expect(
-      await resolveTagsBatch(ctx, [{ latest: versionId, stable: versionId }], [skillId]),
-    ).toEqual([{ latest: "2.0.0", stable: "2.0.0" }]);
+      await resolvePublicSkillVersions(ctx, [
+        { skillId, tags: { latest: versionId, stable: versionId }, latestVersionId: versionId },
+      ]),
+    ).toEqual([
+      { tags: { latest: "2.0.0", stable: "2.0.0" }, latestVersion: { version: "2.0.0" } },
+    ]);
     expect(ctx.runQuery).toHaveBeenCalledWith(internal.skills.getPublicVersionSelectionsInternal, {
       selections: [{ skillId, versionId }],
     });
@@ -144,8 +147,10 @@ describe("http API v1 shared helpers", () => {
       ]);
 
       expect(
-        await resolveTagsBatch(ctx, [{ latest: versionId, stable: versionId }], [skillId]),
-      ).toEqual([{ latest: "1.0.0" }]);
+        await resolvePublicSkillVersions(ctx, [
+          { skillId, tags: { latest: versionId, stable: versionId } },
+        ]),
+      ).toEqual([{ tags: { latest: "1.0.0" }, latestVersion: null }]);
       expect(ctx.runQuery).toHaveBeenCalledTimes(1);
       expect(ctx.runQuery).toHaveBeenCalledWith(
         internal.skills.getPublicVersionSelectionsInternal,
@@ -169,33 +174,11 @@ describe("http API v1 shared helpers", () => {
         version: { version: "1.5.0" },
       },
     ]);
-    expect(await resolveTagsBatch(ctx, [{ latest: otherId, stable: stableId }], [skillId])).toEqual(
-      [{ stable: "1.5.0" }],
-    );
-  });
-
-  it("validates skill scan multipart payloads before storing uploaded files", async () => {
-    const form = new FormData();
-    form.set("payload", JSON.stringify({ source: { kind: "upload" }, update: true }));
-    form.append("files", new Blob(["# Demo"], { type: "text/markdown" }), "SKILL.md");
-    const request = new Request("https://clawhub.ai/api/v1/skills/-/scan", {
-      method: "POST",
-      body: form,
-    });
-    const store = vi.fn();
-    const ctx = {
-      storage: {
-        store,
-        delete: vi.fn(),
-      },
-    } as unknown as ActionCtx;
-
-    await expect(
-      parseMultipartSkillScan(ctx, request, () => {
-        throw new Error("update is not valid for uploaded scans");
-      }),
-    ).rejects.toThrow("update is not valid for uploaded scans");
-    expect(store).not.toHaveBeenCalled();
+    expect(
+      await resolvePublicSkillVersions(ctx, [
+        { skillId, tags: { latest: otherId, stable: stableId } },
+      ]),
+    ).toEqual([{ tags: { stable: "1.5.0" }, latestVersion: null }]);
   });
 
   it("deletes stored publish blobs when the payload fails after upload", async () => {
@@ -266,5 +249,34 @@ describe("http API v1 shared helpers", () => {
     );
     expect(store).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
+  });
+});
+
+describe("anonymousCatalogCacheHeaders", () => {
+  it("marks anonymous catalog reads edge-cacheable", async () => {
+    const { anonymousCatalogCacheHeaders } = await import("./httpApiV1/shared");
+    const headers = new Headers(
+      anonymousCatalogCacheHeaders(new Request("https://example.com/api/v1/skills"), {
+        "X-RateLimit-Limit": "3000",
+      }),
+    );
+    expect(headers.get("Cache-Control")).toBe(
+      "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+    );
+    expect(headers.get("X-RateLimit-Limit")).toBe("3000");
+  });
+
+  it.each([
+    ["authorization", "Bearer clh_x"],
+    ["cookie", "a=b"],
+  ])("never marks requests with %s cacheable", async (name, value) => {
+    const { anonymousCatalogCacheHeaders } = await import("./httpApiV1/shared");
+    const headers = new Headers(
+      anonymousCatalogCacheHeaders(
+        new Request("https://example.com/api/v1/skills", { headers: { [name]: value } }),
+        { "X-RateLimit-Limit": "3000" },
+      ),
+    );
+    expect(headers.get("Cache-Control")).toBeNull();
   });
 });

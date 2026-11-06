@@ -9,6 +9,10 @@
 - `specs/` — product specs, plans, regression notes, design history (see `specs/spec.md`).
 - `public/` — static assets.
 
+## Logo assets
+
+For OpenClaw and OpenClaw Foundation logos, see the [brand kit](https://github.com/openclaw/carapace/tree/main/brand-kit).
+
 ## Durable Intent & Specs
 
 - Use `specs/` to persist system/subsystem intent, invariants, and design rationale that future agents should preserve.
@@ -49,9 +53,9 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 
 ## Testing Guidelines
 
-- Framework: Vitest 4 + jsdom.
+- Framework: Vitest 5 + jsdom.
 - Tests live in `src/**` and `convex/lib/**`.
-- Coverage threshold: 80% global (lines/functions/branches/statements).
+- Coverage thresholds: use `test.coverage.thresholds` in `vitest.config.ts` as the source of truth.
 - Example: `convex/lib/skills.test.ts`.
 - For local UI state testing, prefer creating realistic backend state through seed logic plus a DevPersonaFab entry for the associated test user. Avoid one-off manual DB edits when the state is likely to be reused, such as org membership, official publisher access, moderation holds, or publishing permissions.
 
@@ -91,3 +95,9 @@ Convex agent skills for common tasks can be installed by running
 `npx convex ai-files install`.
 
 <!-- convex-ai-end -->
+
+## Autoreview priority
+
+Use `--max-priority P3` with the shared autoreview helper to preserve this
+repository's existing P0–P3 review gate. Follow the
+[shared skill setup](.agents/skills/autoreview/SKILL.md) before running it.

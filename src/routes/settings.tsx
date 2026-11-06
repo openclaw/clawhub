@@ -835,6 +835,68 @@ export function Settings() {
     }
   }
 
+  function renderCreateOrgDialog(trigger: ReactNode, idSuffix = "") {
+    return (
+      <Dialog
+        open={createOrgDialogOpen}
+        onOpenChange={(open) => {
+          setCreateOrgDialogOpen(open);
+          if (open) setCreateOrgError(null);
+        }}
+      >
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create organization</DialogTitle>
+            <DialogDescription>Create an organization for your team</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <Field label="Handle" htmlFor={`settings-org-handle${idSuffix}`}>
+              <Input
+                id={`settings-org-handle${idSuffix}`}
+                value={orgHandle}
+                onChange={(event) => {
+                  setOrgHandle(event.target.value);
+                  setCreateOrgError(null);
+                }}
+                placeholder="@openclaw"
+              />
+            </Field>
+            <Field label="Display name" htmlFor={`settings-org-display-name${idSuffix}`}>
+              <Input
+                id={`settings-org-display-name${idSuffix}`}
+                value={orgDisplayName}
+                onChange={(event) => {
+                  setOrgDisplayName(event.target.value);
+                  setCreateOrgError(null);
+                }}
+                placeholder="OpenClaw"
+              />
+            </Field>
+          </div>
+          {createOrgError ? (
+            <p className="text-sm font-medium text-status-error-fg" role="alert">
+              {createOrgError}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCreateOrgDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              type="button"
+              disabled={!orgHandle.trim() || isCreatingOrg}
+              onClick={() => void onCreateOrg()}
+            >
+              {isCreatingOrg ? "Creating..." : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <main className="border-b border-[color:var(--line)] bg-[color:var(--bg)]">
       <div
@@ -1086,70 +1148,12 @@ export function Settings() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <Dialog
-                        open={createOrgDialogOpen}
-                        onOpenChange={(open) => {
-                          setCreateOrgDialogOpen(open);
-                          if (open) setCreateOrgError(null);
-                        }}
-                      >
-                        <DialogTrigger asChild>
-                          <Button variant="outline" type="button" className="h-12 sm:w-auto">
-                            <Plus size={16} />
-                            Add new org
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Create organization</DialogTitle>
-                            <DialogDescription>
-                              Create an organization for your team
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="grid gap-4">
-                            <Field label="Handle" htmlFor="settings-org-handle">
-                              <Input
-                                id="settings-org-handle"
-                                value={orgHandle}
-                                onChange={(event) => {
-                                  setOrgHandle(event.target.value);
-                                  setCreateOrgError(null);
-                                }}
-                                placeholder="@openclaw"
-                              />
-                            </Field>
-                            <Field label="Display name" htmlFor="settings-org-display-name">
-                              <Input
-                                id="settings-org-display-name"
-                                value={orgDisplayName}
-                                onChange={(event) => {
-                                  setOrgDisplayName(event.target.value);
-                                  setCreateOrgError(null);
-                                }}
-                                placeholder="OpenClaw"
-                              />
-                            </Field>
-                          </div>
-                          {createOrgError ? (
-                            <p className="text-sm font-medium text-status-error-fg" role="alert">
-                              {createOrgError}
-                            </p>
-                          ) : null}
-                          <DialogFooter>
-                            <Button variant="ghost" onClick={() => setCreateOrgDialogOpen(false)}>
-                              Cancel
-                            </Button>
-                            <Button
-                              variant="primary"
-                              type="button"
-                              disabled={!orgHandle.trim() || isCreatingOrg}
-                              onClick={() => void onCreateOrg()}
-                            >
-                              {isCreatingOrg ? "Creating..." : "Create"}
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
+                      {renderCreateOrgDialog(
+                        <Button variant="outline" type="button" className="h-12 sm:w-auto">
+                          <Plus size={16} />
+                          Add new org
+                        </Button>,
+                      )}
                     </div>
 
                     {selectedOrg && selectedOrg.role !== "publisher" ? (
@@ -1615,70 +1619,13 @@ export function Settings() {
                           </p>
                         </div>
                       </div>
-                      <Dialog
-                        open={createOrgDialogOpen}
-                        onOpenChange={(open) => {
-                          setCreateOrgDialogOpen(open);
-                          if (open) setCreateOrgError(null);
-                        }}
-                      >
-                        <DialogTrigger asChild>
-                          <Button variant="primary" type="button" className="lg:w-auto">
-                            <Building2 size={16} />
-                            Create org
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Create organization</DialogTitle>
-                            <DialogDescription>
-                              Create an organization for your team
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="grid gap-4">
-                            <Field label="Handle" htmlFor="settings-org-handle-empty">
-                              <Input
-                                id="settings-org-handle-empty"
-                                value={orgHandle}
-                                onChange={(event) => {
-                                  setOrgHandle(event.target.value);
-                                  setCreateOrgError(null);
-                                }}
-                                placeholder="@openclaw"
-                              />
-                            </Field>
-                            <Field label="Display name" htmlFor="settings-org-display-name-empty">
-                              <Input
-                                id="settings-org-display-name-empty"
-                                value={orgDisplayName}
-                                onChange={(event) => {
-                                  setOrgDisplayName(event.target.value);
-                                  setCreateOrgError(null);
-                                }}
-                                placeholder="OpenClaw"
-                              />
-                            </Field>
-                          </div>
-                          {createOrgError ? (
-                            <p className="text-sm font-medium text-status-error-fg" role="alert">
-                              {createOrgError}
-                            </p>
-                          ) : null}
-                          <DialogFooter>
-                            <Button variant="ghost" onClick={() => setCreateOrgDialogOpen(false)}>
-                              Cancel
-                            </Button>
-                            <Button
-                              variant="primary"
-                              type="button"
-                              disabled={!orgHandle.trim() || isCreatingOrg}
-                              onClick={() => void onCreateOrg()}
-                            >
-                              {isCreatingOrg ? "Creating..." : "Create"}
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
+                      {renderCreateOrgDialog(
+                        <Button variant="primary" type="button" className="lg:w-auto">
+                          <Building2 size={16} />
+                          Create org
+                        </Button>,
+                        "-empty",
+                      )}
                     </div>
                   </SettingsBlock>
                 ) : null}

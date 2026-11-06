@@ -106,7 +106,8 @@
                 "enum": [
                   "skill",
                   "code-plugin",
-                  "bundle-plugin"
+                  "bundle-plugin",
+                  "template"
                 ]
               }
             }
@@ -286,7 +287,8 @@
             "enum": [
               "skill",
               "code-plugin",
-              "bundle-plugin"
+              "bundle-plugin",
+              "template"
             ]
           },
           "runtimeId": {
@@ -416,7 +418,8 @@
                 "enum": [
                   "skill",
                   "code-plugin",
-                  "bundle-plugin"
+                  "bundle-plugin",
+                  "template"
                 ]
               },
               "isOfficial": {
@@ -486,7 +489,8 @@
                 "enum": [
                   "skill",
                   "code-plugin",
-                  "bundle-plugin"
+                  "bundle-plugin",
+                  "template"
                 ]
               },
               "runtimeId": {
@@ -566,6 +570,20 @@
               },
               "stats": {
                 "$ref": "#/components/schemas/PackageStats"
+              },
+              "templateProfilePolicyVersion": {
+                "type": "integer",
+                "const": 1
+              },
+              "templateManifestSummary": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TemplateManifestSummary"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           },
@@ -616,7 +634,8 @@
                 "enum": [
                   "skill",
                   "code-plugin",
-                  "bundle-plugin"
+                  "bundle-plugin",
+                  "template"
                 ]
               }
             }
@@ -819,7 +838,8 @@
                 "enum": [
                   "skill",
                   "code-plugin",
-                  "bundle-plugin"
+                  "bundle-plugin",
+                  "template"
                 ]
               }
             }
@@ -887,13 +907,6 @@
                   "null"
                 ]
               },
-              "vtAnalysis": {
-                "type": [
-                  "object",
-                  "null"
-                ],
-                "additionalProperties": true
-              },
               "llmAnalysis": {
                 "type": [
                   "object",
@@ -901,12 +914,15 @@
                 ],
                 "additionalProperties": true
               },
-              "staticScan": {
-                "type": [
-                  "object",
-                  "null"
-                ],
-                "additionalProperties": true
+              "templateManifestSummary": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TemplateManifestSummary"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           }
@@ -1047,12 +1063,6 @@
             "type": "boolean"
           },
           "sha256hash": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "virustotalUrl": {
             "type": [
               "string",
               "null"
@@ -1486,6 +1496,688 @@
             }
           }
         }
+      },
+      "SdkUsageStatus": {
+        "type": "string",
+        "enum": [
+          "complete",
+          "partial",
+          "failed",
+          "missing",
+          "incompatible"
+        ]
+      },
+      "SdkUsageEntry": {
+        "type": "object",
+        "required": [
+          "key",
+          "kind",
+          "identity",
+          "classification",
+          "referenceKinds",
+          "deprecationCodes",
+          "evidenceCount",
+          "evidence"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sdk-module",
+              "sdk-export",
+              "api-member",
+              "runtime-member",
+              "hook",
+              "manifest-contract"
+            ]
+          },
+          "identity": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "runtime",
+              "type",
+              "mixed",
+              "declarative"
+            ]
+          },
+          "referenceKinds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "import",
+                "type-import",
+                "reexport",
+                "type-reexport",
+                "side-effect-import",
+                "dynamic-import",
+                "require",
+                "member-access",
+                "call",
+                "type-reference",
+                "hook-registration",
+                "manifest-declaration"
+              ]
+            }
+          },
+          "deprecationCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidenceCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "line",
+                "snippet"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "snippet": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "SdkUsageScan": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/SdkUsageStatus"
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "analysisVersion": {
+            "type": "string"
+          },
+          "inspectorVersion": {
+            "type": "string"
+          },
+          "targetOpenClawVersion": {
+            "type": "string"
+          },
+          "artifactSha256": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "number",
+            "description": "Unix epoch milliseconds"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "entryCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unknownCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "evidenceLimit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unknownLimit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unknowns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "line",
+                "expression",
+                "reason"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "expression": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "coverage": {
+            "type": "object",
+            "required": [
+              "filesDiscovered",
+              "filesAnalyzed",
+              "filesExcluded"
+            ],
+            "properties": {
+              "filesDiscovered": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "filesAnalyzed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "filesExcluded": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "inputKind": {
+            "type": "string",
+            "enum": [
+              "source",
+              "artifact"
+            ],
+            "description": "Only artifact analysis counts as public catalog coverage."
+          }
+        }
+      },
+      "SdkUsageCoveragePage": {
+        "type": "object",
+        "required": [
+          "scope",
+          "counts",
+          "unresolvedReferences",
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string",
+            "const": "page"
+          },
+          "counts": {
+            "type": "object",
+            "required": [
+              "eligible",
+              "complete",
+              "partial",
+              "failed",
+              "missing",
+              "incompatible"
+            ],
+            "properties": {
+              "eligible": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "complete": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "partial": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "missing": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "incompatible": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "unresolvedReferences": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "packageName",
+                "version",
+                "releaseId",
+                "status",
+                "unknownCount"
+              ],
+              "properties": {
+                "packageName": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "releaseId": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/SdkUsageStatus"
+                },
+                "unknownCount": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SdkUsageLookupPage": {
+        "type": "object",
+        "required": [
+          "key",
+          "items",
+          "counts",
+          "nextCursor",
+          "coverage",
+          "coverageUrl"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/SdkUsageEntry"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "packageName",
+                    "version",
+                    "releaseId",
+                    "scan"
+                  ],
+                  "properties": {
+                    "packageName": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "releaseId": {
+                      "type": "string"
+                    },
+                    "scan": {
+                      "$ref": "#/components/schemas/SdkUsageScan"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "counts": {
+            "type": "object",
+            "required": [
+              "scope",
+              "distinctPlugins"
+            ],
+            "properties": {
+              "scope": {
+                "type": "string",
+                "const": "page"
+              },
+              "distinctPlugins": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/SdkUsageCoveragePage"
+          },
+          "coverageUrl": {
+            "type": "string"
+          }
+        }
+      },
+      "SdkUsagePluginPage": {
+        "type": "object",
+        "required": [
+          "packageName",
+          "version",
+          "releaseId",
+          "scan",
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "packageName": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/SdkUsageScan"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SdkUsageEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TemplateManifestSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "agent",
+          "workspace",
+          "packages",
+          "mcpServerCount",
+          "cronJobCount"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "agent": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 1024
+              }
+            }
+          },
+          "workspace": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "bootstrapFiles",
+              "fileCount"
+            ],
+            "properties": {
+              "bootstrapFiles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "fileCount": {
+                "type": "number"
+              }
+            }
+          },
+          "packages": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "skillCount",
+              "pluginCount"
+            ],
+            "properties": {
+              "skillCount": {
+                "type": "number"
+              },
+              "pluginCount": {
+                "type": "number"
+              }
+            }
+          },
+          "profiles": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "count",
+              "hasOpenClaw"
+            ],
+            "properties": {
+              "count": {
+                "type": "number"
+              },
+              "hasOpenClaw": {
+                "type": "boolean"
+              }
+            }
+          },
+          "extensions": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "count"
+            ],
+            "properties": {
+              "count": {
+                "type": "number"
+              }
+            }
+          },
+          "mcpServerCount": {
+            "type": "number"
+          },
+          "cronJobCount": {
+            "type": "number"
+          }
+        }
+      },
+      "ExperimentalTemplateFeedEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "id",
+          "title",
+          "version",
+          "state",
+          "publisher",
+          "templateManifestSummary",
+          "install"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "template"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "recommended",
+              "disabled",
+              "blocked",
+              "deprecated"
+            ]
+          },
+          "publisher": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "trust"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "trust": {
+                "type": "string",
+                "const": "official"
+              }
+            }
+          },
+          "templateManifestSummary": {
+            "$ref": "#/components/schemas/TemplateManifestSummary"
+          },
+          "install": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "candidates"
+            ],
+            "properties": {
+              "candidates": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sourceRef",
+                    "package",
+                    "version",
+                    "integrity"
+                  ],
+                  "properties": {
+                    "sourceRef": {
+                      "type": "string",
+                      "const": "public-clawhub"
+                    },
+                    "package": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "integrity": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ExperimentalTemplateFeed": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "id",
+          "generatedAt",
+          "sequence",
+          "expiresAt",
+          "entries"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "id": {
+            "type": "string",
+            "const": "clawhub-official-templates"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExperimentalTemplateFeedEntry"
+            }
+          }
+        }
       }
     }
   },
@@ -1695,30 +2387,30 @@
             }
           }
         ],
-      "responses": {
-        "200": {
-          "description": "Hosted ZIP bytes or a GitHub-backed source handoff descriptor.",
-          "content": {
-            "application/zip": {
-              "schema": {
-                "type": "string",
-                "format": "binary"
-              }
-            },
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GitHubSkillDownloadHandoff"
+        "responses": {
+          "200": {
+            "description": "Hosted ZIP bytes or a GitHub-backed source handoff descriptor.",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubSkillDownloadHandoff"
+                }
               }
             }
           }
         }
       }
-      }
     },
     "/api/v1/packages": {
       "get": {
         "summary": "List unified catalog packages",
-        "description": "Lists skills, code plugins, and bundle plugins. Anonymous callers see public package channels; authenticated callers can also see readable private packages.",
+        "description": "Lists skills, code plugins, bundle plugins, and Templates. Anonymous callers see public package channels; authenticated callers can also see readable private packages.",
         "security": [
           {},
           {
@@ -1767,7 +2459,8 @@
               "enum": [
                 "skill",
                 "code-plugin",
-                "bundle-plugin"
+                "bundle-plugin",
+                "template"
               ]
             }
           },
@@ -1790,6 +2483,15 @@
             "required": false,
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "Category filter conditional on an explicit family. For family=template, accepted Template slugs are personal, health, travel, productivity, research, engineering, governance, operations, finance, sales, product, people, other. For family=code-plugin or family=bundle-plugin, accepted plugin slugs are channels, models, agent-runtimes, memory, context, voice, web, computer-use, media, security, integrations, developer-tools, infrastructure, documents-files, inbox-collaboration, productivity, scheduling, finance-payments, sales-marketing, data-analytics, agent-orchestration, research, other, tools, runtime, gateway. Existing plugin aliases are mcp-tooling, data, observability, automation, deployment, dev-tools. Not supported with family=skill or omitted family on these unified package endpoints. The selected family determines which category set is valid.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -2450,7 +3152,7 @@
     "/api/v1/packages/search": {
       "get": {
         "summary": "Search unified package catalog",
-        "description": "Searches skills and plugin packages.",
+        "description": "Searches skills, plugin packages, and Templates.",
         "security": [
           {},
           {
@@ -2485,7 +3187,8 @@
               "enum": [
                 "skill",
                 "code-plugin",
-                "bundle-plugin"
+                "bundle-plugin",
+                "template"
               ]
             }
           },
@@ -2508,6 +3211,15 @@
             "required": false,
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "Category filter conditional on an explicit family. For family=template, accepted Template slugs are personal, health, travel, productivity, research, engineering, governance, operations, finance, sales, product, people, other. For family=code-plugin or family=bundle-plugin, accepted plugin slugs are channels, models, agent-runtimes, memory, context, voice, web, computer-use, media, security, integrations, developer-tools, infrastructure, documents-files, inbox-collaboration, productivity, scheduling, finance-payments, sales-marketing, data-analytics, agent-orchestration, research, other, tools, runtime, gateway. Existing plugin aliases are mcp-tooling, data, observability, automation, deployment, dev-tools. Not supported with family=skill or omitted family on these unified package endpoints. The selected family determines which category set is valid.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -3414,6 +4126,339 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WhoamiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sdk-usage": {
+      "get": {
+        "summary": "Find plugins referencing a canonical SDK identity",
+        "description": "Static SDK references in latest eligible public plugin releases. Counts are page-scoped; traverse coverage as well as usage before interpreting an empty result. Live pagination is not a frozen snapshot. No authentication required.",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "example": "api-member:api.registerTool"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque nextCursor from the preceding page. Continue through empty pages until null."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkUsageLookupPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded; honor Retry-After",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sdk-usage/coverage": {
+      "get": {
+        "summary": "Inspect SDK inventory coverage across eligible plugins",
+        "description": "Static SDK references in latest eligible public plugin releases. Counts are page-scoped; traverse coverage as well as usage before interpreting an empty result. Live pagination is not a frozen snapshot. No authentication required.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque nextCursor from the preceding page. Continue through empty pages until null."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkUsageCoveragePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded; honor Retry-After",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sdk-usage/plugin": {
+      "get": {
+        "summary": "Read one plugin’s current SDK inventory",
+        "description": "Static SDK references in latest eligible public plugin releases. Counts are page-scoped; traverse coverage as well as usage before interpreting an empty result. Live pagination is not a frozen snapshot. No authentication required.",
+        "parameters": [
+          {
+            "name": "package",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque nextCursor from the preceding page. Continue through empty pages until null."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkUsagePluginPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded; honor Retry-After",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Plugin does not exist or is not eligible for the public corpus",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feeds/templates": {
+      "get": {
+        "summary": "Read the experimental Official Templates feed",
+        "description": "Separate experimental contract, not an extension of the stable plugin/skill feed. Only eligible Official @openclaw Templates are exported. Uses Cache-Control: no-store; unpublished or policy-invalid snapshots fail closed with 503.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Modified-Since",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current policy-stamped Official Templates snapshot",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentalTemplateFeed"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Snapshot validators match; no response body"
+          },
+          "503": {
+            "description": "No currently authorized published snapshot",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/feeds/templates": {
+      "get": {
+        "summary": "Read the experimental Official Templates feed",
+        "description": "Separate experimental contract, not an extension of the stable plugin/skill feed. Only eligible Official @openclaw Templates are exported. Uses Cache-Control: no-store; unpublished or policy-invalid snapshots fail closed with 503.",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Modified-Since",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current policy-stamped Official Templates snapshot",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentalTemplateFeed"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Snapshot validators match; no response body"
+          },
+          "503": {
+            "description": "No currently authorized published snapshot",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
                 }
               }
             }

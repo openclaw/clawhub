@@ -75,6 +75,22 @@ describe("homeListingData", () => {
     });
   });
 
+  it("loads a URL-requested Skills Trending view as the initial homepage catalog", async () => {
+    const item = makeTrending("first", "First", 12);
+    fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([item], null));
+
+    await expect(fetchInitialHomeListing({ kind: "skills", tab: "trending" })).resolves.toEqual({
+      kind: "skills",
+      tab: "trending",
+      categorySlugs: [],
+      fetchLimit: HOME_LISTING_PAGE_SIZE,
+      items: [{ trending: item }],
+      hasMore: false,
+      trendingState: "available",
+    });
+    expect(fetchPluginCatalogMock).not.toHaveBeenCalled();
+  });
+
   it("preserves canonical order and forwards opaque cursors across pages", async () => {
     const first = makeTrending("first", "First", 12);
     const second = makeTrending("second", "Second", 8);

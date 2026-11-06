@@ -14,8 +14,8 @@ Wire Stripe to Convex using @convex-dev/stripe: a checkout action, an httpAction
 1. Install the component: `npm install @convex-dev/stripe`.
 2. Create `convex/convex.config.ts`:
    ```ts
-   import { defineApp } from "convex/server";
    import stripe from "@convex-dev/stripe/convex.config.js";
+   import { defineApp } from "convex/server";
    const app = defineApp();
    app.use(stripe);
    export default app;
@@ -23,19 +23,19 @@ Wire Stripe to Convex using @convex-dev/stripe: a checkout action, an httpAction
 3. Store Stripe keys in Convex env (use the `env` micro power): `STRIPE_SECRET_KEY` (sk_test_… / sk_live_…) and `STRIPE_WEBHOOK_SECRET` (whsec_…).
 4. Create `convex/http.ts` to register the webhook route (the component handles signature verification automatically):
    ```ts
+   import { registerRoutes } from "@convex-dev/stripe";
    import { httpRouter } from "convex/server";
    import { components } from "./_generated/api";
-   import { registerRoutes } from "@convex-dev/stripe";
    const http = httpRouter();
    registerRoutes(http, components.stripe, { webhookPath: "/stripe/webhook" });
    export default http;
    ```
 5. Create `convex/billing.ts` with a checkout action and a subscription-gate query:
    ```ts
-   import { action, query } from "./_generated/server";
-   import { components } from "./_generated/api";
    import { StripeSubscriptions } from "@convex-dev/stripe";
    import { v } from "convex/values";
+   import { components } from "./_generated/api";
+   import { action, query } from "./_generated/server";
    const stripeClient = new StripeSubscriptions(components.stripe, {});
    export const createSubscriptionCheckout = action({
      args: { priceId: v.string() },

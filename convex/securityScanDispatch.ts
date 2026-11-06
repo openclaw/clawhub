@@ -49,12 +49,13 @@ export async function dispatchSecurityScanWorkflow(
   },
   fetchImpl: typeof fetch = fetch,
 ) {
+  const environment = process.env.CLAWHUB_ENV;
   return dispatchGitHubRepositoryEvent(
     installationToken,
     {
       eventType: "clawhub-security-scan",
       clientPayload: {
-        ...(process.env.CLAWHUB_ENV === "staging" ? { environment: "staging" } : {}),
+        ...(environment === "staging" || environment === "test" ? { environment } : {}),
         batch_limit: "4",
         max_runtime_minutes: "12",
       },

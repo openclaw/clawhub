@@ -33,7 +33,7 @@ const SHARED_KEYS = [
   "updatedAt",
 ] as const satisfies readonly SharedPackageKey[];
 
-const PLUGIN_CATEGORY_SHARED_KEYS = [
+const FACET_SHARED_KEYS = [
   "packageId",
   "name",
   "normalizedName",
@@ -60,36 +60,10 @@ const PLUGIN_CATEGORY_SHARED_KEYS = [
   "softDeletedAt",
   "createdAt",
   "updatedAt",
-] as const satisfies readonly (keyof Doc<"packagePluginCategorySearchDigest">)[];
-
-const TOPIC_SHARED_KEYS = [
-  "packageId",
-  "name",
-  "normalizedName",
-  "displayName",
-  "family",
-  "channel",
-  "isOfficial",
-  "ownerUserId",
-  "ownerPublisherId",
-  "ownerHandle",
-  "ownerKind",
-  "summary",
-  "icon",
-  "latestVersion",
-  "runtimeId",
-  "categories",
-  "topics",
-  "pluginCategoryTags",
-  "verificationTier",
-  "stats",
-  "recommendedScore",
-  "recommendedScoreVersion",
-  "scanStatus",
-  "softDeletedAt",
-  "createdAt",
-  "updatedAt",
-] as const satisfies readonly (keyof Doc<"packageTopicSearchDigest">)[];
+] as const satisfies readonly Extract<
+  keyof Doc<"packagePluginCategorySearchDigest">,
+  keyof Doc<"packageTopicSearchDigest">
+>[];
 
 export type PackageSearchDigestFields = Pick<Doc<"packages">, (typeof SHARED_KEYS)[number]> & {
   packageId: Id<"packages">;
@@ -102,20 +76,25 @@ export type PackageSearchDigestFields = Pick<Doc<"packages">, (typeof SHARED_KEY
 
 type PackagePluginCategorySearchDigestFields = Pick<
   PackageSearchDigestFields,
-  (typeof PLUGIN_CATEGORY_SHARED_KEYS)[number]
+  (typeof FACET_SHARED_KEYS)[number]
 > & {
   pluginCategory: string;
 };
 
 type PackageTopicSearchDigestFields = Pick<
   PackageSearchDigestFields,
-  (typeof TOPIC_SHARED_KEYS)[number]
+  (typeof FACET_SHARED_KEYS)[number]
 > & {
   topic: string;
 };
 
 export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchDigestFields {
-  const categories = resolveStoredPluginCategories(pkg);
+  const pluginCategoryTags =
+    pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
+      ? resolveStoredPluginCategories(pkg)
+      : [];
+  // Template assignments use their own taxonomy; plugin normalization discards them.
+  const categories = pkg.family === "claw" ? (pkg.categories ?? ["other"]) : pluginCategoryTags;
   const inferenceCurrent =
     Boolean(pkg.latestReleaseId) && pkg.latestReleaseId === pkg.inferredFromReleaseId;
   return {
@@ -129,7 +108,7 @@ export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchD
     packageId: pkg._id,
     latestVersion: pkg.latestVersionSummary?.version,
     verificationTier: pkg.verification?.tier,
-    pluginCategoryTags: categories,
+    pluginCategoryTags,
   };
 }
 
@@ -170,7 +149,7 @@ async function syncPackagePluginCategorySearchDigests(
   const nextByCategory = new Map<string, PackagePluginCategorySearchDigestFields>();
   for (const pluginCategory of categories) {
     nextByCategory.set(pluginCategory, {
-      ...pick(fields, [...PLUGIN_CATEGORY_SHARED_KEYS]),
+      ...pick(fields, [...FACET_SHARED_KEYS]),
       pluginCategory,
     });
   }
@@ -204,7 +183,7 @@ async function syncPackageTopicSearchDigests(
   const nextByTopic = new Map<string, PackageTopicSearchDigestFields>();
   for (const topic of topics) {
     nextByTopic.set(topic, {
-      ...pick(fields, [...TOPIC_SHARED_KEYS]),
+      ...pick(fields, [...FACET_SHARED_KEYS]),
       topic,
     });
   }

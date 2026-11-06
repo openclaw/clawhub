@@ -18,7 +18,7 @@ internal mutations directly for staff actions.
 - For `email send`, the user must explicitly ask for the email and sign off on
   the final recipient, subject, and body. Dry-run is fine for drafting. Never
   send until both are true, and only use `--send --confirm-user-request
---confirm-user-signoff` after that approval.
+  --confirm-user-signoff` after that approval.
 - Prefer handles for humans. Use `--id` only when the user provides a user id.
 - Never bypass API-token auth, server role checks, or audit logging.
 - After the write, verify state with the CLI/API and report the result.
@@ -70,7 +70,7 @@ bun run admin -- skills hard-delete @owner/<slug> --reason "<reason>"           
 bun run admin -- skills hard-delete @owner/<slug> --reason "<reason>" --apply --confirm "<token>" --yes
 bun run admin -- skills unhide <slug> --reason "<reason>" --yes
 bun run admin -- skills revoke-version <slug> --version <version> --reason "<reason>" --yes
-bun run admin -- skills rescan <slug> --reason "<reason>" --yes
+bun run admin -- skills rescan <slug> --version <version> --yes
 bun run admin -- skills reports --status open
 bun run admin -- skills triage-report <report-id> --status confirmed --action hide --note "<note>" --yes
 ```
@@ -80,6 +80,10 @@ only with the exact confirmation token returned by that dry-run.
 
 Pass `--owner <handle>` to `revoke-version` when more than one publisher uses
 the same slug.
+
+`skills rescan` accepts an optional exact `--version` and has no `--reason`
+flag. Keep the reason in the task record; queueing a scan is a moderation write
+and still requires authorization.
 
 ### Users
 

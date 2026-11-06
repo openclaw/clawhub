@@ -1,9 +1,9 @@
+import type { PackageEndorAnalysis } from "clawhub-schema";
 import { strToU8, zipSync } from "fflate";
 import type {
   AigAnalysis,
   LlmAnalysis,
   SkillSpectorAnalysis,
-  VtAnalysis,
 } from "../components/SkillSecurityScanResults";
 
 type SecurityAuditExportEntity = {
@@ -14,32 +14,13 @@ type SecurityAuditExportEntity = {
   detailPath: string;
 };
 
-type StaticScanFinding = {
-  code: string;
-  severity: string;
-  file: string;
-  line: number;
-  message: string;
-  evidence: string;
-};
-
-export type StaticScan = {
-  status: string;
-  reasonCodes: string[];
-  findings: StaticScanFinding[];
-  summary: string;
-  engineVersion: string;
-  checkedAt: number;
-};
-
 type SecurityAuditExportInput = {
   entity: SecurityAuditExportEntity;
   sha256hash?: string | null;
-  vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   aigAnalysis?: AigAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
-  staticScan?: StaticScan | null;
+  endorAnalysis?: PackageEndorAnalysis | null;
   exportedAt?: string;
 };
 
@@ -56,8 +37,7 @@ This archive contains stored scanner outcomes for one ClawHub artifact version.
 - clawscan.json: ClawScan risk review and final audit verdict material
 - aig.json: Tencent Zhuque Lab AI-Infra-Guard SARIF findings normalized by ClawHub
 - skillspector.json: SkillSpector agentic-risk findings
-- static-analysis.json: deterministic static scan context
-- virustotal.json: VirusTotal engine telemetry
+- endor.json: reachable vulnerable functions reported by Endor, when available
 `;
 
 function sanitizeFilenameSegment(value: string) {
@@ -101,17 +81,16 @@ export function buildSecurityAuditExportEntries(input: SecurityAuditExportInput)
           aig: input.aigAnalysis?.status ?? null,
           clawscan: input.llmAnalysis?.status ?? null,
           skillspector: input.skillSpectorAnalysis?.status ?? null,
-          staticAnalysis: input.staticScan?.status ?? null,
-          virustotal: input.vtAnalysis?.status ?? null,
+          ...(input.endorAnalysis ? { endor: input.endorAnalysis.status } : {}),
         },
       },
     },
     { path: "clawscan.json", value: input.llmAnalysis ?? null },
     { path: "aig.json", value: input.aigAnalysis ?? null },
     { path: "skillspector.json", value: input.skillSpectorAnalysis ?? null },
-    { path: "static-analysis.json", value: input.staticScan ?? null },
-    { path: "virustotal.json", value: input.vtAnalysis ?? null },
   ];
+
+  if (input.endorAnalysis) entries.push({ path: "endor.json", value: input.endorAnalysis });
 
   return entries;
 }

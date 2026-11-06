@@ -195,7 +195,7 @@ describe("bounded public engagement", () => {
     stop = observeAnalyticsEngagement(send);
     document.body.insertAdjacentHTML(
       "beforeend",
-      '<section class="skill-install-surface"></section>',
+      '<section class="skill-install-command-card"></section>',
     );
     vi.advanceTimersByTime(1500);
     expect(observed.size).toBe(3);

@@ -4,7 +4,6 @@ import {
   ApiV1SkillBulkRescanBatchRequestSchema,
   ApiV1SkillBulkRescanStatusRequestSchema,
   ApiV1SkillHardDeleteRequestSchema,
-  ApiV1SkillRepairVtPendingRequestSchema,
   ApiV1SkillScanBatchRequestSchema,
   ApiV1SkillScanBatchStatusRequestSchema,
   ApiV1SkillScanJobHistoryRequestSchema,
@@ -83,6 +82,12 @@ import {
 } from "../lib/skillZip";
 import { publishVersionForUser } from "../skills";
 import {
+  readOptionalJson,
+  optionalStringField,
+  resolveVersionPathTarget,
+  hasVersionDeleteSelector,
+  versionDeleteRouteGuidance,
+  chunkedParallel,
   MAX_RAW_FILE_BYTES,
   type AmbiguousSkillSlugChoice,
   ambiguousSkillSlugResponse,
@@ -91,13 +96,15 @@ import {
   formatUserFacingErrorMessage,
   getPathSegments,
   json,
+  moderationDecisionResponse,
   parseJsonPayload,
   parseMultipartPublish,
   parsePublishBody,
   publicApiOrigin,
   requireAdminOrResponse,
   requireApiTokenUserOrResponse,
-  resolveTagsBatch,
+  anonymousCatalogCacheHeaders,
+  resolvePublicSkillVersions,
   readPublicSkillVersionSelections,
   safeStoredFilePreviewResponse,
   safeStoredFileResponse,
@@ -105,6 +112,7 @@ import {
   softDeleteErrorToResponse,
   text,
   toOptionalNumber,
+  transientConvexErrorResponse,
 } from "./shared";
 import {
   parseSkillsShCatalogReference,
@@ -209,11 +217,6 @@ type SkillSetupEntry = {
   required: boolean;
 };
 
-type PublicSkillVersionStaticScan = Pick<
-  NonNullable<Doc<"skillVersions">["staticScan"]>,
-  "status" | "reasonCodes" | "summary" | "engineVersion" | "checkedAt"
->;
-
 type PublicSkillVersionResponse = {
   _id: Id<"skillVersions">;
   skillId?: Id<"skills">;
@@ -225,10 +228,8 @@ type PublicSkillVersionResponse = {
   parsed?: PublicSkillVersionParsed;
   softDeletedAt?: number;
   sha256hash?: string;
-  vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   skillSpectorAnalysis?: Doc<"skillVersions">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
-  staticScan?: PublicSkillVersionStaticScan;
 };
 
 type ModerationEvidence = {
@@ -349,16 +350,7 @@ type SkillSecuritySnapshot = {
   model: string | null;
   hasScanResult: boolean;
   sha256hash: string | null;
-  virustotalUrl: string | null;
   scanners: {
-    vt: {
-      status: string;
-      verdict: string | null;
-      normalizedStatus: NormalizedSecurityStatus;
-      analysis: string | null;
-      source: string | null;
-      checkedAt: number | null;
-    } | null;
     skillspector: {
       status: string;
       normalizedStatus: NormalizedSecurityStatus;
@@ -398,9 +390,6 @@ const internalRefs = internal as unknown as {
     getBulkSkillRescanBatchStatusForAdminInternal: unknown;
     requestSkillRescanForUserInternal: unknown;
   };
-  vt: {
-    repairPendingSkillVtAnalysis: unknown;
-  };
   skills: {
     deleteOwnedVersionForUserInternal: unknown;
     setSkillTagForUserInternal: unknown;
@@ -429,10 +418,6 @@ async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Prom
 
 async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runMutation(ref as never, args as never)) as T;
-}
-
-async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runAction(ref as never, args as never)) as T;
 }
 
 function isMultipartRequest(request: Request) {
@@ -485,15 +470,14 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
     "- `suspicious` means ClawHub found behavior that needs review before users should rely on it.",
     "- `clean` means ClawHub did not find blocking security issues in this scan.",
     "",
-    "VirusTotal results are supporting reputation telemetry. They can help explain a risk signal, but they are not the sole source of ClawHub's final verdict.",
+    "Endor results summarize reachable dependency findings. They supplement the ClawScan verdict; a missing or skipped Endor result is not a clean result.",
     "",
     "## Files",
     "",
     "- `manifest.json`: artifact identity, scan status, timestamps, and writeback state.",
     "- `clawscan.json`: final ClawScan verdict, summary, guidance, and findings.",
+    "- `endor.json`: bounded Endor reachability summary when available.",
     "- `skillspector.json`: SkillSpector structure and agentic-risk signals when available.",
-    "- `static-analysis.json`: deterministic scanner findings, reason codes, and static summary.",
-    "- `virustotal.json`: external reputation counts and status when available.",
     "- `README.md`: this interpretation guide.",
     "",
   ].join("\n");
@@ -501,12 +485,8 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
   return buildDeterministicZip([
     { path: "manifest.json", bytes: encodeJsonEntry(manifest) },
     { path: "clawscan.json", bytes: encodeJsonEntry(scanReportPart(status, "clawscan")) },
+    { path: "endor.json", bytes: encodeJsonEntry(scanReportPart(status, "endor")) },
     { path: "skillspector.json", bytes: encodeJsonEntry(scanReportPart(status, "skillspector")) },
-    {
-      path: "static-analysis.json",
-      bytes: encodeJsonEntry(scanReportPart(status, "staticAnalysis")),
-    },
-    { path: "virustotal.json", bytes: encodeJsonEntry(scanReportPart(status, "virustotal")) },
     { path: "README.md", bytes: encodeTextEntry(readme) },
   ]);
 }
@@ -531,14 +511,7 @@ async function handleSkillScanBatchSubmit(ctx: ActionCtx, request: Request, head
       ApiV1SkillScanBatchRequestSchema,
       await request.json(),
       "Skill scan batch payload",
-    ) as {
-      mode?: "all-active-latest";
-      cursor?: string | null;
-      batchSize?: number;
-      dryRun?: boolean;
-      requestId?: string;
-      expectedVersionIds?: string[];
-    };
+    );
     const result = await runMutationRef(
       ctx,
       internalRefs.securityScan.enqueueBulkSkillRescanBatchForAdminInternal,
@@ -571,7 +544,7 @@ async function handleSkillScanBatchStatus(ctx: ActionCtx, request: Request, head
       ApiV1SkillScanBatchStatusRequestSchema,
       await request.json(),
       "Skill scan batch status payload",
-    ) as { jobIds: string[] };
+    );
     const result = await runQueryRef(
       ctx,
       internalRefs.securityScan.getBulkSkillRescanBatchStatusForAdminInternal,
@@ -647,21 +620,16 @@ function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
 }
 
 function buildSkillSecuritySnapshot(
-  version: Pick<
-    PublicSkillVersionResponse,
-    "sha256hash" | "vtAnalysis" | "skillSpectorAnalysis" | "llmAnalysis"
-  >,
+  version: Pick<PublicSkillVersionResponse, "sha256hash" | "skillSpectorAnalysis" | "llmAnalysis">,
 ): SkillSecuritySnapshot | null {
   const sha256hash = version.sha256hash ?? null;
-  const vt = version.vtAnalysis;
   const skillSpector = version.skillSpectorAnalysis;
   const llm = version.llmAnalysis;
 
-  if (!sha256hash && !vt && !skillSpector && !llm) {
+  if (!sha256hash && !skillSpector && !llm) {
     return null;
   }
 
-  const vtStatus = vt ? normalizeSecurityStatus(vt.verdict ?? vt.status) : null;
   const skillSpectorStatus = skillSpector ? normalizeSecurityStatus(skillSpector.status) : null;
   const llmStatus = llm ? normalizeSecurityStatus(llm.verdict ?? llm.status) : null;
 
@@ -673,7 +641,7 @@ function buildSkillSecuritySnapshot(
   const hasWarnings =
     status === "suspicious" || status === "malicious" || hasLlmDimensionWarnings(llm?.dimensions);
 
-  const checkedAtCandidates = [vt?.checkedAt, skillSpector?.checkedAt, llm?.checkedAt].filter(
+  const checkedAtCandidates = [skillSpector?.checkedAt, llm?.checkedAt].filter(
     (value): value is number => typeof value === "number",
   );
   const checkedAt = checkedAtCandidates.length > 0 ? Math.max(...checkedAtCandidates) : null;
@@ -685,18 +653,7 @@ function buildSkillSecuritySnapshot(
     model: llm?.model ?? null,
     hasScanResult,
     sha256hash,
-    virustotalUrl: sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null,
     scanners: {
-      vt: vt
-        ? {
-            status: vt.status,
-            verdict: vt.verdict ?? null,
-            normalizedStatus: vtStatus ?? "pending",
-            analysis: vt.analysis ?? null,
-            source: vt.source ?? null,
-            checkedAt: vt.checkedAt ?? null,
-          }
-        : null,
       skillspector: skillSpector
         ? {
             status: skillSpector.status,
@@ -743,17 +700,9 @@ type SecurityVerdictRequestItem = {
 };
 
 type VerifySecurityVersion = {
-  staticScan?: Pick<
-    NonNullable<Doc<"skillVersions">["staticScan"]>,
-    "status" | "reasonCodes" | "summary" | "engineVersion" | "checkedAt"
-  >;
   llmAnalysis?: Pick<
     NonNullable<Doc<"skillVersions">["llmAnalysis"]>,
     "status" | "verdict" | "confidence" | "summary" | "guidance" | "model" | "checkedAt"
-  >;
-  vtAnalysis?: Pick<
-    NonNullable<Doc<"skillVersions">["vtAnalysis"]>,
-    "status" | "verdict" | "source" | "checkedAt"
   >;
   skillSpectorAnalysis?: Pick<
     NonNullable<Doc<"skillVersions">["skillSpectorAnalysis"]>,
@@ -788,7 +737,10 @@ type SecurityVerdictTargetResult = {
   } | null;
   version:
     | (VerifySecurityVersion &
-        Pick<Doc<"skillVersions">, "_id" | "version" | "createdAt" | "softDeletedAt">)
+        Pick<
+          Doc<"skillVersions">,
+          "_id" | "version" | "createdAt" | "softDeletedAt" | "publicationStatus"
+        >)
     | null;
 } | null;
 
@@ -819,10 +771,6 @@ function buildVerifySecurity(version: VerifySecurityVersion) {
 }
 
 function buildSecurityVerdictSummary(version: VerifySecurityVersion) {
-  const staticStatus = normalizeVerificationStatus(version.staticScan?.status);
-  const vtStatus = version.vtAnalysis
-    ? normalizeVerificationStatus(version.vtAnalysis.verdict ?? version.vtAnalysis.status)
-    : null;
   const skillSpectorStatus = version.skillSpectorAnalysis
     ? normalizeVerificationStatus(version.skillSpectorAnalysis.status)
     : null;
@@ -830,32 +778,6 @@ function buildSecurityVerdictSummary(version: VerifySecurityVersion) {
   return {
     ...buildVerifySecurity(version),
     signals: {
-      staticScan: version.staticScan
-        ? {
-            status: staticStatus,
-            rawStatus: version.staticScan.status,
-            reasonCodes: version.staticScan.reasonCodes ?? [],
-            summary: version.staticScan.summary ?? null,
-            engineVersion: version.staticScan.engineVersion ?? null,
-            checkedAt: version.staticScan.checkedAt ?? null,
-          }
-        : {
-            status: "pending" as const,
-            rawStatus: null,
-            reasonCodes: [],
-            summary: null,
-            engineVersion: null,
-            checkedAt: null,
-          },
-      virusTotal: version.vtAnalysis
-        ? {
-            status: vtStatus ?? "pending",
-            rawStatus: version.vtAnalysis.status,
-            verdict: version.vtAnalysis.verdict ?? null,
-            source: version.vtAnalysis.source ?? null,
-            checkedAt: version.vtAnalysis.checkedAt ?? null,
-          }
-        : null,
       skillSpector: version.skillSpectorAnalysis
         ? {
             status: skillSpectorStatus ?? "pending",
@@ -932,12 +854,9 @@ function buildSecurityVerdictReasons(args: {
 }
 
 function getVerifySecurityCheckedAt(security: ReturnType<typeof buildSecurityVerdictSummary>) {
-  const candidates = [
-    security.checkedAt,
-    security.signals.staticScan?.checkedAt,
-    security.signals.virusTotal?.checkedAt,
-    security.signals.skillSpector?.checkedAt,
-  ].filter((value): value is number => typeof value === "number");
+  const candidates = [security.checkedAt, security.signals.skillSpector?.checkedAt].filter(
+    (value): value is number => typeof value === "number",
+  );
   return candidates.length > 0 ? Math.max(...candidates) : null;
 }
 
@@ -1169,6 +1088,15 @@ async function buildSecurityVerdictItem(
       "version.not_found",
     );
   }
+  // Withheld versions stay undiscoverable even when also soft-deleted.
+  if (version.publicationStatus && version.publicationStatus !== "published") {
+    return buildSecurityVerdictError(
+      item,
+      "version_not_found",
+      "Version not found",
+      "version.not_found",
+    );
+  }
   if (version.softDeletedAt) {
     return buildSecurityVerdictError(
       item,
@@ -1246,12 +1174,7 @@ export async function skillScanSubmitV1Handler(ctx: ActionCtx, request: Request)
       ApiV1SkillScanSubmitRequestSchema,
       await request.json(),
       "Skill scan payload",
-    ) as {
-      source:
-        | { kind: "upload" }
-        | { kind: "published"; slug: string; ownerHandle?: string; version?: string };
-      update?: boolean;
-    };
+    );
     if (body.source.kind === "upload") {
       return text(
         "Local upload scans are no longer supported. Upload a version, then use `clawhub scan download <slug> --version <version>` to retrieve stored scan results.",
@@ -1579,57 +1502,48 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     };
   }
 
-  // Digest summaries may predate publication or owner-deletion transitions.
-  // Re-read the selected public snapshot, preserving older approved versions.
-  const latestTargets = result.items.filter((item) => item.latestVersion);
-  const latestSelections = await readPublicSkillVersionSelections(
+  // Recheck cached latest and tag targets once per exact parent/version pair,
+  // preserving older approved versions across publication and deletion changes.
+  const resolvedVersions = await resolvePublicSkillVersions(
     ctx,
-    latestTargets.map((item) => ({
+    result.items.map((item) => ({
       skillId: item.skill._id,
-      versionId: item.latestVersion!._id,
+      tags: item.skill.tags,
+      latestVersionId: item.latestVersion?._id,
     })),
   );
-  let latestIndex = 0;
-  result.items = result.items.map((item) => {
-    if (!item.latestVersion) return item;
-    const selection = latestSelections[latestIndex++];
-    return { ...item, latestVersion: selection.status === "available" ? selection.version : null };
+
+  const items = result.items.map((item, idx) => {
+    const { tags, latestVersion } = resolvedVersions[idx];
+    const parsed: PublicSkillVersionParsed | undefined = latestVersion?.parsed;
+    return {
+      ownerHandle: item.ownerHandle,
+      slug: item.skill.slug,
+      displayName: item.skill.displayName,
+      summary: item.skill.summary ?? null,
+      description: parsed?.description ?? null,
+      topics: item.skill.topics,
+      tags,
+      stats: item.skill.stats,
+      createdAt: item.skill.createdAt,
+      updatedAt: item.skill.updatedAt,
+      latestVersion: latestVersion
+        ? {
+            version: latestVersion.version,
+            createdAt: latestVersion.createdAt,
+            changelog: latestVersion.changelog,
+            license: parsed?.license ?? null,
+          }
+        : null,
+      metadata: parsed?.clawdis
+        ? {
+            setup: buildSkillSetup(parsed),
+            os: parsed.clawdis.os ?? null,
+            systems: parsed.clawdis.nix?.systems ?? null,
+          }
+        : null,
+    };
   });
-
-  // Tag targets are checked in bounded batches rather than per-item action RPCs.
-  const resolvedTagsList = await resolveTagsBatch(
-    ctx,
-    result.items.map((item) => item.skill.tags),
-    result.items.map((item) => item.skill._id),
-  );
-
-  const items = result.items.map((item, idx) => ({
-    ownerHandle: item.ownerHandle,
-    slug: item.skill.slug,
-    displayName: item.skill.displayName,
-    summary: item.skill.summary ?? null,
-    description: item.latestVersion?.parsed?.description ?? null,
-    topics: item.skill.topics,
-    tags: resolvedTagsList[idx],
-    stats: item.skill.stats,
-    createdAt: item.skill.createdAt,
-    updatedAt: item.skill.updatedAt,
-    latestVersion: item.latestVersion
-      ? {
-          version: item.latestVersion.version,
-          createdAt: item.latestVersion.createdAt,
-          changelog: item.latestVersion.changelog,
-          license: item.latestVersion.parsed?.license ?? null,
-        }
-      : null,
-    metadata: item.latestVersion?.parsed?.clawdis
-      ? {
-          setup: buildSkillSetup(item.latestVersion.parsed),
-          os: item.latestVersion.parsed.clawdis.os ?? null,
-          systems: item.latestVersion.parsed.clawdis.nix?.systems ?? null,
-        }
-      : null,
-  }));
 
   const responseHeaders =
     sort === "trending" && getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled
@@ -1638,7 +1552,11 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
           Link: `<${ApiRoutes.trending}?kind=skills>; rel="successor-version"`,
         })
       : rate.headers;
-  return json({ items, nextCursor: result.nextCursor ?? null }, 200, responseHeaders);
+  return json(
+    { items, nextCursor: result.nextCursor ?? null },
+    200,
+    anonymousCatalogCacheHeaders(request, responseHeaders),
+  );
 }
 
 async function isCurrentSkillHttpOwner(
@@ -1691,6 +1609,7 @@ async function describeOwnerVisibleSkillState(
   if (skill.moderationStatus === "hidden") {
     if (
       skill.moderationReason === "pending.scan" ||
+      // Legacy retired-VirusTotal reason, pending until the moderation backfill rebuilds it.
       skill.moderationReason === "scanner.vt.pending"
     ) {
       return {
@@ -2002,7 +1921,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       );
     }
 
-    const [tags] = await resolveTagsBatch(ctx, [result.skill.tags], [result.skill._id]);
+    const [{ tags }] = await resolvePublicSkillVersions(ctx, [
+      { skillId: result.skill._id, tags: result.skill.tags },
+    ]);
     const latestVersionId =
       result.skill.latestVersionId ?? result.skill.tags?.latest ?? result.latestVersion?._id;
     const descriptionAccessBlock = result.latestVersion
@@ -2067,7 +1988,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           : null,
       },
       200,
-      rate.headers,
+      anonymousCatalogCacheHeaders(request, rate.headers),
     );
   }
 
@@ -2157,6 +2078,21 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       200,
       rate.headers,
     );
+  }
+
+  if (second === "versions" && third && segments[3] === "publication" && segments.length === 4) {
+    const headers = mergeHeaders(rate.headers, {
+      "Cache-Control": "private, no-store",
+      Vary: "Authorization",
+    });
+    const auth = await requireApiTokenUserOrResponse(ctx, request, headers);
+    if (!auth.ok) return auth.response;
+    const result = await ctx.runQuery(internal.skills.getPublicationStatusForUserInternal, {
+      ...skillLookupArgs,
+      version: third,
+      userId: auth.userId,
+    });
+    return result ? json(result, 200, headers) : text("Publication status not found", 404, headers);
   }
 
   if (second === "versions" && segments.length === 2) {
@@ -2638,6 +2574,9 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
   if (!auth.ok) return auth.response;
 
   const contentType = request.headers.get("content-type") ?? "";
+  // Ticketed JSON publishes consume their upload tickets once files persist; a
+  // later failure cannot be fixed by resending the same request.
+  let ticketedFilesPersisted = false;
   try {
     if (contentType.includes("application/json")) {
       const body = await request.json();
@@ -2652,7 +2591,9 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
           rate.headers,
         );
       }
-      const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload);
+      const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload, () => {
+        ticketedFilesPersisted = true;
+      });
       return json({ ok: true, ...result }, 200, rate.headers);
     }
 
@@ -2674,6 +2615,10 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       }
     }
   } catch (error) {
+    const transient = transientConvexErrorResponse(error, rate.headers, {
+      restartRequired: ticketedFilesPersisted,
+    });
+    if (transient) return transient;
     const message = error instanceof Error ? error.message : "Publish failed";
     return text(message, 400, rate.headers);
   }
@@ -3020,6 +2965,8 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       ).toString();
       return json({ uploadUrl, uploadTicket }, 200, rate.headers);
     } catch (error) {
+      const transient = transientConvexErrorResponse(error, rate.headers);
+      if (transient) return transient;
       const message = error instanceof Error ? error.message : "Invalid skill upload request";
       return text(message, 400, rate.headers);
     }
@@ -3064,6 +3011,12 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       return json({ storageId }, 200, rate.headers);
     } catch (error) {
       if (storageId) await ctx.storage.delete(storageId).catch(() => undefined);
+      // A transient platform failure (store rejection or attachment) leaves the
+      // ticket unattached once this blob is reclaimed, so a retry with the same
+      // ticket attaches exactly one blob. If an attachment committed despite the
+      // error, the retry is rejected as a used ticket instead of adding a blob.
+      const transient = transientConvexErrorResponse(error, rate.headers);
+      if (transient) return transient;
       const message = error instanceof Error ? error.message : "Skill upload failed";
       return text(message, 400, rate.headers);
     }
@@ -3107,7 +3060,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         SkillVersionRevokeRequestSchema,
         await request.json(),
         "Skill version moderation payload",
-      ) as { state: "revoked"; reason: string; ownerHandle?: string };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.skills.revokeSkillVersionForUserInternal,
@@ -3126,55 +3079,6 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     }
   }
 
-  if (segments[0] === "-" && segments[1] === "repair-vt-pending" && segments.length === 2) {
-    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
-    if (!auth.ok) return auth.response;
-    const admin = requireAdminOrResponse(auth.user, rate.headers);
-    if (!admin.ok) return admin.response;
-    try {
-      const body = parseArk(
-        ApiV1SkillRepairVtPendingRequestSchema,
-        await request.json(),
-        "Skill VT pending repair payload",
-      ) as {
-        cursor?: string | null;
-        batchSize?: number;
-        concurrency?: number;
-        dryRun?: boolean;
-      };
-      const result = await runActionRef<
-        | {
-            dryRun: boolean;
-            total: number;
-            wouldUpdate: number;
-            updated: number;
-            noResults: number;
-            noDecisiveStats: number;
-            errors: number;
-            done: boolean;
-            cursor: string | null;
-            statusCounts: Record<string, number>;
-            sampleUpdated: Array<{ slug: string; status: string }>;
-          }
-        | { error: string }
-      >(ctx, internalRefs.vt.repairPendingSkillVtAnalysis, {
-        dryRun: body.dryRun !== false,
-        cursor: body.cursor ?? null,
-        ...(body.batchSize !== undefined ? { batchSize: body.batchSize } : {}),
-        ...(body.concurrency !== undefined ? { concurrency: body.concurrency } : {}),
-      });
-      if ("error" in result) return text(result.error, 400, rate.headers);
-      return json({ ok: true, ...result }, 200, rate.headers);
-    } catch (error) {
-      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
-      return text(
-        error instanceof Error ? error.message : "Skill VT pending repair failed",
-        400,
-        rate.headers,
-      );
-    }
-  }
-
   if (segments[0] === "-" && segments[1] === "rescan-batch" && segments.length === 2) {
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
@@ -3185,14 +3089,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         ApiV1SkillBulkRescanBatchRequestSchema,
         await request.json(),
         "Skill bulk rescan batch payload",
-      ) as {
-        mode?: "all-active-latest";
-        cursor?: string | null;
-        batchSize?: number;
-        dryRun?: boolean;
-        requestId?: string;
-        expectedVersionIds?: string[];
-      };
+      );
       const result = await runMutationRef(
         ctx,
         internalRefs.securityScan.enqueueBulkSkillRescanBatchForAdminInternal,
@@ -3234,7 +3131,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         ApiV1SkillBulkRescanStatusRequestSchema,
         await request.json(),
         "Skill bulk rescan status payload",
-      ) as { jobIds: string[] };
+      );
       const result = await runQueryRef(
         ctx,
         internalRefs.securityScan.getBulkSkillRescanBatchStatusForAdminInternal,
@@ -3265,12 +3162,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         ApiV1SkillHardDeleteRequestSchema,
         await request.json(),
         "Skill hard-delete payload",
-      ) as {
-        ownerHandle: string;
-        reason: string;
-        dryRun?: boolean;
-        confirmationToken?: string;
-      };
+      );
       const result = await runMutationRef(ctx, internalRefs.skills.hardDeleteForAdminInternal, {
         actorUserId: auth.userId,
         slug,
@@ -3295,35 +3187,18 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   ) {
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
-    try {
-      const body = parseArk(
-        SkillReportTriageRequestSchema,
-        await request.json(),
-        "Skill report triage payload",
-      ) as {
-        status: "open" | "confirmed" | "dismissed";
-        note?: string;
-        finalAction?: "none" | "hide";
-      };
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.skills.triageSkillReportForUserInternal,
-        {
-          actorUserId: auth.userId,
-          reportId: segments[2] as Id<"skillReports">,
-          status: body.status,
-          ...(body.note ? { note: body.note } : {}),
-          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Skill report triage failed",
-        400,
-        rate.headers,
-      );
-    }
+    return moderationDecisionResponse(
+      ctx,
+      request,
+      rate.headers,
+      SkillReportTriageRequestSchema,
+      "Skill report triage payload",
+      "Skill report triage failed",
+      () => ({
+        ref: internalRefs.skills.triageSkillReportForUserInternal,
+        args: { actorUserId: auth.userId, reportId: segments[2] as Id<"skillReports"> },
+      }),
+    );
   }
 
   if (
@@ -3335,35 +3210,18 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   ) {
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
-    try {
-      const body = parseArk(
-        SkillAppealResolveRequestSchema,
-        await request.json(),
-        "Skill appeal resolve payload",
-      ) as {
-        status: "open" | "accepted" | "rejected";
-        note?: string;
-        finalAction?: "none" | "restore";
-      };
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.skills.resolveSkillAppealForUserInternal,
-        {
-          actorUserId: auth.userId,
-          appealId: segments[2] as Id<"skillAppeals">,
-          status: body.status,
-          ...(body.note ? { note: body.note } : {}),
-          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Skill appeal resolve failed",
-        400,
-        rate.headers,
-      );
-    }
+    return moderationDecisionResponse(
+      ctx,
+      request,
+      rate.headers,
+      SkillAppealResolveRequestSchema,
+      "Skill appeal resolve payload",
+      "Skill appeal resolve failed",
+      () => ({
+        ref: internalRefs.skills.resolveSkillAppealForUserInternal,
+        args: { actorUserId: auth.userId, appealId: segments[2] as Id<"skillAppeals"> },
+      }),
+    );
   }
 
   if (segments.length === 2 && action === "report") {
@@ -3435,14 +3293,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
     try {
-      const body = parseArk(
-        SkillAppealRequestSchema,
-        await request.json(),
-        "Skill appeal payload",
-      ) as {
-        version?: string;
-        message: string;
-      };
+      const body = parseArk(SkillAppealRequestSchema, await request.json(), "Skill appeal payload");
       const result = await runMutationRef(
         ctx,
         internalRefs.skills.submitSkillAppealForUserInternal,
@@ -3647,83 +3498,6 @@ function skillVersionDeleteErrorToResponse(error: unknown, headers: HeadersInit)
   }
   if (lower.includes("not found")) return text(message, 404, headers);
   return text(message, 400, headers);
-}
-
-async function readOptionalJson(request: Request): Promise<unknown> {
-  const raw = await request.text();
-  if (!raw.trim()) return undefined;
-  return JSON.parse(raw) as unknown;
-}
-
-function optionalStringField(value: unknown, key: string): string | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === "string" ? field : undefined;
-}
-
-function hasOwnField(value: unknown, key: string) {
-  return Boolean(
-    value &&
-    typeof value === "object" &&
-    Object.prototype.hasOwnProperty.call(value as Record<string, unknown>, key),
-  );
-}
-
-function resolveVersionPathTarget(
-  pathVersion: string | undefined,
-  request: Request,
-  body: unknown,
-): { version?: string; error?: string } {
-  const rawBodyVersion = optionalStringField(body, "version");
-  if (hasOwnField(body, "version") && rawBodyVersion === undefined) {
-    return { error: "Version must be a non-empty string" };
-  }
-  const version = pathVersion?.trim();
-  const bodyVersion = rawBodyVersion?.trim();
-  const queryVersions = new URL(request.url).searchParams
-    .getAll("version")
-    .map((queryVersion) => queryVersion.trim());
-  if (
-    !version ||
-    (rawBodyVersion !== undefined && !bodyVersion) ||
-    queryVersions.some((queryVersion) => !queryVersion)
-  ) {
-    return { error: "Version cannot be empty" };
-  }
-  if (
-    (bodyVersion && bodyVersion !== version) ||
-    queryVersions.some((queryVersion) => queryVersion !== version)
-  ) {
-    return { error: "Version does not match request target" };
-  }
-  return { version };
-}
-
-function hasVersionDeleteSelector(request: Request, body: unknown) {
-  return hasOwnField(body, "version") || new URL(request.url).searchParams.has("version");
-}
-
-function versionDeleteRouteGuidance(basePath: string, request: Request, body: unknown) {
-  const version =
-    optionalStringField(body, "version")?.trim() ??
-    new URL(request.url).searchParams.get("version")?.trim();
-  return `Version deletion requires DELETE ${basePath}/versions/${
-    version ? encodeURIComponent(version) : "<version>"
-  }.`;
-}
-
-async function chunkedParallel<T, R>(
-  items: T[],
-  chunkSize: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  for (let i = 0; i < items.length; i += chunkSize) {
-    const chunk = items.slice(i, i + chunkSize);
-    const chunkResults = await Promise.all(chunk.map(fn));
-    results.push(...chunkResults);
-  }
-  return results;
 }
 
 type SkillsExportPhase =

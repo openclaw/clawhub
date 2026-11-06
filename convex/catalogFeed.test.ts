@@ -1,15 +1,21 @@
-import { CATALOG_FEED_ID, CATALOG_SKILLS_FEED_ID, EXPERIMENTAL_CLAW_FEED_ID } from "clawhub-schema";
+import {
+  CATALOG_FEED_ID,
+  CATALOG_SKILLS_FEED_ID,
+  EXPERIMENTAL_TEMPLATE_FEED_ID,
+} from "clawhub-schema";
 import { getFunctionName } from "convex/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  listOfficialClawEntries,
+  listOfficialTemplateEntries,
   listOfficialEntries,
   listOfficialSkillEntries,
   publish,
+  storeTemplatePublication,
 } from "./catalogFeed";
+import { getOwnerPublisher } from "./lib/publishers";
 
 vi.mock("./lib/publishers", () => ({
-  getOwnerPublisher: vi.fn().mockResolvedValue({ handle: "openclaw" }),
+  getOwnerPublisher: vi.fn().mockResolvedValue({ kind: "org", handle: "openclaw" }),
 }));
 vi.mock("./lib/officialPublishers", () => ({
   isOfficialPublisher: vi.fn().mockResolvedValue(true),
@@ -31,11 +37,11 @@ const listOfficialEntriesHandler = async (
   ctx: unknown,
   args: { family: "code-plugin" | "bundle-plugin" },
 ) => (await listOfficialEntriesPageHandler(ctx, { ...args, cursor: null })).entries;
-const listOfficialClawEntriesPageHandler = (
-  listOfficialClawEntries as unknown as WrappedHandler<{ cursor: string | null }, EntryPage>
+const listOfficialTemplateEntriesPageHandler = (
+  listOfficialTemplateEntries as unknown as WrappedHandler<{ cursor: string | null }, EntryPage>
 )._handler;
-const listOfficialClawEntriesHandler = async (ctx: unknown, _args: Record<string, never>) =>
-  (await listOfficialClawEntriesPageHandler(ctx, { cursor: null })).entries;
+const listOfficialTemplateEntriesHandler = async (ctx: unknown, _args: Record<string, never>) =>
+  (await listOfficialTemplateEntriesPageHandler(ctx, { cursor: null })).entries;
 const listOfficialSkillEntriesHandler = (
   listOfficialSkillEntries as unknown as WrappedHandler<
     { publisherId: string; cursor: string | null },
@@ -45,6 +51,12 @@ const listOfficialSkillEntriesHandler = (
 const publishHandler = (
   publish as unknown as WrappedHandler<{ expiresAt: string }, Array<{ feedId: string }>>
 )._handler;
+const storeTemplatePublicationHandler = (
+  storeTemplatePublication as unknown as WrappedHandler<
+    { generatedAt: string; expiresAt: string; entries: unknown[] },
+    { entryCount: number }
+  >
+)._handler;
 
 function makePackage(overrides: Record<string, unknown> = {}) {
   return {
@@ -53,12 +65,12 @@ function makePackage(overrides: Record<string, unknown> = {}) {
     normalizedName: "@openclaw/demo",
     displayName: "Demo",
     ownerUserId: "users:1",
-    family: "code-plugin",
     channel: "official",
     isOfficial: true,
     latestReleaseId: "packageReleases:1",
     softDeletedAt: undefined,
     ...overrides,
+    family: overrides.family === "template" ? "claw" : (overrides.family ?? "code-plugin"),
   };
 }
 
@@ -73,6 +85,7 @@ function makeRelease(overrides: Record<string, unknown> = {}) {
     manualModeration: undefined,
     softDeletedAt: undefined,
     ...overrides,
+    clawManifestSummary: overrides.clawManifestSummary ?? overrides.templateManifestSummary,
   };
 }
 
@@ -296,9 +309,8 @@ describe("catalog feed projection", () => {
     ]);
   });
 
-  it("projects validated Claw releases with only their safe summary", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
-    const clawManifestSummary = {
+  it("projects validated Template releases with only their safe summary", async () => {
+    const templateManifestSummary = {
       schemaVersion: 1,
       agent: { id: "triage", name: "Triage" },
       workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
@@ -308,10 +320,10 @@ describe("catalog feed projection", () => {
       mcpServerCount: 0,
       cronJobCount: 1,
     };
-    const result = await listOfficialClawEntriesHandler(
-      makeCtx([makePackage({ family: "claw" })], {
+    const result = await listOfficialTemplateEntriesHandler(
+      makeCtx([makePackage({ family: "template" })], {
         "packageReleases:1": makeRelease({
-          clawManifestSummary,
+          templateManifestSummary,
         }),
       }),
       {},
@@ -319,9 +331,9 @@ describe("catalog feed projection", () => {
 
     expect(result).toEqual([
       expect.objectContaining({
-        type: "claw",
+        type: "template",
         id: "@openclaw/demo",
-        clawManifestSummary,
+        templateManifestSummary,
         install: {
           candidates: [
             expect.objectContaining({
@@ -335,10 +347,57 @@ describe("catalog feed projection", () => {
     ]);
   });
 
-  it("excludes Claw releases without a validated manifest summary", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
-    const result = await listOfficialClawEntriesHandler(
-      makeCtx([makePackage({ family: "claw" })], {
+  it("omits Templates from another Official publisher while retaining @openclaw entries", async () => {
+    vi.mocked(getOwnerPublisher).mockResolvedValueOnce({ kind: "org", handle: "other" } as never);
+    const summary = {
+      schemaVersion: 1,
+      agent: { id: "demo" },
+      workspace: { bootstrapFiles: [], fileCount: 0 },
+      packages: { skillCount: 0, pluginCount: 0 },
+      mcpServerCount: 0,
+      cronJobCount: 0,
+    };
+    const result = await listOfficialTemplateEntriesHandler(
+      makeCtx(
+        [
+          makePackage({
+            _id: "packages:other",
+            name: "@other/demo",
+            normalizedName: "@other/demo",
+            ownerPublisherId: "publishers:other",
+            family: "template",
+            latestReleaseId: "packageReleases:other",
+          }),
+          makePackage({
+            _id: "packages:openclaw",
+            name: "@openclaw/demo",
+            normalizedName: "@openclaw/demo",
+            ownerPublisherId: "publishers:openclaw",
+            family: "template",
+            latestReleaseId: "packageReleases:openclaw",
+          }),
+        ],
+        {
+          "packageReleases:other": makeRelease({
+            packageId: "packages:other",
+            templateManifestSummary: summary,
+          }),
+          "packageReleases:openclaw": makeRelease({
+            packageId: "packages:openclaw",
+            templateManifestSummary: summary,
+          }),
+        },
+      ),
+      {},
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ id: "@openclaw/demo" });
+  });
+
+  it("excludes Template releases without a validated manifest summary", async () => {
+    const result = await listOfficialTemplateEntriesHandler(
+      makeCtx([makePackage({ family: "template" })], {
         "packageReleases:1": makeRelease(),
       }),
       {},
@@ -547,15 +606,26 @@ describe("catalog feed projection", () => {
   it("caps oversized skills feeds instead of blocking plugin publication", async () => {
     const skillEntries = Array.from({ length: 1001 }, (_, index) => makeFeedSkillEntry(index));
     const runMutation = vi.fn(
-      async (_ref: unknown, args: { feedId: string; entries: unknown[] }) => ({
-        feedId: args.feedId,
+      async (ref: unknown, args: { feedId?: string; entries: unknown[] }) => ({
+        feedId: getFunctionName(ref as Parameters<typeof getFunctionName>[0]).endsWith(
+          "storeTemplatePublication",
+        )
+          ? EXPERIMENTAL_TEMPLATE_FEED_ID
+          : args.feedId,
         entryCount: args.entries.length,
       }),
     );
-    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+    const runQuery = vi.fn(async (ref: unknown, args: Record<string, unknown>) => {
       if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
       if ("publisherId" in args) {
         return { entries: skillEntries, isDone: true, continueCursor: "" };
+      }
+      if (
+        getFunctionName(ref as Parameters<typeof getFunctionName>[0]).endsWith(
+          "listOfficialTemplateEntries",
+        )
+      ) {
+        return { entries: [], isDone: true, continueCursor: "" };
       }
       return {
         publishers: [{ _id: "publishers:1" }],
@@ -569,7 +639,7 @@ describe("catalog feed projection", () => {
       { expiresAt: "2026-06-30T00:00:00.000Z" },
     );
 
-    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenCalledTimes(3);
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ feedId: CATALOG_FEED_ID, entries: [] }),
@@ -589,19 +659,19 @@ describe("catalog feed projection", () => {
     expect(result).toEqual([
       { feedId: CATALOG_FEED_ID, entryCount: 0 },
       { feedId: CATALOG_SKILLS_FEED_ID, entryCount: 1000 },
+      { feedId: EXPERIMENTAL_TEMPLATE_FEED_ID, entryCount: 0 },
     ]);
   });
 
-  it("publishes Claws through the separate experimental mutation", async () => {
-    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
-    const clawEntry = {
-      type: "claw",
+  it("publishes Templates through the separate experimental mutation", async () => {
+    const templateEntry = {
+      type: "template",
       id: "@openclaw/triage",
       title: "Triage",
       version: "1.0.0",
       state: "available",
       publisher: { id: "openclaw", trust: "official" },
-      clawManifestSummary: {
+      templateManifestSummary: {
         schemaVersion: 1,
         agent: { id: "triage" },
         workspace: { bootstrapFiles: [], fileCount: 0 },
@@ -620,12 +690,12 @@ describe("catalog feed projection", () => {
         ],
       },
     };
-    const secondClawEntry = {
-      ...clawEntry,
+    const secondTemplateEntry = {
+      ...templateEntry,
       id: "@openclaw/scout",
       title: "Scout",
       install: {
-        candidates: [{ ...clawEntry.install.candidates[0], package: "@openclaw/scout" }],
+        candidates: [{ ...templateEntry.install.candidates[0], package: "@openclaw/scout" }],
       },
     };
     const runQuery = vi.fn(async (ref: unknown, args: Record<string, unknown>) => {
@@ -637,11 +707,11 @@ describe("catalog feed projection", () => {
         return { publishers: [], isDone: true, continueCursor: "" };
       }
       return args.cursor === null
-        ? { entries: [clawEntry], isDone: false, continueCursor: "claw-next" }
-        : { entries: [secondClawEntry], isDone: true, continueCursor: "" };
+        ? { entries: [templateEntry], isDone: false, continueCursor: "claw-next" }
+        : { entries: [secondTemplateEntry], isDone: true, continueCursor: "" };
     });
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => ({
-      feedId: typeof args.feedId === "string" ? args.feedId : EXPERIMENTAL_CLAW_FEED_ID,
+      feedId: typeof args.feedId === "string" ? args.feedId : EXPERIMENTAL_TEMPLATE_FEED_ID,
       entryCount: Array.isArray(args.entries) ? args.entries.length : 0,
     }));
 
@@ -653,11 +723,84 @@ describe("catalog feed projection", () => {
     expect(runMutation).toHaveBeenCalledTimes(3);
     expect(runMutation).toHaveBeenLastCalledWith(
       expect.anything(),
-      expect.objectContaining({ entries: [secondClawEntry, clawEntry] }),
+      expect.objectContaining({ entries: [secondTemplateEntry, templateEntry] }),
     );
     expect(runQuery).toHaveBeenCalledWith(expect.anything(), { cursor: "claw-next" });
     expect(runMutation.mock.calls.at(-1)?.[1]).not.toHaveProperty("feedId");
-    expect(result.at(-1)).toEqual({ feedId: EXPERIMENTAL_CLAW_FEED_ID, entryCount: 2 });
+    expect(result.at(-1)).toEqual({ feedId: EXPERIMENTAL_TEMPLATE_FEED_ID, entryCount: 2 });
+  });
+
+  it("stamps only a current @openclaw Template publication with its publisher authority", async () => {
+    const entry = {
+      type: "template",
+      id: "@openclaw/triage",
+      title: "Triage",
+      version: "1.0.0",
+      state: "available",
+      publisher: { id: "openclaw", trust: "official" },
+      templateManifestSummary: {
+        schemaVersion: 1,
+        agent: { id: "triage" },
+        workspace: { bootstrapFiles: [], fileCount: 0 },
+        packages: { skillCount: 0, pluginCount: 0 },
+        mcpServerCount: 0,
+        cronJobCount: 0,
+      },
+      install: {
+        candidates: [
+          {
+            sourceRef: "public-clawhub",
+            package: "@openclaw/triage",
+            version: "1.0.0",
+            integrity: `sha256:${"a".repeat(64)}`,
+          },
+        ],
+      },
+    };
+    const publisher = { _id: "publishers:openclaw", kind: "org", handle: "openclaw" };
+    const insert = vi.fn().mockResolvedValue("catalogFeedPublications:1");
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (_index: string, apply: (q: { eq: ReturnType<typeof vi.fn> }) => void) => {
+              const q = { eq: vi.fn(() => q) };
+              apply(q);
+              return { unique: vi.fn(async () => (table === "publishers" ? publisher : null)) };
+            },
+          ),
+        })),
+        insert,
+      },
+    };
+    const args = {
+      generatedAt: "2026-10-01T00:00:00.000Z",
+      expiresAt: "2026-10-02T00:00:00.000Z",
+      entries: [entry],
+    };
+
+    await expect(storeTemplatePublicationHandler(ctx, args)).resolves.toMatchObject({
+      entryCount: 1,
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "catalogFeedPublications",
+      expect.objectContaining({
+        clawPolicyVersion: 1,
+        clawEntryCount: 1,
+        clawPublisherId: publisher._id,
+      }),
+    );
+
+    Object.assign(publisher, { deactivatedAt: 123 });
+    await expect(storeTemplatePublicationHandler(ctx, args)).rejects.toThrow(/unavailable/);
+
+    await expect(
+      storeTemplatePublicationHandler(ctx, {
+        ...args,
+        entries: [{ ...entry, id: "@other/triage" }],
+      }),
+    ).rejects.toThrow(/@openclaw/);
+    expect(insert).toHaveBeenCalledTimes(1);
   });
 
   it("projects suspicious current GitHub-backed skills into public GitHub install candidates", async () => {

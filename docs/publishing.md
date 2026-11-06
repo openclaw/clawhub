@@ -11,10 +11,12 @@ read_when:
 Publishing sends a skill folder or plugin package to ClawHub under the owner you
 choose. ClawHub checks that your token can publish for that owner, validates the
 metadata, name, version, files, and source information, then stores the release
-and starts automated security checks.
+as pending and runs automated security checks on that exact artifact.
 
-If validation fails, nothing is published. New releases may also stay out of
-normal install and download surfaces until review finishes.
+If validation fails, nothing is published. A pending release stays out of
+search, install, and download surfaces until the security checks pass. If the
+checks find malicious content, fail repeatedly, or time out, the release is not
+published.
 
 ## Skills
 
@@ -166,6 +168,12 @@ to keep out of public issues.
   installation still uses one plugin for each runtime id.
 - Include `openclaw.plugin.json`. Code plugins also need `package.json` with
   `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`.
+- Publish every entrypoint `package.json` declares. ClawHub rejects a code
+  plugin when a file named by `openclaw.extensions`, `openclaw.runtimeExtensions`,
+  `openclaw.setupEntry`, or `openclaw.runtimeSetupEntry` is missing from the
+  upload, using OpenClaw's install rules: a declared runtime entry must exist,
+  and a TypeScript entry without a runtime entry needs compiled JavaScript such
+  as `dist/index.js`. Build first, then publish the folder or `.tgz`.
 - To show a custom plugin catalog icon, include `assets/icon.png` at the package
   root in the published archive. Use a valid PNG no larger than 512 KiB.
 - Include source repository and exact commit metadata, or use the CLI from a
@@ -177,12 +185,13 @@ to keep out of public issues.
 - Expect new releases to stay out of public install surfaces until automated
   security checks and verification finish.
 
-An inspector operational failure reports the failing stage. A temporary-workspace
-cleanup failure also blocks publication and appears alongside any original
-inspection findings; it does not erase the primary error. These failures are
-distinct from plugin policy findings. Report the stage and Convex request id
-when asking maintainers to investigate; do not include credentials or package
-contents in diagnostic reports.
+Plugin Inspector does not run during publish and never blocks it. After a
+release is accepted, ClawHub scans it with Plugin Inspector as monitoring, and
+again in the nightly scan; findings appear on the plugin's validation tab. If
+Inspector itself fails or times out, ClawHub records that as an Inspector
+outcome, not as a problem with your plugin, and scans the release again later.
+Run `clawhub package validate <source>` to see the same findings before you
+publish.
 
 ### Plugin Icons
 
@@ -232,7 +241,7 @@ The package CLI's `--categories` flag and reusable workflow's `categories` and
 `clear_categories` inputs are deprecated for plugins. They remain accepted but
 are ignored, with a warning on stderr. Move a chosen category into the manifest;
 remove the field to return to automatic classification. This also applies to
-`--categories ""`, which no longer clears plugin categories. Experimental Claw
+`--categories ""`, which no longer clears plugin categories. Experimental Template
 publishes and skill publishing retain their existing category behavior.
 
 Topics remain separate: use `--topics` or the workflow's `topics` input to set

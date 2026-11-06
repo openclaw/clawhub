@@ -15,12 +15,36 @@ vi.mock("../../convex/_generated/api", () => ({
   api: {
     skills: {
       getBySlug: "skills:getBySlug",
-      getReadme: "skills:getReadme",
+    },
+    skillReadme: {
+      getReadme: "skillReadme:getReadme",
     },
   },
 }));
 
 import { fetchSkillPageData } from "./skillPage";
+
+function createSkillQueryResult() {
+  return {
+    skill: {
+      _id: "skills:1",
+      slug: "weather",
+      displayName: "Weather",
+      summary: "Get current weather.",
+    },
+    latestVersion: {
+      _id: "skillVersions:1",
+      version: "1.0.0",
+    },
+    owner: {
+      _id: "users:1",
+      handle: "steipete",
+      name: "Peter",
+    },
+    forkOf: null,
+    canonical: null,
+  };
+}
 
 describe("fetchSkillPageData", () => {
   beforeEach(() => {
@@ -29,25 +53,7 @@ describe("fetchSkillPageData", () => {
   });
 
   it("returns public skill snapshot with readme text", async () => {
-    queryMock.mockResolvedValue({
-      skill: {
-        _id: "skills:1",
-        slug: "weather",
-        displayName: "Weather",
-        summary: "Get current weather.",
-      },
-      latestVersion: {
-        _id: "skillVersions:1",
-        version: "1.0.0",
-      },
-      owner: {
-        _id: "users:1",
-        handle: "steipete",
-        name: "Peter",
-      },
-      forkOf: null,
-      canonical: null,
-    });
+    queryMock.mockResolvedValue(createSkillQueryResult());
     actionMock.mockResolvedValue({ text: "# Weather" });
 
     await expect(fetchSkillPageData("weather")).resolves.toEqual({
@@ -65,25 +71,20 @@ describe("fetchSkillPageData", () => {
     });
     expect(queryMock).toHaveBeenCalledWith("skills:getBySlug", { slug: "weather" });
     expect(queryMock).toHaveBeenCalledTimes(1);
-    expect(actionMock).toHaveBeenCalledWith("skills:getReadme", { versionId: "skillVersions:1" });
+    expect(actionMock).toHaveBeenCalledWith("skillReadme:getReadme", {
+      versionId: "skillVersions:1",
+    });
   });
 
   it("threads owner handle into the skill lookup when provided", async () => {
     queryMock.mockResolvedValue({
-      skill: {
-        _id: "skills:1",
-        slug: "weather",
-        displayName: "Weather",
-        summary: "Get current weather.",
-      },
+      ...createSkillQueryResult(),
       latestVersion: null,
       owner: {
         _id: "publishers:1",
         handle: "clawkit",
         displayName: "Clawkit",
       },
-      forkOf: null,
-      canonical: null,
     });
 
     await expect(fetchSkillPageData("weather", "clawkit")).resolves.toEqual(
@@ -102,20 +103,13 @@ describe("fetchSkillPageData", () => {
 
   it("falls back to slug-only lookup when an older read backend rejects owner handles", async () => {
     queryMock.mockRejectedValueOnce(new Error("Server Error")).mockResolvedValueOnce({
-      skill: {
-        _id: "skills:1",
-        slug: "weather",
-        displayName: "Weather",
-        summary: "Get current weather.",
-      },
+      ...createSkillQueryResult(),
       latestVersion: null,
       owner: {
         _id: "publishers:1",
         handle: "clawkit",
         displayName: "Clawkit",
       },
-      forkOf: null,
-      canonical: null,
     });
 
     await expect(fetchSkillPageData("weather", "clawkit")).resolves.toEqual(
@@ -135,20 +129,13 @@ describe("fetchSkillPageData", () => {
 
   it("does not use slug-only fallback data when it belongs to another owner", async () => {
     queryMock.mockRejectedValueOnce(new Error("Server Error")).mockResolvedValueOnce({
-      skill: {
-        _id: "skills:1",
-        slug: "weather",
-        displayName: "Weather",
-        summary: "Get current weather.",
-      },
+      ...createSkillQueryResult(),
       latestVersion: null,
       owner: {
         _id: "publishers:2",
         handle: "someone-else",
         displayName: "Someone Else",
       },
-      forkOf: null,
-      canonical: null,
     });
 
     await expect(fetchSkillPageData("weather", "clawkit")).resolves.toEqual({
@@ -161,25 +148,7 @@ describe("fetchSkillPageData", () => {
   });
 
   it("keeps skill snapshot when readme fetch fails", async () => {
-    queryMock.mockResolvedValue({
-      skill: {
-        _id: "skills:1",
-        slug: "weather",
-        displayName: "Weather",
-        summary: "Get current weather.",
-      },
-      latestVersion: {
-        _id: "skillVersions:1",
-        version: "1.0.0",
-      },
-      owner: {
-        _id: "users:1",
-        handle: "steipete",
-        name: "Peter",
-      },
-      forkOf: null,
-      canonical: null,
-    });
+    queryMock.mockResolvedValue(createSkillQueryResult());
     actionMock.mockRejectedValue(new Error("boom"));
 
     await expect(fetchSkillPageData("weather")).resolves.toEqual({
@@ -212,23 +181,12 @@ describe("fetchSkillPageData", () => {
 
   it("falls back to owner name when handle is missing", async () => {
     queryMock.mockResolvedValue({
-      skill: {
-        _id: "skills:1",
-        slug: "weather",
-        displayName: "Weather",
-        summary: "Get current weather.",
-      },
-      latestVersion: {
-        _id: "skillVersions:1",
-        version: "1.0.0",
-      },
+      ...createSkillQueryResult(),
       owner: {
         _id: "users:1",
         handle: null,
         name: "Peter Steinberger",
       },
-      forkOf: null,
-      canonical: null,
     });
     actionMock.mockResolvedValue({ text: "# Weather" });
 
@@ -241,20 +199,8 @@ describe("fetchSkillPageData", () => {
 
   it("skips readme fetch when there is no latest version", async () => {
     queryMock.mockResolvedValue({
-      skill: {
-        _id: "skills:1",
-        slug: "weather",
-        displayName: "Weather",
-        summary: "Get current weather.",
-      },
+      ...createSkillQueryResult(),
       latestVersion: null,
-      owner: {
-        _id: "users:1",
-        handle: "steipete",
-        name: "Peter",
-      },
-      forkOf: null,
-      canonical: null,
     });
 
     await expect(fetchSkillPageData("weather")).resolves.toEqual({
@@ -275,25 +221,7 @@ describe("fetchSkillPageData", () => {
   });
 
   it("uses default readme error for non-Error failures", async () => {
-    queryMock.mockResolvedValue({
-      skill: {
-        _id: "skills:1",
-        slug: "weather",
-        displayName: "Weather",
-        summary: "Get current weather.",
-      },
-      latestVersion: {
-        _id: "skillVersions:1",
-        version: "1.0.0",
-      },
-      owner: {
-        _id: "users:1",
-        handle: "steipete",
-        name: "Peter",
-      },
-      forkOf: null,
-      canonical: null,
-    });
+    queryMock.mockResolvedValue(createSkillQueryResult());
     actionMock.mockRejectedValue("boom");
 
     await expect(fetchSkillPageData("weather")).resolves.toEqual(

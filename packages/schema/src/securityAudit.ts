@@ -80,25 +80,16 @@ export function getClawScanDisplayStatus(analysis?: AuditLlmAnalysis | null) {
   return status;
 }
 
-export function aggregateAuditVerdict(signals: {
-  llmAnalysis?: AuditLlmAnalysis | null;
-  staticScan?: { status?: string | null } | null;
-}) {
+export function aggregateAuditVerdict(signals: { llmAnalysis?: AuditLlmAnalysis | null }) {
   const clawScanStatus = getClawScanDisplayStatus(signals.llmAnalysis);
-  const staticStatus = signals.staticScan?.status?.trim().toLowerCase();
-  if (clawScanStatus === "malicious" || staticStatus === "malicious") return "malicious";
+  if (clawScanStatus === "malicious") return "malicious";
   if (
     clawScanStatus === "review" ||
     clawScanStatus === "suspicious" ||
     clawScanStatus === "warn" ||
-    clawScanStatus === "warning" ||
-    staticStatus === "suspicious" ||
-    staticStatus === "review" ||
-    staticStatus === "warn" ||
-    staticStatus === "warning"
+    clawScanStatus === "warning"
   ) {
     return "review";
   }
-  if (clawScanStatus !== "pending") return clawScanStatus;
-  return staticStatus || clawScanStatus;
+  return clawScanStatus;
 }

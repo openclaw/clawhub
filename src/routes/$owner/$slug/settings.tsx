@@ -1,8 +1,11 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { SkillDetailPage } from "../../../components/SkillDetailPage";
-import { buildSkillMeta } from "../../../lib/og";
 import { buildSkillSettingsHref, isOwnerRouteHandleOrIdSegment } from "../../../lib/ownerRoute";
-import { fetchSkillPageData } from "../../../lib/skillPage";
+import {
+  buildSkillRouteMeta,
+  createSkillRouteLoader,
+  type SkillRouteHeadArgs,
+} from "../../../lib/skillRoute";
 
 export const Route = createFileRoute("/$owner/$slug/settings")({
   beforeLoad: ({ params }) => {
@@ -16,47 +19,10 @@ export const Route = createFileRoute("/$owner/$slug/settings")({
   },
 });
 
-export async function loadSkillSettingsRouteData(params: { owner: string; slug: string }) {
-  const data = await fetchSkillPageData(params.slug, params.owner);
-  const canonicalOwner = data.initialData?.result?.owner?.handle ?? null;
-  const canonicalSlug = data.initialData?.result?.resolvedSlug ?? params.slug;
+export const loadSkillSettingsRouteData = createSkillRouteLoader("/$owner/skills/$slug/settings");
 
-  if (canonicalOwner && (canonicalOwner !== params.owner || canonicalSlug !== params.slug)) {
-    throw redirect({
-      to: "/$owner/skills/$slug/settings",
-      params: { owner: canonicalOwner, slug: canonicalSlug },
-      replace: true,
-    });
-  }
-
-  return {
-    owner: data?.owner ?? params.owner,
-    displayName: data?.displayName ?? null,
-    summary: data?.summary ?? null,
-    version: data?.version ?? null,
-    initialData: data.initialData,
-  };
-}
-
-export function skillSettingsRouteHead({
-  params,
-  loaderData,
-}: {
-  params: { owner: string; slug: string };
-  loaderData?: {
-    owner?: string | null;
-    displayName?: string | null;
-    summary?: string | null;
-    version?: string | null;
-  };
-}) {
-  const meta = buildSkillMeta({
-    slug: params.slug,
-    owner: loaderData?.owner ?? params.owner,
-    displayName: loaderData?.displayName,
-    summary: loaderData?.summary,
-    version: loaderData?.version ?? null,
-  });
+export function skillSettingsRouteHead({ params, loaderData }: SkillRouteHeadArgs) {
+  const meta = buildSkillRouteMeta({ params, loaderData });
   return {
     meta: [
       { title: `Settings · ${meta.title}` },

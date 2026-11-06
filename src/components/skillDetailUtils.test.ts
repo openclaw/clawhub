@@ -4,7 +4,6 @@ import type { Id } from "../../convex/_generated/dataModel";
 import {
   buildSkillInstallTarget,
   buildSkillPageUrl,
-  formatClawHubInstallCommand,
   formatOpenClawInstallCommand,
   formatOpenClawPrompt,
   formatSkillsCliInstallCommand,
@@ -24,18 +23,9 @@ describe("skill detail install helpers", () => {
     expect(buildSkillInstallTarget(null, null, "weather")).toBe("weather");
   });
 
-  it("formats the OpenClaw and ClawHub commands", () => {
+  it("formats the OpenClaw and skills CLI commands", () => {
     expect(formatOpenClawInstallCommand("@steipete/weather")).toBe(
       "openclaw skills install @steipete/weather",
-    );
-    expect(formatClawHubInstallCommand("@steipete/weather", "npm")).toBe(
-      "npx clawhub@latest install @steipete/weather",
-    );
-    expect(formatClawHubInstallCommand("@steipete/weather", "pnpm")).toBe(
-      "pnpm dlx clawhub@latest install @steipete/weather",
-    );
-    expect(formatClawHubInstallCommand("@steipete/weather", "bun")).toBe(
-      "bunx clawhub@latest install @steipete/weather",
     );
     expect(formatSkillsCliInstallCommand("https://clawhub.ai/steipete/skills/weather")).toBe(
       "npx skills add https://clawhub.ai/steipete/skills/weather",

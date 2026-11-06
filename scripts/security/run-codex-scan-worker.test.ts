@@ -4,12 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  assertCodexWorkerExecutionAllowed,
-  isCodexWorkerExecutionAllowed,
-  LOCAL_CODEX_WORKER_OPT_IN,
-  resolveCodexWorkerHome,
-} from "../codex-worker-guard";
+import { summarizeClawScanExposure } from "./clawscan-exposure";
 import {
   assertAigFilePathsHaveNoCompiledPython,
   normalizeAigAnalysis,
@@ -53,6 +48,7 @@ describe("run-codex-scan-worker diagnostics", () => {
     try {
       await publishWorkerHealthSummary(diagnosticsRoot, {
         clawscan: {
+          exposure: summarizeClawScanExposure([undefined]),
           averageDurationMs: 30_000,
           completed: 1,
           failed: 0,
@@ -90,6 +86,7 @@ describe("run-codex-scan-worker diagnostics", () => {
     const markdown = await readFile(stepSummaryPath, "utf8");
     expect(markdown).toContain("## Security scan worker health");
     expect(markdown).toContain("| Completed | 1 |");
+    expect(markdown).toContain("| Unknown judge exposure runs | 1 |");
     const artifact = JSON.parse(
       await readFile(join(diagnosticsRoot, "worker-summary.json"), "utf8"),
     );
@@ -140,6 +137,89 @@ describe("run-codex-scan-worker diagnostics", () => {
       totalClaimFailures: 0,
     });
     expect(claimJobs.mock.calls.map(([limit]) => limit)).toEqual([2, 1, 1]);
+  });
+
+  it("stops claiming after a worker-fatal result and finishes already leased work", async () => {
+    const sleep = vi.fn(async () => {});
+    let releaseActiveJob: (() => void) | undefined;
+    const activeJob = new Promise<void>((resolve) => {
+      releaseActiveJob = resolve;
+    });
+    const claimJobs = vi.fn(async () => ({
+      claimedCount: 2,
+      jobs: [{ id: "fatal" }, { id: "active" }],
+    }));
+    const processClaimedJob = vi.fn(async (job: { id: string }) => {
+      if (job.id === "active") await activeJob;
+      return {
+        completed: job.id === "active",
+        hardFailed: job.id === "fatal",
+        retryableFailed: false,
+        ...(job.id === "fatal" ? { workerMustStop: true } : {}),
+      };
+    });
+
+    const run = runContinuouslyRefilledWorkerPool({
+      concurrency: 2,
+      maxJobs: undefined,
+      canClaim: () => true,
+      claimJobs,
+      processClaimedJob,
+      idlePollMs: 1000,
+      sleep,
+    });
+    await vi.waitFor(() => expect(processClaimedJob).toHaveBeenCalledTimes(2));
+    releaseActiveJob?.();
+
+    await expect(run).resolves.toMatchObject({
+      totalClaimed: 2,
+      totalCompleted: 1,
+      totalFailed: 1,
+    });
+    expect(claimJobs).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("does not refill when ordinary work settles immediately before a fatal result", async () => {
+    let finishNormal: (() => void) | undefined;
+    let finishFatal: (() => void) | undefined;
+    const normal = new Promise<void>((resolve) => {
+      finishNormal = resolve;
+    });
+    const fatal = new Promise<void>((resolve) => {
+      finishFatal = resolve;
+    });
+    const claimJobs = vi
+      .fn()
+      .mockResolvedValueOnce({ claimedCount: 2, jobs: ["normal", "fatal"] })
+      .mockResolvedValue({ claimedCount: 0, jobs: [] });
+    const processClaimedJob = vi.fn(async (job: string) => {
+      await (job === "normal" ? normal : fatal);
+      return {
+        completed: job === "normal",
+        hardFailed: job === "fatal",
+        retryableFailed: false,
+        ...(job === "fatal" ? { workerMustStop: true } : {}),
+      };
+    });
+
+    const run = runContinuouslyRefilledWorkerPool({
+      concurrency: 2,
+      maxJobs: undefined,
+      canClaim: () => true,
+      claimJobs,
+      processClaimedJob,
+    });
+    await vi.waitFor(() => expect(processClaimedJob).toHaveBeenCalledTimes(2));
+    finishNormal?.();
+    finishFatal?.();
+
+    await expect(run).resolves.toMatchObject({
+      totalClaimed: 2,
+      totalCompleted: 1,
+      totalFailed: 1,
+    });
+    expect(claimJobs).toHaveBeenCalledTimes(1);
   });
 
   it("keeps refilling after a full lease batch has no hydratable jobs", async () => {
@@ -380,54 +460,6 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(sleep).not.toHaveBeenCalled();
   });
 
-  it("blocks direct local Codex security worker runs without opt-in", () => {
-    expect(isCodexWorkerExecutionAllowed({})).toBe(false);
-    expect(() => assertCodexWorkerExecutionAllowed({})).toThrow(
-      `Refusing to run local Codex workers without ${LOCAL_CODEX_WORKER_OPT_IN}=1`,
-    );
-  });
-
-  it("does not treat a bare GITHUB_ACTIONS flag as CI authorization", () => {
-    expect(isCodexWorkerExecutionAllowed({ GITHUB_ACTIONS: "true" })).toBe(false);
-    expect(() => assertCodexWorkerExecutionAllowed({ GITHUB_ACTIONS: "true" })).toThrow(
-      `Refusing to run local Codex workers without ${LOCAL_CODEX_WORKER_OPT_IN}=1`,
-    );
-  });
-
-  it("allows direct Codex security worker runs in GitHub Actions", () => {
-    const env = {
-      CI: "true",
-      GITHUB_ACTIONS: "true",
-      GITHUB_REPOSITORY: "openclaw/clawhub",
-      GITHUB_RUN_ID: "123",
-    };
-
-    expect(isCodexWorkerExecutionAllowed(env)).toBe(true);
-    expect(() => assertCodexWorkerExecutionAllowed(env)).not.toThrow();
-  });
-
-  it("allows direct local Codex security worker runs with explicit opt-in", () => {
-    expect(isCodexWorkerExecutionAllowed({ [LOCAL_CODEX_WORKER_OPT_IN]: "1" })).toBe(true);
-    expect(() =>
-      assertCodexWorkerExecutionAllowed({ [LOCAL_CODEX_WORKER_OPT_IN]: "1" }),
-    ).not.toThrow();
-  });
-
-  it("uses an isolated local Codex home for opted-in local workers by default", () => {
-    expect(
-      resolveCodexWorkerHome(
-        { [LOCAL_CODEX_WORKER_OPT_IN]: "1" },
-        "/repo/.codex/runtime/codex-workers/security-scan",
-      ),
-    ).toBe("/repo/.codex/runtime/codex-workers/security-scan");
-    expect(
-      resolveCodexWorkerHome(
-        { [LOCAL_CODEX_WORKER_OPT_IN]: "1", CODEX_HOME: "/tmp/custom-codex-home" },
-        "/repo/.codex/runtime/codex-workers/security-scan",
-      ),
-    ).toBe("/tmp/custom-codex-home");
-  });
-
   it("normalizes real SkillSpector JSON risk assessment fields", () => {
     const analysis = normalizeSkillSpectorAnalysis(
       JSON.stringify({
@@ -476,6 +508,33 @@ describe("run-codex-scan-worker diagnostics", () => {
       codeSnippet: "description: Harmless local demo",
     });
   });
+
+  it.each([
+    {
+      completeness: { is_complete: false, status: "partial" },
+      inspection: "partial",
+      risk: "suspicious",
+    },
+    {
+      completeness: { is_complete: true, status: "completed" },
+      inspection: "completed",
+      risk: "clean",
+    },
+    { completeness: undefined, inspection: undefined, risk: "clean" },
+  ])(
+    "retains inspection provenance separately from risk: $inspection",
+    ({ completeness, inspection, risk }) => {
+      const analysis = normalizeSkillSpectorAnalysis(
+        JSON.stringify({
+          status: "clean",
+          issues: [],
+          analysis_completeness: completeness,
+        }),
+      );
+      expect(analysis.status).toBe(risk);
+      expect(analysis.inspectionStatus).toBe(inspection);
+    },
+  );
 
   it("caps stored SkillSpector issues while preserving the full issue count", () => {
     const longSnippet = "sensitive artifact text ".repeat(200);
@@ -631,7 +690,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -681,7 +739,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "test-auth-token",
             source: "skills-sh-catalog-test",
             targetKind: "skillScanRequest",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -710,7 +767,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "pre-publication",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -756,7 +812,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "pre-publication",
           targetKind: "packageRelease",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -797,7 +852,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "lease-secret",
             source: "publish",
             targetKind: "skillVersion",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -822,7 +876,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -856,7 +909,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -895,7 +947,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {
           files: [
@@ -946,7 +997,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "lease-secret",
           source: "publish",
           targetKind: "packageRelease",
-          waitForVtUntil: 0,
         },
         target: {
           clawpackUrl:
@@ -987,7 +1037,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "lease-secret",
             source: "publish",
             targetKind: "skillVersion",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -1054,7 +1103,6 @@ describe("run-codex-scan-worker diagnostics", () => {
             leaseToken: "lease-secret",
             source: "publish",
             targetKind: "skillVersion",
-            waitForVtUntil: 0,
           },
           target: {
             files: [
@@ -1183,7 +1231,6 @@ describe("run-codex-scan-worker diagnostics", () => {
           leaseToken: "placeholder",
           source: "publish",
           targetKind: "skillVersion",
-          waitForVtUntil: 0,
         },
         target: {},
       },
@@ -1277,5 +1324,48 @@ describe("run-codex-scan-worker diagnostics", () => {
         status: "copied",
       },
     ]);
+  });
+
+  it("writes bounded Endor failure diagnostics with secrets redacted", async () => {
+    const diagnosticsRoot = await tempDir();
+    await writeJobDiagnostic({
+      completedAt: 2000,
+      diagnosticsRoot,
+      endor: {
+        args: ["docker", "run", "--rm", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
+        error: "Endor scan timed out; see redacted stdout/stderr diagnostics",
+        exitCode: null,
+        stderr: `ENDOR_TOKEN=fixture-token\ndependency resolution failed ${"x".repeat(21_000)}\n`,
+        stdout: "",
+        timedOut: true,
+      },
+      job: {
+        job: {
+          _id: "job-endor-failure-evidence",
+          hasMaliciousSignal: false,
+          leaseToken: "placeholder",
+          source: "publish",
+          targetKind: "packageRelease",
+        },
+        target: {},
+      },
+      startedAt: 1000,
+      status: "completed",
+    });
+
+    const jobDir = join(diagnosticsRoot, "job-endor-failure-evidence");
+    const stderr = await readFile(join(jobDir, "endor.stderr.redacted.log"), "utf8");
+    const diagnostic = JSON.parse(await readFile(join(jobDir, "diagnostic.json"), "utf8"));
+    expect(stderr).toContain("ENDOR_TOKEN=[redacted-secret]");
+    expect(stderr).toContain("...[truncated ");
+    expect(stderr).not.toContain("fixture-token");
+    expect(diagnostic.endorResult).toEqual({
+      args: ["docker", "run", "--rm", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
+      error: "Endor scan timed out; see redacted stdout/stderr diagnostics",
+      exitCode: null,
+      stderrPath: "endor.stderr.redacted.log",
+      stdoutPath: "endor.stdout.redacted.log",
+      timedOut: true,
+    });
   });
 });

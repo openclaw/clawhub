@@ -15,21 +15,12 @@ on:
           - cli-package
           - repository-automation
           - actions
-  push:
-    branches: [main]
-    paths:
-      - ".github/codeql/**"
-      - ".github/workflows/**"
-      - "convex/**"
-      - "packages/clawhub/**"
-      - "packages/schema/**"
-      - "scripts/**"
-      - "src/**"
-      - "bun.lock"
-      - "package.json"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
+      - ".gitattributes"
+      - "**/.gitattributes"
+      - ".github/actions/**"
       - ".github/codeql/**"
       - ".github/workflows/**"
       - "convex/**"
@@ -40,10 +31,10 @@ on:
       - "bun.lock"
       - "package.json"
   schedule:
-    - cron: "17 7 * * *"
+    - cron: "17 */6 * * *"
 
 concurrency:
-  group: codeql-light-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  group: codeql-light-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name == 'pull_request' && github.event.pull_request.number || github.event_name == 'schedule' && 'schedule' || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -88,13 +79,13 @@ jobs:
 
       - name: Initialize CodeQL
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.profile == 'all' || inputs.profile == matrix.category }}
-        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
           languages: ${{ matrix.language }}
           config-file: ${{ matrix.config_file }}
 
       - name: Analyze
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.profile == 'all' || inputs.profile == matrix.category }}
-        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
           category: "/codeql-light/${{ matrix.category }}"

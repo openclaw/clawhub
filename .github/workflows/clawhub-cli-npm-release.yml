@@ -25,8 +25,8 @@ permissions: {}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  NODE_VERSION: "24.x"
-  BUN_VERSION: "1.3.10"
+  NODE_VERSION: "24.22.1"
+  BUN_VERSION: "1.4.4"
 
 jobs:
   preflight_clawhub_cli_npm:
@@ -54,7 +54,7 @@ jobs:
           path: release-tools
 
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
@@ -219,7 +219,7 @@ jobs:
           path: release-tools
 
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
@@ -367,11 +367,12 @@ jobs:
           EOF
           )"
           NPM_DIST_JSON=""
-          for attempt in {1..12}; do
+          # npm may acknowledge a publish before its processing makes metadata public.
+          for attempt in {1..120}; do
             if NPM_DIST_JSON="$(npm view "clawhub@${PACKAGE_VERSION}" dist.tarball dist.integrity --json 2>/tmp/npm-view-error)" && [[ -n "$NPM_DIST_JSON" ]]; then
               break
             fi
-            if [[ "$attempt" == "12" ]]; then
+            if [[ "$attempt" == "120" ]]; then
               cat /tmp/npm-view-error >&2 || true
               exit 1
             fi

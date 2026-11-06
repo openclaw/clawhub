@@ -39,6 +39,26 @@
     "./rolloutCapabilities": {
       "types": "./dist/rolloutCapabilities.d.ts",
       "default": "./dist/rolloutCapabilities.js"
+    },
+    "./securityAudit": {
+      "types": "./dist/securityAudit.d.ts",
+      "default": "./dist/securityAudit.js"
+    },
+    "./openclawContract": {
+      "types": "./dist/openclawContract.d.ts",
+      "default": "./dist/openclawContract.js"
+    },
+    "./docsLinks": {
+      "types": "./dist/docsLinks.d.ts",
+      "default": "./dist/docsLinks.js"
+    },
+    "./packageNames": {
+      "types": "./dist/packageNames.d.ts",
+      "default": "./dist/packageNames.js"
+    },
+    "./packageUploadLimits": {
+      "types": "./dist/packageUploadLimits.d.ts",
+      "default": "./dist/packageUploadLimits.js"
     }
   },
   "scripts": {
@@ -46,10 +66,10 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "arktype": "2.2.3",
-    "croner": "10.0.1",
-    "unicode-case-folding": "1.1.1",
-    "yaml": "2.9.0"
+    "arktype": "2.2.9",
+    "croner": "11.0.0",
+    "unicode-case-folding": "1.1.2",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@typescript/native": "npm:typescript@7.0.2",

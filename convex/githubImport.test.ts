@@ -129,13 +129,33 @@ const originalGitHubAppEnv = {
   privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
 };
 
-function corruptZipEntry(zip: Uint8Array, path: string) {
+function corruptZipEntry(zip: Uint8Array, path: string, originalSize?: number) {
   const header = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
   for (let offset = 0; header.getUint32(offset, true) === 0x04034b50;) {
     const nameLength = header.getUint16(offset + 26, true);
     const dataOffset = offset + 30 + nameLength + header.getUint16(offset + 28, true);
     const name = new TextDecoder().decode(zip.subarray(offset + 30, offset + 30 + nameLength));
     if (name === path) {
+      if (originalSize !== undefined) {
+        // Generated fixtures have no ZIP comment. Update both size records so
+        // the same valid boundary archive can model a declared byte overflow.
+        header.setUint32(offset + 22, originalSize, true);
+        let central = header.getUint32(zip.byteLength - 6, true);
+        while (header.getUint32(central, true) === 0x02014b50) {
+          if (header.getUint32(central + 42, true) === offset) {
+            header.setUint32(central + 24, originalSize, true);
+            break;
+          }
+          central +=
+            46 +
+            header.getUint16(central + 28, true) +
+            header.getUint16(central + 30, true) +
+            header.getUint16(central + 32, true);
+        }
+        if (header.getUint32(central, true) !== 0x02014b50) {
+          throw new Error(`Missing central ZIP fixture entry: ${path}`);
+        }
+      }
       // An invalid DEFLATE block makes any attempted inflation of this entry fail.
       zip[dataOffset] = 0x07;
       return zip;
@@ -235,19 +255,21 @@ describe("githubImport", () => {
   });
 
   it("rejects excessive total bytes before inflating the over-limit entry", () => {
+    const contents = new Uint8Array(10 * 1024 * 1024);
     const files = Object.fromEntries(
-      Array.from({ length: 8 }, (_, index) => [
-        `demo-repo/${index}.bin`,
-        new Uint8Array(10 * 1024 * 1024),
-      ]),
+      Array.from({ length: 8 }, (_, index) => [`demo-repo/${index}.bin`, contents]),
     );
-    const entries = __test.unzipToEntries(zipSync(files));
+    files["demo-repo/overflow.md"] = new Uint8Array();
+    const zip = zipSync(files);
+    const entries = __test.unzipToEntries(zip);
     expect(Object.values(entries).reduce((sum, bytes) => sum + bytes.byteLength, 0)).toBe(
       80 * 1024 * 1024,
     );
+    expect(entries["demo-repo/overflow.md"]).toHaveLength(0);
 
-    files["demo-repo/overflow.md"] = new TextEncoder().encode("x");
-    const zip = corruptZipEntry(zipSync(files), "demo-repo/overflow.md");
+    // Keep the real DEFLATE payloads and 80MiB acceptance boundary; avoid
+    // allocating and recompressing that entire archive a second time in CI.
+    corruptZipEntry(zip, "demo-repo/overflow.md", 1);
     expect(() => __test.unzipToEntries(zip)).toThrow("Repo archive is too large");
   });
 

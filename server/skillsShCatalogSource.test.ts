@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSkillsShMirrorProofSnapshotId,
   buildSkillsShMirrorObservation,
+  skillsShPageIdentityHash,
   buildSkillsShMirrorControlledObservation,
   buildSkillsShMirrorDetail,
   buildSkillsShMirrorUpstreamScanners,
@@ -136,6 +137,60 @@ describe("skills.sh Vercel source boundary", () => {
       },
     });
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("captures only the top window of an oversized trending feed", async () => {
+    const upstreamTotal = 93_032;
+    const requestedPages: number[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
+      expect(url.searchParams.get("view")).toBe("trending");
+      const page = Number(url.searchParams.get("page"));
+      requestedPages.push(page);
+      return new Response(
+        JSON.stringify({
+          data: Array.from({ length: 500 }, (_, index) => ({
+            id: `owner/repo/skill-${page * 500 + index}`,
+            installUrl: "https://github.com/owner/repo",
+            installs: 1,
+            name: "Skill",
+            slug: `skill-${page * 500 + index}`,
+            source: "owner/repo",
+            sourceType: "github",
+            url: `https://www.skills.sh/owner/repo/skill-${page * 500 + index}`,
+          })),
+          pagination: { page, perPage: 500, total: upstreamTotal, hasMore: true },
+        }),
+      );
+    });
+
+    const measured = await measureSkillsShTrendingSource({
+      fetchImpl: fetchImpl as typeof fetch,
+      oidcToken: "oidc-token",
+      minimumApiRequestIntervalMs: 0,
+      observedAt: "2026-10-14T20:00:00.000Z",
+    });
+
+    expect(requestedPages).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(measured).toMatchObject({
+      catalogTotal: 4_000,
+      upstreamTotal,
+      sourceRequests: 8,
+      evidence: {
+        endpointExhausted: false,
+        window: { rows: 4_000, upstreamTotal, truncated: true },
+        uniqueIds: 4_000,
+        duplicateIds: 0,
+      },
+    });
+    expect(measured.sourcePages.at(-1)).toMatchObject({
+      page: 7,
+      sourceTotal: 4_000,
+      pageLength: 500,
+      hasMore: false,
+    });
   });
 
   it("retains each upstream scanner status and source link independently", () => {
@@ -921,12 +976,120 @@ describe("skills.sh Vercel source boundary", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it("rejects an over-capacity leaderboard from the first measured page", async () => {
-    const fetchImpl = vi.fn(async () => {
+  // Regression: on 2026-10-05 the default all-time view grew from ~9.9k rows to its ~93k serving
+  // window and every scheduled sync failed with "proof source total 92838 exceeds 50000 rows".
+  it("mirrors only the top window of an oversized leaderboard", async () => {
+    const upstreamTotal = 93_052;
+    const row = (index: number) => ({
+      id: `owner/repo/skill-${index}`,
+      installUrl: "https://github.com/owner/repo",
+      installs: 100_000 - index,
+      name: `Skill ${index}`,
+      slug: `skill-${index}`,
+      source: "owner/repo",
+      sourceType: "github",
+      url: `https://www.skills.sh/owner/repo/skill-${index}`,
+    });
+    const listPages: number[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
+      if (url.pathname === "/api/v1/skills") {
+        expect(url.searchParams.get("view")).toBeNull();
+        const page = Number(url.searchParams.get("page"));
+        listPages.push(page);
+        return new Response(
+          JSON.stringify({
+            data: Array.from({ length: 500 }, (_, index) => row(page * 500 + index)),
+            pagination: { page, perPage: 500, total: upstreamTotal, hasMore: true },
+          }),
+        );
+      }
+      if (url.pathname === "/api/v1/skills/search") {
+        return new Response(JSON.stringify({ data: [row(0)] }));
+      }
+      if (url.pathname === "/api/v1/skills/owner/repo/skill-0") {
+        return new Response(
+          JSON.stringify({
+            files: [],
+            hash: "a".repeat(64),
+            id: row(0).id,
+            installs: row(0).installs,
+            slug: row(0).slug,
+            source: row(0).source,
+          }),
+        );
+      }
+      if (url.searchParams.has("_rsc")) {
+        return new Response('0:{"prompt":"skill"}\n', {
+          headers: { "Content-Type": "text/x-component" },
+        });
+      }
+      if (url.href === row(0).url) {
+        return new Response("<!doctype html>", {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+      throw new Error(`unexpected URL ${url.href}`);
+    });
+
+    const measured = await measureSkillsShMirrorProofSource({
+      oidcToken: "oidc-token",
+      fetchImpl: fetchImpl as typeof fetch,
+      minimumApiRequestIntervalMs: 0,
+    });
+
+    // Eight list pages cover the 4,000-row window; no page beyond it and no beyond-end probe.
+    expect(listPages).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(measured.catalogTotal).toBe(4_000);
+    expect(measured.upstreamTotal).toBe(upstreamTotal);
+    expect(measured.sourceRequests).toBe(12);
+    expect(measured.sourcePages).toHaveLength(8);
+    expect(measured.sourcePages.at(-1)).toMatchObject({
+      page: 7,
+      sourceTotal: 4_000,
+      pageLength: 500,
+      hasMore: false,
+    });
+    expect(measured.sourcePages.at(-1)?.rows.at(-1)?.id).toBe("owner/repo/skill-3999");
+    expect(measured.evidence.pagination).toMatchObject({
+      endpointExhausted: false,
+      window: { rows: 4_000, upstreamTotal, truncated: true },
+      finalNonemptyPage: { page: 7, count: 500 },
+      firstBeyondEndPage: null,
+      uniqueIds: 4_000,
+      duplicateIds: 0,
+    });
+    expect(measured.evidence.pagination.requestedPages.at(-1)).toMatchObject({
+      page: 7,
+      count: 500,
+      hasMore: false,
+    });
+
+    // The start route stores this window as the run's proof snapshot.
+    const snapshot = parseSkillsShMirrorProofSnapshotId(
+      buildSkillsShMirrorProofSnapshotId({
+        catalogTotal: measured.catalogTotal,
+        controlledExternalIds: [],
+        evidence: measured.evidence,
+      }),
+    );
+    expect(snapshot.catalogTotal).toBe(4_000);
+    expect(snapshot.evidence?.pagination.requestedPages).toHaveLength(8);
+  });
+
+  it("keeps the bounded pagination guard when the window is never reached", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
+      const page = Number(url.searchParams.get("page"));
+      // A misbehaving upstream that reports hasMore forever while returning empty pages.
       return new Response(
         JSON.stringify({
           data: [],
-          pagination: { page: 0, perPage: 500, total: 50_001, hasMore: true },
+          pagination: { page, perPage: 500, total: 93_052, hasMore: true },
         }),
       );
     });
@@ -937,8 +1100,8 @@ describe("skills.sh Vercel source boundary", () => {
         fetchImpl: fetchImpl as typeof fetch,
         minimumApiRequestIntervalMs: 0,
       }),
-    ).rejects.toThrow("skills.sh proof source total 50001 exceeds 50000 rows");
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    ).rejects.toThrow("skills.sh proof source pagination exceeds its bounded total");
+    expect(fetchImpl).toHaveBeenCalledTimes(100);
   });
 
   it("normalizes GitHub and well-known rows without inventing repository identity", () => {
@@ -1113,6 +1276,48 @@ describe("skills.sh Vercel source boundary", () => {
         if (row.installUrl) expect(message).not.toContain(row.installUrl);
       }
     }
+  });
+
+  it("quarantines a non-string skills.sh id instead of throwing", () => {
+    const liveRow = {
+      id: "larksuite/cli/lark-doc",
+      installUrl: "https://github.com/larksuite/cli",
+      installs: 383_123,
+      name: "lark-doc",
+      slug: "lark-doc",
+      source: "larksuite/cli",
+      sourceType: "repository",
+      url: "https://skills.sh/larksuite/cli/lark-doc",
+    };
+    const malformed = { ...liveRow, id: 12, source: { repo: "larksuite/cli" } };
+    expect(() => buildSkillsShMirrorObservation(malformed as never)).toThrow(
+      "Unsupported skills.sh mirror identity",
+    );
+    expect(() => skillsShPageIdentityHash([malformed as never])).not.toThrow();
+    expect(skillsShPageIdentityHash([malformed as never])).toBe(
+      skillsShPageIdentityHash([{ ...liveRow, id: "" }]),
+    );
+    expect(skillsShPageIdentityHash([malformed as never])).not.toBe(
+      skillsShPageIdentityHash([{ ...liveRow, id: "missing:0:0" }]),
+    );
+  });
+
+  it("keeps a legacy blank id hash distinct from the stored missing placeholder", () => {
+    const row = {
+      id: "owner/repo/skill",
+      installUrl: "https://github.com/owner/repo",
+      installs: 1,
+      name: "Skill",
+      slug: "skill",
+      source: "owner/repo",
+      sourceType: "github",
+      url: "https://skills.sh/owner/repo/skill",
+    };
+    const legacy = [{ ...row, id: "   " }, row];
+    const empty = [{ ...row, id: "" }, row];
+    const stored = [{ ...row, id: "missing:4:0" }, row];
+    expect(skillsShPageIdentityHash(legacy, 4)).toBe(skillsShPageIdentityHash(empty, 4));
+    expect(skillsShPageIdentityHash(legacy, 4)).not.toBe(skillsShPageIdentityHash(stored, 4));
   });
 
   it("requires the exact skills.sh site route for well-known identity", () => {

@@ -134,6 +134,7 @@ export function SkillsShCatalogDetailPage({ entry }: { entry: SkillsShCatalogDet
           <a
             className="skills-sh-sync-source"
             href={entry.sourceUrl}
+            data-analytics-public-detail=""
             target="_blank"
             rel="noreferrer"
           >
@@ -191,6 +192,7 @@ function SkillsShSidebar({ entry }: { entry: SkillsShCatalogDetail }) {
             value: (
               <a
                 href={pinnedGitHubSourceUrl(entry)}
+                data-analytics-public-detail=""
                 target="_blank"
                 rel="noreferrer"
                 className="plugin-external-link"
@@ -251,7 +253,7 @@ function SkillsShContentTabs({ entry }: { entry: SkillsShCatalogDetail }) {
                 Content is truncated to the stored 64 KiB snapshot.
               </p>
             ) : null}
-            <div className="skill-readme-preview">
+            <div className="skill-readme-preview" data-analytics-public-detail="">
               <MarkdownPreview highlight={false}>
                 {stripFrontmatter(entry.content.markdown)}
               </MarkdownPreview>
@@ -282,7 +284,13 @@ function UpstreamCheck({ check }: { check: SkillsShUpstreamCheck }) {
     </>
   );
   return check.url ? (
-    <a className="skills-sh-security-audit-row" href={check.url} target="_blank" rel="noreferrer">
+    <a
+      className="skills-sh-security-audit-row"
+      href={check.url}
+      target="_blank"
+      rel="noreferrer"
+      data-analytics-public-detail=""
+    >
       {content}
     </a>
   ) : (

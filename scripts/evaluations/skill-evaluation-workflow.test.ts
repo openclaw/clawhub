@@ -22,6 +22,7 @@ describe("skill evaluation workflow", () => {
           concurrency?: { "cancel-in-progress"?: boolean; group?: string };
           env?: Record<string, unknown>;
           environment?: string;
+          strategy?: { "fail-fast"?: boolean; matrix?: { worker: number[] } };
           "runs-on"?: string;
           steps: WorkflowStep[];
           "timeout-minutes"?: number;
@@ -45,24 +46,27 @@ describe("skill evaluation workflow", () => {
       uses: "actions/checkout@v7.0.1",
       with: { "persist-credentials": false },
     });
-    expect(job["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");
+    expect(job["runs-on"]).toBe("blacksmith-4vcpu-ubuntu-2404");
     expect(job.environment).toBe("Production");
-    expect(job["timeout-minutes"]).toBe(180);
+    expect(job["timeout-minutes"]).toBe(360);
     expect(job.concurrency).toEqual({
-      group: "clawhub-skill-evaluation-worker",
+      group: "clawhub-skill-evaluation-worker-${{ matrix.worker }}",
       "cancel-in-progress": false,
     });
-    expect(install?.run).toContain("--branch v0.1.0");
-    expect(install?.run).toContain("4975c97d49e3623eeab739248e52d83c4aa8f582");
+    expect(job.strategy).toEqual({
+      "fail-fast": false,
+      matrix: { worker: Array.from({ length: 64 }, (_, index) => index + 1) },
+    });
+    expect(job.env?.SKILL_EVALUATION_WORKER_ID).toContain("${{ matrix.worker }}");
+    expect(install?.run).toContain("--branch v0.5.0");
+    expect(install?.run).toContain("7304d76cde371287b67ea99653409d014b6b9c85");
     expect(install?.run).toContain("uv sync");
     expect(install?.run).toContain("--extra tier3 --frozen");
     expect(job.env).not.toHaveProperty("SKILL_EVALUATOR_DIR");
     expect(install?.env).toEqual({
       SKILL_EVALUATOR_DIR: "${{ runner.temp }}/SkillEvaluator",
     });
-    expect(installCodex?.run).toContain("npm install -g @openai/codex@0.148.0");
-    expect(installCodex?.run).toContain("codex --version");
-    expect(installCodex?.run).not.toContain("@latest");
+    expect(installCodex?.uses).toBe("./.github/actions/setup-codex");
     expect(job.env).not.toHaveProperty("OPENAI_API_KEY");
     expect(job.env).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
     expect(run?.env).toEqual({

@@ -59,7 +59,7 @@ function client(overrides: Partial<Client> = {}): Client {
     run: vi.fn(async () => ({ appBuildSha: sha })) as Client["run"],
     query: vi.fn(async () => []) as Client["query"],
     envNames: vi.fn(async () => ["OPENAI_API_KEY"]),
-    model: vi.fn(async () => "gpt-5.6-luna"),
+    model: vi.fn(async () => "gpt-6-luna"),
     taxonomyMatches: vi.fn(async () => true),
     ...overrides,
   };
@@ -129,7 +129,7 @@ describe("production category operator guards", () => {
       envNames: async () => ["OPENAI_API_KEY", "OPENAI_PLUGIN_CATEGORY_MODEL"],
       model: async () => "other-model",
     });
-    await expect(operate(otherModel, options(), vi.fn())).rejects.toThrow("gpt-5.6-luna");
+    await expect(operate(otherModel, options(), vi.fn())).rejects.toThrow("gpt-6-luna");
     expect(otherModel.run).toHaveBeenCalledTimes(1);
     const oldTaxonomy = client({ taxonomyMatches: async () => false });
     await expect(operate(oldTaxonomy, options(), vi.fn())).rejects.toThrow("category contract");

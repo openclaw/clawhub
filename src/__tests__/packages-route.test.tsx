@@ -7,6 +7,7 @@ import {
   convexReactMocks,
   resetConvexReactMocks,
   setupDefaultConvexReactMocks,
+  setupRealCountQuery,
 } from "./helpers/convexReactMocks";
 
 const fetchPluginCatalogMock = vi.fn();
@@ -78,6 +79,7 @@ vi.mock("../convex/client", () => ({
 
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => convexReactMocks.useQuery(...args),
+  useQueries: (...args: unknown[]) => convexReactMocks.useQueries(...args),
 }));
 
 vi.mock("../../convex/_generated/api", () => ({
@@ -573,6 +575,41 @@ describe("plugins route", () => {
     await expect(pendingLoader).rejects.toMatchObject({ name: "AbortError" });
   });
 
+  it("accepts a healthy catalog response that takes longer than five seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const item = {
+        name: "healthy-slow-plugin",
+        displayName: "Healthy slow plugin",
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      fetchPluginCatalogMock.mockImplementation(
+        ({ signal }: { signal?: AbortSignal }) =>
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(() => resolve({ items: [item], nextCursor: null }), 6_000);
+            signal?.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timer);
+                reject(signal.reason);
+              },
+              { once: true },
+            );
+          }),
+      );
+      const { loadPluginsPageData } = await import("../routes/plugins/index");
+      const pendingLoader = loadPluginsPageData({});
+      await vi.advanceTimersByTimeAsync(6_000);
+      await expect(pendingLoader).resolves.toMatchObject({ items: [item], apiError: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("returns an API error when the catalog request exceeds the loader timeout", async () => {
     vi.useFakeTimers();
     try {
@@ -585,7 +622,7 @@ describe("plugins route", () => {
       const { loadPluginsPageData } = await import("../routes/plugins/index");
 
       const pendingLoader = loadPluginsPageData({});
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(10_000);
 
       await expect(pendingLoader).resolves.toEqual(
         expect.objectContaining({
@@ -943,7 +980,7 @@ describe("plugins route", () => {
 
   it("keeps plugin count copy hidden on non-first browse pages", async () => {
     searchMock = { cursor: "cursor:current" };
-    convexReactMocks.useQuery.mockReturnValue(333);
+    convexReactMocks.useQueries.mockReturnValue({ totalPluginsCount: 333 });
     loaderDataMock = {
       items: [
         {
@@ -969,7 +1006,7 @@ describe("plugins route", () => {
     expect(screen.queryByText("1 shown")).toBeNull();
     expect(screen.queryByText("1 result shown")).toBeNull();
     expect(screen.queryByText("333")).toBeNull();
-    expect(convexReactMocks.useQuery).toHaveBeenCalledWith("packages:countPublicPlugins", "skip");
+    expect(convexReactMocks.useQueries).toHaveBeenCalledWith({});
   });
 
   it("renders the total plugin count in the unfiltered page title", async () => {
@@ -996,11 +1033,11 @@ describe("plugins route", () => {
     render(<Component />);
 
     expect(screen.getByRole("heading", { name: "Plugins 321" })).toBeTruthy();
-    expect(convexReactMocks.useQuery).toHaveBeenCalledWith("packages:countPublicPlugins", "skip");
+    expect(convexReactMocks.useQueries).toHaveBeenCalledWith({});
   });
 
   it("falls back to the Convex plugin count when catalog data has no total", async () => {
-    convexReactMocks.useQuery.mockReturnValue(333);
+    convexReactMocks.useQueries.mockReturnValue({ totalPluginsCount: 333 });
     loaderDataMock = {
       items: [],
       nextCursor: null,
@@ -1014,6 +1051,49 @@ describe("plugins route", () => {
     render(<Component />);
 
     expect(screen.getByRole("heading", { name: "Plugins 333" })).toBeTruthy();
+    expect(convexReactMocks.useQueries).toHaveBeenCalledWith({
+      totalPluginsCount: { query: "packages:countPublicPlugins", args: {} },
+    });
+  });
+
+  it("keeps plugins browsable when the optional total count fails", async () => {
+    const failure = new Error("Count fixture timed out");
+    const { ConvexProvider, client, setCount } = await setupRealCountQuery(failure);
+    convexReactMocks.useQuery.mockImplementation((_reference, args) => {
+      if (args !== "skip") throw failure;
+      return null;
+    });
+    loaderDataMock = {
+      items: [
+        {
+          name: "available-plugin",
+          displayName: "Available Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      nextCursor: null,
+      totalCount: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(
+      <ConvexProvider client={client}>
+        <Component />
+      </ConvexProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
+    expect(screen.getByText("Available Plugin")).toBeTruthy();
+    expect(screen.queryByText("Count fixture timed out")).toBeNull();
+    act(() => setCount(123));
+    expect(screen.getByRole("heading", { name: "Plugins 123" })).toBeTruthy();
   });
 
   it("hides the total plugin count when filters are active", async () => {

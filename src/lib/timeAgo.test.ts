@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { timeAgo } from "./timeAgo";
 
@@ -35,6 +37,7 @@ describe("timeAgo", () => {
 
   it("formats days and weeks", () => {
     expect(agoByDays(1)).toBe("1d ago");
+    expect(agoByDays(3)).toBe("3d ago");
     expect(agoByDays(6)).toBe("6d ago");
     expect(agoByDays(7)).toBe("1w ago");
     expect(agoByDays(29)).toBe("4w ago");

@@ -26,6 +26,16 @@ clawhub package validate <path-to-plugin>
 
 ## Author-facing findings
 
+The manager dashboard shows an informational API update notice when a deprecated
+OpenClaw API has a scheduled retirement date and the selected OpenClaw release
+exports the replacement. Open **API details** to see each API and its replacement.
+The date is the final compatibility day. These notices do not block installation.
+Publishers also see an **API update** item in their dashboard.
+Plugin managers can inspect compatibility errors in their validation details.
+
+After updating to the replacement APIs, validate and publish a new version to
+refresh the findings for your plugin's latest release.
+
 | Code                                    | Start here                                                                                                                  |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `package-json-missing`                  | [Add package metadata](./plugin-validation-fixes.md#package-json-missing)                                                   |
@@ -99,7 +109,9 @@ entrypoint.
 ### package-entrypoint-missing
 
 The package declares an OpenClaw entrypoint, but the referenced file is missing
-from the package being validated.
+from the package being validated. ClawHub rejects a code plugin publish with
+this problem, because OpenClaw cannot install or load it; the publish error
+names the missing file.
 
 - Check each path in `openclaw.extensions`, `openclaw.runtimeExtensions`,
   `openclaw.setupEntry`, and `openclaw.runtimeSetupEntry`.

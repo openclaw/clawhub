@@ -28,7 +28,7 @@ Reading order:
 4. `docs/publishing.md`: owner-scoped skill/plugin publishing flow.
 5. `docs/cli.md`: ClawHub CLI reference.
 6. `docs/skill-format.md`: skill bundle metadata and package shape.
-7. `docs/claws.md`: experimental Claw package authoring and publication.
+7. `docs/templates.md`: experimental Template package authoring and publication.
 8. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
 9. `docs/telemetry.md`: install telemetry and how to opt out.
 10. `docs/namespace-claims.md`: org, brand, owner-handle, package-scope, skill-slug, and namespace ownership disputes.

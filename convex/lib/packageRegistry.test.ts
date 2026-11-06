@@ -7,6 +7,7 @@ import {
   ensurePluginNameMatchesPackage,
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
+  assertPackageVersion,
   normalizePackageName,
   normalizePublishFiles,
   summarizePackageForSearch,
@@ -16,6 +17,96 @@ import {
 import { buildPackageInventoryDigest } from "./skills";
 
 describe("packageRegistry", () => {
+  it("still accepts a publisher-defined bundle version", () => {
+    expect(assertPackageVersion("bundle-plugin", "2026.10 beta")).toBe("2026.10 beta");
+    expect(assertPackageVersion("bundle-plugin", "1.2.3-beta.1")).toBe("1.2.3-beta.1");
+    expect(assertPackageVersion("bundle-plugin", `1"; filename*=UTF-8''setup.jar; x="`)).toBe(
+      `1"; filename*=UTF-8''setup.jar; x="`,
+    );
+    expect(assertPackageVersion("code-plugin", "1.2.3")).toBe("1.2.3");
+    expect(assertPackageVersion("claw", "1.2.3+build.4")).toBe("1.2.3+build.4");
+  });
+
+  it("derives bundle identity from the canonical name, never a native envelope or upload hint", () => {
+    expect(
+      extractBundlePluginArtifacts({
+        packageName: "upload-name",
+        pluginManifest: { id: "native-id" },
+        bundleManifest: { name: "Canonical Bundle" },
+      }).runtimeId,
+    ).toBe("canonical-bundle");
+    expect(() =>
+      extractBundlePluginArtifacts({
+        packageName: "upload-name",
+        pluginManifest: {},
+        bundleManifest: {},
+      }),
+    ).toThrow("bundle manifest must declare a name");
+  });
+  it.each([
+    "../escape",
+    "scope/name",
+    "@scope",
+    "@/name",
+    "@scope/..",
+    "@scope//name",
+    "@scope/name/extra",
+    "demo\\plugin",
+    "demo\u0000plugin",
+    "demo\u001fplugin",
+    "demo\u007fplugin",
+  ])("rejects native code plugin identifiers the scan worker cannot accept: %j", (id) => {
+    expect(() =>
+      extractCodePluginArtifacts({
+        packageName: "demo-plugin",
+        packageJson: {
+          openclaw: {
+            extensions: ["./dist/index.js"],
+            compat: { pluginApi: "^1.0.0" },
+            build: { openclawVersion: "2026.3.14" },
+          },
+        },
+        pluginManifest: { id, configSchema: { type: "object" } },
+        source: {
+          kind: "github",
+          url: "https://github.com/example/demo-plugin",
+          repo: "example/demo-plugin",
+          commit: "abc123",
+          ref: "refs/tags/v1.0.0",
+          path: ".",
+          importedAt: 1,
+        },
+      }),
+    ).toThrow("invalid native plugin id");
+  });
+
+  it.each(["demo.plugin", "@scope/demo-plugin", "bare name", " trimmed.plugin "])(
+    "preserves valid native code plugin identifiers: %j",
+    (id) => {
+      const result = extractCodePluginArtifacts({
+        packageName: "demo-plugin",
+        packageJson: {
+          openclaw: {
+            extensions: ["./dist/index.js"],
+            compat: { pluginApi: "^1.0.0" },
+            build: { openclawVersion: "2026.3.14" },
+          },
+        },
+        pluginManifest: { id, configSchema: { type: "object" } },
+        source: {
+          kind: "github",
+          url: "https://github.com/example/demo-plugin",
+          repo: "example/demo-plugin",
+          commit: "abc123",
+          ref: "refs/tags/v1.0.0",
+          path: ".",
+          importedAt: 1,
+        },
+      });
+      expect(result.runtimeId).toBe(id.trim());
+    },
+  );
+
   it("can validate package names without throwing", () => {
     expect(tryNormalizePackageName("@OpenClaw/Discord")).toBe("@openclaw/discord");
     expect(tryNormalizePackageName("openclaw/discord")).toBeNull();
@@ -671,6 +762,7 @@ describe("packageRegistry", () => {
       },
       pluginManifest: { id: "matrix-bundle" },
       bundleManifest: {
+        name: "matrix-bundle",
         hostTargets: ["openclaw"],
       },
     });
@@ -685,6 +777,7 @@ describe("packageRegistry", () => {
       packageName: "demo-bundle",
       packageJson: { name: "demo-bundle" },
       pluginManifest: { id: "demo-bundle" },
+      bundleManifest: { name: "demo-bundle" },
     });
 
     expect(result.runtimeId).toBe("demo-bundle");

@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 import { gzipSync, strToU8, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { expandFiles, expandFilesWithReport } from "./uploadFiles";
+import { expandFilesWithReport } from "./uploadFiles";
 
 if (typeof File === "undefined") {
   class NodeFile extends Blob {
@@ -60,7 +60,7 @@ function writeString(target: Uint8Array, value: string, start: number, length: n
   target.set(bytes.subarray(0, length), start);
 }
 
-describe("expandFiles", () => {
+describe("expandFilesWithReport", () => {
   it("expands zip archives into files", async () => {
     const zip = zipSync({
       "SKILL.md": strToU8("hello"),
@@ -69,7 +69,7 @@ describe("expandFiles", () => {
     const zipFile = new File([Uint8Array.from(zip).buffer], "pack.zip", {
       type: "application/zip",
     });
-    const result = await expandFiles([zipFile]);
+    const { files: result } = await expandFilesWithReport([zipFile]);
     expect(result.map((file) => file.name)).toEqual(["SKILL.md", "docs/readme.txt"]);
   });
 
@@ -86,7 +86,7 @@ describe("expandFiles", () => {
     const zipFile = new File([Uint8Array.from(zip).buffer], "pack.zip", {
       type: "application/zip",
     });
-    const result = await expandFiles([zipFile]);
+    const { files: result } = await expandFilesWithReport([zipFile]);
     expect(result.map((file) => file.name)).toEqual([
       "SKILL.md",
       "docs/readme.txt",
@@ -136,7 +136,7 @@ describe("expandFiles", () => {
     const tgzFile = new File([Uint8Array.from(tgz).buffer], "bundle.tgz", {
       type: "application/gzip",
     });
-    const result = await expandFiles([tgzFile]);
+    const { files: result } = await expandFilesWithReport([tgzFile]);
     expect(result.map((file) => file.name)).toEqual(["SKILL.md", "notes.txt"]);
   });
 
@@ -149,7 +149,7 @@ describe("expandFiles", () => {
     const tgzFile = new File([Uint8Array.from(tgz).buffer], "bundle.tgz", {
       type: "application/gzip",
     });
-    const result = await expandFiles([tgzFile]);
+    const { files: result } = await expandFilesWithReport([tgzFile]);
     expect(result.map((file) => file.name)).toEqual(["SKILL.md", "notes.txt"]);
   });
 
@@ -172,7 +172,7 @@ describe("expandFiles", () => {
     const gzFile = new File([Uint8Array.from(gz).buffer], "skill.md.gz", {
       type: "application/gzip",
     });
-    const result = await expandFiles([gzFile]);
+    const { files: result } = await expandFilesWithReport([gzFile]);
     expect(result.map((file) => file.name)).toEqual(["skill.md"]);
   });
 });

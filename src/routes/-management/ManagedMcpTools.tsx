@@ -1,4 +1,5 @@
-import { PLUGIN_CATEGORY_DEFINITIONS, type ManagedMcpDefinition } from "clawhub-schema";
+import type { ManagedMcpDefinition } from "clawhub-schema";
+import { PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema/catalogMetadata";
 import { useAction } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -293,7 +294,15 @@ function ManagedMcpForm({
           transport: text("transport"),
           auth:
             auth === "oauth"
-              ? { kind: auth, ...(text("scope") ? { scope: text("scope") } : {}) }
+              ? {
+                  kind: auth,
+                  ...(text("scope") ? { scope: text("scope") } : {}),
+                  // Preserve CLI-authored CIMD identity when editing other fields.
+                  ...(initial?.connection.auth.kind === "oauth" &&
+                  initial.connection.auth.clientMetadataUrl
+                    ? { clientMetadataUrl: initial.connection.auth.clientMetadataUrl }
+                    : {}),
+                }
               : auth === "api-key"
                 ? { kind: auth, header: text("header"), placeholder: text("placeholder") }
                 : { kind: "none" },

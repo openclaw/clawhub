@@ -8,6 +8,8 @@ import {
 } from "../lib/analyticsEngagement";
 import {
   ANALYTICS_EVENT,
+  analyticsExternalLinkParameters,
+  analyticsPublicResourcePlacement,
   analyticsPreferenceAllowsCollection,
   captureAnalyticsOperation,
   isSensitiveAnalyticsDestination,
@@ -197,8 +199,13 @@ export function GoogleAnalytics() {
     const onClick = (event: MouseEvent) => {
       const anchor =
         event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
-      if (!anchor) return;
-      const url = new URL(anchor.href, window.location.origin);
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      let url: URL;
+      try {
+        url = new URL(anchor.href, window.location.origin);
+      } catch {
+        return;
+      }
       if (
         url.origin !== window.location.origin &&
         isSensitiveAnalyticsDestination(anchor.href, window.location.origin)
@@ -207,6 +214,21 @@ export function GoogleAnalytics() {
         // this view paused until navigation, rather than guessing an SDK send delay.
         sensitiveDeparture.current = window.location.pathname;
         tracker.pause();
+        return;
+      }
+      if (url.origin !== window.location.origin) {
+        const placement = analyticsPublicResourcePlacement(anchor);
+        if (placement && tracker.isActive() && analyticsPreferenceAllowsCollection()) {
+          tracker.track({
+            name: "select_content",
+            params: {
+              content_type: "resource",
+              content_id: `${placement}_link`,
+              ui_location: placement,
+              ...analyticsExternalLinkParameters(anchor, window.location.origin),
+            },
+          });
+        }
         return;
       }
       if (

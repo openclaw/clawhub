@@ -1,9 +1,11 @@
 import { apiRequest } from "../../http.js";
 import { ApiRoutes, ApiV1DeleteResponseSchema, parseArk } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
+import { normalizeOwnerHandle } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
-import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { createCrabLoader, fail, isInteractive, promptConfirm } from "../ui.js";
 
 type SkillActionLabels = {
   verb: string;
@@ -79,7 +81,7 @@ export async function cmdDeleteSkill(
   const registry = await getRegistry(opts, { cache: true });
   const target = version ? `${formatSkillRef(ref)} version ${version}` : formatSkillRef(ref);
   const spinner = createCrabLoader(`${labels.progress} ${target}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const body = buildBody(reason, ref.ownerHandle, version);
     const result = await apiRequest(
       registry,
@@ -97,10 +99,7 @@ export async function cmdDeleteSkill(
     const parsed = parseArk(ApiV1DeleteResponseSchema, result, "Delete response");
     spinner.succeed(`OK. ${labels.past} ${target}${version ? "" : formatSlugReservation(parsed)}`);
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdUndeleteSkill(
@@ -131,7 +130,7 @@ export async function cmdUndeleteSkill(
   const registry = await getRegistry(opts, { cache: true });
   const target = version ? `${formatSkillRef(ref)} version ${version}` : formatSkillRef(ref);
   const spinner = createCrabLoader(`${labels.progress} ${target}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const body = buildBody(reason, ref.ownerHandle, version);
     const result = await apiRequest(
       registry,
@@ -148,10 +147,7 @@ export async function cmdUndeleteSkill(
     );
     spinner.succeed(`OK. ${labels.past} ${target}`);
     return parseArk(ApiV1DeleteResponseSchema, result, "Undelete response");
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdHideSkill(
@@ -170,15 +166,6 @@ export async function cmdUnhideSkill(
   inputAllowed: boolean,
 ) {
   return cmdUndeleteSkill(opts, slugArg, options, inputAllowed, unhideLabels);
-}
-
-function normalizeOwnerHandle(raw: string | null | undefined) {
-  const handle = raw?.trim().replace(/^@+/, "").toLowerCase();
-  if (!handle) return undefined;
-  if (handle.includes("/") || handle.includes("\\") || handle.includes("..")) {
-    fail(`Invalid owner handle: ${raw}`);
-  }
-  return handle;
 }
 
 function normalizeSlug(slugArg: string) {

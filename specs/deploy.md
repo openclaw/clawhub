@@ -74,6 +74,26 @@ Production deploy notes:
   exact active modes, pauses them before deploying Convex, and restores and verifies them before
   production HTTP smoke. The restore steps run even when deployment or dark-state verification
   fails.
+- Temporary exception authorized by Patrick on 2026-10-05: [PR #3911](https://github.com/openclaw/clawhub/pull/3911)
+  permits one controlled backend deployment while skills.sh stays enabled and a real sync progresses.
+  Dispatch `skills-sh-sync.yml` from reviewed `main` with `deploy_experiment_sha`, exact successful
+  `deploy_experiment_ci_run` and `deploy_experiment_test_run`, and
+  `deploy_experiment_confirm=deploy-once-with-enabled-skills-sh`. Only Patrick's first attempt of the
+  earliest immutable experiment run, excluding only proven first-attempt cancellations with zero jobs,
+  is eligible. A prior first-attempt cancellation
+  is excluded only after a live GitHub jobs read proves it had zero jobs. A started job or rerun still
+  consumes the single attempt. The experiment uses a separate outer queue so recurring schedules
+  cannot replace it, but retains the shared `deploy-production` job mutex. Ordinary sync queueing is
+  unchanged. All other release gates remain: the existing
+  Production environment, production mutex through both processes and cleanup, unchanged rollout
+  boundaries, typechecks, promotions/contract verification, and production HTTP smoke. The sync child
+  uses its existing OIDC identity without the deploy credential. Record prior backend SHA and rollout,
+  active durable sync progress, actual deployment logs, catalog reads during/after deployment, and
+  complete sync accounting. Stamp revision metadata only after successful deployment; investigate
+  failures and reconcile the actual deployed code before using the existing rollback procedure.
+  Remove the temporary inputs and supervisor after that attempt and evidence reconciliation. The
+  ordinary pause/restore guard remains; a successful experiment does not establish every future
+  deployment is safe without a pause.
 - `frontend` does not call `vercel deploy` directly yet. It relies on the existing Vercel Git-based production deploy for that SHA.
 - The real deploy job uses the GitHub `Production` environment for deploy secrets, but it does not wait for a separate approval.
 - Required `Production` environment secret: `CONVEX_DEPLOY_KEY`.
@@ -189,8 +209,7 @@ worker instead of the production pool.
 
 For automatic dispatch, configure the existing GitHub App integration on staging
 (`GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY`), then set
-`SECURITY_SCAN_EVENT_DISPATCH_ENABLED=1` and
-`CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES=1`. Keep `CLAWHUB_DISABLE_CRONS=1`; upload
+`SECURITY_SCAN_EVENT_DISPATCH_ENABLED=1`. Keep `CLAWHUB_DISABLE_CRONS=1`; upload
 and queue events start workers through Convex's existing scheduled actions.
 Staging dispatch payloads carry `environment: staging`. The workflows on `main`
 relay these events to the same workflow on `staging`, using only a job-scoped
@@ -242,7 +261,7 @@ worker run. Compare terminal claim failures separately from successful job count
 Skill Card input reuse adds optional receipts to existing versions and jobs; no
 backfill is required. The worker currently omits the recipe hash, so automatic
 workflow runs remain compatible with the backend before its manual deployment.
-Sol/medium/fast is enabled; input reuse is prepared but not active.
+Luna/medium/Standard is the default; input reuse is prepared but not active.
 
 Activate recipe-hash claims in the separate worker change only after a successful
 Convex deployment of the preparation commit or a descendant containing it. Verify
@@ -417,6 +436,30 @@ with the GitHub `Test` environment and a target guard pinned to
 Test crons remain disabled, so this does not scan the catalog on a nightly or
 periodic schedule. The five-minute scheduled pre-publication worker remains a
 Production-only recovery path.
+
+### Permanent Test security rescans
+
+The signed-in Rescan action queues a normal `manual` security job on Test.
+`SECURITY_SCAN_EVENT_DISPATCH_ENABLED=1` and the GitHub App dispatch credentials
+enable the existing coalesced worker dispatch without enabling general crons.
+Test deployments provision the dispatch flag after deploying the backend in
+`deploy-test.yml`. Test retains the existing five-minute scan-dispatch watchdog
+and expired-lease recovery even when general crons are disabled. Dispatch still
+respects its enable flag. Unrelated catalog schedules stay disabled, and
+previews run neither recovery job.
+The event carries `environment=test`, selecting the `Test` GitHub environment
+and a separate worker concurrency group. Manual workflow dispatches can also
+select `Test` from `main`; neither path requires assigned job IDs or a special
+package. Test retains one shared worker shard, which claims manual jobs first.
+
+The worker checks the permanent Test URL, deploy key and backend environment
+before loading Test's own worker token. It uses the same worker, scanner profile
+and digest-pinned Endor image preparation as Production. Configure
+`CODEX_SECURITY_SCAN_ENDOR_ENABLED=1`, `CODEX_SECURITY_SCAN_ENDOR_IMAGE` with a
+published `@sha256:` image digest, `ENDOR_NAMESPACE`, `ENDOR_API` and the Endor
+credentials in the `Test` GitHub environment. Test and Production both analyze
+every code-plugin release, report-only. Results are saved on the native package
+release and served through its usual security views.
 
 Preview browser traffic is public and read-only. Nitro rejects non-GET/HEAD
 requests before proxying and adds `X-ClawHub-Preview-Backend` to proxied preview
