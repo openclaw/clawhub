@@ -207,7 +207,6 @@ function buildSyntheticScanJob(attempt: ClaimedPrePublicationAttempt): ClaimedJo
       targetKind,
       source: "pre-publication",
       hasMaliciousSignal: false,
-      waitForVtUntil: 0,
       attempts: 1,
     },
     target: {

@@ -112,7 +112,7 @@ describe("publish attempt runtime recovery", () => {
       });
       const jobs = state.jobs.filter(
         (job) =>
-          job.name === "vt:scanWithVirusTotal" ||
+          job.name === "skillVersionArtifactHash:computeSkillVersionArtifactHashInternal" ||
           job.name === "securityScan:enqueueSkillVersionScanInternal",
       );
       expect(
@@ -123,7 +123,7 @@ describe("publish attempt runtime recovery", () => {
         })),
       ).toEqual([
         {
-          name: "vt:scanWithVirusTotal",
+          name: "skillVersionArtifactHash:computeSkillVersionArtifactHashInternal",
           args: [{ versionId: fixture.result.versionId }],
           delay: 0,
         },
@@ -313,7 +313,7 @@ describe("publish attempt runtime recovery", () => {
     "wrong legacy user",
     "unexpected publisher",
   ] as const)(
-    "commits package VT, security job and receipt together with ownership binding: %s",
+    "commits package security job and receipt together with ownership binding: %s",
     async (failure) => {
       vi.useFakeTimers();
       try {
@@ -553,13 +553,8 @@ describe("publish attempt runtime recovery", () => {
         expect(state.attempt?.checkClaimId).toBeUndefined();
         expect(state.attempt?.checkClaimedAt).toBeUndefined();
         expect(state.attempt?.checkClaimExpiresAt).toBeUndefined();
-        expect(state.jobs).toMatchObject([
-          {
-            name: "vt:scanPackageReleaseWithVirusTotal",
-            args: [{ releaseId: fixture.result.releaseId }],
-            scheduledTime: state.attempt!.finalizedAt! + 30_000,
-          },
-        ]);
+        // VirusTotal is retired: finalization schedules no external upload.
+        expect(state.jobs).toEqual([]);
         expect(state.scans).toHaveLength(1);
         expect(state.scans[0]).toMatchObject({
           targetKind: "packageRelease",

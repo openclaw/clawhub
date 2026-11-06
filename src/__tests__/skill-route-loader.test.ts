@@ -39,6 +39,7 @@ async function loadRoute() {
   return (await import("../routes/$owner/skills/$slug")).Route as unknown as {
     __config: {
       beforeLoad: (args: { params: { owner: string; slug: string } }) => unknown;
+      validateSearch: (search: Record<string, unknown>) => { published?: true };
       loader?: (args: { params: { owner: string; slug: string } }) => Promise<unknown>;
       head?: (args: {
         params: { owner: string; slug: string };
@@ -57,6 +58,7 @@ async function loadLegacyRoute() {
   return (await import("../routes/$owner/$slug")).Route as unknown as {
     __config: {
       beforeLoad?: (args: { params: { owner: string; slug: string } }) => unknown;
+      validateSearch: (search: Record<string, unknown>) => { published?: true };
       loader?: (args: { params: { owner: string; slug: string } }) => Promise<unknown>;
     };
   };
@@ -106,6 +108,15 @@ function runHead(
 }
 
 describe("skill route loader", () => {
+  it("keeps legacy and canonical post-publish search validation compatible", async () => {
+    for (const route of [await loadLegacyRoute(), await loadRoute()]) {
+      expect(route.__config.validateSearch({ published: ' "true" ', tab: "files" })).toEqual({
+        published: true,
+      });
+      expect(route.__config.validateSearch({ published: "false", tab: "files" })).toEqual({});
+    }
+  });
+
   it.each(["123abc", "example.tools", "studio_tools", "users:abc123", "publishers:abc123"])(
     "allows owner %s in beforeLoad",
     async (owner) => {

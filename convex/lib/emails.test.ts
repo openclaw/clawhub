@@ -363,6 +363,9 @@ describe("moderation notification email copy", () => {
     expect(email.html).toContain("Very low installs per listing.");
     expect(email.html).toContain("2026-06-26 04:00:00 UTC");
     expect(email.html).toContain(OPENCLAW_DISCORD_URL);
+    expect(OPENCLAW_DISCORD_URL).toBe(
+      "https://openclaw.ai/discord?from=clawhub-publisher-warning-email",
+    );
   });
 
   it("builds a templated admin one-off email with escaped staff-authored content", async () => {

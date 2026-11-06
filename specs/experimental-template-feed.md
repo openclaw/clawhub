@@ -62,14 +62,16 @@ which enforces canonical `package/` paths, regular files/directories only,
 Legacy ZIP extraction applies the same entry, expanded-size, path, and portable
 collision bounds and supports either `package/` or archive-root package layout.
 
-## Historical persisted snapshot cutover
+## Canonical wire format and physical storage
 
 The logical new route/ID/type do not rename existing database rows. Physical
-snapshot ID `clawhub-official-claws` and `claw*` policy markers remain stable,
-including empty snapshots. A valid old snapshot can be projected in memory to
-canonical Template ID/type/summary keys without changing records or artifact
-candidates. Read authority, policy version, count, raw stored checksum and strict
-wire validation must all pass; otherwise return `503`/`no-store`. Response digest
-and ETag are recomputed for the projected bytes, never copied from the different
-historical wire representation. The normal publisher writes canonical new wire
-bytes into the same physical row and advances its existing sequence.
+snapshot ID clawhub-official-claws and claw* policy markers remain stable,
+including empty snapshots. The payload itself must already use the canonical
+Template ID/type/summary keys. Retired wire snapshots are not projected or
+adapted; they fail closed with 503/no-store. The existing publisher writes a
+canonical payload into the same physical row and advances its sequence.
+
+Read authority, policy version, count and exact stored checksum must all pass.
+The response serves the exact stored canonical bytes and digest. Archive container
+handling never relaxes the strict openclaw.template package-selector contract;
+retired openclaw.claw artifacts are not admitted by the bridge or publish owner.

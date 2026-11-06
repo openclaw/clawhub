@@ -308,17 +308,14 @@ additional inspected-file array, and binds the returned path, hash and challenge
 to the final native attempt's provenance. Unsupported versions, mixed fields and
 inconsistent or missing native provenance fail closed. Prepublication uses this
 same validator, strips both progress opt-ins, and keeps inspection diagnostics out
-of the stored public policy output. Legacy Endor profiles deliberately remain v1.
+of the stored public policy output.
 
 ## Risk analysis
 
 Risk analysis is powered internally by ClawScan, ClawHub's own security audit
 system. It reviews each release as an agent-facing artifact: instructions,
-metadata, declared permissions, files, capability signals, static scan signals,
-SkillSpector findings, A.I.G findings for skills, and
-publisher-provided context.
-Static scan signals are internal context for this review; they are not a
-standalone public audit section or install-blocking verdict.
+metadata, declared permissions, files, capability signals, SkillSpector
+findings, A.I.G findings for skills, and publisher-provided context.
 
 Risk analysis uses the
 [OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/)

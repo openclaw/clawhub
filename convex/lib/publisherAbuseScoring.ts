@@ -1,3 +1,13 @@
+import type {
+  StoredTemporalAbuseCohortBenchmark,
+  TemporalAbuseCohortBenchmark,
+} from "./publisherAbuseBenchmark";
+
+export type {
+  StoredTemporalAbuseCohortBenchmark,
+  TemporalAbuseCohortBenchmark,
+} from "./publisherAbuseBenchmark";
+
 export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v4";
 export const PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION = "publisher-abuse-temporal.v2";
 
@@ -47,12 +57,6 @@ export type PublisherAbuseRawScore = {
   reasonCodes: string[];
 };
 
-export type PublisherAbuseScore = PublisherAbuseRawScore & {
-  label: PublisherAbuseLabel;
-  rank: number;
-  zScore: number;
-};
-
 export type SkillTemporalAbuseDailyStat = {
   day: number;
   downloads: number;
@@ -99,25 +103,6 @@ export type SkillTemporalAbuseScore = {
   nearConversionWindowEndDay?: number;
   reasonCodes: string[];
 };
-
-export type TemporalAbuseCohortBenchmark = {
-  scope?: "all_active_skills";
-  sampleSize: number;
-  downloads30dAverage: number;
-  downloads30dMedian: number;
-  downloads30dP95: number;
-  downloads30dP99: number;
-  spikeMultiplier7dP95: number;
-  spikeMultiplier7dP99: number;
-  excess7DownloadsP95: number;
-  excess7DownloadsP99: number;
-};
-
-export type StoredTemporalAbuseCohortBenchmark = Omit<
-  TemporalAbuseCohortBenchmark,
-  "excess7DownloadsP95" | "excess7DownloadsP99"
-> &
-  Partial<Pick<TemporalAbuseCohortBenchmark, "excess7DownloadsP95" | "excess7DownloadsP99">>;
 
 export function normalizeTemporalAbuseCohortBenchmark(
   benchmark: StoredTemporalAbuseCohortBenchmark,
@@ -285,46 +270,6 @@ export function computePublisherAbusePressure(
     (installBenchmark / totalInstalls) ** config.installTrustElasticity *
     (starBenchmark / totalStars) ** config.starTrustElasticity *
     (downloadBenchmark / totalDownloads) ** config.downloadDemandElasticity
-  );
-}
-
-export function scorePublisherAbuseCohort(
-  inputs: PublisherAbuseInput[],
-  config: PublisherAbuseModelConfig = DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
-): PublisherAbuseScore[] {
-  const rawScores = inputs.map((input) => computePublisherAbuseRawScore(input, config));
-  const scoredRawScores = rawScores.filter((score) => score.publishedSkills > 0);
-  const mean = average(scoredRawScores.map((score) => score.logPressure));
-  const stdDev = standardDeviation(
-    scoredRawScores.map((score) => score.logPressure),
-    mean,
-  );
-  const safeStdDev = stdDev === 0 ? 1 : stdDev;
-
-  return rawScores
-    .map((score) => {
-      const zScore = isPublisherAbuseCheckEligible(score, config)
-        ? (score.logPressure - mean) / safeStdDev
-        : 0;
-      return {
-        ...score,
-        zScore,
-        label: labelForPublisherAbuseScore(score, zScore, config),
-        rank: 0,
-      };
-    })
-    .sort(comparePublisherAbuseScores)
-    .map((score, index) => ({ ...score, rank: index + 1 }));
-}
-
-export function comparePublisherAbuseScores(
-  left: Pick<PublisherAbuseScore, "pressure" | "publishedSkills" | "input">,
-  right: Pick<PublisherAbuseScore, "pressure" | "publishedSkills" | "input">,
-) {
-  return (
-    right.pressure - left.pressure ||
-    right.publishedSkills - left.publishedSkills ||
-    left.input.handleSnapshot.localeCompare(right.input.handleSnapshot)
   );
 }
 
@@ -703,10 +648,4 @@ function percentile(values: number[], quantile: number) {
 function p99Band(input: { value: number; p99: number }): "p99" | undefined {
   if (input.value <= 0) return undefined;
   return input.value > input.p99 ? "p99" : undefined;
-}
-
-function standardDeviation(values: number[], mean: number) {
-  if (values.length === 0) return 0;
-  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
-  return Math.sqrt(variance);
 }

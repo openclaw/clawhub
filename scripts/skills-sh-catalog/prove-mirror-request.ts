@@ -1,3 +1,52 @@
+export function createMirrorProofClient() {
+  function requireEnv(name: string) {
+    const value = process.env[name]?.trim();
+    if (!value) throw new Error(`${name} is required`);
+    return value;
+  }
+
+  const targetUrl = requireEnv("CLAWHUB_TEST_MIRROR_GATE_URL");
+  const operatorAuthorization = requireEnv("CLAWHUB_TEST_OPERATOR_TOKEN");
+  const vercelAutomationBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
+  async function callRaw(body: Record<string, unknown>) {
+    const startedAt = performance.now();
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers: buildMirrorProofHeaders(operatorAuthorization, vercelAutomationBypassSecret),
+      body: JSON.stringify(body),
+    });
+    const text = await response.text();
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      payload = { text };
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      elapsedMs: performance.now() - startedAt,
+      payload,
+      retryAfter: response.headers.get("retry-after"),
+    };
+  }
+
+  function callFailure(body: Record<string, unknown>, result: Awaited<ReturnType<typeof callRaw>>) {
+    return new Error(
+      `${String(body.operation)} returned HTTP ${result.status}: ${JSON.stringify(result.payload)}`,
+    );
+  }
+
+  async function call(body: Record<string, unknown>) {
+    const result = await callRaw(body);
+    if (!result.ok) throw callFailure(body, result);
+    return result;
+  }
+
+  return { targetUrl, callRaw, call, callFailure };
+}
+
 export function buildMirrorProofHeaders(
   operatorAuthorization: string,
   vercelAutomationBypassSecret?: string,

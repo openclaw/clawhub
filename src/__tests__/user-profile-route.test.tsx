@@ -5,7 +5,6 @@ import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildPublisherGroupTabOptions,
-  formatRelativeUpdatedAt,
   groupPublisherCatalogItemsByTopic,
   parsePluginCatalogRoute,
   resolveDefaultCatalogTab,
@@ -677,10 +676,5 @@ describe("publisher profile helpers", () => {
         activePublishedDisplay: null,
       }),
     ).toBe(true);
-  });
-
-  it("formats relative update times", () => {
-    const now = Date.UTC(2026, 5, 23, 12, 0, 0);
-    expect(formatRelativeUpdatedAt(now - 3 * 24 * 60 * 60 * 1000, now)).toBe("3d ago");
   });
 });

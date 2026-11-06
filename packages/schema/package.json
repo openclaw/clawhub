@@ -67,7 +67,7 @@
   },
   "dependencies": {
     "arktype": "2.2.9",
-    "croner": "10.0.1",
+    "croner": "11.0.0",
     "unicode-case-folding": "1.1.2",
     "yaml": "2.9.1"
   },

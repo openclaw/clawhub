@@ -34,9 +34,7 @@ type SkillVersionPublicBrowseFields = Pick<
   | "changelog"
   | "changelogSource"
   | "parsed"
-  | "vtAnalysis"
   | "llmAnalysis"
-  | "staticScan"
 >;
 
 export type PublicBrowseVersionState =
@@ -48,6 +46,8 @@ function isPendingSkillModerationReason(reason: string | null | undefined) {
   return (
     normalized === "pending.scan" ||
     normalized === "pending.scan.stale" ||
+    // Legacy reason from the retired VirusTotal poller. It stays pending (fail
+    // closed) until backfillLatestSkillModerationInternal rebuilds it from ClawScan.
     normalized === "scanner.vt.pending" ||
     normalized === "scanner.llm.pending"
   );
@@ -94,13 +94,13 @@ export function isPubliclyListableSkillVersion(
   version: SkillVersionPublicBrowseFields | null | undefined,
 ) {
   if (!version || !isPublicSkillVersionAvailableForSkill(version, version.skillId)) return false;
-  const statuses = [
-    normalizeSecurityScanStatus(version.vtAnalysis?.status),
-    normalizeSecurityScanStatus(version.llmAnalysis?.verdict ?? version.llmAnalysis?.status),
-    normalizeSecurityScanStatus(version.staticScan?.status),
-  ];
-  if (statuses.some((status) => status === "pending" || status === "not-run")) return false;
-  return !statuses.some((status) => isSecurityScanStatusBlockedFromPublic(status));
+  // ClawScan is the only listing gate. Retired VirusTotal and static publish-scan
+  // results stored on older versions no longer hold or block public listing.
+  const status = normalizeSecurityScanStatus(
+    version.llmAnalysis?.verdict ?? version.llmAnalysis?.status,
+  );
+  if (status === "pending" || status === "not-run") return false;
+  return !isSecurityScanStatusBlockedFromPublic(status);
 }
 
 export async function hasResolvablePublicBrowseVersion(

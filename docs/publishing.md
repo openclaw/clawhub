@@ -168,6 +168,12 @@ to keep out of public issues.
   installation still uses one plugin for each runtime id.
 - Include `openclaw.plugin.json`. Code plugins also need `package.json` with
   `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`.
+- Publish every entrypoint `package.json` declares. ClawHub rejects a code
+  plugin when a file named by `openclaw.extensions`, `openclaw.runtimeExtensions`,
+  `openclaw.setupEntry`, or `openclaw.runtimeSetupEntry` is missing from the
+  upload, using OpenClaw's install rules: a declared runtime entry must exist,
+  and a TypeScript entry without a runtime entry needs compiled JavaScript such
+  as `dist/index.js`. Build first, then publish the folder or `.tgz`.
 - To show a custom plugin catalog icon, include `assets/icon.png` at the package
   root in the published archive. Use a valid PNG no larger than 512 KiB.
 - Include source repository and exact commit metadata, or use the CLI from a
@@ -179,12 +185,13 @@ to keep out of public issues.
 - Expect new releases to stay out of public install surfaces until automated
   security checks and verification finish.
 
-An inspector operational failure reports the failing stage. A temporary-workspace
-cleanup failure also blocks publication and appears alongside any original
-inspection findings; it does not erase the primary error. These failures are
-distinct from plugin policy findings. Report the stage and Convex request id
-when asking maintainers to investigate; do not include credentials or package
-contents in diagnostic reports.
+Plugin Inspector does not run during publish and never blocks it. After a
+release is accepted, ClawHub scans it with Plugin Inspector as monitoring, and
+again in the nightly scan; findings appear on the plugin's validation tab. If
+Inspector itself fails or times out, ClawHub records that as an Inspector
+outcome, not as a problem with your plugin, and scans the release again later.
+Run `clawhub package validate <source>` to see the same findings before you
+publish.
 
 ### Plugin Icons
 

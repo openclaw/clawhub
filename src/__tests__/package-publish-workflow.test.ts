@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
+import { PLUGIN_INSPECTOR_RELEASE_SCAN_EVENT } from "../../convex/lib/pluginInspectorReleaseScan";
+import { loadWorkflow, workflowDispatchInputs } from "./helpers/githubWorkflowExpression";
 
 describe("package publish workflow", () => {
   it("runs plugin-inspector before publishing and uploads inspector artifacts", () => {
@@ -38,6 +40,113 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("actions/upload-artifact");
   });
 
+  describe("Plugin Inspector release scans", () => {
+    const workflowText = readFileSync(
+      resolve(".github/workflows/plugin-inspector-bulk-scan.yml"),
+      "utf8",
+    );
+    const workflow = loadWorkflow(workflowText);
+    const SCAN_STEP = "Run plugin inspector bulk scan";
+    const REQUIRE_STEP = "Require the released package for release scans";
+    const releaseEvent = (packageName: string) => ({
+      github: {
+        event_name: "repository_dispatch",
+        ref: "refs/heads/main",
+        event: {
+          action: PLUGIN_INSPECTOR_RELEASE_SCAN_EVENT,
+          client_payload: { package_name: packageName, version: "1.2.3", release_id: "r1" },
+        },
+      },
+      // repository_dispatch has no workflow inputs.
+      inputs: {},
+      vars: {},
+      secrets: {},
+    });
+
+    it("subscribes to the event ClawHub dispatches", () => {
+      expect(
+        (parseYaml(workflowText) as { on?: { repository_dispatch?: { types?: string[] } } }).on
+          ?.repository_dispatch?.types,
+      ).toEqual([PLUGIN_INSPECTOR_RELEASE_SCAN_EVENT]);
+    });
+
+    it("runs a persisted, email-free scan of exactly the released package", () => {
+      const context = releaseEvent("@openclaw/demo");
+      expect(workflow.stepRuns("scan", SCAN_STEP, context)).toBe(true);
+      expect(workflow.stepEnv("scan", SCAN_STEP, context)).toMatchObject({
+        PLUGIN_INSPECTOR_PACKAGE_NAMES: "@openclaw/demo",
+        PLUGIN_INSPECTOR_DRY_RUN: "0",
+        PLUGIN_INSPECTOR_NOTIFY_OWNERS: "0",
+        PLUGIN_INSPECTOR_NOTIFICATION_ONLY: "0",
+        PLUGIN_INSPECTOR_NOTIFICATION_MANIFEST: "",
+        PLUGIN_INSPECTOR_OPENCLAW_VERSION: "beta",
+        CLAWHUB_SITE_URL: "https://clawhub.ai",
+      });
+      expect(workflow.jobTimeoutMinutes("scan", context)).toBe(30);
+    });
+
+    it("keeps manual dispatch defaults as a no-email preview and the nightly sweep persisted", () => {
+      const manual = {
+        github: { event_name: "workflow_dispatch", ref: "refs/heads/main", event: {} },
+        inputs: workflowDispatchInputs(workflowText),
+        vars: {},
+        secrets: {},
+      };
+      expect(workflow.stepEnv("scan", SCAN_STEP, manual)).toMatchObject({
+        PLUGIN_INSPECTOR_PACKAGE_NAMES: "",
+        PLUGIN_INSPECTOR_DRY_RUN: "1",
+        PLUGIN_INSPECTOR_NOTIFY_OWNERS: "0",
+        PLUGIN_INSPECTOR_NOTIFICATION_ONLY: "0",
+      });
+      const nightly = {
+        github: { event_name: "schedule", ref: "refs/heads/main", event: {} },
+        inputs: {},
+        vars: {},
+        secrets: {},
+      };
+      expect(workflow.stepEnv("scan", SCAN_STEP, nightly)).toMatchObject({
+        PLUGIN_INSPECTOR_PACKAGE_NAMES: "",
+        PLUGIN_INSPECTOR_DRY_RUN: "0",
+        PLUGIN_INSPECTOR_NOTIFY_OWNERS: "0",
+        PLUGIN_INSPECTOR_NOTIFICATION_ONLY: "0",
+      });
+      expect(workflow.jobTimeoutMinutes("scan", nightly)).toBe(360);
+      expect(workflow.stepRuns("scan", REQUIRE_STEP, nightly)).toBe(false);
+    });
+
+    it("queues release scans per package and keeps the sweep's own group", () => {
+      const groups = [
+        workflow.concurrencyGroup(releaseEvent("@openclaw/a")),
+        workflow.concurrencyGroup(releaseEvent("@openclaw/b")),
+        workflow.concurrencyGroup({ github: { event_name: "schedule" }, inputs: {} }),
+        workflow.concurrencyGroup({ github: { event_name: "workflow_dispatch" }, inputs: {} }),
+      ];
+      expect(groups).toEqual([
+        "clawhub-plugin-inspector-release-scan-@openclaw/a",
+        "clawhub-plugin-inspector-release-scan-@openclaw/b",
+        "clawhub-plugin-inspector-bulk-scan",
+        "clawhub-plugin-inspector-bulk-scan",
+      ]);
+    });
+
+    it("fails a release scan that names no package", () => {
+      const script = workflow.stepScript("scan", REQUIRE_STEP);
+      const run = (packageName: string) =>
+        spawnSync("bash", ["-e", "-c", script], {
+          env: {
+            PATH: process.env.PATH,
+            ...workflow.stepEnv("scan", REQUIRE_STEP, releaseEvent(packageName)),
+          },
+          encoding: "utf8",
+        });
+      expect(workflow.stepRuns("scan", REQUIRE_STEP, releaseEvent(""))).toBe(true);
+      const missing = run("");
+      expect(missing.status).toBe(1);
+      expect(missing.stderr).toContain("client_payload.package_name is required");
+      expect(run("@openclaw/demo").status).toBe(0);
+    });
+  });
+
   it("runs nightly beta plugin scans while preserving manual dispatch", () => {
     const workflow = readFileSync(
       resolve(".github/workflows/plugin-inspector-bulk-scan.yml"),
@@ -67,9 +176,7 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("plugin-inspector-bulk-scan-reports");
     expect(workflow).toContain("source_pr:");
     expect(workflow).toContain("source_sha:");
-    expect(workflow).toContain(
-      "concurrency:\n  group: clawhub-plugin-inspector-bulk-scan\n  cancel-in-progress: false",
-    );
+    expect(parseYaml(workflow).concurrency?.["cancel-in-progress"]).toBe(false);
     expect(workflow).toContain("PLUGIN_INSPECTOR_OPENCLAW_VERSION: beta");
     expect(workflow).toContain("notify_owners:");
     expect(parsedWorkflow.on?.workflow_dispatch?.inputs?.notify_owners?.default).toBe(false);

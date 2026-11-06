@@ -85,13 +85,6 @@ function makeCtx({
         }),
       };
     }
-    if (table === "skillVersions") {
-      return {
-        withIndex: () => ({
-          take: async () => [],
-        }),
-      };
-    }
     throw new Error(`Unexpected table ${table}`);
   });
   const scheduler = { runAfter: vi.fn() };

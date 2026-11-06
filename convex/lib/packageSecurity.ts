@@ -8,7 +8,7 @@ export type PackageScanStatus = Doc<"packages">["scanStatus"];
 
 type PackageReleaseSecurityLike = Pick<
   Doc<"packageReleases">,
-  "sha256hash" | "vtAnalysis" | "llmAnalysis" | "verification" | "staticScan" | "manualModeration"
+  "sha256hash" | "llmAnalysis" | "verification" | "staticScan" | "manualModeration"
 >;
 
 export function normalizePackageScanStatus(status: string | null | undefined): PackageScanStatus {
@@ -39,6 +39,10 @@ export function resolvePackageReleaseScanStatus(
     return "clean";
   }
 
+  // Legacy compatibility only: the retired static publish scan used to copy its
+  // status into verification.scanStatus. A verification status that merely mirrors
+  // a stored static result is not a trust verdict, so it is ignored. New releases
+  // never carry staticScan; drop this once historical rows are migrated.
   const staticStatus = normalizePackageScanStatus(release.staticScan?.status);
   const effectiveVerificationStatus =
     (verificationStatus === "suspicious" && staticStatus === "suspicious") ||
@@ -60,12 +64,8 @@ export function isPackageBlockedFromPublic(scanStatus: PackageScanStatus) {
   return isSecurityScanStatusBlockedFromPublic(scanStatus);
 }
 
-export function isPackageReleaseTrustStale(release: Pick<Doc<"packageReleases">, "vtAnalysis">) {
-  return release.vtAnalysis?.status?.trim().toLowerCase() === "stale";
-}
-
 export function getPackageTrustReasons(
-  release: Pick<Doc<"packageReleases">, "manualModeration" | "staticScan" | "vtAnalysis">,
+  release: Pick<Doc<"packageReleases">, "manualModeration">,
   scanStatus: Exclude<PackageScanStatus, undefined>,
   reportCount = 0,
 ) {

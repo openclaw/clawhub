@@ -41,6 +41,7 @@ async function fixture(
     { userId, path: "SKILL.md", size: bytes.length, sha256 },
   );
   const statuses: number[] = [];
+  const retryDelays: number[] = [];
   let stores = 0,
     attaches = 0,
     attempts = 0;
@@ -48,6 +49,14 @@ async function fixture(
     runtime: "node",
     configureDispatcher: false,
     random: () => 0,
+    // Run retry sleeps immediately but record them; request deadlines never fire.
+    setTimeoutImpl: ((callback: () => void, ms: number) => {
+      if (ms === 15_000 || ms === 120_000) return 0;
+      retryDelays.push(ms);
+      callback();
+      return 0;
+    }) as unknown as typeof setTimeout,
+    clearTimeoutImpl: (() => undefined) as typeof clearTimeout,
     fetchImpl: async (input, init) => {
       attempts += 1;
       let response: Response | undefined;
@@ -78,6 +87,7 @@ async function fixture(
     userId,
     uploadTicket,
     statuses,
+    retryDelays,
     calls: () => ({ stores, attaches }),
     upload: (overrides: { bytes?: Uint8Array; token?: string } = {}) =>
       client.uploadBinary<{ storageId: string }>({
@@ -90,11 +100,13 @@ async function fixture(
   };
 }
 
-describe("pre-blob skill upload pressure through the real shared CLI retry policy", () => {
+describe("transient skill upload failures through the real shared CLI retry policy", () => {
   it("retries typed storage rejection and attaches the exact bytes once", async () => {
     const f = await fixture(1);
     const result = await f.upload();
     expect(f.statuses).toEqual([503, 200]);
+    // The 503 carries Retry-After, which the CLI honors before retrying.
+    expect(f.retryDelays).toEqual([2_000]);
     expect(f.calls()).toEqual({ stores: 2, attaches: 1 });
     expect(await f.t.run((ctx) => ctx.db.get(f.uploadTicket))).toMatchObject({
       storageId: result.storageId,
@@ -128,12 +140,41 @@ describe("pre-blob skill upload pressure through the real shared CLI retry polic
     },
   );
 
-  it("does not extend retry classification past the storage.store boundary", async () => {
+  it.each([
+    capacityMessage,
+    "InternalServerError: Transient error while running generate upload url",
+    "Your request couldn't be completed. Try again later.",
+  ])("retries a transient platform failure while storing: %s", async (message) => {
+    const f = await fixture(1, "store", message);
+    const result = await f.upload();
+    expect(f.statuses).toEqual([503, 200]);
+    expect(f.calls()).toEqual({ stores: 2, attaches: 1 });
+    expect(
+      (await f.t.run((ctx) => ctx.db.system.query("_storage").collect())).map((blob) => blob._id),
+    ).toEqual([result.storageId]);
+  });
+
+  it("retries a transient attachment failure and keeps exactly one attached blob", async () => {
+    const f = await fixture(1, "attach");
+    const result = await f.upload();
+    expect(f.statuses).toEqual([503, 200]);
+    expect(f.calls()).toEqual({ stores: 2, attaches: 2 });
+    // The failed attempt's blob was reclaimed; only the attached one remains.
+    expect(
+      (await f.t.run((ctx) => ctx.db.system.query("_storage").collect())).map((blob) => blob._id),
+    ).toEqual([result.storageId]);
+    expect(await f.t.run((ctx) => ctx.db.get(f.uploadTicket))).toMatchObject({
+      storageId: result.storageId,
+    });
+  });
+
+  it("bounds persistent attachment failures and leaves no blob behind", async () => {
     const f = await fixture(10, "attach");
-    await expect(f.upload()).rejects.toThrow("Too many writes");
-    expect(f.statuses).toEqual([400]);
-    expect(f.calls()).toEqual({ stores: 1, attaches: 1 });
+    await expect(f.upload()).rejects.toThrow("ClawHub backend is temporarily unavailable");
+    expect(f.statuses).toEqual([503, 503, 503]);
+    expect(f.calls()).toEqual({ stores: 3, attaches: 3 });
     expect(await f.t.run((ctx) => ctx.db.system.query("_storage").collect())).toEqual([]);
+    expect(await f.t.run((ctx) => ctx.db.get(f.uploadTicket))).not.toHaveProperty("storageId");
   });
 
   it.each(["jello", "hell", "hello!"])("rejects invalid bytes before storage: %s", async (text) => {

@@ -46,7 +46,7 @@ describe("skill evaluation workflow", () => {
       uses: "actions/checkout@v7.0.1",
       with: { "persist-credentials": false },
     });
-    expect(job["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");
+    expect(job["runs-on"]).toBe("blacksmith-4vcpu-ubuntu-2404");
     expect(job.environment).toBe("Production");
     expect(job["timeout-minutes"]).toBe(360);
     expect(job.concurrency).toEqual({

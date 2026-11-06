@@ -111,6 +111,10 @@ export const publishForAdminInternal = internalAction({
         url: bundle.definition.connection.url,
         transport: bundle.definition.connection.transport,
         checkOAuth: bundle.definition.connection.auth.kind === "oauth",
+        ...(bundle.definition.connection.auth.kind === "oauth" &&
+        bundle.definition.connection.auth.clientMetadataUrl
+          ? { clientMetadataUrl: bundle.definition.connection.auth.clientMetadataUrl }
+          : {}),
       },
     );
     if (
@@ -118,7 +122,7 @@ export const publishForAdminInternal = internalAction({
       endpointObservation.oauthDiscovery !== "ready"
     )
       throw new ConvexError(
-        "OAuth discovery must advertise public authorization, token, and client registration endpoints.",
+        "OAuth discovery requires public authorization and token endpoints plus dynamic registration, or advertised CIMD support with a usable authored client metadata document.",
       );
     if (endpointObservation.status === "unavailable")
       throw new ConvexError(

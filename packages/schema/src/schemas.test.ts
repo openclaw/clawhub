@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
+import { CliTelemetryInstallRequestSchema as cliTelemetrySchema } from "../../clawhub/src/schema/schemas";
 import { parseArk } from "./ark";
 import { DocsLinks, openClawDocsUrl } from "./docsLinks";
 import {
@@ -368,9 +369,12 @@ describe("clawhub-schema", () => {
     expect(blocked.ok).toBe(false);
   });
 
-  it("accepts skill, plugin, and legacy install telemetry payloads", () => {
+  it.each([
+    { name: "registry", schema: CliTelemetryInstallRequestSchema },
+    { name: "CLI", schema: cliTelemetrySchema },
+  ])("$name accepts skill, plugin, and legacy install telemetry payloads", ({ schema }) => {
     const current = parseArk(
-      CliTelemetryInstallRequestSchema,
+      schema,
       {
         event: "install",
         slug: "demo",
@@ -388,7 +392,7 @@ describe("clawhub-schema", () => {
       "Install telemetry",
     );
     const plugin = parseArk(
-      CliTelemetryInstallRequestSchema,
+      schema,
       {
         event: "plugin_install",
         packageName: "@openclaw/voice-call",
@@ -397,7 +401,7 @@ describe("clawhub-schema", () => {
       "Install telemetry",
     );
     const legacy = parseArk(
-      CliTelemetryInstallRequestSchema,
+      schema,
       {
         roots: [
           {

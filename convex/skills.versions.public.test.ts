@@ -291,7 +291,8 @@ describe("public skill version queries", () => {
       description: "Full uploaded description",
       license: "MIT-0",
     });
-    expect(result?.latestVersion?.staticScan?.findings?.[0]?.evidence).toBe("");
+    expect(result?.latestVersion).not.toHaveProperty("staticScan");
+    expect(result?.latestVersion).not.toHaveProperty("vtAnalysis");
   });
 
   it("sanitizes direct public version queries", async () => {
@@ -344,7 +345,8 @@ describe("public skill version queries", () => {
       expect(result?.parsed).not.toHaveProperty("metadata");
       expect(result?.parsed).not.toHaveProperty("moltbot");
       expect(result?.parsed?.description).toBe("Full uploaded description");
-      expect(result?.staticScan?.findings?.[0]?.evidence).toBe("");
+      expect(result).not.toHaveProperty("staticScan");
+      expect(result).not.toHaveProperty("vtAnalysis");
     }
   });
 

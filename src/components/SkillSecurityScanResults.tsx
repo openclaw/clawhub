@@ -41,29 +41,6 @@ type LlmRiskSummaryBucket = {
 
 type LlmRiskSummary = Record<ClawScanRiskBucket, LlmRiskSummaryBucket>;
 
-export type VtAnalysis = {
-  status: string;
-  verdict?: string;
-  analysis?: string;
-  source?: string;
-  scanner?: string;
-  engineStats?: {
-    malicious?: number;
-    suspicious?: number;
-    harmless?: number;
-    undetected?: number;
-  };
-  metadata?: {
-    stats?: {
-      malicious?: number;
-      suspicious?: number;
-      harmless?: number;
-      undetected?: number;
-    };
-  };
-  checkedAt: number;
-};
-
 export type LlmAnalysis = {
   status: string;
   verdict?: string;

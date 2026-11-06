@@ -1,23 +1,5 @@
-export type SkillEvaluationMetrics = {
-  sampleCount: number;
-  overall: {
-    withSkill: number;
-    withoutSkill: number;
-    delta: number;
-  };
-  cases: {
-    withSkillPassed: number;
-    withSkillTotal: number;
-    withoutSkillPassed: number;
-    withoutSkillTotal: number;
-  };
-  dimensions: Array<{
-    id: string;
-    withSkill: number;
-    withoutSkill: number;
-    delta: number;
-  }>;
-};
+import type { SkillEvaluationMetrics } from "./skillEvaluationMetrics";
+export type { SkillEvaluationMetrics } from "./skillEvaluationMetrics";
 
 const DIMENSION_ORDER = [
   "security",

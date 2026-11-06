@@ -2,55 +2,14 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { buildMirrorProofHeaders } from "./prove-mirror-request";
+import { createMirrorProofClient } from "./prove-mirror-request";
 
 const OUTPUT_PATH = resolve("proof/claw-589/skills-sh-trending-test-proof.json");
 const RUN_STATE_PATH = resolve("proof/claw-589/active-run.json");
 const MAX_STEPS = 2_000;
 const HYDRATION_BOUND = 50;
 
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-}
-
-const targetUrl = requireEnv("CLAWHUB_TEST_MIRROR_GATE_URL");
-const operatorAuthorization = requireEnv("CLAWHUB_TEST_OPERATOR_TOKEN");
-const vercelAutomationBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
-
-async function callRaw(body: Record<string, unknown>) {
-  const startedAt = performance.now();
-  const response = await fetch(targetUrl, {
-    method: "POST",
-    headers: buildMirrorProofHeaders(operatorAuthorization, vercelAutomationBypassSecret),
-    body: JSON.stringify(body),
-  });
-  const text = await response.text();
-  let payload: Record<string, unknown>;
-  try {
-    payload = JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    payload = { text };
-  }
-  return {
-    ok: response.ok,
-    status: response.status,
-    elapsedMs: performance.now() - startedAt,
-    payload,
-    retryAfter: response.headers.get("retry-after"),
-  };
-}
-
-async function call(body: Record<string, unknown>) {
-  const result = await callRaw(body);
-  if (!result.ok) {
-    throw new Error(
-      `${String(body.operation)} returned HTTP ${result.status}: ${JSON.stringify(result.payload)}`,
-    );
-  }
-  return result;
-}
+const { targetUrl, callRaw, call } = createMirrorProofClient();
 
 function requiredString(record: Record<string, unknown>, key: string) {
   const value = record[key];

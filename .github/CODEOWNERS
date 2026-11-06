@@ -100,12 +100,6 @@
 /packages/schema/src/routes.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/schema/src/schemas.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/schema/src/textFiles.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/packages/schema/dist/index.d.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/packages/schema/dist/index.js @openclaw/openclaw-secops @Patrick-Erichsen
-/packages/schema/dist/index.js.map @openclaw/openclaw-secops @Patrick-Erichsen
-/packages/schema/dist/pluginCategories.d.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/packages/schema/dist/pluginCategories.js @openclaw/openclaw-secops @Patrick-Erichsen
-/packages/schema/dist/pluginCategories.js.map @openclaw/openclaw-secops @Patrick-Erichsen
 
 # Security, auth, API, webhook, and deployment documentation.
 /docs/acceptable-usage.md @openclaw/openclaw-secops @Patrick-Erichsen

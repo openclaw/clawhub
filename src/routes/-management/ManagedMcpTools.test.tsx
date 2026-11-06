@@ -195,6 +195,28 @@ describe("ManagedMcpTools", () => {
     });
   });
 
+  it("preserves CLI-authored CIMD identity and scope when updating another field", async () => {
+    const authored = {
+      ...definition,
+      connection: {
+        ...definition.connection,
+        auth: {
+          kind: "oauth",
+          scope: "events:read offline_access",
+          clientMetadataUrl: "https://client.example.com/oauth/client.json",
+        },
+      },
+    };
+    getDefinition.mockResolvedValue(authored);
+    publish.mockResolvedValue({ releaseId: "packageReleases:cimd", publicationStatus: "pending" });
+    render(<ManagedMcpTools packageName="@openclaw/deepwiki" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit MCP integration" }));
+    await screen.findByRole("dialog", { name: "Publish an updated MCP integration" });
+    submitForm();
+    await screen.findByRole("status");
+    expect(publish).toHaveBeenCalledWith({ definition: { ...authored, version: "1.0.1" } });
+  });
+
   it("retains icon provenance when an edit keeps the existing image", async () => {
     const branded = {
       ...definition,

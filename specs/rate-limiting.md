@@ -46,10 +46,25 @@ the public quota in `RATE_LIMITS`; the component's `shards` setting exists to
 spread writes across counter rows while preserving the configured limit. Low
 rate buckets should stay unsharded or keep enough per-shard capacity that
 normal clients are not randomly denied well before the public limit.
-Because the component does not expose an exact total remaining count for
-sharded buckets, successful HTTP responses must not synthesize a global
-`RateLimit-Remaining` value. Denied responses can still return an exact
-remaining value of `0`.
+
+## Truthful rate-limit headers
+
+Rate-limit headers (`X-RateLimit-*`, `RateLimit-*`) and the limiter's
+`Retry-After` are sent only on a `429` the limiter actually denied, with an
+exact remaining value of `0`. Admitted requests carry none of them, including
+every request while `CLAWHUB_RATE_LIMITER_DISABLED=1` or unmetered batching
+skips the limiter, and including admitted requests whose handler later fails.
+The route wrapper merges limiter headers into every handler response, so
+sending limit/reset headers on admission made unrelated 4xx/5xx failures read
+as rate limiting to publishers and the CLI (observed during the November 2026
+write-saturation outage while the limiter was disabled). The component also
+cannot report an exact global remaining count for sharded buckets, so there is
+no truthful remaining value to send on admission anyway.
+
+The counter-contention `503` (`Rate limit temporarily unavailable`) is a
+limiter availability failure, not a denial: it carries `Retry-After: 1` and no
+quota or reset headers. Transient backend failures elsewhere are covered in
+`http-error-semantics.md`.
 
 ## Batched accounting for high-volume buckets
 

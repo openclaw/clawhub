@@ -34,6 +34,7 @@ export type PublisherAbuseTab =
   | "resolved"
   | "signals";
 export type ManagementView =
+  | "downloads"
   | "search-insights"
   | "overview"
   | "abuse"

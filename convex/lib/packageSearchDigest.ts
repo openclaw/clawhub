@@ -89,7 +89,12 @@ type PackageTopicSearchDigestFields = Pick<
 };
 
 export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchDigestFields {
-  const categories = resolveStoredPluginCategories(pkg);
+  const pluginCategoryTags =
+    pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
+      ? resolveStoredPluginCategories(pkg)
+      : [];
+  // Template assignments use their own taxonomy; plugin normalization discards them.
+  const categories = pkg.family === "claw" ? (pkg.categories ?? ["other"]) : pluginCategoryTags;
   const inferenceCurrent =
     Boolean(pkg.latestReleaseId) && pkg.latestReleaseId === pkg.inferredFromReleaseId;
   return {
@@ -103,7 +108,7 @@ export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchD
     packageId: pkg._id,
     latestVersion: pkg.latestVersionSummary?.version,
     verificationTier: pkg.verification?.tier,
-    pluginCategoryTags: categories,
+    pluginCategoryTags,
   };
 }
 

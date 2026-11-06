@@ -57,7 +57,6 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
       source: "manual",
       priority: 1,
       hasMaliciousSignal: false,
-      waitForVtUntil: 0,
       nextRunAt: 0,
       attempts: 1,
       leaseToken: "lease-fixture",

@@ -34,7 +34,7 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
   crons.interval(
     "github-skill-source-sync",
-    { minutes: 15 },
+    { hours: 24 },
     internal.githubSkillSyncNode.syncGitHubSkillSourcesInternal,
     {},
   );
@@ -109,6 +109,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
     { minutes: 15 },
     internal.packages.processPackageStatEventsInternal,
     { batchSize: 100 },
+  );
+
+  crons.interval(
+    "template-download-analytics",
+    { minutes: 15 },
+    internal.downloadAnalytics.refreshInternal,
+    {},
   );
 
   // Syncs accumulated stat deltas to skill documents every 6 hours.
@@ -186,14 +193,6 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
     internal.publisherAbuse.processPublisherAbuseAutobansInternal,
     { batchSize: 1, maxPages: 50 },
   );
-
-  crons.interval("vt-pending-scans", { minutes: 5 }, internal.vt.pollPendingScans, {
-    batchSize: 100,
-  });
-
-  crons.interval("vt-cache-backfill", { minutes: 30 }, internal.vt.backfillActiveSkillsVTCache, {
-    batchSize: 100,
-  });
 
   crons.interval(
     "package-scan-backfill",
