@@ -337,6 +337,33 @@ describe("publisher stat maintenance", () => {
     expect(ctx.db.query).not.toHaveBeenCalled();
   });
 
+  it("uses deltas without scanning the catalog when a published package is soft-deleted", async () => {
+    const stats = {
+      ...emptyPublisherStatsContribution(),
+      publishedPackages: 1,
+      totalDownloads: 10,
+      totalInstalls: 4,
+      totalStars: 2,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async () => stats),
+        patch: vi.fn(),
+        query: vi.fn(),
+      },
+    };
+    await adjustPublisherStatsForPackageChange(
+      ctx as never,
+      makePackage({}),
+      makePackage({ softDeletedAt: 1 }),
+    );
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishers:alice",
+      emptyPublisherStatsContribution(),
+    );
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
   it("does not count a staged package that has no published release", async () => {
     const ctx = {
       db: {

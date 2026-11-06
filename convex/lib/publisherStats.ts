@@ -269,6 +269,7 @@ async function recomputeAndPatchPublisherStats(
   if (!publisher) return;
   // A staged parent used to increment publishedPackages. Adding one again when
   // its first release publishes would store two packages. Read the rows.
+  // Losing a published package still uses its delta; it cannot double-count a parent.
   await ctx.db.patch(publisherId, await recomputePublisherStats(ctx, publisherId));
 }
 
@@ -296,11 +297,7 @@ export async function adjustPublisherStatsForPackageChange(
     nextPackage ? getPackagePublisherContribution(nextPackage) : null,
   );
 
-  if (
-    previousPublisherId &&
-    previousPublisherId === nextPublisherId &&
-    previousCount !== nextCount
-  ) {
+  if (previousPublisherId && previousPublisherId === nextPublisherId && previousCount < nextCount) {
     await recomputeAndPatchPublisherStats(ctx, previousPublisherId);
     return;
   }
