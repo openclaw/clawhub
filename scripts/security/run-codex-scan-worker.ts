@@ -2105,7 +2105,12 @@ export function validateClawScanArtifactForClawHubProfile(
     const aigAnalysis = normalized
       ? normalizeAigAnalysis(JSON.stringify(normalized), llmAnalysis.checkedAt)
       : undefined;
-    if (!aigAnalysis || aigAnalysis.status === "error")
+    // Templates require ordinary SkillSpector evidence, not plugin MCP or AIG.
+    // Only project/require AIG when the claim actually requires that scanner.
+    if (
+      required.some((id) => id === "aig" || id === "aig-mcp") &&
+      (!aigAnalysis || aigAnalysis.status === "error")
+    )
       throw new Error("ClawScan AIG report was unusable");
     return {
       llmAnalysis,

@@ -13,8 +13,8 @@ vi.mock("./clawscan-plugin-runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./clawscan-plugin-runtime")>();
   return {
     ...actual,
-    usesWholePluginScanForTarget: async (kind: string) =>
-      runtimeFixture.qualified && kind === "packageRelease",
+    usesWholePluginScanForTarget: async (kind: string, pkg: { family?: string }) =>
+      runtimeFixture.qualified && kind === "packageRelease" && pkg.family !== "claw",
     qualifiedPluginCommand: async () => runtimeFixture.command,
   };
 });
@@ -104,6 +104,7 @@ async function runFixture(
   targetKind: ClaimedJob["job"]["targetKind"] = "packageRelease",
   qualified = false,
   rescan = false,
+  family: "code-plugin" | "claw" = "code-plugin",
 ) {
   const workspace = await mkdtemp(join(tmpdir(), "decisions-consumer-"));
   dirs.push(workspace);
@@ -139,7 +140,7 @@ async function runFixture(
         leaseToken: "fixture",
         hasMaliciousSignal: false,
       },
-      target: { package: { family: "code-plugin" }, release: { artifactKind: "legacy-zip" } },
+      target: { package: { family }, release: { artifactKind: "legacy-zip" } },
     };
     const mapped = await runClawScan(job, workspace, (diagnostic) => {
       if (diagnostic.args) invocation = diagnostic.args;
@@ -158,7 +159,7 @@ async function runFixture(
         leaseToken: "fixture",
         hasMaliciousSignal: false,
       },
-      target: { package: { family: "code-plugin" }, release: { artifactKind: "legacy-zip" } },
+      target: { package: { family }, release: { artifactKind: "legacy-zip" } },
     },
     workspace,
   );
@@ -191,6 +192,36 @@ describe("Scanner-report-only Codex publication consumer", () => {
     const published = await runFixture(artifact, "packageRelease", true);
     expect(published.analysis).toMatchObject({ status: "clean", verdict: "benign" });
   });
+  it.each([false, true])(
+    "accepts Template ordinary scanner evidence (qualified=%s)",
+    async (qualified) => {
+      const artifact = fixture() as Record<string, any>;
+      delete artifact.judge.result.decision;
+      delete artifact.judge.command;
+      artifact.judge.outputSchemaPath = "evidence-judge.schema.json";
+      artifact.judge.promptPath = "evidence-judge.md";
+      const execution = artifact.scanners["aig-mcp"];
+      artifact.scanners = {
+        skillspector: { ...execution, command: ["skillspector", "analyze"], raw: { issues: [] } },
+      };
+      const result = await runFixture(artifact, "packageRelease", qualified, false, "claw");
+      expect(result.check.status).toBe("clean");
+      expect(result.analysis?.verdict).toBe("benign");
+      expect("aigAnalysis" in result ? result.aigAnalysis : undefined).toBeUndefined();
+    },
+  );
+  it("rejects Template evidence with missing ordinary scanner coverage", async () => {
+    const artifact = fixture() as Record<string, any>;
+    delete artifact.judge.result.decision;
+    delete artifact.judge.command;
+    artifact.judge.outputSchemaPath = "evidence-judge.schema.json";
+    artifact.judge.promptPath = "evidence-judge.md";
+    artifact.scanners = { aig: { ...artifact.scanners["aig-mcp"], command: ["aig-skill-scan"] } };
+    const result = await runFixture(artifact, "packageRelease", false, false, "claw");
+    expect(result.check.status).toBe("failed");
+    expect(result.check.summary).toContain("skillspector");
+  });
+
   it("accepts native EvidenceOnly provenance when Command is deliberately omitted", () => {
     const artifact = fixture() as Record<string, any>;
     delete artifact.judge.result.decision;

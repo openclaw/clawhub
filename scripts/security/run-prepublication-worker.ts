@@ -830,7 +830,11 @@ export async function runNativeClawScan(
     const parsed = storedAnalysisFromClawScanArtifact(
       artifact,
       job.job.targetKind,
-      wholePlugin ? ["aig-mcp"] : undefined,
+      wholePlugin
+        ? ["aig-mcp"]
+        : job.job.targetKind === "packageRelease" && asRecord(job.target.package)?.family === "claw"
+          ? REQUIRED_PACKAGE_SCANNERS
+          : undefined,
     );
     if (parsed.error || !parsed.analysis) {
       logFailureDiagnostic();
