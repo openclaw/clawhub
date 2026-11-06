@@ -106,6 +106,7 @@ async function runFixture(
   rescan = false,
   family: "code-plugin" | "claw" = "code-plugin",
   requireDockerConnection = false,
+  expectedPublisherTrust?: boolean | "absent",
 ) {
   const workspace = await mkdtemp(join(tmpdir(), "decisions-consumer-"));
   dirs.push(workspace);
@@ -131,6 +132,12 @@ async function runFixture(
   await writeFile(
     command,
     "#!/usr/bin/env node\n" +
+      (expectedPublisherTrust === undefined
+        ? ""
+        : 'const fs=require("node:fs");const i=process.argv.indexOf("--context");if(i<0)throw new Error("missing verified publisher context");const c=JSON.parse(fs.readFileSync(process.argv[i+1],"utf8"));require("node:assert/strict").deepEqual(c,{trustedOpenClawPlugin:EXPECTED});\n'.replace(
+            "EXPECTED",
+            String(expectedPublisherTrust === true),
+          )) +
       (requireDockerConnection
         ? 'if(process.env.DOCKER_CONTEXT!=="scoped-test"||process.env.DOCKER_CONFIG!=="/private/docker-fixture")process.exit(88);\n'
         : "") +
@@ -153,7 +160,12 @@ async function runFixture(
         leaseToken: "fixture",
         hasMaliciousSignal: false,
       },
-      target: { package: { family }, release: { artifactKind: "legacy-zip" } },
+      target: {
+        trustedOpenClawPlugin:
+          expectedPublisherTrust === "absent" ? undefined : expectedPublisherTrust,
+        package: { family, name: "@openclaw/unverified-name" },
+        release: { artifactKind: "legacy-zip", endorAnalysis: { private: "must not pass" } },
+      },
     };
     const mapped = await runClawScan(job, workspace, (diagnostic) => {
       if (diagnostic.args) invocation = diagnostic.args;
@@ -174,12 +186,40 @@ async function runFixture(
         leaseToken: "fixture",
         hasMaliciousSignal: false,
       },
-      target: { package: { family }, release: { artifactKind: "legacy-zip" } },
+      target: {
+        trustedOpenClawPlugin:
+          expectedPublisherTrust === "absent" ? undefined : expectedPublisherTrust,
+        package: { family, name: "@openclaw/unverified-name" },
+        release: { artifactKind: "legacy-zip", endorAnalysis: { private: "must not pass" } },
+      },
     },
     workspace,
   );
 }
 describe("Scanner-report-only Codex publication consumer", () => {
+  it.each([false, true, "absent"] as const)(
+    "passes only backend-verified publisher trust into both native judge lanes (trusted=%s)",
+    async (trusted) => {
+      const artifact = fixture() as Record<string, any>;
+      artifact.sandbox = { mode: "docker", image: QUALIFIED_PLUGIN_IMAGE };
+      for (const rescan of [false, true]) {
+        expect(
+          (
+            await runFixture(
+              artifact,
+              "packageRelease",
+              true,
+              rescan,
+              "code-plugin",
+              false,
+              trusted,
+            )
+          ).analysis?.verdict,
+        ).toBe("benign");
+      }
+    },
+  );
+
   it("accepts the typed native Codex verdict without inventing Decisions evidence or artifact inspection", async () => {
     const artifact = fixture() as Record<string, any>;
     delete artifact.judge.result.decision;

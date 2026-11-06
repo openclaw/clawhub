@@ -1,10 +1,87 @@
-# Qualified image-only plugin consumer runtime
+# Activated image-only plugin consumer runtime
+
+Status: this PR activates the scanner-report-only Codex EvidenceOnly profile in
+the default source pin and both security-worker workflows. Merging does not itself
+perform the separate parent-owned exact-SHA Deploy Test → production rollout or
+30-minute monitoring. No historical rewrite, bulk requeue or data migration.
+
+## Current qualified binding
+
+- Merged ClawScan source: 80d11a34a97a9181213c806fc3013123360f9012 (producer #152).
+- Source tree: dae6e848e052bb95f60da4af98efbe579f64c0bc.
+- Runtime tree: ddfec1285eaf19beb3043e9e5ad043a0d274cb53.
+- Immutable image: ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c.
+- Native amd64/arm64 publication and installed CLI qualification:
+  https://github.com/openclaw/clawscan/actions/runs/42292655384.
+
+Plugins run one whole-artifact AIG MCP audit in that immutable Docker image.
+Skills use SkillSpector plus AIG; the shared judge reads scanner reports only.
+Templates retain canonical claw-family requirements and native rescans. New
+EvidenceOnly results do not require Decisions metadata or an artifact-inspection
+receipt. Complete native execution, exact attempts, valid verdict/schema and
+source/image binding remain fail-closed. Historical readers remain supported.
+
+## Executable installation / qualification
+
+Use a disposable isolated runner with RUNNER_TEMP, GITHUB_ENV and GITHUB_PATH
+set as in Actions. Both optional-source and default installation now select the
+same approved merged source (source56 is no longer accepted):
+
+```sh
+sh scripts/security/install-clawscan.sh 80d11a34a97a9181213c806fc3013123360f9012
+# Apply CLAWSCAN_SOURCE_DIR and PATH emitted through the Actions files before
+# invoking the scanner installer; keep that retained source checkout clean.
+sh scripts/security/install-clawscan-scanners.sh aig-mcp \
+  80d11a34a97a9181213c806fc3013123360f9012
+
+docker run --rm --pull never --network none --entrypoint /bin/sh \
+  ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c \
+  -ec 'aig-mcp-scan --help >/dev/null; codex --help >/dev/null'
+```
+
+Installers verify exact source/tree/runtime tree and clean tracked/untracked/
+ignored state. Workers additionally verify embedded VCS revision, unmodified
+binary/source identity and immutable image. No mutable image or host MCP fallback.
+Historical stdlib Decisions compatibility tests still run; their command is not
+the active EvidenceOnly judge. Caller-owned Docker endpoint/context/config/TLS
+settings survive both restricted worker environments and cleanup; scanner/provider
+credentials do not reach cleanup.
+
+## Verified publisher context
+
+Both package native invocations write a private context JSON containing only
+trustedOpenClawPlugin, true strictly when the backend-derived target boolean is
+true. They pass its path using --context. Backend persisted publisher ownership,
+including existing requireSecurityChecks suppression, remains the authority;
+artifact names/scopes/text cannot confer trust. No package contents, signed URLs,
+lease tokens, old reports or Endor evidence enter this caller context. Skills
+retain their existing context behavior. The producer inserts that explicit caller
+context into its evidence-only prompt, rather than reading outer metadata.json.
+
+## Current evidence and limits
+
+Actual clean merged-source installer and 24 isolated compatibility tests passed.
+Real exact-image inert skill and plugin runs completed their native scanners,
+Codex judge and optional overview; strict ClawHub projection accepted both. These
+were real provider/container calls, not substituted scanner output. Scoped Colima
+connection left protected containers unchanged and removed qualification containers.
+Do not generalize that proof to corpus accuracy, all tool-capability absence, or
+production execution. The local native Convex authority fixture separately proves
+allowed Endor-only writes and rejection of stale/retired/substituted authority;
+only its Endor subprocess transport is simulated. Production was untouched.
+
+## Historical preparation record (superseded)
+
+The following source56/c3 records describe earlier preparation, not current
+installation commands, accepted pins, activation status or rollout authorization.
+
+### Historical: Earlier source56 preparation
 
 Preparation binding, not a production pin, activation switch, deployment, data
 migration or model/corpus approval. Default installers/workflows still consume
 `clawscan-source-commit.txt` at c3cfaf1515a47685786d72f031c714b1e5d9b34e.
 
-## Reviewed native binding
+### Historical: Reviewed native binding
 
 - ClawScan landed source: 56d17aaa423cdb1ed87aeda970b9a2b30eed7dd8
 - Source tree: d860e0022e5832b76abf7c7ab6c3a679fdda1f64
@@ -21,7 +98,7 @@ rejects provider/iteration exhaustion and incomplete SARIF; ClawHub does not
 infer completion from an empty results list. These facts replace the temporary
 blanket MCP installer/completion fences. They do not authorize rollout.
 
-## Explicit preparation commands
+### Historical: Explicit preparation commands
 
 Run only in an isolated runner; these are not changes to production workflows:
 
@@ -48,7 +125,7 @@ No host MCP executable, stock package fallback, provider SDK or host-off opt-in
 is installed. No activation variables are emitted. Existing old-pin scanner
 installation stays intact.
 
-## Both executable worker paths
+### Historical: Both executable worker paths
 
 Only code-plugin/bundle-plugin releases use the plugin override. Skills and
 Templates do not inherit it. Before starting MCP, both publication and manual
@@ -66,7 +143,7 @@ aliases. Native scanner completion/provenance and the qualified adapter/image,
 not synthetic invocations or prose, establish the scan boundary. Optional
 overview failure still leaves an otherwise valid verdict intact.
 
-## Preparation verification and limits
+### Historical: Preparation verification and limits
 
 Actual source installations were run locally for both default c3cfaf15 and
 candidate 56d17aaa. Both embedded VCS revisions were clean; candidate stdlib
@@ -88,7 +165,7 @@ packages, full lint and full installed formatter passed. Independent narrative
 read-only review of the integration found no actionable P0–P3 findings.
 No helper-owned isolation or production readiness claim is conferred.
 
-## Supervisor custody and target disambiguation repairs
+### Historical: Supervisor custody and target disambiguation repairs
 
 An exact-head review after ac583161 identified two missing native contracts.
 First, a root directory containing both SKILL.md and a plugin manifest is
@@ -154,9 +231,9 @@ Independent narrative read-only review of all repair source/tests and owning
 loops found no actionable P0–P3 findings. No real-daemon/corpus/UI rerun or
 production-readiness claim is implied by these compatibility/custody tests.
 
-## Scoped rollout deadline integration (binding pending native successor)
+### Historical: Plugin deadline integration (current budgets; historical rationale)
 
-The approved rollout adopts the whole source: the shared judge becomes Decisions
+The approved rollout adopts the whole source: the shared judge becomes scanner-only Codex
 and skills no longer request clawscan-static. This is not a plugin-only model
 change. Skill-specific subprocess settings and host sandbox selection remain
 unchanged; only code/bundle plugins get the longer subprocess deadline.
@@ -184,7 +261,7 @@ worker step is 100m within 125m. Step and hosted deadline minima both apply.
 These limits do not guarantee arbitrary stalled storage/backend calls finish;
 they prevent intentional scanner budgets from outliving their claim/workflow.
 
-## Scanner-report-only Codex successor preparation (2026-11-06)
+## Historical successor preparation (2026-11-06; binding now qualified above)
 
 The subsequently approved direction replaces the Decisions judge with the native
 EvidenceOnly Codex profile. Consumer projection accepts its exact typed verdict,

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -705,6 +705,17 @@ export async function runNativeClawScan(
   const wholePlugin = await usesWholePluginScanForTarget(job.job.targetKind, job.target.package);
   const command = wholePlugin ? await qualifiedPluginCommand("PREPUBLICATION") : clawScanCommand();
   const args = [target, "--profile", "clawhub", "--output", artifactPath];
+  if (job.job.targetKind === "packageRelease") {
+    // Only the backend-verified boolean enters the judge; package text and
+    // existing scanner reports cannot elevate publisher trust.
+    const contextPath = join(workspace, "clawscan-publisher-context.json");
+    await writeFile(
+      contextPath,
+      JSON.stringify({ trustedOpenClawPlugin: job.target.trustedOpenClawPlugin === true }),
+      { mode: 0o600 },
+    );
+    args.push("--context", contextPath);
+  }
   const sandbox = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX?.trim();
   if (wholePlugin) {
     args.push("--sandbox", "docker", "--sandbox-image", QUALIFIED_PLUGIN_IMAGE);

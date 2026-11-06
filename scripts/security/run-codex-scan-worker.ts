@@ -2265,6 +2265,17 @@ export async function runClawScan(
     args.push("--scanner-result", `skillspector=${skillSpectorResultPath}`);
   }
   args.push("--output", artifactPath);
+  if (job.job.targetKind === "packageRelease") {
+    const contextPath = join(workspace, "clawscan-publisher-context.json");
+    // Trust is already derived from persisted ownership (including forced-check
+    // suppression); never infer it from an artifact name or pass stored reports.
+    await writeFile(
+      contextPath,
+      JSON.stringify({ trustedOpenClawPlugin: job.target.trustedOpenClawPlugin === true }),
+      { mode: 0o600 },
+    );
+    args.push("--context", contextPath);
+  }
   const sandbox = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX?.trim();
   if (wholePlugin) {
     args.push("--sandbox", "docker", "--sandbox-image", QUALIFIED_PLUGIN_IMAGE);

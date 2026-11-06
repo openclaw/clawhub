@@ -404,7 +404,8 @@ printf 'called\\n' >> ${JSON.stringify(input.callLog)}
 out=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config|--context) exit 98 ;;
+    --config) exit 98 ;;
+    --context) grep -q '"trustedOpenClawPlugin":' "$2" || exit 98; [[ "$(cat "$2")" != *endor* ]] || exit 99; shift 2 ;;
     --scanner-result) [[ "$2" != endor=* ]] || exit 99; shift 2 ;;
     --output) out="$2"; shift 2 ;;
     *) shift ;;
@@ -1562,7 +1563,7 @@ JSON`,
         expect(invocationArgs).toEqual(
           expect.arrayContaining(["--profile", "clawhub", "--output"]),
         );
-        expect(invocationArgs).not.toContain("--context");
+        expect(invocationArgs.includes("--context")).toBe(targetKind === "packageRelease");
         if (targetKind === "packageRelease") {
           expect(invocationArgs).toContain("--scanner-result");
           expect(invocationArgs.some((arg) => arg.startsWith("skillspector="))).toBe(true);

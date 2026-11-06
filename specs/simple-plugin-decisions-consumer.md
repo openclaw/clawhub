@@ -1,10 +1,38 @@
-# Simple plugin Decisions consumer preparation
+# Scanner-report-only Codex consumer activation
+
+Current status: PR #4411 adopts merged EvidenceOnly source
+80d11a34a97a9181213c806fc3013123360f9012 as the default source and qualified
+immutable image d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c.
+See plugin-qualified-runtime.md for current executable setup and source/tree/image
+qualification. Separate deployment and monitoring remain parent-owned.
+
+Plugins use AIG MCP only in immutable Docker; skills use SkillSpector plus AIG.
+New typed results use verdict/confidence/dimensions/contextual findings without
+Decisions payloads or independent artifact-inspection receipts. Optional overview
+cannot replace the verdict; incomplete native evidence fails closed. Historical
+Decisions/receipt readers remain intact. Model configuration is not asserted to
+be provider-returned provenance when the native Codex result omits such metadata.
+
+Both package worker lanes explicitly pass only backend-verified publisher trust
+via --context; persisted ownership and requireSecurityChecks suppression stay
+unchanged. Artifact names/scopes/scanner text cannot confer official trust.
+Automatic plugin follow-ups remain report-only Endor. Canonical final writes
+reject verdict substitution, replay, revoked/reassigned authority and retired
+jobs before release/package changes. No backfill or production migration.
+
+## Historical Decisions preparation record (superseded)
+
+Everything below records the earlier c3/source56 preparation and intentionally
+closed unqualified lane. Its status, future-tense requirements and model-provenance
+rules are historical, not the active EvidenceOnly installation/rollout contract.
+
+### Historical: Earlier Decisions preparation
 
 Status: compatibility preparation only, not activation or scanner qualification.
 The production scanner lock remains c3cfaf1515a47685786d72f031c714b1e5d9b34e.
 No workflow, production environment, stored version or uploaded artifact is changed.
 
-## Source contract
+### Historical: Source contract
 
 Inspected readonly openclaw/clawscan #148 at 000cda8 (Decisions schema and
 optional overview; corrections were uncommitted) and #149 at d430dc4 (whole
@@ -18,7 +46,7 @@ Standalone skill scanner selection is unchanged. The installed source capability
 helper recognizes the paired pluginScanners override and Decisions command; the
 old pin retains its existing targets and bundled-skill compatibility path.
 
-## Consumer trust boundary
+### Historical: Consumer trust boundary
 
 The typed verdict and confidence come only from judge.result. Model identity is
 judge.result.decision.model, not the configured command or overview model.
@@ -36,7 +64,7 @@ synthetic startedAt are not scanner execution proof. Exposure eligibility needs
 a valid completed native run and at least one actual scanner execution; missing
 metadata remains unknown rather than inventing judge calls or receipt retries.
 
-## Explicit unqualified-runtime fence
+### Historical: Explicit unqualified-runtime fence
 
 The current #149 report cannot establish safe ranged-read/exhaustion behavior.
 Both executable worker seams reject AIG MCP publication/rescan completion even
@@ -54,7 +82,7 @@ with actual artifact and worker-seam evidence. Host-off execution is not enabled
 by this preparation. The stdlib Decisions command is installed conditionally
 from matching reviewed source/tests; the old pin without it remains supported.
 
-## Routing / migration
+### Historical: Routing / migration
 
 See plugin-single-scan-routing.md. Preserve the exact prepublication analysis
 snapshot for the version audit; Endor is report-only. Explicit admin rescan uses
@@ -62,7 +90,7 @@ the same validation path. No automatic scan, requeue or backfill should replace
 the admitted plugin verdict. Existing immutable artifacts and historical scan
 readability remain intact. No production data migration is run here.
 
-## Validation limits
+### Historical: Validation limits
 
 Targeted worker tests cover old receipts, each new verdict projection, missing
 judge/verdict, failed scanners, unsuccessful/mixed-case SARIF invocations,
@@ -72,7 +100,7 @@ They do not validate the new profile live. Production activation requires a
 separate explicit decision after upstream fixes, installer qualification and
 real isolated end-to-end proof.
 
-## Preparation validation record (2026-11-04)
+### Historical: Preparation validation record (2026-11-04)
 
 - Full ci:types-build passed, including app/schema/CLI/admin typechecks and app
   build; separate Convex deploy TypeScript check passed. No remote push/deploy.
@@ -99,7 +127,7 @@ uncommitted patch/test changes. Neither is paired merged source qualification or
 authority to remove the worker/installer fence. Independent review, complete
 install integration and UI absent-overview copy/proof remain follow-up blockers.
 
-## Repair validation superseding the preparation record (2026-11-04)
+### Historical: Repair validation superseding the preparation record (2026-11-04)
 
 Current main 612ab448 is merged. Its post-acceptance Plugin Inspector monitoring
 remains intact; this branch does not reintroduce an in-publish Inspector action.
@@ -149,7 +177,7 @@ Source qualification/install integration of the paired corrected upstream and
 removal of MCP fences still require parent clearance and real qualification.
 The production scanner pin and activation settings remain unchanged.
 
-## Landed-pair qualification supersedes temporary fence (2026-11-04)
+### Historical: Landed-pair qualification supersedes temporary fence (2026-11-04)
 
 The parent cleared consumer preparation against landed source 56d17aaa and its
 native both-architecture immutable runtime. See plugin-qualified-runtime.md for
