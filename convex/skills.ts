@@ -7995,7 +7995,37 @@ export const backfillLatestSkillModerationInternal = internalMutation({
         ? shouldForceBackfillLatestSkillModeration(skill)
         : shouldBackfillLatestSkillModeration(skill);
       if (!shouldBackfill) continue;
-      await syncSkillModerationFromLatestVersion(ctx, skill, Date.now());
+      const now = Date.now();
+      const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+      // An empty or unfinished ClawScan is not a clean verdict. Stay hidden
+      // and enqueue a replacement scan, the same as a moderation lift.
+      if (!latestVersion || !hasCompletedScannerResult(latestVersion)) {
+        if (latestVersion) {
+          await ctx.scheduler.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
+            versionId: latestVersion._id,
+            source: "backfill",
+            preserveActiveJob: true,
+          });
+        }
+        const patch: SkillModerationPatch = {
+          moderationStatus: "hidden",
+          moderationReason: "pending.scan",
+          isSuspicious: computeIsSuspicious({
+            moderationFlags: skill.moderationFlags,
+            moderationReason: "pending.scan",
+          }),
+          hiddenAt: undefined,
+          hiddenBy: undefined,
+          lastReviewedAt: now,
+          updatedAt: now,
+        };
+        const nextSkill = { ...skill, ...patch };
+        await ctx.db.patch(skill._id, patch);
+        await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+        patched++;
+        continue;
+      }
+      await syncSkillModerationFromLatestVersion(ctx, skill, now);
       patched++;
     }
 
