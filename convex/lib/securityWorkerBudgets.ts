@@ -15,7 +15,7 @@ export const pluginScanBudget = {
 
 export function publicationCheckLeaseMs(kind: string, family: string | undefined) {
   // Historical package attempts without family still need conservative custody.
-  return kind === "package" && family !== "template"
+  return kind === "package" && family !== "claw"
     ? pluginScanBudget.publicationLeaseMs
     : 30 * minute;
 }

@@ -17,7 +17,7 @@ describe("plugin scan deadline hierarchy", () => {
     expect(publicationCheckLeaseMs("package", "bundle-plugin")).toBe(70 * minute);
     expect(publicationCheckLeaseMs("package", undefined)).toBe(70 * minute);
     expect(publicationCheckLeaseMs("skill", undefined)).toBe(30 * minute);
-    expect(publicationCheckLeaseMs("package", "template")).toBe(30 * minute);
+    expect(publicationCheckLeaseMs("package", "claw")).toBe(30 * minute);
   });
   it("covers sequential optional Endor plus MCP in explicit rescans without extending skill/report-only leases", () => {
     expect(pluginScanBudget.manualJobMs).toBe(85 * minute);

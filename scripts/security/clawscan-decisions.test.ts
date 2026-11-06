@@ -167,7 +167,9 @@ describe("Scanner-report-only Codex publication consumer", () => {
   it("accepts the typed native Codex verdict without inventing Decisions evidence or artifact inspection", async () => {
     const artifact = fixture() as Record<string, any>;
     delete artifact.judge.result.decision;
-    artifact.judge.command = "codex exec --output-schema evidence-judge.schema.json";
+    delete artifact.judge.command;
+    artifact.judge.outputSchemaPath = "evidence-judge.schema.json";
+    artifact.judge.promptPath = "evidence-judge.md";
     artifact.judge.configuredModel = "gpt-6.1-sol";
     artifact.sandbox = { mode: "docker", image: QUALIFIED_PLUGIN_IMAGE };
     delete artifact.judge.commandStarted;
@@ -189,25 +191,40 @@ describe("Scanner-report-only Codex publication consumer", () => {
     const published = await runFixture(artifact, "packageRelease", true);
     expect(published.analysis).toMatchObject({ status: "clean", verdict: "benign" });
   });
+  it("accepts native EvidenceOnly provenance when Command is deliberately omitted", () => {
+    const artifact = fixture() as Record<string, any>;
+    delete artifact.judge.result.decision;
+    delete artifact.judge.command;
+    artifact.judge.configuredModel = "gpt-6.1-sol";
+    artifact.judge.outputSchemaPath = "evidence-judge.schema.json";
+    artifact.judge.promptPath = "evidence-judge.md";
+    expect(
+      validateClawScanArtifactForClawHubProfile(artifact, ["aig-mcp"]).llmAnalysis,
+    ).toMatchObject({ verdict: "benign", model: "gpt-6.1-sol" });
+  });
+
   it.each([
     "incomplete",
     "failed",
     "invalid verdict",
     "missing dimension",
     "inconsistent attempt",
-    "unrecognized command",
+    "unrecognized schema",
     "missing scanner",
     "invented decision",
   ])("fails closed for scanner-only Codex %s", (scenario) => {
     const artifact = fixture() as Record<string, any>;
     delete artifact.judge.result.decision;
-    artifact.judge.command = "codex exec --output-schema evidence-judge.schema.json";
+    delete artifact.judge.command;
+    artifact.judge.outputSchemaPath = "evidence-judge.schema.json";
+    artifact.judge.promptPath = "evidence-judge.md";
     if (scenario === "incomplete") artifact.complete = false;
     if (scenario === "failed") artifact.judge.status = "failed";
     if (scenario === "invalid verdict") artifact.judge.result.verdict = "unknown";
     if (scenario === "missing dimension") delete artifact.judge.result.dimensions.instruction_scope;
     if (scenario === "inconsistent attempt") artifact.judge.attempts[0].result = {};
-    if (scenario === "unrecognized command") artifact.judge.command = "echo codex";
+    if (scenario === "unrecognized schema")
+      artifact.judge.outputSchemaPath = "artifact-schema.json";
     if (scenario === "missing scanner") delete artifact.scanners["aig-mcp"];
     if (scenario === "invented decision") artifact.judge.result.decision = { api: "decisions" };
     expect(() => validateClawScanArtifactForClawHubProfile(artifact, ["aig-mcp"])).toThrow();

@@ -51,11 +51,13 @@ const decisionSchema = z.strictObject({
 const evidenceJudgeSchema = decisionSchema.omit({ decision: true });
 export function isEvidenceOnlyCodexRun(run: Record<string, unknown>) {
   const judge = object(run.judge);
-  const command = judge?.command;
+  // Native output deliberately omits the rendered shell command, which may
+  // contain secrets. Identify its built-in evidence schema/prompt provenance.
   return (
-    typeof command === "string" &&
-    /\bcodex\s+exec\b/.test(command) &&
-    command.includes("evidence-judge.schema.json")
+    typeof judge?.outputSchemaPath === "string" &&
+    /(?:^|\/)evidence-judge\.schema\.json$/.test(judge.outputSchemaPath) &&
+    typeof judge.promptPath === "string" &&
+    /(?:^|\/)evidence-judge\.md$/.test(judge.promptPath)
   );
 }
 export function isTypedScannerJudgeRun(run: Record<string, unknown>) {
@@ -246,8 +248,8 @@ export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: r
     judge.status !== "completed" ||
     judge.error !== "" ||
     judge.commandStarted === false ||
-    typeof judge.command !== "string" ||
-    (!evidenceOnly && !judge.command.includes("clawscan-decisions-judge")) ||
+    (!evidenceOnly &&
+      (typeof judge.command !== "string" || !judge.command.includes("clawscan-decisions-judge"))) ||
     !/^[a-f0-9]{64}$/.test(String(judge.outputSchemaSha256)) ||
     !/^[a-f0-9]{64}$/.test(String(judge.promptSha256)) ||
     !decisionsJudgeAccounting(run)
