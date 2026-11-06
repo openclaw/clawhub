@@ -55,6 +55,33 @@ describe("reviewed ClawScan installation", () => {
     expect(JSON.stringify(workflow)).not.toContain("69dcdfb74487d361ba4c811d088cfdea2ff3a9dc");
   });
 
+  it.each([
+    ["prepublication-publish-checks", "prepublication-publish-checks", "PREPUBLICATION", 100, 75],
+    ["security-scan-codex", "codex-security-scan", "CODEX_SECURITY_SCAN", 125, 100],
+  ] as const)(
+    "reserves complete plugin drain coverage in %s without changing skill timeout",
+    async (file, jobId, lane, hostedMinutes, workerMinutes) => {
+      const workflow = parseYaml(await readFile(".github/workflows/" + file + ".yml", "utf8"));
+      const job = workflow.jobs[jobId];
+      expect(job["timeout-minutes"]).toBe(hostedMinutes);
+      expect(job.env[lane + "_CLAWSCAN_TIMEOUT_MS"]).toContain("900000");
+      expect(job.env[lane + "_CLAWSCAN_SANDBOX"]).toBe("off");
+      expect(job.env[lane + "_CLAWSCAN_PLUGIN_SANDBOX"]).toBe("docker");
+      const deadline = job.steps[0];
+      expect(deadline.name).toBe("Reserve hosted worker drain deadline");
+      expect(deadline.run).toContain(hostedMinutes + " * 60000 - 120000");
+      expect(deadline.run).toContain("SECURITY_SCAN_WORKER_HOST_DEADLINE_MS");
+      const workers = job.steps.filter((step: { name?: string }) => step.name?.startsWith("Run "));
+      expect(workers.length).toBeGreaterThan(0);
+      for (const worker of workers) expect(worker["timeout-minutes"]).toBe(workerMinutes);
+      expect(
+        job.steps.find(
+          (step: { name?: string }) => step.name === "Prepare qualified plugin Docker runtime",
+        )?.run,
+      ).toBe("sh scripts/security/install-clawscan-scanners.sh aig-mcp");
+    },
+  );
+
   it("rejects mutable or missing source revisions before executing installation tools", async () => {
     const root = await mkdtemp(join(tmpdir(), "clawscan-install-reject-"));
     try {

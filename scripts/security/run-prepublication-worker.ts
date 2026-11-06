@@ -12,6 +12,11 @@ import {
   prepublicationReportSchema,
   type PrepublicationReport,
 } from "../../convex/lib/prepublicationReports";
+import {
+  canAdmitSecurityScan,
+  pluginScanBudget,
+  securityWorkerDeadline,
+} from "../../convex/lib/securityWorkerBudgets";
 import { runWorkerCommand, CommandFailure } from "../lib/runWorkerCommand";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
@@ -19,7 +24,7 @@ import {
   redactWorkerPublicErrorMessage,
   redactWorkerPublicText,
 } from "../lib/workerRedaction";
-import { isDecisionsRun } from "./clawscan-decisions";
+import { isTypedScannerJudgeRun } from "./clawscan-decisions";
 import { projectSkillSpectorReport } from "./clawscan-diagnostic-skillspector";
 import {
   withClawScanDockerCleanup,
@@ -131,7 +136,6 @@ type ProcessAttemptDeps = {
 
 const DEFAULT_BATCH_LIMIT = 2;
 const DEFAULT_MAX_RUNTIME_MS = 8 * 60 * 1000;
-const CLAIM_WINDOW_SHUTDOWN_BUFFER_MS = 90_000;
 const DEFAULT_TRUFFLEHOG_IMAGE =
   "ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056";
 const TRUFFLEHOG_SECRET_EXIT_CODE = 183;
@@ -450,7 +454,8 @@ export async function runNativeTruffleHog(workspace: string): Promise<TruffleHog
 
 export const DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS = 15 * 60 * 1000;
 
-function clawScanTimeoutMs() {
+export function clawScanTimeoutMs(wholePlugin = false) {
+  if (wholePlugin) return pluginScanBudget.subprocessMs;
   const parsed = Number(process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS);
   return Number.isFinite(parsed) && parsed > 0
     ? parsed
@@ -506,7 +511,7 @@ function storedAnalysisFromClawScanArtifact(
   error?: string;
 } {
   const record = asRecord(artifact);
-  if (record && (isDecisionsRun(record) || requiredScannerOverride)) {
+  if (record && (isTypedScannerJudgeRun(record) || requiredScannerOverride)) {
     try {
       const mapped = validateClawScanArtifactForClawHubProfile(
         record,
@@ -730,7 +735,7 @@ export async function runNativeClawScan(
               const captured = await runWorkerCommand(command, args, {
                 cwd: workspace,
                 env,
-                timeoutMs: clawScanTimeoutMs(),
+                timeoutMs: clawScanTimeoutMs(true),
                 cleanupProcessGroup: true,
                 onTermination,
               });
@@ -1364,6 +1369,7 @@ export function claimBatchDrainedQueue(
 }
 
 async function main() {
+  const startedAt = Date.now();
   const { batchLimit, claimFilters, maxJobs, maxRuntimeMs } = parseArgs();
   maskKnownWorkerSecrets();
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
@@ -1372,8 +1378,12 @@ async function main() {
   const client = new ConvexHttpClient(convexUrl);
   const scannerRuntime = await resolvePrepublicationScannerRuntime();
   if (scannerRuntime) process.env.PREPUBLICATION_CLAWSCAN_COMMAND = scannerRuntime.command;
-  const startedAt = Date.now();
   const claimDeadline = startedAt + maxRuntimeMs;
+  const workerDeadline = securityWorkerDeadline(
+    startedAt,
+    pluginScanBudget.publicationWorkerMs,
+    process.env.SECURITY_SCAN_WORKER_HOST_DEADLINE_MS,
+  );
   let totalClaimed = 0;
   let totalCompleted = 0;
   const exposures: ClawScanExposure[] = [];
@@ -1389,8 +1399,14 @@ async function main() {
     "pre-publication worker started",
   );
 
-  while (Date.now() < claimDeadline) {
-    if (totalClaimed > 0 && claimDeadline - Date.now() < CLAIM_WINDOW_SHUTDOWN_BUFFER_MS) break;
+  while (
+    canAdmitSecurityScan(
+      Date.now(),
+      claimDeadline,
+      workerDeadline,
+      pluginScanBudget.publicationJobMs,
+    )
+  ) {
     const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
     if (remainingJobs === 0) break;
     const targeted = Object.values(claimFilters).some(Boolean);

@@ -22,14 +22,23 @@ export async function usesWholePluginScan(env: NodeJS.ProcessEnv = process.env) 
   const profile = parseYaml(raw)?.profiles?.clawhub;
   const ids = profile?.pluginScanners;
   if (ids === undefined) return false;
+  const judge = profile?.judge;
+  const evidenceJudge =
+    judge?.evidenceOnly === true &&
+    /\bcodex\s+exec\b/.test(String(judge?.command)) &&
+    String(judge?.command).includes("evidence-judge.schema.json") &&
+    Array.isArray(profile?.scanners) &&
+    profile.scanners.length === 2 &&
+    profile.scanners.includes("skillspector") &&
+    profile.scanners.includes("aig");
   if (
     !Array.isArray(ids) ||
     ids.length !== 1 ||
     ids[0] !== "aig-mcp" ||
-    !String(profile?.judge?.command).includes("clawscan-decisions-judge")
+    (!evidenceJudge && !String(judge?.command).includes("clawscan-decisions-judge"))
   ) {
     throw new Error(
-      "Installed ClawScan plugin profile has not qualified for the Decisions consumer",
+      "Installed ClawScan plugin profile has not qualified for the typed scanner judge consumer",
     );
   }
   return true;
@@ -39,7 +48,9 @@ export async function qualifiedPluginCommand(
   lane: "PREPUBLICATION" | "CODEX_SECURITY_SCAN",
   env: NodeJS.ProcessEnv = process.env,
 ) {
-  const sandbox = env[lane + "_CLAWSCAN_SANDBOX"]?.trim();
+  const sandbox = (
+    env[lane + "_CLAWSCAN_PLUGIN_SANDBOX"] ?? env[lane + "_CLAWSCAN_SANDBOX"]
+  )?.trim();
   const image = env[lane + "_CLAWSCAN_SANDBOX_IMAGE"]?.trim();
   if ((sandbox && sandbox !== "docker") || (image && image !== QUALIFIED_PLUGIN_IMAGE)) {
     throw new Error(

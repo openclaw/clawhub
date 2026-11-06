@@ -13,13 +13,13 @@ import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
 } from "./lib/securityAnalysisValidators";
+import { publicationCheckLeaseMs } from "./lib/securityWorkerBudgets";
 import { isPublishedSkillVersion } from "./lib/skillFileAccess";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
 import { llmAnalysisValidator } from "./schema";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 const CHECK_RETRY_BACKOFF_MS = 5 * 60 * 1000;
 const CLAIM_STORAGE_URL_CONCURRENCY = 8;
 const MAX_CONSECUTIVE_SCANNER_FAILURES = 3;
@@ -1043,7 +1043,24 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
       }
       if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) continue;
 
-      const checkClaimExpiresAt = now + CHECK_CLAIM_LEASE_MS;
+      let packageFamily: Doc<"packages">["family"] | undefined;
+      if (attempt.kind === "package" && attempt.packageId) {
+        const pkg = await ctx.db.get(attempt.packageId);
+        const release = attempt.packageReleaseId
+          ? await ctx.db.get(attempt.packageReleaseId)
+          : null;
+        if (
+          release?.pluginFamily !== undefined &&
+          (release.packageId !== attempt.packageId ||
+            release.integritySha256 !== attempt.artifactFingerprint)
+        ) {
+          throw new ConvexError(
+            "Package release family does not match the original publish artifact",
+          );
+        }
+        packageFamily = pkg ? resolvePackageReleaseFamily(pkg.family, release) : undefined;
+      }
+      const checkClaimExpiresAt = now + publicationCheckLeaseMs(attempt.kind, packageFamily);
       await ctx.db.patch(attempt._id, {
         checkClaimId: args.claimId,
         checkClaimedAt: now,
@@ -1079,23 +1096,6 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
         }
       }
 
-      let packageFamily: Doc<"packages">["family"] | undefined;
-      if (attempt.kind === "package" && attempt.packageId) {
-        const pkg = await ctx.db.get(attempt.packageId);
-        const release = attempt.packageReleaseId
-          ? await ctx.db.get(attempt.packageReleaseId)
-          : null;
-        if (
-          release?.pluginFamily !== undefined &&
-          (release.packageId !== attempt.packageId ||
-            release.integritySha256 !== attempt.artifactFingerprint)
-        ) {
-          throw new ConvexError(
-            "Package release family does not match the original publish artifact",
-          );
-        }
-        packageFamily = pkg ? resolvePackageReleaseFamily(pkg.family, release) : undefined;
-      }
       return {
         attemptId: attempt._id,
         status: attempt.status,
@@ -1186,7 +1186,7 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
       await ctx.db.patch(attempt._id, {
         checkClaimId: args.claimId,
         checkClaimedAt: now,
-        checkClaimExpiresAt: now + CHECK_CLAIM_LEASE_MS,
+        checkClaimExpiresAt: now + publicationCheckLeaseMs(attempt.kind, undefined),
         checkClaimLastError: undefined,
         updatedAt: now,
       });
@@ -1209,7 +1209,7 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
         version: attempt.version,
         artifactFingerprint: attempt.artifactFingerprint,
         files: [],
-        checkClaimExpiresAt: now + CHECK_CLAIM_LEASE_MS,
+        checkClaimExpiresAt: now + publicationCheckLeaseMs(attempt.kind, undefined),
         previousCheckClaimLastError: attempt.checkClaimLastError,
         createdAt: attempt.createdAt,
       };

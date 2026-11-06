@@ -46,6 +46,21 @@ const decisionSchema = z.strictObject({
     signals: z.record(z.string(), unit),
   }),
 });
+// The scanner-only Codex profile uses the same typed dimensions but never
+// supplies Decisions probabilities/provenance or an artifact-inspection receipt.
+const evidenceJudgeSchema = decisionSchema.omit({ decision: true });
+export function isEvidenceOnlyCodexRun(run: Record<string, unknown>) {
+  const judge = object(run.judge);
+  const command = judge?.command;
+  return (
+    typeof command === "string" &&
+    /\bcodex\s+exec\b/.test(command) &&
+    command.includes("evidence-judge.schema.json")
+  );
+}
+export function isTypedScannerJudgeRun(run: Record<string, unknown>) {
+  return isDecisionsRun(run) || isEvidenceOnlyCodexRun(run);
+}
 const overviewSchema = z.strictObject({
   summary: z.string(),
   dimensions: z.strictObject({
@@ -225,28 +240,34 @@ export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: r
     }
   }
   const judge = object(run.judge);
+  const evidenceOnly = isEvidenceOnlyCodexRun(run);
   if (
     !judge ||
     judge.status !== "completed" ||
     judge.error !== "" ||
     judge.commandStarted === false ||
     typeof judge.command !== "string" ||
-    !judge.command.includes("clawscan-decisions-judge") ||
+    (!evidenceOnly && !judge.command.includes("clawscan-decisions-judge")) ||
     !/^[a-f0-9]{64}$/.test(String(judge.outputSchemaSha256)) ||
     !/^[a-f0-9]{64}$/.test(String(judge.promptSha256)) ||
     !decisionsJudgeAccounting(run)
   ) {
     throw new Error("ClawScan Decisions judge completion/provenance was invalid");
   }
-  const parsed = decisionSchema.safeParse(judge.result);
+  const parsed = evidenceOnly
+    ? evidenceJudgeSchema.safeParse(judge.result)
+    : decisionSchema.safeParse(judge.result);
   if (!parsed.success) throw new Error("ClawScan Decisions judge result did not match its schema");
   const result = parsed.data;
-  const confidence = result.decision.verdict.confidence;
-  if (
-    result.verdict !== result.decision.verdict.choice ||
-    result.confidence !== (confidence >= 0.8 ? "high" : confidence >= 0.5 ? "medium" : "low")
-  ) {
-    throw new Error("ClawScan Decisions verdict/confidence disagreed with decision evidence");
+  const decision = evidenceOnly ? undefined : decisionSchema.parse(judge.result).decision;
+  if (decision) {
+    const confidence = decision.verdict.confidence;
+    if (
+      result.verdict !== decision.verdict.choice ||
+      result.confidence !== (confidence >= 0.8 ? "high" : confidence >= 0.5 ? "medium" : "low")
+    ) {
+      throw new Error("ClawScan Decisions verdict/confidence disagreed with decision evidence");
+    }
   }
   const overview = object(run.overview);
   const prose =
@@ -260,7 +281,11 @@ export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: r
     status: result.verdict === "benign" ? "clean" : result.verdict,
     verdict: result.verdict,
     confidence: result.confidence,
-    model: result.decision.model,
+    ...(decision
+      ? { model: decision.model }
+      : typeof judge.configuredModel === "string" && judge.configuredModel.trim()
+        ? { model: judge.configuredModel }
+        : {}),
     checkedAt: Date.parse(run.completedAt),
     ...(details ? { summary: details.summary, guidance: details.user_guidance } : {}),
     dimensions: Object.entries(decisionDimensionLabels).map(([name, label]) => ({

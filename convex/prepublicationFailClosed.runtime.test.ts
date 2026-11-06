@@ -441,3 +441,29 @@ it("requires canonical plugin precheck evidence and retains that exact object af
   const jobs = await f.t.run((ctx) => ctx.db.query("securityScanJobs").collect());
   expect(jobs).toMatchObject([{ targetKind: "packageRelease", scanMode: "endor-report-only" }]);
 });
+
+it("keeps plugin claim custody beyond the old 30m lease through full stage/cleanup drain", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const f = await stagedFixture("package");
+  const original = await f.claim();
+  const attempt = await f.attempt();
+  const startedAt = attempt!.checkClaimedAt!;
+  expect(attempt!.checkClaimExpiresAt! - startedAt).toBe(70 * 60_000);
+  vi.setSystemTime(startedAt + 65 * 60_000);
+  await expect(
+    f.t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+      attemptId: attempt!._id,
+      claimId: "replacement-claim",
+    }),
+  ).resolves.toEqual({ outcome: "active_claim" });
+  expect((await f.attempt())?.checkClaimId).toBe(original.claimId);
+  expect((await f.target())?.publicationStatus).toBe("pending");
+  vi.setSystemTime(startedAt + 70 * 60_000 + 1);
+  await expect(
+    f.t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+      attemptId: attempt!._id,
+      claimId: "replacement-claim",
+    }),
+  ).resolves.toMatchObject({ claimId: "replacement-claim" });
+  expect((await f.target())?.publicationStatus).toBe("pending");
+});

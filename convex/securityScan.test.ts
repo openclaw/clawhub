@@ -3560,6 +3560,52 @@ describe("securityScan", () => {
     expect(take).toHaveBeenCalledWith(expect.any(Number));
   });
 
+  it.each([
+    ["openclaw", undefined, true],
+    ["another-publisher", undefined, false],
+    ["openclaw", 1, false],
+    [undefined, undefined, false],
+  ])(
+    "derives scan trust from the persisted owner rather than an @openclaw package name (%s)",
+    async (handle, deletedAt, trusted) => {
+      const docs = new Map<string, Record<string, unknown>>([
+        [
+          "securityScanJobs:official-context",
+          {
+            _id: "securityScanJobs:official-context",
+            targetKind: "packageRelease",
+            source: "manual",
+            packageReleaseId: "packageReleases:official-context",
+          },
+        ],
+        [
+          "packageReleases:official-context",
+          { _id: "packageReleases:official-context", packageId: "packages:official-context" },
+        ],
+        [
+          "packages:official-context",
+          {
+            _id: "packages:official-context",
+            family: "code-plugin",
+            normalizedName: "@openclaw/discord",
+            ownerPublisherId: "publishers:owner",
+          },
+        ],
+      ]);
+      if (handle)
+        docs.set("publishers:owner", {
+          _id: "publishers:owner",
+          handle,
+          ...(deletedAt ? { deletedAt } : {}),
+        });
+      const result = await getJobTargetInternalHandler(
+        { db: { get: vi.fn(async (id: string) => docs.get(id) ?? null) } },
+        { jobId: "securityScanJobs:official-context" },
+      );
+      expect(result).toMatchObject({ trustedOpenClawPlugin: trusted });
+    },
+  );
+
   it("rejects GitHub file chunks that exceed the cumulative manifest hydration budget", async () => {
     const docs = new Map<string, Record<string, unknown>>([
       [
@@ -3934,6 +3980,31 @@ describe("securityScan", () => {
         error: "ClawPack artifact unavailable",
       }),
     );
+  });
+
+  it("gives explicit plugin rescans full custody while preserving the requested skill lease", async () => {
+    const { ctx, patches } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:plugin-budget",
+        targetKind: "packageRelease",
+        source: "manual",
+        packageReleaseId: "packageReleases:budget",
+      }),
+      makeScanJob({ _id: "securityScanJobs:skill-budget", source: "manual" }),
+    ]);
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "budget-worker",
+      limit: 2,
+      leaseMs: 60_000,
+    });
+    const plugin = claimed.find((job) => job.targetKind === "packageRelease")!;
+    const skill = claimed.find((job) => job.targetKind === "skillVersion")!;
+    expect(
+      plugin.leaseExpiresAt! - Number(patches.find(({ id }) => id === plugin._id)!.patch.updatedAt),
+    ).toBe(90 * 60_000);
+    expect(
+      skill.leaseExpiresAt! - Number(patches.find(({ id }) => id === skill._id)!.patch.updatedAt),
+    ).toBe(60_000);
   });
 
   it("claims manual rescans and malicious signals before ordinary backlog", async () => {

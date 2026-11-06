@@ -48,6 +48,20 @@ describe("qualified immutable plugin runtime policy", () => {
     ).toBe(false);
     expect(await usesWholePluginScanForTarget("skillVersion", undefined, current)).toBe(false);
   });
+  it("recognizes only the scanner-only Codex profile and rejects a receipt-free artifact-reading judge", async () => {
+    const current = await source(
+      "profiles:\n  clawhub:\n    scanners: [skillspector, aig]\n    pluginScanners: [aig-mcp]\n    judge:\n      evidenceOnly: true\n      command: codex exec --output-schema evidence-judge.schema.json\n",
+    );
+    expect(
+      await usesWholePluginScanForTarget("packageRelease", { family: "code-plugin" }, current),
+    ).toBe(true);
+    const unconfined = await source(
+      "profiles:\n  clawhub:\n    scanners: [skillspector, aig]\n    pluginScanners: [aig-mcp]\n    judge:\n      command: codex exec --output-schema evidence-judge.schema.json\n",
+    );
+    await expect(
+      usesWholePluginScanForTarget("packageRelease", { family: "code-plugin" }, unconfined),
+    ).rejects.toThrow();
+  });
   it.each(["PREPUBLICATION", "CODEX_SECURITY_SCAN"] as const)(
     "binds %s to the exact source/binary and ignores no dirty/ignored files",
     async (lane) => {
@@ -65,6 +79,14 @@ describe("qualified immutable plugin runtime policy", () => {
       );
     },
   );
+  it("uses plugin-only Docker configuration without changing skill host configuration", async () => {
+    const env = {
+      PREPUBLICATION_CLAWSCAN_SANDBOX: "off",
+      PREPUBLICATION_CLAWSCAN_PLUGIN_SANDBOX: "docker",
+    };
+    expect(await qualifiedPluginCommand("PREPUBLICATION", env)).toBe("/qualified/clawscan");
+    expect(env.PREPUBLICATION_CLAWSCAN_SANDBOX).toBe("off");
+  });
   it.each(["off", "auto"])("rejects unqualified sandbox %s", async (sandbox) => {
     await expect(
       qualifiedPluginCommand("PREPUBLICATION", { PREPUBLICATION_CLAWSCAN_SANDBOX: sandbox }),

@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   decisionsJudgeAccounting,
   hasScannerExecution,
-  isDecisionsRun,
+  isTypedScannerJudgeRun,
 } from "./clawscan-decisions";
 
 export type ClawScanExposure = {
@@ -70,7 +70,7 @@ export function clawScanExposure(artifact?: unknown): ClawScanExposure {
   )
     return unknown;
   if (
-    isDecisionsRun(run) ||
+    isTypedScannerJudgeRun(run) ||
     record(run.judge)?.command?.toString().includes("clawscan-decisions-judge")
   ) {
     const accounting = decisionsJudgeAccounting(run);

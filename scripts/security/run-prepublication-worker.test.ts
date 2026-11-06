@@ -10,6 +10,7 @@ import { summarizeClawScanExposure } from "./clawscan-exposure";
 import partialReport from "./fixtures/skillspector-usable-partial.json";
 import {
   DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS,
+  clawScanTimeoutMs,
   claimBatchDrainedQueue,
   claimPrePublicationAttempt,
   claimPrePublicationBatch,
@@ -1878,4 +1879,13 @@ exit 183
     if (previousCommand === undefined) delete process.env.PREPUBLICATION_TRUFFLEHOG_COMMAND;
     else process.env.PREPUBLICATION_TRUFFLEHOG_COMMAND = previousCommand;
   });
+});
+
+it("gives only the qualified plugin subprocess stage headroom beyond native 30m", () => {
+  vi.stubEnv("PREPUBLICATION_CLAWSCAN_TIMEOUT_MS", "900000");
+  expect(clawScanTimeoutMs()).toBe(900000);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
+  vi.stubEnv("PREPUBLICATION_CLAWSCAN_TIMEOUT_MS", "123456");
+  expect(clawScanTimeoutMs()).toBe(123456);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
 });

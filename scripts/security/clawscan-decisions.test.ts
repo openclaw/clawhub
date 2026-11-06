@@ -163,6 +163,57 @@ async function runFixture(
     workspace,
   );
 }
+describe("Scanner-report-only Codex publication consumer", () => {
+  it("accepts the typed native Codex verdict without inventing Decisions evidence or artifact inspection", async () => {
+    const artifact = fixture() as Record<string, any>;
+    delete artifact.judge.result.decision;
+    artifact.judge.command = "codex exec --output-schema evidence-judge.schema.json";
+    artifact.judge.configuredModel = "gpt-6.1-sol";
+    artifact.sandbox = { mode: "docker", image: QUALIFIED_PLUGIN_IMAGE };
+    delete artifact.judge.commandStarted;
+    delete artifact.judge.attempts[0].commandStarted;
+    const mapped = validateClawScanArtifactForClawHubProfile(artifact, ["aig-mcp"]);
+    expect(mapped.llmAnalysis).toMatchObject({
+      status: "clean",
+      verdict: "benign",
+      confidence: "high",
+      model: "gpt-6.1-sol",
+    });
+    expect(mapped.llmAnalysis).not.toHaveProperty("decision");
+    expect(mapped.llmAnalysis).not.toHaveProperty("artifact_inspection");
+    expect(clawScanExposure(artifact)).toMatchObject({
+      eligibleScanAttempt: true,
+      judgeInvocations: 1,
+      judgeOperationalFailures: 0,
+    });
+    const published = await runFixture(artifact, "packageRelease", true);
+    expect(published.analysis).toMatchObject({ status: "clean", verdict: "benign" });
+  });
+  it.each([
+    "incomplete",
+    "failed",
+    "invalid verdict",
+    "missing dimension",
+    "inconsistent attempt",
+    "unrecognized command",
+    "missing scanner",
+    "invented decision",
+  ])("fails closed for scanner-only Codex %s", (scenario) => {
+    const artifact = fixture() as Record<string, any>;
+    delete artifact.judge.result.decision;
+    artifact.judge.command = "codex exec --output-schema evidence-judge.schema.json";
+    if (scenario === "incomplete") artifact.complete = false;
+    if (scenario === "failed") artifact.judge.status = "failed";
+    if (scenario === "invalid verdict") artifact.judge.result.verdict = "unknown";
+    if (scenario === "missing dimension") delete artifact.judge.result.dimensions.instruction_scope;
+    if (scenario === "inconsistent attempt") artifact.judge.attempts[0].result = {};
+    if (scenario === "unrecognized command") artifact.judge.command = "echo codex";
+    if (scenario === "missing scanner") delete artifact.scanners["aig-mcp"];
+    if (scenario === "invented decision") artifact.judge.result.decision = { api: "decisions" };
+    expect(() => validateClawScanArtifactForClawHubProfile(artifact, ["aig-mcp"])).toThrow();
+  });
+});
+
 describe("Decisions publication consumer", () => {
   it("validates native Docker output recovery without inventing unknown-start invocation counts", () => {
     const artifact = fixture() as Record<string, any>;

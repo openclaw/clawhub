@@ -10,6 +10,11 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { endorAnalysisSchema, type EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import { parseLlmEvalResponse, type LlmEvalDimension } from "../../convex/lib/securityPrompt";
+import {
+  canAdmitSecurityScan,
+  pluginScanBudget,
+  securityWorkerDeadline,
+} from "../../convex/lib/securityWorkerBudgets";
 import { readWorkerAssignment } from "../../packages/clawhub-admin/src/scanAssignments";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 import { materializeVerifiedArtifactFiles } from "../lib/artifactMaterialization";
@@ -31,7 +36,11 @@ import {
   type BundledSkillSpectorFailureContext,
 } from "./bundled-skillspector-diagnostic";
 import { writeClawHubEndorProfile } from "./clawHubEndorProfile";
-import { isDecisionsRun, validateDecisionsRun, validateAigMcpReport } from "./clawscan-decisions";
+import {
+  isTypedScannerJudgeRun,
+  validateDecisionsRun,
+  validateAigMcpReport,
+} from "./clawscan-decisions";
 import {
   withClawScanDockerCleanup,
   ClawScanContainerCleanupError,
@@ -1540,7 +1549,8 @@ function toStoredLlmAnalysis(
   };
 }
 
-function clawScanTimeoutMs() {
+export function clawScanTimeoutMs(wholePlugin = false) {
+  if (wholePlugin) return pluginScanBudget.subprocessMs;
   const parsed = Number(process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CLAWSCAN_TIMEOUT_MS;
 }
@@ -2072,7 +2082,7 @@ export function validateClawScanArtifactForClawHubProfile(
   scannerSet = REQUIRED_CLAWHUB_SCANNERS,
   endorAnalysis?: EndorAnalysis,
 ) {
-  if (isDecisionsRun(artifact)) {
+  if (isTypedScannerJudgeRun(artifact)) {
     // Requirements come from the claim, never from returned scanner IDs.
     const required = scannerSet.includes("aig-mcp")
       ? ["aig-mcp"]
@@ -2331,7 +2341,7 @@ export async function runClawScan(
             runWorkerCommand(command, args, {
               cwd: workspace,
               env,
-              timeoutMs: clawScanTimeoutMs(),
+              timeoutMs: clawScanTimeoutMs(true),
               onStderrChunk: progress.write,
               cleanupProcessGroup: true,
               onTermination: (termination) => {
@@ -2935,6 +2945,11 @@ async function main() {
     }:${process.env.CODEX_SECURITY_SCAN_SHARD ?? process.env.GITHUB_JOB ?? "0"}`;
   const startedAt = Date.now();
   const claimDeadline = startedAt + maxRuntimeMs;
+  const workerDeadline = securityWorkerDeadline(
+    startedAt,
+    pluginScanBudget.manualWorkerMs,
+    process.env.SECURITY_SCAN_WORKER_HOST_DEADLINE_MS,
+  );
   const outcomes: SecurityScanJobHealth[] = [];
 
   logger.info(
@@ -2967,7 +2982,8 @@ async function main() {
   const stats = await runContinuouslyRefilledWorkerPool({
     concurrency: batchLimit,
     maxJobs,
-    canClaim: () => Date.now() < claimDeadline,
+    canClaim: () =>
+      canAdmitSecurityScan(Date.now(), claimDeadline, workerDeadline, pluginScanBudget.manualJobMs),
     claimJobs: async (limit) => {
       const leases = (await client.action(api.securityScan.claimCodexScanJobLeases, {
         token,

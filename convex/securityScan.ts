@@ -26,6 +26,7 @@ import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
 } from "./lib/securityAnalysisValidators";
+import { securityScanLeaseMs } from "./lib/securityWorkerBudgets";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
 import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 import {
@@ -2869,7 +2870,7 @@ export const claimQueuedJobsInternal = internalMutation({
   handler: async (ctx, args) => {
     const now = Date.now();
     const limit = normalizeLimit(args.limit);
-    const leaseMs = Math.max(60_000, Math.min(args.leaseMs ?? DEFAULT_LEASE_MS, 60 * 60 * 1000));
+    const requestedLeaseMs = args.leaseMs ?? DEFAULT_LEASE_MS;
     const capacity = limit;
 
     const ready: Doc<"securityScanJobs">[] = [];
@@ -3115,6 +3116,7 @@ export const claimQueuedJobsInternal = internalMutation({
         }
         catalogAttemptId = attempt._id;
       }
+      const leaseMs = securityScanLeaseMs(job.targetKind, job.scanMode, requestedLeaseMs);
       const leaseToken = crypto.randomUUID();
       await ctx.db.patch(job._id, {
         status: "running",

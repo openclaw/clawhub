@@ -472,7 +472,7 @@ describe("publishAttempts", () => {
       checkClaimedAt: number;
       checkClaimExpiresAt: number;
     };
-    expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBeGreaterThanOrEqual(30 * 60 * 1000);
+    expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBe(30 * 60 * 1000);
   });
 
   it.each([undefined, "bundle-plugin", "code-plugin"])(
@@ -518,6 +518,11 @@ describe("publishAttempts", () => {
             release: { artifactKind: "legacy-zip" },
           },
         });
+        const patch = ctx.db.patch.mock.calls.find(([id]) => id === attempt._id)?.[1] as {
+          checkClaimedAt: number;
+          checkClaimExpiresAt: number;
+        };
+        expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBe(70 * 60_000);
       }
     },
   );

@@ -15,6 +15,7 @@ import partialReport from "./fixtures/skillspector-usable-partial.json";
 import type { ClaimedJob, ClawScanCommandDiagnostic } from "./run-codex-scan-worker";
 import {
   aggregateSkillSpectorAnalyses,
+  clawScanTimeoutMs,
   normalizeAigAnalysis,
   processJob,
   resolveClawScanTarget,
@@ -3079,4 +3080,13 @@ wait "$child_pid"`,
       }
     }
   });
+});
+
+it("preserves skill subprocess settings independently of the qualified plugin deadline", () => {
+  vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "900000");
+  expect(clawScanTimeoutMs()).toBe(900000);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
+  vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "123456");
+  expect(clawScanTimeoutMs()).toBe(123456);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
 });

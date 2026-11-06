@@ -153,3 +153,53 @@ formatter passed; final cleanup/Decisions predicate suites passed 81 tests.
 Independent narrative read-only review of all repair source/tests and owning
 loops found no actionable P0–P3 findings. No real-daemon/corpus/UI rerun or
 production-readiness claim is implied by these compatibility/custody tests.
+
+## Scoped rollout deadline integration (binding pending native successor)
+
+The approved rollout adopts the whole source: the shared judge becomes Decisions
+and skills no longer request clawscan-static. This is not a plugin-only model
+change. Skill-specific subprocess settings and host sandbox selection remain
+unchanged; only code/bundle plugins get the longer subprocess deadline.
+
+Native source56 cannot accept --timeout and constructs the MCP runner with 20m.
+The producer owns a narrowly qualified plugin-only 30m successor and immutable
+image. Do not activate the intermediate workflow patch with the old default pin:
+the final source/tree/image binding must be updated together after native proof.
+No component resolver, historical data rewrite or bulk requeue is involved.
+
+Consumer ceilings allow native MCP 30m + native judge 20m + optional overview 5m:
+plugin subprocess 60m (including process/container cleanup headroom), publication
+job drain 65m and claim lease 70m. Explicit rescans can first spend 20m in Endor;
+their job drain is 85m and backend enforces a 90m lease. Skill leases and automatic
+Endor-report-only job leases retain their previous normalization. Templates keep
+the 30m staged claim lease. Historical package claims without family reserve the
+conservative package budget; no old evidence is changed.
+
+Workers retain their existing claim-window setting, but also require a complete
+worst-case job drain window before claiming, including the first claim. Already
+active work drains normally. Hosted jobs publish an absolute deadline before
+setup, less a 2m tail reserve; slow installation reduces available admission.
+The publication worker step is capped at 75m within a 100m hosted job; the manual
+worker step is 100m within 125m. Step and hosted deadline minima both apply.
+These limits do not guarantee arbitrary stalled storage/backend calls finish;
+they prevent intentional scanner budgets from outliving their claim/workflow.
+
+## Scanner-report-only Codex successor preparation (2026-11-06)
+
+The subsequently approved direction replaces the Decisions judge with the native
+EvidenceOnly Codex profile. Consumer projection accepts its exact typed verdict,
+confidence, five dimensions and contextual findings without requiring decision.api,
+inventing Decisions probabilities, or asking for an independent artifact-inspection
+receipt. Built-in profile, terminal complete state, scanner execution provenance,
+matched final judge attempts, valid verdict/schema and immutable plugin sandbox
+checks remain required. Optional overview prose cannot change the verdict.
+
+This local compatibility work does not qualify or activate an image. The final
+reviewed source/tree/runtime-tree/digest binding, default pin and installer CLI
+qualification must be changed together when the producer provides its receipt.
+The old source56 Decisions image is not the approved deployment target. Historical
+receipt/Decisions readers remain for retained evidence; they are not new rollout
+selection. Plugin scans stay AIG MCP only; skills stay SkillSpector plus AIG with
+their existing specific timeout/sandbox settings. The shared judge changes.
+EvidenceOnly restricts source exposure, but residual delegation capabilities are
+not claimed absent merely because the five approved runs observed no calls.
