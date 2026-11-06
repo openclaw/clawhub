@@ -48,6 +48,8 @@ export const ApiV1SearchResponseSchema = type({
 
 export const ApiV1SkillListResponseSchema = type({
   items: type({
+    requiresIntermediary: "boolean|null?",
+    intermediaryDetails: "string|null?",
     ownerHandle: "string",
     slug: "string",
     displayName: "string",
@@ -79,6 +81,8 @@ export const ApiV1SkillListResponseSchema = type({
 });
 
 export const ApiV1SkillResponseSchema = type({
+  requiresIntermediary: "boolean|null?",
+  intermediaryDetails: "string|null?",
   skill: type({
     slug: "string",
     displayName: "string",
@@ -150,6 +154,8 @@ export const SecurityStatusSchema = type({
 
 export const ApiV1SkillVersionResponseSchema = type({
   version: type({
+    requiresIntermediary: "boolean|null?",
+    intermediaryDetails: "string|null?",
     version: "string",
     createdAt: "number",
     changelog: "string",

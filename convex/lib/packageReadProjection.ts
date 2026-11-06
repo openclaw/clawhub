@@ -1,3 +1,4 @@
+import { toIntermediaryDisclosure } from "clawhub-schema";
 import type { Doc, Id } from "../_generated/dataModel";
 import { resolvePackageReleaseScanStatus } from "./packageSecurity";
 import type { PublicPublisher } from "./public";
@@ -109,6 +110,7 @@ export function toPackageVersionResponse(release: ReleaseLike, packageName: stri
   const scanStatus = resolvePackageReleaseScanStatus(release);
   const verification = release.verification ? { ...release.verification, scanStatus } : null;
   return {
+    ...toIntermediaryDisclosure(release.llmAnalysis?.intermediaryAnalysis),
     version: release.version,
     createdAt: release.createdAt,
     changelog: release.changelog,
@@ -136,9 +138,14 @@ export function toPackageMetadataResponse(
   pkg: PublicPackageDocLike,
   owner: PublicPublisher | null,
   tags: Record<string, string>,
+  release: ReleaseLike | null | undefined,
 ) {
   return {
-    package: { ...toPackageDetailResponsePackage(pkg), tags },
+    package: {
+      ...toPackageDetailResponsePackage(pkg),
+      tags,
+      ...toIntermediaryDisclosure(release?.llmAnalysis?.intermediaryAnalysis),
+    },
     owner: owner
       ? {
           handle: owner.handle ?? null,

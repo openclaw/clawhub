@@ -25,12 +25,14 @@ import {
   noClawScanExposure,
   summarizeClawScanExposure,
 } from "./clawscan-exposure";
+import { attachIntermediaries } from "./infer-intermediaries";
 import { resolvePrepublicationScannerRuntime } from "./prepublicationScannerSource";
 import {
   type AigAnalysis,
   assertAigFilePathsHaveNoCompiledPython,
   type ClaimedJob,
   resolveClawScanTarget,
+  resolveScanArtifactRoot,
   type StoredLlmAnalysis,
   type SkillSpectorAnalysis,
   validateClawScanArtifactForClawHubProfile,
@@ -753,11 +755,14 @@ export async function runNativeClawScan(
         },
       };
     }
+    const analysis = await attachIntermediaries(parsed.analysis, async () =>
+      resolve(workspace, await resolveScanArtifactRoot(workspace, job)),
+    );
     return {
-      analysis: parsed.analysis,
+      analysis,
       aigAnalysis: parsed.aigAnalysis,
       skillSpectorAnalysis: parsed.skillSpectorAnalysis,
-      check: clawScanCheckResult(parsed.analysis),
+      check: clawScanCheckResult(analysis),
     };
   } catch (error) {
     failure =

@@ -34,7 +34,7 @@ export const getPage: ReturnType<typeof action> = action({
       }
     }
     return {
-      ...toPackageMetadataResponse(pkg, snapshot.owner, snapshot.tags),
+      ...toPackageMetadataResponse(pkg, snapshot.owner, snapshot.tags, release),
       version: release ? toPackageVersionResponse(release, pkg.name) : null,
       readme,
     };

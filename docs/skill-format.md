@@ -83,6 +83,18 @@ metadata:
 
 Use `requires.env` for environment variables that must be present before the skill can run. Use `envVars` when you need per-variable metadata, including optional variables with `required: false`.
 
+The experimental intermediary inspector can infer requirements from published
+instructions and supporting code. It is disabled by default; operators must
+explicitly enable it on scanner workers with
+`CLAWHUB_INTERMEDIARY_DISCLOSURE_ENABLED=1`. Listings show **Required intermediary** as
+Yes, No, or Unknown, with an AI-inferred explanation when available. This is
+informational, not a security verdict, and requires no additional frontmatter.
+The target application itself is not an intermediary. Uninspected or inconclusive
+versions, including scans with the experiment disabled, remain Unknown.
+Skill detail/list APIs and exact skill/plugin version
+APIs expose `requiresIntermediary` (`true`, `false`, or `null`) and
+`intermediaryDetails` (`string` or `null`).
+
 ### Full field reference
 
 | Field              | Type       | Description                                                                                                                                  |

@@ -21,3 +21,4 @@ export * from "./securityAudit.js";
 export { ApiRoutes, LegacyApiRoutes } from "./routes.js";
 export * from "./schemas.js";
 export * from "./textFiles.js";
+export * from "./intermediaries.js";

@@ -1,3 +1,4 @@
+import { toIntermediaryDisclosure } from "clawhub-schema";
 import {
   ApiRoutes,
   ApiV1PackageScanBatchRequestSchema,
@@ -492,6 +493,7 @@ type SkillPackageDocLike = {
 };
 
 type SkillVersionLike = {
+  llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
   _id: Id<"skillVersions">;
   skillId: Id<"skills">;
   version: string;
@@ -1027,6 +1029,7 @@ function toSkillPackageDetail(
 ) {
   return {
     package: {
+      ...toIntermediaryDisclosure(latestVersion?.llmAnalysis?.intermediaryAnalysis),
       name: skill.slug,
       displayName: skill.displayName,
       family: "skill" as const,
@@ -4019,7 +4022,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       parseArk(
         ApiV1PluginDetailResponseSchema,
         {
-          ...toPackageMetadataResponse(pkg, snapshot.owner, snapshot.tags),
+          ...toPackageMetadataResponse(pkg, snapshot.owner, snapshot.tags, release),
           versions: snapshot.versions,
           version: release ? toPackageVersionResponse(release, pkg.name) : null,
           readme,
@@ -4133,7 +4136,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const tags = await resolvePackageTags(ctx, publicPackage!, viewerUserId ?? undefined);
 
-    return json(toPackageMetadataResponse(publicPackage!, packageOwner, tags), 200, rate.headers);
+    return json(
+      toPackageMetadataResponse(publicPackage!, packageOwner, tags, packageDetail?.latestRelease),
+      200,
+      rate.headers,
+    );
   }
 
   if (packageSegments[0] === "trusted-publisher" && packageSegments.length === 1) {
@@ -4290,6 +4297,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
             family: "skill",
           },
           version: {
+            ...toIntermediaryDisclosure(version.llmAnalysis?.intermediaryAnalysis),
             version: version.version,
             createdAt: version.createdAt,
             changelog: version.changelog,

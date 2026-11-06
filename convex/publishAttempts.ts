@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { storedFilesValidator } from "./lib/fileValidators";
+import { intermediaryAnalysisValidator } from "./lib/intermediaryAnalysis";
 import { manualPackageRecovery } from "./lib/packagePublishRecovery";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
@@ -61,6 +62,7 @@ const workerCheckResultValidator = v.object({
 });
 
 const workerLlmAnalysisValidator = v.object({
+  intermediaryAnalysis: v.optional(intermediaryAnalysisValidator),
   status: v.string(),
   verdict: v.optional(v.string()),
   confidence: v.optional(v.string()),

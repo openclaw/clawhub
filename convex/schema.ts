@@ -12,6 +12,7 @@ import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
 import { storedFilesValidator } from "./lib/fileValidators";
+import { intermediaryAnalysisValidator } from "./lib/intermediaryAnalysis";
 import {
   packageInspectorFailureValidator,
   packageInspectorOutcomeValidator,
@@ -105,6 +106,7 @@ const llmRiskSummaryBucketValidator = v.object({
 });
 
 export const llmAnalysisValidator = v.object({
+  intermediaryAnalysis: v.optional(intermediaryAnalysisValidator),
   status: v.string(),
   verdict: v.optional(v.string()),
   confidence: v.optional(v.string()),

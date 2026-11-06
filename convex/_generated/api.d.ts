@@ -127,6 +127,7 @@ import type * as lib_httpUtils from "../lib/httpUtils.js";
 import type * as lib_indexCursor from "../lib/indexCursor.js";
 import type * as lib_initialPluginFamilyRead from "../lib/initialPluginFamilyRead.js";
 import type * as lib_installResolver from "../lib/installResolver.js";
+import type * as lib_intermediaryAnalysis from "../lib/intermediaryAnalysis.js";
 import type * as lib_leaderboards from "../lib/leaderboards.js";
 import type * as lib_managedMcpBundle from "../lib/managedMcpBundle.js";
 import type * as lib_mcpPublicInspection from "../lib/mcpPublicInspection.js";
@@ -461,6 +462,7 @@ declare const fullApi: ApiFromModules<{
   "lib/indexCursor": typeof lib_indexCursor;
   "lib/initialPluginFamilyRead": typeof lib_initialPluginFamilyRead;
   "lib/installResolver": typeof lib_installResolver;
+  "lib/intermediaryAnalysis": typeof lib_intermediaryAnalysis;
   "lib/leaderboards": typeof lib_leaderboards;
   "lib/managedMcpBundle": typeof lib_managedMcpBundle;
   "lib/mcpPublicInspection": typeof lib_mcpPublicInspection;

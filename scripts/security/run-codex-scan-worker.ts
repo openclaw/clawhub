@@ -10,6 +10,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import { parseLlmEvalResponse, type LlmEvalDimension } from "../../convex/lib/securityPrompt";
 import { readWorkerAssignment } from "../../packages/clawhub-admin/src/scanAssignments";
+import type { IntermediaryAnalysis } from "../../packages/schema/src/intermediaries";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 import { materializeVerifiedArtifactFiles } from "../lib/artifactMaterialization";
 import {
@@ -40,6 +41,7 @@ import {
   parseClawScanProgress,
   type SafeClawScanProgress,
 } from "./clawscan-progress";
+import { attachIntermediaries } from "./infer-intermediaries";
 import {
   isEndorPluginScanEnabled,
   runEndorPluginScan,
@@ -88,6 +90,7 @@ export type ClaimedJob = {
 type ClaimedJobLease = ClaimedJob["job"];
 
 export type StoredLlmAnalysis = {
+  intermediaryAnalysis?: IntermediaryAnalysis;
   status: string;
   verdict?: string;
   confidence?: string;
@@ -2264,7 +2267,7 @@ export async function runClawScan(
   return mapped;
 }
 
-async function resolveScanArtifactRoot(workspace: string, job: ClaimedJob) {
+export async function resolveScanArtifactRoot(workspace: string, job: ClaimedJob) {
   if (job.job.targetKind === "packageRelease") {
     const packageRoot = join(workspace, "artifact", "package");
     if (await fileExists(join(packageRoot, "package.json"))) return "./artifact/package";
@@ -2427,9 +2430,12 @@ export async function processJob(
       skillSpectorResult.value,
     );
     llmAnalysis = mapped.llmAnalysis;
+    if (!llmAnalysis) throw new Error("Security scan did not produce llmAnalysis");
+    llmAnalysis = await attachIntermediaries(llmAnalysis, async () =>
+      resolve(workspace, await resolveScanArtifactRoot(workspace, job)),
+    );
     aigAnalysis = mapped.aigAnalysis;
     skillSpectorAnalysis = mapped.skillSpectorAnalysis;
-    if (!llmAnalysis) throw new Error("Security scan did not produce llmAnalysis");
     // A signed upload URL advertises support after the separately deployed
     // backend updates. Upload directly to storage to avoid action argument limits.
     let scannerReportsStorageId: string | undefined;
