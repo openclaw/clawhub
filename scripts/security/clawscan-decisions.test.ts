@@ -105,6 +105,7 @@ async function runFixture(
   qualified = false,
   rescan = false,
   family: "code-plugin" | "claw" = "code-plugin",
+  requireDockerConnection = false,
 ) {
   const workspace = await mkdtemp(join(tmpdir(), "decisions-consumer-"));
   dirs.push(workspace);
@@ -115,14 +116,25 @@ async function runFixture(
     const bin = join(workspace, "bin");
     await mkdir(bin);
     const docker = join(bin, "docker");
-    await writeFile(docker, '#!/bin/sh\n[ "$1 $2" = "container ls" ] || exit 91\nexit 0\n');
+    await writeFile(
+      docker,
+      "#!/bin/sh\n" +
+        (requireDockerConnection
+          ? '[ "$DOCKER_CONTEXT" = scoped-test ] && [ "$DOCKER_CONFIG" = /private/docker-fixture ] || exit 89\n'
+          : "") +
+        '[ "$1 $2" = "container ls" ] || exit 91\nexit 0\n',
+    );
     await chmod(docker, 0o755);
     vi.stubEnv("PATH", bin + ":" + process.env.PATH);
   }
   const command = join(workspace, "clawscan-fixture");
   await writeFile(
     command,
-    '#!/usr/bin/env node\nrequire("node:fs").writeFileSync(process.argv[process.argv.indexOf("--output")+1], ' +
+    "#!/usr/bin/env node\n" +
+      (requireDockerConnection
+        ? 'if(process.env.DOCKER_CONTEXT!=="scoped-test"||process.env.DOCKER_CONFIG!=="/private/docker-fixture")process.exit(88);\n'
+        : "") +
+      'require("node:fs").writeFileSync(process.argv[process.argv.indexOf("--output")+1], ' +
       JSON.stringify(JSON.stringify(artifact)) +
       ");\n",
   );
@@ -242,6 +254,20 @@ describe("Scanner-report-only Codex publication consumer", () => {
     expect(result.check.status).toBe("failed");
     expect(result.check.summary).toContain("skillspector");
   });
+
+  it.each([false, true])(
+    "preserves scoped Docker settings through worker execution and cleanup (rescan=%s)",
+    async (rescan) => {
+      vi.stubEnv("DOCKER_CONTEXT", "scoped-test");
+      vi.stubEnv("DOCKER_CONFIG", "/private/docker-fixture");
+      const artifact = fixture() as Record<string, any>;
+      artifact.sandbox = { mode: "docker", image: QUALIFIED_PLUGIN_IMAGE };
+      expect(
+        (await runFixture(artifact, "packageRelease", true, rescan, "code-plugin", true)).analysis
+          ?.verdict,
+      ).toBe("benign");
+    },
+  );
 
   it("accepts native EvidenceOnly provenance when Command is deliberately omitted", () => {
     const artifact = fixture() as Record<string, any>;

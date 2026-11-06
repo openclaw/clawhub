@@ -13,6 +13,7 @@ import {
   ClawScanContainerCleanupError,
   hasKnownClawScanChildFinality,
   withClawScanDockerCleanup,
+  clawScanDockerEnvironment,
 } from "./clawscan-docker-cleanup";
 
 const dirs: string[] = [];
@@ -500,4 +501,24 @@ describe("ClawScan supervising-worker Docker cleanup", () => {
       expect((await f.state()).runId).toBeUndefined();
     },
   );
+});
+
+it("forwards Docker connection settings without provider or worker credentials", () => {
+  const expected = {
+    DOCKER_HOST: "unix:///private/docker.sock",
+    DOCKER_CONTEXT: "fixture",
+    DOCKER_CONFIG: "/private/config",
+    DOCKER_TLS: "1",
+    DOCKER_TLS_VERIFY: "1",
+    DOCKER_CERT_PATH: "/private/certs",
+    DOCKER_API_VERSION: "1.50",
+  };
+  expect(
+    clawScanDockerEnvironment({
+      ...expected,
+      OPENAI_API_KEY: "secret",
+      SECURITY_SCAN_WORKER_TOKEN: "secret",
+      DOCKER_AUTH_CONFIG: "secret",
+    }),
+  ).toEqual(expected);
 });

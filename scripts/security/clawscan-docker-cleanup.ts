@@ -54,12 +54,31 @@ export class ClawScanContainerCleanupError extends Error {
   }
 }
 
+// Connection settings identify the caller-owned daemon; they are not scanner
+// credentials and must survive restricted worker environments as well as cleanup.
+export function clawScanDockerEnvironment(source: NodeJS.ProcessEnv) {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of [
+    "DOCKER_CONFIG",
+    "DOCKER_HOST",
+    "DOCKER_CONTEXT",
+    "DOCKER_TLS",
+    "DOCKER_TLS_VERIFY",
+    "DOCKER_CERT_PATH",
+    "DOCKER_API_VERSION",
+  ]) {
+    if (source[key] !== undefined) env[key] = source[key];
+  }
+  return env;
+}
+
 function cleanupEnv(workspace: string, source: NodeJS.ProcessEnv) {
   const env: NodeJS.ProcessEnv = {
     NO_COLOR: "1",
     TEMP: workspace,
     TMP: workspace,
     TMPDIR: workspace,
+    ...clawScanDockerEnvironment(source),
   };
   // Preserve the caller's Docker destination, without forwarding scanner credentials.
   for (const key of [
@@ -74,12 +93,6 @@ function cleanupEnv(workspace: string, source: NodeJS.ProcessEnv) {
     "WINDIR",
     "COMSPEC",
     "PATHEXT",
-    "DOCKER_CONFIG",
-    "DOCKER_HOST",
-    "DOCKER_CONTEXT",
-    "DOCKER_TLS_VERIFY",
-    "DOCKER_CERT_PATH",
-    "DOCKER_API_VERSION",
   ]) {
     if (source[key] !== undefined) env[key] = source[key];
   }

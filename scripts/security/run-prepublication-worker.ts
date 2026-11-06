@@ -28,6 +28,7 @@ import { isTypedScannerJudgeRun } from "./clawscan-decisions";
 import { projectSkillSpectorReport } from "./clawscan-diagnostic-skillspector";
 import {
   withClawScanDockerCleanup,
+  clawScanDockerEnvironment,
   ClawScanContainerCleanupError,
   hasKnownClawScanChildFinality,
 } from "./clawscan-docker-cleanup";
@@ -728,6 +729,7 @@ export async function runNativeClawScan(
             hasKnownClawScanChildFinality(JSON.parse(await readFile(artifactPath, "utf8"))),
           env: {
             ...restrictedChildEnvironment(workspace),
+            ...clawScanDockerEnvironment(process.env),
             ...securityScannerEnvironment(process.env),
           },
           run: async (env, onTermination) => {
@@ -752,6 +754,7 @@ export async function runNativeClawScan(
           cwd: workspace,
           env: {
             ...restrictedChildEnvironment(workspace),
+            ...clawScanDockerEnvironment(process.env),
             ...securityScannerEnvironment(process.env),
           },
           timeoutMs: clawScanTimeoutMs(),

@@ -41,6 +41,7 @@ import {
 } from "./clawscan-decisions";
 import {
   withClawScanDockerCleanup,
+  clawScanDockerEnvironment,
   ClawScanContainerCleanupError,
   hasKnownClawScanChildFinality,
 } from "./clawscan-docker-cleanup";
@@ -2314,7 +2315,11 @@ export async function runClawScan(
           workspace,
           confirmChildFinality: async () =>
             hasKnownClawScanChildFinality(JSON.parse(await readFile(artifactPath, "utf8"))),
-          env: { ...codexEnv(workspace), VIRUSTOTAL_API_KEY: undefined },
+          env: {
+            ...codexEnv(workspace),
+            ...clawScanDockerEnvironment(process.env),
+            VIRUSTOTAL_API_KEY: undefined,
+          },
           run: (env, onTermination) =>
             runWorkerCommand(command, args, {
               cwd: workspace,
