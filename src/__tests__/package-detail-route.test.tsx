@@ -272,15 +272,15 @@ describe("plugin detail route", () => {
   });
 
   it.each([
-    { family: "code-plugin", name: "demo-plugin" },
-    { family: "code-plugin", name: "discord" },
-    { family: "code-plugin", name: "@shopify/ai-toolkit" },
-    { family: "code-plugin", name: "owner/plugin" },
-    { family: "bundle-plugin", name: "demo-bundle" },
-    { family: "bundle-plugin", name: "@owner/scoped-bundle" },
+    { family: "code-plugin", name: "demo-plugin", target: "demo-plugin@latest" },
+    { family: "code-plugin", name: "discord", target: "discord@latest" },
+    { family: "code-plugin", name: "@shopify/ai-toolkit", target: "@shopify/ai-toolkit" },
+    { family: "code-plugin", name: "owner/plugin", target: "owner/plugin" },
+    { family: "bundle-plugin", name: "demo-bundle", target: "demo-bundle@latest" },
+    { family: "bundle-plugin", name: "@owner/scoped-bundle", target: "@owner/scoped-bundle" },
   ] as const)(
     "shows and copies the CLI command and ClawHub prompt for $name",
-    async ({ family, name }) => {
+    async ({ family, name, target }) => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       vi.stubGlobal("navigator", { clipboard: { writeText } });
       loaderDataMock.detail.package = { ...loaderDataMock.detail.package!, family, name };
@@ -292,7 +292,7 @@ describe("plugin detail route", () => {
       const card = screen
         .getByRole("heading", { name: "Install" })
         .closest(".skill-install-command-card") as HTMLElement;
-      const command = `openclaw plugins install ${name}`;
+      const command = `openclaw plugins install ${target}`;
       expect(card.querySelectorAll("pre")).toHaveLength(1);
       expect(card.querySelector(".skill-install-command-wrap pre")).toBeTruthy();
       expect(card.querySelector("pre")?.textContent).toBe(command);
@@ -1844,7 +1844,7 @@ describe("plugin detail route", () => {
     expect(screen.getByText("sha512-demo")).toBeTruthy();
     expect(screen.getAllByText("openclaw plugins install")).toHaveLength(1);
     expect(
-      screen.getByText("demo-plugin", { selector: ".skill-install-command-target" }),
+      screen.getByText("demo-plugin@latest", { selector: ".skill-install-command-target" }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",

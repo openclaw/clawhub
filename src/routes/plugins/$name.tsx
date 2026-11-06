@@ -1211,7 +1211,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const installTarget = isPlugin
     ? pkg.name
     : `@${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
-  const installCommand = `openclaw ${isPlugin ? "plugins" : "skills"} install ${installTarget}`;
+  // Bare names like `discord` match bundled plugin IDs, which OpenClaw resolves
+  // before its ClawHub default; `@latest` keeps unscoped plugins on ClawHub.
+  const cliInstallTarget =
+    isPlugin && !installTarget.includes("/") ? `${installTarget}@latest` : installTarget;
+  const installCommand = `openclaw ${isPlugin ? "plugins" : "skills"} install ${cliInstallTarget}`;
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
