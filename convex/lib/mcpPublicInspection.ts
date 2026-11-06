@@ -1,6 +1,6 @@
 "use node";
 
-import { assertManagedMcpUrl } from "clawhub-schema";
+import { assertManagedMcpClientMetadataUrl, assertManagedMcpUrl } from "clawhub-schema";
 import { requestPublicResource } from "../../server/og/requestPublicImage";
 
 export type McpPublicInspection = {
@@ -71,7 +71,12 @@ function wellKnown(url: URL, kind: string) {
   return `${url.origin}/.well-known/${kind}${url.pathname === "/" ? "" : url.pathname}`;
 }
 
-async function discoverOAuth(endpoint: string, challenge: string | null, signal: AbortSignal) {
+async function discoverOAuth(
+  endpoint: string,
+  challenge: string | null,
+  signal: AbortSignal,
+  clientMetadataUrl?: string,
+) {
   const url = new URL(endpoint);
   const advertised = /(?:^|[\s,])resource_metadata="([^"]+)"/i.exec(challenge ?? "")?.[1];
   const candidates = [
@@ -111,7 +116,7 @@ async function discoverOAuth(endpoint: string, challenge: string | null, signal:
         metadata.issuer.replace(/\/$/, "") !== issuer.replace(/\/$/, "")
       )
         continue;
-      for (const key of ["authorization_endpoint", "token_endpoint", "registration_endpoint"]) {
+      for (const key of ["authorization_endpoint", "token_endpoint"]) {
         if (typeof metadata[key] !== "string") throw new Error("Missing OAuth endpoint");
         assertManagedMcpUrl(metadata[key]);
       }
@@ -120,6 +125,31 @@ async function discoverOAuth(endpoint: string, challenge: string | null, signal:
         !metadata.code_challenge_methods_supported.includes("S256")
       )
         continue;
+      if (clientMetadataUrl !== undefined) {
+        // Explicit CIMD identity must be usable; do not silently substitute DCR.
+        if (metadata.client_id_metadata_document_supported !== true) continue;
+        assertManagedMcpClientMetadataUrl(clientMetadataUrl);
+        const client = await requestJson(clientMetadataUrl, signal);
+        if (
+          client.client_id !== clientMetadataUrl ||
+          Object.hasOwn(client, "client_secret") ||
+          Object.hasOwn(client, "client_secret_expires_at") ||
+          // Shared-secret client authentication is forbidden for CIMD. Key-based
+          // authentication still needs consumer configuration outside this inspection.
+          (client.token_endpoint_auth_method !== undefined &&
+            client.token_endpoint_auth_method !== "none" &&
+            client.token_endpoint_auth_method !== "private_key_jwt") ||
+          typeof client.client_name !== "string" ||
+          !client.client_name.trim() ||
+          !Array.isArray(client.redirect_uris) ||
+          !client.redirect_uris.length ||
+          !client.redirect_uris.every(isUsableRedirectUri)
+        )
+          continue;
+      } else {
+        if (typeof metadata.registration_endpoint !== "string") continue;
+        assertManagedMcpUrl(metadata.registration_endpoint);
+      }
       return true;
     } catch {
       /* Try the standard discovery fallback, without following redirects. */
@@ -128,11 +158,28 @@ async function discoverOAuth(endpoint: string, challenge: string | null, signal:
   return false;
 }
 
+// Redirect URIs are metadata only: never fetch callbacks. Native loopback HTTP
+// callbacks remain valid; other web callbacks must be public HTTPS URLs.
+function isUsableRedirectUri(raw: unknown): boolean {
+  if (typeof raw !== "string") return false;
+  try {
+    const url = new URL(raw);
+    if (url.username || url.password || url.hash) return false;
+    if (url.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(url.hostname))
+      return true;
+    assertManagedMcpUrl(raw);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Bounded public observation. OAuth discovery does not register a client or prove account access. */
 export async function inspectPublicMcp(
   url: string,
   transport: "streamable-http" | "sse",
   checkOAuth = false,
+  clientMetadataUrl?: string,
 ): Promise<McpPublicInspection> {
   const observedAt = Date.now();
   const unavailable = { status: "unavailable" as const, observedAt };
@@ -204,7 +251,12 @@ export async function inspectPublicMcp(
     }
     if (response.body && !response.body.locked) await response.body.cancel().catch(() => {});
     if (checkOAuth)
-      result.oauthDiscovery = (await discoverOAuth(url, challenge, controller.signal))
+      result.oauthDiscovery = (await discoverOAuth(
+        url,
+        challenge,
+        controller.signal,
+        clientMetadataUrl,
+      ))
         ? "ready"
         : "unavailable";
     return result;

@@ -13,10 +13,10 @@ import {
 } from "clawhub-schema";
 import { getPage, type IndexKey, paginator } from "convex-helpers/server/pagination";
 import { paginationOptsValidator } from "convex/server";
-import { ConvexError, v, type Value } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   action,
@@ -30,6 +30,7 @@ import {
   assertAdmin,
   assertModerator,
   getOptionalActiveAuthUserId,
+  requireActiveUserById,
   requireUser,
   requireUserFromAction,
 } from "./lib/access";
@@ -52,6 +53,7 @@ import {
 } from "./lib/downloadTrend";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
+import { storedFilesValidator } from "./lib/fileValidators";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
   getGitHubProviderAccountId,
@@ -63,6 +65,10 @@ import {
   isPublicSkillDoc,
   readGlobalPublicSkillsCount,
 } from "./lib/globalStats";
+import {
+  decodeIndexCursor as decodePublicListCursor,
+  encodeIndexCursor as encodeIndexKey,
+} from "./lib/indexCursor";
 import {
   TRENDING_LEADERBOARD_KIND,
   TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
@@ -154,6 +160,10 @@ import {
   queueHighlightedWebhook,
   type SkillPublishResult,
 } from "./lib/skillPublish";
+import {
+  qualityAssessmentValidator,
+  type StoredQualityAssessment,
+} from "./lib/skillQualityContract";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { getPublicSkillMetadataOwner } from "./lib/skills/publicVersions";
 import {
@@ -178,7 +188,12 @@ import {
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
-import { readCanonicalStat, readPublicDownloads, readSkillMetricSources } from "./lib/skillStats";
+import {
+  createInitialSkillStats,
+  readCanonicalStat,
+  readPublicDownloads,
+  readSkillMetricSources,
+} from "./lib/skillStats";
 import { normalizeSkillTags } from "./lib/skillTags";
 import { fetchText } from "./lib/storageText";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
@@ -1438,6 +1453,21 @@ async function hardDeleteSkillStep(
     await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
   }
 
+  const deleteBatch = async (
+    batchQuery: { take: (limit: number) => Promise<Array<{ _id: Id<TableNames> }>> },
+    nextPhase: HardDeletePhase,
+  ) => {
+    const rows = await batchQuery.take(HARD_DELETE_BATCH_SIZE);
+    for (const row of rows) {
+      await ctx.db.delete(row._id);
+    }
+    if (rows.length === HARD_DELETE_BATCH_SIZE) {
+      await scheduleHardDelete(ctx, skill._id, actorUserId, phase, scope);
+      return;
+    }
+    await scheduleHardDelete(ctx, skill._id, actorUserId, nextPhase, scope);
+  };
+
   switch (phase) {
     case "versions": {
       const versions = await ctx.db
@@ -1457,21 +1487,13 @@ async function hardDeleteSkillStep(
       await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints", scope);
       return;
     }
-    case "fingerprints": {
-      const fingerprints = await ctx.db
-        .query("skillVersionFingerprints")
-        .withIndex("by_skill_fingerprint", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const fingerprint of fingerprints) {
-        await ctx.db.delete(fingerprint._id);
-      }
-      if (fingerprints.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "githubScans", scope);
-      return;
-    }
+    case "fingerprints":
+      return deleteBatch(
+        ctx.db
+          .query("skillVersionFingerprints")
+          .withIndex("by_skill_fingerprint", (q) => q.eq("skillId", skill._id)),
+        "githubScans",
+      );
     case "githubScans": {
       const deletedScans = await deleteGitHubSkillScansForSkill(
         ctx,
@@ -1485,21 +1507,13 @@ async function hardDeleteSkillStep(
       await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs", scope);
       return;
     }
-    case "skillCardJobs": {
-      const jobs = await ctx.db
-        .query("skillCardGenerationJobs")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const job of jobs) {
-        await ctx.db.delete(job._id);
-      }
-      if (jobs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings", scope);
-      return;
-    }
+    case "skillCardJobs":
+      return deleteBatch(
+        ctx.db
+          .query("skillCardGenerationJobs")
+          .withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "embeddings",
+      );
     case "embeddings": {
       const embeddings = await ctx.db
         .query("skillEmbeddings")
@@ -1520,111 +1534,45 @@ async function hardDeleteSkillStep(
       await scheduleHardDelete(ctx, skill._id, actorUserId, "reports", scope);
       return;
     }
-    case "reports": {
-      const reports = await ctx.db
-        .query("skillReports")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const report of reports) {
-        await ctx.db.delete(report._id);
-      }
-      if (reports.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "reports", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "stars", scope);
-      return;
-    }
-    case "stars": {
-      const stars = await ctx.db
-        .query("stars")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const star of stars) {
-        await ctx.db.delete(star._id);
-      }
-      if (stars.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "stars", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "badges", scope);
-      return;
-    }
-    case "badges": {
-      const badges = await ctx.db
-        .query("skillBadges")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const badge of badges) {
-        await ctx.db.delete(badge._id);
-      }
-      if (badges.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "badges", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats", scope);
-      return;
-    }
-    case "dailyStats": {
-      const dailyStats = await ctx.db
-        .query("skillDailyStats")
-        .withIndex("by_skill_day", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const stat of dailyStats) {
-        await ctx.db.delete(stat._id);
-      }
-      if (dailyStats.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents", scope);
-      return;
-    }
-    case "statEvents": {
-      const statEvents = await ctx.db
-        .query("skillStatEvents")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const statEvent of statEvents) {
-        await ctx.db.delete(statEvent._id);
-      }
-      if (statEvents.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "installs", scope);
-      return;
-    }
-    case "installs": {
-      const installs = await ctx.db
-        .query("userSkillInstalls")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const install of installs) {
-        await ctx.db.delete(install._id);
-      }
-      if (installs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "installs", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "installTelemetryDedupes", scope);
-      return;
-    }
-    case "installTelemetryDedupes": {
-      const dedupeRows = await ctx.db
-        .query("installTelemetryDedupes")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const row of dedupeRows) {
-        await ctx.db.delete(row._id);
-      }
-      if (dedupeRows.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "installTelemetryDedupes", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards", scope);
-      return;
-    }
+    case "reports":
+      return deleteBatch(
+        ctx.db.query("skillReports").withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "stars",
+      );
+    case "stars":
+      return deleteBatch(
+        ctx.db.query("stars").withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "badges",
+      );
+    case "badges":
+      return deleteBatch(
+        ctx.db.query("skillBadges").withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "dailyStats",
+      );
+    case "dailyStats":
+      return deleteBatch(
+        ctx.db
+          .query("skillDailyStats")
+          .withIndex("by_skill_day", (q) => q.eq("skillId", skill._id)),
+        "statEvents",
+      );
+    case "statEvents":
+      return deleteBatch(
+        ctx.db.query("skillStatEvents").withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "installs",
+      );
+    case "installs":
+      return deleteBatch(
+        ctx.db.query("userSkillInstalls").withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "installTelemetryDedupes",
+      );
+    case "installTelemetryDedupes":
+      return deleteBatch(
+        ctx.db
+          .query("installTelemetryDedupes")
+          .withIndex("by_skill", (q) => q.eq("skillId", skill._id)),
+        "leaderboards",
+      );
     case "leaderboards": {
       const leaderboards = await ctx.db
         .query("skillLeaderboards")
@@ -3674,8 +3622,7 @@ export const reportSkillForUserInternal = internalMutation({
     ownerHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || undefined;
     const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, ownerHandle);
@@ -4063,8 +4010,7 @@ export const submitSkillAppealForUserInternal = internalMutation({
     message: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug, {
       includeSoftDeleted: true,
@@ -4159,8 +4105,7 @@ export const listSkillReportsInternal = internalQuery({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -4198,8 +4143,7 @@ export const triageSkillReportForUserInternal = internalMutation({
     finalAction: v.optional(v.union(v.literal("none"), v.literal("hide"))),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const skillReport = await ctx.db.get(args.reportId);
@@ -4286,8 +4230,7 @@ export const listSkillAppealsInternal = internalQuery({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -4324,8 +4267,7 @@ export const resolveSkillAppealForUserInternal = internalMutation({
     finalAction: v.optional(v.union(v.literal("none"), v.literal("restore"))),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const appeal = await ctx.db.get(args.appealId);
@@ -4390,8 +4332,7 @@ export const listSkillModerationEventLogsInternal = internalQuery({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 50), 100));
@@ -4613,27 +4554,7 @@ const NONSUSPICIOUS_SORT_INDEX_FIELD_COUNTS: Record<PublicListSort, number> = {
   stars: 4,
   installs: 4,
 };
-const GET_PAGE_TIEBREAKER_FIELD_COUNT = 2;
 const PUBLIC_API_PREFIX_CURSOR_PREFIX = "skillprefix:";
-
-function encodeIndexKeyValue(val: Value | undefined): Value {
-  return val === undefined ? { __undef: 1 } : val;
-}
-
-function decodeIndexKeyValue(val: unknown): Value | undefined {
-  if (val !== null && typeof val === "object" && "__undef" in (val as Record<string, unknown>)) {
-    return undefined;
-  }
-  return val as Value;
-}
-
-function encodeIndexKey(indexName: string, key: IndexKey): string {
-  return JSON.stringify({
-    v: 1,
-    index: indexName,
-    key: key.map(encodeIndexKeyValue),
-  });
-}
 
 function encodePublicApiPrefixCursor(prefix: string, indexName: string, key: IndexKey) {
   return `${PUBLIC_API_PREFIX_CURSOR_PREFIX}${JSON.stringify({
@@ -4657,55 +4578,6 @@ function decodePublicApiPrefixCursor(cursor: string | undefined, prefix: string)
     return (parsed as { cursor: string }).cursor;
   } catch {
     return undefined;
-  }
-}
-
-function indexKeyStartsWithPrefix(key: IndexKey, prefix: IndexKey): boolean {
-  if (key.length < prefix.length) return false;
-  return prefix.every((value, index) => key[index] === value);
-}
-
-function decodePublicListCursor({
-  cursor,
-  indexName,
-  maxIndexKeyLength,
-  eqPrefix,
-  allowLegacyArray = true,
-}: {
-  cursor?: string;
-  indexName: string;
-  maxIndexKeyLength: number;
-  eqPrefix: IndexKey;
-  allowLegacyArray?: boolean;
-}): IndexKey | null {
-  if (!cursor) return null;
-  try {
-    const parsed = JSON.parse(cursor) as unknown;
-    const isSelfDescribingCursor =
-      parsed !== null &&
-      typeof parsed === "object" &&
-      !Array.isArray(parsed) &&
-      (parsed as { v?: unknown }).v === 1 &&
-      (parsed as { index?: unknown }).index === indexName &&
-      Array.isArray((parsed as { key?: unknown }).key);
-    const arr =
-      Array.isArray(parsed) && allowLegacyArray
-        ? parsed
-        : isSelfDescribingCursor
-          ? (parsed as { key: unknown[] }).key
-          : null;
-    if (!Array.isArray(arr)) return null;
-    const key = arr.map(decodeIndexKeyValue);
-    // Self-describing cursors include the index name, so they can safely carry
-    // getPage's full key with Convex's implicit _creationTime/_id tie-breakers.
-    const maxLength = isSelfDescribingCursor
-      ? maxIndexKeyLength + GET_PAGE_TIEBREAKER_FIELD_COUNT
-      : maxIndexKeyLength;
-    if (key.length > maxLength) return null;
-    if (!indexKeyStartsWithPrefix(key, eqPrefix)) return null;
-    return key;
-  } catch {
-    return null;
   }
 }
 
@@ -8123,7 +7995,37 @@ export const backfillLatestSkillModerationInternal = internalMutation({
         ? shouldForceBackfillLatestSkillModeration(skill)
         : shouldBackfillLatestSkillModeration(skill);
       if (!shouldBackfill) continue;
-      await syncSkillModerationFromLatestVersion(ctx, skill, Date.now());
+      const now = Date.now();
+      const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+      // An empty or unfinished ClawScan is not a clean verdict. Stay hidden
+      // and enqueue a replacement scan, the same as a moderation lift.
+      if (!latestVersion || !hasCompletedScannerResult(latestVersion)) {
+        if (latestVersion) {
+          await ctx.scheduler.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
+            versionId: latestVersion._id,
+            source: "backfill",
+            preserveActiveJob: true,
+          });
+        }
+        const patch: SkillModerationPatch = {
+          moderationStatus: "hidden",
+          moderationReason: "pending.scan",
+          isSuspicious: computeIsSuspicious({
+            moderationFlags: skill.moderationFlags,
+            moderationReason: "pending.scan",
+          }),
+          hiddenAt: undefined,
+          hiddenBy: undefined,
+          lastReviewedAt: now,
+          updatedAt: now,
+        };
+        const nextSkill = { ...skill, ...patch };
+        await ctx.db.patch(skill._id, patch);
+        await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+        patched++;
+        continue;
+      }
+      await syncSkillModerationFromLatestVersion(ctx, skill, now);
       patched++;
     }
 
@@ -8281,8 +8183,7 @@ export async function deleteOwnedSkillVersionForUser(
     version: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
 
   const slug = args.slug.trim();
   if (!slug) throw new ConvexError("Slug required");
@@ -8395,8 +8296,7 @@ export async function restoreOwnedSkillVersionForUser(
     ownerHandle?: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
 
   const slug = args.slug.trim().toLowerCase();
   if (!slug) throw new ConvexError("Slug required");
@@ -8454,8 +8354,7 @@ export async function revokeSkillVersionForUser(
     ownerHandle?: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
   assertModerator(actor);
 
   const slug = args.slug.trim().toLowerCase();
@@ -8623,15 +8522,7 @@ export const publishVersion: ReturnType<typeof action> = action({
         version: v.optional(v.string()),
       }),
     ),
-    files: v.array(
-      v.object({
-        path: v.string(),
-        size: v.number(),
-        storageId: v.id("_storage"),
-        sha256: v.string(),
-        contentType: v.optional(v.string()),
-      }),
-    ),
+    files: storedFilesValidator,
   },
   handler: async (ctx, args): Promise<SkillPublishResult> => {
     if (args.acceptLicenseTerms !== true) {
@@ -9074,8 +8965,7 @@ export const setSkillTagForUserInternal = internalMutation({
     ownerHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const slug = args.slug.trim().toLowerCase();
     if (!slug) throw new ConvexError("Slug required");
@@ -9354,8 +9244,7 @@ export const setSkillFeaturedForUserInternal = internalMutation({
     featured: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
@@ -10074,8 +9963,7 @@ export const transferSkillOwnerForUserInternal = internalMutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const slug = normalizeSkillSlug(args.slug);
     if (!slug) throw new ConvexError("Skill slug required");
@@ -10616,8 +10504,7 @@ export const hardDeleteForAdminInternal = internalMutation({
     confirmationToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const slug = normalizeSkillSlugKey(args.slug);
@@ -10744,23 +10631,7 @@ type SkillPendingPublishArgs = {
   files: Doc<"skillVersions">["files"];
   parsed: Doc<"skillVersions">["parsed"];
   summary?: string;
-  qualityAssessment?: {
-    decision: "pass" | "quarantine" | "reject";
-    score: number;
-    reason: string;
-    trustTier: "low" | "medium" | "trusted";
-    similarRecentCount: number;
-    signals: {
-      bodyChars: number;
-      bodyWords: number;
-      uniqueWordRatio: number;
-      headingCount: number;
-      bulletCount: number;
-      templateMarkerHits: number;
-      genericSummary: boolean;
-      cjkChars?: number;
-    };
-  };
+  qualityAssessment?: StoredQualityAssessment;
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
   embedding: number[];
 };
@@ -10814,15 +10685,7 @@ export const insertVersion = internalMutation({
         version: v.optional(v.string()),
       }),
     ),
-    files: v.array(
-      v.object({
-        path: v.string(),
-        size: v.number(),
-        storageId: v.id("_storage"),
-        sha256: v.string(),
-        contentType: v.optional(v.string()),
-      }),
-    ),
+    files: storedFilesValidator,
     parsed: v.object({
       frontmatter: v.record(v.string(), v.any()),
       metadata: v.optional(v.any()),
@@ -10831,25 +10694,7 @@ export const insertVersion = internalMutation({
       presentation: v.optional(skillPresentationValidator),
     }),
     summary: v.optional(v.string()),
-    qualityAssessment: v.optional(
-      v.object({
-        decision: v.union(v.literal("pass"), v.literal("quarantine"), v.literal("reject")),
-        score: v.number(),
-        reason: v.string(),
-        trustTier: v.union(v.literal("low"), v.literal("medium"), v.literal("trusted")),
-        similarRecentCount: v.number(),
-        signals: v.object({
-          bodyChars: v.number(),
-          bodyWords: v.number(),
-          uniqueWordRatio: v.number(),
-          headingCount: v.number(),
-          bulletCount: v.number(),
-          templateMarkerHits: v.number(),
-          genericSummary: v.boolean(),
-          cjkChars: v.optional(v.number()),
-        }),
-      }),
-    ),
+    qualityAssessment: v.optional(qualityAssessmentValidator),
     // Retired static publish scan. Still accepted so stored insert args from
     // publish attempts staged before its removal can finalize; never persisted.
     staticScan: v.optional(v.any()),
@@ -11329,18 +11174,7 @@ export const insertVersion = internalMutation({
         }),
         reportCount: 0,
         lastReportedAt: undefined,
-        statsDownloads: 0,
-        statsStars: 0,
-        statsInstallsCurrent: 0,
-        statsInstallsAllTime: 0,
-        stats: {
-          downloads: 0,
-          installsCurrent: 0,
-          installsAllTime: 0,
-          stars: 0,
-          versions: 0,
-          comments: 0,
-        },
+        ...createInitialSkillStats(),
         createdAt: now,
         updatedAt: now,
       });

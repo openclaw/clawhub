@@ -13,6 +13,12 @@ import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
 import { isLocalDevAuthEnabled } from "./lib/devAuth";
+import {
+  type DisplayManifest,
+  type DisplayManifestStatus,
+  displayManifestStatusValidator,
+  displayManifestValidator,
+} from "./lib/displayManifest";
 import { ACTIVITY_TREND_DAYS } from "./lib/downloadTrend";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
@@ -31,7 +37,7 @@ import {
 } from "./lib/recommendationScore";
 import type { SourceBackedSkillScanStatus } from "./lib/securityScanPolicy";
 import { buildEmbeddingText, parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
-import { readCanonicalStat } from "./lib/skillStats";
+import { createInitialSkillStats, readCanonicalStat } from "./lib/skillStats";
 import { assertTestSeedAllowed } from "./lib/testSeed";
 import { generateToken, hashToken } from "./lib/tokens";
 
@@ -104,24 +110,6 @@ function seededPackageRecommendationPatch(stats: {
   };
 }
 
-const displayManifestStatusValidator = v.union(
-  v.literal("ok"),
-  v.literal("missing"),
-  v.literal("invalid"),
-  v.literal("failed"),
-);
-
-const displayManifestValidator = v.object({
-  notGrouped: v.optional(v.union(v.literal("top"), v.literal("bottom"))),
-  groupings: v.array(
-    v.object({
-      title: v.string(),
-      description: v.optional(v.string()),
-      skills: v.array(v.string()),
-    }),
-  ),
-});
-
 const githubSkillScanStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -141,15 +129,8 @@ type SeedGitHubBackedSkillSourceArgs = {
   displayManifestHash?: string;
   displayManifestCommit?: string;
   displayManifestFetchedAt?: number;
-  displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
-  displayManifest?: {
-    notGrouped?: "top" | "bottom";
-    groupings: Array<{
-      title: string;
-      description?: string;
-      skills: string[];
-    }>;
-  };
+  displayManifestStatus?: DisplayManifestStatus;
+  displayManifest?: DisplayManifest;
   skills: Array<{
     slug: string;
     displayName: string;
@@ -4037,18 +4018,7 @@ export async function seedGitHubBackedSkillSourceHandler(
       moderationVerdict: moderation.moderationVerdict,
       moderationFlags: moderation.moderationFlags,
       isSuspicious: moderation.isSuspicious,
-      statsDownloads: 0,
-      statsStars: 0,
-      statsInstallsCurrent: 0,
-      statsInstallsAllTime: 0,
-      stats: {
-        downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
-        stars: 0,
-        versions: 0,
-        comments: 0,
-      },
+      ...createInitialSkillStats(),
       createdAt: now,
       updatedAt: now,
     });
@@ -4542,18 +4512,7 @@ async function seedDeletionFixtureArtifacts(
     moderationStatus: "active",
     moderationReason: "clean",
     isSuspicious: false,
-    statsDownloads: 0,
-    statsStars: 0,
-    statsInstallsCurrent: 0,
-    statsInstallsAllTime: 0,
-    stats: {
-      downloads: 0,
-      installsCurrent: 0,
-      installsAllTime: 0,
-      stars: 0,
-      versions: 0,
-      comments: 0,
-    },
+    ...createInitialSkillStats(),
     createdAt: now,
     updatedAt: now,
   });
@@ -4893,18 +4852,7 @@ export const seedVersionDeletionFixtureMutation = internalMutation({
       moderationStatus: "active",
       moderationReason: "clean",
       isSuspicious: false,
-      statsDownloads: 0,
-      statsStars: 0,
-      statsInstallsCurrent: 0,
-      statsInstallsAllTime: 0,
-      stats: {
-        downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
-        stars: 0,
-        versions: 0,
-        comments: 0,
-      },
+      ...createInitialSkillStats(),
       createdAt: olderCreatedAt,
       updatedAt: now,
     });
@@ -5578,18 +5526,7 @@ export const seedSkillMutation = internalMutation({
       tags: {},
       softDeletedAt: undefined,
       badges: { highlighted: { byUserId: userId, at: now }, redactionApproved: undefined },
-      statsDownloads: 0,
-      statsStars: 0,
-      statsInstallsCurrent: 0,
-      statsInstallsAllTime: 0,
-      stats: {
-        downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
-        stars: 0,
-        versions: 0,
-        comments: 0,
-      },
+      ...createInitialSkillStats(),
       createdAt: now,
       updatedAt: now,
     });
@@ -5632,18 +5569,7 @@ export const seedSkillMutation = internalMutation({
     await ctx.db.patch(skillId, {
       latestVersionId: versionId,
       tags: { latest: versionId },
-      statsDownloads: 0,
-      statsStars: 0,
-      statsInstallsCurrent: 0,
-      statsInstallsAllTime: 0,
-      stats: {
-        downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
-        stars: 0,
-        versions: 1,
-        comments: 0,
-      },
+      ...createInitialSkillStats(1),
       updatedAt: now,
     });
 

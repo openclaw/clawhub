@@ -6,9 +6,12 @@ import {
   canonicalTrendingCardValidator,
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
+import { displayManifestStatusValidator, displayManifestValidator } from "./lib/displayManifest";
+import { analyticsBuildValidator, analyticsSnapshotValidator } from "./lib/downloadAnalytics";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
+import { storedFilesValidator } from "./lib/fileValidators";
 import {
   packageInspectorFailureValidator,
   packageInspectorOutcomeValidator,
@@ -18,6 +21,7 @@ import {
   pluginCategoryClassificationValidator,
   pluginCategoryReviewValidator,
 } from "./lib/pluginCategoryClassificationContract";
+import { storedTemporalBenchmarkValidator } from "./lib/publisherAbuseBenchmark";
 import { searchDigestValidator } from "./lib/searchDigestContract";
 import {
   searchArtifactKind,
@@ -34,6 +38,7 @@ import {
 } from "./lib/securityAnalysisValidators";
 import { skillEvaluationMetricsValidator } from "./lib/skillEvaluationMetrics";
 import { skillPresentationValidator } from "./lib/skillPresentationValidator";
+import { qualityAssessmentValidator } from "./lib/skillQualityContract";
 
 export { skillSpectorAnalysisValidator } from "./lib/securityAnalysisValidators";
 
@@ -324,24 +329,6 @@ const officialPublishers = defineTable({
 })
   .index("by_publisher", ["publisherId"])
   .index("by_created", ["createdAt"]);
-
-const displayManifestStatusValidator = v.union(
-  v.literal("ok"),
-  v.literal("missing"),
-  v.literal("invalid"),
-  v.literal("failed"),
-);
-
-const displayManifestValidator = v.object({
-  notGrouped: v.optional(v.union(v.literal("top"), v.literal("bottom"))),
-  groupings: v.array(
-    v.object({
-      title: v.string(),
-      description: v.optional(v.string()),
-      skills: v.array(v.string()),
-    }),
-  ),
-});
 
 const githubSkillSourceInvalidSkillValidator = v.object({
   slug: v.string(),
@@ -816,15 +803,7 @@ const skillCardGenerationJobSourceValidator = v.union(
   v.literal("manual"),
 );
 
-const packageFilesValidator = v.array(
-  v.object({
-    path: v.string(),
-    size: v.number(),
-    storageId: v.id("_storage"),
-    sha256: v.string(),
-    contentType: v.optional(v.string()),
-  }),
-);
+const packageFilesValidator = storedFilesValidator;
 
 const catalogClassificationConfidenceValidator = v.union(
   v.literal("high"),
@@ -946,26 +925,7 @@ const skills = defineTable({
   // Deprecated compatibility field. The cleanup migration removes stored
   // values before this field and its validator are removed in a follow-up.
   manualOverride: v.optional(manualModerationOverride),
-  quality: v.optional(
-    v.object({
-      score: v.number(),
-      decision: v.union(v.literal("pass"), v.literal("quarantine"), v.literal("reject")),
-      trustTier: v.union(v.literal("low"), v.literal("medium"), v.literal("trusted")),
-      similarRecentCount: v.number(),
-      reason: v.string(),
-      signals: v.object({
-        bodyChars: v.number(),
-        bodyWords: v.number(),
-        uniqueWordRatio: v.number(),
-        headingCount: v.number(),
-        bulletCount: v.number(),
-        templateMarkerHits: v.number(),
-        genericSummary: v.boolean(),
-        cjkChars: v.optional(v.number()),
-      }),
-      evaluatedAt: v.number(),
-    }),
-  ),
+  quality: v.optional(qualityAssessmentValidator.extend({ evaluatedAt: v.number() })),
   isSuspicious: v.optional(v.boolean()),
   moderationFlags: v.optional(v.array(v.string())),
   lastReviewedAt: v.optional(v.number()),
@@ -1133,15 +1093,7 @@ const skillVersions = defineTable({
   changelog: v.string(),
   changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
   icon: v.optional(v.string()),
-  files: v.array(
-    v.object({
-      path: v.string(),
-      size: v.number(),
-      storageId: v.id("_storage"),
-      sha256: v.string(),
-      contentType: v.optional(v.string()),
-    }),
-  ),
+  files: storedFilesValidator,
   skillCardGeneration: v.optional(v.object({ inputHash: v.string(), cardSha256: v.string() })),
   parsed: v.object({
     frontmatter: v.record(v.string(), v.any()),
@@ -1180,6 +1132,9 @@ const skillVersions = defineTable({
   .index("by_skill_active_created", ["skillId", "softDeletedAt", "createdAt"])
   .index("by_skill_owner_deleted_created", ["skillId", "ownerDeletedBy", "createdAt"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
+  // Retain the existing production index until a separately approved cleanup.
+  // No active VirusTotal reader uses it; removing it blocks non-destructive deploys.
+  .index("by_active_vt_status_created", ["softDeletedAt", "vtAnalysis.status", "createdAt"])
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 
@@ -2193,6 +2148,15 @@ const skillCardGenerationJobs = defineTable({
   .index("by_skill_version_status", ["skillVersionId", "status"])
   .index("by_skill_version", ["skillVersionId"]);
 
+// One replaceable report and one bounded in-flight cursor, never a download hot counter.
+const downloadAnalyticsReports = defineTable({
+  scope: v.literal("templates"),
+  revision: v.number(),
+  snapshot: v.optional(analyticsSnapshotValidator),
+  build: v.optional(analyticsBuildValidator),
+  lastError: v.optional(v.string()),
+}).index("by_scope", ["scope"]);
+
 const packageStatEvents = defineTable({
   packageId: v.id("packages"),
   kind: v.union(v.literal("download"), v.literal("install"), v.literal("install_clear")),
@@ -2925,6 +2889,13 @@ const skillStatEvents = defineTable({
 const skillStatUpdateCursors = defineTable({
   key: v.string(),
   cursorCreationTime: v.optional(v.number()),
+  // Opaque Convex pagination cursor for the creation-time index. It keeps
+  // the id tie-break when a page ends inside one shared _creationTime.
+  paginationCursor: v.optional(v.string()),
+  paginationLowerBound: v.optional(v.number()),
+  // Highest creation time already written while a pagination cursor is open.
+  // An empty final page promotes this to cursorCreationTime.
+  pendingCreationTime: v.optional(v.number()),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 
@@ -3776,20 +3747,7 @@ const publisherAbuseScoreRuns = defineTable({
   temporalSpikeP99: v.optional(v.number()),
   temporalExcessP95: v.optional(v.number()),
   temporalExcessP99: v.optional(v.number()),
-  temporalBenchmark: v.optional(
-    v.object({
-      scope: v.optional(v.literal("all_active_skills")),
-      sampleSize: v.number(),
-      downloads30dAverage: v.number(),
-      downloads30dMedian: v.number(),
-      downloads30dP95: v.number(),
-      downloads30dP99: v.number(),
-      spikeMultiplier7dP95: v.number(),
-      spikeMultiplier7dP99: v.number(),
-      excess7DownloadsP95: v.optional(v.number()),
-      excess7DownloadsP99: v.optional(v.number()),
-    }),
-  ),
+  temporalBenchmark: v.optional(storedTemporalBenchmarkValidator),
   errorMessage: v.optional(v.string()),
   // Distinguishes an intentional stop from a scan failure in the staff UI.
   canceledAt: v.optional(v.number()),
@@ -3931,20 +3889,7 @@ const publisherAbuseScores = defineTable({
   temporalSpikeSkillCount: v.optional(v.number()),
   temporalSustainedSkillCount: v.optional(v.number()),
   temporalMaxPressure: v.optional(v.number()),
-  temporalBenchmark: v.optional(
-    v.object({
-      scope: v.optional(v.literal("all_active_skills")),
-      sampleSize: v.number(),
-      downloads30dAverage: v.number(),
-      downloads30dMedian: v.number(),
-      downloads30dP95: v.number(),
-      downloads30dP99: v.number(),
-      spikeMultiplier7dP95: v.number(),
-      spikeMultiplier7dP99: v.number(),
-      excess7DownloadsP95: v.optional(v.number()),
-      excess7DownloadsP99: v.optional(v.number()),
-    }),
-  ),
+  temporalBenchmark: v.optional(storedTemporalBenchmarkValidator),
   temporalEvidence: v.optional(
     v.array(
       v.object({
@@ -4099,20 +4044,7 @@ const publisherAbuseSignals = defineTable({
   allTimeDownloads: v.number(),
   allTimeInstalls: v.number(),
   allTimeInstallDownloadRatio: v.number(),
-  temporalBenchmark: v.optional(
-    v.object({
-      scope: v.optional(v.literal("all_active_skills")),
-      sampleSize: v.number(),
-      downloads30dAverage: v.number(),
-      downloads30dMedian: v.number(),
-      downloads30dP95: v.number(),
-      downloads30dP99: v.number(),
-      spikeMultiplier7dP95: v.number(),
-      spikeMultiplier7dP99: v.number(),
-      excess7DownloadsP95: v.optional(v.number()),
-      excess7DownloadsP99: v.optional(v.number()),
-    }),
-  ),
+  temporalBenchmark: v.optional(storedTemporalBenchmarkValidator),
   expected7Downloads: v.optional(v.number()),
   excess7Downloads: v.optional(v.number()),
   spikeMultiplier: v.optional(v.number()),
@@ -4570,6 +4502,7 @@ export default defineSchema({
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
   packageStatEvents,
+  downloadAnalyticsReports,
   pluginSearchObservations,
   packageDailyStats,
   packageLeaderboards,

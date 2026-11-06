@@ -202,4 +202,4 @@ receipt/Decisions readers remain for retained evidence; they are not new rollout
 selection. Plugin scans stay AIG MCP only; skills stay SkillSpector plus AIG with
 their existing specific timeout/sandbox settings. The shared judge changes.
 EvidenceOnly restricts source exposure, but residual delegation capabilities are
-not claimed absent merely because the five approved runs observed no calls.
+not claimed absent merely because the five approved runs exposed no visible artifact/tool activity; their JSON events do not establish absence of delegation.

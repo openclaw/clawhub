@@ -209,16 +209,38 @@ async function resolvePackageListStats(
   return pkg?.stats ?? digest.stats ?? defaultPackageStats();
 }
 
+type PackageListReadCache = {
+  publishers: Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>;
+  officialPublishers: Map<Id<"publishers">, Promise<boolean>>;
+};
+
 export async function toPublicPackageListItem(
   ctx: DbReaderCtx,
   digest: PackageDigestLike,
   featuredAt?: number,
+  cache?: PackageListReadCache,
 ): Promise<PublicPackageListItem> {
   // Publisher identity is independent of the package's official channel. Resolve
   // current status so granting/revoking a badge needs no package digest backfill.
-  const publisher = digest.ownerPublisherId
-    ? await ctx.db.get(digest.ownerPublisherId)
-    : await getOwnerPublisher(ctx, digest);
+  // These reads are independent. Cache only inside this query so badge and
+  // publisher changes remain visible on the next catalog request.
+  const statsPromise = resolvePackageListStats(ctx, digest);
+  let publisherPromise = digest.ownerPublisherId
+    ? cache?.publishers.get(digest.ownerPublisherId)
+    : undefined;
+  if (!publisherPromise) {
+    publisherPromise = digest.ownerPublisherId
+      ? ctx.db.get(digest.ownerPublisherId)
+      : getOwnerPublisher(ctx, digest);
+    if (digest.ownerPublisherId) cache?.publishers.set(digest.ownerPublisherId, publisherPromise);
+  }
+  const publisher = await publisherPromise;
+  let officialPromise = publisher ? cache?.officialPublishers.get(publisher._id) : undefined;
+  if (!officialPromise) {
+    officialPromise = isOfficialPublisher(ctx, publisher);
+    if (publisher) cache?.officialPublishers.set(publisher._id, officialPromise);
+  }
+  const [stats, ownerOfficial] = await Promise.all([statsPromise, officialPromise]);
   return {
     name: digest.name,
     displayName: digest.displayName,
@@ -230,7 +252,7 @@ export async function toPublicPackageListItem(
     icon: digest.icon ?? null,
     ownerHandle: digest.ownerHandle || null,
     ownerImage: toPublicPublisher(publisher)?.image ?? null,
-    ownerOfficial: await isOfficialPublisher(ctx, publisher),
+    ownerOfficial,
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
     latestVersion: digest.latestVersion ?? null,
@@ -238,7 +260,7 @@ export async function toPublicPackageListItem(
     topics: digest.topics,
     ...(featuredAt === undefined ? {} : { featuredAt }),
     verificationTier: digest.verificationTier ?? null,
-    stats: await resolvePackageListStats(ctx, digest),
+    stats,
   };
 }
 

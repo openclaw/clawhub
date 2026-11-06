@@ -1,10 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import ignore from "ignore";
 import mime from "mime";
 import semver from "semver";
 import { parseClawPack } from "../../clawpack.js";
@@ -19,6 +18,7 @@ import {
   uploadBinary,
 } from "../../http.js";
 import { LEGACY_AUTHOR_REMEDIATION_SUMMARIES } from "../../packageInspectorRemediation.js";
+import { forEachPublishFile } from "../../publishFiles.js";
 import {
   ApiCliUploadUrlResponseSchema,
   ApiRoutes,
@@ -61,6 +61,7 @@ import {
 } from "../../schema/index.js";
 import { buildGitHubFolderContentHash, hashSkillFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
 import { titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
@@ -80,10 +81,6 @@ import {
   resolveSourceInput,
 } from "./github.js";
 
-const DOT_DIR = ".clawhub";
-const LEGACY_DOT_DIR = ".clawdhub";
-const DOT_IGNORE = ".clawhubignore";
-const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const PACKAGE_PUBLISH_RETRY_COUNT = 5;
 const PACKAGE_PUBLISH_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_PACKAGE_PUBLISH_WAIT_TIMEOUT_SECONDS = 30 * 60;
@@ -353,7 +350,7 @@ export async function cmdExplorePackages(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader(trimmedQuery ? "Searching packages" : "Listing packages");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const limit = clampLimit(options.limit ?? 25, 100);
     if (trimmedQuery) {
       const url = registryUrl(`${ApiRoutes.packages}/search`, registry);
@@ -410,10 +407,7 @@ export async function cmdExplorePackages(
     for (const item of result.items) {
       console.log(formatPackageLine(item));
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdInspectPackage(
@@ -427,7 +421,7 @@ export async function cmdInspectPackage(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching package");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const detail = await apiRequestPackageDetail(registry, trimmed, token);
     if (!detail.package) {
       spinner.fail("Package not found");
@@ -538,10 +532,7 @@ export async function cmdInspectPackage(
       process.stdout.write(fileContent);
       if (!fileContent.endsWith("\n")) process.stdout.write("\n");
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdGetPackageTrustedPublisher(
@@ -553,7 +544,7 @@ export async function cmdGetPackageTrustedPublisher(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching trusted publisher");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequestPackageTrustedPublisher(registry, trimmed, token);
     spinner.stop();
     if (options.json) {
@@ -565,10 +556,7 @@ export async function cmdGetPackageTrustedPublisher(
       return;
     }
     printTrustedPublisher(result.trustedPublisher);
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdSetPackageTrustedPublisher(
@@ -586,7 +574,7 @@ export async function cmdSetPackageTrustedPublisher(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Saving trusted publisher");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -610,10 +598,7 @@ export async function cmdSetPackageTrustedPublisher(
     if (result.trustedPublisher) {
       printTrustedPublisher(result.trustedPublisher);
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdDeletePackageTrustedPublisher(
@@ -625,7 +610,7 @@ export async function cmdDeletePackageTrustedPublisher(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Deleting trusted publisher");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -641,10 +626,7 @@ export async function cmdDeletePackageTrustedPublisher(
       return;
     }
     console.log(`Trusted publisher deleted for ${trimmed}.`);
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdPackPackage(
@@ -684,7 +666,7 @@ export async function cmdPackPackage(
   const spinner = options.json
     ? null
     : createCrabLoader(`Packing ${packageName}@${packageVersion}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const packed = await createClawPackFromFolder({
       sourcePath,
       packDestination,
@@ -719,10 +701,7 @@ export async function cmdPackPackage(
       console.log(`SHA-256: ${packed.identity.sha256}`);
       console.log(`npm integrity: ${packed.identity.npmIntegrity}`);
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdValidatePackage(
@@ -1156,7 +1135,7 @@ export async function cmdRecoverPackage(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json ? null : createCrabLoader("Recovering staged publication");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1195,10 +1174,7 @@ export async function cmdRecoverPackage(
         `Recovery submitted for ${result.name}@${result.version}; pending security checks. Attempt ${result.attemptId}.`,
       );
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function revalidateTrustedToolingIdentityAtMutationBoundary() {
@@ -1475,7 +1451,7 @@ export async function cmdDownloadPackage(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json ? null : createCrabLoader("Resolving package artifact");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const targetVersion = await resolvePackageVersion(registry, trimmed, {
       token,
       version: options.version,
@@ -1518,10 +1494,7 @@ export async function cmdDownloadPackage(
       console.log(`npm integrity: ${identity.npmIntegrity}`);
       console.log(`npm shasum: ${identity.npmShasum}`);
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdVerifyPackage(
@@ -1536,7 +1509,7 @@ export async function cmdVerifyPackage(
   }
 
   const spinner = options.json ? null : createCrabLoader("Reading artifact");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const bytes = new Uint8Array(await readFile(targetFile));
     const identity = computeArtifactIdentity(bytes);
     let artifactResult: PackageArtifactResponse | null = null;
@@ -1595,10 +1568,7 @@ export async function cmdVerifyPackage(
     } else {
       console.log("Computed artifact digests. Pass --package or expected digests to verify.");
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdDeletePackage(
@@ -1625,7 +1595,7 @@ export async function cmdDeletePackage(
   const registry = await getRegistry(opts, { cache: true });
   const target = version ? `${name} version ${version}` : name;
   const spinner = createCrabLoader(`Deleting ${target}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1643,10 +1613,7 @@ export async function cmdDeletePackage(
       console.log(JSON.stringify(result, null, 2));
     }
     return result;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function normalizeDeleteVersion(value: string | undefined) {
@@ -1680,7 +1647,7 @@ export async function cmdUndeletePackage(
   const registry = await getRegistry(opts, { cache: true });
   const target = version ? `${name} version ${version}` : name;
   const spinner = createCrabLoader(`Restoring ${target}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1698,10 +1665,7 @@ export async function cmdUndeletePackage(
       console.log(JSON.stringify(result, null, 2));
     }
     return result;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdTransferPackage(
@@ -1717,7 +1681,7 @@ export async function cmdTransferPackage(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader(`Transferring ${name} to @${toOwner}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1736,10 +1700,7 @@ export async function cmdTransferPackage(
       console.log(JSON.stringify(result, null, 2));
     }
     return result;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdReportPackage(
@@ -1755,7 +1716,7 @@ export async function cmdReportPackage(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json ? null : createCrabLoader(`Reporting ${trimmed}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1780,10 +1741,7 @@ export async function cmdReportPackage(
     }
     const versionSuffix = version ? `@${version}` : "";
     console.log(`OK. Reported ${trimmed}${versionSuffix} for moderator review.`);
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdPackageModerationStatus(
@@ -3044,50 +3002,17 @@ function formatByteCount(value: number) {
 
 async function listPackageFiles(root: string) {
   const files: PackageFile[] = [];
-  const absRoot = resolve(root);
-  const ig = ignore();
-  ig.add([".git/", "node_modules/", `${DOT_DIR}/`, `${LEGACY_DOT_DIR}/`]);
-  await addIgnoreFile(ig, join(absRoot, DOT_IGNORE));
-  await addIgnoreFile(ig, join(absRoot, LEGACY_DOT_IGNORE));
-  await walk(absRoot, async (absPath) => {
-    const relPath = normalizePath(relative(absRoot, absPath));
-    if (!relPath || ig.ignores(relPath)) return;
-    const bytes = new Uint8Array(await readFile(absPath));
-    files.push({
-      relPath,
-      bytes,
-      contentType: mime.getType(relPath) ?? "application/octet-stream",
-    });
-  });
+  await forEachPublishFile(
+    root,
+    { includeDotfiles: true, respectGitignore: false },
+    async (absPath, relPath) => {
+      const bytes = new Uint8Array(await readFile(absPath));
+      files.push({
+        relPath,
+        bytes,
+        contentType: mime.getType(relPath) ?? "application/octet-stream",
+      });
+    },
+  );
   return files;
-}
-
-function normalizePath(path: string) {
-  return path
-    .split(sep)
-    .join("/")
-    .replace(/^\.\/+/, "");
-}
-
-async function walk(dir: string, onFile: (path: string) => Promise<void>) {
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name === ".git" || entry.name === "node_modules") continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await walk(full, onFile);
-      continue;
-    }
-    if (!entry.isFile()) continue;
-    await onFile(full);
-  }
-}
-
-async function addIgnoreFile(ig: ReturnType<typeof ignore>, path: string) {
-  try {
-    const raw = await readFile(path, "utf8");
-    ig.add(raw.split(/\r?\n/));
-  } catch {
-    // optional
-  }
 }

@@ -26,6 +26,7 @@ import {
   cmdGetContentRightsCase,
   cmdRecordContentRightsCorrespondence,
 } from "./commands/contentRights.js";
+import { cmdDownloads } from "./commands/downloads.js";
 import { cmdSendStaffEmail } from "./commands/email.js";
 import { cmdSetPackageFeatured, cmdSetSkillFeatured } from "./commands/featured.js";
 import { cmdFeaturedSelection } from "./commands/featuredSelections.js";
@@ -146,6 +147,16 @@ program
     const opts = await resolveGlobalOpts();
     await cmdWhoami(opts);
   });
+
+program
+  .command("downloads")
+  .description("New: admin Template recorded-download analytics (rolling 24h and lifetime)")
+  .option("--json", "Output the backend summary as JSON")
+  .option(
+    "--refresh",
+    "Schedule a bounded refresh; returns current/pending report, not a completed rebuild",
+  )
+  .action(async (options) => cmdDownloads(await resolveGlobalOpts(), options));
 
 const auth = program
   .command("auth")

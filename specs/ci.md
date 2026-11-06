@@ -12,6 +12,11 @@ times overlap and each required check reports its own failure:
   inspect the current tree and installed packages, not Git history.
 - `unit` runs the Vitest coverage suite. This replaces a separate `test` run
   because coverage already executes the test suite.
+  It also records the complete initial test inventory, final file outcomes and
+  native Vitest dependency records for adaptive-CI experiments. The seven-day
+  artifact contains repository-relative paths, counts, hashes and timings; it
+  excludes assertion text, logs and test names. Missing or incomplete evidence
+  stays unknown. Recording never changes test selection or coverage thresholds.
   Script suites explicitly use the Node environment used by the commands they
   exercise, avoiding a jsdom startup for filesystem and data-processing tests.
   Backend helper suites without browser dependencies also use Node. Keep the

@@ -1,4 +1,5 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
@@ -92,6 +93,16 @@ export async function getOptionalActiveAuthUserIdFromAction(
   } catch {
     return undefined;
   }
+}
+
+// The caller must already have resolved the actor ID through its authentication boundary.
+export async function requireActiveUserById(
+  ctx: Pick<MutationCtx | QueryCtx, "db">,
+  userId: Id<"users">,
+) {
+  const user = await ctx.db.get(userId);
+  if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError("Unauthorized");
+  return user;
 }
 
 export async function requireUser(ctx: MutationCtx | QueryCtx) {

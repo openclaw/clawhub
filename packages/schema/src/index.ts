@@ -1,6 +1,7 @@
 export type { ArkValidator } from "./ark.js";
 export { formatArkErrors, parseArk } from "./ark.js";
 export * from "./templates.js";
+export * from "./downloadAnalytics.js";
 export * from "./templatePackage.js";
 export * from "./catalogFeed.js";
 export * from "./experimentalTemplateFeed.js";

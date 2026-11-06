@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ChevronRight,
   ClipboardList,
+  Download,
   GitBranch,
   Megaphone,
   PackageSearch,
@@ -38,6 +39,7 @@ import {
   getPublisherAbuseItemsForTab,
   getPublisherAbuseVisiblePendingItems,
 } from "./-management/AbusePage";
+import { DownloadsPage } from "./-management/DownloadsPage";
 import { DuplicatesPage } from "./-management/DuplicatesPage";
 import {
   formatManagementUserLabel,
@@ -69,6 +71,7 @@ import { SkillsPage } from "./-management/SkillsPage";
 import { UsersPage } from "./-management/UsersPage";
 
 const MANAGEMENT_VIEWS = new Set<string>([
+  "downloads",
   "search-insights",
   "overview",
   "abuse",
@@ -766,6 +769,13 @@ export function Management() {
           <strong>{formatManagementViewLabel(activeView)}</strong>
         </div>
 
+        {activeView === "downloads" ? (
+          admin ? (
+            <DownloadsPage />
+          ) : (
+            <p>Admin access is required to view download analytics.</p>
+          )
+        ) : null}
         {activeView === "search-insights" ? <SearchInsightsPage endDay={search.endDay} /> : null}
         {activeView === "abuse" ? (
           <AbusePage
@@ -1076,6 +1086,14 @@ function ManagementSidebar({
         </div>
 
         <div className="management-sidebar-section-title">Staff tools</div>
+        {admin ? (
+          <ManagementSidebarLink
+            active={activeView === "downloads"}
+            icon={<Download size={15} />}
+            label="Template downloads"
+            view="downloads"
+          />
+        ) : null}
         <ManagementSidebarLink
           active={activeView === "search-insights"}
           icon={<PackageSearch size={15} />}
@@ -1155,6 +1173,7 @@ function resolveManagementView(
 }
 
 const MANAGEMENT_VIEW_LABELS: Record<ManagementView, string> = {
+  downloads: "Template downloads",
   "search-insights": "Search intelligence",
   overview: "Overview",
   abuse: "Publisher abuse",

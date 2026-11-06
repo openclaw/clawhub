@@ -1,10 +1,11 @@
 import { apiRequest, registryUrl } from "../../http.js";
 import { ApiRoutes, ApiV1UnstarResponseSchema } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
 import { parseSkillRef } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
-import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { createCrabLoader, fail, isInteractive, promptConfirm } from "../ui.js";
 
 function unstarRequestArgs(
   registry: string,
@@ -38,7 +39,7 @@ export async function cmdUnstarSkill(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader(`Unstarring ${slug}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       unstarRequestArgs(registry, slug, requested.ownerHandle, token),
@@ -48,8 +49,5 @@ export async function cmdUnstarSkill(
       result.alreadyUnstarred ? `OK. ${slug} already unstarred.` : `OK. Unstarred ${slug}`,
     );
     return result;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }

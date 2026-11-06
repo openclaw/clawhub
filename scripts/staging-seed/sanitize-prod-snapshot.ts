@@ -67,10 +67,10 @@ async function main() {
   await mkdir(bundleDir, { recursive: true });
 
   try {
-    const selectedSkills = await selectSkills(input, options.limit);
-    const selectedPackages = await selectPackages(input, options.limit);
-    const skillVersions = await selectSkillVersions(input, selectedSkills);
-    const packageReleases = await selectPackageReleases(input, selectedPackages);
+    const selectedSkills = await selectCatalogRecords(input, "skills", options.limit);
+    const selectedPackages = await selectCatalogRecords(input, "packages", options.limit);
+    const skillVersions = await selectArtifacts(input, selectedSkills, "skillVersions");
+    const packageReleases = await selectArtifacts(input, selectedPackages, "packageReleases");
 
     removeMissingParents(selectedSkills, skillVersions, "latestVersionId");
     removeMissingParents(selectedPackages, packageReleases, "latestReleaseId");
@@ -83,10 +83,10 @@ async function main() {
     updateArtifactFileMetadata(skillVersions, storageDocs);
     updateArtifactFileMetadata(packageReleases, storageDocs);
 
-    const userIds = collectUserIds(selectedSkills, selectedPackages);
-    const publisherIds = collectPublisherIds(selectedSkills, selectedPackages);
-    const users = await selectUsers(input, userIds, publisherIds);
-    const publishers = await selectPublishers(input, publisherIds, userIds);
+    const userIds = collectOwnerIds(selectedSkills, selectedPackages, "ownerUserId");
+    const publisherIds = collectOwnerIds(selectedSkills, selectedPackages, "ownerPublisherId");
+    const users = await selectOwners(input, "users", userIds, publisherIds);
+    const publishers = await selectOwners(input, "publishers", publisherIds, userIds);
 
     await writeTable(
       bundleDir,
@@ -166,53 +166,40 @@ async function main() {
   }
 }
 
-async function selectSkills(input: string, limit: number | null) {
+async function selectCatalogRecords(
+  input: string,
+  table: "skills" | "packages",
+  limit: number | null,
+) {
+  const isPublic = table === "skills" ? isPublicSkillSnapshot : isPublicPackageSnapshot;
+  const versionField = table === "skills" ? "latestVersionId" : "latestReleaseId";
   const rows = new Map<string, SnapshotDocument>();
-  for await (const doc of readSnapshotTable(input, "skills")) {
-    if (!isPublicSkillSnapshot(doc) || typeof doc.latestVersionId !== "string") continue;
+  for await (const doc of readSnapshotTable(input, table)) {
+    if (!isPublic(doc) || typeof doc[versionField] !== "string") continue;
     rows.set(doc._id, doc);
     if (limit && rows.size >= limit) break;
   }
   return rows;
 }
 
-async function selectPackages(input: string, limit: number | null) {
-  const rows = new Map<string, SnapshotDocument>();
-  for await (const doc of readSnapshotTable(input, "packages")) {
-    if (!isPublicPackageSnapshot(doc) || typeof doc.latestReleaseId !== "string") continue;
-    rows.set(doc._id, doc);
-    if (limit && rows.size >= limit) break;
-  }
-  return rows;
-}
-
-async function selectSkillVersions(input: string, skills: ReadonlyMap<string, SnapshotDocument>) {
+async function selectArtifacts(
+  input: string,
+  parents: ReadonlyMap<string, SnapshotDocument>,
+  table: "skillVersions" | "packageReleases",
+) {
+  const versionField = table === "skillVersions" ? "latestVersionId" : "latestReleaseId";
+  const selectFiles =
+    table === "skillVersions" ? selectSkillSnapshotFiles : selectPackageSnapshotFiles;
   const wanted = new Map(
-    [...skills.values()].map((skill) => [skill.latestVersionId as string, skill]),
+    [...parents.values()].map((parent) => [parent[versionField] as string, parent]),
   );
   const rows = new Map<string, SelectedArtifact>();
-  for await (const doc of readSnapshotTable(input, "skillVersions")) {
-    const skill = wanted.get(doc._id);
-    if (!skill) continue;
-    const files = selectSkillSnapshotFiles(doc.files);
-    if (files.length === 0 || typeof skill.ownerUserId !== "string") continue;
-    rows.set(doc._id, { doc, files, ownerUserId: skill.ownerUserId });
-  }
-  return rows;
-}
-
-async function selectPackageReleases(
-  input: string,
-  packages: ReadonlyMap<string, SnapshotDocument>,
-) {
-  const wanted = new Map([...packages.values()].map((pkg) => [pkg.latestReleaseId as string, pkg]));
-  const rows = new Map<string, SelectedArtifact>();
-  for await (const doc of readSnapshotTable(input, "packageReleases")) {
-    const pkg = wanted.get(doc._id);
-    if (!pkg) continue;
-    const files = selectPackageSnapshotFiles(doc.files);
-    if (files.length === 0 || typeof pkg.ownerUserId !== "string") continue;
-    rows.set(doc._id, { doc, files, ownerUserId: pkg.ownerUserId });
+  for await (const doc of readSnapshotTable(input, table)) {
+    const parent = wanted.get(doc._id);
+    if (!parent) continue;
+    const files = selectFiles(doc.files);
+    if (files.length === 0 || typeof parent.ownerUserId !== "string") continue;
+    rows.set(doc._id, { doc, files, ownerUserId: parent.ownerUserId });
   }
   return rows;
 }
@@ -238,59 +225,34 @@ function collectStorageIds(
   return ids;
 }
 
-function collectUserIds(
+function collectOwnerIds(
   skills: ReadonlyMap<string, SnapshotDocument>,
   packages: ReadonlyMap<string, SnapshotDocument>,
+  field: "ownerUserId" | "ownerPublisherId",
 ) {
   const ids = new Set<string>();
   for (const doc of [...skills.values(), ...packages.values()]) {
-    if (typeof doc.ownerUserId === "string") ids.add(doc.ownerUserId);
+    if (typeof doc[field] === "string") ids.add(doc[field]);
   }
   return ids;
 }
 
-function collectPublisherIds(
-  skills: ReadonlyMap<string, SnapshotDocument>,
-  packages: ReadonlyMap<string, SnapshotDocument>,
-) {
-  const ids = new Set<string>();
-  for (const doc of [...skills.values(), ...packages.values()]) {
-    if (typeof doc.ownerPublisherId === "string") ids.add(doc.ownerPublisherId);
-  }
-  return ids;
-}
-
-async function selectUsers(
+async function selectOwners(
   input: string,
-  userIds: ReadonlySet<string>,
-  publisherIds: ReadonlySet<string>,
+  table: "users" | "publishers",
+  ids: ReadonlySet<string>,
+  relatedIds: ReadonlySet<string>,
 ) {
+  const relationField = table === "users" ? "personalPublisherId" : "linkedUserId";
   const rows = new Map<string, SnapshotDocument>();
-  for await (const doc of readSnapshotTable(input, "users")) {
-    if (!userIds.has(doc._id)) continue;
-    if (typeof doc.personalPublisherId === "string" && !publisherIds.has(doc.personalPublisherId)) {
-      delete doc.personalPublisherId;
+  for await (const doc of readSnapshotTable(input, table)) {
+    if (!ids.has(doc._id)) continue;
+    if (typeof doc[relationField] === "string" && !relatedIds.has(doc[relationField])) {
+      delete doc[relationField];
     }
     rows.set(doc._id, doc);
   }
-  assertAllDocumentsFound("users", userIds, rows);
-  return rows;
-}
-
-async function selectPublishers(
-  input: string,
-  publisherIds: ReadonlySet<string>,
-  userIds: ReadonlySet<string>,
-) {
-  const rows = new Map<string, SnapshotDocument>();
-  for await (const doc of readSnapshotTable(input, "publishers")) {
-    if (!publisherIds.has(doc._id)) continue;
-    if (typeof doc.linkedUserId === "string" && !userIds.has(doc.linkedUserId)) {
-      delete doc.linkedUserId;
-    }
-    rows.set(doc._id, doc);
-  }
-  assertAllDocumentsFound("publishers", publisherIds, rows);
+  assertAllDocumentsFound(table, ids, rows);
   return rows;
 }
 

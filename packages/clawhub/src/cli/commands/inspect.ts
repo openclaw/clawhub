@@ -13,6 +13,7 @@ import {
   type ApiV1SkillPublicationResponse,
 } from "../../schema/index.js";
 import { getOptionalAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
 import {
   parsePublishedSkillRef,
@@ -77,7 +78,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching skill");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     let skillResult: Awaited<ReturnType<typeof fetchSkillDetail>> | null = null;
     let moderationDiagnostics: ModerationDiagnostics = null;
     try {
@@ -286,10 +287,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       if (shouldPrintMeta) console.log(`\n${options.file}:\n`);
       process.stdout.write(fileBytes);
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdVerifySkill(
@@ -309,7 +307,7 @@ export async function cmdVerifySkill(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching skill verification");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/verify`, registry);
     if (skillsShRef) {
       url.searchParams.set("reference", skillsShRef.sourceRef);
@@ -345,10 +343,7 @@ export async function cmdVerifySkill(
 
     console.log(JSON.stringify(result, null, 2));
     if (!readBoolean(result, "ok")) process.exitCode = 1;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function parseSkillsShCatalogRef(raw: string) {

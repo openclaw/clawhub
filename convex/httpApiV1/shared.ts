@@ -4,6 +4,7 @@ import {
   getClawHubRuntimeEnvironment,
   normalizeContentType,
   parseArk,
+  type ArkValidator,
 } from "clawhub-schema";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -24,8 +25,25 @@ const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 const SAFE_TEXT_FILE_CSP =
   "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
+export function contentDispositionAttachment(filename: string) {
+  const leaf = filename.split(/[/\\]/).pop()?.trim() || "download";
+  // encodeURIComponent leaves * ' ( ) raw. Those are not RFC 5987 attr-chars.
+  const encoded = encodeURIComponent(leaf).replace(
+    /[*'()]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  const extension = leaf.match(/\.(?:tgz|zip)$/i)?.[0]?.toLowerCase() ?? "";
+  const stem = extension ? leaf.slice(0, -extension.length) : leaf;
+  const stemIsSafe = /^[A-Za-z0-9._+-]+$/.test(stem) && !stem.startsWith(".");
+  const asciiStem = stemIsSafe
+    ? stem
+    : stem.replace(/[^A-Za-z0-9_+-]+/g, "_").replace(/^_+|_+$/g, "") || "download";
+  return `attachment; filename="${asciiStem}${extension}"; filename*=UTF-8''${encoded}`;
+}
+
 function attachmentDisposition(path: string) {
-  return `attachment; filename*=UTF-8''${encodeURIComponent(path.split("/").at(-1) || "download")}`;
+  const leaf = path.split("/").at(-1) || "download";
+  return `attachment; filename*=UTF-8''${encodeURIComponent(leaf)}`;
 }
 
 type SafeFileResponseParams = {
@@ -169,6 +187,33 @@ export async function parseJsonPayload(request: Request, headers: HeadersInit) {
     return { ok: true as const, payload };
   } catch {
     return { ok: false as const, response: text("Invalid JSON", 400, headers) };
+  }
+}
+
+export async function moderationDecisionResponse(
+  ctx: ActionCtx,
+  request: Request,
+  headers: HeadersInit,
+  schema: ArkValidator<{ status: string; note?: string; finalAction?: string }>,
+  label: string,
+  fallback: string,
+  resolveMutation: () => { ref: unknown; args: Record<string, unknown> },
+) {
+  try {
+    const body = parseArk(schema, await request.json(), label);
+    const { ref, args } = resolveMutation();
+    const result = await ctx.runMutation(
+      ref as never,
+      {
+        ...args,
+        status: body.status,
+        ...(body.note ? { note: body.note } : {}),
+        ...(body.finalAction ? { finalAction: body.finalAction } : {}),
+      } as never,
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    return text(error instanceof Error ? error.message : fallback, 400, headers);
   }
 }
 

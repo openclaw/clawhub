@@ -134,6 +134,7 @@ import {
   MAX_RAW_FILE_BYTES,
   getPathSegments,
   json,
+  moderationDecisionResponse,
   parsePackagePathSegments,
   publicApiOrigin,
   resolvePublicSkillVersions,
@@ -141,6 +142,7 @@ import {
   requireAdminOrResponse,
   requireModeratorOrResponse,
   requirePackagePublishAuthOrResponse,
+  contentDispositionAttachment,
   safeStoredFilePreviewResponse,
   safeStoredFileResponse,
   softDeleteErrorToResponse,
@@ -740,7 +742,9 @@ async function streamClawPackRelease(
   }
   const headers: Record<string, string> = {
     "Content-Type": "application/octet-stream",
-    "Content-Disposition": `attachment; filename="${release.npmTarballName ?? `${pkg.name.replaceAll("/", "-")}-${release.version}.tgz`}"`,
+    "Content-Disposition": contentDispositionAttachment(
+      release.npmTarballName ?? `${pkg.name.replaceAll("/", "-")}-${release.version}.tgz`,
+    ),
     "X-ClawHub-Artifact-Type": "npm-pack-tarball",
   };
   if (release.clawpackSha256) {
@@ -2789,31 +2793,18 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
 
-    try {
-      const body = parseArk(
-        PackageReportTriageRequestSchema,
-        await request.json(),
-        "Package report triage payload",
-      );
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.packages.triagePackageReportForUserInternal,
-        {
-          actorUserId: auth.userId,
-          reportId: segments[1] as Id<"packageReports">,
-          status: body.status,
-          ...(body.note ? { note: body.note } : {}),
-          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Package report triage failed",
-        400,
-        rate.headers,
-      );
-    }
+    return moderationDecisionResponse(
+      ctx,
+      request,
+      rate.headers,
+      PackageReportTriageRequestSchema,
+      "Package report triage payload",
+      "Package report triage failed",
+      () => ({
+        ref: internalRefs.packages.triagePackageReportForUserInternal,
+        args: { actorUserId: auth.userId, reportId: segments[1] as Id<"packageReports"> },
+      }),
+    );
   }
 
   if (
@@ -2827,31 +2818,18 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
 
-    try {
-      const body = parseArk(
-        PackageAppealResolveRequestSchema,
-        await request.json(),
-        "Package appeal resolve payload",
-      );
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.packages.resolvePackageAppealForUserInternal,
-        {
-          actorUserId: auth.userId,
-          appealId: segments[1] as Id<"packageAppeals">,
-          status: body.status,
-          ...(body.note ? { note: body.note } : {}),
-          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Package appeal resolve failed",
-        400,
-        rate.headers,
-      );
-    }
+    return moderationDecisionResponse(
+      ctx,
+      request,
+      rate.headers,
+      PackageAppealResolveRequestSchema,
+      "Package appeal resolve payload",
+      "Package appeal resolve failed",
+      () => ({
+        ref: internalRefs.packages.resolvePackageAppealForUserInternal,
+        args: { actorUserId: auth.userId, appealId: segments[1] as Id<"packageAppeals"> },
+      }),
+    );
   }
 
   const packageRoute = parsePackagePathSegments(segments);
@@ -4484,7 +4462,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         rate.headers,
         {
           "Content-Type": "application/zip",
-          "Content-Disposition": `attachment; filename="${publicPackage!.name.replaceAll("/", "-")}-${release.version}.zip"`,
+          "Content-Disposition": contentDispositionAttachment(
+            `${publicPackage!.name.replaceAll("/", "-")}-${release.version}.zip`,
+          ),
           ETag: `"sha256:${zipSha256}"`,
           Digest: `sha-256=${zipSha256Base64}`,
           "X-ClawHub-Artifact-Type": "legacy-plugin-zip",

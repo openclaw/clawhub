@@ -4,7 +4,12 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, mutation, query } from "./functions";
-import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
+import {
+  assertAdmin,
+  getOptionalActiveAuthUserId,
+  requireActiveUserById,
+  requireUser,
+} from "./lib/access";
 import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
@@ -1095,8 +1100,7 @@ async function migrateLegacyPublisherHandleToOrgWithActor(
     displayName?: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
   assertAdmin(actor);
 
   const orgHandle = validateHandle(args.handle, { allowReservedOpenClawPublisherHandle: true });
@@ -1256,8 +1260,7 @@ async function ensureOrgPublisherHandleWithActor(
     memberRole?: "owner" | "admin" | "publisher";
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
   assertAdmin(actor);
 
   const handle = validateHandle(args.handle, { allowReservedOpenClawPublisherHandle: true });
@@ -1660,8 +1663,7 @@ export const recoverPersonalPublisherInternal = internalMutation({
     dryRun: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const publisherHandle = validateHandle(args.publisherHandle);
@@ -1925,8 +1927,7 @@ async function createOrgPublisherForUser(
     bio?: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  await requireActiveUserById(ctx, args.actorUserId);
 
   const handle = validateHandle(args.handle);
   const existingPublisher = await getPublisherByHandle(ctx, handle);
@@ -2064,8 +2065,7 @@ async function deleteOrgPublisherForOwner(
     source: "settings" | "account.delete";
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  await requireActiveUserById(ctx, args.actorUserId);
 
   const publisher = await ctx.db.get(args.publisherId);
   if (!publisher || publisher.kind !== "org" || publisher.deletedAt || publisher.deactivatedAt) {
@@ -2189,8 +2189,7 @@ export const resolvePublishTargetForUserInternal = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     const minimumRole = args.minimumRole ?? "publisher";
     const requestedHandle = normalizePublisherHandle(args.ownerHandle);
     const personal = await ensurePersonalPublisherForUser(ctx, actor, {
@@ -3312,8 +3311,7 @@ export const updateOrgPublisherProfileInternal = internalMutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -3399,8 +3397,7 @@ export const removeOrgPublisherMemberInternal = internalMutation({
     memberHandle: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -3477,8 +3474,7 @@ export const deleteEmptyOrgPublisherInternal = internalMutation({
     dryRun: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -3575,8 +3571,7 @@ export const reclaimDeletedOrgHandleInternal = internalMutation({
     confirmationToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -3683,8 +3678,7 @@ export const listOfficialPublishersInternal = internalQuery({
     actorUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const rows = await ctx.db
@@ -3724,8 +3718,7 @@ export const addOfficialPublisherInternal = internalMutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -3798,8 +3791,7 @@ export const removeOfficialPublisherInternal = internalMutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -4257,8 +4249,7 @@ export const setTrustedPublisherInternal = internalMutation({
     trustedPublisher: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
     const publisher = await ctx.db.get(args.publisherId);
     const now = Date.now();

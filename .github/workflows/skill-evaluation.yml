@@ -11,7 +11,7 @@ permissions:
 jobs:
   evaluate:
     name: NVIDIA SkillEvaluator Tier 3 (${{ matrix.worker }})
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 360
     environment: Production
     strategy:

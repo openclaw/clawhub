@@ -9,6 +9,7 @@ import {
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
   isTemplateCategorySlug,
+  TEMPLATE_CATEGORY_DEFINITIONS,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   normalizePluginCategories,
@@ -29,7 +30,7 @@ import {
 } from "clawhub-schema";
 import { getPage, type IndexKey } from "convex-helpers/server/pagination";
 import { paginationOptsValidator, type PaginationOptions } from "convex/server";
-import { ConvexError, v, type Value } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -48,6 +49,7 @@ import {
   assertModerator,
   assertRole,
   getOptionalActiveAuthUserId,
+  requireActiveUserById,
   requireUserFromAction,
   requireUser,
 } from "./lib/access";
@@ -73,9 +75,16 @@ import {
 } from "./lib/emails";
 import { endorAnalysisSchema, endorAnalysisValidator } from "./lib/endorAnalysis";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
+import { storedFilesValidator } from "./lib/fileValidators";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
+import {
+  decodeIndexCursor as decodePackageIndexCursor,
+  decodeIndexKeyValue as decodePackageIndexKeyValue,
+  encodeIndexCursor as encodePackageIndexCursor,
+  encodeIndexKeyValue as encodePackageIndexKeyValue,
+} from "./lib/indexCursor";
 import {
   readInitialPluginFamilyPage,
   canReadInitialPluginFamilyPage,
@@ -261,7 +270,6 @@ const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
 const MAX_STORED_PACKAGE_METADATA_DEPTH = 10;
 const CURRENT_TEMPLATE_PROFILE_POLICY_VERSION = 1;
 const PLUGIN_EXPORT_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
-const GET_PAGE_TIEBREAKER_FIELD_COUNT = 2;
 
 function computePackageRecommendationScore(
   stats: Doc<"packages">["stats"],
@@ -1816,66 +1824,6 @@ function buildPackagePluginCategoryDigestQuery(
   const channel = args.channel;
   const isOfficial = args.isOfficial;
   const digests = ctx.db.query("packagePluginCategorySearchDigest");
-  if (args.sort === "downloads") {
-    if (family && channel && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_family_channel_official_category_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category),
-      );
-    }
-    if (family && channel) {
-      return digests.withIndex("by_active_family_channel_category_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("pluginCategory", args.category),
-      );
-    }
-    if (family && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_family_official_category_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category),
-      );
-    }
-    if (channel && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_channel_official_category_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category),
-      );
-    }
-    if (family) {
-      return digests.withIndex("by_active_family_category_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
-      );
-    }
-    if (channel) {
-      return digests.withIndex("by_active_channel_category_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("channel", channel).eq("pluginCategory", args.category),
-      );
-    }
-    if (typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_official_category_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category),
-      );
-    }
-    return digests.withIndex("by_active_category_downloads", (q) =>
-      q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
-    );
-  }
   if (args.sort === "installs" || args.sort === "recommended") {
     if (family && typeof isOfficial === "boolean") {
       return digests.withIndex(
@@ -1918,8 +1866,19 @@ function buildPackagePluginCategoryDigestQuery(
       (q) => q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
     );
   }
+  const sort = args.sort === "downloads" ? "downloads" : "updated";
+  if (sort === "downloads" && family && channel && typeof isOfficial === "boolean") {
+    return digests.withIndex("by_active_family_channel_official_category_downloads", (q) =>
+      q
+        .eq("softDeletedAt", undefined)
+        .eq("family", family)
+        .eq("channel", channel)
+        .eq("isOfficial", isOfficial)
+        .eq("pluginCategory", args.category),
+    );
+  }
   if (family && channel) {
-    return digests.withIndex("by_active_family_channel_category_updated", (q) =>
+    return digests.withIndex(`by_active_family_channel_category_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("family", family)
@@ -1928,7 +1887,7 @@ function buildPackagePluginCategoryDigestQuery(
     );
   }
   if (family && typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_family_official_category_updated", (q) =>
+    return digests.withIndex(`by_active_family_official_category_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("family", family)
@@ -1937,7 +1896,7 @@ function buildPackagePluginCategoryDigestQuery(
     );
   }
   if (channel && typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_channel_official_category_updated", (q) =>
+    return digests.withIndex(`by_active_channel_official_category_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("channel", channel)
@@ -1946,24 +1905,24 @@ function buildPackagePluginCategoryDigestQuery(
     );
   }
   if (family) {
-    return digests.withIndex("by_active_family_category_updated", (q) =>
+    return digests.withIndex(`by_active_family_category_${sort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
     );
   }
   if (channel) {
-    return digests.withIndex("by_active_channel_category_updated", (q) =>
+    return digests.withIndex(`by_active_channel_category_${sort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("channel", channel).eq("pluginCategory", args.category),
     );
   }
   if (typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_official_category_updated", (q) =>
+    return digests.withIndex(`by_active_official_category_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("isOfficial", isOfficial)
         .eq("pluginCategory", args.category),
     );
   }
-  return digests.withIndex("by_active_category_updated", (q) =>
+  return digests.withIndex(`by_active_category_${sort}`, (q) =>
     q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
   );
 }
@@ -1982,63 +1941,6 @@ function buildPackageTopicDigestQuery(
   const channel = args.channel;
   const isOfficial = args.isOfficial;
   const digests = ctx.db.query("packageTopicSearchDigest");
-  if (args.sort === "downloads") {
-    if (family && channel && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_family_channel_official_topic_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("topic", args.topic),
-      );
-    }
-    if (family && channel) {
-      return digests.withIndex("by_active_family_channel_topic_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("topic", args.topic),
-      );
-    }
-    if (family && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_family_official_topic_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("topic", args.topic),
-      );
-    }
-    if (channel && typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_channel_official_topic_downloads", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("topic", args.topic),
-      );
-    }
-    if (family) {
-      return digests.withIndex("by_active_family_topic_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("family", family).eq("topic", args.topic),
-      );
-    }
-    if (channel) {
-      return digests.withIndex("by_active_channel_topic_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("channel", channel).eq("topic", args.topic),
-      );
-    }
-    if (typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_official_topic_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("isOfficial", isOfficial).eq("topic", args.topic),
-      );
-    }
-    return digests.withIndex("by_active_topic_downloads", (q) =>
-      q.eq("softDeletedAt", undefined).eq("topic", args.topic),
-    );
-  }
   if (args.sort === "installs") {
     if (typeof isOfficial === "boolean") {
       return digests.withIndex("by_active_official_topic_installs", (q) =>
@@ -2059,8 +1961,19 @@ function buildPackageTopicDigestQuery(
       q.eq("softDeletedAt", undefined).eq("topic", args.topic),
     );
   }
+  const sort = args.sort === "downloads" ? "downloads" : "updated";
+  if (sort === "downloads" && family && channel && typeof isOfficial === "boolean") {
+    return digests.withIndex("by_active_family_channel_official_topic_downloads", (q) =>
+      q
+        .eq("softDeletedAt", undefined)
+        .eq("family", family)
+        .eq("channel", channel)
+        .eq("isOfficial", isOfficial)
+        .eq("topic", args.topic),
+    );
+  }
   if (family && channel) {
-    return digests.withIndex("by_active_family_channel_topic_updated", (q) =>
+    return digests.withIndex(`by_active_family_channel_topic_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("family", family)
@@ -2069,7 +1982,7 @@ function buildPackageTopicDigestQuery(
     );
   }
   if (family && typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_family_official_topic_updated", (q) =>
+    return digests.withIndex(`by_active_family_official_topic_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("family", family)
@@ -2078,7 +1991,7 @@ function buildPackageTopicDigestQuery(
     );
   }
   if (channel && typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_channel_official_topic_updated", (q) =>
+    return digests.withIndex(`by_active_channel_official_topic_${sort}`, (q) =>
       q
         .eq("softDeletedAt", undefined)
         .eq("channel", channel)
@@ -2087,21 +2000,21 @@ function buildPackageTopicDigestQuery(
     );
   }
   if (family) {
-    return digests.withIndex("by_active_family_topic_updated", (q) =>
+    return digests.withIndex(`by_active_family_topic_${sort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("family", family).eq("topic", args.topic),
     );
   }
   if (channel) {
-    return digests.withIndex("by_active_channel_topic_updated", (q) =>
+    return digests.withIndex(`by_active_channel_topic_${sort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("channel", channel).eq("topic", args.topic),
     );
   }
   if (typeof isOfficial === "boolean") {
-    return digests.withIndex("by_active_official_topic_updated", (q) =>
+    return digests.withIndex(`by_active_official_topic_${sort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("isOfficial", isOfficial).eq("topic", args.topic),
     );
   }
-  return digests.withIndex("by_active_topic_updated", (q) =>
+  return digests.withIndex(`by_active_topic_${sort}`, (q) =>
     q.eq("softDeletedAt", undefined).eq("topic", args.topic),
   );
 }
@@ -3381,17 +3294,6 @@ function emptyPluginExportMergedCursor(): PluginExportMergedCursor {
   };
 }
 
-function encodePackageIndexKeyValue(val: Value | undefined): Value {
-  return val === undefined ? { __undef: 1 } : val;
-}
-
-function decodePackageIndexKeyValue(val: unknown): Value | undefined {
-  if (val !== null && typeof val === "object" && "__undef" in (val as Record<string, unknown>)) {
-    return undefined;
-  }
-  return val as Value;
-}
-
 function emptyStablePackageDiscoveryCursor(
   sort: StablePackageDiscoveryCursorState["sort"],
 ): StablePackageDiscoveryCursorState {
@@ -3475,58 +3377,6 @@ function decodeStablePackageDiscoveryCursor(
     return decoded;
   } catch {
     return fallback;
-  }
-}
-
-function encodePackageIndexCursor(indexName: string, key: IndexKey): string {
-  return JSON.stringify({
-    v: 1,
-    index: indexName,
-    key: key.map(encodePackageIndexKeyValue),
-  });
-}
-
-function packageIndexKeyStartsWithPrefix(key: IndexKey, prefix: IndexKey): boolean {
-  if (key.length < prefix.length) return false;
-  return prefix.every((value, index) => key[index] === value);
-}
-
-function decodePackageIndexCursor({
-  cursor,
-  indexName,
-  maxIndexKeyLength,
-  eqPrefix,
-}: {
-  cursor?: string | null;
-  indexName: string;
-  maxIndexKeyLength: number;
-  eqPrefix: IndexKey;
-}): IndexKey | null {
-  if (!cursor) return null;
-  try {
-    const parsed = JSON.parse(cursor) as unknown;
-    const isSelfDescribingCursor =
-      parsed !== null &&
-      typeof parsed === "object" &&
-      !Array.isArray(parsed) &&
-      (parsed as { v?: unknown }).v === 1 &&
-      (parsed as { index?: unknown }).index === indexName &&
-      Array.isArray((parsed as { key?: unknown }).key);
-    const arr = Array.isArray(parsed)
-      ? parsed
-      : isSelfDescribingCursor
-        ? (parsed as { key: unknown[] }).key
-        : null;
-    if (!Array.isArray(arr)) return null;
-    const key = arr.map(decodePackageIndexKeyValue);
-    const maxLength = isSelfDescribingCursor
-      ? maxIndexKeyLength + GET_PAGE_TIEBREAKER_FIELD_COUNT
-      : maxIndexKeyLength;
-    if (key.length > maxLength) return null;
-    if (!packageIndexKeyStartsWithPrefix(key, eqPrefix)) return null;
-    return key;
-  } catch {
-    return null;
   }
 }
 
@@ -3918,6 +3768,83 @@ export const listPluginValidationReportPageInternal = internalQuery({
       nextCursor: result.nextCursor,
       done: !result.hasMore,
     };
+  },
+});
+
+// The overview replaces fourteen independently paginated category reads with
+// one consistent public snapshot. Larger catalogs explicitly retain the paginated
+// path rather than silently returning a partial popularity ranking.
+export const templateOverviewInternal = internalQuery({
+  args: { limit: v.number() },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(Math.floor(args.limit), 8));
+    const maximumRows = 1000;
+    const [digests, badges] = await Promise.all([
+      ctx.db
+        .query("packageSearchDigest")
+        .withIndex("by_active_family_channel_updated", (q) =>
+          q.eq("softDeletedAt", undefined).eq("family", "claw"),
+        )
+        .order("desc")
+        .take(maximumRows + 1),
+      ctx.db
+        .query("packageBadges")
+        .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))
+        .order("desc")
+        .take(maximumRows + 1),
+    ]);
+    if (digests.length > maximumRows || badges.length > maximumRows) {
+      return { complete: false, featured: [], sections: [] };
+    }
+    const cache = {
+      publishers: new Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>(),
+      officialPublishers: new Map<Id<"publishers">, Promise<boolean>>(),
+    };
+    const candidates = digests.filter((digest) => digestMatchesFilters(digest, {}));
+    // Each projection may open several independent reads. Bound both phases well
+    // below Convex's concurrent-I/O ceiling even at the full 1,000-row cap.
+    const visible: PackageDigestLike[] = [];
+    const items: PublicPackageListItem[] = [];
+    const batchSize = 16;
+    for (let offset = 0; offset < candidates.length; offset += batchSize) {
+      const batch = candidates.slice(offset, offset + batchSize);
+      const available = await Promise.all(
+        batch.map((digest) => isTemplateCatalogPublisherAvailable(ctx, digest, cache.publishers)),
+      );
+      const selected = batch.filter((_, index) => available[index]);
+      visible.push(...selected);
+      items.push(
+        ...(await Promise.all(
+          selected.map((digest) => toPublicPackageListItem(ctx, digest, undefined, cache)),
+        )),
+      );
+    }
+    const byId = new Map(
+      visible.map((digest, index) => [String(digest.packageId), { digest, item: items[index] }]),
+    );
+    const featured: PublicPackageListItem[] = [];
+    for (const badge of badges) {
+      const entry = byId.get(String(badge.packageId));
+      if (
+        !entry ||
+        getPluginDiscoveryExclusion(entry.digest.categories) ||
+        !isEnglishPluginListing(entry.digest)
+      )
+        continue;
+      featured.push({ ...entry.item, featuredAt: badge.at });
+      if (featured.length >= limit) break;
+    }
+    const ranked = [...items].sort(
+      (left, right) =>
+        right.stats.installs - left.stats.installs || left.name.localeCompare(right.name),
+    );
+    const sections = [...TEMPLATE_CATEGORY_DEFINITIONS.map(({ slug }) => slug), "other"]
+      .map((category) => ({
+        category,
+        items: ranked.filter((item) => item.categories?.includes(category)).slice(0, limit),
+      }))
+      .filter((section) => section.items.length > 0);
+    return { complete: true, featured, sections };
   },
 });
 
@@ -4525,8 +4452,19 @@ async function listPackagePageImpl(
         .order("desc")
         .paginate({ cursor: currentCursor, numItems: scanPageSize });
 
+      const selected: PackageDigestLike[] = [];
+      const projectSelected = async () => {
+        const cache = { publishers: templatePublisherCache, officialPublishers: new Map() };
+        collected.push(
+          ...(await Promise.all(
+            selected.map((digest) => toPublicPackageListItem(ctx, digest, undefined, cache)),
+          )),
+        );
+      };
       for (let index = pageOffset; index < page.page.length; index += 1) {
         const digest = page.page[index] as PackageDigestLike;
+        // Avoid owner reads for unrelated categories in the shared Template page.
+        if (!digestMatchesFilters(digest, { ...args, category, topic })) continue;
         if (!(await canViewPackage(digest))) continue;
         if (family && digest.family !== family) continue;
         if (channel && digest.channel !== channel) continue;
@@ -4535,9 +4473,9 @@ async function listPackagePageImpl(
         }
         if (!(await isTemplateCatalogPublisherAvailable(ctx, digest, templatePublisherCache)))
           continue;
-        if (!digestMatchesFilters(digest, { ...args, category, topic })) continue;
-        collected.push(await toPublicPackageListItem(ctx, digest));
-        if (collected.length >= targetCount) {
+        selected.push(digest);
+        if (selected.length >= targetCount) {
+          await projectSelected();
           const nextOffset = index + 1;
           const hasMoreInPage = nextOffset < page.page.length;
           const nextState = {
@@ -4556,6 +4494,7 @@ async function listPackagePageImpl(
         }
       }
 
+      await projectSelected();
       done = page.isDone;
       cursor = page.continueCursor;
       pageOffset = 0;
@@ -5796,8 +5735,7 @@ export const hardDeleteForAdminInternal = internalMutation({
     confirmationToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const name = normalizePackageName(args.name);
@@ -6720,8 +6658,7 @@ export const deleteOwnedReleaseForUserInternal = internalMutation({
     version: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const version = args.version.trim();
     if (!version) throw new ConvexError("Version required");
@@ -6820,8 +6757,7 @@ export const restoreOwnedReleaseForUserInternal = internalMutation({
     version: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const version = args.version.trim();
     if (!version) throw new ConvexError("Version required");
@@ -6850,8 +6786,7 @@ export const moderatePackageReleaseForUserInternal = internalMutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const normalizedName = normalizePackageName(args.name);
@@ -7191,8 +7126,7 @@ export const listPackageReportsInternal = internalQuery({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -7235,8 +7169,7 @@ export const triagePackageReportForUserInternal = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const report = await ctx.db.get(args.reportId);
@@ -7333,8 +7266,7 @@ export const getPackageModerationStatusForUserInternal = internalQuery({
     name: v.string(),
   },
   handler: async (ctx, args): Promise<PackageModerationStatus> => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
     if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package not found");
@@ -7394,8 +7326,7 @@ export const submitPackageAppealForUserInternal = internalMutation({
     message: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
 
     const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
     if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package not found");
@@ -7524,8 +7455,7 @@ export const listPackageAppealsInternal = internalQuery({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -7566,8 +7496,7 @@ export const resolvePackageAppealForUserInternal = internalMutation({
     finalAction: v.optional(v.union(v.literal("none"), v.literal("approve"))),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const appeal = await ctx.db.get(args.appealId);
@@ -7648,8 +7577,7 @@ export const listPackageModerationEventLogsInternal = internalQuery({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 50), 100));
@@ -7736,8 +7664,7 @@ export const listOfficialPluginMigrationsInternal = internalQuery({
     phase: v.optional(v.union(packageOfficialMigrationPhaseValidator, v.literal("all"))),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -7779,8 +7706,7 @@ export const upsertOfficialPluginMigrationForUserInternal = internalMutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const bundledPluginId = normalizeOfficialMigrationId(args.bundledPluginId);
@@ -7880,8 +7806,7 @@ export const listPackageModerationQueueInternal = internalQuery({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
@@ -9651,8 +9576,7 @@ export const reservePackageNameInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const owner = await ctx.db.get(args.ownerUserId);
@@ -9836,8 +9760,7 @@ async function transferPackageOwnerForUser(
     reason?: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
 
   const normalizedName = normalizePackageName(args.name);
   const pkg = await getPackageByNormalizedName(ctx, normalizedName);
@@ -9962,8 +9885,7 @@ export const transferPackageOwnerInternal = internalMutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const owner = await ctx.db.get(args.ownerUserId);
@@ -10006,8 +9928,7 @@ export const repairPackageIdentityInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const normalizedName = normalizePackageName(args.name);
@@ -11531,15 +11452,7 @@ export const insertReleaseInternal = internalMutation({
     aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     allowExistingRelease: v.optional(v.boolean()),
-    files: v.array(
-      v.object({
-        path: v.string(),
-        size: v.number(),
-        storageId: v.id("_storage"),
-        sha256: v.string(),
-        contentType: v.optional(v.string()),
-      }),
-    ),
+    files: storedFilesValidator,
     integritySha256: v.string(),
     sha256hash: v.string(),
     artifactKind: v.optional(v.union(v.literal("legacy-zip"), v.literal("npm-pack"))),
@@ -11621,8 +11534,7 @@ export const insertReleaseInternal = internalMutation({
     } else if (args.trustedPublishInventoryDigest) {
       throw new ConvexError("Trusted publish inventory requires a publish token");
     }
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     const owner = await ctx.db.get(args.ownerUserId);
     if (!owner || owner.deletedAt || owner.deactivatedAt) {
       throw new ConvexError("Package owner is unavailable");
@@ -12629,8 +12541,7 @@ export const setPackageFeaturedForUserInternal = internalMutation({
     featured: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertModerator(actor);
 
     const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
@@ -12649,8 +12560,7 @@ export const removeBetaLatestPackageTagsInternal = internalMutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const results = [];

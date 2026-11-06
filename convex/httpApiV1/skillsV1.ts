@@ -96,6 +96,7 @@ import {
   formatUserFacingErrorMessage,
   getPathSegments,
   json,
+  moderationDecisionResponse,
   parseJsonPayload,
   parseMultipartPublish,
   parsePublishBody,
@@ -3186,31 +3187,18 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   ) {
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
-    try {
-      const body = parseArk(
-        SkillReportTriageRequestSchema,
-        await request.json(),
-        "Skill report triage payload",
-      );
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.skills.triageSkillReportForUserInternal,
-        {
-          actorUserId: auth.userId,
-          reportId: segments[2] as Id<"skillReports">,
-          status: body.status,
-          ...(body.note ? { note: body.note } : {}),
-          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Skill report triage failed",
-        400,
-        rate.headers,
-      );
-    }
+    return moderationDecisionResponse(
+      ctx,
+      request,
+      rate.headers,
+      SkillReportTriageRequestSchema,
+      "Skill report triage payload",
+      "Skill report triage failed",
+      () => ({
+        ref: internalRefs.skills.triageSkillReportForUserInternal,
+        args: { actorUserId: auth.userId, reportId: segments[2] as Id<"skillReports"> },
+      }),
+    );
   }
 
   if (
@@ -3222,31 +3210,18 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   ) {
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
     if (!auth.ok) return auth.response;
-    try {
-      const body = parseArk(
-        SkillAppealResolveRequestSchema,
-        await request.json(),
-        "Skill appeal resolve payload",
-      );
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.skills.resolveSkillAppealForUserInternal,
-        {
-          actorUserId: auth.userId,
-          appealId: segments[2] as Id<"skillAppeals">,
-          status: body.status,
-          ...(body.note ? { note: body.note } : {}),
-          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Skill appeal resolve failed",
-        400,
-        rate.headers,
-      );
-    }
+    return moderationDecisionResponse(
+      ctx,
+      request,
+      rate.headers,
+      SkillAppealResolveRequestSchema,
+      "Skill appeal resolve payload",
+      "Skill appeal resolve failed",
+      () => ({
+        ref: internalRefs.skills.resolveSkillAppealForUserInternal,
+        args: { actorUserId: auth.userId, appealId: segments[2] as Id<"skillAppeals"> },
+      }),
+    );
   }
 
   if (segments.length === 2 && action === "report") {

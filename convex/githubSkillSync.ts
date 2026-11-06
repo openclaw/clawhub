@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./functions";
 import { assertAdmin, requireUserFromAction } from "./lib/access";
+import { displayManifestStatusValidator, displayManifestValidator } from "./lib/displayManifest";
 import { buildGitHubApiHeaders } from "./lib/githubAuth";
 import { getGitHubProviderAccountId } from "./lib/githubIdentity";
 import {
@@ -45,6 +46,7 @@ import { chunkSkillScanRequestFiles } from "./lib/skillScanRequestFiles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug } from "./lib/skillSlugValidator";
 import { getSkillsShFixtureEnvironmentPolicy } from "./lib/skillsShCatalogEnvironment";
+import { createInitialSkillStats } from "./lib/skillStats";
 import { enqueueNvidiaSkillEvaluation } from "./skillEvaluations";
 import {
   isDecodableSkillPresentationRaster,
@@ -202,28 +204,10 @@ type GitHubSkillContentTarget = {
   candidateId?: Id<"githubSkillCandidates">;
 };
 
-const displayManifestStatusValidator = v.union(
-  v.literal("ok"),
-  v.literal("missing"),
-  v.literal("invalid"),
-  v.literal("failed"),
-);
-
 function clampInt(value: number, min: number, max: number) {
   const finite = Number.isFinite(value) ? Math.trunc(value) : min;
   return Math.min(max, Math.max(min, finite));
 }
-
-const displayManifestValidator = v.object({
-  notGrouped: v.optional(v.union(v.literal("top"), v.literal("bottom"))),
-  groupings: v.array(
-    v.object({
-      title: v.string(),
-      description: v.optional(v.string()),
-      skills: v.array(v.string()),
-    }),
-  ),
-});
 
 const discoveredSkillMetadataValidator = v.object({
   slug: v.string(),
@@ -1310,18 +1294,7 @@ async function applyGenericGitHubSkillSourceSyncHandler(
         githubScanStatus: "pending",
         latestVersionSummary: latestGitHubVersionSummary(discovered.upstreamVersion, args.now),
         tags: {},
-        statsDownloads: 0,
-        statsStars: 0,
-        statsInstallsCurrent: 0,
-        statsInstallsAllTime: 0,
-        stats: {
-          downloads: 0,
-          stars: 0,
-          installsCurrent: 0,
-          installsAllTime: 0,
-          versions: 0,
-          comments: 0,
-        },
+        ...createInitialSkillStats(),
         ...moderation,
         createdAt: args.now,
         updatedAt: args.now,

@@ -18,15 +18,13 @@ ClawHub's security consumers use three independent model lanes. A scanner's
   these scanner lanes. Explicit scanner settings
   survive the workers' restricted subprocess environments. Custom providers retain
   their own defaults instead of receiving an OpenAI model accidentally.
-- **Endor-enabled judge:** the generated ClawHub profile uses `gpt-6.1-sol`, high
-  reasoning, explicitly `service_tier=default`. This change does **not** enable Endor.
-  Existing enablement, image-digest requirements and fail-closed behavior remain.
+- **Endor:** report-only and never an input to the judge, so it has no judge
+  model policy. See `specs/endor-plugin-scans.md`.
 
 The local dry run sends Responses requests with the same final-judge default,
 reasoning and Standard (`service_tier=default`, not `priority`) policy. Existing
 `OPENAI_EVAL_MODEL`, `OPENAI_EVAL_REASONING_EFFORT` and
-`OPENAI_EVAL_SERVICE_TIER` overrides remain supported for that evaluator and the
-generated Endor judge. The ordinary production judge remains selected by the
+`OPENAI_EVAL_SERVICE_TIER` overrides remain supported for that evaluator. The ordinary production judge remains selected by the
 reviewed ClawScan profile, not by those local evaluator environment variables.
 
 ## Source and transport boundary
@@ -165,8 +163,6 @@ health or service recovery.
 - True worker subprocess tests capture both scanner models and reasoning efforts
   with default and distinct explicit settings, and verify worker credentials and
   ambient endpoint overrides are not forwarded.
-- The generated Endor judge is executed against a fake Codex executable, proving
-  the actual argv, high/override effort, Standard tier and safe shell quoting.
 - Workflow/installer contracts cover exact source fetches, patch application,
   hash-locked AIG dependencies, locked SkillSpector installation, adapter tests and
   all three security consumer workflows. Invalid/mutable commit pins fail closed.

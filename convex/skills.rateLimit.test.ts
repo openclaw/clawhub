@@ -2793,4 +2793,180 @@ describe("skills anti-spam guards", () => {
       }),
     );
   });
+
+  it("keeps a retired scanner hide pending when the latest version has no ClawScan", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skills:vt-unscanned",
+          slug: "vt-unscanned",
+          ownerUserId: "users:owner",
+          latestVersionId: "skillVersions:vt-unscanned",
+          moderationSourceVersionId: "skillVersions:vt-unscanned",
+          moderationStatus: "hidden",
+          moderationReason: "scanner.vt.malicious",
+          moderationFlags: ["blocked.malware"],
+          manualOverride: undefined,
+          softDeletedAt: undefined,
+        },
+        {
+          _id: "skills:static-unscanned",
+          slug: "static-unscanned",
+          ownerUserId: "users:owner",
+          latestVersionId: "skillVersions:static-unscanned",
+          moderationSourceVersionId: "skillVersions:static-unscanned",
+          moderationStatus: "hidden",
+          moderationReason: "scanner.static.malicious",
+          moderationFlags: ["blocked.malware"],
+          manualOverride: undefined,
+          softDeletedAt: undefined,
+        },
+        {
+          _id: "skills:clawscan-clean",
+          slug: "clawscan-clean",
+          ownerUserId: "users:owner",
+          latestVersionId: "skillVersions:clawscan-clean",
+          moderationSourceVersionId: "skillVersions:clawscan-clean",
+          moderationStatus: "hidden",
+          moderationReason: "scanner.vt.suspicious",
+          moderationFlags: ["flagged.suspicious"],
+          manualOverride: undefined,
+          softDeletedAt: undefined,
+        },
+      ],
+      continueCursor: null,
+      isDone: true,
+    });
+    const patch = vi.fn(async () => {});
+    const runAfter = vi.fn(async () => {});
+    const vtUnscannedVersion = {
+      _id: "skillVersions:vt-unscanned",
+      vtAnalysis: { status: "malicious" },
+    };
+    const staticUnscannedVersion = {
+      _id: "skillVersions:static-unscanned",
+      staticScan: {
+        status: "malicious",
+        reasonCodes: ["malicious.static_fixture"],
+        findings: [],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: Date.now(),
+      },
+    };
+    const clawScanCleanVersion = {
+      _id: "skillVersions:clawscan-clean",
+      vtAnalysis: { status: "malicious" },
+      staticScan: {
+        status: "malicious",
+        reasonCodes: ["malicious.static_fixture"],
+        findings: [],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: Date.now(),
+      },
+      llmAnalysis: { status: "clean" },
+    };
+    const owner = {
+      _id: "users:owner",
+      role: "user",
+      _creationTime: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      deletedAt: undefined,
+    };
+
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "skillVersions:vt-unscanned") return vtUnscannedVersion;
+        if (id === "skillVersions:static-unscanned") return staticUnscannedVersion;
+        if (id === "skillVersions:clawscan-clean") return clawScanCleanVersion;
+        if (id === "users:owner") return owner;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table);
+        if (globalStatsQuery) return globalStatsQuery;
+        if (table === "skills") {
+          return {
+            paginate,
+          };
+        }
+        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+        if (emptyAliasesQuery) return emptyAliasesQuery;
+        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+        if (emptyReservationsQuery) return emptyReservationsQuery;
+        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+        if (emptyPublishersQuery) return emptyPublishersQuery;
+        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
+    };
+
+    const result = await backfillLatestSkillModerationHandler(
+      { db, scheduler: { runAfter } } as never,
+      { batchSize: 10 } as never,
+    );
+
+    expect(result).toEqual({ patched: 3, isDone: true, scanned: 3 });
+    expect(patch).toHaveBeenCalledWith(
+      "skills:vt-unscanned",
+      expect.objectContaining({
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan",
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "skills:static-unscanned",
+      expect.objectContaining({
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan",
+      }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      "skills:vt-unscanned",
+      expect.objectContaining({
+        moderationReason: "scanner.aggregate.clean",
+      }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      "skills:static-unscanned",
+      expect.objectContaining({
+        moderationReason: "scanner.aggregate.clean",
+      }),
+    );
+    const enqueuedCalls = runAfter.mock.calls as unknown as Array<
+      [number, unknown, { source?: string; versionId?: string } | undefined]
+    >;
+    const enqueuedVersionIds = enqueuedCalls
+      .filter((call) => call[2]?.source === "backfill")
+      .map((call) => call[2]?.versionId);
+    expect(enqueuedVersionIds).toEqual([
+      "skillVersions:vt-unscanned",
+      "skillVersions:static-unscanned",
+    ]);
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      internal.securityScan.enqueueSkillVersionScanInternal,
+      expect.objectContaining({
+        versionId: "skillVersions:vt-unscanned",
+        source: "backfill",
+        preserveActiveJob: true,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "skills:clawscan-clean",
+      expect.objectContaining({
+        moderationStatus: "active",
+        moderationReason: "scanner.llm.clean",
+        moderationVerdict: "clean",
+        moderationSourceVersionId: "skillVersions:clawscan-clean",
+      }),
+    );
+  });
 });

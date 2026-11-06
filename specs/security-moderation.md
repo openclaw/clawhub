@@ -695,7 +695,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   VirusTotal status never affects moderation reasons, listing, or trust.
   Historical `vtAnalysis`, `vtScanLogs`, `scanLastCheckedAt`/`scanCheckCount`
   and `securityScanJobs.waitForVtUntil` values remain in the database only until a
-  follow-up migration narrows the schema. Queued legacy `vt-update` jobs still
+  follow-up migration narrows the schema. The unused production
+  `skillVersions.by_active_vt_status_created` index is retained as deployment
+  compatibility until a separately approved cleanup; this does not re-enable
+  any VirusTotal reader, writer, scheduler, or trust decision. Queued legacy `vt-update` jobs still
   drain through the normal claim path. ClawScan workers keep stripping
   `VIRUSTOTAL_API_KEY` from scanner subprocesses so the OSS ClawScan VirusTotal
   scanner can never activate from a stray runner secret.
@@ -1134,4 +1137,4 @@ Generated wrappers accept only remote public HTTPS HTTP/SSE connections, current
 
 Managed publication always enters the ordinary staged security pipeline. Neither admin authorship nor the `@openclaw` namespace grants trusted-package scan exemption; subsequent ordinary submissions retaining the managed definition marker also remain subject to checks. A successful package scan says nothing about the remote service's current or future tools.
 
-Public MCP inspection resolves a server from an accessible immutable release, never a caller-supplied URL. It pins public DNS destinations, rejects private addresses and credential-bearing URLs, never follows redirects, limits bytes and time, and uses an endpoint rate limit. It does not authenticate, register OAuth clients, follow legacy SSE session endpoints, or execute tools. OAuth authoring checks inspect public discovery metadata; they do not imply completed account testing.
+Public MCP inspection resolves a server from an accessible immutable release, never a caller-supplied URL. It pins public DNS destinations, rejects private addresses and credential-bearing URLs, never follows redirects, limits bytes and time, and uses an endpoint rate limit. It does not authenticate, register OAuth clients, follow legacy SSE session endpoints, or execute tools. OAuth authoring checks require public authorization/token endpoints and retain issuer and PKCE validation. The default identity path still requires a public DCR registration endpoint. Explicit CIMD authoring is accepted only when discovery advertises the boolean `client_id_metadata_document_supported: true` and the authored public HTTPS non-root client URL returns a bounded JSON document whose `client_id` exactly matches that URL, with a nonempty client name and usable redirect URIs. CIMD identifiers reject dot path segments; documents reject client secrets and shared-secret authentication methods. The client document uses the same public-DNS-pinned, no-redirect request path, without credentials; callback URIs are never fetched. Explicit CIMD must not silently fall back to a DCR identity. Scope and client metadata URL remain in immutable bundle/managed-definition bytes. These observations do not imply domain control, consumer callback or client-auth compatibility, or completed account testing.

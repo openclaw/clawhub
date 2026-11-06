@@ -8,6 +8,36 @@ rewriting historical download counts.
 New skill and package downloads use one shared metering path. The path records
 one counted download per target, identity kind, identity hash, and UTC day.
 
+## Committed Template download events
+
+A newly counted package download for a public, undeleted Template schedules an
+internal emitter in the same transaction as its existing `packageStatEvents`
+insert. A rolled-back transaction therefore cannot emit a counted event. A
+repeated download in the same target/identity/UTC-day bucket creates neither a
+new stat nor a new scheduled emission. Counting paused before the stat mutation
+runs leaves archive serving unchanged and creates neither; already committed
+counts can still finish emitting after counting is paused.
+
+The emitter reads the committed stat and rechecks that the package still exists,
+is a Template, is not private, and is not soft-deleted. A queued event becomes a
+no-op if those conditions no longer hold. Skill and non-Template package
+downloads do not emit this event.
+
+The log payload is an explicit eight-field allowlist: `event`
+(`template_download_counted`), `schemaVersion` (`1`), `eventId` (the committed
+package stat ID), `packageId`, `packageName`, `family` (`template`), `occurredAt`
+(from the stat), and `dayStart` (the UTC dedupe bucket). Never include IPs, user
+IDs, identity hashes, credentials, or other listing fields. This event is
+recorded download telemetry, not an installation or unique-person count.
+
+Delivery through the existing console log stream is best-effort, not exactly
+once or guaranteed lossless. Retrying/replaying the emitter preserves
+`eventId`; consumers must deduplicate that ID rather than count log lines.
+Visibility suppression or missing logs can make observed events lower than
+committed historical counters. Do not infer or backfill past events from those
+counters. This adds no public telemetry endpoint, external scheduler, or new
+counter pipeline.
+
 ## Identity Hashing
 
 The identity hash input includes the identity kind:
@@ -84,3 +114,60 @@ Dashboard metrics require current publisher ownership. A personal publisher with
 `personalPublisherId` matches the requested publisher. Supplying the caller's ID
 is not evidence of legacy ownership. A current `linkedUserId` takes precedence
 over that legacy link, and organization access follows current membership.
+
+## Native admin Template analytics
+
+The authenticated admin dashboard, the new admin CLI downloads command, and
+GET/POST /api/v1/admin/download-analytics share one native Convex report.
+Session queries/mutations require a current active admin; HTTP uses existing
+API-token authentication and rechecks the current actor role internally. No
+ordinary user, moderator, anonymous caller, or caller-supplied identity can read
+or refresh the report through a public API.
+
+The rolling figure counts only download-kind packageStatEvents in the exact
+[startedAt - 24 hours, startedAt) interval, including unprocessed events. Daily
+buckets and completed-hour leaderboards cannot represent those boundaries.
+Install/install_clear events and non-Template, private, deleted or missing
+packages are excluded. Metering dedupe and its download hot path are unchanged.
+Lifetime sums packages.stats.downloads over every eligible package, with no
+leaderboard limit. It is not reconstructed from the seven-day retained event
+window and does not rewrite existing counters or invent historical events.
+
+A single replaceable downloadAnalyticsReports document holds the last completed
+result and a bounded in-flight cursor. A 15-minute cron or authorized refresh
+starts one build; concurrent refreshes coalesce, successful builds have a
+one-minute manual-refresh cooldown, and revision/page checks make duplicate
+scheduled delivery harmless. Each worker transaction scans one event page
+(maximum ten events and at most ten distinct canonical package hydrations) or
+one package page (100 rows, 1 MiB pagination read budget). Event hydration uses
+canonical documents, avoiding reliance on digest backfill completeness. Package
+pages have the same byte budget, so large documents can yield short pages.
+There is no per-download report write, new aggregate component, migration,
+unbounded in-memory package list, or on-demand table scan in an admin read.
+The summary read is one indexed report lookup plus authentication.
+
+Publish only after both scans complete; never expose partial sums as zeros or
+completed totals. No report means pending with null numbers/timestamps. A
+refresh failure/30-minute timeout preserves the previous completed report and
+publishes a sanitized lastError; an absent baseline remains pending/null.
+Consumers compare staleAfterAt (window end plus 30 minutes) and refreshExpiresAt
+against their own clock; queries do not read wall time. countingPaused describes
+the current emergency switch, not a claim that the historical window had no
+pauses. Stored report/build state is overwritten, not retained as report history.
+
+This is deliberately a **multi-page observation, not an atomic snapshot**.
+Eligibility is current when each page hydrates a package; packages becoming
+private/deleted after hydration can remain represented until a later refresh.
+Late-arriving events and changes behind a cursor may only appear next time.
+Lifetime counters are observed during the package scan, not frozen at the
+event windowEndAt. Their existing 15-minute processing cadence/backlog plus
+report cadence add lag, so the two figures need not reconcile at one timestamp.
+Lifetime scope means all history of currently eligible listings; changes in
+eligibility can reduce the scoped total. Counting pauses produce real gaps and
+must not be backfilled from inferred traffic.
+
+Completed reports expose eventsScanned, packagesScanned, eligiblePackages,
+eligibilityReads and pages, and log those counters plus durationMs. Validate
+these work counts and real Convex read bytes/latency before increasing page
+sizes or introducing a heavier aggregation pipeline. Existing processed-event
+cleanup keeps seven days after processing and does not delete unprocessed work.
