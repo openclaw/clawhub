@@ -984,7 +984,7 @@ The plugin detail Install card uses the same shared install card as skills: an
 `Install` heading, `CLI` and `Prompt` tabs, and one copyable block. The CLI tab
 shows `openclaw plugins install <package-name>` without the `clawhub:` prefix,
 because OpenClaw resolves unprefixed package installs from ClawHub by default.
-The Prompt tab shows only `install <package-name> from ClawHub`. Do not add
+The Prompt tab shows only `Install the <package-name> package from ClawHub`. Do not add
 version labels or explanatory subtext to this card. Keep CLI compatibility
 guidance, including the explicit `clawhub:` source for older OpenClaw releases,
 in the public docs instead.

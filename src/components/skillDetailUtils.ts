@@ -171,8 +171,8 @@ export function formatSkillsCliInstallCommand(skillPageUrl: string) {
 
 // Keep the copied prompt short: the agent resolves, inspects, and installs the
 // named ClawHub skill or plugin through its own install flow.
-export function formatOpenClawPrompt(name: string) {
-  return `install ${name.trim()} from ClawHub`;
+export function formatOpenClawPrompt(name: string, kind: "skill" | "package") {
+  return `Install the ${name.trim()} ${kind} from ClawHub`;
 }
 
 export function formatBytes(bytes: number) {

@@ -9,7 +9,8 @@ Skill and catalog pages now use `SkillCommandLineCard` for the CLI, skills CLI, 
 with copy behavior shared through `InstallCopyButton`. This document retains the original design history.
 
 Implementation note (2026-11-06): skill and plugin pages share `InstallCommandCard`. The Prompt tab
-copies one line, `install <install-target> from ClawHub`; the agent's own install flow handles
+copies one line, `Install the <install-target> skill from ClawHub` (plugin pages say
+`package`); the agent's own install flow handles
 inspection and setup, so the prompt no longer carries metadata or setup instructions.
 
 ## Problem

@@ -1812,7 +1812,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 {validationAvailabilityAlert}
                 <InstallCommandCard
                   cliCommand={installCommand}
-                  prompt={formatOpenClawPrompt(installTarget)}
+                  prompt={formatOpenClawPrompt(installTarget, isPlugin ? "package" : "skill")}
                   cliCopyAriaLabel={
                     isPlugin ? "Copy plugin install command" : "Copy skill install command"
                   }

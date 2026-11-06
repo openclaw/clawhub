@@ -305,7 +305,7 @@ describe("plugin detail route", () => {
       await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
 
       fireEvent.click(within(card).getByRole("button", { name: "Prompt" }));
-      const prompt = `install ${name} from ClawHub`;
+      const prompt = `Install the ${name} package from ClawHub`;
       expect(card.querySelector("pre")?.textContent).toBe(prompt);
       fireEvent.click(within(card).getByRole("button", { name: "Copy OpenClaw prompt" }));
       await waitFor(() => expect(writeText).toHaveBeenCalledWith(prompt));

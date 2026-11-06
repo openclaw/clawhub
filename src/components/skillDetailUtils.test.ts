@@ -32,10 +32,12 @@ describe("skill detail install helpers", () => {
   });
 
   it("builds a one-line ClawHub install prompt", () => {
-    expect(formatOpenClawPrompt("@steipete/weather")).toBe(
-      "install @steipete/weather from ClawHub",
+    expect(formatOpenClawPrompt("@steipete/weather", "skill")).toBe(
+      "Install the @steipete/weather skill from ClawHub",
     );
-    expect(formatOpenClawPrompt(" @openclaw/luma ")).toBe("install @openclaw/luma from ClawHub");
+    expect(formatOpenClawPrompt(" @openclaw/luma ", "package")).toBe(
+      "Install the @openclaw/luma package from ClawHub",
+    );
   });
 
   it("avoids fabricating unknown owner URLs when the owner is missing", () => {

@@ -51,7 +51,7 @@ describe("skill install commands", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
 
-    expect(screen.getByText("install @steipete/weather from ClawHub")).toBeTruthy();
+    expect(screen.getByText("Install the @steipete/weather skill from ClawHub")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Prompt" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
@@ -59,7 +59,9 @@ describe("skill install commands", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw prompt" }));
 
     await waitFor(() => {
-      expect(writeTextMock).toHaveBeenCalledWith("install @steipete/weather from ClawHub");
+      expect(writeTextMock).toHaveBeenCalledWith(
+        "Install the @steipete/weather skill from ClawHub",
+      );
     });
   });
 

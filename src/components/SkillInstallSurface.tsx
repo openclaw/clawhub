@@ -57,7 +57,7 @@ export function SkillCommandLineCard({
   return (
     <InstallCommandCard
       cliCommand={formatOpenClawInstallCommand(installTarget)}
-      prompt={formatOpenClawPrompt(installTarget)}
+      prompt={formatOpenClawPrompt(installTarget, "skill")}
       secondaryInstall={
         skillsCliCommand
           ? {
