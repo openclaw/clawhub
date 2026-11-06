@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CI: right-size Skill Card workers, credential canaries, and skill evaluations to four-vCPU runners while preserving resource checks.
+
 - Security: retire VirusTotal entirely. ClawHub no longer uploads skill or plugin artifacts to VirusTotal, polls or backfills its results, re-queues ClawScan from VirusTotal updates, delays ClawScan for it, or shows VirusTotal data in the UI, CLI, public API, scan reports, or audit exports. The `clawhub-admin skills repair-vt-pending` command and its API route are removed.
 - Publishing: remove the in-publish static scan, which ran out of memory on large plugin packages and duplicated the ClawScan pre-publication gate. Static results are no longer computed, sent to ClawScan, or displayed; Skill Cards now wait only for ClawScan.
 - Publishing: return `503` with `Retry-After` instead of `400`/`401` when Convex reports a transient platform failure (overload, internal/transient error, write admission or conflict) on publish, upload, token-mint, recovery and API-token auth paths; genuine validation errors keep their `4xx` and message.
