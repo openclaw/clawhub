@@ -61,17 +61,18 @@ preparation errors. Those were reported to publishers as plugin breakage.
   never becomes a finding, an email, or a publish error.
 - Outcomes are recorded on `packageInspectorScanStates` (`outcome`, `failure`,
   `scanSource`). Rows written before outcomes existed have no `outcome` and
-  are completed scans; a pre-outcome bulk-scan failure therefore still reads
-  as a completed scan until the next scan of that identity rewrites it.
+  cannot establish clean without an explicit success marker. Actual stored
+  findings remain visible until a verified successful rescan replaces them.
   Attempts staged while Inspector still ran at publish (before this cutover,
   within the 30-day attempt TTL) still apply their staged findings and outcome
   at finalization with `scanSource: "publish"`, never emailing owners; a
   publish-time failure without a resolved target used
   `targetOpenClawVersion: "unresolved"`, which matches no real target.
 - A failed rescan never replaces a completed verdict for the same release,
-  Inspector version, and target: the row keeps its `outcome`, `completedAt`,
-  and findings and records only the latest `failure`. A later completed scan
-  clears `failure`.
+  Inspector version, and target: the row keeps its verified `outcome`, findings, and
+  `findingsCompletedAt`, while `completedAt` records the latest attempt and
+  `inspectionFailed` keeps the release retryable. A later completed scan
+  clears `failure` and `inspectionFailed`.
 - A failed or timed-out scan state never counts as covering a release: the
   bulk scan claim does not skip it, and the plugin validation report takes its
   verdict and nightly finding tuple from the latest scan that actually
@@ -129,6 +130,36 @@ so signal handlers can stop them; signal and normal-exit cleanup share one run.
 The backend's HTTP transport timeout for the initial push is raised so a slow
 external-deps build cannot be retried into the executor's shared build directory.
 No test timeout or backend execution limit is raised.
+
+A nightly or publish-time run that throws stores a failed attempt, preserving
+any previous verified findings and their completion time. `findingsCompletedAt`
+is written only after an explicit successful inspection; `outcome: clean` and
+`outcome: findings` from the earlier monitoring rollout are also verified
+successes. Historical `completedAt`-only rows are ambiguous and never establish
+clean. They remain eligible for a fresh scan, without rewriting historical
+production data. Actual stored historical findings remain visible, including
+when the same tuple later crashes. A successful rescan is the only way to
+replace them with clean.
+
+The moderator report selects the latest verified findings, independently
+selecting nightly findings so a later publish scan cannot hide them. It walks
+the `completedAt` index with `getPage`, not native pagination, so one report
+page can read every release and no fixed number of newer failures hides an
+older result. Crashes remain eligible for retry even if an earlier successful
+verdict was retained. A later successful run clears the latest-attempt failure,
+refreshes `findingsCompletedAt`, and may establish notification completion;
+a failed run never establishes notification completion. Inspector is advisory
+plugin validation and does not change ClawScan trust or publication policy.
+
+When no stored nightly findings need selecting, the report stops once the
+overall verdict's time bounds all remaining rows. Failure-only or ambiguous
+history may still require every distinct Inspector/target tuple; retry attempts
+overwrite their tuple rather than adding rows. A new success-marker index alone
+cannot cover historical explicit outcomes and unmarked findings without a
+backfill, and no production backfill is part of this change. Publish findings
+remain visible unconditionally; without a verified scan their scan metadata
+stays unknown, while legacy nightly tuples are selected to avoid hiding their
+stored findings.
 
 The earlier generated-card browser failure included one-second execution
 timeouts in multiple unrelated queries and mutations. It is not evidence of a

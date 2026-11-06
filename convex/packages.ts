@@ -3640,7 +3640,83 @@ export const listPluginExportPageInternal = internalQuery({
   },
 });
 
-const PLUGIN_VALIDATION_REPORT_SCAN_STATE_LOOKBACK = 10;
+async function latestCompletedFindingsScans(
+  ctx: Pick<QueryCtx, "db">,
+  releaseId: Id<"packageReleases">,
+  warnings: Doc<"packageInspectorWarnings">[],
+) {
+  type Scan = Doc<"packageInspectorScanStates">;
+  let scanState: Scan | null = null;
+  let nightlyScanState: Scan | null = null;
+  let failedScanState: Scan | null = null;
+  let scannedAt = -1;
+  let nightlyScannedAt = -1;
+  const findingsTimes = new Map<string, number>();
+  const tupleKey = (state: { inspectorVersion?: string; targetOpenClawVersion?: string }) =>
+    JSON.stringify([state.inspectorVersion, state.targetOpenClawVersion]);
+  for (const warning of warnings) {
+    if (warning.scanSource !== "nightly") continue;
+    const key = tupleKey(warning);
+    findingsTimes.set(key, Math.max(findingsTimes.get(key) ?? -1, warning.createdAt));
+  }
+  const hasNightlyFindings = findingsTimes.size > 0;
+  // Native pagination cannot run once per release in this report. Walk the
+  // index with getPage so any number of newer failures cannot hide a success.
+  let startIndexKey: IndexKey = [releaseId];
+  let startInclusive = true;
+  while (true) {
+    const page = await getPage(ctx, {
+      table: "packageInspectorScanStates",
+      index: "by_release_and_completed_at",
+      startIndexKey,
+      startInclusive,
+      endIndexKey: [releaseId],
+      endInclusive: true,
+      order: "desc",
+      absoluteMaxRows: 25,
+      schema,
+    });
+    for (const state of page.page) {
+      if (
+        !failedScanState &&
+        (state.inspectionFailed === true || isPackageInspectorFailureOutcome(state.outcome))
+      ) {
+        failedScanState = state;
+      }
+      // Historical attempt timestamps alone cannot prove clean. Actual stored
+      // findings remain useful evidence even if their old run has no marker.
+      const completed =
+        state.findingsCompletedAt ??
+        (state.outcome === "clean" || state.outcome === "findings"
+          ? state.completedAt
+          : findingsTimes.get(tupleKey(state)));
+      if (completed === undefined) continue;
+      if (completed > scannedAt) {
+        scanState = state;
+        scannedAt = completed;
+      }
+      if (state.scanSource !== "publish" && completed > nightlyScannedAt) {
+        nightlyScanState = state;
+        nightlyScannedAt = completed;
+      }
+    }
+    const oldest = page.page.at(-1);
+    // With no nightly findings to select, only the overall verdict matters.
+    const oldestNeededAt = hasNightlyFindings ? nightlyScannedAt : scannedAt;
+    if (
+      scanState &&
+      (!hasNightlyFindings || nightlyScanState) &&
+      oldest &&
+      oldest.completedAt <= oldestNeededAt
+    )
+      break;
+    const nextKey = page.indexKeys.at(-1);
+    if (!page.hasMore || !nextKey) break;
+    startIndexKey = nextKey;
+    startInclusive = false;
+  }
+  return { scanState, nightlyScanState, failedScanState, scannedAt };
+}
 
 function normalizePackageValidationFinding(warning: Doc<"packageInspectorWarnings">) {
   const severity =
@@ -3679,24 +3755,6 @@ export const listPluginValidationReportPageInternal = internalQuery({
       if (!digest.latestReleaseId) continue;
       const release = await ctx.db.get(digest.latestReleaseId);
       if (!isPublishedPackageRelease(release, digest.packageId)) continue;
-      const recentScanStates = await ctx.db
-        .query("packageInspectorScanStates")
-        .withIndex("by_release_and_completed_at", (q) => q.eq("releaseId", release._id))
-        .order("desc")
-        .take(PLUGIN_VALIDATION_REPORT_SCAN_STATE_LOOKBACK);
-      // Tool failures and timeouts say nothing about the plugin: findings and the
-      // clean verdict come from the latest scan that actually inspected it.
-      const scanState =
-        recentScanStates.find((state) => !isPackageInspectorFailureOutcome(state.outcome)) ?? null;
-      const nightlyScanState =
-        recentScanStates.find(
-          (state) =>
-            state.scanSource !== "publish" && !isPackageInspectorFailureOutcome(state.outcome),
-        ) ?? null;
-      const failedScanState =
-        !scanState && isPackageInspectorFailureOutcome(recentScanStates[0]?.outcome)
-          ? recentScanStates[0]
-          : null;
       // CLAW-626 reconciles nightly findings per release and preserves publish/static findings.
       // Matching the selected tuple also fails closed if stale nightly rows survive a partial rollout.
       const storedWarnings = await ctx.db
@@ -3704,6 +3762,8 @@ export const listPluginValidationReportPageInternal = internalQuery({
         .withIndex("by_release_created", (q) => q.eq("releaseId", release._id))
         .order("asc")
         .collect();
+      const { scanState, nightlyScanState, failedScanState, scannedAt } =
+        await latestCompletedFindingsScans(ctx, release._id, storedWarnings);
       const warnings = storedWarnings.filter(
         (warning) =>
           warning.scanSource !== "nightly" ||
@@ -3738,7 +3798,9 @@ export const listPluginValidationReportPageInternal = internalQuery({
         },
         scan: {
           status,
-          scannedAt: scanState?.completedAt ?? null,
+          // A later crash refreshes completedAt. The report shows when the
+          // findings scan finished, which stays on findingsCompletedAt.
+          scannedAt: scanState ? scannedAt : null,
           target: scanState
             ? {
                 channel: scanState.scanSource === "publish" ? "latest" : "beta",
@@ -10542,8 +10604,12 @@ async function listPackageInspectorScanBatch(
         scanState.sdkUsage.analysisVersion === args.inventoryAnalysisVersion;
       if (
         scanState &&
-        // A crashed or timed-out scan never counts as covering the release.
+        scanState.inspectionFailed !== true &&
+        scanState.failure === undefined &&
         !isPackageInspectorFailureOutcome(scanState.outcome) &&
+        (scanState.findingsCompletedAt !== undefined ||
+          scanState.outcome === "clean" ||
+          scanState.outcome === "findings") &&
         (!inventoryRequired || inventoryCurrent) &&
         (!args.notifyOwners || scanState.notificationCompletedAt)
       ) {
@@ -10822,7 +10888,9 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
         release,
         inspectorVersion,
         targetOpenClawVersion,
-        notificationComplete: args.notifyOwners === true && !result.shouldEmailOwner,
+        notificationComplete:
+          args.inspectionFailed !== true && args.notifyOwners === true && !result.shouldEmailOwner,
+        inspectionFailed: args.inspectionFailed === true,
         report: args.sdkUsage,
         artifactSha256: args.artifactSha256,
         outcome,

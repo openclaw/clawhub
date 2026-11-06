@@ -106,6 +106,7 @@ export async function recordPackageInspectorScan(
     inspectorVersion: string;
     targetOpenClawVersion: string;
     notificationComplete?: boolean;
+    inspectionFailed?: boolean;
     report?: SdkUsageReport;
     artifactSha256?: string;
     outcome?: PackageInspectorOutcome;
@@ -124,7 +125,7 @@ export async function recordPackageInspectorScan(
     )
     .unique();
   const completedAt = Date.now();
-  const values = {
+  const identity = {
     packageId: pkg._id,
     releaseId: release._id,
     inspectorVersion,
@@ -135,20 +136,37 @@ export async function recordPackageInspectorScan(
     ...(args.failure ? { failure: args.failure } : {}),
     ...(args.scanSource ? { scanSource: args.scanSource } : {}),
   };
-  const scanId = existing?._id ?? (await ctx.db.insert("packageInspectorScanStates", values));
-  if (existing) {
-    if (
-      isPackageInspectorFailureOutcome(args.outcome) &&
-      !isPackageInspectorFailureOutcome(existing.outcome)
-    ) {
-      // A crashed or timed-out rescan says nothing about the plugin: keep the
-      // completed verdict (and its findings) and only note the latest failure.
-      await ctx.db.patch(scanId, { failure: args.failure });
-    } else {
-      // A rescan with an outcome replaces the previous one, clearing any stale failure.
-      await ctx.db.patch(scanId, args.outcome ? { failure: undefined, ...values } : values);
-    }
-  }
+  // Only an explicit successful inspection can establish a clean verdict.
+  // Legacy completedAt-only rows may also have come from a crashed attempt.
+  const failed = args.inspectionFailed === true || isPackageInspectorFailureOutcome(args.outcome);
+  const succeeded = args.outcome === "clean" || args.outcome === "findings";
+  const existingSucceeded =
+    existing?.findingsCompletedAt !== undefined ||
+    existing?.outcome === "clean" ||
+    existing?.outcome === "findings";
+  let scanId = existing?._id;
+  const values = failed
+    ? {
+        ...identity,
+        inspectionFailed: true as const,
+        failure: args.failure,
+        // Source describes the retained verdict, not this failed attempt.
+        ...(existing ? { scanSource: existing.scanSource } : {}),
+        // A failed retry changes the attempt, never the last verified findings.
+        ...(existingSucceeded && existing
+          ? {
+              outcome: existing.outcome,
+              findingsCompletedAt: existing.findingsCompletedAt ?? existing.completedAt,
+            }
+          : {}),
+      }
+    : {
+        ...identity,
+        ...(succeeded ? { findingsCompletedAt: completedAt } : {}),
+        ...(existing && succeeded ? { inspectionFailed: undefined, failure: undefined } : {}),
+      };
+  if (scanId) await ctx.db.patch(scanId, values);
+  else scanId = await ctx.db.insert("packageInspectorScanStates", values);
   if (args.report && args.artifactSha256) {
     return await replacePackageSdkUsage(ctx, {
       pkg,

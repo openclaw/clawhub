@@ -2286,6 +2286,7 @@ function makePluginValidationReportCtx(
   options: {
     statesByRelease?: Record<string, Array<Record<string, unknown>>>;
     findingsByRelease?: Record<string, Array<Record<string, unknown>>>;
+    onScanStateRead?: () => void;
   } = {},
 ) {
   const base = makePluginExportCtx(digests);
@@ -2319,21 +2320,81 @@ function makePluginValidationReportCtx(
                 _indexName: string,
                 builder: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
               ) => {
+                const filters: Array<{ op: string; field: string; value: unknown }> = [];
+                const remember = (op: string) => (field: string, value: unknown) => {
+                  filters.push({ op, field, value });
+                  return queryBuilder;
+                };
                 const queryBuilder = {
-                  eq: (field: string, value: unknown) => {
-                    if (field === "releaseId") releaseId = String(value);
-                    return queryBuilder;
-                  },
+                  eq: remember("eq"),
+                  lt: remember("lt"),
+                  lte: remember("lte"),
+                  gt: remember("gt"),
+                  gte: remember("gte"),
                 };
                 builder(queryBuilder);
+                const releaseFilter = filters.find(
+                  (filter) => filter.op === "eq" && filter.field === "releaseId",
+                );
+                if (releaseFilter) releaseId = String(releaseFilter.value);
                 return {
-                  order: vi.fn(() => ({
-                    take: vi.fn(async (count: number) =>
-                      [...(options.statesByRelease?.[releaseId] ?? [])]
-                        .sort((a, b) => Number(b.completedAt) - Number(a.completedAt))
-                        .slice(0, count),
-                    ),
-                  })),
+                  order: vi.fn(() => {
+                    const ordered = () => {
+                      const rows: Array<Record<string, unknown>> = [
+                        ...(options.statesByRelease?.[releaseId] ?? []),
+                      ].map((row, index) => ({
+                        ...row,
+                        _id:
+                          typeof row._id === "string"
+                            ? row._id
+                            : `packageInspectorScanStates:${releaseId}:${index}`,
+                        _creationTime:
+                          typeof row._creationTime === "number" ? row._creationTime : index,
+                      }));
+                      const compareValues = (left: unknown, right: unknown) => {
+                        if (typeof left === "number" && typeof right === "number")
+                          return left - right;
+                        if (typeof left === "string" && typeof right === "string") {
+                          if (left < right) return -1;
+                          if (left > right) return 1;
+                          return 0;
+                        }
+                        return null;
+                      };
+                      const bounded = rows.filter((row) =>
+                        filters.every((filter) => {
+                          if (filter.op === "eq" && filter.field === "releaseId") return true;
+                          const left = row[filter.field];
+                          const right = filter.value;
+                          if (filter.op === "eq") return left === right;
+                          const order = compareValues(left, right);
+                          if (order === null) return false;
+                          if (filter.op === "lt") return order < 0;
+                          if (filter.op === "lte") return order <= 0;
+                          if (filter.op === "gt") return order > 0;
+                          if (filter.op === "gte") return order >= 0;
+                          return false;
+                        }),
+                      );
+                      return bounded.sort((a, b) => Number(b.completedAt) - Number(a.completedAt));
+                    };
+                    const rows = ordered();
+                    return {
+                      [Symbol.asyncIterator]: async function* scanStates() {
+                        for (const row of rows) {
+                          options.onScanStateRead?.();
+                          yield row;
+                        }
+                      },
+                      first: vi.fn(async () => rows[0] ?? null),
+                      take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+                      paginate: vi.fn(async ({ numItems }: { numItems: number }) => ({
+                        page: rows.slice(0, numItems),
+                        isDone: rows.length <= numItems,
+                        continueCursor: "",
+                      })),
+                    };
+                  }),
                 };
               },
             ),
@@ -3460,6 +3521,7 @@ describe("packages public queries", () => {
             scanSource: "nightly",
             inspectorVersion: "0.3.18",
             targetOpenClawVersion: "2026.7.29-beta.1",
+            createdAt: 100,
             findingKind: "error",
             code: "stale-missing-api",
             message: "Old target API is unavailable",
@@ -3474,6 +3536,7 @@ describe("packages public queries", () => {
             scanSource: "nightly",
             inspectorVersion: "0.3.19",
             targetOpenClawVersion: "2026.7.30-beta.1",
+            createdAt: 200,
             findingKind: "error",
             code: "missing-api",
             message: "Required API is unavailable",
@@ -3503,6 +3566,47 @@ describe("packages public queries", () => {
       nextCursor: null,
       done: true,
     });
+  });
+
+  it("finishes publish-only history within one scan page when older tuples cannot change the verdict", async () => {
+    const releaseId = "packageReleases:demo-1";
+    const reads = vi.fn();
+    const ctx = makePluginValidationReportCtx(
+      [makePluginExportDigest("demo", "code-plugin", 300)],
+      {
+        statesByRelease: {
+          [releaseId]: [
+            {
+              releaseId,
+              inspectorVersion: "latest-inspector",
+              targetOpenClawVersion: "2026.11.1",
+              completedAt: 1000,
+              findingsCompletedAt: 1000,
+              outcome: "clean",
+              scanSource: "publish",
+            },
+            ...Array.from({ length: 60 }, (_, index) => ({
+              releaseId,
+              inspectorVersion: `older-${index}`,
+              targetOpenClawVersion: "2026.10.16",
+              completedAt: 100 + index,
+              outcome: "clean",
+              scanSource: "publish",
+            })),
+          ],
+        },
+        onScanStateRead: reads,
+      },
+    );
+    const result = await listPluginValidationReportPageInternalHandler(ctx, { numItems: 20 });
+    expect(result.items[0]?.scan).toMatchObject({
+      status: "clean",
+      scannedAt: 1000,
+      inspectorVersion: "latest-inspector",
+      target: { channel: "latest", version: "2026.11.1" },
+    });
+    // getPage reads one lookahead row after its 25-row page. Later history is irrelevant.
+    expect(reads.mock.calls.length).toBeLessThanOrEqual(26);
   });
 
   it("reports Inspector tool failures as skipped scans, never as plugin errors", async () => {
@@ -14844,6 +14948,7 @@ describe("packages public queries", () => {
       inspectorVersion: "0.6.0",
       targetOpenClawVersion: "2026.8.0-beta.1",
       completedAt: expect.any(Number),
+      findingsCompletedAt: expect.any(Number),
       notificationCompletedAt: expect.any(Number),
       outcome: "clean",
       scanSource: "nightly",
@@ -16127,6 +16232,7 @@ describe("packages public queries", () => {
       unique: vi.fn().mockResolvedValue({
         releaseId: "packageReleases:current",
         inspectorVersion: "0.6.0",
+        outcome: "clean",
         targetOpenClawVersion: "2026.8.0-beta.1",
       }),
     }));

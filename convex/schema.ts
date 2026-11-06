@@ -1942,8 +1942,12 @@ const packageInspectorScanStates = defineTable({
   targetOpenClawVersion: v.string(),
   completedAt: v.number(),
   notificationCompletedAt: v.optional(v.number()),
+  // Set only when this tuple stored a findings scan. A later crash must not clear it.
+  findingsCompletedAt: v.optional(v.number()),
+  // The latest attempt crashed. Absent on rows written before this field existed.
+  inspectionFailed: v.optional(v.boolean()),
   sdkUsage: v.optional(sdkUsageScan),
-  // Absent on rows written before outcomes were recorded; those scans completed.
+  // Legacy rows without a success marker cannot establish a clean inspection.
   outcome: v.optional(packageInspectorOutcomeValidator),
   // The most recent tool failure for this scan identity. On a completed
   // outcome it records a later failed rescan that left the verdict in place.
