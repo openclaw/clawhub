@@ -737,6 +737,90 @@ describe("public SDK usage from serialized Inspector reports", () => {
     });
   });
 
+  it.each(["clean", "findings"] as const)(
+    "retains a pre-marker verified %s verdict and time when that exact tuple crashes",
+    async (outcome) => {
+      const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
+      await t.run(async (ctx) => {
+        await ctx.db.insert("packageSearchDigest", {
+          packageId,
+          name: "sdk-plugin",
+          normalizedName: "sdk-plugin",
+          displayName: "SDK plugin",
+          ownerUserId,
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          latestVersion: "1.0.0",
+          scanStatus: "clean",
+          stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        await ctx.db.insert("packageInspectorScanStates", {
+          packageId,
+          releaseId,
+          inspectorVersion: "0.4.3",
+          targetOpenClawVersion: "2026.10.16",
+          completedAt: 100,
+          outcome,
+          scanSource: "nightly",
+        });
+        if (outcome === "findings")
+          await ctx.db.insert("packageInspectorWarnings", {
+            packageId,
+            releaseId,
+            ownerUserId,
+            packageName: "sdk-plugin",
+            version: "1.0.0",
+            scanSource: "nightly",
+            inspectorVersion: "0.4.3",
+            targetOpenClawVersion: "2026.10.16",
+            findingKind: "error",
+            code: "missing-api",
+            message: "Verified earlier finding",
+            createdAt: 100,
+          });
+      });
+      await ingest(failedSdkUsageReport("verified pre-marker retry crashed"), {
+        inspectorVersion: "0.4.3",
+        targetOpenClawVersion: "2026.10.16",
+        inspectionFailed: true,
+      });
+      const stored = await t.run((ctx) =>
+        ctx.db
+          .query("packageInspectorScanStates")
+          .withIndex("by_release_and_inspector_version_and_target_openclaw_version", (q) =>
+            q
+              .eq("releaseId", releaseId)
+              .eq("inspectorVersion", "0.4.3")
+              .eq("targetOpenClawVersion", "2026.10.16"),
+          )
+          .unique(),
+      );
+      expect(stored).toMatchObject({
+        outcome,
+        findingsCompletedAt: 100,
+        inspectionFailed: true,
+        scanSource: "nightly",
+      });
+      expect(stored?.completedAt).toBeGreaterThan(100);
+      const report = await t.query(internal.packages.listPluginValidationReportPageInternal, {
+        numItems: 20,
+      });
+      expect(report.items[0]?.scan).toMatchObject({
+        status: outcome === "clean" ? "clean" : "error",
+        scannedAt: 100,
+      });
+      expect(report.items[0]?.findings).toHaveLength(outcome === "clean" ? 0 : 1);
+      const claim = await t.query(internal.packages.previewPackageInspectorScanBatchInternal, {
+        inspectorVersion: "0.4.3",
+        targetOpenClawVersion: "2026.10.16",
+      });
+      expect(claim.items).toEqual([expect.objectContaining({ releaseId })]);
+    },
+  );
+
   it("preserves publish provenance and older nightly findings when a nightly retry crashes", async () => {
     const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
     await t.run(async (ctx) => {
