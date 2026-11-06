@@ -272,15 +272,15 @@ describe("plugin detail route", () => {
   });
 
   it.each([
-    { family: "code-plugin", name: "demo-plugin" },
-    { family: "code-plugin", name: "discord" },
-    { family: "code-plugin", name: "@shopify/ai-toolkit" },
-    { family: "code-plugin", name: "owner/plugin" },
-    { family: "bundle-plugin", name: "demo-bundle" },
-    { family: "bundle-plugin", name: "@owner/scoped-bundle" },
+    { family: "code-plugin", name: "demo-plugin", target: "demo-plugin@latest" },
+    { family: "code-plugin", name: "discord", target: "discord@latest" },
+    { family: "code-plugin", name: "@shopify/ai-toolkit", target: "@shopify/ai-toolkit" },
+    { family: "code-plugin", name: "owner/plugin", target: "owner/plugin" },
+    { family: "bundle-plugin", name: "demo-bundle", target: "demo-bundle@latest" },
+    { family: "bundle-plugin", name: "@owner/scoped-bundle", target: "@owner/scoped-bundle" },
   ] as const)(
-    "shows and copies one explicit ClawHub command for $name",
-    async ({ family, name }) => {
+    "shows and copies the CLI command and ClawHub prompt for $name",
+    async ({ family, name, target }) => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       vi.stubGlobal("navigator", { clipboard: { writeText } });
       loaderDataMock.detail.package = { ...loaderDataMock.detail.package!, family, name };
@@ -291,17 +291,24 @@ describe("plugin detail route", () => {
 
       const card = screen
         .getByRole("heading", { name: "Install" })
-        .closest(".skill-install-command-card")!;
-      const command = `openclaw plugins install clawhub:${name}`;
+        .closest(".skill-install-command-card") as HTMLElement;
+      const command = `openclaw plugins install ${target}`;
       expect(card.querySelectorAll("pre")).toHaveLength(1);
       expect(card.querySelector(".skill-install-command-wrap pre")).toBeTruthy();
       expect(card.querySelector("pre")?.textContent).toBe(command);
+      expect(card.textContent).not.toContain("clawhub:");
       expect(card.querySelector("p")).toBeNull();
-      expect(within(card as HTMLElement).getAllByRole("button")).toHaveLength(1);
-      fireEvent.click(
-        within(card as HTMLElement).getByRole("button", { name: "Copy plugin install command" }),
+      expect(within(card).getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe(
+        "true",
       );
+      fireEvent.click(within(card).getByRole("button", { name: "Copy plugin install command" }));
       await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
+
+      fireEvent.click(within(card).getByRole("button", { name: "Prompt" }));
+      const prompt = `Install the ${name} package from ClawHub`;
+      expect(card.querySelector("pre")?.textContent).toBe(prompt);
+      fireEvent.click(within(card).getByRole("button", { name: "Copy OpenClaw prompt" }));
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith(prompt));
     },
   );
 
@@ -1837,7 +1844,7 @@ describe("plugin detail route", () => {
     expect(screen.getByText("sha512-demo")).toBeTruthy();
     expect(screen.getAllByText("openclaw plugins install")).toHaveLength(1);
     expect(
-      screen.getByText("clawhub:demo-plugin", { selector: ".skill-install-command-target" }),
+      screen.getByText("demo-plugin@latest", { selector: ".skill-install-command-target" }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",

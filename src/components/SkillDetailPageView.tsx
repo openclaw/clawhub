@@ -164,7 +164,6 @@ export type SkillDetailPageViewProps = {
   hasPluginBundle: boolean;
   configRequirements: ClawdisSkillMetadata["config"] | undefined;
   cliHelp: string | undefined;
-  clawdis: ClawdisSkillMetadata | undefined;
   category?: SkillCategory | null;
   categories?: SkillCategory[] | null;
   staffVisibilityAlert?: ReactNode;
@@ -217,7 +216,6 @@ export function SkillDetailPageView({
   hasPluginBundle,
   configRequirements,
   cliHelp,
-  clawdis,
   category,
   categories,
   staffVisibilityAlert,
@@ -615,10 +613,8 @@ export function SkillDetailPageView({
               {installContent ?? (
                 <SkillCommandLineCard
                   slug={skill.slug}
-                  displayName={skill.displayName}
                   ownerHandle={ownerHandle}
                   ownerId={installOwnerId}
-                  clawdis={clawdis}
                 />
               )}
             </div>
