@@ -7,6 +7,7 @@ import {
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
 import { displayManifestStatusValidator, displayManifestValidator } from "./lib/displayManifest";
+import { analyticsBuildValidator, analyticsSnapshotValidator } from "./lib/downloadAnalytics";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
@@ -2144,6 +2145,15 @@ const skillCardGenerationJobs = defineTable({
   .index("by_skill", ["skillId"])
   .index("by_skill_version_status", ["skillVersionId", "status"])
   .index("by_skill_version", ["skillVersionId"]);
+
+// One replaceable report and one bounded in-flight cursor, never a download hot counter.
+const downloadAnalyticsReports = defineTable({
+  scope: v.literal("templates"),
+  revision: v.number(),
+  snapshot: v.optional(analyticsSnapshotValidator),
+  build: v.optional(analyticsBuildValidator),
+  lastError: v.optional(v.string()),
+}).index("by_scope", ["scope"]);
 
 const packageStatEvents = defineTable({
   packageId: v.id("packages"),
@@ -4490,6 +4500,7 @@ export default defineSchema({
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
   packageStatEvents,
+  downloadAnalyticsReports,
   pluginSearchObservations,
   packageDailyStats,
   packageLeaderboards,

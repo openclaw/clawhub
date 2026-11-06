@@ -83,6 +83,7 @@ describe("packed admin CLI", () => {
     expect(JSON.parse(inputs["assigned-jobs"]).flat()).toEqual(jobIds);
 
     expect(result.stdout).toContain("Usage: clawhub-admin");
+    expect(result.stdout).toContain("downloads");
     expect(result.stdout.replace(/\s+/g, " ")).toContain(
       "registry discovery and device verification",
     );
@@ -154,7 +155,53 @@ describe("packed admin CLI", () => {
       repositoryOwnerId: "2",
       workflowFilename: "publish.yml",
     };
+    const analytics = {
+      scope: "templates",
+      status: "ready",
+      generatedAt: 1000,
+      windowStartAt: 0,
+      windowEndAt: 1000,
+      downloadsLast24h: 0,
+      downloadsAllTime: 123456,
+      countingPaused: false,
+      refreshInProgress: false,
+      refreshStartedAt: null,
+      refreshExpiresAt: null,
+      staleAfterAt: 2000,
+      lastError: null,
+      scan: null,
+      counterLagNote: "Counters lag processing.",
+      eligibilityNote: "Public undeleted Templates.",
+      consistencyNote: "Not an atomic snapshot.",
+    };
     const server = createServer(async (request, response) => {
+      if (request.url === "/api/v1/admin/download-analytics") {
+        requests.push({
+          method: request.method,
+          url: request.url,
+          authorization: request.headers.authorization,
+          body: undefined,
+        });
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify(
+            request.method === "POST"
+              ? {
+                  ...analytics,
+                  status: "pending",
+                  generatedAt: null,
+                  windowStartAt: null,
+                  windowEndAt: null,
+                  downloadsLast24h: null,
+                  downloadsAllTime: null,
+                  refreshInProgress: true,
+                  staleAfterAt: null,
+                }
+              : analytics,
+          ),
+        );
+        return;
+      }
       let body = "";
       for await (const chunk of request) body += chunk;
       const parsed = JSON.parse(body) as { environment?: string };
@@ -192,7 +239,14 @@ describe("packed admin CLI", () => {
       const run = (args: string[], config = configPath) =>
         execFileAsync(process.execPath, args, {
           cwd: tempDir,
-          env: { ...process.env, CLAWHUB_CONFIG_PATH: config, FORCE_COLOR: "0" },
+          env: {
+            ...process.env,
+            CLAWHUB_CONFIG_PATH: config,
+            FORCE_COLOR: "0",
+            // This fixture is loopback-only, even on hosts with an egress proxy.
+            NO_PROXY: [process.env.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(","),
+            no_proxy: [process.env.no_proxy, "127.0.0.1", "localhost"].filter(Boolean).join(","),
+          },
         });
       const json = await run([...setArgs, "--environment", " release ", "--json"]);
       expect(JSON.parse(json.stdout)).toEqual({
@@ -229,6 +283,24 @@ describe("packed admin CLI", () => {
           body: { repository: "openclaw/example", workflowFilename: "publish.yml" },
         },
       ]);
+      const downloadArgs = [
+        join(installDir, "package", "bin", "clawhub-admin.js"),
+        "--registry",
+        registry,
+        "downloads",
+      ];
+      expect(JSON.parse((await run([...downloadArgs, "--json"])).stdout)).toEqual(analytics);
+      const pendingDownloads = await run([...downloadArgs, "--refresh"]);
+      expect(pendingDownloads.stdout).toContain("Status: pending");
+      expect(pendingDownloads.stdout).toContain("Last 24 hours: not available");
+      expect(requests.slice(-2)).toEqual(
+        ["GET", "POST"].map((method) => ({
+          method,
+          url: "/api/v1/admin/download-analytics",
+          authorization: "Bearer artifact-test-token",
+          body: undefined,
+        })),
+      );
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolveClosed, reject) =>

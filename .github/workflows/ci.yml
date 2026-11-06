@@ -240,6 +240,7 @@ jobs:
               e2e/mobile-skills.pw.test.ts
           - name: template-artifacts
             specs: |
+              e2e/local-auth/admin-download-analytics.pw.test.ts
               e2e/local-auth/exact-template-artifact.pw.test.ts
               e2e/local-auth/template-official-boundary.pw.test.ts
           - name: moderation-malicious

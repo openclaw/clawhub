@@ -2,6 +2,7 @@ import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
 import { httpRouter } from "convex/server";
 import { agentSkillsHttp } from "./agentSkillsHttp";
 import { auth } from "./auth";
+import { handle as downloadAnalyticsHttp } from "./downloadAnalyticsHttp";
 import { downloadZip, recordArchiveDownloadMetric } from "./downloads";
 import {
   cliPublishHttp,
@@ -95,6 +96,16 @@ const http = installRateLimitedRoutes(httpRouter());
 
 http.route({ path: "/api/v1/templates/overview", method: "GET", handler: templateOverviewHttp });
 
+http.route({
+  path: "/api/v1/admin/download-analytics",
+  method: "GET",
+  handler: downloadAnalyticsHttp,
+});
+http.route({
+  path: "/api/v1/admin/download-analytics",
+  method: "POST",
+  handler: downloadAnalyticsHttp,
+});
 auth.addHttpRoutes(http);
 http.route({
   path: "/api/internal/prepublication-reports",

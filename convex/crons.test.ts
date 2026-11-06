@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => {
     searchWeeklyTick: Symbol("search-weekly-tick"),
     searchWeeklyPrune: Symbol("search-weekly-prune"),
     searchReportsPrune: Symbol("search-reports-prune"),
+    downloadAnalyticsRef: Symbol("template-download-analytics"),
     githubSkillSyncRef,
     installTelemetryDedupePruneRef,
     publisherAbuseAutobanRef,
@@ -72,6 +73,7 @@ vi.mock("./_generated/api", () => ({
     searchReports: {
       pruneExpiredInternal: mocks.searchReportsPrune,
     },
+    downloadAnalytics: { refreshInternal: mocks.downloadAnalyticsRef },
     searchInsights: {
       aggregateInternal: Symbol("search-insights-aggregate"),
       pruneExpiredInternal: Symbol("search-insights-retention"),

@@ -1361,6 +1361,21 @@ describe("Management", () => {
     );
   });
 
+  it("links admins to Template download analytics", () => {
+    render(<Management />);
+    expect(screen.getByRole("link", { name: "Template downloads" }).getAttribute("href")).toBe(
+      "/management?view=downloads",
+    );
+  });
+
+  it("rejects a moderator opening the downloads view directly", () => {
+    authUser = { _id: "users:moderator", handle: "moderator", role: "moderator" };
+    searchState = { view: "downloads" };
+    render(<Management />);
+    expect(screen.queryByRole("link", { name: "Template downloads" })).toBeNull();
+    expect(screen.getByText("Admin access is required to view download analytics.")).toBeTruthy();
+  });
+
   it("does not expose the users sidebar link to moderators", () => {
     authUser = {
       _id: "users:moderator",

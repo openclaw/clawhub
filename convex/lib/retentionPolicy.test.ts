@@ -53,6 +53,12 @@ describe("retention policies", () => {
     });
   });
 
+  it("classifies the single replaceable download report as derived state", () => {
+    expect(getRetentionPolicy("downloadAnalyticsReports")).toMatchObject({
+      classification: "derived",
+    });
+  });
+
   it("documents package daily stats as durable analytics", () => {
     expect(getRetentionPolicy("packageDailyStats")).toMatchObject({
       classification: "permanent",

@@ -243,6 +243,10 @@ export const RETENTION_POLICIES = {
       retention: "30 days after observation.",
     },
   ),
+  downloadAnalyticsReports: derived(
+    "Single replaceable admin report plus bounded build cursor; no per-download writes or report history.",
+    "packageStatEvents and canonical packages.stats.downloads",
+  ),
   packageDailyStats: permanent("Daily aggregate package stats are product analytics."),
   packageLeaderboards: derived(
     "Package trending snapshots can be rebuilt from the retained packageStatEvents window.",

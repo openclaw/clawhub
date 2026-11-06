@@ -111,6 +111,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
     { batchSize: 100 },
   );
 
+  crons.interval(
+    "template-download-analytics",
+    { minutes: 15 },
+    internal.downloadAnalytics.refreshInternal,
+    {},
+  );
+
   // Syncs accumulated stat deltas to skill documents every 6 hours.
   // Runs infrequently to avoid thundering-herd reactive query invalidation.
   // Uses processedAt field to track progress (independent of the action cursor).
