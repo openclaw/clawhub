@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -171,9 +171,14 @@ async function runFixture(
       if (diagnostic.args) invocation = diagnostic.args;
     });
     expect(invocation).toContain(
-      family === "claw" ? "./artifact" : "./artifact/openclaw.plugin.json",
+      targetKind === "skillVersion"
+        ? "./artifact/SKILL.md"
+        : family === "claw"
+          ? "./artifact"
+          : "./artifact/openclaw.plugin.json",
     );
-    if (family !== "claw") expect(invocation).toContain(QUALIFIED_PLUGIN_IMAGE);
+    if (targetKind !== "skillVersion" && family !== "claw")
+      expect(invocation).toContain(QUALIFIED_PLUGIN_IMAGE);
     expect(invocation).not.toContain("--scanner-result");
     return { analysis: mapped.llmAnalysis, check: { status: "rescan", summary: undefined } };
   }
@@ -196,6 +201,42 @@ async function runFixture(
     workspace,
   );
 }
+async function partialSkillFixture(verdict: string, exitCode: number) {
+  const artifact = fixture(verdict) as Record<string, any>;
+  delete artifact.judge.result.decision;
+  delete artifact.judge.command;
+  artifact.judge.outputSchemaPath = "evidence-judge.schema.json";
+  artifact.judge.promptPath = "evidence-judge.md";
+  const raw = JSON.parse(
+    await readFile(new URL("./fixtures/skillspector-usable-partial.json", import.meta.url), "utf8"),
+  );
+  const execution = artifact.scanners["aig-mcp"];
+  artifact.scanners = {
+    skillspector: {
+      ...execution,
+      status: "partial",
+      reportPolicy: "judge-gaps",
+      exitCode,
+      command: ["skillspector", "analyze"],
+      raw,
+    },
+    aig: {
+      ...execution,
+      command: ["aig-skill-scan"],
+      raw: {
+        ...execution.raw,
+        runs: [
+          {
+            ...execution.raw.runs[0],
+            tool: { driver: { name: "aig-skill-scan", version: "fixture" } },
+          },
+        ],
+      },
+    },
+  };
+  return artifact;
+}
+
 describe("Scanner-report-only Codex publication consumer", () => {
   it.each([false, true, "absent"] as const)(
     "passes only backend-verified publisher trust into both native judge lanes (trusted=%s)",
@@ -265,6 +306,58 @@ describe("Scanner-report-only Codex publication consumer", () => {
       expect("aigAnalysis" in result ? result.aigAnalysis : undefined).toBeUndefined();
     },
   );
+  it.each(
+    [false, true].flatMap((rescan) =>
+      [0, 1].flatMap((exitCode) =>
+        ["benign", "suspicious"].map((verdict) => ({ rescan, exitCode, verdict })),
+      ),
+    ),
+  )(
+    "preserves native $verdict over usable partial evidence (exit=$exitCode, rescan=$rescan)",
+    async ({ verdict, exitCode, rescan }) => {
+      const artifact = await partialSkillFixture(verdict, exitCode);
+      const raw = artifact.scanners.skillspector.raw;
+      const result = await runFixture(artifact, "skillVersion", false, rescan, "claw");
+      expect(result.analysis, JSON.stringify(result.check)).toMatchObject({
+        status: verdict === "benign" ? "clean" : "suspicious",
+        verdict,
+      });
+      expect(result.analysis).not.toHaveProperty("decision");
+      expect(result.check.status).not.toBe("failed");
+      const mapped = validateClawScanArtifactForClawHubProfile(artifact);
+      expect(mapped.mapping).toMatchObject({ skillSpectorReportPolicy: "judge-gaps" });
+      expect(JSON.parse(mapped.scannerReportsJson).skillspector).toEqual(raw);
+    },
+  );
+
+  it.each([
+    "missing policy",
+    "malformed raw",
+    "unsuccessful execution",
+    "crash",
+    "scanner error",
+    "imported report",
+    "missing exit",
+    "missing AIG",
+    "failed judge",
+  ])("rejects partial typed evidence with %s in both worker consumers", async (scenario) => {
+    const artifact = await partialSkillFixture("benign", 1);
+    const scanner = artifact.scanners.skillspector;
+    if (scenario === "missing policy") delete scanner.reportPolicy;
+    if (scenario === "malformed raw") scanner.raw = { issues: [] };
+    if (scenario === "unsuccessful execution") scanner.raw.execution_successful = false;
+    if (scenario === "crash") scanner.exitCode = 2;
+    if (scenario === "scanner error") scanner.error = "scanner crashed";
+    if (scenario === "imported report") scanner.command = ["scanner-result"];
+    if (scenario === "missing exit") delete scanner.exitCode;
+    if (scenario === "missing AIG") delete artifact.scanners.aig;
+    if (scenario === "failed judge") artifact.judge.status = "failed";
+    const result = await runFixture(artifact, "skillVersion", false, false, "claw");
+    expect(result.check.status).toBe("failed");
+    expect(result.analysis).toBeUndefined();
+    await expect(runFixture(artifact, "skillVersion", false, true, "claw")).rejects.toThrow();
+  });
+
   it("runs Template rescan scanners natively instead of importing bundled evidence", async () => {
     const artifact = fixture() as Record<string, any>;
     delete artifact.judge.result.decision;

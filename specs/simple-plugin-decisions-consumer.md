@@ -56,8 +56,9 @@ invented summary text. Historical prose/receipt artifacts keep their old strict
 validation, including v2 final-attempt provenance.
 
 Decisions artifacts require native completed run/status, ordered times, actual
-scanner command/exit/duration evidence, completed scanner without error, matching
-judge attempt/result/start metadata and schema/prompt hashes. Requirements are
+scanner command/exit/duration evidence, completed scanner without error (or
+existing usable partial SkillSpector `judge-gaps` evidence with native exit 0/1),
+matching judge attempt/result/start metadata and schema/prompt hashes. Requirements are
 bound to the claimed target, never inferred from the scanner IDs returned.
 A plugin cannot substitute skill evidence, or vice versa. Empty results and a
 synthetic startedAt are not scanner execution proof. Exposure eligibility needs

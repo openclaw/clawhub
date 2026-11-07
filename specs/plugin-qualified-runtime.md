@@ -271,6 +271,15 @@ receipt. Built-in profile, terminal complete state, scanner execution provenance
 matched final judge attempts, valid verdict/schema and immutable plugin sandbox
 checks remain required. Optional overview prose cannot change the verdict.
 
+Typed SkillSpector consumers preserve the existing usable-partial contract from
+#4171: successful structured `partial` evidence with `reportPolicy: judge-gaps`
+and native exit 0 or 1 may reach a completed judge. Coverage gaps stay in the raw
+report and diagnostics; they are uncertainty for the judge, not execution failure.
+Missing/malformed/unsuccessful evidence, crashes, imported reports, missing native
+execution metadata and incomplete judges still fail closed. This exception does
+not relax AIG or the plugin-only AIG MCP contract. Both executable worker seams
+cover benign/suspicious typed verdicts and the invalid-evidence boundaries.
+
 This local compatibility work does not qualify or activate an image. The final
 reviewed source/tree/runtime-tree/digest binding, default pin and installer CLI
 qualification must be changed together when the producer provides its receipt.

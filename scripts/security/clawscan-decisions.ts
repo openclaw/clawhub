@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
+import { isAdjudicableSkillSpectorResult } from "./skillSpectorReportPolicy";
 
 const unit = z.number().finite().min(0).max(1);
 const verdict = z.enum(["benign", "suspicious", "malicious"]);
@@ -230,9 +231,10 @@ export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: r
     const scanner = object(scanners[id]);
     if (
       !scanner ||
-      scanner.status !== "completed" ||
-      scanner.error !== "" ||
-      scanner.exitCode !== 0 ||
+      // Coverage gaps are evidence for the completed judge, not execution failure.
+      // Only SkillSpector has this structured partial-report admission contract.
+      (!(id === "skillspector" && isAdjudicableSkillSpectorResult(scanner)) &&
+        (scanner.status !== "completed" || scanner.error !== "" || scanner.exitCode !== 0)) ||
       !hasScannerExecution(scanner) ||
       (id === "aig-mcp" &&
         (!Array.isArray(scanner.command) || scanner.command[0] !== "aig-mcp-scan")) ||
