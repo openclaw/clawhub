@@ -277,7 +277,7 @@ export function Footer() {
                               key={item.label}
                               href={item.href}
                               target="_blank"
-                              rel="noreferrer"
+                              rel={item.icon === "discord" ? "noreferrer nofollow" : "noreferrer"}
                               className={`footer-col-link-external${item.icon ? " footer-col-link-with-icon" : ""}`}
                             >
                               {item.icon ? <FooterSocialIcon icon={item.icon} /> : null}
