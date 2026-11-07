@@ -20,8 +20,8 @@ describe("reviewed ClawScan installation", () => {
     ).toBe("${{ vars.PREPUBLICATION_REPORT_SCANNER_SOURCE || 'false' }}");
   });
   it("ships a full immutable source lock for the workflow installers", async () => {
-    expect(await readFile(join(scripts, "clawscan-source-commit.txt"), "utf8")).toMatch(
-      /^[a-f0-9]{40}\n$/,
+    expect(await readFile(join(scripts, "clawscan-source-commit.txt"), "utf8")).toBe(
+      "80d11a34a97a9181213c806fc3013123360f9012\n",
     );
   });
 
@@ -55,10 +55,76 @@ describe("reviewed ClawScan installation", () => {
     expect(JSON.stringify(workflow)).not.toContain("69dcdfb74487d361ba4c811d088cfdea2ff3a9dc");
   });
 
+  it.each([
+    ["prepublication-publish-checks", "prepublication-publish-checks", "PREPUBLICATION", 100, 75],
+    ["security-scan-codex", "codex-security-scan", "CODEX_SECURITY_SCAN", 125, 100],
+  ] as const)(
+    "reserves complete plugin drain coverage in %s without changing skill timeout",
+    async (file, jobId, lane, hostedMinutes, workerMinutes) => {
+      const workflow = parseYaml(await readFile(".github/workflows/" + file + ".yml", "utf8"));
+      const job = workflow.jobs[jobId];
+      expect(job["timeout-minutes"]).toBe(hostedMinutes);
+      expect(job.env[lane + "_CLAWSCAN_TIMEOUT_MS"]).toContain("900000");
+      expect(job.env[lane + "_CLAWSCAN_SANDBOX"]).toBe("off");
+      expect(job.env[lane + "_CLAWSCAN_PLUGIN_SANDBOX"]).toBe("docker");
+      const deadline = job.steps[0];
+      expect(deadline.name).toBe("Reserve hosted worker drain deadline");
+      expect(deadline.run).toContain(hostedMinutes + " * 60000 - 120000");
+      expect(deadline.run).toContain("SECURITY_SCAN_WORKER_HOST_DEADLINE_MS");
+      const workers = job.steps.filter((step: { name?: string }) => step.name?.startsWith("Run "));
+      expect(workers.length).toBeGreaterThan(0);
+      for (const worker of workers) expect(worker["timeout-minutes"]).toBe(workerMinutes);
+      expect(
+        job.steps.find(
+          (step: { name?: string }) => step.name === "Prepare qualified plugin Docker runtime",
+        )?.run,
+      ).toContain("sh scripts/security/install-clawscan-scanners.sh aig-mcp");
+    },
+  );
+
+  it.each(["prepublication-publish-checks", "security-scan-codex"])(
+    "does not prepare MCP for an unqualified default in %s",
+    async (name) => {
+      const workflow = parseYaml(await readFile(".github/workflows/" + name + ".yml", "utf8"));
+      const steps = (
+        Object.values(workflow.jobs) as Array<{ steps?: Array<{ name?: string; run?: string }> }>
+      ).flatMap((job) => job.steps ?? []);
+      const step = steps.find((step) => step.name === "Prepare qualified plugin Docker runtime");
+      if (!step?.run) throw new Error("Missing qualified plugin preparation step");
+      const root = await mkdtemp(join(tmpdir(), "legacy-workflow-mcp-"));
+      try {
+        const dir = join(root, "scripts/security");
+        await mkdir(dir, { recursive: true });
+        await writeFile(
+          join(dir, "clawscan-install-source.sh"),
+          "qualified_source_commit=" + "b".repeat(40) + "\n",
+        );
+        await writeFile(join(dir, "clawscan-source-commit.txt"), "a".repeat(40) + "\n");
+        await writeFile(
+          join(dir, "install-clawscan-scanners.sh"),
+          '#!/bin/sh\necho "$*" >> calls\nexit 91\n',
+        );
+        await run("sh", ["-c", step.run!], { cwd: root, env: { PATH: process.env.PATH } });
+        await expect(readFile(join(root, "calls"), "utf8")).rejects.toThrow();
+        await writeFile(join(dir, "clawscan-source-commit.txt"), "b".repeat(40) + "\n");
+        await expect(
+          run("sh", ["-c", step.run!], { cwd: root, env: { PATH: process.env.PATH } }),
+        ).rejects.toThrow();
+        expect(await readFile(join(root, "calls"), "utf8")).toBe("aig-mcp\n");
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("rejects mutable or missing source revisions before executing installation tools", async () => {
     const root = await mkdtemp(join(tmpdir(), "clawscan-install-reject-"));
     try {
       await copyFile(join(scripts, "install-clawscan.sh"), join(root, "install.sh"));
+      await copyFile(
+        join(scripts, "clawscan-install-source.sh"),
+        join(root, "clawscan-install-source.sh"),
+      );
       await expect(
         run("sh", [join(root, "install.sh")], { env: { PATH: process.env.PATH } }),
       ).rejects.toThrow();
@@ -96,6 +162,7 @@ describe("reviewed ClawScan installation", () => {
           join(scriptDir, "install.sh"),
         );
         for (const file of [
+          "clawscan-install-source.sh",
           "skillspector-pydantic-requirements.txt",
           "test_skillspector_serialization.py",
         ]) {

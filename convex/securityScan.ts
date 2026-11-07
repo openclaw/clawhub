@@ -12,6 +12,12 @@ import { Events, logEvent } from "./lib/observabilityEvents";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { normalizePackageScanStatus } from "./lib/packageSecurity";
+import {
+  isExplicitPluginScanSource,
+  isRetiredAutomaticPluginScan,
+  isSingleScanPlugin,
+  terminalizeRetiredAutomaticPluginScan,
+} from "./lib/pluginScanRouting";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 import {
   getRuntimeRolloutCapabilities,
@@ -21,6 +27,7 @@ import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
 } from "./lib/securityAnalysisValidators";
+import { securityScanLeaseMs } from "./lib/securityWorkerBudgets";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
 import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 import {
@@ -790,7 +797,12 @@ export const enqueueBulkPackageRescanBatchForAdminInternal = internalMutation({
           .query("securityScanJobs")
           .withIndex("by_package_release", (q) => q.eq("packageReleaseId", version._id))
           .collect();
-        const active = existing.find((job) => job.status === "queued" || job.status === "running");
+        const active = existing.find(
+          (job) =>
+            (job.status === "queued" || job.status === "running") &&
+            job.scanMode === undefined &&
+            isExplicitPluginScanSource(job.source),
+        );
         if (active) alreadyQueued += 1;
         else queued += 1;
         continue;
@@ -2689,6 +2701,19 @@ async function enqueuePackageReleaseScan(
 ) {
   const release = knownRelease ?? (await ctx.db.get(args.releaseId));
   if (!release || release.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
+  const pkg = await ctx.db.get(release.packageId);
+  const reportOnly = isSingleScanPlugin(pkg?.family) && !isExplicitPluginScanSource(args.source);
+  if (
+    reportOnly &&
+    release.publicationStatus !== undefined &&
+    release.publicationStatus !== "published"
+  ) {
+    return { ok: true as const, skipped: "prepublication" as const };
+  }
+  if (reportOnly && release.endorAnalysis && release.endorAnalysis.status !== "failed") {
+    return { ok: true as const, skipped: "reported" as const };
+  }
+  const scanMode = reportOnly ? ("endor-report-only" as const) : undefined;
   const now = Date.now();
   const nextRunAt = now;
   const hasMaliciousSignal = false;
@@ -2697,7 +2722,14 @@ async function enqueuePackageReleaseScan(
     .query("securityScanJobs")
     .withIndex("by_package_release", (q) => q.eq("packageReleaseId", args.releaseId))
     .collect();
-  const active = existing.find((job) => job.status === "queued" || job.status === "running");
+  // Never promote a legacy automatic ClawScan job into an explicit rescan, or
+  // let an Endor job absorb one. Their write authority is intentionally distinct.
+  const active = existing.find(
+    (job) =>
+      (job.status === "queued" || job.status === "running") &&
+      job.scanMode === scanMode &&
+      (reportOnly || !isSingleScanPlugin(pkg?.family) || isExplicitPluginScanSource(job.source)),
+  );
   if (active) {
     if (args.preserveActiveJob) {
       return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
@@ -2715,6 +2747,7 @@ async function enqueuePackageReleaseScan(
 
   const jobId = await ctx.db.insert("securityScanJobs", {
     targetKind: "packageRelease",
+    ...(scanMode ? { scanMode } : {}),
     packageReleaseId: args.releaseId,
     status: "queued",
     source: args.source,
@@ -2832,7 +2865,7 @@ export const claimQueuedJobsInternal = internalMutation({
   handler: async (ctx, args) => {
     const now = Date.now();
     const limit = normalizeLimit(args.limit);
-    const leaseMs = Math.max(60_000, Math.min(args.leaseMs ?? DEFAULT_LEASE_MS, 60 * 60 * 1000));
+    const requestedLeaseMs = args.leaseMs ?? DEFAULT_LEASE_MS;
     const capacity = limit;
 
     const ready: Doc<"securityScanJobs">[] = [];
@@ -2874,6 +2907,7 @@ export const claimQueuedJobsInternal = internalMutation({
     };
     const githubSkillSyncEnabled = getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled;
     const isJobRolloutClaimable = async (job: Doc<"securityScanJobs">) => {
+      if (await isRetiredAutomaticPluginScan(ctx, job)) return false;
       if (
         githubSkillSyncEnabled ||
         job.targetKind !== "skillScanRequest" ||
@@ -3077,6 +3111,7 @@ export const claimQueuedJobsInternal = internalMutation({
         }
         catalogAttemptId = attempt._id;
       }
+      const leaseMs = securityScanLeaseMs(job.targetKind, job.scanMode, requestedLeaseMs);
       const leaseToken = crypto.randomUUID();
       await ctx.db.patch(job._id, {
         status: "running",
@@ -3283,19 +3318,24 @@ export const requeueExpiredCodexScanJobsInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    const limit = Math.max(
+      1,
+      Math.min(args.limit ?? MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES, MAX_CODEX_SCAN_CLAIM_LIMIT),
+    );
     const jobs = await ctx.db
       .query("securityScanJobs")
       .withIndex("by_status_and_lease_expires_at", (q) =>
         q.eq("status", "running").lte("leaseExpiresAt", now),
       )
-      .take(
-        Math.max(
-          1,
-          Math.min(args.limit ?? MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES, MAX_CODEX_SCAN_CLAIM_LIMIT),
-        ),
-      );
+      .take(limit);
     let requeued = 0;
+    let retired = 0;
     for (const job of jobs) {
+      if (await isRetiredAutomaticPluginScan(ctx, job)) {
+        await terminalizeRetiredAutomaticPluginScan(ctx, job, now);
+        retired += 1;
+        continue;
+      }
       const catalogRetry = await prepareCatalogRetry(ctx, job, now);
       if (catalogRetry.kind === "blocked") {
         await terminalizeBlockedCatalogRetry(ctx, catalogRetry, now);
@@ -3336,6 +3376,13 @@ export const requeueExpiredCodexScanJobsInternal = internalMutation({
       }
       requeued += 1;
     }
+    // A full retired window must not consume every cron tick forever. Each
+    // bounded continuation removes those heads without reviving their authority.
+    if (retired > 0 && jobs.length === limit) {
+      await ctx.scheduler.runAfter(0, internal.securityScan.requeueExpiredCodexScanJobsInternal, {
+        limit,
+      });
+    }
     if (requeued > 0) await requestSecurityScanDispatch(ctx);
     return { requeued };
   },
@@ -3347,6 +3394,7 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
     failedBefore: v.number(),
     dryRun: v.boolean(),
     limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     if (args.failedBefore <= args.failedAfter) {
@@ -3359,7 +3407,7 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
         MAX_FAILED_SCAN_RECOVERY_LIMIT,
       ),
     );
-    const jobs = await ctx.db
+    const page = await ctx.db
       .query("securityScanJobs")
       .withIndex("by_status_and_updated_at", (q) =>
         q
@@ -3369,8 +3417,17 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
       )
       .filter((q) => q.neq(q.field("source"), "skills-sh-catalog-test"))
       .order("asc")
-      .take(limit + 1);
-    const matched = jobs.slice(0, limit);
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: limit,
+        maximumRowsRead: MAX_FAILED_SCAN_RECOVERY_LIMIT + 1,
+      });
+    // Retired failures remain untouched, including during dry runs. Return the
+    // native index cursor so a retained head cannot hide later eligible jobs.
+    const matched: Doc<"securityScanJobs">[] = [];
+    for (const job of page.page) {
+      if (!(await isRetiredAutomaticPluginScan(ctx, job))) matched.push(job);
+    }
     const bySource: Partial<Record<SecurityScanJobSource, number>> = {};
     const byTargetKind: Partial<Record<Doc<"securityScanJobs">["targetKind"], number>> = {};
     let requeued = 0;
@@ -3432,7 +3489,8 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
       dryRun: args.dryRun,
       matched: matched.length,
       requeued: args.dryRun ? 0 : requeued,
-      hasMore: jobs.length > limit,
+      hasMore: !page.isDone,
+      nextCursor: page.isDone ? null : page.continueCursor,
       bySource,
       byTargetKind,
       sampleJobIds: matched.slice(0, FAILED_SCAN_RECOVERY_SAMPLE_LIMIT).map((job) => job._id),
@@ -3447,6 +3505,7 @@ export const getJobTargetInternal = internalQuery({
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
     if (!job) return null;
+    if (await isRetiredAutomaticPluginScan(ctx, job)) return { job, missing: true as const };
     if (job.targetKind === "skillVersion" && job.skillVersionId) {
       const version = await ctx.db.get(job.skillVersionId);
       if (!version || version.softDeletedAt) return { job, missing: true as const };
@@ -3545,7 +3604,10 @@ export const failJobInternal = internalMutation({
     if (!job || job.leaseToken !== args.leaseToken) throw new ConvexError("Lease mismatch");
     const now = Date.now();
     const catalogRetry = await prepareCatalogRetry(ctx, job, now, job.attempts < MAX_ATTEMPTS);
-    const retry = job.attempts < MAX_ATTEMPTS && catalogRetry.kind !== "blocked";
+    const retry =
+      job.attempts < MAX_ATTEMPTS &&
+      catalogRetry.kind !== "blocked" &&
+      !(await isRetiredAutomaticPluginScan(ctx, job));
     const error = sanitizeWorkerErrorDetail(args.error, 2000);
     if (catalogRetry.kind === "blocked") {
       await terminalizeBlockedCatalogRetry(ctx, catalogRetry, now);
@@ -3589,7 +3651,8 @@ export const requeueJobLeaseInternal = internalMutation({
     }
     const now = Date.now();
     const catalogRetry = await prepareCatalogRetry(ctx, job, now);
-    const retry = catalogRetry.kind !== "blocked";
+    const retry =
+      catalogRetry.kind !== "blocked" && !(await isRetiredAutomaticPluginScan(ctx, job));
     if (catalogRetry.kind === "blocked") {
       await terminalizeBlockedCatalogRetry(ctx, catalogRetry, now);
     }
@@ -3839,7 +3902,7 @@ export const completeCodexScanJob = action({
     token: v.string(),
     jobId: v.id("securityScanJobs"),
     leaseToken: v.string(),
-    llmAnalysis: llmAnalysisValidator,
+    llmAnalysis: v.optional(llmAnalysisValidator),
     aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     endorAnalysis: v.optional(endorAnalysisValidator),
@@ -3866,6 +3929,21 @@ export const completeCodexScanJob = action({
     if (args.endorAnalysis && target.job.targetKind !== "packageRelease") {
       throw new ConvexError("Endor analysis is only supported for package release scans");
     }
+    if (target.job.scanMode === "endor-report-only") {
+      if (target.job.targetKind !== "packageRelease" || !target.release)
+        throw new ConvexError("Invalid Endor report target");
+      if (args.llmAnalysis || args.aigAnalysis || args.skillSpectorAnalysis)
+        throw new ConvexError("Endor report-only jobs cannot replace ClawScan evidence");
+      return await runMutationRef(ctx, internalRefs.packages.completeReleaseSecurityScanInternal, {
+        releaseId: target.release._id,
+        jobId: args.jobId,
+        leaseToken: args.leaseToken,
+        runId: args.runId,
+        endorAnalysis: args.endorAnalysis,
+      });
+    }
+    const llmAnalysis = args.llmAnalysis;
+    if (!llmAnalysis) throw new ConvexError("ClawScan analysis is required");
     const completedAigAnalysis = reusableAigAnalysis(args.aigAnalysis);
     if (
       (target.job.targetKind === "skillVersion" || target.job.targetKind === "skillScanRequest") &&
@@ -3891,7 +3969,7 @@ export const completeCodexScanJob = action({
         }
         await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
           versionId,
-          llmAnalysis: args.llmAnalysis,
+          llmAnalysis,
           scannerReportsStorageId,
         });
       } catch (error) {
@@ -3911,7 +3989,8 @@ export const completeCodexScanJob = action({
           jobId: args.jobId,
           leaseToken: args.leaseToken,
           runId: args.runId,
-          llmAnalysis: args.llmAnalysis,
+          llmAnalysis,
+          aigAnalysis: args.aigAnalysis,
           ...(args.skillSpectorAnalysis
             ? {
                 skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
@@ -3949,8 +4028,8 @@ export const completeCodexScanJob = action({
       if (target.scanRequest.sourceKind === "github" && target.githubScan) {
         await runMutationRef(ctx, internalRefs.securityScan.recordGitHubSkillScanResultInternal, {
           githubSkillScanId: target.githubScan._id,
-          scanStatus: githubSkillScanStatusFromLlmAnalysis(args.llmAnalysis),
-          llmAnalysis: args.llmAnalysis,
+          scanStatus: githubSkillScanStatusFromLlmAnalysis(llmAnalysis),
+          llmAnalysis,
           aigAnalysis: completedAigAnalysis,
           skillSpectorAnalysis,
           runId: args.runId,
@@ -3970,9 +4049,9 @@ export const completeCodexScanJob = action({
             jobId: args.jobId,
             leaseToken: args.leaseToken,
             artifactContentHash: target.scanRequest.sha256hash ?? "",
-            verdict: githubSkillScanStatusFromLlmAnalysis(args.llmAnalysis),
+            verdict: githubSkillScanStatusFromLlmAnalysis(llmAnalysis),
             runId: args.runId,
-            llmAnalysis: args.llmAnalysis,
+            llmAnalysis,
             aigAnalysis: completedAigAnalysis,
             skillSpectorAnalysis,
           },
@@ -3992,7 +4071,7 @@ export const completeCodexScanJob = action({
         scanId: target.scanRequest._id,
         jobId: args.jobId,
         runId: args.runId,
-        llmAnalysis: args.llmAnalysis,
+        llmAnalysis,
         aigAnalysis: completedAigAnalysis,
         skillSpectorAnalysis,
         writtenBack,
@@ -4064,7 +4143,10 @@ export const failCodexScanJob = action({
             });
           }
         } else if (target.job.targetKind === "packageRelease" && target.release) {
-          if (!hasArtifactBackedLlmAnalysis(target.release.llmAnalysis)) {
+          if (
+            target.job.scanMode !== "endor-report-only" &&
+            !hasArtifactBackedLlmAnalysis(target.release.llmAnalysis)
+          ) {
             await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
               releaseId: target.release._id,
               llmAnalysis,

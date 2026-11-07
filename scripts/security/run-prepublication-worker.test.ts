@@ -5,10 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
+import { ClawScanContainerCleanupError } from "./clawscan-docker-cleanup";
 import { summarizeClawScanExposure } from "./clawscan-exposure";
 import partialReport from "./fixtures/skillspector-usable-partial.json";
 import {
   DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS,
+  clawScanTimeoutMs,
   claimBatchDrainedQueue,
   claimPrePublicationAttempt,
   claimPrePublicationBatch,
@@ -163,6 +165,36 @@ const attempt = {
 };
 
 describe("pre-publication worker", () => {
+  it("preserves the artifact and requests worker stop when MCP cleanup is unconfirmed", async () => {
+    let preserved: string | undefined;
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+    const result = await processPrePublicationAttempt(client, "fixture", attempt, {
+      writeWorkspace: async (_job, workspace) => {
+        preserved = workspace;
+        await mkdir(join(workspace, "artifact"));
+        await writeFile(join(workspace, "artifact/SKILL.md"), "retained mounted fixture");
+      },
+      runTruffleHog: async () => ({ status: "clean" }),
+      runClawScan: async () => {
+        throw new ClawScanContainerCleanupError("ClawScan Docker cleanup unconfirmed");
+      },
+    });
+    expect(result).toEqual({ completed: false, result: undefined, workerMustStop: true });
+    expect(client.action).not.toHaveBeenCalled();
+    tempDirs.push(preserved!);
+    expect(await readFile(join(preserved!, "artifact/SKILL.md"), "utf8")).toBe(
+      "retained mounted fixture",
+    );
+  });
+  it("propagates cleanup stop across the completed batch instead of swallowing it as an ordinary attempt failure", async () => {
+    const processAttempt = vi.fn(async () => {
+      throw new ClawScanContainerCleanupError("unconfirmed");
+    });
+    expect(await processPrePublicationBatch([attempt], processAttempt)).toEqual([
+      { completed: false, result: undefined, workerMustStop: true },
+    ]);
+  });
+
   it("allows production ClawScan runs up to 15 minutes by default", () => {
     expect(DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS).toBe(900_000);
   });
@@ -1847,4 +1879,13 @@ exit 183
     if (previousCommand === undefined) delete process.env.PREPUBLICATION_TRUFFLEHOG_COMMAND;
     else process.env.PREPUBLICATION_TRUFFLEHOG_COMMAND = previousCommand;
   });
+});
+
+it("gives only the qualified plugin subprocess stage headroom beyond native 30m", () => {
+  vi.stubEnv("PREPUBLICATION_CLAWSCAN_TIMEOUT_MS", "900000");
+  expect(clawScanTimeoutMs()).toBe(900000);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
+  vi.stubEnv("PREPUBLICATION_CLAWSCAN_TIMEOUT_MS", "123456");
+  expect(clawScanTimeoutMs()).toBe(123456);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
 });

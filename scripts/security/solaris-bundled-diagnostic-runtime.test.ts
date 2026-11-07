@@ -124,10 +124,10 @@ afterEach(async () => {
 async function setup(corrupt = false) {
   probe.calls = 0;
   probe.leakedEnvironment = false;
-  probe.adoptedCommitOverride = null;
-  probe.scannerCommit = (
-    await readFile(new URL("./clawscan-source-commit.txt", import.meta.url), "utf8")
-  ).trim();
+  // This diagnostic intentionally admits only its historical incident runtime.
+  // A later production rollout must not silently rewrite that diagnostic scope.
+  probe.adoptedCommitOverride = "c3cfaf1515a47685786d72f031c714b1e5d9b34e";
+  probe.scannerCommit = probe.adoptedCommitOverride;
   const root = await mkdtemp(join(tmpdir(), "solaris-diagnostic-test-"));
   roots.push(root);
   const source = join(root, "solaris-source/harnesses/openclaw/skills/control");
@@ -236,4 +236,12 @@ it("rejects an unreviewed production pin before invoking any model", async () =>
     validationFailed: true,
     cleanup: true,
   });
+});
+
+it("keeps the historical diagnostic closed after production adopts a different runtime", async () => {
+  await setup();
+  probe.adoptedCommitOverride = null;
+  await main([]);
+  expect(probe.calls).toBe(0);
+  expect(process.exitCode).toBe(1);
 });

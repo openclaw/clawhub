@@ -74,7 +74,7 @@ jobs:
     name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
     # Match the qualified recovery image; Ubuntu24.04 AppArmor blocks judge bwrap setup.
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 125
     environment: ${{ (inputs.environment == 'Test' || github.event.client_payload.environment == 'test') && 'Test' || 'Production' }}
     concurrency:
       # Bulk assignments must not wait behind ordinary queue workers on the same shard.
@@ -102,12 +102,17 @@ jobs:
       CODEX_SECURITY_SCAN_ENDOR_IMAGE: ${{ vars.CODEX_SECURITY_SCAN_ENDOR_IMAGE }}
       # The runner is disposable and installs the reviewed, source-pinned host scanners below.
       CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX: "off"
+      # Only plugins use Docker; skill-specific host settings remain intact.
+      CODEX_SECURITY_SCAN_CLAWSCAN_PLUGIN_SANDBOX: "docker"
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
       CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: codex-security-scan-diagnostics-${{ matrix.shard }}
       CODEX_SECURITY_SCAN_SHARD: ${{ matrix.shard }}
       CODEX_SECURITY_SCAN_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
       SKILLSPECTOR_PROVIDER: openai
     steps:
+      - name: Reserve hosted worker drain deadline
+        run: echo "SECURITY_SCAN_WORKER_HOST_DEADLINE_MS=$(( $(date +%s) * 1000 + 125 * 60000 - 120000 ))" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7.0.1
 
       - name: Check Test scan target
@@ -172,6 +177,16 @@ jobs:
           set -euo pipefail
           sh scripts/security/install-clawscan-scanners.sh aig
 
+      - name: Prepare qualified plugin Docker runtime
+        run: |
+          set -eu
+          . scripts/security/clawscan-install-source.sh
+          if [ "$(cat scripts/security/clawscan-source-commit.txt)" != "$qualified_source_commit" ]; then
+            echo 'Default source has no qualified plugin Docker runtime; retaining legacy setup.'
+            exit 0
+          fi
+          sh scripts/security/install-clawscan-scanners.sh aig-mcp
+
       - name: Install SkillSpector
         run: |
           set -euo pipefail
@@ -183,6 +198,7 @@ jobs:
         run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
 
       - name: Run Codex security worker
+        timeout-minutes: 100
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           DEFAULT_BASE_URL: https://api.openai.com/v1

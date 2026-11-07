@@ -7,11 +7,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as dockerCleanup from "./clawscan-docker-cleanup";
+import * as pluginRuntime from "./clawscan-plugin-runtime";
 import completeReport from "./fixtures/skillspector-completed.json";
 import partialReport from "./fixtures/skillspector-usable-partial.json";
 import type { ClaimedJob, ClawScanCommandDiagnostic } from "./run-codex-scan-worker";
 import {
   aggregateSkillSpectorAnalyses,
+  clawScanTimeoutMs,
   normalizeAigAnalysis,
   processJob,
   resolveClawScanTarget,
@@ -401,7 +404,8 @@ printf 'called\\n' >> ${JSON.stringify(input.callLog)}
 out=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config|--context) exit 98 ;;
+    --config) exit 98 ;;
+    --context) grep -q '"trustedOpenClawPlugin":' "$2" || exit 98; [[ "$(cat "$2")" != *endor* ]] || exit 99; shift 2 ;;
     --scanner-result) [[ "$2" != endor=* ]] || exit 99; shift 2 ;;
     --output) out="$2"; shift 2 ;;
     *) shift ;;
@@ -507,6 +511,80 @@ async function configureEndorFakeCommands(input: {
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
+  it.each([false, true])(
+    "stops and preserves the MCP workspace after cleanup failure (backend unavailable: %s)",
+    async (backendUnavailable) => {
+      vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "0");
+      vi.spyOn(pluginRuntime, "usesWholePluginScanForTarget").mockResolvedValue(true);
+      vi.spyOn(pluginRuntime, "qualifiedPluginCommand").mockResolvedValue("/qualified/clawscan");
+      let preserved: string | undefined;
+      vi.spyOn(dockerCleanup, "withClawScanDockerCleanup").mockImplementation(async (input) => {
+        preserved = input.workspace;
+        throw new dockerCleanup.ClawScanContainerCleanupError(
+          "ClawScan Docker cleanup unconfirmed",
+        );
+      });
+      const client = {
+        action: vi.fn(async (..._args: unknown[]) => {
+          if (backendUnavailable) throw new Error("backend transport unavailable");
+          return { retry: true };
+        }),
+      };
+      await expect(
+        processJob(client, "fixture", pluginPackageJob("securityScanJobs:owned-mcp"), undefined),
+      ).resolves.toMatchObject({
+        completed: false,
+        workerMustStop: true,
+        hardFailed: true,
+        retryableFailed: false,
+      });
+      expect(preserved).toBeTruthy();
+      tempDirs.push(preserved!);
+      expect(
+        await readFile(join(preserved!, "artifact/package/openclaw.plugin.json"), "utf8"),
+      ).toContain("fixture-plugin");
+      expect(client.action).toHaveBeenCalledTimes(1);
+      expect(client.action.mock.calls[0]?.[1]).toHaveProperty("error");
+    },
+  );
+
+  it("completes automatic Endor-only work without launching ClawScan or bundled scanners", async () => {
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "0");
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", "/missing/must-not-launch-clawscan");
+    const job: ClaimedJob = {
+      job: {
+        _id: "securityScanJobs:report-only",
+        targetKind: "packageRelease",
+        source: "publish",
+        leaseToken: "fixture-lease",
+        hasMaliciousSignal: false,
+        scanMode: "endor-report-only",
+      },
+      target: {
+        ...fileTarget("package.json", '{"name":"fixture","version":"1.0.0"}'),
+        package: { name: "fixture", family: "code-plugin" },
+        release: { artifactKind: "legacy-zip" },
+      },
+    };
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+    const health = vi.fn();
+    await expect(
+      processJob(client, "fixture-token", job, undefined, health),
+    ).resolves.toMatchObject({ completed: true });
+    expect(client.action).toHaveBeenCalledTimes(1);
+    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+      endorAnalysis: { status: "skipped" },
+    });
+    expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("llmAnalysis");
+    expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("aigAnalysis");
+    expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("skillSpectorAnalysis");
+    expect(health).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exposure: expect.objectContaining({ scanExecution: "not_started", judgeInvocations: 0 }),
+      }),
+    );
+  });
+
   it("keeps scan eligibility unknown when artifact preparation fails before any judge call", async () => {
     const job = skillVersionJob("securityScanJobs:input-unproven");
     job.target.files![0]!.sha256 = "0".repeat(64);
@@ -1485,7 +1563,7 @@ JSON`,
         expect(invocationArgs).toEqual(
           expect.arrayContaining(["--profile", "clawhub", "--output"]),
         );
-        expect(invocationArgs).not.toContain("--context");
+        expect(invocationArgs.includes("--context")).toBe(targetKind === "packageRelease");
         if (targetKind === "packageRelease") {
           expect(invocationArgs).toContain("--scanner-result");
           expect(invocationArgs.some((arg) => arg.startsWith("skillspector="))).toBe(true);
@@ -2787,4 +2865,13 @@ wait "$child_pid"`,
       }
     }
   });
+});
+
+it("preserves skill subprocess settings independently of the qualified plugin deadline", () => {
+  vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "900000");
+  expect(clawScanTimeoutMs()).toBe(900000);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
+  vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "123456");
+  expect(clawScanTimeoutMs()).toBe(123456);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
 });

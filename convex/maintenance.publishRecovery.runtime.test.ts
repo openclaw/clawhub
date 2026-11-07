@@ -852,6 +852,11 @@ describe("targeted recovery of expired finalizing uploads (#4234)", () => {
       expect(after.checks).toEqual(before.checks);
       expect(after.checkFailureCount).toBe(before.checkFailureCount);
       expect(after.checkClaimLastError).toBe(before.checkClaimLastError);
+      // Conflict integration: retain targeted recovery error/evidence while
+      // applying the consumer's conservative package versus skill claim budget.
+      expect(after.checkClaimExpiresAt! - after.checkClaimedAt!).toBe(
+        (kind === "package" ? 70 : 30) * 60_000,
+      );
       const target = await t.run((ctx) =>
         ctx.db.get((ids.skillVersionId ?? ids.packageReleaseId)!),
       );

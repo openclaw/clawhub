@@ -349,6 +349,12 @@ async function harness(options: { failInspectorDispatches?: number } = {}) {
       artifactFingerprint: claim.artifactFingerprint,
       trufflehog: { status: "clean" },
       clawscan: { status: "clean" },
+      clawscanAnalysis: {
+        status: "completed",
+        verdict: "benign",
+        checkedAt: Date.now(),
+        summary: "Simulated scanner completion for the real Inspector authority-chain proof.",
+      },
     });
     phase = `finalize:${name}`;
     await advance(0);

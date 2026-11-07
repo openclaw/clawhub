@@ -560,6 +560,7 @@ describe("publish attempt runtime recovery", () => {
           targetKind: "packageRelease",
           packageReleaseId: fixture.result.releaseId,
           source: "publish",
+          scanMode: "endor-report-only",
           status: "queued",
           attempts: 0,
         });

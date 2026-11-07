@@ -269,10 +269,7 @@ describe.each(["skill", "package"] as const)("%s pre-publication checks fail clo
             summary: "Inspected source with residual uncertainty.",
             checkedAt,
           },
-          aigAnalysis:
-            kind === "skill"
-              ? { status: "clean", issueCount: 0, findings: [], checkedAt }
-              : undefined,
+          aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt },
           skillSpectorAnalysis,
         }),
       ).resolves.toMatchObject({ status: "finalized" });
@@ -367,6 +364,7 @@ describe.each(["skill", "package"] as const)("%s pre-publication checks fail clo
       f.complete(claimId, {
         trufflehog: { status: "clean" },
         clawscan: { status: "blocked", summary: "Malicious credential exfiltration." },
+        aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
         skillSpectorAnalysis,
         clawscanAnalysis: {
           status: "malicious",
@@ -404,4 +402,68 @@ describe.each(["skill", "package"] as const)("%s pre-publication checks fail clo
     expect((await f.target())?.publicationStatus).toBe("pending");
     await f.expectNotPublic();
   });
+});
+
+it("requires canonical plugin precheck evidence and retains that exact object after publication", async () => {
+  vi.useFakeTimers();
+  const f = await stagedFixture("package");
+  const { claimId } = await f.claim();
+  const before = await f.target();
+  const base = {
+    trufflehog: { status: "clean" as const },
+    clawscan: { status: "clean" as const },
+    aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: 12 },
+  };
+  await expect(f.complete(claimId, base)).rejects.toThrow("completed ClawScan and A.I.G evidence");
+  expect(await f.target()).toEqual(before);
+  expect((await f.attempt())?.status).toBe("pending_checks");
+  const submitted = {
+    status: "clean",
+    verdict: "benign",
+    checkedAt: 12,
+    summary: "Publication decision, not a second review",
+    guidance: "Exact guidance",
+    findings: "Exact findings",
+    model: "fixture-judge",
+    dimensions: [{ name: "intent", label: "Intent", rating: "pass", detail: "Exact evidence" }],
+    agenticRiskFindings: [],
+    riskSummary: {
+      abnormal_behavior_control: { status: "none" as const, summary: "Exact control summary" },
+      permission_boundary: { status: "note" as const, summary: "Exact permission summary" },
+      sensitive_data_protection: { status: "concern" as const, summary: "Exact data summary" },
+    },
+  };
+  await f.complete(claimId, { ...base, clawscanAnalysis: submitted });
+  expect((await f.target())?.llmAnalysis).toEqual(submitted);
+  const response = await f.t.fetch("/api/v1/packages/" + PACKAGE_NAME + "/versions/1.0.0");
+  const version = await response.json();
+  expect(version.version.llmAnalysis).toEqual(submitted);
+  const jobs = await f.t.run((ctx) => ctx.db.query("securityScanJobs").collect());
+  expect(jobs).toMatchObject([{ targetKind: "packageRelease", scanMode: "endor-report-only" }]);
+});
+
+it("keeps plugin claim custody beyond the old 30m lease through full stage/cleanup drain", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const f = await stagedFixture("package");
+  const original = await f.claim();
+  const attempt = await f.attempt();
+  const startedAt = attempt!.checkClaimedAt!;
+  expect(attempt!.checkClaimExpiresAt! - startedAt).toBe(70 * 60_000);
+  vi.setSystemTime(startedAt + 65 * 60_000);
+  await expect(
+    f.t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+      attemptId: attempt!._id,
+      claimId: "replacement-claim",
+    }),
+  ).resolves.toEqual({ outcome: "active_claim" });
+  expect((await f.attempt())?.checkClaimId).toBe(original.claimId);
+  expect((await f.target())?.publicationStatus).toBe("pending");
+  vi.setSystemTime(startedAt + 70 * 60_000 + 1);
+  await expect(
+    f.t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+      attemptId: attempt!._id,
+      claimId: "replacement-claim",
+    }),
+  ).resolves.toMatchObject({ claimId: "replacement-claim" });
+  expect((await f.target())?.publicationStatus).toBe("pending");
 });
