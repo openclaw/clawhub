@@ -3,6 +3,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
+import { makePublicSkill } from "../__tests__/helpers/publicCatalog";
 import type { PublicSkill } from "../lib/publicUser";
 import { SkillRelatedSection } from "./SkillRelatedSection";
 
@@ -33,20 +34,11 @@ describe("SkillRelatedSection", () => {
 });
 
 function makeSkill(): PublicSkill {
-  return {
+  return makePublicSkill({
     _id: "skills:related" as Id<"skills">,
-    _creationTime: 1,
     slug: "related",
     displayName: "Related Skill",
     summary: "A related skill.",
-    icon: undefined,
-    ownerUserId: "users:owner" as Id<"users">,
-    ownerPublisherId: "publishers:owner" as Id<"publishers">,
-    canonicalSkillId: undefined,
-    forkOf: undefined,
-    latestVersionId: undefined,
-    tags: {},
-    badges: {},
     stats: {
       downloads: 4_321,
       stars: 654,
@@ -54,8 +46,5 @@ function makeSkill(): PublicSkill {
       comments: 0,
       installs: 7_300,
     },
-    isSuspicious: false,
-    createdAt: 1,
-    updatedAt: 1,
-  };
+  });
 }
