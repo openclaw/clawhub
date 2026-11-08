@@ -13,6 +13,7 @@ const sharedSchemaModules = [
   "pluginInput",
   "schemaShared",
   "templatePackage",
+  "templatePaths",
   "templates",
   "textFiles",
 ];
