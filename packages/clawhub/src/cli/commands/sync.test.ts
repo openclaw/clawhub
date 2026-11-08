@@ -6,7 +6,7 @@ import {
   createHttpModuleMocks,
   createRegistryModuleMocks,
   createUiModuleMocks,
-  makeGlobalOpts,
+  makeGlobalOpts as makeOpts,
 } from "../../../test/cliCommandTestKit.js";
 import type { SkillOrigin } from "../../skills.js";
 
@@ -99,10 +99,6 @@ function mockDefaultSkillResolution() {
     }
     throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
   });
-}
-
-function makeOpts() {
-  return makeGlobalOpts();
 }
 
 afterEach(async () => {
@@ -276,7 +272,7 @@ describe("cmdSync", () => {
 
     try {
       await cmdSync(
-        makeGlobalOpts("/workspace"),
+        makeOpts("/workspace"),
         {
           root: ["scan"],
           all: true,
@@ -311,7 +307,7 @@ describe("cmdSync", () => {
     });
 
     await cmdSync(
-      makeGlobalOpts("/workspace"),
+      makeOpts("/workspace"),
       {
         root: ["/external/scan"],
         all: true,

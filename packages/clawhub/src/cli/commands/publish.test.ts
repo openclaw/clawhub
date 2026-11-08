@@ -9,7 +9,7 @@ import {
   createHttpModuleMocks,
   createRegistryModuleMocks,
   createUiModuleMocks,
-  makeGlobalOpts,
+  makeGlobalOpts as makeOpts,
 } from "../../../test/cliCommandTestKit.js";
 
 const authTokenMocks = createAuthTokenModuleMocks();
@@ -40,10 +40,6 @@ const realUi = await vi.importActual<typeof import("../ui.js")>("../ui.js");
 async function makeTmpWorkdir() {
   const root = await mkdtemp(join(tmpdir(), "clawhub-publish-"));
   return root;
-}
-
-function makeOpts(workdir: string) {
-  return makeGlobalOpts(workdir);
 }
 
 afterEach(() => {

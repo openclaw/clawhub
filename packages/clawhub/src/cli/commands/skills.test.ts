@@ -7,7 +7,7 @@ import {
   createHttpModuleMocks,
   createRegistryModuleMocks,
   createUiModuleMocks,
-  makeGlobalOpts,
+  makeGlobalOpts as makeOpts,
 } from "../../../test/cliCommandTestKit.js";
 import { ApiRoutes, LegacyApiRoutes } from "../../schema/index.js";
 import * as skillStore from "../../skills.js";
@@ -100,10 +100,6 @@ const {
 const { rename, rm, stat } = fsPromises;
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
-
-function makeOpts() {
-  return makeGlobalOpts();
-}
 
 function githubArtifactIdentity(repo: string, path: string, commit: string, contentHash: string) {
   return JSON.stringify({ installKind: "github", repo, path, commit, contentHash });
