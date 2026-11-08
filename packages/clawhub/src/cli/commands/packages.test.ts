@@ -1,6 +1,5 @@
 /* @vitest-environment node */
 
-import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,6 +13,7 @@ import {
   createUiModuleMocks,
   makeGlobalOpts as makeOpts,
 } from "../../../test/cliCommandTestKit.js";
+import { runGit } from "../../../test/git.js";
 import { npmPackFixture } from "../../../test/npmPack.js";
 
 const authTokenMocks = createAuthTokenModuleMocks();
@@ -83,17 +83,6 @@ async function makeTmpWorkdir() {
 
 async function listClawPackTempDirs() {
   return new Set((await readdir(tmpdir())).filter((name) => name.startsWith("clawhub-clawpack-")));
-}
-
-function runGit(cwd: string, args: string[]) {
-  const result = spawnSync("git", ["-C", cwd, ...args], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  if (result.status !== 0) {
-    throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
-  }
-  return result.stdout.trim();
 }
 
 function getPublishForm() {
