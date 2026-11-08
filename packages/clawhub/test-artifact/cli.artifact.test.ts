@@ -21,6 +21,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { strToU8, zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
+import { runGit } from "../test/git.js";
 
 const require = createRequire(import.meta.url);
 const packageRoot = resolve(import.meta.dirname, "..");
@@ -81,17 +82,6 @@ async function runNodeAsync(args: string[], envOverrides: NodeJS.ProcessEnv = {}
   );
   clearTimeout(timeout);
   return { ...result, stdout, stderr };
-}
-
-function runGit(cwd: string, args: string[]) {
-  const result = spawnSync("git", ["-C", cwd, ...args], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  if (result.status !== 0) {
-    throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
-  }
-  return result.stdout.trim();
 }
 
 afterEach(async () => {
