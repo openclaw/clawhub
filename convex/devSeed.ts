@@ -22,6 +22,7 @@ import {
 import { ACTIVITY_TREND_DAYS } from "./lib/downloadTrend";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
+import { githubBackedSkillModeration as buildGitHubBackedSkillModeration } from "./lib/githubSkillSync";
 import { toDayKey } from "./lib/leaderboards";
 import { normalizePackageName } from "./lib/packageRegistry";
 import {
@@ -3892,58 +3893,11 @@ export const seedLocalModerationFixturesMutation = internalMutation({
 });
 
 function githubBackedSkillModeration(scanStatus: GitHubSkillScanStatus, removedAt?: number) {
-  if (typeof removedAt === "number") {
-    return {
-      moderationStatus: "hidden" as const,
-      moderationReason: "github.upstream.removed",
-      moderationVerdict: undefined,
-      moderationFlags: [],
-      isSuspicious: false,
-    };
-  }
-  if (scanStatus === "pending") {
-    return {
-      moderationStatus: "hidden" as const,
-      moderationReason: "pending.scan",
-      moderationVerdict: undefined,
-      moderationFlags: [],
-      isSuspicious: false,
-    };
-  }
-  if (scanStatus === "failed") {
-    return {
-      moderationStatus: "hidden" as const,
-      moderationReason: "scanner.failed",
-      moderationVerdict: undefined,
-      moderationFlags: [],
-      isSuspicious: false,
-    };
-  }
-  if (scanStatus === "malicious") {
-    return {
-      moderationStatus: "hidden" as const,
-      moderationReason: "scanner.llm.malicious",
-      moderationVerdict: "malicious" as const,
-      moderationFlags: ["blocked.malware"],
-      isSuspicious: true,
-    };
-  }
-  if (scanStatus === "suspicious") {
-    return {
-      moderationStatus: "active" as const,
-      moderationReason: "scanner.llm.suspicious",
-      moderationVerdict: "suspicious" as const,
-      moderationFlags: ["flagged.suspicious"],
-      isSuspicious: true,
-    };
-  }
-  return {
-    moderationStatus: "active" as const,
-    moderationReason: undefined,
-    moderationVerdict: "clean" as const,
-    moderationFlags: [],
-    isSuspicious: false,
-  };
+  const moderation = buildGitHubBackedSkillModeration(scanStatus, removedAt);
+  // Preserve the seed-only hidden state for pending scans.
+  return scanStatus === "pending"
+    ? { ...moderation, moderationStatus: "hidden" as const }
+    : moderation;
 }
 
 export async function seedGitHubBackedSkillSourceHandler(
