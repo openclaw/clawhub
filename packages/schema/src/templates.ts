@@ -1,6 +1,6 @@
 import { ArkErrors, type BaseType, type inferred, type } from "arktype";
 import { Cron } from "croner";
-import { caseFold } from "unicode-case-folding";
+import { hasPortablePathSegments, portablePathKey } from "./templatePaths.js";
 
 export const TEMPLATE_SCHEMA_VERSION = 1 as const;
 export const TEMPLATE_SUMMARY_AGENT_NAME_MAX_CHARS = 128;
@@ -220,9 +220,6 @@ const EXACT_VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const ENV_REFERENCE_PATTERN = /^\$\{[A-Z_][A-Z0-9_]*\}$/;
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
-const WINDOWS_INVALID_PATH_CHARS = /[<>:"|?*]/;
-const WINDOWS_RESERVED_PATH_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
-const UNICODE_CONTROL_CHARACTER = /\p{Cc}/u;
 const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 const AVATAR_MAX_DATA_URL_CHARS = 2_796_230;
 const AVATAR_DATA_URL_PATTERN = /^data:image\/[^,]*,/i;
@@ -377,23 +374,7 @@ function isSafePackagePath(value: string): boolean {
   ) {
     return false;
   }
-  return normalized
-    .split("/")
-    .every(
-      (segment) =>
-        segment !== "" &&
-        segment !== "." &&
-        segment !== ".." &&
-        !WINDOWS_INVALID_PATH_CHARS.test(segment) &&
-        !UNICODE_CONTROL_CHARACTER.test(segment) &&
-        !segment.endsWith(".") &&
-        !segment.endsWith(" ") &&
-        !WINDOWS_RESERVED_PATH_SEGMENT.test(segment),
-    );
-}
-
-function portablePathKey(value: string): string {
-  return caseFold(value.replaceAll("\\", "/").normalize("NFC"));
+  return hasPortablePathSegments(normalized);
 }
 
 function isPortableAvatar(value: string): boolean {

@@ -321,6 +321,7 @@ describe("built CLI artifact", () => {
       "pluginInput",
       "schemaShared",
       "templatePackage",
+      "templatePaths",
       "templates",
       "textFiles",
     ];

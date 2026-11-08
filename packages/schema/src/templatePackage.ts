@@ -1,6 +1,6 @@
 import { ArkErrors, type } from "arktype";
-import { caseFold } from "unicode-case-folding";
 import { isScalar, parseDocument, visit } from "yaml";
+import { hasPortablePathSegments, portablePathKey } from "./templatePaths.js";
 import {
   summarizeTemplateManifest,
   validateTemplateManifest,
@@ -25,9 +25,6 @@ export type OpenClawProfilePolicy = "current" | "publication-compatible";
 
 const EXACT_VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
-const WINDOWS_INVALID_PATH_CHARS = /[<>:"|?*]/;
-const WINDOWS_RESERVED_PATH_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
-const UNICODE_CONTROL_CHARACTER = /\p{Cc}/u;
 const MAX_TEMPLATE_MANIFEST_BYTES = 1024 * 1024;
 const MAX_PACKAGE_BOOTSTRAP_BYTES = 2 * 1024 * 1024;
 const MAX_HARNESS_PROFILE_BYTES = 256 * 1024;
@@ -342,23 +339,7 @@ export function isSafeTemplatePackagePath(value: string): boolean {
   ) {
     return false;
   }
-  return normalized
-    .split("/")
-    .every(
-      (segment) =>
-        segment !== "" &&
-        segment !== "." &&
-        segment !== ".." &&
-        !WINDOWS_INVALID_PATH_CHARS.test(segment) &&
-        !UNICODE_CONTROL_CHARACTER.test(segment) &&
-        !segment.endsWith(".") &&
-        !segment.endsWith(" ") &&
-        !WINDOWS_RESERVED_PATH_SEGMENT.test(segment),
-    );
-}
-
-function portablePathKey(value: string): string {
-  return caseFold(value.replaceAll("\\", "/").normalize("NFC"));
+  return hasPortablePathSegments(normalized);
 }
 
 export function findTemplatePackagePathHierarchyCollision(
