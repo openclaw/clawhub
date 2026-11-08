@@ -12,7 +12,7 @@ import {
   createHttpModuleMocks,
   createRegistryModuleMocks,
   createUiModuleMocks,
-  makeGlobalOpts,
+  makeGlobalOpts as makeOpts,
 } from "../../../test/cliCommandTestKit.js";
 import { npmPackFixture } from "../../../test/npmPack.js";
 
@@ -76,10 +76,6 @@ const { MAX_PACKAGE_MULTIPART_BYTES } = await import("../../schema/index.js");
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 const mockWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
 const mockWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-
-function makeOpts(workdir = "/work") {
-  return makeGlobalOpts(workdir);
-}
 
 async function makeTmpWorkdir() {
   return await mkdtemp(join(tmpdir(), "clawhub-package-"));
