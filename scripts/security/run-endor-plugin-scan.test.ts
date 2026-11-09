@@ -284,7 +284,8 @@ describe("runEndorPluginScan", () => {
     await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
     await expect(runScan(workspace)).resolves.toMatchObject({
       status: "skipped",
-      reason: "Endor cannot scan pnpm packages yet.",
+      reason:
+        "Endor cannot scan pnpm packages yet. No action is needed: this does not affect publication, and a rescan will also be skipped.",
     });
     await expect(readFile(join(workspace, "docker-run-args"))).rejects.toMatchObject({
       code: "ENOENT",

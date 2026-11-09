@@ -225,7 +225,8 @@ export async function runEndorPluginScan(input: {
     return {
       status: "skipped",
       checkedAt: Date.now(),
-      reason: "Endor cannot scan pnpm packages yet.",
+      reason:
+        "Endor cannot scan pnpm packages yet. No action is needed: this does not affect publication, and a rescan will also be skipped.",
     };
   }
 
