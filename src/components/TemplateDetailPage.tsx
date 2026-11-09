@@ -156,7 +156,7 @@ export function TemplateDetailPage({
                     ) : tab === "Automations" ? (
                       <TemplateAutomations manifest={manifest} />
                     ) : (
-                      <TemplateWorkspace manifest={manifest} pkg={pkg} />
+                      <TemplateWorkspace manifest={manifest} pkg={pkg} markdown={markdown} />
                     )
                   ) : null}
                 </div>
@@ -289,15 +289,27 @@ function TemplateAutomations({ manifest }: { manifest: TemplateManifest }) {
   );
 }
 
-function TemplateWorkspace({ manifest, pkg }: { manifest: TemplateManifest; pkg: Package }) {
-  const files = [
+function TemplateWorkspace({
+  manifest,
+  pkg,
+  markdown,
+}: {
+  manifest: TemplateManifest;
+  pkg: Package;
+  markdown: string | null;
+}) {
+  const files: Array<{ path: string; source: string; contents?: string }> = [
     ...Object.entries(manifest.workspace?.bootstrapFiles ?? {}).map(([path, entry]) => ({
       path,
       source: entry.source,
     })),
     ...(manifest.workspace?.files ?? []),
   ];
-  const [selectedSource, setSelectedSource] = useState<string | null>(null);
+  if (markdown?.trim() && !files.some((file) => file.path.toUpperCase() === "SOUL.MD")) {
+    files.unshift({ path: "SOUL.md", source: "CLAW.md body", contents: markdown });
+  }
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const selectedFile = files.find((file) => file.path === selectedPath);
   if (!files.length)
     return <ContentMessage>No workspace files are included in this Template.</ContentMessage>;
   return (
@@ -307,8 +319,8 @@ function TemplateWorkspace({ manifest, pkg }: { manifest: TemplateManifest; pkg:
           <li key={file.path}>
             <button
               type="button"
-              aria-pressed={selectedSource === file.source}
-              onClick={() => setSelectedSource(file.source)}
+              aria-pressed={selectedPath === file.path}
+              onClick={() => setSelectedPath(file.path)}
             >
               {file.path}
             </button>
@@ -316,12 +328,19 @@ function TemplateWorkspace({ manifest, pkg }: { manifest: TemplateManifest; pkg:
           </li>
         ))}
       </ul>
-      {selectedSource && pkg.latestVersion ? (
+      {selectedFile?.contents !== undefined ? (
+        <section className="template-detail-file-preview" aria-label="Preview of SOUL.md">
+          <h3>SOUL.md</h3>
+          <MarkdownPreview className="template-detail-markdown">
+            {selectedFile.contents}
+          </MarkdownPreview>
+        </section>
+      ) : selectedFile && pkg.latestVersion ? (
         <WorkspaceFilePreview
-          key={selectedSource}
+          key={selectedFile.source}
           name={pkg.name}
           version={pkg.latestVersion}
-          path={selectedSource}
+          path={selectedFile.source}
         />
       ) : null}
     </div>

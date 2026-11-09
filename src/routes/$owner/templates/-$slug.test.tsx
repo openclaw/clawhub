@@ -363,6 +363,44 @@ describe("Template detail composition and interactions", () => {
     expect(screen.queryByRole("button", { name: "Copy OpenClaw prompt" })).toBeNull();
   });
 
+  it("previews the implicit SOUL.md from a body-only Template without fetching an archive file", () => {
+    renderTemplate({
+      contents:
+        "---\n" +
+        JSON.stringify({ schemaVersion: 1, agent: { id: "release-brief" } }) +
+        "\n---\n# Managed instructions\n\nUse the published release notes.",
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
+    expect(screen.queryByText("No workspace files are included in this Template.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "SOUL.md" }));
+    const preview = screen.getByRole("region", { name: "Preview of SOUL.md" });
+    expect(within(preview).getByRole("heading", { name: "Managed instructions" })).toBeTruthy();
+    expect(within(preview).getByText("Use the published release notes.")).toBeTruthy();
+    expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps explicit SOUL.md archive previews when the document body is empty", async () => {
+    renderTemplate({
+      contents:
+        "---\n" +
+        JSON.stringify({
+          schemaVersion: 1,
+          agent: { id: "release-brief" },
+          workspace: { bootstrapFiles: { "SOUL.md": { source: "workspace/SOUL.md" } } },
+        }) +
+        "\n---\n   \n",
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
+    expect(screen.getAllByRole("button", { name: "SOUL.md" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "SOUL.md" }));
+    expect(await screen.findByRole("heading", { name: "Workspace instructions" })).toBeTruthy();
+    expect(mocks.fetchPackageFile).toHaveBeenCalledWith(
+      "@maker/release-brief",
+      "workspace/SOUL.md",
+      "0.1.0",
+    );
+  });
+
   it("reads real workspace source files only after selection and pins their version", async () => {
     renderTemplate();
     expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
