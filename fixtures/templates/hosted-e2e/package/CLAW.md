@@ -19,7 +19,13 @@ workspace:
 skills: []
 plugins: []
 mcpServers: {}
-automations: []
+automations:
+  - id: onboarding-brief
+    name: Onboarding brief
+    enabled: false
+    schedule: { cron: "0 9 * * *", timezone: UTC }
+    session: isolated
+    message: Summarize approved sources after onboarding.
 ---
 
 # Hosted E2E

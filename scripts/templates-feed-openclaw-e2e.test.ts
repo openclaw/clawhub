@@ -189,7 +189,7 @@ function feedValue() {
             },
             packages: { skillCount: 0, pluginCount: 0 },
             mcpServerCount: 0,
-            cronJobCount: 0,
+            cronJobCount: 1,
           },
           install: {
             candidates: [
@@ -534,6 +534,12 @@ describe("published Template to OpenClaw dry-run proof", () => {
             kind: "workspaceFile",
             id: "assets/incident.schema.json",
             blocked: false,
+          }),
+          expect.objectContaining({
+            kind: "cronJob",
+            id: "onboarding-brief",
+            blocked: false,
+            details: expect.objectContaining({ enabled: false }),
           }),
           // Current consumers import deprecated heartbeat input as an ordinary
           // automation plus bounded scratch, not a persistent workspace heartbeat.
