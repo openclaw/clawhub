@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +9,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { parseArk } from "../../packages/schema/src/ark";
 import { ApiV1SkillListResponseSchema } from "../../packages/schema/src/schemas";
 import { extractLastJsonObject } from "../helpers/convexOutput";
+import { localConvexDeployment } from "../helpers/localConvex";
 import {
   expectNoFatalErrorUi,
   expectNoRuntimeErrors,
@@ -81,15 +81,6 @@ function convexSiteUrl() {
   const url = process.env.VITE_CONVEX_SITE_URL;
   if (!url) throw new Error("VITE_CONVEX_SITE_URL is required");
   return url.replace(/\/$/u, "");
-}
-
-function localConvexDeployment() {
-  const raw = readFileSync(".convex/local/default/config.json", "utf8");
-  const parsed = JSON.parse(raw) as { deploymentName?: unknown };
-  if (typeof parsed.deploymentName !== "string" || !parsed.deploymentName) {
-    throw new Error("Local Convex deployment name was not available");
-  }
-  return `local:${parsed.deploymentName}`;
 }
 
 function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {

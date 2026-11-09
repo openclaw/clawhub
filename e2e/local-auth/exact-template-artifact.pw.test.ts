@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { localConvexDeployment } from "../helpers/localConvex";
 import { completeMockPrePublicationChecks } from "./helpers";
 
 test.setTimeout(180_000);
@@ -12,15 +13,6 @@ test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
   "exact Template artifact proof requires the local dev auth runner",
 );
-
-function localConvexDeployment() {
-  const raw = readFileSync(".convex/local/default/config.json", "utf8");
-  const parsed = JSON.parse(raw) as { deploymentName?: unknown };
-  if (typeof parsed.deploymentName !== "string" || !parsed.deploymentName) {
-    throw new Error("Local Convex deployment name was not available");
-  }
-  return `local:${parsed.deploymentName}`;
-}
 
 function extractLastJsonObject(output: string) {
   const trimmed = output.trim();
