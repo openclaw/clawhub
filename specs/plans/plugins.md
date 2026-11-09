@@ -982,14 +982,15 @@ openclaw plugins install clawhub:@scope/pkg
 
 The plugin detail Install card uses the same shared install card as skills: an
 `Install` heading, `CLI` and `Prompt` tabs, and one copyable block. The CLI tab
-shows `openclaw plugins install <package-name>` without the `clawhub:` prefix,
-because OpenClaw resolves unprefixed package installs from ClawHub by default.
-Unscoped names get `@latest` (`discord@latest`) because OpenClaw resolves bare
-bundled plugin IDs before its ClawHub default; scoped names stay as-is.
+shows `openclaw plugins install clawhub:<package-name>` so the displayed and
+copied command selects ClawHub on released clients as well as main/dev builds.
+OpenClaw 2026.11.2 still routes unprefixed package specs to npm; the default-source
+change on main is not a released-client compatibility guarantee (see #4491).
+Unscoped names retain `@latest` (`clawhub:discord@latest`) to distinguish registry
+packages from bundled plugin IDs; scoped names stay as-is after the prefix.
 The Prompt tab shows only `Install the <package-name> package from ClawHub`. Do not add
-version labels or explanatory subtext to this card. Keep CLI compatibility
-guidance, including the explicit `clawhub:` source for older OpenClaw releases,
-in the public docs instead.
+version labels or explanatory subtext to this card. Skill commands and prompts
+remain unchanged. Keep additional CLI compatibility guidance in the public docs.
 
 Skills should also install directly from ClawHub:
 

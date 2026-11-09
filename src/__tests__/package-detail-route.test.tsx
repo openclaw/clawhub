@@ -275,6 +275,7 @@ describe("plugin detail route", () => {
     { family: "code-plugin", name: "demo-plugin", target: "demo-plugin@latest" },
     { family: "code-plugin", name: "discord", target: "discord@latest" },
     { family: "code-plugin", name: "@shopify/ai-toolkit", target: "@shopify/ai-toolkit" },
+    { family: "code-plugin", name: "@sliekens/voxtral", target: "@sliekens/voxtral" },
     { family: "code-plugin", name: "owner/plugin", target: "owner/plugin" },
     { family: "bundle-plugin", name: "demo-bundle", target: "demo-bundle@latest" },
     { family: "bundle-plugin", name: "@owner/scoped-bundle", target: "@owner/scoped-bundle" },
@@ -292,11 +293,11 @@ describe("plugin detail route", () => {
       const card = screen
         .getByRole("heading", { name: "Install" })
         .closest(".skill-install-command-card") as HTMLElement;
-      const command = `openclaw plugins install ${target}`;
+      const command = `openclaw plugins install clawhub:${target}`;
       expect(card.querySelectorAll("pre")).toHaveLength(1);
       expect(card.querySelector(".skill-install-command-wrap pre")).toBeTruthy();
       expect(card.querySelector("pre")?.textContent).toBe(command);
-      expect(card.textContent).not.toContain("clawhub:");
+      expect(card.querySelector("pre")?.textContent).toContain("clawhub:");
       expect(card.querySelector("p")).toBeNull();
       expect(within(card).getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe(
         "true",
@@ -1844,7 +1845,7 @@ describe("plugin detail route", () => {
     expect(screen.getByText("sha512-demo")).toBeTruthy();
     expect(screen.getAllByText("openclaw plugins install")).toHaveLength(1);
     expect(
-      screen.getByText("demo-plugin@latest", { selector: ".skill-install-command-target" }),
+      screen.getByText("clawhub:demo-plugin@latest", { selector: ".skill-install-command-target" }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",

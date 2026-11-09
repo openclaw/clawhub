@@ -64,12 +64,12 @@ openclaw plugins install @composio/composio
 ```
 
 The shorter form is not supported as a ClawHub default by released versions
-through `2026.10.4`. The explicit `clawhub:<package>` form works on both old and
+through `2026.11.2`. The explicit `clawhub:<package>` form works on both old and
 updated builds. Use `openclaw plugins install npm:<package>` to install directly
 from npm.
 
-For an unscoped package, use `openclaw plugins install episodic-claw@latest`.
-This shorter form also requires an updated build. ClawHub pages include `@latest`
+For an unscoped package, use `openclaw plugins install clawhub:episodic-claw@latest`.
+ClawHub pages use the explicit `clawhub:` source and include `@latest`
 on unscoped names to distinguish registry packages from OpenClaw's bundled plugin
 shortcuts.
 
