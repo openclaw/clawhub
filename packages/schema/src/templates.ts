@@ -101,6 +101,7 @@ export type TemplateManifestSummary = {
   agent: { id: string; name?: string; description?: string };
   workspace: { bootstrapFiles: string[]; fileCount: number };
   packages: { skillCount: number; pluginCount: number };
+  // Historical immutable release summaries may retain these stored fields. New summaries never emit them.
   profiles?: { count: number; hasOpenClaw: boolean };
   extensions?: { count: number };
   mcpServerCount: number;

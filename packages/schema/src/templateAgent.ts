@@ -274,8 +274,8 @@ export const nativeAgentSettingsFields = {
   }).optional(),
 } as const;
 const NativeAgentSettingsSchema = type({ "+": "reject", ...nativeAgentSettingsFields });
-export type NativeAgentSettings = (typeof NativeAgentSettingsSchema)[inferred];
-export type NativeAgentValidationIssue = { code: string; path: string; message: string };
+type NativeAgentSettings = (typeof NativeAgentSettingsSchema)[inferred];
+type NativeAgentValidationIssue = { code: string; path: string; message: string };
 
 function isStrictNonEmpty(value: string): boolean {
   return value.length > 0 && value === value.trim();
