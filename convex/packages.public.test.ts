@@ -11780,7 +11780,7 @@ describe("packages public queries", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
-  it("publishes a profile-bearing Template through the staged release pipeline", async () => {
+  it("publishes inline native settings and canonical inventory through the staged release pipeline", async () => {
     const longTemplateDescription = "x".repeat(1_100);
     const artifactSha256 = "a".repeat(64);
     const storedFiles = new Map<string, string>([
@@ -11794,10 +11794,8 @@ describe("packages public queries", () => {
       ],
       [
         "storage:claw",
-        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Template\n  description: ${longTemplateDescription}\n---\nRun the demo workflow precisely.\n`,
+        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Template\n  description: ${longTemplateDescription}\n  tools: { profile: minimal }\nskills: [{ ref: "@acme/research", version: "1.2.3" }]\nplugins: [{ ref: "@acme/alerts", version: "2.0.0" }]\n---\nRun the demo workflow precisely.\n`,
       ],
-      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
-      ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
       ["storage:bootstrap", "Ask which repositories the user owns.\n"],
     ]);
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
@@ -11859,18 +11857,6 @@ describe("packages public queries", () => {
               sha256: "template",
             },
             {
-              path: "profiles/openclaw.yml",
-              size: 1,
-              storageId: "storage:profile",
-              sha256: "profile",
-            },
-            {
-              path: "profiles/codex.yml",
-              size: 1,
-              storageId: "storage:codex-profile",
-              sha256: "codex-profile",
-            },
-            {
               path: "BOOTSTRAP.md",
               size: 1,
               storageId: "storage:bootstrap",
@@ -11921,6 +11907,10 @@ describe("packages public queries", () => {
             bootstrapFiles: ["BOOTSTRAP.md", "SOUL.md"],
           }),
         }),
+        templateInventory: [
+          { kind: "skill", source: "clawhub", ref: "@acme/research", version: "1.2.3" },
+          { kind: "plugin", source: "clawhub", ref: "@acme/alerts", version: "2.0.0" },
+        ],
         pluginManifestSummary: undefined,
       }),
     );
@@ -12139,9 +12129,7 @@ describe("packages public queries", () => {
           },
         },
       }),
-    ).rejects.toThrow(
-      "profiles/openclaw.yml.agent.tools.profile: Must name a registered OpenClaw built-in profile.",
-    );
+    ).rejects.toThrow("profiles/openclaw.yml: Template profiles are no longer supported.");
     expect(runMutation).toHaveBeenCalledTimes(2);
 
     runQuery.mockReset();
@@ -21222,7 +21210,7 @@ describe("restorePackageInternal", () => {
     ).resolves.not.toBeNull();
   });
 
-  it("exposes only the safe manifest summary on named Template reads", async () => {
+  it("exposes only safe summaries and exact-release dependency inventories on named Template reads", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
     const latestTemplateManifestSummary = {
       schemaVersion: 1,
@@ -21248,6 +21236,9 @@ describe("restorePackageInternal", () => {
       files: [],
       integritySha256: "latest-integrity",
       templateManifestSummary: latestTemplateManifestSummary,
+      templateInventory: [
+        { kind: "skill", source: "clawhub", ref: "@acme/research", version: "2.0.0" },
+      ],
       createdBy: "users:must-not-project-latest",
       publishActor: { kind: "user", userId: "users:must-not-project-latest" },
       extractedPackageJson: {
@@ -21280,6 +21271,9 @@ describe("restorePackageInternal", () => {
         files: [],
         integritySha256: "exact-integrity",
         templateManifestSummary: exactTemplateManifestSummary,
+        templateInventory: [
+          { kind: "skill", source: "clawhub", ref: "@acme/research", version: "1.0.0" },
+        ],
         createdBy: "users:must-not-project-exact",
         publishActor: { kind: "user", userId: "users:must-not-project-exact" },
         extractedPackageJson: {
@@ -21320,7 +21314,12 @@ describe("restorePackageInternal", () => {
       });
       expect(version).toMatchObject({
         package: { family: "template", templateManifestSummary: latestTemplateManifestSummary },
-        version: { templateManifestSummary: exactTemplateManifestSummary },
+        version: {
+          templateManifestSummary: exactTemplateManifestSummary,
+          templateInventory: [
+            { kind: "skill", source: "clawhub", ref: "@acme/research", version: "1.0.0" },
+          ],
+        },
       });
       expect(version?.version).not.toHaveProperty("extractedTemplateManifest");
       expect(JSON.stringify(version)).not.toContain("must-not-project");

@@ -1,4 +1,8 @@
-import type { TemplateManifest } from "clawhub-schema";
+import {
+  templateDependencyInventory,
+  type TemplateDependencyInventory,
+  type TemplateManifest,
+} from "clawhub-schema";
 import { TEMPLATE_CATEGORY_DEFINITIONS } from "clawhub-schema/catalogMetadata";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { fetchPackageFile, type PackageDetailResponse } from "../lib/packageApi";
@@ -35,6 +39,8 @@ export function TemplateDetailPage({
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const id = useId();
   const summary = pkg.templateManifestSummary;
+  const inventory =
+    pkg.templateInventory ?? (manifest ? templateDependencyInventory(manifest) : null);
   const categories = (pkg.categories ?? manifest?.categories ?? []).map(
     (slug) =>
       TEMPLATE_CATEGORY_DEFINITIONS.find((category) => category.slug === slug)?.label ?? slug,
@@ -148,7 +154,7 @@ export function TemplateDetailPage({
                       </ContentMessage>
                     ) : tab === "Skills" || tab === "Plugins" ? (
                       <TemplatePackages
-                        manifest={manifest}
+                        inventory={inventory ?? []}
                         kind={tab === "Skills" ? "skill" : "plugin"}
                       />
                     ) : tab === "Automations" ? (
@@ -166,6 +172,23 @@ export function TemplateDetailPage({
               ariaLabel="Template metadata"
               density="compact"
               blocks={[
+                {
+                  key: "provenance",
+                  label: "Declared contents",
+                  value: (
+                    <span>
+                      Template {pkg.latestVersion ? "v" + pkg.latestVersion : "release unavailable"}
+                      {pkg.artifact?.sha256 ? (
+                        <>
+                          <br />
+                          <code title={pkg.artifact.sha256}>
+                            SHA-256 {pkg.artifact.sha256.slice(0, 12)}…
+                          </code>
+                        </>
+                      ) : null}
+                    </span>
+                  ),
+                },
                 {
                   key: "security",
                   label: <DetailSecuritySummaryLabel />,
@@ -268,13 +291,13 @@ function ContentMessage({ children }: { children: React.ReactNode }) {
 }
 
 function TemplatePackages({
-  manifest,
+  inventory,
   kind,
 }: {
-  manifest: TemplateManifest;
+  inventory: TemplateDependencyInventory;
   kind: "skill" | "plugin";
 }) {
-  const packages = manifest.packages?.filter((entry) => entry.kind === kind) ?? [];
+  const packages = inventory.filter((entry) => entry.kind === kind);
   if (!packages.length)
     return (
       <ContentMessage>
@@ -282,19 +305,22 @@ function TemplatePackages({
       </ContentMessage>
     );
   return (
-    <ul
-      className="template-detail-entry-list"
-      aria-label={kind === "skill" ? "Included skills" : "Included plugins"}
-    >
-      {packages.map((entry) => (
-        <li key={entry.ref}>
-          <strong>{entry.ref}</strong>
-          <span className="template-detail-entry-meta">
-            Version {entry.version} · {entry.source}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <p className="template-detail-entry-meta">
+        {packages.length} declared {packages.length === 1 ? kind : kind + "s"}
+      </p>
+      <ul
+        className="template-detail-entry-list"
+        aria-label={kind === "skill" ? "Included skills" : "Included plugins"}
+      >
+        {packages.map((entry) => (
+          <li key={entry.ref}>
+            <strong>{entry.ref}</strong>
+            <span className="template-detail-entry-meta">Version {entry.version} · ClawHub</span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -307,7 +333,8 @@ function TemplateAutomations({ manifest }: { manifest: TemplateManifest }) {
         <li key={job.id}>
           <strong>{job.name || job.id}</strong>
           <span className="template-detail-entry-meta">
-            <code>{job.schedule.cron}</code> · {job.schedule.timezone} · {job.session} session
+            {job.enabled === false ? "Paused" : "Enabled"} · <code>{job.schedule.cron}</code> ·{" "}
+            {job.schedule.timezone} · {job.session} session
           </span>
           <p className="template-detail-job-message">{job.message}</p>
           {job.delivery ? (

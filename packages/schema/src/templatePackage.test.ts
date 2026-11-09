@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import {
   findTemplatePackagePathHierarchyCollision,
   validateTemplatePackageContents,
@@ -11,7 +12,7 @@ const manifest = {
     bootstrapFiles: {},
     files: [{ source: "workspace/reference.md", path: "reference.md" }],
   },
-  packages: [{ kind: "skill", source: "clawhub", ref: "@acme/triage", version: "1.2.0" }],
+  skills: [{ ref: "@acme/triage", version: "1.2.0" }],
   mcpServers: {},
   automations: [],
 };
@@ -57,35 +58,32 @@ function files(manifestText = `---\n${JSON.stringify(manifest)}\n---\n`) {
 }
 
 describe("validateTemplatePackageContents", () => {
-  it.each(["automations", "cronJobs"])(
-    "preserves scheduled work from the %s manifest key",
-    (key) => {
-      const { automations: _, ...portable } = manifest;
-      const result = validateTemplatePackageContents({
-        packageName: "@acme/github-triage",
-        version: "1.0.0",
-        packageJson: packageJson(),
-        files: files(
-          `---\n${JSON.stringify({
-            ...portable,
-            [key]: [
-              {
-                id: "daily-triage",
-                schedule: { cron: "0 8 * * *", timezone: "UTC" },
-                session: "isolated",
-                message: "Triage new issues.",
-              },
-            ],
-          })}\n---\n`,
-        ),
-      });
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.manifest.automations?.[0]?.id).toBe("daily-triage");
-      expect(result.value.manifest).not.toHaveProperty("cronJobs");
-      expect(result.value.summary.cronJobCount).toBe(1);
-    },
-  );
+  it.each(["automations"])("preserves scheduled work from the %s manifest key", (key) => {
+    const { automations: _, ...portable } = manifest;
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: files(
+        `---\n${JSON.stringify({
+          ...portable,
+          [key]: [
+            {
+              id: "daily-triage",
+              schedule: { cron: "0 8 * * *", timezone: "UTC" },
+              session: "isolated",
+              message: "Triage new issues.",
+            },
+          ],
+        })}\n---\n`,
+      ),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.manifest.automations?.[0]?.id).toBe("daily-triage");
+    expect(result.value.manifest).not.toHaveProperty("cronJobs");
+    expect(result.value.summary.cronJobCount).toBe(1);
+  });
 
   it("rejects packages that declare both automation keys", () => {
     const result = validateTemplatePackageContents({
@@ -97,7 +95,7 @@ describe("validateTemplatePackageContents", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.issues).toEqual(
-      expect.arrayContaining([expect.objectContaining({ path: "$.automations" })]),
+      expect.arrayContaining([expect.objectContaining({ path: "$.cronJobs" })]),
     );
   });
 
@@ -135,8 +133,6 @@ describe("validateTemplatePackageContents", () => {
             description: "Reviews issues.",
           },
           packages: { skillCount: 1, pluginCount: 0 },
-          profiles: { count: 0, hasOpenClaw: false },
-          extensions: { count: 0 },
           workspace: { bootstrapFiles: [], fileCount: 1 },
         }),
       }),
@@ -286,303 +282,64 @@ describe("validateTemplatePackageContents", () => {
     });
   });
 
-  it("validates a package-local OpenClaw profile without returning it", () => {
+  it("validates supported native settings directly in CLAW.md", () => {
+    const agent = { ...manifest.agent, ...parse(openClawProfile).agent };
     const result = validateTemplatePackageContents({
       packageName: "@acme/github-triage",
       version: "1.0.0",
       packageJson: packageJson(),
-      files: [
-        ...files(`---\n${JSON.stringify(manifest)}\n---\n# Prompt\n`),
-        { path: "profiles/openclaw.yml", text: openClawProfile },
-      ],
+      files: files(`---\n${JSON.stringify({ ...manifest, agent })}\n---\n`),
     });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value).not.toHaveProperty("profile");
-      expect(result.value.manifest.agent).toEqual(manifest.agent);
-      expect(result.value.summary.profiles).toEqual({ count: 1, hasOpenClaw: true });
-      expect(result.value.summary.extensions).toEqual({ count: 0 });
-    }
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        manifest: { agent },
+        inventory: [{ kind: "skill", source: "clawhub", ref: "@acme/triage", version: "1.2.0" }],
+      },
+    });
+    if (result.ok) expect(result.value.summary).not.toHaveProperty("profiles");
   });
 
-  it("summarizes the public profile and extension footprint without exposing contents", () => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: [
-        ...files(),
-        {
-          path: "profiles/openclaw.yml",
-          text: [
-            "schemaVersion: 1",
-            "agent:",
-            "  tools:",
-            "    profile: minimal",
-            "extensions:",
-            "  - id: issue-tools",
-            "    kind: plugin",
-            "    format: openclaw",
-            "    source: clawhub",
-            "    ref: '@acme/issue-tools'",
-            "    version: 2.3.4",
-          ].join("\n"),
-        },
-        { path: "profiles/codex.yml", text: "version: 1" },
-      ],
-    });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.summary.profiles).toEqual({ count: 2, hasOpenClaw: true });
-      expect(result.value.summary.extensions).toEqual({ count: 1 });
-    }
-  });
-
-  it("rejects an applying harness profile that shipped OpenClaw does not know", () => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: [
-        ...files(`---\n${JSON.stringify(manifest)}\n---\n# Prompt\n`),
-        {
-          path: "profiles/openclaw.yml",
-          text: "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile",
-        },
-      ],
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      issues: [
-        expect.objectContaining({
-          code: "invalid_openclaw_profile",
-          path: "profiles/openclaw.yml.agent.tools.profile",
-        }),
-      ],
-    });
-  });
+  it.each(["profiles/openclaw.yml", "profiles/codex.yml", "Profiles/openclaw.yml"])(
+    "rejects retired profile %s with migration guidance",
+    (path) => {
+      const result = validateTemplatePackageContents({
+        packageName: "@acme/github-triage",
+        version: "1.0.0",
+        packageJson: packageJson(),
+        files: [...files(), { path, text: openClawProfile }],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        issues: [
+          {
+            code: "retired_template_profile",
+            path,
+            message: expect.stringContaining("CLAW.md agent"),
+          },
+        ],
+      });
+    },
+  );
 
   it.each([
-    ["a custom profile", "profile: future-profile"],
-    ["unbounded coding", "profile: coding"],
-    ["unbounded messaging", "profile: messaging"],
-    ["unbounded full", "profile: full"],
-    ["a legacy wildcard allowlist", "profile: full\n    allow: ['*']"],
-    ["alsoAllow without a profile", "alsoAllow: [read]"],
-  ])("preserves publication compatibility for %s", (_label, tools) => {
+    { profile: "future-profile" },
+    { profile: "coding" },
+    { profile: "messaging" },
+    { profile: "full" },
+    { profile: "full", allow: ["*"] },
+    { alsoAllow: ["read"] },
+    { profile: "minimal", allow: ["read"] },
+  ])("rejects unbounded or incompatible native tool policy %j", (tools) => {
     const result = validateTemplatePackageContents({
       packageName: "@acme/github-triage",
       version: "1.0.0",
       packageJson: packageJson(),
-      openClawProfilePolicy: "publication-compatible",
-      files: [
-        ...files(),
-        {
-          path: "profiles/openclaw.yml",
-          text: `schemaVersion: 1\nagent:\n  tools:\n    ${tools}`,
-        },
-      ],
+      files: files(
+        `---\n${JSON.stringify({ ...manifest, agent: { ...manifest.agent, tools } })}\n---\n`,
+      ),
     });
-
-    expect(result.ok).toBe(true);
-  });
-
-  it("retains legacy non-empty profile validation in publication compatibility mode", () => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      openClawProfilePolicy: "publication-compatible",
-      files: [
-        ...files(),
-        {
-          path: "profiles/openclaw.yml",
-          text: "schemaVersion: 1\nagent:\n  tools:\n    profile: ' '",
-        },
-      ],
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      issues: [
-        expect.objectContaining({
-          code: "invalid_openclaw_profile",
-          path: "profiles/openclaw.yml.agent.tools.profile",
-        }),
-      ],
-    });
-  });
-
-  it.each([
-    ["coding without a bounded allowlist", "profile: coding"],
-    ["messaging without a bounded allowlist", "profile: messaging"],
-    ["full without a bounded allowlist", "profile: full"],
-    ["an unbounded allow grant", "profile: full\n    allow: ['*']"],
-    ["an allow grant outside the selected profile", "profile: minimal\n    allow: [read]"],
-  ])("rejects %s like shipped OpenClaw", (_label, tools) => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: [
-        ...files(),
-        {
-          path: "profiles/openclaw.yml",
-          text: `schemaVersion: 1\nagent:\n  tools:\n    ${tools}`,
-        },
-      ],
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      issues: expect.arrayContaining([
-        expect.objectContaining({ code: "invalid_openclaw_profile" }),
-      ]),
-    });
-  });
-
-  it("accepts the documented bounded coding profile like shipped OpenClaw", () => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: [
-        ...files(),
-        {
-          path: "profiles/openclaw.yml",
-          text: "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: [read]",
-        },
-      ],
-    });
-
-    expect(result.ok).toBe(true);
-  });
-
-  it.each([
-    "profiles/OPENCLAW.yml",
-    "profiles/openclaw.yaml",
-    "Profiles/openclaw.yml",
-    "profiles/openclaw.json",
-    "profiles/codex/settings.yml",
-  ])("requires conventional harness profile path %s", (profilePath) => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: [...files(), { path: profilePath, text: openClawProfile }],
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      issues: [
-        expect.objectContaining({ code: "invalid_harness_profile_path", path: profilePath }),
-      ],
-    });
-  });
-
-  it("requires agent settings in the conventional OpenClaw profile", () => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: [
-        ...files(),
-        {
-          path: "profiles/openclaw.yml",
-          text: [
-            "schemaVersion: 1",
-            "extensions:",
-            "  - id: issue-tools",
-            "    kind: plugin",
-            "    format: openclaw",
-            "    source: clawhub",
-            "    ref: '@acme/issue-tools'",
-            "    version: 2.3.4",
-          ].join("\n"),
-        },
-      ],
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      issues: [
-        expect.objectContaining({
-          code: "invalid_openclaw_profile",
-          path: "profiles/openclaw.yml.agent",
-        }),
-      ],
-    });
-  });
-
-  it.each([
-    ["duplicate id", "id: issue-tools", "id: issue-tools"],
-    ["duplicate ref", "id: issue-tools", "id: other-tools"],
-  ])("rejects OpenClaw extension %s", (_label, firstId, secondId) => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: [
-        ...files(),
-        {
-          path: "profiles/openclaw.yml",
-          text: [
-            "schemaVersion: 1",
-            "extensions:",
-            `  - ${firstId}`,
-            "    kind: plugin",
-            "    format: openclaw",
-            "    source: clawhub",
-            "    ref: '@acme/issue-tools'",
-            "    version: 2.3.4",
-            `  - ${secondId}`,
-            "    kind: plugin",
-            "    format: codex",
-            "    source: clawhub",
-            "    ref: '@acme/issue-tools'",
-            "    version: 2.3.5",
-          ].join("\n"),
-        },
-      ],
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      issues: expect.arrayContaining([
-        expect.objectContaining({ code: "invalid_openclaw_profile" }),
-      ]),
-    });
-  });
-
-  it("accepts but does not interpret a foreign conventional profile", () => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: [...files(), { path: "profiles/codex.yml", text: "version: 27\nfeatures: [future]" }],
-    });
-
-    expect(result.ok).toBe(true);
-  });
-
-  it.each([
-    ["malformed", "version: ["],
-    ["non-mapping", "- one\n- two"],
-    ["non-finite scalar", "limits: [.inf, .nan]"],
-    ["alias", "base: &base {}\ncopy: *base"],
-  ])("rejects %s foreign harness profile YAML", (_label, profileText) => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: [...files(), { path: "profiles/codex.yml", text: profileText }],
-    });
-
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.issues[0]?.code).toMatch(/harness_profile/);
   });
 
   it("accepts a nonempty UTF-8 package-root BOOTSTRAP.md", () => {
@@ -647,7 +404,7 @@ describe("validateTemplatePackageContents", () => {
         expect.objectContaining({
           code: "invalid_template_manifest",
           path: "$.metadata.openclaw.config",
-          message: expect.stringContaining("move the profile to profiles/openclaw.yml"),
+          message: expect.stringContaining("move native settings into CLAW.md agent"),
         }),
       ],
     });
@@ -680,99 +437,20 @@ describe("validateTemplatePackageContents", () => {
   });
 
   it.each([
-    ["malformed YAML", "schemaVersion: [", "invalid_openclaw_profile"],
-    ["duplicate keys", "schemaVersion: 1\nschemaVersion: 1\nagent: {}", "invalid_openclaw_profile"],
-    [
-      "aliases",
-      "schemaVersion: 1\nagent: &agent {}\ncopy: *agent",
-      "unsupported_openclaw_profile_yaml_feature",
-    ],
-    ["anchors", "schemaVersion: 1\nagent: &agent {}", "unsupported_openclaw_profile_yaml_feature"],
-    [
-      "merge keys",
-      "schemaVersion: 1\nagent:\n  <<: { tools: {} }",
-      "unsupported_openclaw_profile_yaml_feature",
-    ],
-    [
-      "explicit tags",
-      "schemaVersion: 1\nagent: !!map {}",
-      "unsupported_openclaw_profile_yaml_feature",
-    ],
-    [
-      "non-string mapping keys",
-      "schemaVersion: 1\nagent:\n  ? [tools]\n  : {}",
-      "unsupported_openclaw_profile_yaml_feature",
-    ],
-  ])("rejects OpenClaw profile %s", (_label, text, code) => {
+    { heartbeat: { skipWhenBusy: true } },
+    { tools: { fs: { workspaceOnly: false } } },
+    { tools: { allow: ["read"], alsoAllow: ["write"] } },
+    { memory: { search: { sources: ["sessions"] } } },
+  ])("rejects unsupported or unsafe native settings %j", (settings) => {
     const result = validateTemplatePackageContents({
       packageName: "@acme/github-triage",
       version: "1.0.0",
       packageJson: packageJson(),
-      files: [
-        ...files(`---\n${JSON.stringify(manifest)}\n---\n# Prompt\n`),
-        { path: "profiles/openclaw.yml", text },
-      ],
+      files: files(
+        `---\n${JSON.stringify({ ...manifest, agent: { ...manifest.agent, ...settings } })}\n---\n`,
+      ),
     });
-
-    expect(result).toEqual({
-      ok: false,
-      issues: [expect.objectContaining({ code })],
-    });
-  });
-
-  it("rejects an oversized OpenClaw profile", () => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: [
-        ...files(`---\n${JSON.stringify(manifest)}\n---\n# Prompt\n`),
-        { path: "profiles/openclaw.yml", text: `#${"x".repeat(256 * 1024)}` },
-      ],
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      issues: [expect.objectContaining({ code: "openclaw_profile_too_large" })],
-    });
-  });
-
-  it.each([
-    ["unknown version", "schemaVersion: 2\nagent: {}"],
-    ["unknown field", "schemaVersion: 1\nagent:\n  model: gpt-5"],
-    [
-      "unsupported heartbeat field",
-      "schemaVersion: 1\nagent:\n  heartbeat:\n    skipWhenBusy: true",
-    ],
-    [
-      "workspaceOnly false",
-      "schemaVersion: 1\nagent:\n  tools:\n    fs:\n      workspaceOnly: false",
-    ],
-    [
-      "allow conflict",
-      "schemaVersion: 1\nagent:\n  tools:\n    allow: [read]\n    alsoAllow: [write]",
-    ],
-    [
-      "sessions without consent",
-      "schemaVersion: 1\nagent:\n  memory:\n    search:\n      sources: [sessions]",
-    ],
-  ])("rejects OpenClaw profile with %s", (_label, text) => {
-    const result = validateTemplatePackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: [
-        ...files(`---\n${JSON.stringify(manifest)}\n---\n# Prompt\n`),
-        { path: "profiles/openclaw.yml", text },
-      ],
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      issues: expect.arrayContaining([
-        expect.objectContaining({ code: "invalid_openclaw_profile" }),
-      ]),
-    });
+    expect(result.ok).toBe(false);
   });
 
   it.each([

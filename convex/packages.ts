@@ -868,6 +868,7 @@ type PublicPackageDoc = {
   verification?: Doc<"packages">["verification"];
   artifact?: PackageArtifactSummary;
   templateManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
+  templateInventory?: Doc<"packageReleases">["templateInventory"];
   scanStatus?: Doc<"packages">["scanStatus"];
   stats: Doc<"packages">["stats"];
   createdAt: number;
@@ -1006,6 +1007,10 @@ function toPublicPackage(
         : isPublishedPackageRelease(latestRelease)
           ? packageArtifactSummary(latestRelease)
           : undefined,
+    templateInventory:
+      pkg.family === "claw" && isPublishedPackageRelease(latestRelease)
+        ? latestRelease.templateInventory
+        : undefined,
     templateManifestSummary:
       pkg.family === "claw" && isPublishedPackageRelease(latestRelease)
         ? latestRelease.clawManifestSummary
@@ -1048,6 +1053,7 @@ function toPublicPackageRelease(release: Doc<"packageReleases">, family: Package
       npmUnpackedSize: release.npmUnpackedSize,
       npmFileCount: release.npmFileCount,
       templateManifestSummary: release.clawManifestSummary,
+      templateInventory: release.templateInventory,
       compatibility: release.compatibility,
       runtimeId: release.runtimeId,
       sourceRepo: release.sourceRepo,
@@ -1070,6 +1076,7 @@ function toPublicPluginRelease(release: Doc<"packageReleases">) {
   const {
     capabilities: _capabilities,
     clawManifestSummary: _clawManifestSummary,
+    templateInventory: _templateInventory,
     extractedTemplateManifest: _extractedTemplateManifest,
     ...publicRelease
   } = release as Doc<"packageReleases"> & {
@@ -8541,15 +8548,6 @@ async function publishPackageImpl(
     if (bootstrapEntry) {
       templateTextByPath.set(bootstrapEntry.file.path, bootstrapEntry.text);
     }
-    for (const profileFile of files.filter((file) => /^profiles\/.*\.ya?ml$/i.test(file.path))) {
-      const profileText = await readStorageText(ctx, profileFile.storageId, {
-        maxBytes: 256 * 1024,
-        label:
-          profileFile.path === "profiles/openclaw.yml" ? "OpenClaw profile" : "Harness profile",
-        strictUtf8: true,
-      });
-      templateTextByPath.set(profileFile.path, profileText);
-    }
   }
   const templateValidationFiles = files.map((file) => ({
     path: file.path,
@@ -8561,12 +8559,6 @@ async function publishPackageImpl(
           packageName: name,
           version,
           packageJson,
-          openClawProfilePolicy:
-            existingPackage &&
-            !hasNoPublishedPackageVersions(existingPackage) &&
-            existingPackage.clawProfilePolicyVersion !== CURRENT_TEMPLATE_PROFILE_POLICY_VERSION
-              ? "publication-compatible"
-              : "current",
           files: templateValidationFiles,
         })
       : null;
@@ -8757,6 +8749,7 @@ async function publishPackageImpl(
     pluginManifestSummary,
     categoryClassification,
     clawManifestSummary: validatedTemplate?.summary,
+    templateInventory: validatedTemplate?.inventory,
     source: effectiveSource,
     trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
     trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
@@ -11440,6 +11433,16 @@ export const insertReleaseInternal = internalMutation({
     pluginManifestSummary: v.optional(v.any()),
     categoryClassification: v.optional(pluginCategoryClassificationValidator),
     clawManifestSummary: v.optional(v.any()),
+    templateInventory: v.optional(
+      v.array(
+        v.object({
+          kind: v.union(v.literal("skill"), v.literal("plugin")),
+          source: v.literal("clawhub"),
+          ref: v.string(),
+          version: v.string(),
+        }),
+      ),
+    ),
     source: v.optional(v.any()),
     trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
     trustedPublishInventoryDigest: v.optional(v.string()),
@@ -11772,6 +11775,7 @@ export const insertReleaseInternal = internalMutation({
       pluginManifestSummary: args.pluginManifestSummary,
       categoryClassification: args.categoryClassification,
       clawManifestSummary: args.clawManifestSummary,
+      templateInventory: args.templateInventory,
       compatibility: args.compatibility,
       runtimeId: args.runtimeId,
       sourceRepo: args.sourceRepo,

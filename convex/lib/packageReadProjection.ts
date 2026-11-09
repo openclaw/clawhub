@@ -20,6 +20,7 @@ export type ReleaseLike = {
   compatibility?: Doc<"packageReleases">["compatibility"];
   pluginManifestSummary?: Doc<"packageReleases">["pluginManifestSummary"];
   templateManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
+  templateInventory?: Doc<"packageReleases">["templateInventory"];
   clawManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
   verification?: Doc<"packageReleases">["verification"];
   extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
@@ -73,6 +74,7 @@ export type PublicPackageDocLike = {
     npmFileCount?: number;
   };
   templateManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
+  templateInventory?: Doc<"packageReleases">["templateInventory"];
   stats?: { downloads: number; installs: number; stars: number; versions: number };
   createdAt: number;
   updatedAt: number;
@@ -124,6 +126,7 @@ export function toPackageVersionResponse(release: ReleaseLike, packageName: stri
     compatibility: release.compatibility ?? null,
     pluginManifestSummary: release.pluginManifestSummary ?? null,
     templateManifestSummary: release.templateManifestSummary ?? release.clawManifestSummary ?? null,
+    ...(release.templateInventory ? { templateInventory: release.templateInventory } : {}),
     verification,
     artifact: toReleaseArtifact(release, packageName),
     sha256hash: release.sha256hash ?? null,

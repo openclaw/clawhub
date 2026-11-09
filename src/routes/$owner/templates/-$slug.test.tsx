@@ -234,14 +234,13 @@ const manifest = {
     bootstrapFiles: { "AGENTS.md": { source: "workspace/AGENTS.md" } },
     files: [{ path: "notes/checklist.txt", source: "workspace/checklist.txt" }],
   },
-  packages: [
-    { kind: "skill", source: "clawhub", ref: "@maker/release-search", version: "1.2.3" },
-    { kind: "plugin", source: "clawhub", ref: "@maker/release-alerts", version: "2.0.0" },
-  ],
+  skills: [{ ref: "@maker/release-search", version: "1.2.3" }],
+  plugins: [{ ref: "@maker/release-alerts", version: "2.0.0" }],
   automations: [
     {
       id: "weekday-brief",
       name: "Weekday release brief",
+      enabled: false,
       schedule: { cron: "0 9 * * 1-5", timezone: "America/Los_Angeles" },
       session: "isolated",
       message: "Summarize the approved release sources.",
@@ -395,15 +394,18 @@ describe("Template detail composition and interactions", () => {
     renderTemplate();
     fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
     expect(screen.getByText("@maker/release-search")).toBeTruthy();
-    expect(screen.getByText("Version 1.2.3 · clawhub")).toBeTruthy();
+    expect(screen.getByText("Version 1.2.3 · ClawHub")).toBeTruthy();
+    expect(screen.getByText("1 declared skill")).toBeTruthy();
     expect(screen.queryByText("@maker/release-alerts")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     expect(screen.getByText("@maker/release-alerts")).toBeTruthy();
-    expect(screen.getByText("Version 2.0.0 · clawhub")).toBeTruthy();
+    expect(screen.getByText("Version 2.0.0 · ClawHub")).toBeTruthy();
+    expect(screen.getByText("1 declared plugin")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Automations" }));
     expect(screen.getByText("Weekday release brief")).toBeTruthy();
     expect(screen.getByText("0 9 * * 1-5")).toBeTruthy();
     expect(screen.getByText(/America\/Los_Angeles/)).toBeTruthy();
+    expect(screen.getByText(/Paused/)).toBeTruthy();
     expect(screen.getByText("Summarize the approved release sources.")).toBeTruthy();
   });
 
@@ -630,7 +632,7 @@ describe("Template detail composition and interactions", () => {
 });
 
 describe("Template document handling", () => {
-  it.each(["automations", "cronJobs"])("reads published %s as canonical automations", (key) => {
+  it.each(["automations"])("reads published %s as canonical automations", (key) => {
     const { automations, ...portable } = manifest;
     const parsed = parseTemplateDocument(
       `---\n${JSON.stringify({ ...portable, [key]: automations })}\n---\n# Instructions`,
@@ -652,7 +654,8 @@ describe("Template document handling", () => {
 
   it("strips BOM and CRLF frontmatter while retaining the published Markdown", () => {
     const parsed = parseTemplateDocument("\uFEFF" + templateContents.replace(/\n/g, "\r\n"));
-    expect(parsed.manifest?.packages).toHaveLength(2);
+    expect(parsed.manifest?.skills).toHaveLength(1);
+    expect(parsed.manifest?.plugins).toHaveLength(1);
     expect(parsed.markdown).toContain("# Release instructions");
     expect(parsed.markdown).not.toContain("schemaVersion");
   });
