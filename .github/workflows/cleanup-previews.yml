@@ -1,0 +1,63 @@
+name: Cleanup Previews
+
+on:
+  pull_request_target:
+    types: [closed]
+  delete:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Closed/deleted branch whose previews should be removed"
+        required: true
+        type: string
+      dry_run:
+        description: "List matching previews without deleting them"
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: preview-cleanup-${{ inputs.branch || github.event.pull_request.head.ref || github.event.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'delete' && github.event.ref_type == 'branch') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      # Never check out or execute PR code in this privileged event.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: ./.github/actions/setup-bun
+      - name: Remove branch previews and retry leftovers
+        env:
+          CONVEX_PREVIEW_DEPLOY_KEY: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_BRANCH: ${{ inputs.branch || github.event.pull_request.head.ref || github.event.ref }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          case "$PREVIEW_BRANCH" in main|test|staging|'') echo 'Permanent/empty branch: skipped'; exit 0;; esac
+          for pass in 1 2; do
+            # Recheck each pass: a branch can be reopened/reused during cleanup.
+            open_count=$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+              -f state=open -f head="$GITHUB_REPOSITORY_OWNER:$PREVIEW_BRANCH" --jq 'length')
+            if [[ "$open_count" != 0 ]]; then
+              echo 'Branch still has an open PR: preserving its preview'
+              exit 0
+            fi
+            args=(--branch "$PREVIEW_BRANCH")
+            if [[ "$DRY_RUN" != true ]]; then args+=(--apply); fi
+            bun scripts/cleanup-convex-previews.ts "${args[@]}"
+            # Catch a build that was finishing as the PR closed.
+            if [[ "$pass" == 1 && "$DRY_RUN" != true ]]; then sleep 90; else break; fi
+          done
