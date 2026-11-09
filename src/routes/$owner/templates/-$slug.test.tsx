@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { LlmAnalysis } from "../../../components/SkillSecurityScanResults";
 import { TemplateDetailPage } from "../../../components/TemplateDetailPage";
 import type { PackageDetailResponse } from "../../../lib/packageApi";
 import { getTemplateManifestPath, parseTemplateDocument } from "../../../lib/templateDetail";
@@ -7,6 +8,7 @@ import { getTemplateManifestPath, parseTemplateDocument } from "../../../lib/tem
 const mocks = vi.hoisted(() => ({
   fetchPackageDetail: vi.fn(),
   fetchPackageFile: vi.fn(),
+  fetchPackageVersion: vi.fn(),
 }));
 
 vi.mock("../../../lib/packageApi", () => mocks);
@@ -53,6 +55,7 @@ function packageDetail(family: "template" | "code-plugin" = "template"): Package
 describe("publisher Template detail route loader", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.fetchPackageVersion.mockResolvedValue(null);
     mocks.fetchPackageFile.mockResolvedValue("# Release Brief");
   });
 
@@ -64,6 +67,26 @@ describe("publisher Template detail route loader", () => {
     expect(loaded.detail.package?.family).toBe("template");
     expect(loaded.contents).toBe("# Release Brief");
     expect(mocks.fetchPackageFile).toHaveBeenCalledWith("@maker/release-brief", "CLAW.md", "0.1.0");
+  });
+
+  it("loads the actual audit from the pinned latest release, not the package scan flag", async () => {
+    mocks.fetchPackageDetail.mockResolvedValue(packageDetail());
+    const llmAnalysis = { status: "suspicious", checkedAt: 1, summary: "Review permissions." };
+    mocks.fetchPackageVersion.mockResolvedValue({ version: { version: "0.1.0", llmAnalysis } });
+    const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+    expect(mocks.fetchPackageVersion).toHaveBeenCalledWith("@maker/release-brief", "0.1.0");
+    expect(loaded.llmAnalysis).toEqual(llmAnalysis);
+  });
+
+  it.each([
+    null,
+    { version: { version: "0.0.9", llmAnalysis: { status: "clean", checkedAt: 1 } } },
+  ])("keeps missing or mismatched release audit evidence unavailable: %j", async (release) => {
+    mocks.fetchPackageDetail.mockResolvedValue(packageDetail());
+    mocks.fetchPackageVersion.mockResolvedValue(release);
+    const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+    expect(loaded.llmAnalysis).toBeNull();
+    expect(loaded.contents).toBe("# Release Brief");
   });
 
   it("normalizes an at-prefixed publisher route before checking package ownership", async () => {
@@ -105,6 +128,7 @@ afterEach(() => {
 describe("publisher Template route invariants", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.fetchPackageVersion.mockResolvedValue(null);
     mocks.fetchPackageFile.mockResolvedValue("# Release Brief");
   });
 
@@ -141,6 +165,7 @@ describe("publisher Template route invariants", () => {
       (await loadPublisherTemplate({ owner: "maker", slug: "release-brief" })).contents,
     ).toBeNull();
     expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+    expect(mocks.fetchPackageVersion).not.toHaveBeenCalled();
   });
 
   it("reads the package's declared nested CLAW.md at the pinned release", async () => {
@@ -223,6 +248,7 @@ function renderTemplate(
     status?: NonNullable<PackageDetailResponse["package"]>["scanStatus"];
     contents?: string | null;
     version?: string | null;
+    llmAnalysis?: LlmAnalysis | null;
   } = {},
 ) {
   const detail = packageDetail();
@@ -234,6 +260,7 @@ function renderTemplate(
       detail={detail}
       contents={"contents" in options ? options.contents! : templateContents}
       fallbackOwner="maker"
+      llmAnalysis={options.llmAnalysis}
     />,
   );
 }
@@ -241,8 +268,35 @@ function renderTemplate(
 describe("Template detail composition and interactions", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.fetchPackageVersion.mockResolvedValue(null);
     mocks.fetchPackageFile.mockResolvedValue("# Workspace instructions\n\nActual file contents.");
   });
+
+  it("shows Unavailable and neutral bars when a clean package has no release audit evidence", () => {
+    renderTemplate();
+    const metadata = screen.getByRole("complementary", { name: "Template metadata" });
+    expect(within(metadata).getByText("Unavailable")).toBeTruthy();
+    expect(within(metadata).queryByText("Clean")).toBeNull();
+    expect(metadata.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("0");
+  });
+
+  it.each([
+    ["benign", "Clean", "3"],
+    ["suspicious", "Review", "2"],
+    ["malicious", "Malicious", "1"],
+    ["pending", "Unavailable", "0"],
+    ["error", "Unavailable", "0"],
+  ])(
+    "uses actual release evidence for %s instead of the package's clean flag",
+    (verdict, label, level) => {
+      renderTemplate({ llmAnalysis: { status: verdict, verdict, checkedAt: 1 } });
+      const metadata = screen.getByRole("complementary", { name: "Template metadata" });
+      expect(within(metadata).getByText(label)).toBeTruthy();
+      expect(metadata.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe(
+        level,
+      );
+    },
+  );
 
   it("defaults to rendered CLAW.md without exposing the manifest or old instructional UI", () => {
     renderTemplate();
@@ -254,7 +308,7 @@ describe("Template detail composition and interactions", () => {
     expect(screen.queryByText(/schemaVersion/)).toBeNull();
     expect(screen.queryByText("Add this Template")).toBeNull();
     expect(screen.queryByText("About this Template")).toBeNull();
-    expect(screen.getByText("Clean")).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.getByText("Nov 5, 2026")).toBeTruthy();
     expect(screen.getByText("v0.1.0")).toBeTruthy();
   });
@@ -336,13 +390,13 @@ describe("Template detail composition and interactions", () => {
   });
 
   it.each([
-    ["pending", "Pending", /Security review pending/],
-    ["not-run", "Not run", /Security review has not started/],
-    ["suspicious", "Suspicious", /Security scan flagged/],
-    ["malicious", "Malicious", /marked this Template as malicious/],
-  ] as const)("preserves %s warnings and gates install copy", (status, label, warning) => {
+    ["pending", /Security review pending/],
+    ["not-run", /Security review has not started/],
+    ["suspicious", /Security scan flagged/],
+    ["malicious", /marked this Template as malicious/],
+  ] as const)("preserves %s warnings and gates install copy", (status, warning) => {
     renderTemplate({ status });
-    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.getAllByText(warning).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
     expect(document.querySelector(".skill-install-command")?.textContent).toBe(
@@ -377,6 +431,20 @@ describe("Template detail composition and interactions", () => {
     expect(within(preview).getByRole("heading", { name: "Managed instructions" })).toBeTruthy();
     expect(within(preview).getByText("Use the published release notes.")).toBeTruthy();
     expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+  });
+
+  it("opens the selected file beside its filename and moves focus to its preview", async () => {
+    renderTemplate();
+    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
+    for (const name of ["SOUL.md", "AGENTS.md"]) {
+      const file = screen.getByRole("button", { name });
+      fireEvent.click(file);
+      const preview = within(file.closest("li")!).getByRole("region", { name: /Preview of/ });
+      expect(document.activeElement).toBe(preview);
+      expect(file.getAttribute("aria-expanded")).toBe("true");
+      expect(file.getAttribute("aria-controls")).toBe(preview.id);
+    }
+    expect(await screen.findByRole("heading", { name: "Workspace instructions" })).toBeTruthy();
   });
 
   it("keeps explicit SOUL.md archive previews when the document body is empty", async () => {

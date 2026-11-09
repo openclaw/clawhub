@@ -4,6 +4,8 @@ import { TemplateDetailPage } from "../../../components/TemplateDetailPage";
 import {
   fetchPackageDetail,
   fetchPackageFile,
+  fetchPackageVersion,
+  type PackageVersionDetail,
   type PackageDetailResponse,
 } from "../../../lib/packageApi";
 import { getClawHubSiteUrl } from "../../../lib/site";
@@ -17,6 +19,7 @@ import {
 type TemplateDetailData = {
   detail: PackageDetailResponse;
   contents: string | null;
+  llmAnalysis: NonNullable<PackageVersionDetail["version"]>["llmAnalysis"] | null;
 };
 
 function packageNameFromParams(params: { owner: string; slug: string }) {
@@ -46,18 +49,23 @@ export async function loadPublisherTemplate(params: {
     throw notFound();
   }
   let contents: string | null = null;
+  let llmAnalysis: TemplateDetailData["llmAnalysis"] = null;
   if (detail.package.latestVersion) {
-    const [rootContents, packageJson] = await Promise.all([
+    const [rootContents, packageJson, release] = await Promise.all([
       fetchPackageFile(detail.package.name, "CLAW.md", detail.package.latestVersion),
       fetchPackageFile(detail.package.name, "package.json", detail.package.latestVersion),
+      fetchPackageVersion(detail.package.name, detail.package.latestVersion),
     ]);
+    if (release?.version?.version === detail.package.latestVersion) {
+      llmAnalysis = release.version.llmAnalysis ?? null;
+    }
     const manifestPath = getTemplateManifestPath(packageJson);
     contents =
       manifestPath === "CLAW.md"
         ? rootContents
         : await fetchPackageFile(detail.package.name, manifestPath, detail.package.latestVersion);
   }
-  return { detail, contents };
+  return { detail, contents, llmAnalysis };
 }
 
 export const Route = createFileRoute("/$owner/templates/$slug")({
@@ -144,12 +152,13 @@ function TemplateDetailError() {
 
 function PublisherTemplatePage() {
   const params = Route.useParams();
-  const { detail, contents } = Route.useLoaderData() as TemplateDetailData;
+  const { detail, contents, llmAnalysis } = Route.useLoaderData() as TemplateDetailData;
   return (
     <TemplateDetailPage
       key={detail.package!.name + ":" + detail.package!.latestVersion}
       detail={detail}
       contents={contents}
+      llmAnalysis={llmAnalysis}
       fallbackOwner={params.owner}
     />
   );

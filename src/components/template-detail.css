@@ -299,6 +299,9 @@
 }
 
 .template-detail-file-preview {
+  width: 100%;
+  min-width: 0;
+  scroll-margin-top: 100px;
   margin-top: 24px;
   padding-top: 20px;
   border-top: 1px solid var(--line);
