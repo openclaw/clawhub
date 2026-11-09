@@ -48,13 +48,7 @@ jobs:
           set -euo pipefail
           case "$PREVIEW_BRANCH" in main|test|staging|'') echo 'Permanent/empty branch: skipped'; exit 0;; esac
           for pass in 1 2; do
-            # Recheck each pass: a branch can be reopened/reused during cleanup.
-            open_count=$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
-              -f state=open -f head="$GITHUB_REPOSITORY_OWNER:$PREVIEW_BRANCH" --jq 'length')
-            if [[ "$open_count" != 0 ]]; then
-              echo 'Branch still has an open PR: preserving its preview'
-              exit 0
-            fi
+            # The script paginates all open PRs and rechecks ownership before every delete.
             args=(--branch "$PREVIEW_BRANCH")
             if [[ "$DRY_RUN" != true ]]; then args+=(--apply); fi
             bun scripts/cleanup-convex-previews.ts "${args[@]}"

@@ -94,6 +94,21 @@ replaces (deletes) any same-name deployment, so a second deploy-key consumer
 using raw branch names would otherwise delete Vercel's deployment mid-push
 (observed 2026-07-17 as get_config_hashes/wait_for_schema 404s on every PR).
 
+Preview cleanup runs only trusted main-branch code with a dedicated preview-only
+key, pinned to ClawHub project 1479485. Raw branch identifiers can overlap another
+branch's Vercel/retry namespace (for example, closing `feature/demo-vercel` must
+not delete the preview of an open `feature/demo` PR). Every open PR head claims its
+raw, `-vercel` and numeric `-vercel-retry-N` identifiers; ambiguous/fork head names
+are preserved conservatively. Cleanup reads all open-PR pages for selection and
+again after the deployment identity check, immediately before **each** deletion.
+A reopened branch revokes authorization; failed/malformed GitHub reads abort
+without that deletion. This is a fresh-read guard, not an atomic transaction
+between GitHub and Convex. Deployment project/type/nondefault/ID/name/stable-reference
+guards remain separate from branch authorization; the single-deployment endpoint
+omits previewIdentifier, so it must not be required there. Manual workflow runs
+are branch-scoped and dry-run by default; the script's explicit all-preview scope
+also preserves open-branch claims and is not an ongoing purge policy.
+
 To reproduce the local-auth browser gate locally, install the chromium
 Playwright browser once and run:
 
