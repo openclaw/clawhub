@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { expect, type APIRequestContext, type APIResponse, test } from "@playwright/test";
 import { buildSkillDetailHref } from "../../src/lib/ownerRoute";
 import { buildPluginDetailHref } from "../../src/lib/pluginRoutes";
+import { extractLastJsonObject } from "../helpers/convexOutput";
 import {
   expectNoFatalErrorUi,
   recoverFromTransientErrorScreen,
@@ -31,21 +32,6 @@ function localConvexDeployment() {
     throw new Error("Local Convex deployment name was not available");
   }
   return `local:${parsed.deploymentName}`;
-}
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      // Convex can print status lines before the JSON payload.
-    }
-  }
-  throw new Error(`No JSON object in convex run output:\n${output}`);
 }
 
 function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {
