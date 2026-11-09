@@ -30,7 +30,9 @@ they are scanned for any reason (new publication, owner rescan, admin rescan).
 - Store a bounded summary on the release: at most 50 findings with 2,000-character
   summaries, plus the total reachable-function count.
 - An artifact without `package.json` at its root or under `package/` (including
-  legacy ZIP layouts) is saved as `skipped`, never as a clean scan.
+  legacy ZIP layouts) is saved as `skipped`, never as a clean scan. So is a
+  package with a root `pnpm-lock.yaml`: `endorctl` needs pnpm for it, and the
+  scanner image only runs npm and Yarn through credential-stripping shims.
 - A scanner failure or timeout is saved as `failed` with a generic reason. It
   does not fail or retry the job; owners or admins can request a rescan.
 - A later scan replaces the stored result; this is not a report archive. The

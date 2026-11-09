@@ -2489,6 +2489,27 @@ export function scanHealthClassification(input: {
   } as const;
 }
 
+// Endor is report-only: a scanner failure is saved on the release as a failed
+// analysis and never fails or retries the job.
+async function runEndorReport(
+  job: ClaimedJob,
+  workspace: string,
+  endor: EndorCommandDiagnostic,
+): Promise<EndorAnalysis> {
+  try {
+    return await runEndorPluginScan({
+      workspace,
+      packageRelease: job.target,
+      onDiagnostic: (next) => Object.assign(endor, next),
+    });
+  } catch (reason) {
+    endor.error = sanitizeWorkerErrorMessage(
+      reason instanceof Error ? reason.message : String(reason),
+    );
+    return { status: "failed", checkedAt: Date.now(), reason: ENDOR_SCAN_FAILED_REASON };
+  }
+}
+
 export async function processJob(
   client: CodexScanWorkerClient,
   token: string,
@@ -2517,11 +2538,7 @@ export async function processJob(
         readString(asRecord(job.target.package) ?? {}, ["family"]),
       );
       const report = enabled
-        ? await runEndorPluginScan({
-            workspace,
-            packageRelease: job.target,
-            onDiagnostic: (next) => Object.assign(endor, next),
-          })
+        ? await runEndorReport(job, workspace, endor)
         : {
             status: "skipped" as const,
             checkedAt: Date.now(),
@@ -2548,15 +2565,7 @@ export async function processJob(
     // Endor is report-only: its result is saved on the release and never
     // passed to the ClawScan judge, so it cannot change moderation.
     const [endorResult, skillSpectorResult] = await Promise.allSettled([
-      shouldRunEndor
-        ? runEndorPluginScan({
-            workspace,
-            packageRelease: job.target,
-            onDiagnostic: (next) => {
-              Object.assign(endor, next);
-            },
-          })
-        : Promise.resolve(undefined),
+      shouldRunEndor ? runEndorReport(job, workspace, endor) : Promise.resolve(undefined),
       job.job.targetKind === "packageRelease" &&
       asRecord(job.target.package)?.family !== "claw" &&
       !(await usesWholePluginScanForTarget(job.job.targetKind, job.target.package))
@@ -2565,19 +2574,8 @@ export async function processJob(
           })
         : Promise.resolve(undefined),
     ]);
-    if (endorResult.status === "fulfilled") {
-      endorAnalysis = endorResult.value;
-    } else {
-      const { reason } = endorResult;
-      endor.error = sanitizeWorkerErrorMessage(
-        reason instanceof Error ? reason.message : String(reason),
-      );
-      endorAnalysis = {
-        status: "failed",
-        checkedAt: Date.now(),
-        reason: ENDOR_SCAN_FAILED_REASON,
-      };
-    }
+    // runEndorReport never rejects.
+    if (endorResult.status === "fulfilled") endorAnalysis = endorResult.value;
     if (skillSpectorResult.status === "rejected") throw skillSpectorResult.reason;
     const mapped = await runClawScan(
       job,
