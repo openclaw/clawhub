@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@clack/prompts": "1.8.1",
-    "@openclaw/plugin-inspector": "0.4.5",
+    "@openclaw/plugin-inspector": "0.4.6",
     "arktype": "2.2.9",
     "commander": "15.0.0",
     "croner": "11.0.0",
@@ -48,8 +48,8 @@
     "mime": "4.1.2",
     "ora": "10.0.0",
     "p-retry": "8.0.1",
-    "semver": "7.8.5",
-    "undici": "7.30.1",
+    "semver": "7.8.6",
+    "undici": "7.30.2",
     "unicode-case-folding": "1.1.2",
     "yaml": "2.9.1"
   },
