@@ -4498,18 +4498,26 @@ async function listNpmPackReleases(
   const releases: ReleaseLike[] = [];
   let cursor: string | null = null;
   let done = false;
-  let pages = 0;
-  while (!done && pages < 20) {
-    pages += 1;
+  // Full plugin releases include manifests, files, and scan reports. A 100-row
+  // page can exhaust the query CPU budget even below the read-byte limit. Keep
+  // the existing 2,000-version bound, not a page bound that truncates small pages.
+  let remainingVersions = 2_000;
+  while (!done && remainingVersions > 0) {
     const result: NpmPackReleasePage = await runQueryRef(
       ctx,
       internalRefs.packages.listVersionsForViewerInternal,
       {
         name: packageName,
         viewerUserId: viewerUserId ?? undefined,
-        paginationOpts: { cursor, numItems: 100 },
+        paginationOpts: {
+          cursor,
+          numItems: Math.min(5, remainingVersions),
+          maximumBytesRead: 512 * 1024,
+        },
       },
     );
+    // Filtered native pages may be empty; charge those too to bound the loop.
+    remainingVersions -= Math.max(result.page.length, 1);
     releases.push(
       ...result.page.filter(
         (release: ReleaseLike) =>
