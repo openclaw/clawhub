@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { ConvexError } from "convex/values";
 import type { ReactNode } from "react";
 import { vi } from "vitest";
 import { ImportGitHub } from "../routes/import";
@@ -553,6 +554,50 @@ describe("Import route", () => {
 
     expect(await screen.findByText(/GitHub tree is too large/i)).toBeTruthy();
     expect(screen.queryByText(/Setting up your skills/i)).toBeNull();
+    expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /review selected/i }));
+    expect(await screen.findByDisplayValue("taken-skill")).toBeTruthy();
+    expect(previewCandidate).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps edited metadata, file selection, and license consent for an inline publish retry", async () => {
+    const safeMessage =
+      "GitHub API rate limit exceeded. Wait a few minutes, then try again; your selections are kept.";
+    importSkill.mockRejectedValueOnce(new ConvexError(safeMessage));
+    importSkill.mockResolvedValueOnce({ slug: "edited-skill" });
+    useQueriesMock.mockImplementation((queries: Record<string, unknown>) =>
+      Object.fromEntries(Object.keys(queries).map((key) => [key, { available: true }])),
+    );
+    const preview = await previewCandidate();
+    previewCandidate.mockResolvedValue({
+      ...preview,
+      files: [...preview.files, { path: "skill/extra.md", size: 80, defaultSelected: false }],
+    });
+    previewCandidate.mockClear();
+    render(<ImportGitHub />);
+    await screen.findByRole("checkbox");
+    fireEvent.click(screen.getByRole("button", { name: /review selected/i }));
+    await screen.findByDisplayValue("taken-skill");
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Edited Skill" } });
+    fireEvent.change(screen.getByLabelText("Slug"), { target: { value: "edited-skill" } });
+    fireEvent.click(screen.getByRole("button", { name: /1 file selected/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Select all$/i }));
+    fireEvent.click(screen.getByLabelText(/I have the rights/i));
+    fireEvent.click(screen.getByRole("button", { name: /publish selected/i }));
+    expect(await screen.findByText(safeMessage)).toBeTruthy();
+    expect((screen.getByLabelText("Slug") as HTMLInputElement).value).toBe("edited-skill");
+    expect((screen.getByLabelText(/I have the rights/i) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /publish selected/i }));
+    await waitFor(() => expect(importSkill).toHaveBeenCalledTimes(2));
+    expect(importSkill.mock.calls[1]?.[0]).toEqual(importSkill.mock.calls[0]?.[0]);
+    expect(importSkill.mock.calls[1]?.[0]).toMatchObject({
+      slug: "edited-skill",
+      displayName: "Edited Skill",
+      ownerHandle: "me",
+      selectedPaths: ["skill/SKILL.md", "skill/extra.md"],
+      acceptLicenseTerms: true,
+    });
+    expect(previewCandidate).toHaveBeenCalledTimes(1);
   });
 
   it("checks and publishes imported skills in the authenticated user's owner namespace", async () => {

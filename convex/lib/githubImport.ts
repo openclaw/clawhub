@@ -1,5 +1,7 @@
+import { ConvexError } from "convex/values";
 import { zipSync } from "fflate";
 import semver from "semver";
+import { fetchGitHubApi } from "./githubImportApi";
 import { parseFrontmatter } from "./skills";
 
 export type GitHubImportUrl = {
@@ -122,13 +124,45 @@ export async function resolveGitHubCommit(
 
 async function resolveRefCommit(parsed: GitHubImportUrl, ref: string, fetcher: typeof fetch) {
   const apiUrl = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(ref)}`;
-  const response = await fetcher(apiUrl, {
-    headers: buildGitHubImportHeaders(),
-  });
-  if (!response.ok) throw new Error("GitHub ref not found");
-  const body = (await response.json()) as { sha?: unknown };
-  const sha = typeof body.sha === "string" ? body.sha : "";
-  if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error("GitHub commit sha missing");
+  let response: Response;
+  try {
+    response = await fetchGitHubApi(apiUrl, fetcher);
+  } catch {
+    // Never return upstream bodies, transport errors, or authentication details to the client.
+    throw new ConvexError("Could not reach GitHub. Try again; your selections are kept.");
+  }
+  if (!response.ok) {
+    if (
+      response.status === 429 ||
+      (response.status === 403 &&
+        (response.headers.get("x-ratelimit-remaining") === "0" ||
+          response.headers.has("retry-after")))
+    ) {
+      throw new ConvexError(
+        "GitHub API rate limit exceeded. Wait a few minutes, then try again; your selections are kept.",
+      );
+    }
+    if (response.status === 404 || response.status === 422) {
+      throw new ConvexError(
+        "GitHub branch or commit was not found. Return to Select skills and refresh your repositories.",
+      );
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new ConvexError(
+        "GitHub authentication is temporarily unavailable. Try again later or contact ClawHub support.",
+      );
+    }
+    throw new ConvexError(
+      "GitHub is temporarily unavailable. Try again; your selections are kept.",
+    );
+  }
+  const body = (await response.json().catch(() => null)) as { sha?: unknown } | null;
+  const sha = typeof body?.sha === "string" ? body.sha : "";
+  if (!/^[a-f0-9]{40}$/i.test(sha)) {
+    throw new ConvexError(
+      "GitHub returned an invalid commit. Try previewing again; your selections are kept.",
+    );
+  }
   return sha.toLowerCase();
 }
 
