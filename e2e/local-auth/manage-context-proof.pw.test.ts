@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { buildPluginDetailHref, buildPluginSecurityAuditHref } from "../../src/lib/pluginRoutes";
+import { localConvexDeployment } from "../helpers/localConvex";
 import {
   expectNoFatalErrorUi,
   expectNoRuntimeErrors,
@@ -80,15 +80,6 @@ function isPackageManageContextPayload(value: unknown): value is PackageManageCo
     typeof value.latestRelease._id === "string" &&
     typeof value.latestRelease.version === "string"
   );
-}
-
-function localConvexDeployment() {
-  const raw = readFileSync(".convex/local/default/config.json", "utf8");
-  const parsed = JSON.parse(raw) as { deploymentName?: unknown };
-  if (typeof parsed.deploymentName !== "string" || !parsed.deploymentName) {
-    throw new Error("Local Convex deployment name was not available");
-  }
-  return `local:${parsed.deploymentName}`;
 }
 
 function seedLocalModerationFixtures() {
