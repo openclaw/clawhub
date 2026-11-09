@@ -958,6 +958,13 @@ Practical design:
 
 - canonical API remains ClawHub-native
 - npm facade is an adapter, not the source of truth
+- npm metadata and tarballs must use bounded release-query pages: full stored
+  plugin releases include files, manifests, and scanner reports, so row count
+  alone does not bound query CPU or bytes. Follow short-page cursors without
+  reducing the supported history to an arbitrary number of small pages.
+- npm delivery serves the exact uploaded tarball and preserves native package
+  visibility, private-owner access, release-publication, and download-moderation
+  checks; scanner verdicts are not changed to repair a delivery failure.
 - official-only npm views or endpoints can exist later if OpenClaw needs a
   trusted-only install surface
 - remote/virtual-repository-style composition is a good mental model for
