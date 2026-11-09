@@ -585,6 +585,37 @@ describe("run-codex-scan-worker clawscan authority", () => {
     );
   });
 
+  it("saves a failed Endor-only scan on the release instead of failing the job", async () => {
+    const workspace = await tempDir();
+    await configureEndorFakeCommands({
+      clawScan: "/missing/must-not-launch-clawscan",
+      dockerBody: fakeEndorDockerBody({
+        endorDoneMarker: join(workspace, "endor-done"),
+        exitCode: 1,
+        stdout: "",
+      }),
+      workspace,
+    });
+    const job = pluginPackageJob("securityScanJobs:report-only-failed");
+    job.job.scanMode = "endor-report-only";
+    job.target.package = { name: "@community/fixture-plugin", family: "code-plugin" };
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+
+    await expect(processJob(client, "worker-auth", job, undefined)).resolves.toEqual({
+      completed: true,
+      hardFailed: false,
+      retryableFailed: false,
+    });
+    expect(client.action).toHaveBeenCalledTimes(1);
+    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+      endorAnalysis: {
+        status: "failed",
+        reason: "Endor analysis failed. Request a rescan to try again.",
+      },
+    });
+    expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("error");
+  });
+
   it("keeps scan eligibility unknown when artifact preparation fails before any judge call", async () => {
     const job = skillVersionJob("securityScanJobs:input-unproven");
     job.target.files![0]!.sha256 = "0".repeat(64);

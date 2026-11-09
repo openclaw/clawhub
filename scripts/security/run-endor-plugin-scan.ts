@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { cp, lstat, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod";
 import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
@@ -25,7 +25,9 @@ const CHILD_RUNTIME_ENV_KEYS = [
 ] as const;
 const DEFAULT_ENDOR_TIMEOUT_MS = 20 * 60 * 1000;
 const DOCKER_REMOVE_TIMEOUT_MS = 10_000;
-const MAX_ENDOR_REPORT_BYTES = 8 * 1024 * 1024;
+// Community packages with large dependency trees produce reports over 8 MiB.
+// Only the bounded summary is kept; diagnostics are capped separately.
+const MAX_ENDOR_REPORT_BYTES = 64 * 1024 * 1024;
 const MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES = 128 * 1024;
 const MAX_ENDOR_DIAGNOSTIC_CHARS = 20_000;
 const MAX_SUMMARY_FINDINGS = 50;
@@ -119,6 +121,16 @@ async function normalizePackageTree(scanRoot: string, directory = scanRoot): Pro
   }
 }
 
+// The container's node user must be able to read files the artifact stored as
+// owner-only. The mount is read-only, so this only adds read and search bits.
+async function makeTreeReadable(path: string): Promise<void> {
+  const info = await lstat(path);
+  if (info.isSymbolicLink()) return;
+  await chmod(path, info.mode | (info.isDirectory() ? 0o555 : 0o444));
+  if (!info.isDirectory()) return;
+  for (const name of await readdir(path)) await makeTreeReadable(join(path, name));
+}
+
 function endorTimeoutMs(env: NodeJS.ProcessEnv) {
   const parsed = Number(env.CODEX_SECURITY_SCAN_ENDOR_TIMEOUT_MS);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_ENDOR_TIMEOUT_MS;
@@ -208,11 +220,22 @@ export async function runEndorPluginScan(input: {
     };
   }
 
+  // endorctl needs pnpm for these, and the scanner image only isolates npm and Yarn.
+  if (await isRegularFile(join(sourceRoot, "pnpm-lock.yaml"))) {
+    return {
+      status: "skipped",
+      checkedAt: Date.now(),
+      reason:
+        "Endor cannot scan pnpm packages yet. No action is needed: this does not affect publication, and a rescan will also be skipped.",
+    };
+  }
+
   const image = env.CODEX_SECURITY_SCAN_ENDOR_IMAGE?.trim();
   if (!image) throw new Error("CODEX_SECURITY_SCAN_ENDOR_IMAGE is required when Endor is enabled");
   const scanRoot = join(input.workspace, "endor-artifact");
   await cp(sourceRoot, scanRoot, { recursive: true, errorOnExist: true, force: false });
   await normalizePackageTree(scanRoot);
+  await makeTreeReadable(scanRoot);
 
   const containerName = `clawhub-endor-${randomUUID()}`;
   const args = [

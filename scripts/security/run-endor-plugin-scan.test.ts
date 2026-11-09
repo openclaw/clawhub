@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -261,6 +261,35 @@ describe("runEndorPluginScan", () => {
     const message = (error as Error).message;
     expect(message).toContain("Endor scan exited 17");
     expect(message.includes("Endor container removal also failed")).toBe(scenario.recorded);
+  });
+
+  it("lets the container user read files the artifact stored as owner-only", async () => {
+    const workspace = await tempDir();
+    const root = await packageRoot(workspace);
+    await mkdir(join(root, "private-dir"));
+    await writeFile(join(root, "private-dir", "openclaw.plugin.json"), '{"id":"fixture"}\n');
+    await chmod(join(root, "private-dir", "openclaw.plugin.json"), 0o600);
+    await chmod(join(root, "private-dir"), 0o700);
+    await writeFile(join(workspace, "docker-run-stdout"), report());
+
+    await expect(runScan(workspace)).resolves.toMatchObject({ status: "completed" });
+    const copied = join(workspace, "endor-artifact", "private-dir");
+    expect((await stat(copied)).mode & 0o555).toBe(0o555);
+    expect((await stat(join(copied, "openclaw.plugin.json"))).mode & 0o444).toBe(0o444);
+  });
+
+  it("skips pnpm packages, which the scanner image cannot resolve", async () => {
+    const workspace = await tempDir();
+    const root = await packageRoot(workspace);
+    await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await expect(runScan(workspace)).resolves.toMatchObject({
+      status: "skipped",
+      reason:
+        "Endor cannot scan pnpm packages yet. No action is needed: this does not affect publication, and a rescan will also be skipped.",
+    });
+    await expect(readFile(join(workspace, "docker-run-args"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("skips artifacts without a package manifest instead of reporting a clean scan", async () => {
