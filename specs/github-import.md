@@ -272,6 +272,17 @@ Rate limits:
 
 Error UX:
 
+- Commit resolution must use the same GitHub App/PAT-aware public API transport
+  as ownership checks and tree/blob downloads, including the bounded fallback
+  for public repositories outside the installation's access. It must not silently
+  fall back to a separate anonymous-only quota after an authenticated repo check.
+- Ref lookup failures must be sanitized application errors, distinguishing rate
+  limits, missing refs, authentication failures, and temporary/network failures.
+  Never return GitHub response bodies, transport details, or credentials.
+- Preview retry keeps repository selections; publish retry keeps edited metadata,
+  selected files, license consent, and already-successful results. Neither retry
+  bypasses ownership, source freshness, publisher permissions, or scanner gates.
+
 - “No SKILL.md or skills.md found.”
 - “Multiple skills found; pick one.”
 - “Repo too large / too many files.”

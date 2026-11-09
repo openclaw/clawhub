@@ -112,6 +112,7 @@ import type * as lib_githubAuth from "../lib/githubAuth.js";
 import type * as lib_githubHandoff from "../lib/githubHandoff.js";
 import type * as lib_githubIdentity from "../lib/githubIdentity.js";
 import type * as lib_githubImport from "../lib/githubImport.js";
+import type * as lib_githubImportApi from "../lib/githubImportApi.js";
 import type * as lib_githubOrgMemberships from "../lib/githubOrgMemberships.js";
 import type * as lib_githubProfileSync from "../lib/githubProfileSync.js";
 import type * as lib_githubRepositoryDispatch from "../lib/githubRepositoryDispatch.js";
@@ -446,6 +447,7 @@ declare const fullApi: ApiFromModules<{
   "lib/githubHandoff": typeof lib_githubHandoff;
   "lib/githubIdentity": typeof lib_githubIdentity;
   "lib/githubImport": typeof lib_githubImport;
+  "lib/githubImportApi": typeof lib_githubImportApi;
   "lib/githubOrgMemberships": typeof lib_githubOrgMemberships;
   "lib/githubProfileSync": typeof lib_githubProfileSync;
   "lib/githubRepositoryDispatch": typeof lib_githubRepositoryDispatch;
