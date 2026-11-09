@@ -170,8 +170,8 @@ export function formatSkillsCliInstallCommand(skillPageUrl: string) {
 }
 
 // Keep the copied prompt short: the agent resolves, inspects, and installs the
-// named ClawHub skill or plugin through its own install flow.
-export function formatOpenClawPrompt(name: string, kind: "skill" | "package") {
+// named ClawHub skill, plugin or template through its own install flow.
+export function formatOpenClawPrompt(name: string, kind: "skill" | "package" | "template") {
   return `Install the ${name.trim()} ${kind} from ClawHub`;
 }
 
