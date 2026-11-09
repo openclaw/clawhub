@@ -30,6 +30,7 @@ import {
   resolveRoleHelpTokens,
   shouldSeedRoleHelpTokens,
 } from "./helpers/clawhubCli";
+import { extractLastJsonObject } from "./helpers/convexOutput";
 
 const itIfLiveMutations = allowLiveMutations() ? it : it.skip;
 const itIfAdminAndUserTokens =
@@ -234,21 +235,6 @@ type SkillVersionsBody = {
   items?: Array<{ version?: unknown }>;
   nextCursor?: string | null;
 };
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      // Convex can print status lines before the JSON payload.
-    }
-  }
-  throw new Error(`No JSON object in convex run output:\n${output}`);
-}
 
 function runConvexJson<T>(functionName: string, args: Record<string, unknown>) {
   const result = spawnSync(
