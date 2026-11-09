@@ -82,7 +82,7 @@ export const TemplateManifestSchema = type({
   mcpServers: type({
     "[string]": StdioMcpServerSchema.or(RemoteMcpServerSchema),
   }).optional(),
-  cronJobs: type({
+  automations: type({
     "+": "reject",
     id: "string",
     name: "string?",
@@ -231,7 +231,7 @@ export const OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1 = {
   contractVersion: 1,
   source: {
     repository: "openclaw/openclaw",
-    commit: "522e31dbe8c5012914400d71664e9dc1343db0d2",
+    commit: "bb2f1c4a8acc31dde09a18fe61c5b51e76c85511",
     path: "src/infra/host-env-security-policy.json",
     sha256: "6923ab681c0e701381ea5fccebe36b7c6d2bfeadd72cfa08b0d542640d5e9601",
   },
@@ -538,6 +538,28 @@ export function validateTemplateManifest(
 ):
   | { ok: true; manifest: TemplateManifest }
   | { ok: false; issues: TemplateManifestValidationIssue[] } {
+  // Published artifacts keep their exact bytes; normalize the retired key only at ingestion.
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.hasOwn(value, "cronJobs")
+  ) {
+    if (Object.hasOwn(value, "automations")) {
+      return {
+        ok: false,
+        issues: [
+          validationIssue(
+            TEMPLATE_MANIFEST_VALIDATION_CODES.invalidManifestShape,
+            "$.automations",
+            "Declare only automations; remove the legacy cronJobs key.",
+          ),
+        ],
+      };
+    }
+    const { cronJobs, ...manifest } = value as Record<string, unknown>;
+    value = { ...manifest, automations: cronJobs };
+  }
   const parsed = TemplateManifestSchema(value);
   if (parsed instanceof ArkErrors) return { ok: false, issues: arkIssues(parsed) };
 
@@ -847,20 +869,20 @@ export function validateTemplateManifest(
   }
 
   const cronIds = new Set<string>();
-  for (const [index, job] of (parsed.cronJobs ?? []).entries()) {
+  for (const [index, job] of (parsed.automations ?? []).entries()) {
     if (!AGENT_ID_PATTERN.test(job.id)) {
       issues.push(
         validationIssue(
           TEMPLATE_MANIFEST_VALIDATION_CODES.invalidCronJobId,
-          `$.cronJobs.${index}.id`,
+          `$.automations.${index}.id`,
           "Invalid cron job id.",
         ),
       );
     }
-    pushNonEmpty(issues, `$.cronJobs.${index}.name`, job.name);
-    pushNonEmpty(issues, `$.cronJobs.${index}.schedule.cron`, job.schedule.cron);
-    pushNonEmpty(issues, `$.cronJobs.${index}.schedule.timezone`, job.schedule.timezone);
-    pushNonEmpty(issues, `$.cronJobs.${index}.message`, job.message);
+    pushNonEmpty(issues, `$.automations.${index}.name`, job.name);
+    pushNonEmpty(issues, `$.automations.${index}.schedule.cron`, job.schedule.cron);
+    pushNonEmpty(issues, `$.automations.${index}.schedule.timezone`, job.schedule.timezone);
+    pushNonEmpty(issues, `$.automations.${index}.message`, job.message);
     try {
       if (job.schedule.cron.trim().split(/\s+/).length !== 5) throw new Error("fields");
       const cron = new Cron(job.schedule.cron.trim(), {
@@ -873,7 +895,7 @@ export function validateTemplateManifest(
       issues.push(
         validationIssue(
           TEMPLATE_MANIFEST_VALIDATION_CODES.invalidCronSchedule,
-          `$.cronJobs.${index}.schedule`,
+          `$.automations.${index}.schedule`,
           "Must contain a valid cron expression and timezone.",
         ),
       );
@@ -885,7 +907,7 @@ export function validateTemplateManifest(
       issues.push(
         validationIssue(
           TEMPLATE_MANIFEST_VALIDATION_CODES.invalidCronDelivery,
-          `$.cronJobs.${index}.delivery`,
+          `$.automations.${index}.delivery`,
           'Must be { mode: "none" } or { mode: "announce", channel: "last" }.',
         ),
       );
@@ -894,7 +916,7 @@ export function validateTemplateManifest(
       issues.push(
         validationIssue(
           TEMPLATE_MANIFEST_VALIDATION_CODES.duplicateCronJob,
-          `$.cronJobs.${index}.id`,
+          `$.automations.${index}.id`,
           "Cron job id is declared more than once.",
         ),
       );
@@ -935,6 +957,6 @@ export function summarizeTemplateManifest(
       pluginCount: packages.filter((pkg) => pkg.kind === "plugin").length,
     },
     mcpServerCount: Object.keys(manifest.mcpServers ?? {}).length,
-    cronJobCount: manifest.cronJobs?.length ?? 0,
+    cronJobCount: manifest.automations?.length ?? 0,
   };
 }

@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 25
     env:
       OPENCLAW_CONTRACT_REPOSITORY: openclaw/openclaw
-      OPENCLAW_CONTRACT_SHA: 522e31dbe8c5012914400d71664e9dc1343db0d2
+      OPENCLAW_CONTRACT_SHA: bb2f1c4a8acc31dde09a18fe61c5b51e76c85511
 
     steps:
       - uses: actions/checkout@v7.0.1

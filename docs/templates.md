@@ -66,13 +66,17 @@ packages:
     ref: "@acme/triage"
     version: 1.2.0
 mcpServers: {}
-cronJobs: []
+automations: []
 ---
 
 # GitHub Triage
 
 Reviews and classifies incoming GitHub issues.
 ```
+
+Declare scheduled work under `automations`. Older published packages using
+`cronJobs` remain readable and validate as `automations`; declaring both keys is
+rejected. Existing archives and digests are preserved.
 
 `categories` is optional and accepts one to three distinct lowercase slugs.
 ClawHub accepts these categories for new releases: `personal`, `health`,

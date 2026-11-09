@@ -227,7 +227,7 @@ const manifest = {
     { kind: "skill", source: "clawhub", ref: "@maker/release-search", version: "1.2.3" },
     { kind: "plugin", source: "clawhub", ref: "@maker/release-alerts", version: "2.0.0" },
   ],
-  cronJobs: [
+  automations: [
     {
       id: "weekday-brief",
       name: "Weekday release brief",
@@ -537,6 +537,26 @@ describe("Template detail composition and interactions", () => {
 });
 
 describe("Template document handling", () => {
+  it.each(["automations", "cronJobs"])("reads published %s as canonical automations", (key) => {
+    const { automations, ...portable } = manifest;
+    const parsed = parseTemplateDocument(
+      `---\n${JSON.stringify({ ...portable, [key]: automations })}\n---\n# Instructions`,
+    );
+    expect(parsed.manifest?.automations).toEqual(automations);
+    expect(parsed.manifest).not.toHaveProperty("cronJobs");
+  });
+
+  it("keeps instructions readable when conflicting automation keys invalidate the manifest", () => {
+    expect(
+      parseTemplateDocument(
+        `---\n${JSON.stringify({ ...manifest, cronJobs: [] })}\n---\n# Instructions`,
+      ),
+    ).toEqual({
+      markdown: "# Instructions",
+      manifest: null,
+    });
+  });
+
   it("strips BOM and CRLF frontmatter while retaining the published Markdown", () => {
     const parsed = parseTemplateDocument("\uFEFF" + templateContents.replace(/\n/g, "\r\n"));
     expect(parsed.manifest?.packages).toHaveLength(2);
