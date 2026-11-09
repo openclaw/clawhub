@@ -4,11 +4,13 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { fetchPackageFile, type PackageDetailResponse } from "../lib/packageApi";
 import { parseTemplateDocument } from "../lib/templateDetail";
 import { isTemplateReadyToAdd, templateSecurityStatusMessage } from "../lib/templateRoutes";
-import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
+import { auditVerdictMeterLevel, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { aggregateAuditVerdict } from "./securityAuditModel";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { formatOpenClawPrompt } from "./skillDetailUtils";
 import { InstallCommandCard } from "./SkillInstallSurface";
+import type { LlmAnalysis } from "./SkillSecurityScanResults";
 import { UserBadge } from "./UserBadge";
 import "./template-detail.css";
 
@@ -20,10 +22,12 @@ export function TemplateDetailPage({
   detail,
   contents,
   fallbackOwner,
+  llmAnalysis,
 }: {
   detail: PackageDetailResponse;
   contents: string | null;
   fallbackOwner: string;
+  llmAnalysis?: LlmAnalysis | null;
 }) {
   const pkg = detail.package!;
   const { markdown, manifest } = useMemo(() => parseTemplateDocument(contents), [contents]);
@@ -39,13 +43,17 @@ export function TemplateDetailPage({
   const scanStatus = pkg.scanStatus ?? "pending";
   const ready = isTemplateReadyToAdd(scanStatus) && Boolean(pkg.latestVersion);
   const installCommand = "openclaw templates add " + pkg.name;
-  const securityLabel = {
-    clean: "Clean",
-    suspicious: "Suspicious",
-    malicious: "Malicious",
-    pending: "Pending",
-    "not-run": "Not run",
-  }[scanStatus];
+  // Package scanStatus still gates installation; an audit verdict needs release evidence.
+  const auditVerdict = llmAnalysis ? aggregateAuditVerdict({ llmAnalysis }) : "unavailable";
+  const securityLabel =
+    (
+      { benign: "Clean", clean: "Clean", review: "Review", malicious: "Malicious" } as Record<
+        string,
+        string
+      >
+    )[auditVerdict] ?? "Unavailable";
+  const auditDescription =
+    llmAnalysis?.summary || "No completed security audit is available for this release.";
 
   return (
     <main className="template-detail-page">
@@ -172,23 +180,12 @@ export function TemplateDetailPage({
                   key: "security",
                   label: <DetailSecuritySummaryLabel />,
                   value: (
-                    <div
-                      data-scan-status={scanStatus}
-                      title={templateSecurityStatusMessage(scanStatus)}
-                    >
+                    <div data-audit-verdict={auditVerdict} title={auditDescription}>
                       <div className="template-detail-security-value">
                         <span>{securityLabel}</span>
                         <div
                           className="security-audit-meter"
-                          data-level={
-                            scanStatus === "clean"
-                              ? 3
-                              : scanStatus === "suspicious"
-                                ? 2
-                                : scanStatus === "malicious"
-                                  ? 1
-                                  : 0
-                          }
+                          data-level={auditVerdictMeterLevel(auditVerdict)}
                           aria-hidden="true"
                         >
                           <span />
@@ -196,7 +193,7 @@ export function TemplateDetailPage({
                           <span />
                         </div>
                       </div>
-                      <span className="sr-only">{templateSecurityStatusMessage(scanStatus)}</span>
+                      <span className="sr-only">{auditDescription}</span>
                     </div>
                   ),
                 },
@@ -310,6 +307,13 @@ function TemplateWorkspace({
   }
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const selectedFile = files.find((file) => file.path === selectedPath);
+  const previewId = useId();
+  const previewRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!selectedPath) return;
+    previewRef.current?.focus({ preventScroll: true });
+    previewRef.current?.scrollIntoView?.({ block: "start" });
+  }, [selectedPath]);
   if (!files.length)
     return <ContentMessage>No workspace files are included in this Template.</ContentMessage>;
   return (
@@ -320,38 +324,62 @@ function TemplateWorkspace({
             <button
               type="button"
               aria-pressed={selectedPath === file.path}
-              onClick={() => setSelectedPath(file.path)}
+              aria-expanded={selectedPath === file.path}
+              aria-controls={selectedPath === file.path ? previewId : undefined}
+              onClick={() => {
+                setSelectedPath(file.path);
+                if (selectedPath === file.path) {
+                  previewRef.current?.focus({ preventScroll: true });
+                  previewRef.current?.scrollIntoView?.({ block: "start" });
+                }
+              }}
             >
               {file.path}
             </button>
             <span className="template-detail-entry-meta">{file.source}</span>
+            {selectedPath === file.path ? (
+              <>
+                {selectedFile?.contents !== undefined ? (
+                  <section
+                    id={previewId}
+                    ref={previewRef}
+                    tabIndex={-1}
+                    className="template-detail-file-preview"
+                    aria-label="Preview of SOUL.md"
+                  >
+                    <h3>SOUL.md</h3>
+                    <MarkdownPreview className="template-detail-markdown">
+                      {selectedFile.contents}
+                    </MarkdownPreview>
+                  </section>
+                ) : selectedFile && pkg.latestVersion ? (
+                  <WorkspaceFilePreview
+                    key={selectedFile.source}
+                    previewId={previewId}
+                    previewRef={previewRef}
+                    name={pkg.name}
+                    version={pkg.latestVersion}
+                    path={selectedFile.source}
+                  />
+                ) : null}
+              </>
+            ) : null}
           </li>
         ))}
       </ul>
-      {selectedFile?.contents !== undefined ? (
-        <section className="template-detail-file-preview" aria-label="Preview of SOUL.md">
-          <h3>SOUL.md</h3>
-          <MarkdownPreview className="template-detail-markdown">
-            {selectedFile.contents}
-          </MarkdownPreview>
-        </section>
-      ) : selectedFile && pkg.latestVersion ? (
-        <WorkspaceFilePreview
-          key={selectedFile.source}
-          name={pkg.name}
-          version={pkg.latestVersion}
-          path={selectedFile.source}
-        />
-      ) : null}
     </div>
   );
 }
 
 function WorkspaceFilePreview({
+  previewId,
+  previewRef,
   name,
   version,
   path,
 }: {
+  previewId: string;
+  previewRef: React.RefObject<HTMLElement | null>;
   name: string;
   version: string;
   path: string;
@@ -374,7 +402,13 @@ function WorkspaceFilePreview({
     };
   }, [name, path, version, attempt]);
   return (
-    <section className="template-detail-file-preview" aria-label={"Preview of " + path}>
+    <section
+      id={previewId}
+      ref={previewRef}
+      tabIndex={-1}
+      className="template-detail-file-preview"
+      aria-label={"Preview of " + path}
+    >
       <h3>{path}</h3>
       {state.error ? (
         <p role="alert">
