@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -100,15 +101,6 @@ function makeOrgAdminMembershipQuery() {
           role: "admin",
         }),
       };
-    },
-  };
-}
-
-function chainEq(constraints: Record<string, unknown>) {
-  return {
-    eq(field: string, value: unknown) {
-      constraints[field] = value;
-      return chainEq(constraints);
     },
   };
 }

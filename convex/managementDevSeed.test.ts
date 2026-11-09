@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("./_generated/server", () => ({
   internalMutation: (def: { handler: unknown }) => ({ _handler: def.handler }),
@@ -28,15 +29,6 @@ const clearManagementQueuesHandler = (
 
 const DEMO_REPORT_MARKER = "managementDevSeed:report";
 const DEMO_FINGERPRINT = "9f8c2a1b7e4d6c30a5b2f1d089c4e76b";
-
-function chainEq(constraints: Record<string, unknown>) {
-  return {
-    eq(field: string, value: unknown) {
-      constraints[field] = value;
-      return chainEq(constraints);
-    },
-  };
-}
 
 function matches(doc: TestDoc, constraints: Record<string, unknown>) {
   return Object.entries(constraints).every(([key, value]) => doc[key] === value);

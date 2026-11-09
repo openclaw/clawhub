@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("./lib/access", () => ({
   requireUser: vi.fn(),
@@ -54,15 +55,6 @@ const getSkillsShAliasTargetHandler = (
     { canonicalRef: string; canonicalRoute: string } | null
   >
 )._handler;
-
-function chainEq(constraints: Record<string, unknown>) {
-  return {
-    eq(field: string, value: unknown) {
-      constraints[field] = value;
-      return chainEq(constraints);
-    },
-  };
-}
 
 function matches(doc: Row, constraints: Record<string, unknown>) {
   return Object.entries(constraints).every(([key, value]) => doc[key] === value);
