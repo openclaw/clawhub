@@ -1,6 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
-import { isAdjudicableSkillSpectorResult } from "./skillSpectorReportPolicy";
+import {
+  isAdjudicableSkillSpectorResult,
+  isUsableSkillSpectorReport,
+} from "./skillSpectorReportPolicy";
 
 const unit = z.number().finite().min(0).max(1);
 const verdict = z.enum(["benign", "suspicious", "malicious"]);
@@ -207,6 +210,72 @@ export function validateAigMcpReport(value: unknown) {
   // confined ranged-read checks; no property-name guess substitutes for them.
   return document;
 }
+const scannerCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const completedSkillSpectorAccounting = z
+  .object({
+    total_components: scannerCount,
+    scanned_components: scannerCount,
+    fully_inspected_files: scannerCount,
+    partially_inspected_files: scannerCount,
+    entirely_uninspected_files: scannerCount,
+    findings_before_filtering: scannerCount.nullish(),
+    findings_after_filtering: scannerCount.nullish(),
+    analyzer_statuses: z
+      .array(
+        z
+          .object({
+            planned_work: scannerCount.nullish(),
+            completed: scannerCount.nullish(),
+            partial: scannerCount.nullish(),
+            skipped: scannerCount.nullish(),
+            failed: scannerCount.nullish(),
+            unaccounted: scannerCount.nullish(),
+          })
+          .passthrough(),
+      )
+      .nullish(),
+    coverage_percent: z.number().finite().min(0).max(100),
+  })
+  .passthrough()
+  .refine(
+    (accounting) =>
+      accounting.fully_inspected_files +
+        accounting.partially_inspected_files +
+        accounting.entirely_uninspected_files ===
+        accounting.total_components &&
+      accounting.scanned_components <= accounting.total_components &&
+      (accounting.findings_before_filtering == null ||
+        accounting.findings_after_filtering == null ||
+        accounting.findings_after_filtering <= accounting.findings_before_filtering),
+  );
+
+// SkillSpector's findings exit (1) is not a process crash. Native ClawScan
+// retains "exit status 1" plus stderr even after validating a complete report.
+// Admit only explicit successful, complete findings evidence; never rewrite it.
+function completedSkillSpectorFindings(scanner: Record<string, unknown>) {
+  const raw = object(scanner.raw);
+  const completeness = object(raw?.analysis_completeness);
+  return (
+    scanner.status === "completed" &&
+    scanner.exitCode === 1 &&
+    typeof scanner.error === "string" &&
+    (scanner.error === "" || /^exit status 1(?:: |$)/.test(scanner.error)) &&
+    raw?.execution_successful === true &&
+    completeness?.execution_successful === true &&
+    completeness.is_complete === true &&
+    completeness.status === "complete" &&
+    completedSkillSpectorAccounting.safeParse(completeness).success &&
+    Array.isArray(raw.issues) &&
+    raw.issues.length > 0 &&
+    // Validate native issues themselves: a findings alias must not mask them.
+    raw.issues.every((issue) => {
+      const finding = object(issue);
+      return finding && Object.keys(finding).length > 0;
+    }) &&
+    isUsableSkillSpectorReport(raw)
+  );
+}
+
 export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: readonly string[]) {
   if (
     run.schemaVersion !== "clawscan-run-v1" ||
@@ -231,9 +300,12 @@ export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: r
     const scanner = object(scanners[id]);
     if (
       !scanner ||
-      // Coverage gaps are evidence for the completed judge, not execution failure.
-      // Only SkillSpector has this structured partial-report admission contract.
-      (!(id === "skillspector" && isAdjudicableSkillSpectorResult(scanner)) &&
+      // Coverage gaps and findings exits are evidence for the completed judge,
+      // not execution failure. Only SkillSpector has these bounded exceptions.
+      (!(
+        id === "skillspector" &&
+        (isAdjudicableSkillSpectorResult(scanner) || completedSkillSpectorFindings(scanner))
+      ) &&
         (scanner.status !== "completed" || scanner.error !== "" || scanner.exitCode !== 0)) ||
       !hasScannerExecution(scanner) ||
       (id === "aig-mcp" &&

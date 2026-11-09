@@ -237,6 +237,33 @@ async function partialSkillFixture(verdict: string, exitCode: number) {
   return artifact;
 }
 
+async function completedSkillFixture(verdict = "benign") {
+  const artifact = await partialSkillFixture(verdict, 1);
+  const scanner = artifact.scanners.skillspector;
+  scanner.status = "completed";
+  delete scanner.reportPolicy;
+  // Native SkillSpector uses exit 1 for findings and retains process stderr.
+  scanner.error = "exit status 1: UserWarning: Pydantic serializer warnings";
+  scanner.raw = {
+    execution_successful: true,
+    metadata: { skillspector_version: "fixture" },
+    components: [{ path: "SKILL.md", type: "markdown" }],
+    issues: [{ id: "fixture-finding", severity: "HIGH", description: "Controlled finding" }],
+    analysis_completeness: {
+      execution_successful: true,
+      is_complete: true,
+      status: "complete",
+      total_components: 1,
+      scanned_components: 1,
+      fully_inspected_files: 1,
+      partially_inspected_files: 0,
+      entirely_uninspected_files: 0,
+      coverage_percent: 100,
+    },
+  };
+  return artifact;
+}
+
 describe("Scanner-report-only Codex publication consumer", () => {
   it.each([false, true, "absent"] as const)(
     "passes only backend-verified publisher trust into both native judge lanes (trusted=%s)",
@@ -306,6 +333,89 @@ describe("Scanner-report-only Codex publication consumer", () => {
       expect("aigAnalysis" in result ? result.aigAnalysis : undefined).toBeUndefined();
     },
   );
+  it.each(["benign", "suspicious", "malicious"])(
+    "preserves native %s for completed SkillSpector findings exits",
+    async (verdict) => {
+      const artifact = await completedSkillFixture(verdict);
+      const scanner = artifact.scanners.skillspector;
+      const result = await runFixture(artifact, "skillVersion");
+      expect(result.check.status, JSON.stringify(result.check)).toBe(
+        verdict === "malicious" ? "blocked" : "clean",
+      );
+      expect(result.analysis?.verdict).toBe(verdict);
+      expect(
+        JSON.parse(validateClawScanArtifactForClawHubProfile(artifact).scannerReportsJson)
+          .skillspector,
+      ).toEqual(scanner.raw);
+    },
+  );
+
+  it.each([
+    "crash exit",
+    "unrecognized process error",
+    "unsuccessful report",
+    "unsuccessful accounting",
+    "missing accounting",
+    "incomplete accounting",
+    "failed accounting",
+    "malformed findings",
+    "malformed native issues with findings alias",
+    "impossible accounting",
+    "missing component accounting",
+    "inconsistent component totals",
+    "excess scanned components",
+    "negative coverage",
+    "negative findings count",
+    "increasing filtered findings",
+    "negative analyzer counter",
+    "report error",
+    "imported report",
+    "missing AIG",
+    "failed judge",
+  ])("rejects completed findings evidence with %s", async (scenario) => {
+    const artifact = await completedSkillFixture();
+    const scanner = artifact.scanners.skillspector;
+    if (scenario === "crash exit") scanner.exitCode = 2;
+    if (scenario === "unrecognized process error") scanner.error = "scanner crashed";
+    if (scenario === "unsuccessful report") scanner.raw.execution_successful = false;
+    if (scenario === "unsuccessful accounting")
+      scanner.raw.analysis_completeness.execution_successful = false;
+    if (scenario === "missing accounting") delete scanner.raw.analysis_completeness;
+    if (scenario === "incomplete accounting") scanner.raw.analysis_completeness.is_complete = false;
+    if (scenario === "failed accounting") scanner.raw.analysis_completeness.status = "failed";
+    if (scenario === "malformed findings") scanner.raw.issues = [null];
+    if (scenario === "malformed native issues with findings alias") {
+      scanner.raw.issues = [null];
+      scanner.raw.filtered_findings = [];
+    }
+    if (scenario === "impossible accounting") {
+      scanner.raw.analysis_completeness.total_components = -1;
+      scanner.raw.analysis_completeness.coverage_percent = 1000;
+    }
+    if (scenario === "missing component accounting")
+      delete scanner.raw.analysis_completeness.total_components;
+    if (scenario === "inconsistent component totals")
+      scanner.raw.analysis_completeness.fully_inspected_files = 2;
+    if (scenario === "excess scanned components")
+      scanner.raw.analysis_completeness.scanned_components = 2;
+    if (scenario === "negative coverage") scanner.raw.analysis_completeness.coverage_percent = -1;
+    if (scenario === "negative findings count")
+      scanner.raw.analysis_completeness.findings_before_filtering = -1;
+    if (scenario === "increasing filtered findings") {
+      scanner.raw.analysis_completeness.findings_before_filtering = 1;
+      scanner.raw.analysis_completeness.findings_after_filtering = 2;
+    }
+    if (scenario === "negative analyzer counter")
+      scanner.raw.analysis_completeness.analyzer_statuses = [{ completed: -1 }];
+    if (scenario === "report error") scanner.raw.error = "failed inspection";
+    if (scenario === "imported report") scanner.command = ["scanner-result"];
+    if (scenario === "missing AIG") delete artifact.scanners.aig;
+    if (scenario === "failed judge") artifact.judge.status = "failed";
+    const result = await runFixture(artifact, "skillVersion");
+    expect(result.check.status).toBe("failed");
+    expect(() => validateClawScanArtifactForClawHubProfile(artifact)).toThrow();
+  });
+
   it.each(
     [false, true].flatMap((rescan) =>
       [0, 1].flatMap((exitCode) =>
