@@ -209,6 +209,8 @@ jobs:
     name: playwright-local-auth / ${{ matrix.name }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION: precompiled-2026-10-22-1447815
     strategy:
       fail-fast: false
       max-parallel: 8
@@ -279,6 +281,33 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}
+
+      - name: Cache the pinned Convex backend
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/convex/binaries/${{ env.PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION }}
+          key: ${{ runner.os }}-${{ runner.arch }}-convex-${{ env.PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION }}-7be627d8a8c9175b
+
+      - name: Prepare the pinned Convex backend
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          backend_dir="$HOME/.cache/convex/binaries/$PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION"
+          if [[ -x "$backend_dir/convex-local-backend" ]]; then
+            echo "Using cached Convex backend $PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION"
+            exit 0
+          fi
+          scratch=$(mktemp -d)
+          trap 'rm -rf "$scratch"' EXIT
+          # The release web URL intermittently returns errors; use the asset API.
+          curl --fail --show-error --location --retry 3 --retry-all-errors \
+            --retry-delay 5 --connect-timeout 15 --max-time 60 \
+            --header 'Accept: application/octet-stream' \
+            --output "$scratch/backend.zip" \
+            https://api.github.com/repos/convex/convex-backend/releases/assets/667377511
+          echo "7be627d8a8c9175b66a55cf6c4ab63c5f6bde1c412f59fbbe93f64a24a11bd13  $scratch/backend.zip" | sha256sum --check
+          unzip -p "$scratch/backend.zip" convex-local-backend > "$scratch/convex-local-backend"
+          install -D -m 755 "$scratch/convex-local-backend" "$backend_dir/convex-local-backend"
 
       - name: Cache npm packages for local Convex external dependencies
         uses: actions/cache@v6

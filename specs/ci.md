@@ -138,6 +138,14 @@ set before the first push. Application readiness checks never republish code,
 and no development watcher can push again while the app builds. A persistent
 launcher retains ownership of the backend process group through cleanup.
 
+CI pins the local-auth backend with `PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION`.
+Before bootstrap, it restores the versioned binary cache or downloads the Linux
+x64 release asset through GitHub's asset API with bounded retries. The archive's
+SHA-256 must match before extraction and installation. Update the version,
+asset ID, digest, and cache key together. This avoids the release web URL's
+intermittent HTTP failures and keeps all shards on the same backend. Local runs
+without the variable retain Convex's default backend selection.
+
 The disposable backend defaults `FUNRUN_ISOLATE_ACTIVE_THREADS` to `2` before
 bootstrap, limiting simultaneous V8 execution on small runners. Convex pauses
 the user watchdog while a request waits for an execution permit; the one-second

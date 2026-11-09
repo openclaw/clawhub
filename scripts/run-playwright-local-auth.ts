@@ -6,6 +6,7 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import {
   buildLocalAuthBackendEnv,
+  buildLocalAuthBackendVersionArgs,
   buildLocalAuthTrendingSnapshotArgs,
   createLocalAuthTempDir,
   resolveLocalAuthDeployment,
@@ -625,6 +626,7 @@ async function main() {
     convexCloudPort,
     "--local-site-port",
     convexSitePort,
+    ...buildLocalAuthBackendVersionArgs(),
   ];
   // Deployment environment controls cron registration, so configure it before any push.
   await startLocalConvex([...convexArgs, "--skip-push"], e2eEnv, convexUrl);
