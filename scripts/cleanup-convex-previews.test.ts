@@ -170,7 +170,7 @@ describe("Convex preview cleanup", () => {
         if (reads === 1) return Response.json([]);
         if (failure === "http") return new Response("private server body", { status: 403 });
         if (failure === "network") throw new Error("Network unavailable");
-        if (failure === "json") return new Response("not json");
+        if (failure === "json") return new Response("private server body: not json");
         if (failure === "shape") return Response.json({ items: [] });
         if (failure === "head") return Response.json([{ state: "open", head: {} }]);
         if (failure === "state") return Response.json([{ ...openPr(branch), state: "closed" }]);
@@ -180,7 +180,7 @@ describe("Convex preview cleanup", () => {
       });
       await expect(
         cleanupConvexPreviews({ ...options, githubFetch, fetch: request }),
-      ).rejects.toThrow();
+      ).rejects.toThrow(failure === "json" ? "Invalid GitHub open-PR response" : undefined);
       expect(remaining.size).toBe(1);
       expect(request.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
     },

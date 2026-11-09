@@ -98,7 +98,10 @@ export async function cleanupConvexPreviews({
         },
       );
       if (!response.ok) throw new Error("GitHub open-PR request failed (" + response.status + ")");
-      const pulls: unknown = await response.json();
+      const pulls: unknown = await response.json().catch(() => {
+        // JSON parser errors can echo the response body; keep failures redacted.
+        throw new Error("Invalid GitHub open-PR response");
+      });
       if (!Array.isArray(pulls)) throw new Error("Invalid GitHub open-PR response");
       for (const pull of pulls) {
         if (pull?.state !== "open" || typeof pull?.head?.ref !== "string" || !pull.head.ref)
