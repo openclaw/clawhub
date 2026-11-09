@@ -23,7 +23,7 @@ type SkillCommandLineCardProps = {
 };
 
 export function OpenClawCliInstallCommand({ command }: { command: string }) {
-  const match = command.match(/^(openclaw (?:skills|plugins) install)( .+)$/);
+  const match = command.match(/^(openclaw (?:(?:skills|plugins) install|templates add))( .+)$/);
   if (!match) {
     return <code translate="no">{command}</code>;
   }
@@ -72,6 +72,7 @@ export function SkillCommandLineCard({
 }
 
 type InstallCommandCardProps = {
+  copyEnabled?: boolean;
   cliCommand: string;
   prompt: string;
   cliCopyAriaLabel?: string;
@@ -83,6 +84,7 @@ type InstallCommandCardProps = {
 };
 
 export function InstallCommandCard({
+  copyEnabled = true,
   cliCommand,
   prompt,
   cliCopyAriaLabel = "Copy OpenClaw CLI command",
@@ -176,21 +178,23 @@ export function InstallCommandCard({
               <code translate="no">{activeInstallText}</code>
             )}
           </pre>
-          <InstallCopyButton
-            analyticsMethod={activeInstallTab}
-            text={activeInstallText}
-            ariaLabel={
-              activeInstallTab === "prompt"
-                ? "Copy OpenClaw prompt"
-                : activeInstallTab === "skills"
-                  ? (secondaryInstall?.copyAriaLabel ?? "Copy npx skills command")
-                  : cliCopyAriaLabel
-            }
-            className="skill-install-command-inline-button"
-            showLabel={false}
-            variant="ghost"
-            size="icon-sm"
-          />
+          {copyEnabled ? (
+            <InstallCopyButton
+              analyticsMethod={activeInstallTab}
+              text={activeInstallText}
+              ariaLabel={
+                activeInstallTab === "prompt"
+                  ? "Copy OpenClaw prompt"
+                  : activeInstallTab === "skills"
+                    ? (secondaryInstall?.copyAriaLabel ?? "Copy npx skills command")
+                    : cliCopyAriaLabel
+              }
+              className="skill-install-command-inline-button"
+              showLabel={false}
+              variant="ghost"
+              size="icon-sm"
+            />
+          ) : null}
         </div>
       </div>
     </article>
