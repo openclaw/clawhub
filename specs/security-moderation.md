@@ -667,6 +667,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   separately from risk `status`; absent completeness stays unknown. A benign
   judge does not erase partial inspection provenance. Secret and unsafe
   bytecode rejection remain independent gates.
+- A completed native SkillSpector invocation may exit 1 because it found issues,
+  retaining the native `exit status 1` diagnostic and stderr. Typed worker
+  consumers accept that findings exit only with actual command/timing provenance,
+  a nonempty usable findings report explicitly declaring successful execution,
+  and explicit successful, complete accounting. Unknown process errors, crash
+  exits, unsuccessful/malformed evidence, missing required scanners and failed
+  judges still fail closed. The original report and process diagnostics remain
+  unchanged; the completed independent judge remains the risk authority, so
+  malicious still blocks and suspicious retains its warning semantics.
 - Published skill verification retains complete upstream A.I.G and SkillSpector
   JSON in a version-owned storage blob, separate from capped database summaries.
   `/verify` returns these reports under `security.scannerReports`, alongside the

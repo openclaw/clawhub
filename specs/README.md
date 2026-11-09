@@ -25,6 +25,7 @@ into `docs/` and leave only the design record here.
 - `slug-routing.md`: internal web route precedence and plugin alias contract.
 - `og-routes.md`: public OG card metadata fetches and hang timeouts.
 - `cli-request-deadlines.md`: CLI HTTP total-transfer deadlines, retries, and the package-publish override.
+- `content-rights-proxy.md`: Hermit content-rights proxy deadline, body coverage, and archive recovery.
 - `catalog-taxonomy.md`: stored category, author topic, browse ordering, and correction contract.
 - `ci.md`: PR check and production deploy audit-tag policy.
 - `rate-limiting.md`: HTTP quota buckets, batching, switches, and truthful rate-limit headers.
