@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import {
   applyGitHubSkillSourceSyncHandler,
   applyGitHubSkillVerificationResultHandler,
@@ -15,15 +16,6 @@ import {
 } from "./securityScan";
 
 type Row = Record<string, unknown> & { _id: string };
-
-function chainEq(constraints: Record<string, unknown>) {
-  return {
-    eq(field: string, value: unknown) {
-      constraints[field] = value;
-      return chainEq(constraints);
-    },
-  };
-}
 
 function matches(doc: Row, constraints: Record<string, unknown>) {
   return Object.entries(constraints).every(([key, value]) => doc[key] === value);

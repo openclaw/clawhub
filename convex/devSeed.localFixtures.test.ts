@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import type { Id } from "./_generated/dataModel";
 import {
   backfillExistingPublicCorpusBatchRows,
@@ -46,15 +47,6 @@ const seedPublicCorpusBatchHandler = (
 const backfillExistingPublicCorpusBatchRowsHandler = (
   backfillExistingPublicCorpusBatchRows as unknown as WrappedHandler<Record<string, unknown>>
 )._handler;
-
-function chainEq(constraints: Record<string, unknown>) {
-  return {
-    eq(field: string, value: unknown) {
-      constraints[field] = value;
-      return chainEq(constraints);
-    },
-  };
-}
 
 function matches(doc: Record<string, unknown>, constraints: Record<string, unknown>) {
   return Object.entries(constraints).every(([key, value]) => doc[key] === value);
