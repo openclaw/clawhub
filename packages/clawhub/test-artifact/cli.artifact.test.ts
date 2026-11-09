@@ -310,6 +310,7 @@ describe("built CLI artifact", () => {
       "packageUploadLimits",
       "pluginInput",
       "schemaShared",
+      "templateAgent",
       "templatePackage",
       "templatePaths",
       "templates",
