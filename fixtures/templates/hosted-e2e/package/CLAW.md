@@ -12,7 +12,7 @@ workspace:
       path: assets/incident.schema.json
 packages: []
 mcpServers: {}
-cronJobs: []
+automations: []
 ---
 
 # Hosted E2E

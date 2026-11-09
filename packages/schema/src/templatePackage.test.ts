@@ -13,7 +13,7 @@ const manifest = {
   },
   packages: [{ kind: "skill", source: "clawhub", ref: "@acme/triage", version: "1.2.0" }],
   mcpServers: {},
-  cronJobs: [],
+  automations: [],
 };
 const openClawProfile = [
   "schemaVersion: 1",
@@ -57,6 +57,50 @@ function files(manifestText = `---\n${JSON.stringify(manifest)}\n---\n`) {
 }
 
 describe("validateTemplatePackageContents", () => {
+  it.each(["automations", "cronJobs"])(
+    "preserves scheduled work from the %s manifest key",
+    (key) => {
+      const { automations: _, ...portable } = manifest;
+      const result = validateTemplatePackageContents({
+        packageName: "@acme/github-triage",
+        version: "1.0.0",
+        packageJson: packageJson(),
+        files: files(
+          `---\n${JSON.stringify({
+            ...portable,
+            [key]: [
+              {
+                id: "daily-triage",
+                schedule: { cron: "0 8 * * *", timezone: "UTC" },
+                session: "isolated",
+                message: "Triage new issues.",
+              },
+            ],
+          })}\n---\n`,
+        ),
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.manifest.automations?.[0]?.id).toBe("daily-triage");
+      expect(result.value.manifest).not.toHaveProperty("cronJobs");
+      expect(result.value.summary.cronJobCount).toBe(1);
+    },
+  );
+
+  it("rejects packages that declare both automation keys", () => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: files(`---\n${JSON.stringify({ ...manifest, cronJobs: [] })}\n---\n`),
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "$.automations" })]),
+    );
+  });
+
   it("finds hierarchy collisions even when another path sorts between them", () => {
     expect(findTemplatePackagePathHierarchyCollision(["a", "a-0", "a/child"])).toEqual({
       ancestor: "a",
@@ -750,7 +794,7 @@ describe("validateTemplatePackageContents", () => {
           "workspace: {}",
           "packages: []",
           "mcpServers: {}",
-          "cronJobs: []",
+          "automations: []",
           "---",
         ].join("\n"),
       ),

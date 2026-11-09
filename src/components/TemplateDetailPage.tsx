@@ -263,11 +263,11 @@ function TemplatePackages({
 }
 
 function TemplateAutomations({ manifest }: { manifest: TemplateManifest }) {
-  if (!manifest.cronJobs?.length)
+  if (!manifest.automations?.length)
     return <ContentMessage>No automations are included in this Template.</ContentMessage>;
   return (
     <ul className="template-detail-entry-list" aria-label="Included automations">
-      {manifest.cronJobs.map((job) => (
+      {manifest.automations.map((job) => (
         <li key={job.id}>
           <strong>{job.name || job.id}</strong>
           <span className="template-detail-entry-meta">

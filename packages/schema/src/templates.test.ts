@@ -39,7 +39,7 @@ const fixture = {
       auth: "oauth",
     },
   },
-  cronJobs: [
+  automations: [
     {
       id: "morning-brief",
       schedule: { cron: "0 8 * * 1-5", timezone: "America/New_York" },
@@ -62,10 +62,12 @@ describe("Template manifest contract", () => {
     ).not.toBeInstanceOf(ArkErrors);
   });
 
-  it("accepts the grouped OpenClaw v1 fixture and derives a safe summary", () => {
+  it("accepts canonical automations and derives a safe summary", () => {
     const result = validateTemplateManifest(fixture);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.manifest.automations).toEqual(fixture.automations);
+    expect(result.manifest).not.toHaveProperty("cronJobs");
     expect(summarizeTemplateManifest(result.manifest)).toEqual({
       schemaVersion: 1,
       agent: { id: "financial-analyst", name: "Financial Analyst" },
@@ -74,6 +76,47 @@ describe("Template manifest contract", () => {
       mcpServerCount: 1,
       cronJobCount: 1,
     });
+  });
+
+  it("normalizes legacy cronJobs without losing published automations", () => {
+    const { automations, ...portable } = fixture;
+    const result = validateTemplateManifest({ ...portable, cronJobs: automations });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.manifest.automations).toEqual(automations);
+    expect(result.manifest).not.toHaveProperty("cronJobs");
+    expect(summarizeTemplateManifest(result.manifest).cronJobCount).toBe(1);
+  });
+
+  it.each([{ cronJobs: [] }, { cronJobs: fixture.automations }])(
+    "rejects both automation keys: %j",
+    ({ cronJobs }) => {
+      const result = validateTemplateManifest({ ...fixture, cronJobs });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.issues).toContainEqual({
+        code: TEMPLATE_MANIFEST_VALIDATION_CODES.invalidManifestShape,
+        phase: "schema",
+        path: "$.automations",
+        message: "Declare only automations; remove the legacy cronJobs key.",
+      });
+    },
+  );
+
+  it("validates legacy schedules using the canonical automation rules", () => {
+    const { automations, ...portable } = fixture;
+    const result = validateTemplateManifest({
+      ...portable,
+      cronJobs: [{ ...automations[0], schedule: { cron: "not-a-cron", timezone: "UTC" } }],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        code: TEMPLATE_MANIFEST_VALIDATION_CODES.invalidCronSchedule,
+        path: "$.automations.0.schedule",
+      }),
+    );
   });
 
   it("accepts optional portable category slugs without embedding the catalog taxonomy", () => {
@@ -414,7 +457,7 @@ describe("Template manifest contract", () => {
     const result = validateTemplateManifest({
       ...fixture,
       mcpServers: { empty: { command: "   " } },
-      cronJobs: [
+      automations: [
         {
           id: "broken",
           schedule: { cron: "not-a-cron", timezone: "Not/AZone" },
@@ -426,7 +469,7 @@ describe("Template manifest contract", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.issues.map((issue) => issue.path)).toEqual(
-      expect.arrayContaining(["$.mcpServers.empty.command", "$.cronJobs.0.schedule"]),
+      expect.arrayContaining(["$.mcpServers.empty.command", "$.automations.0.schedule"]),
     );
   });
 
@@ -493,7 +536,7 @@ describe("Template manifest contract", () => {
           transport: "streamable-http",
         },
       },
-      cronJobs: [
+      automations: [
         {
           id: "brief",
           schedule: { cron: "0 8 * * * *", timezone: "UTC" },
@@ -511,8 +554,8 @@ describe("Template manifest contract", () => {
         "$.mcpServers.floating.env.BAD-KEY",
         "$.mcpServers.floating.toolFilter.include.1",
         "$.mcpServers.remote.url",
-        "$.cronJobs.0.schedule",
-        "$.cronJobs.0.delivery",
+        "$.automations.0.schedule",
+        "$.automations.0.delivery",
       ]),
     );
   });
@@ -711,7 +754,7 @@ describe("Template manifest contract", () => {
     expect(
       validateTemplateManifest({
         ...fixture,
-        cronJobs: [
+        automations: [
           {
             id: "brief",
             schedule: { cron: "0 8 * * *" },
@@ -724,7 +767,7 @@ describe("Template manifest contract", () => {
     expect(
       validateTemplateManifest({
         ...fixture,
-        cronJobs: [
+        automations: [
           {
             id: "brief",
             schedule: { cron: "0 8 * * *", timezone: "UTC" },

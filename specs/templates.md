@@ -24,6 +24,14 @@ settings live in package-local profiles discovered at conventional
 `profiles/<harness>.yml` paths; the manifest contains no profile pointer.
 `metadata.openclaw.config` is retired and rejected with migration guidance.
 
+Scheduled work uses the portable `automations` manifest key. The public manifest
+validator accepts the legacy `cronJobs` spelling for existing artifacts and
+normalizes it to `automations` before strict validation. Declaring both keys is
+rejected, including an empty legacy list, so no scheduled work is silently
+discarded. Parsed manifests expose only `automations`; published artifact bytes
+and digests stay unchanged. The stored/feed summary field remains `cronJobCount`
+for compatibility and counts the normalized automations.
+
 Profiles exist only inside the Template package. ClawHub reserves the `profiles/`
 namespace for lowercase, single-file harness profiles, requires each profile to
 be a bounded UTF-8 JSON-compatible YAML mapping, and rejects aliases, anchors,

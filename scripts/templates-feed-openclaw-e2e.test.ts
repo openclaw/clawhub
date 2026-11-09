@@ -411,7 +411,7 @@ describe("published Template to OpenClaw dry-run proof", () => {
               workspace: { bootstrapFiles: {}, files: [] },
               packages: [],
               mcpServers: {},
-              cronJobs: [],
+              automations: [],
             }),
           );
         }
