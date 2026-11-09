@@ -62,9 +62,15 @@ state so users can inspect a skill or plugin before installing it.
 Native OpenClaw commands install into the active OpenClaw workspace and persist
 source metadata so later update commands can stay on ClawHub.
 
-Use `clawhub:<package>` when a plugin install should resolve through ClawHub.
-Bare npm-safe plugin specs may resolve through npm during launch cutovers, and
-`npm:<package>` stays npm-only when a source must be explicit.
+Released OpenClaw versions through `2026.10.4` require the `clawhub:<package>`
+prefix to select ClawHub. Updated main/dev builds with ClawHub-default support can
+omit it, for example `openclaw plugins install @composio/composio`. The explicit
+prefix works on both old and updated builds. Use
+`openclaw plugins install npm:<package>` to install directly from npm.
+
+On updated builds, unscoped package commands include `@latest`, such as
+`openclaw plugins install episodic-claw@latest`, to avoid matching a bundled plugin
+shortcut with the same name.
 
 Plugin installs validate advertised `pluginApi` and `minGatewayVersion`
 compatibility before archive install runs. When a package version publishes a

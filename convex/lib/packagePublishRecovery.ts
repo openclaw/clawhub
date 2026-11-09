@@ -210,6 +210,20 @@ export async function assertPackageRecoveryEligibility(
     (release.publishAttemptId !== undefined && release.publishAttemptId !== attempt._id)
   )
     throw new ConvexError("Only the current failed staged publish attempt can be recovered");
+  const operationalRetry = release.operationalRetry;
+  if (
+    [operationalRetry, release.finalizationRecovery].some(
+      (binding) =>
+        binding &&
+        (binding.attemptId !== attempt._id ||
+          binding.actorUserId !== attempt.userId ||
+          binding.ownerUserId !== pkg.ownerUserId ||
+          binding.ownerPublisherId !== pkg.ownerPublisherId),
+    )
+  )
+    throw new ConvexError(
+      "Recovered package publication authorization operational binding changed",
+    );
   if (release.publishAttemptId === undefined) {
     // Older staged attempts acquired the backlink only after successful scans.
     // Validate that no live or finalized sibling owns this exact release first.

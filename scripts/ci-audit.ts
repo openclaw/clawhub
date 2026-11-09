@@ -42,7 +42,16 @@ type Advisory = { title?: unknown; url?: unknown; severity?: unknown; cwe?: unkn
 
 function isExpectedAuditStderr(output: string): boolean {
   const plain = output.replace(/\u001b\[[0-9;]*m/g, "").trim();
-  return plain === "" || /^bun audit v\d+\.\d+\.\d+ \([0-9a-f]+\)$/.test(plain);
+  return (
+    plain === "" ||
+    plain
+      .split(/\r?\n/)
+      .every(
+        (line) =>
+          /^bun audit v\d+\.\d+\.\d+ \([0-9a-f]+\)$/.test(line) ||
+          /^\[\d+(?:\.\d+)?m?s\] "\.env(?:\.[\w.-]+)?"(?:, "\.env(?:\.[\w.-]+)?")*$/.test(line),
+      )
+  );
 }
 
 // Malware advisories carry CWE-506 or say the package itself is malware or was

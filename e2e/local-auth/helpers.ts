@@ -230,22 +230,24 @@ export async function completeMockPrePublicationChecks(args: {
   claim?: MockPrePublicationClaim;
   trufflehog?: "clean" | "blocked";
   clawscan?: "clean" | "suspicious" | "malicious" | "failed";
+  overview?: boolean;
 }) {
   const claim = args.claim ?? (await claimMockPrePublicationChecks(args));
   const clawscan = args.clawscan ?? "clean";
   const clawscanBlocked = clawscan === "malicious";
   const clawscanFailed = clawscan === "failed";
-  const clawscanAnalysis =
-    clawscan === "suspicious" || clawscan === "malicious"
-      ? {
-          status: "completed",
-          verdict: clawscan,
-          confidence: "high",
-          summary: `Mock ClawScan marked the local e2e fixture ${clawscan}.`,
-          model: "mock-local-e2e",
-          checkedAt: Date.now(),
-        }
-      : undefined;
+  const clawscanAnalysis = !clawscanFailed
+    ? {
+        status: "completed",
+        verdict: clawscan === "clean" ? "benign" : clawscan,
+        confidence: "high",
+        ...(args.overview !== false
+          ? { summary: `Mock ClawScan marked the local e2e fixture ${clawscan}.` }
+          : {}),
+        model: "mock-local-e2e",
+        checkedAt: Date.now(),
+      }
+    : undefined;
   const completion = (await convexClient().action(
     api.publishAttempts.completePrePublicationChecks,
     {

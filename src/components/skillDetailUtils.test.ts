@@ -1,10 +1,8 @@
-import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { describe, expect, it } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
   buildSkillInstallTarget,
   buildSkillPageUrl,
-  formatClawHubInstallCommand,
   formatOpenClawInstallCommand,
   formatOpenClawPrompt,
   formatSkillsCliInstallCommand,
@@ -24,73 +22,25 @@ describe("skill detail install helpers", () => {
     expect(buildSkillInstallTarget(null, null, "weather")).toBe("weather");
   });
 
-  it("formats the OpenClaw and ClawHub commands", () => {
+  it("formats the OpenClaw and skills CLI commands", () => {
     expect(formatOpenClawInstallCommand("@steipete/weather")).toBe(
       "openclaw skills install @steipete/weather",
-    );
-    expect(formatClawHubInstallCommand("@steipete/weather", "npm")).toBe(
-      "npx clawhub@latest install @steipete/weather",
-    );
-    expect(formatClawHubInstallCommand("@steipete/weather", "pnpm")).toBe(
-      "pnpm dlx clawhub@latest install @steipete/weather",
-    );
-    expect(formatClawHubInstallCommand("@steipete/weather", "bun")).toBe(
-      "bunx clawhub@latest install @steipete/weather",
     );
     expect(formatSkillsCliInstallCommand("https://clawhub.ai/steipete/skills/weather")).toBe(
       "npx skills add https://clawhub.ai/steipete/skills/weather",
     );
   });
 
-  it("builds the install-and-setup prompt from known metadata only", () => {
-    const clawdis = {
-      requires: {
-        env: ["WEATHER_API_KEY"],
-        bins: ["curl"],
-        config: ["~/.weatherrc"],
-      },
-    } satisfies Partial<ClawdisSkillMetadata>;
-
-    const prompt = formatOpenClawPrompt({
-      mode: "install-and-setup",
-      skillName: "Weather",
-      slug: "weather",
-      ownerHandle: "steipete",
-      ownerId: ownerPublisherId,
-      clawdis: clawdis as ClawdisSkillMetadata,
-    });
-
-    expect(prompt).toContain("@steipete/weather");
-    expect(prompt).toContain("https://clawhub.ai/steipete/skills/weather");
-    expect(prompt).toContain("WEATHER_API_KEY");
-    expect(prompt).toContain("curl");
-    expect(prompt).toContain("~/.weatherrc");
-    expect(prompt.startsWith("Before installing anything")).toBe(true);
-    expect(prompt).toContain("verify its source, maintainer, and package contents");
-    expect(prompt).toContain(
-      'Install the skill "Weather" (@steipete/weather) from ClawHub only after those checks pass.',
+  it("builds a one-line ClawHub install prompt", () => {
+    expect(formatOpenClawPrompt("@steipete/weather", "skill")).toBe(
+      "Install the @steipete/weather skill from ClawHub",
     );
-    expect(prompt).toContain("After install, help me finish setup from verified skill metadata.");
-    expect(prompt).not.toContain("unknown");
+    expect(formatOpenClawPrompt(" @openclaw/luma ", "package")).toBe(
+      "Install the @openclaw/luma package from ClawHub",
+    );
   });
 
   it("avoids fabricating unknown owner URLs when the owner is missing", () => {
     expect(buildSkillPageUrl(null, null, "weather")).toBeNull();
-
-    const prompt = formatOpenClawPrompt({
-      mode: "install-only",
-      skillName: "Weather",
-      slug: "weather",
-      ownerHandle: null,
-      ownerId: null,
-    });
-
-    expect(prompt.startsWith("Before installing anything")).toBe(true);
-    expect(prompt).toContain(
-      'Install the skill "Weather" (weather) from ClawHub only after those checks pass.',
-    );
-    expect(prompt).toContain("verify its source, maintainer, and package contents");
-    expect(prompt).not.toContain("Skill page:");
-    expect(prompt).not.toContain("unknown");
   });
 });

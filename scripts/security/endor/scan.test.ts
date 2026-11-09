@@ -9,7 +9,10 @@ import { CommandFailure, runWorkerCommand } from "../../lib/runWorkerCommand";
 
 const scanScript = fileURLToPath(new URL("./scan.sh", import.meta.url));
 const directories: string[] = [];
-const emptyReport = { all_findings: [], blocking_findings: [], warning_findings: [] };
+const emptyReport = { all_findings: [] };
+const sourceUrl =
+  "https://clawhub.ai/api/v1/packages/%40openclaw/fixture/versions/1.0.0/artifact/download";
+const tags = "plugin:@openclaw/fixture,version:1.0.0";
 
 async function fixture(body: string) {
   const root = await mkdtemp(join(tmpdir(), "clawhub-endor-wrapper-"));
@@ -38,7 +41,7 @@ async function fixture(body: string) {
 }
 
 async function run(test: Awaited<ReturnType<typeof fixture>>, timeoutMs = 10_000) {
-  return runWorkerCommand("/bin/sh", [scanScript, test.source], {
+  return runWorkerCommand("/bin/sh", [scanScript, test.source, sourceUrl, tags], {
     commandLabel: "Endor wrapper",
     cwd: test.root,
     env: test.env,
@@ -52,28 +55,7 @@ afterEach(async () => {
   );
 });
 
-describe("Endor custom-scanner wrapper", () => {
-  it.each(["stdout", "stderr"] as const)("bounds captured %s output", async (stream) => {
-    const result = runWorkerCommand(
-      process.execPath,
-      ["-e", `process.${stream}.write("x".repeat(4096))`],
-      {
-        commandLabel: "bounded fixture",
-        cwd: process.cwd(),
-        env: process.env,
-        maxStdoutBytes: 1024,
-        maxStderrBytes: 1024,
-        timeoutMs: 10_000,
-      },
-    );
-
-    await expect(result).rejects.toMatchObject({
-      outputLimitExceeded: stream,
-      [stream]: "x".repeat(1024),
-      timedOut: false,
-    });
-  });
-
+describe("Endor scan wrapper", () => {
   it.each([0, 128])("preserves findings when Endor exits %s", async (status) => {
     const report = {
       all_findings: [
@@ -126,7 +108,7 @@ describe("Endor custom-scanner wrapper", () => {
     expect(failure.stderr).toContain("Endor");
   });
 
-  it("scans a fresh snapshot and keeps credentials away from package managers", async () => {
+  it("scans a fresh snapshot with the claimed identity and isolated credentials", async () => {
     const test = await fixture("");
     const observation = join(test.root, "observation.json");
     execFileSync("git", ["init", "-q", test.source]);
@@ -166,8 +148,15 @@ process.stdout.write(${JSON.stringify(JSON.stringify(emptyReport))});
     const observed = JSON.parse(await readFile(observation, "utf8"));
     expect(observed.cwd).not.toBe(test.source);
     expect(observed.token).toBe("fixture-token");
-    expect(observed.origin).toBe("https://example.invalid/clawscan/scan-target.git");
-    expect(observed.args).toContain("--dry-run");
+    expect(observed.origin).toBe(sourceUrl);
+    expect(observed.args.slice(0, 6)).toEqual([
+      "scan",
+      "--exit-on-policy-warning=false",
+      "--project-tags",
+      tags,
+      "--tags",
+      tags,
+    ]);
     expect(observed.args).toContain("--build=false");
     for (const resolver of [observed.npm, observed.yarn]) {
       expect(resolver.NPM_CONFIG_IGNORE_SCRIPTS).toBe("true");

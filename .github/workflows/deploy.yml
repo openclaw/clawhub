@@ -127,7 +127,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.4
 
       - name: Install
         run: bun install --frozen-lockfile
@@ -194,41 +194,63 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "$SKILLS_SH_RESTORE_MODE" ]]; then
-            bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE off --prod
+            node scripts/set-release-convex-env.mjs CLAWHUB_SKILLS_SH_ROLLOUT_MODE off
           fi
           if [[ -n "$GITHUB_SKILL_SYNC_RESTORE_MODE" ]]; then
-            bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE off --prod
+            node scripts/set-release-convex-env.mjs CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE off
           fi
 
       - name: Stamp Convex runtime environment
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex env set CLAWHUB_ENV production --prod
-
-      - name: Stamp Convex build SHA
-        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex env set APP_BUILD_SHA "${GITHUB_SHA}" --prod
-
-      - name: Stamp Convex deploy time
-        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex env set APP_DEPLOYED_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" --prod
+        run: node scripts/set-release-convex-env.mjs CLAWHUB_ENV production
 
       - name: Deploy Convex
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          deploy_cmd=(bun run convex:deploy)
           if [[ "${{ inputs.allow_deleting_large_indexes }}" == "true" ]]; then
-            bunx convex deploy --typecheck=disable --yes --allow-deleting-large-indexes
-          else
-            bun run convex:deploy
+            deploy_cmd=(bunx convex deploy --typecheck=disable --yes --allow-deleting-large-indexes)
           fi
+          # Write-capacity admission can refuse the push before it starts. A
+          # refused start_push changes nothing on the deployment, so retry only
+          # that exact failure, bounded, with jittered backoff. Every other
+          # failure (including errors after the push started) fails at once.
+          max_attempts=24
+          for attempt in $(seq 1 "$max_attempts"); do
+            log="$(mktemp)"
+            if "${deploy_cmd[@]}" 2>&1 | tee "$log"; then
+              exit 0
+            fi
+            if ! grep -q "Unable to start push" "$log" || ! grep -q "CommitterFullError" "$log"; then
+              echo "::error::Convex deploy failed after the push started or for another reason; not retrying."
+              exit 1
+            fi
+            if [[ "$attempt" == "$max_attempts" ]]; then
+              echo "::error::Convex push admission refused $max_attempts times (CommitterFullError)."
+              exit 1
+            fi
+            delay=$((10 + RANDOM % 20))
+            echo "::warning::Push admission refused (CommitterFullError), attempt $attempt/$max_attempts; retrying in ${delay}s."
+            sleep "$delay"
+          done
+
+      # A failed code push must not advertise the candidate as the deployed build.
+      - name: Stamp Convex build SHA
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: node scripts/set-release-convex-env.mjs APP_BUILD_SHA "${GITHUB_SHA}"
+
+      - name: Stamp Convex deploy time
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: node scripts/set-release-convex-env.mjs APP_DEPLOYED_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
       - name: Publish promotions feed snapshot
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
@@ -270,13 +292,13 @@ jobs:
           set -uo pipefail
           restore_failed=0
           if [[ -n "$SKILLS_SH_RESTORE_MODE" ]] &&
-            ! bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE "$SKILLS_SH_RESTORE_MODE" --prod
+            ! node scripts/set-release-convex-env.mjs CLAWHUB_SKILLS_SH_ROLLOUT_MODE "$SKILLS_SH_RESTORE_MODE"
           then
             echo "::error::Failed to restore CLAWHUB_SKILLS_SH_ROLLOUT_MODE."
             restore_failed=1
           fi
           if [[ -n "$GITHUB_SKILL_SYNC_RESTORE_MODE" ]] &&
-            ! bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE "$GITHUB_SKILL_SYNC_RESTORE_MODE" --prod
+            ! node scripts/set-release-convex-env.mjs CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE "$GITHUB_SKILL_SYNC_RESTORE_MODE"
           then
             echo "::error::Failed to restore CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE."
             restore_failed=1

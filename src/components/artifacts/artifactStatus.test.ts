@@ -9,9 +9,7 @@ describe("artifactStatus", () => {
       moderationFlags: [],
       moderationReason: "pending.scan",
       latestVersion: {
-        vtStatus: "malicious",
         llmStatus: "clean",
-        staticScanStatus: "malicious",
       },
     });
 
@@ -22,9 +20,7 @@ describe("artifactStatus", () => {
     const status = packageArtifactStatus({
       scanStatus: "clean",
       latestRelease: {
-        vtStatus: "malicious",
         llmStatus: "clean",
-        staticScanStatus: "malicious",
       },
     });
 

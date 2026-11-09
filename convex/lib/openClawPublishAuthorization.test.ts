@@ -117,7 +117,10 @@ function oidc(): VerifiedGitHubActionsIdentity {
 }
 
 function artifact(filename: string, value: unknown) {
-  const bytes = zipSync({ [filename]: strToU8(JSON.stringify(value)) });
+  const bytes = zipSync(
+    { [filename]: strToU8(JSON.stringify(value)) },
+    { mtime: new Date("2026-01-01T00:00:00Z") },
+  );
   return {
     bytes,
     digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
@@ -253,6 +256,7 @@ function verify(
 
 afterEach(() => {
   delete process.env.GITHUB_TOKEN;
+  vi.useRealTimers();
 });
 
 describe("OpenClaw package publish authorization", () => {
@@ -433,8 +437,11 @@ describe("OpenClaw package publish authorization", () => {
   it.each(["submission", "terminal"] as const)(
     "authorizes human recovery through the original bot child receipt in %s mode",
     async (mode) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
       const fetchImpl = recoveryFetch();
       const result = await verify(fetchImpl, mode);
+      vi.setSystemTime(new Date("2026-01-01T00:00:02Z"));
       expect(result).toMatchObject({ authorizationRoute: "explicit-recovery", artifactId: "101" });
       expect(result.artifactDigest).toBe(
         artifact(

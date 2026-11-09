@@ -168,7 +168,7 @@ async function fixture() {
   vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
   vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const ids = await t.run(async (ctx) => {
     const now = Date.now();
     const owner = await ctx.db.insert("users", { handle: "original-owner" });
@@ -640,6 +640,8 @@ it("terminalizes full-action finalization after publisher membership is lost", a
     attemptId,
     claimId: "scanner",
     artifactFingerprint: "c".repeat(64),
+    clawscanAnalysis: { status: "clean", verdict: "benign", checkedAt: Date.now() },
+    aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
     trufflehog: { status: "clean" },
     clawscan: { status: "clean" },
   });
@@ -667,6 +669,12 @@ it.each(["trufflehog", "clawscan"] as const)(
       attemptId,
       claimId: "scanner",
       artifactFingerprint: "c".repeat(64),
+      clawscanAnalysis: {
+        status: scanner === "clawscan" ? "malicious" : "clean",
+        verdict: scanner === "clawscan" ? "malicious" : "benign",
+        checkedAt: Date.now(),
+      },
+      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
       trufflehog: { status: scanner === "trufflehog" ? "blocked" : "clean" },
       clawscan: { status: scanner === "clawscan" ? "blocked" : "clean" },
     });
@@ -702,6 +710,8 @@ it("finalizes a second successor through the complete action and replays its res
     attemptId,
     claimId: "scanner",
     artifactFingerprint: "c".repeat(64),
+    clawscanAnalysis: { status: "clean", verdict: "benign", checkedAt: Date.now() },
+    aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
     trufflehog: { status: "clean" },
     clawscan: { status: "clean" },
   });
@@ -904,6 +914,8 @@ it.each(["none", "membership", "token", "archive-digest"] as const)(
       attemptId,
       claimId: "fresh-scanner",
       artifactFingerprint: "c".repeat(64),
+      clawscanAnalysis: { status: "clean", verdict: "benign", checkedAt: Date.now() },
+      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
       trufflehog: { status: "clean", summary: "Fresh secret scan" },
       clawscan: { status: "clean", summary: "Fresh policy scan" },
     });
@@ -983,7 +995,8 @@ it("reports unknown and hard-deleted releases as absent despite retained attempt
     { version: "unknown", state: "absent" },
     publicationPath.replace(publicationVersion, "unknown"),
   );
-  expect(response.headers.get("X-RateLimit-Limit")).toBe("3000");
+  // Admitted requests carry no rate-limit headers.
+  expect(response.headers.get("X-RateLimit-Limit")).toBeNull();
   await t.run((ctx) => ctx.db.delete(ids.releaseId));
   await publication({ state: "absent" });
   expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).not.toBeNull();
@@ -1232,5 +1245,120 @@ it.each(["private", "deleted", "staged-first-release", "missing", "skill"] as co
       for (const versionPath of [path, path.replace("/publication", "")])
         expect((await t.fetch(versionPath, { headers })).status).toBe(200);
     }
+  },
+);
+
+it.each(
+  (["none", "membership", "token"] as const).flatMap((revocation) =>
+    ["operationalRetry", "finalizationRecovery"].map(
+      (bindingKind) => [revocation, bindingKind] as const,
+    ),
+  ),
+)(
+  "preserves authenticated successor recovery after recovery fails: %s / %s",
+  async (revocation, bindingKind) => {
+    const { t, ids, recover } = await fixture();
+    const original = await t.run(async (ctx) => {
+      await ctx.db.insert("publisherMembers", {
+        publisherId: ids.publisher,
+        userId: ids.owner,
+        role: "publisher",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.patch(ids.attemptId, {
+        checks: { trufflehog: { status: "clean" }, clawscan: { status: "failed" } },
+        checkFailureCount: 3,
+        checkClaimLastError: "Operational scanner timeout",
+      });
+      return {
+        attempt: (await ctx.db.get(ids.attemptId))!,
+        release: (await ctx.db.get(ids.releaseId))!,
+      };
+    });
+    await expect(
+      t.mutation(internal.maintenance.retryFailedPublishAttemptChecksInternal, {
+        attemptId: ids.attemptId,
+        expectedArtifactFingerprint: original.attempt.artifactFingerprint,
+        expectedUpdatedAt: original.attempt.updatedAt,
+        reason: "Retry after scanner repair",
+        dryRun: false,
+      }),
+    ).resolves.toMatchObject({ requeued: true });
+    const binding = (await t.run((ctx) => ctx.db.get(ids.releaseId)))!.operationalRetry;
+    if (bindingKind === "finalizationRecovery") {
+      // Same validated predecessor identity, retained after a finalization failure.
+      await t.run((ctx) =>
+        ctx.db.patch(ids.releaseId, {
+          operationalRetry: undefined,
+          finalizationRecovery: binding,
+        }),
+      );
+    }
+    await t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+      attemptId: ids.attemptId,
+      claimId: "operational-scan",
+    });
+    await t.mutation(internal.publishAttempts.completePendingPublishAttemptChecksInternal, {
+      attemptId: ids.attemptId,
+      claimId: "operational-scan",
+      artifactFingerprint: original.attempt.artifactFingerprint,
+      trufflehog: { status: "clean" },
+      clawscan: { status: "failed", summary: "Operational failure recurred" },
+    });
+    expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({
+      status: "failed",
+      checkFailureCount: 4,
+    });
+    const response = await recover();
+    expect(response.status).toBe(202);
+    const successorId = (await response.json()).attemptId as Id<"publishAttempts">;
+    await t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+      attemptId: successorId,
+      claimId: "successor-scan",
+    });
+    await t.mutation(internal.publishAttempts.completePendingPublishAttemptChecksInternal, {
+      attemptId: successorId,
+      claimId: "successor-scan",
+      artifactFingerprint: original.attempt.artifactFingerprint,
+      clawscanAnalysis: { status: "clean", verdict: "benign", checkedAt: Date.now() },
+      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
+      trufflehog: { status: "clean" },
+      clawscan: { status: "clean" },
+    });
+    await t.mutation(internal.publishAttempts.claimPackagePublishAttemptForFinalizationInternal, {
+      attemptId: successorId,
+      claimId: "successor-final",
+    });
+    if (revocation === "membership") await t.run((ctx) => ctx.db.delete(ids.membership));
+    if (revocation === "token")
+      await t.run((ctx) => ctx.db.patch(ids.apiToken, { revokedAt: Date.now() }));
+    const promote = t.mutation(internal.packages.publishPendingReleaseInternal, {
+      releaseId: ids.releaseId,
+      manualRecoveryAttemptId: successorId,
+      manualRecoveryClaimId: "successor-final",
+    });
+    if (revocation === "none") await expect(promote).resolves.toMatchObject({ ok: true });
+    else await expect(promote).rejects.toThrow(/Recovered package publication authorization/);
+    const release = (await t.run((ctx) => ctx.db.get(ids.releaseId)))!;
+    expect(release.publicationStatus).toBe(revocation === "none" ? "published" : "pending");
+    expect(release.operationalRetry).toBeUndefined();
+    expect(release.finalizationRecovery).toBeUndefined();
+    expect(release.files).toEqual(original.release.files);
+    expect(release.clawpackStorageId).toBe(original.release.clawpackStorageId);
+    const audit = await t.run((ctx) =>
+      ctx.db
+        .query("auditLogs")
+        .filter((q) => q.eq(q.field("action"), "package.publish.recover"))
+        .unique(),
+    );
+    expect(audit?.metadata).toMatchObject({
+      retiredOperationalRetry: bindingKind === "operationalRetry" ? binding : null,
+      retiredFinalizationRecovery: bindingKind === "finalizationRecovery" ? binding : null,
+    });
+    expect(await t.run((ctx) => ctx.db.get(ids.attemptId))).toMatchObject({
+      status: "failed",
+      checkFailureCount: 4,
+    });
   },
 );

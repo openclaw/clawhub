@@ -16,6 +16,11 @@ const MAX_LOCAL_AUTH_TMP_BASE_BYTES = 32;
 
 type RunnerEnv = Record<string, string | undefined>;
 
+export function buildLocalAuthBackendVersionArgs(env: RunnerEnv = process.env) {
+  const version = env.PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION?.trim();
+  return version ? ["--local-backend-version", version] : [];
+}
+
 export type LocalAuthRunnerConfig = {
   convexDeployment: string | undefined;
   convexSiteUrl: string;

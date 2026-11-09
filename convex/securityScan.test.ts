@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EndorAnalysis } from "./lib/endorAnalysis";
 import {
   appendGitHubSkillScanRequestFilesInternal,
-  cancelQueuedVtUpdateJobsInternal,
   claimCodexScanJobs,
   claimCodexScanJobLeases,
   clearQueuedBackfillJobsForLocalDev,
@@ -102,12 +101,13 @@ const requeueExpiredCodexScanJobsInternalHandler = (
 
 const requeueFailedSecurityScanJobsInternalHandler = (
   requeueFailedSecurityScanJobsInternal as unknown as WrappedHandler<
-    { failedAfter: number; failedBefore: number; dryRun: boolean; limit?: number },
+    { failedAfter: number; failedBefore: number; dryRun: boolean; limit?: number; cursor?: string },
     {
       dryRun: boolean;
       matched: number;
       requeued: number;
       hasMore: boolean;
+      nextCursor: string | null;
       bySource: Record<string, number>;
       byTargetKind: Record<string, number>;
       sampleJobIds: string[];
@@ -343,14 +343,6 @@ const prepareGitHubSkillScanRequestInternalHandler = (
       commit: string;
       force?: boolean;
       parsed: { frontmatter: Record<string, unknown> };
-      staticScan: {
-        status: "clean" | "suspicious" | "malicious";
-        reasonCodes: string[];
-        findings: [];
-        summary: string;
-        engineVersion: string;
-        checkedAt: number;
-      };
     },
     { ok: true; prepared?: true; scanId?: string; requestId?: string }
   >
@@ -378,28 +370,6 @@ const getJobTargetInternalHandler = (
   getJobTargetInternal as unknown as WrappedHandler<{ jobId: string }>
 )._handler;
 
-type CancelArgs = {
-  dryRun: boolean;
-  createdBefore: number;
-  scanLimit?: number;
-  deleteLimit?: number;
-};
-
-type CancelResult = {
-  dryRun: boolean;
-  scanned: number;
-  matched: number;
-  deleted: number;
-  wouldDelete: number;
-  skippedByReason: Record<string, number>;
-  oldestScannedCreatedAt: number | null;
-  newestScannedCreatedAt: number | null;
-  oldestScannedNextRunAt: number | null;
-  newestScannedNextRunAt: number | null;
-  sampleMatchedJobIds: string[];
-  sampleDeletedJobIds: string[];
-};
-
 type ScanJob = {
   _id: string;
   _creationTime: number;
@@ -412,7 +382,6 @@ type ScanJob = {
   source: string;
   priority: number;
   hasMaliciousSignal: boolean;
-  waitForVtUntil: number;
   nextRunAt: number;
   attempts: number;
   leaseToken?: string;
@@ -422,9 +391,6 @@ type ScanJob = {
   updatedAt: number;
 };
 
-const cancelQueuedVtUpdateJobsInternalHandler = (
-  cancelQueuedVtUpdateJobsInternal as unknown as WrappedHandler<CancelArgs, CancelResult>
-)._handler;
 const clearQueuedBackfillJobsForLocalDevHandler = (
   clearQueuedBackfillJobsForLocalDev as unknown as WrappedHandler<
     { dryRun?: boolean; limit?: number },
@@ -477,9 +443,8 @@ const enqueueSkillVersionScanInternalHandler = (
   enqueueSkillVersionScanInternal as unknown as WrappedHandler<
     {
       versionId: string;
-      source: "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
+      source: "publish" | "backfill" | "bulk-rescan" | "manual";
       priority?: number;
-      waitForVtMs?: number;
       preserveActiveJob?: boolean;
       preserveExistingJob?: boolean;
     },
@@ -491,9 +456,8 @@ const enqueuePackageReleaseScanInternalHandler = (
   enqueuePackageReleaseScanInternal as unknown as WrappedHandler<
     {
       releaseId: string;
-      source: "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
+      source: "publish" | "backfill" | "bulk-rescan" | "manual";
       priority?: number;
-      waitForVtMs?: number;
     },
     { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
   >
@@ -605,7 +569,6 @@ const claimedJob = {
   source: "publish",
   priority: 0,
   hasMaliciousSignal: true,
-  waitForVtUntil: 0,
   nextRunAt: 0,
   attempts: 1,
   leaseToken: "lease-token",
@@ -622,7 +585,6 @@ function makeScanJob(overrides: Partial<ScanJob> = {}): ScanJob {
     source: "vt-update",
     priority: 0,
     hasMaliciousSignal: false,
-    waitForVtUntil: 0,
     nextRunAt: 100,
     attempts: 0,
     createdAt: 50,
@@ -769,7 +731,16 @@ function makeFailedScanRecoveryCtx(
             order: vi.fn((direction: string) => {
               expect(direction).toBe("asc");
               return {
-                take: vi.fn(async (limit: number) => filtered.slice(0, limit)),
+                paginate: vi.fn(
+                  async ({ numItems, cursor }: { numItems: number; cursor: string | null }) => {
+                    const start = cursor ? Number(cursor) : 0;
+                    return {
+                      page: filtered.slice(start, start + numItems),
+                      isDone: start + numItems >= filtered.length,
+                      continueCursor: String(start + numItems),
+                    };
+                  },
+                ),
               };
             }),
           };
@@ -796,16 +767,6 @@ function makeFailedScanRecoveryCtx(
     },
     patches,
     inserts,
-  };
-}
-
-function makeTarget(llmStatus?: string) {
-  if (!llmStatus) return {};
-  return {
-    llmAnalysis: {
-      status: llmStatus,
-      checkedAt: 123,
-    },
   };
 }
 
@@ -1100,55 +1061,6 @@ function makeBulkRescanCtx(options: {
     insert,
     patch,
     query,
-  };
-}
-
-function makeCancelCtx(jobs: ScanJob[], targets: Map<string, unknown> = new Map()) {
-  const deleted: string[] = [];
-  const deleteDoc = vi.fn(async (id: string) => {
-    deleted.push(id);
-  });
-  const get = vi.fn(async (id: string) => targets.get(id) ?? null);
-  const noopWrite = vi.fn(async () => undefined);
-  const take = vi.fn(async (limit: number) => jobs.slice(0, limit));
-  const order = vi.fn(() => ({ take }));
-  const indexBuilder: {
-    eq: ReturnType<typeof vi.fn>;
-    lt: ReturnType<typeof vi.fn>;
-  } = {
-    eq: vi.fn(() => indexBuilder),
-    lt: vi.fn(() => indexBuilder),
-  };
-  const withIndex = vi.fn((indexName: string, buildRange: (q: typeof indexBuilder) => unknown) => {
-    expect(indexName).toBe("by_status_source_created_at");
-    buildRange(indexBuilder);
-    expect(indexBuilder.eq).toHaveBeenCalledWith("status", "queued");
-    expect(indexBuilder.eq).toHaveBeenCalledWith("source", "vt-update");
-    expect(indexBuilder.lt).toHaveBeenCalledWith("createdAt", 1000);
-    return { order };
-  });
-  const query = vi.fn((tableName: string) => {
-    expect(tableName).toBe("securityScanJobs");
-    return { withIndex };
-  });
-
-  return {
-    ctx: {
-      db: {
-        query,
-        get,
-        delete: deleteDoc,
-        insert: noopWrite,
-        patch: noopWrite,
-        replace: noopWrite,
-        normalizeId: vi.fn(() => null),
-        system: {},
-      },
-    },
-    deleted,
-    deleteDoc,
-    get,
-    take,
   };
 }
 
@@ -1693,14 +1605,13 @@ describe("securityScan", () => {
     });
   });
 
-  it("keeps an unscanned skill publish at publish priority when VirusTotal finishes", async () => {
+  it("keeps an unscanned skill publish at publish priority when a lower source re-enqueues", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
     const existingJob = makeScanJob({
       _id: "securityScanJobs:skill-publish",
       source: "publish",
       skillVersionId: "skillVersions:skill-publish",
-      waitForVtUntil: 1_500_000,
       nextRunAt: 1_500_000,
     });
     const { ctx, patches } = makeRescanCtx({
@@ -1710,7 +1621,6 @@ describe("securityScan", () => {
           _id: "skillVersions:skill-publish",
           skillId: "skills:skill-publish",
           version: "1.0.0",
-          vtAnalysis: { status: "clean", checkedAt: 1_000_000 },
         },
       },
       activeJobs: [existingJob],
@@ -1718,8 +1628,7 @@ describe("securityScan", () => {
 
     await enqueueSkillVersionScanInternalHandler(ctx, {
       versionId: "skillVersions:skill-publish",
-      source: "vt-update",
-      waitForVtMs: 0,
+      source: "bulk-rescan",
     });
 
     expect(patches).toContainEqual({
@@ -1731,7 +1640,7 @@ describe("securityScan", () => {
     });
   });
 
-  it("keeps an unscanned package publish at publish priority when VirusTotal finishes", async () => {
+  it("keeps an unscanned package publish at publish priority when a lower source re-enqueues", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(2_000_000);
     const existingJob = makeScanJob({
@@ -1740,7 +1649,6 @@ describe("securityScan", () => {
       skillVersionId: undefined,
       packageReleaseId: "packageReleases:package-publish",
       source: "publish",
-      waitForVtUntil: 2_500_000,
       nextRunAt: 2_500_000,
     });
     const { ctx, patches } = makeRescanCtx({
@@ -1750,7 +1658,6 @@ describe("securityScan", () => {
           _id: "packageReleases:package-publish",
           packageId: "packages:package-publish",
           version: "1.0.0",
-          vtAnalysis: { status: "clean", checkedAt: 2_000_000 },
         },
       },
       activeJobs: [existingJob],
@@ -1758,8 +1665,7 @@ describe("securityScan", () => {
 
     await enqueuePackageReleaseScanInternalHandler(ctx, {
       releaseId: "packageReleases:package-publish",
-      source: "vt-update",
-      waitForVtMs: 0,
+      source: "bulk-rescan",
     });
 
     expect(patches).toContainEqual({
@@ -2028,7 +1934,6 @@ describe("securityScan", () => {
           source: "publish",
           priority: 0,
           nextRunAt: Date.now() + 60_000,
-          waitForVtUntil: Date.now() + 60_000,
         },
       },
     });
@@ -2049,7 +1954,6 @@ describe("securityScan", () => {
         source: "manual",
         priority: 100,
         nextRunAt: expect.any(Number),
-        waitForVtUntil: expect.any(Number),
       }),
     });
   });
@@ -2131,13 +2035,6 @@ describe("securityScan", () => {
             summary: "Attempts to exfiltrate credentials.",
             checkedAt: 1_700_000_000_000,
           },
-          staticScan: {
-            status: "malicious",
-            reasonCodes: ["network.exfiltration"],
-            findings: [],
-            summary: "Credential exfiltration pattern.",
-            checkedAt: 1_700_000_000_000,
-          },
           createdAt: 1_700_000_000_000,
         },
       },
@@ -2164,12 +2061,11 @@ describe("securityScan", () => {
           status: "malicious",
           summary: "Attempts to exfiltrate credentials.",
         },
-        staticAnalysis: {
-          status: "malicious",
-          summary: "Credential exfiltration pattern.",
-        },
       },
     });
+    // Historical static scan rows are retained but never surfaced in reports.
+    expect(report).not.toHaveProperty("report.staticAnalysis");
+    expect(report).not.toHaveProperty("report.virustotal");
   });
 
   it("resolves a stored report from the active target when a merged source shares its slug", async () => {
@@ -2877,6 +2773,7 @@ describe("securityScan", () => {
       matched: 2,
       requeued: 0,
       hasMore: false,
+      nextCursor: null,
       bySource: { manual: 1, publish: 1 },
       byTargetKind: { skillScanRequest: 1, skillVersion: 1 },
       sampleJobIds: ["securityScanJobs:publish-failed", "securityScanJobs:manual-failed"],
@@ -3663,6 +3560,52 @@ describe("securityScan", () => {
     expect(take).toHaveBeenCalledWith(expect.any(Number));
   });
 
+  it.each([
+    ["openclaw", undefined, true],
+    ["another-publisher", undefined, false],
+    ["openclaw", 1, false],
+    [undefined, undefined, false],
+  ])(
+    "derives scan trust from the persisted owner rather than an @openclaw package name (%s)",
+    async (handle, deletedAt, trusted) => {
+      const docs = new Map<string, Record<string, unknown>>([
+        [
+          "securityScanJobs:official-context",
+          {
+            _id: "securityScanJobs:official-context",
+            targetKind: "packageRelease",
+            source: "manual",
+            packageReleaseId: "packageReleases:official-context",
+          },
+        ],
+        [
+          "packageReleases:official-context",
+          { _id: "packageReleases:official-context", packageId: "packages:official-context" },
+        ],
+        [
+          "packages:official-context",
+          {
+            _id: "packages:official-context",
+            family: "code-plugin",
+            normalizedName: "@openclaw/discord",
+            ownerPublisherId: "publishers:owner",
+          },
+        ],
+      ]);
+      if (handle)
+        docs.set("publishers:owner", {
+          _id: "publishers:owner",
+          handle,
+          ...(deletedAt ? { deletedAt } : {}),
+        });
+      const result = await getJobTargetInternalHandler(
+        { db: { get: vi.fn(async (id: string) => docs.get(id) ?? null) } },
+        { jobId: "securityScanJobs:official-context" },
+      );
+      expect(result).toMatchObject({ trustedOpenClawPlugin: trusted });
+    },
+  );
+
   it("rejects GitHub file chunks that exceed the cumulative manifest hydration budget", async () => {
     const docs = new Map<string, Record<string, unknown>>([
       [
@@ -4037,6 +3980,31 @@ describe("securityScan", () => {
         error: "ClawPack artifact unavailable",
       }),
     );
+  });
+
+  it("gives explicit plugin rescans full custody while preserving the requested skill lease", async () => {
+    const { ctx, patches } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:plugin-budget",
+        targetKind: "packageRelease",
+        source: "manual",
+        packageReleaseId: "packageReleases:budget",
+      }),
+      makeScanJob({ _id: "securityScanJobs:skill-budget", source: "manual" }),
+    ]);
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "budget-worker",
+      limit: 2,
+      leaseMs: 60_000,
+    });
+    const plugin = claimed.find((job) => job.targetKind === "packageRelease")!;
+    const skill = claimed.find((job) => job.targetKind === "skillVersion")!;
+    expect(
+      plugin.leaseExpiresAt! - Number(patches.find(({ id }) => id === plugin._id)!.patch.updatedAt),
+    ).toBe(90 * 60_000);
+    expect(
+      skill.leaseExpiresAt! - Number(patches.find(({ id }) => id === skill._id)!.patch.updatedAt),
+    ).toBe(60_000);
   });
 
   it("claims manual rescans and malicious signals before ordinary backlog", async () => {
@@ -5650,6 +5618,96 @@ describe("securityScan", () => {
     expect(runMutation).toHaveBeenNthCalledWith(2, expect.anything(), {});
   });
 
+  it.each(["skillVersion", "packageRelease", "skillScanRequest"] as const)(
+    "acknowledges committed %s completion when only queue refill fails",
+    async (targetKind) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "placeholder");
+      const runQuery = vi.fn(async () => ({
+        job: {
+          _id: "securityScanJobs:1",
+          targetKind,
+          leaseToken: "lease-token",
+        },
+        ...(targetKind === "skillVersion" ? { version: { _id: "skillVersions:1" } } : {}),
+        ...(targetKind === "packageRelease" ? { release: { _id: "packageReleases:1" } } : {}),
+        ...(targetKind === "skillScanRequest"
+          ? { scanRequest: { _id: "skillScanRequests:1", sourceKind: "upload" } }
+          : {}),
+      }));
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if (Object.keys(args).length === 0) throw new Error("dispatch unavailable");
+        return { ok: true };
+      });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      await expect(
+        completeCodexScanJobHandler(
+          { runMutation, runQuery },
+          {
+            token: "placeholder",
+            jobId: "securityScanJobs:1",
+            leaseToken: "lease-token",
+            llmAnalysis: { status: "suspicious", checkedAt: 123 },
+            aigAnalysis: cleanAigAnalysis,
+          },
+        ),
+      ).resolves.toEqual({ ok: true });
+
+      const calls = runMutation.mock.calls.map(([, args]) => args);
+      const expectedCalls =
+        targetKind === "skillVersion" ? 4 : targetKind === "packageRelease" ? 2 : 3;
+      expect(calls).toHaveLength(expectedCalls);
+      expect(calls.at(-1)).toEqual({});
+      expect(calls.at(-2)).toMatchObject({
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+      });
+      expect(calls.some((args) => "error" in args)).toBe(false);
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    },
+  );
+
+  it.each([
+    ["skillVersion", 1],
+    ["skillVersion", 2],
+    ["skillVersion", 3],
+    ["packageRelease", 1],
+  ] as const)(
+    "propagates %s completion write failure at mutation %i",
+    async (targetKind, failAt) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "placeholder");
+      const runQuery = vi.fn(async () => ({
+        job: { _id: "securityScanJobs:1", targetKind, leaseToken: "lease-token" },
+        ...(targetKind === "skillVersion"
+          ? { version: { _id: "skillVersions:1" } }
+          : { release: { _id: "packageReleases:1" } }),
+      }));
+      const failure = new Error("completion write unavailable");
+      let mutations = 0;
+      const runMutation = vi.fn(async (_ref: unknown, _args: Record<string, unknown>) => {
+        mutations += 1;
+        if (mutations === failAt) throw failure;
+        return { ok: true };
+      });
+
+      await expect(
+        completeCodexScanJobHandler(
+          { runMutation, runQuery },
+          {
+            token: "placeholder",
+            jobId: "securityScanJobs:1",
+            leaseToken: "lease-token",
+            llmAnalysis: { status: "suspicious", checkedAt: 123 },
+            aigAnalysis: cleanAigAnalysis,
+          },
+        ),
+      ).rejects.toBe(failure);
+      expect(runMutation).toHaveBeenCalledTimes(failAt);
+      expect(runMutation.mock.calls.some(([, args]) => Object.keys(args).length === 0)).toBe(false);
+    },
+  );
+
   it("acknowledges a committed catalog completion when queue refill fails", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "placeholder");
     const runQuery = vi.fn(async () => ({
@@ -5724,7 +5782,7 @@ describe("securityScan", () => {
     expect(runMutation).toHaveBeenCalledTimes(2);
   });
 
-  it("commits the package Endor summary without persisting package AIG payloads", async () => {
+  it("commits explicit package scanner evidence and the Endor summary together", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const runQuery = vi.fn(async () => ({
       job: {
@@ -5751,12 +5809,7 @@ describe("securityScan", () => {
           reachableFunctionCount: 3,
           findings: [{ severity: "high", summary: "Reachable finding" }],
         },
-        aigAnalysis: {
-          status: "error",
-          issueCount: 99,
-          findings: [],
-          checkedAt: Number.POSITIVE_INFINITY,
-        },
+        aigAnalysis: cleanAigAnalysis,
       },
     );
 
@@ -5774,7 +5827,7 @@ describe("securityScan", () => {
       },
     });
     expect(releasePatches).not.toContainEqual(expect.objectContaining({ aigAnalysis: undefined }));
-    expect(releasePatches.some((patch) => "aigAnalysis" in patch)).toBe(false);
+    expect(releasePatches[0]).toMatchObject({ aigAnalysis: cleanAigAnalysis });
   });
 
   it("persists an error ClawScan result when worker retries are exhausted", async () => {
@@ -5999,14 +6052,6 @@ describe("securityScan", () => {
         commit: "a".repeat(40),
         force,
         parsed: { frontmatter: {} },
-        staticScan: {
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "No static findings.",
-          engineVersion: "test",
-          checkedAt: 2,
-        },
       });
       expect(prepared).toMatchObject({
         ok: true,
@@ -6151,14 +6196,6 @@ describe("securityScan", () => {
       contentHash: "candidate-hash",
       commit: candidateCommit,
       parsed: { frontmatter: {} },
-      staticScan: {
-        status: "clean" as const,
-        reasonCodes: [],
-        findings: [] as [],
-        summary: "No static findings.",
-        engineVersion: "test",
-        checkedAt: 2,
-      },
     };
 
     const prepared = await prepareGitHubSkillScanRequestInternalHandler(ctx as never, args);
@@ -6250,14 +6287,6 @@ describe("securityScan", () => {
         contentHash: "content-hash",
         commit: "a".repeat(40),
         parsed: { frontmatter: {} },
-        staticScan: {
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "No static findings.",
-          engineVersion: "test",
-          checkedAt: 2,
-        },
       }),
     ).resolves.toMatchObject({
       ok: true,
@@ -6415,14 +6444,6 @@ describe("securityScan", () => {
         commit: "a".repeat(40),
         force: true,
         parsed: { frontmatter: {} },
-        staticScan: {
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "No static findings.",
-          engineVersion: "test",
-          checkedAt: now,
-        },
       });
 
       expect(prepared).toMatchObject({
@@ -6499,21 +6520,11 @@ describe("securityScan", () => {
         system: {},
       },
     };
-    const staticScan = {
-      status: "clean" as const,
-      reasonCodes: [],
-      findings: [] as [],
-      summary: "No static findings.",
-      engineVersion: "test",
-      checkedAt: 2,
-    };
-
     const result = await prepareGitHubSkillScanRequestInternalHandler(ctx as never, {
       skillId: "skills:1",
       contentHash: "content-hash",
       commit: "b".repeat(40),
       parsed: { frontmatter: {} },
-      staticScan,
     });
 
     expect(result).toMatchObject({
@@ -6526,8 +6537,8 @@ describe("securityScan", () => {
       githubSourceId: "githubSkillSources:new",
       commit: "b".repeat(40),
       path: "skills/demo",
-      staticScan,
     });
+    expect(docs.get("githubSkillScans:1")).not.toHaveProperty("staticScan");
   });
 
   it("writes completed GitHub-backed scan results to the durable content-hash record", async () => {
@@ -7145,138 +7156,5 @@ describe("securityScan", () => {
         leaseToken: "lease-token",
       }),
     );
-  });
-
-  it("dry-runs queued vt-update jobs without deleting", async () => {
-    const job = makeScanJob({ _id: "securityScanJobs:dry-run" });
-    const { ctx, deleteDoc, take } = makeCancelCtx(
-      [job],
-      new Map<string, unknown>([["skillVersions:dry-run", makeTarget("clean")]]),
-    );
-
-    const result = await cancelQueuedVtUpdateJobsInternalHandler(ctx, {
-      dryRun: true,
-      createdBefore: 1000,
-    });
-
-    expect(take).toHaveBeenCalledWith(1000);
-    expect(result).toMatchObject({
-      dryRun: true,
-      scanned: 1,
-      matched: 1,
-      wouldDelete: 1,
-      deleted: 0,
-      oldestScannedCreatedAt: 50,
-      newestScannedCreatedAt: 50,
-      oldestScannedNextRunAt: 100,
-      newestScannedNextRunAt: 100,
-      skippedByReason: {},
-      sampleMatchedJobIds: ["securityScanJobs:dry-run"],
-      sampleDeletedJobIds: [],
-    });
-    expect(deleteDoc).not.toHaveBeenCalled();
-  });
-
-  it("deletes all queued vt-update jobs while preserving other sources and running jobs", async () => {
-    const jobs = [
-      makeScanJob({ _id: "securityScanJobs:clean" }),
-      makeScanJob({
-        _id: "securityScanJobs:package",
-        targetKind: "packageRelease",
-        skillVersionId: undefined,
-        packageReleaseId: "packageReleases:package",
-      }),
-      makeScanJob({
-        _id: "securityScanJobs:malicious-signal",
-        hasMaliciousSignal: true,
-      }),
-      makeScanJob({ _id: "securityScanJobs:vt-mismatch" }),
-      makeScanJob({ _id: "securityScanJobs:no-llm" }),
-      makeScanJob({ _id: "securityScanJobs:publish", source: "publish" }),
-      makeScanJob({ _id: "securityScanJobs:manual", source: "manual" }),
-      makeScanJob({ _id: "securityScanJobs:backfill", source: "backfill" }),
-      makeScanJob({ _id: "securityScanJobs:running", status: "running" }),
-    ];
-    const { ctx, deleted, get } = makeCancelCtx(
-      jobs,
-      new Map<string, unknown>([
-        ["skillVersions:clean", makeTarget("clean")],
-        ["packageReleases:package", makeTarget("clean")],
-        ["skillVersions:malicious-signal", makeTarget("clean")],
-        ["skillVersions:vt-mismatch", makeTarget("clean")],
-        ["skillVersions:no-llm", makeTarget()],
-        ["skillVersions:running", makeTarget("clean")],
-      ]),
-    );
-
-    const result = await cancelQueuedVtUpdateJobsInternalHandler(ctx, {
-      dryRun: false,
-      createdBefore: 1000,
-      scanLimit: 25,
-      deleteLimit: 10,
-    });
-
-    expect(deleted).toEqual([
-      "securityScanJobs:clean",
-      "securityScanJobs:package",
-      "securityScanJobs:vt-mismatch",
-    ]);
-    expect(get).toHaveBeenCalled();
-    expect(result).toMatchObject({
-      dryRun: false,
-      scanned: 9,
-      matched: 3,
-      wouldDelete: 3,
-      deleted: 3,
-      skippedByReason: {
-        "not-vt-update": 3,
-        "not-queued-vt-update": 1,
-        "malicious-signal": 1,
-        "missing-llm-analysis": 1,
-      },
-      sampleMatchedJobIds: [
-        "securityScanJobs:clean",
-        "securityScanJobs:package",
-        "securityScanJobs:vt-mismatch",
-      ],
-      sampleDeletedJobIds: [
-        "securityScanJobs:clean",
-        "securityScanJobs:package",
-        "securityScanJobs:vt-mismatch",
-      ],
-    });
-  });
-
-  it("counts matched jobs beyond the per-run delete limit without deleting them", async () => {
-    const jobs = [
-      makeScanJob({ _id: "securityScanJobs:first" }),
-      makeScanJob({ _id: "securityScanJobs:second" }),
-    ];
-    const { ctx, deleted } = makeCancelCtx(
-      jobs,
-      new Map<string, unknown>([
-        ["skillVersions:first", makeTarget("clean")],
-        ["skillVersions:second", makeTarget("clean")],
-      ]),
-    );
-
-    const result = await cancelQueuedVtUpdateJobsInternalHandler(ctx, {
-      dryRun: false,
-      createdBefore: 1000,
-      deleteLimit: 1,
-    });
-
-    expect(deleted).toEqual(["securityScanJobs:first"]);
-    expect(result).toMatchObject({
-      scanned: 2,
-      matched: 2,
-      wouldDelete: 1,
-      deleted: 1,
-      skippedByReason: {
-        "delete-limit-reached": 1,
-      },
-      sampleMatchedJobIds: ["securityScanJobs:first", "securityScanJobs:second"],
-      sampleDeletedJobIds: ["securityScanJobs:first"],
-    });
   });
 });

@@ -12,9 +12,9 @@ assert.ok(process.env.CONVEX_URL === undefined);
 assert.ok(process.env.VITE_CONVEX_URL === undefined);
 const settings = skillCardGenerationSettings();
 assert.deepEqual(settings, {
-  model: "gpt-6-sol",
+  model: "gpt-6-luna",
   reasoningEffort: "medium",
-  serviceTier: "fast",
+  serviceTier: "default",
 });
 const skill =
   "# Greeting helper\n\nWrite a friendly greeting. No tools or network access are needed.\n";

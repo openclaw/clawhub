@@ -1,53 +1,44 @@
 import { randomUUID } from "node:crypto";
-import { cp, lstat, readFile, readdir, readlink, rename, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { chmod, cp, lstat, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { join, relative } from "node:path";
 import { z } from "zod";
 import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import { CommandFailure, runWorkerCommand } from "../lib/runWorkerCommand";
 import { redactWorkerPublicText } from "../lib/workerRedaction";
 
-const ENDOR_ENV_KEYS = [
-  "ENDOR_API",
-  "ENDOR_NAMESPACE",
+const ENDOR_SECRET_ENV_KEYS = [
   "ENDOR_TOKEN",
   "ENDOR_API_CREDENTIALS_KEY",
   "ENDOR_API_CREDENTIALS_SECRET",
 ] as const;
+const ENDOR_ENV_KEYS = ["ENDOR_API", "ENDOR_NAMESPACE", ...ENDOR_SECRET_ENV_KEYS] as const;
 const CHILD_RUNTIME_ENV_KEYS = [
   "PATH",
   "LANG",
   "LC_ALL",
   "LC_CTYPE",
   "TZ",
-  "SYSTEMROOT",
-  "SystemRoot",
-  "WINDIR",
-  "COMSPEC",
-  "PATHEXT",
   // The host Docker CLI needs its selected context. Container variables are
-  // explicitly selected in the create command.
+  // explicitly selected with --env.
   "HOME",
   "DOCKER_CONFIG",
 ] as const;
 const DEFAULT_ENDOR_TIMEOUT_MS = 20 * 60 * 1000;
-const DOCKER_CLEANUP_TIMEOUT_MS = 10_000;
-const DOCKER_LATE_CREATE_POLL_MS = 100;
-const MAX_ENDOR_REPORT_BYTES = 8 * 1024 * 1024;
+const DOCKER_REMOVE_TIMEOUT_MS = 10_000;
+// Community packages with large dependency trees produce reports over 8 MiB.
+// Only the bounded summary is kept; diagnostics are capped separately.
+const MAX_ENDOR_REPORT_BYTES = 64 * 1024 * 1024;
 const MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES = 128 * 1024;
-const ENDOR_RUN_ID_LABEL = "org.openclaw.clawhub.endor-run-id";
 const MAX_ENDOR_DIAGNOSTIC_CHARS = 20_000;
 const MAX_SUMMARY_FINDINGS = 50;
 const MAX_SUMMARY_TEXT_CHARS = 2_000;
 const REACHABLE_FUNCTION_TAG = "FINDING_TAGS_REACHABLE_FUNCTION";
 
-export class EndorContainerCleanupError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "EndorContainerCleanupError";
-  }
-}
-
 const unknownRecordSchema = z.record(z.string(), z.unknown());
+const packageReleaseSchema = z.object({
+  package: z.object({ name: z.string().min(1) }),
+  release: z.object({ version: z.string().min(1) }),
+});
 const endorFindingSchema = z.object({
   meta: z
     .object({
@@ -64,11 +55,7 @@ const endorFindingSchema = z.object({
     target_dependency_version: z.string().optional(),
   }),
 });
-const endorRawReportSchema = z.object({
-  all_findings: z.array(endorFindingSchema),
-  blocking_findings: z.array(unknownRecordSchema),
-  warning_findings: z.array(unknownRecordSchema),
-});
+const endorRawReportSchema = z.object({ all_findings: z.array(endorFindingSchema) });
 
 export type EndorCommandDiagnostic = {
   args?: string[];
@@ -80,27 +67,9 @@ export type EndorCommandDiagnostic = {
   timedOut?: boolean;
 };
 
-function isPathWithin(root: string, candidate: string) {
-  const normalizedRoot = resolve(root);
-  const normalizedCandidate = resolve(candidate);
-  return (
-    normalizedCandidate === normalizedRoot ||
-    normalizedCandidate.startsWith(`${normalizedRoot}${sep}`)
-  );
-}
-
-async function assertNoExternalSymlinks(root: string, directory = root): Promise<void> {
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isSymbolicLink()) {
-      const target = resolve(dirname(path), await readlink(path));
-      if (!isPathWithin(root, target)) {
-        throw new Error("Package artifact contains a symlink outside its root");
-      }
-      continue;
-    }
-    if (entry.isDirectory()) await assertNoExternalSymlinks(root, path);
-  }
+export function isEndorPluginScanEnabled(family: string | undefined): boolean {
+  // Endor resolves npm dependencies, so only code plugins are eligible.
+  return process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED === "1" && family === "code-plugin";
 }
 
 async function isRegularFile(path: string) {
@@ -123,6 +92,7 @@ async function normalizePackageRoot(scanRoot: string, manifestDirectory: string)
     if (!devDependencies.success) {
       throw new Error(`Endor scan devDependencies is invalid at ${packageRoot}`);
     }
+    // Published packages keep monorepo dev links that npm cannot resolve.
     const workspaceDependencyNames = Object.entries(devDependencies.data)
       .filter(([, version]) => typeof version === "string" && version.startsWith("workspace:"))
       .map(([name]) => name);
@@ -151,16 +121,22 @@ async function normalizePackageTree(scanRoot: string, directory = scanRoot): Pro
   }
 }
 
+// The container's node user must be able to read files the artifact stored as
+// owner-only. The mount is read-only, so this only adds read and search bits.
+async function makeTreeReadable(path: string): Promise<void> {
+  const info = await lstat(path);
+  if (info.isSymbolicLink()) return;
+  await chmod(path, info.mode | (info.isDirectory() ? 0o555 : 0o444));
+  if (!info.isDirectory()) return;
+  for (const name of await readdir(path)) await makeTreeReadable(join(path, name));
+}
+
 function endorTimeoutMs(env: NodeJS.ProcessEnv) {
   const parsed = Number(env.CODEX_SECURITY_SCAN_ENDOR_TIMEOUT_MS);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_ENDOR_TIMEOUT_MS;
 }
 
-function endorRuntimeEnv(
-  workspace: string,
-  source: NodeJS.ProcessEnv,
-  extraKeys: readonly string[] = [],
-) {
+function dockerEnv(workspace: string, source: NodeJS.ProcessEnv, extraKeys: readonly string[]) {
   const env: NodeJS.ProcessEnv = {
     NO_COLOR: "1",
     TEMP: workspace,
@@ -174,86 +150,9 @@ function endorRuntimeEnv(
   return env;
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function dockerObjectMissing(error: unknown) {
-  if (!(error instanceof CommandFailure)) return false;
-  const output = `${error.stdout}\n${error.stderr}`.toLowerCase();
-  return output.includes("no such object") || output.includes("no such container");
-}
-
-async function cleanupEndorContainer(input: {
-  env: NodeJS.ProcessEnv;
-  runId: string;
-  waitForLateCreate: boolean;
-  workspace: string;
-}) {
-  const deadline = Date.now() + DOCKER_CLEANUP_TIMEOUT_MS;
-  const cleanupEnv = endorRuntimeEnv(input.workspace, input.env);
-  const remainingMs = () => {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new Error("Endor Docker cleanup timed out");
-    return remaining;
-  };
-  const runDocker = async (args: string[]) =>
-    await runWorkerCommand("docker", args, {
-      commandLabel: "Endor Docker cleanup",
-      cwd: input.workspace,
-      env: cleanupEnv,
-      maxStdoutBytes: MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES,
-      maxStderrBytes: MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES,
-      timeoutMs: remainingMs(),
-    });
-  const name = `clawhub-endor-${input.runId}`;
-  const removeIfOwned = async () => {
-    let inspected;
-    try {
-      inspected = await runDocker([
-        "container",
-        "inspect",
-        "--format",
-        `{{ .Id }}\n{{ .Name }}\n{{ index .Config.Labels ${JSON.stringify(ENDOR_RUN_ID_LABEL)} }}`,
-        name,
-      ]);
-    } catch (error) {
-      if (dockerObjectMissing(error)) return false;
-      throw error;
-    }
-    const [id, actualName, runId, ...extra] = inspected.stdout.trim().split("\n");
-    if (
-      !id ||
-      !/^[a-f0-9]{64}$/.test(id) ||
-      actualName !== `/${name}` ||
-      runId !== input.runId ||
-      extra.length > 0
-    ) {
-      throw new Error(`refusing to remove Docker container ${name}: ownership does not match`);
-    }
-    try {
-      await runDocker(["container", "rm", "--force", "--volumes", id]);
-    } catch (error) {
-      if (!dockerObjectMissing(error)) throw error;
-    }
-    return true;
-  };
-
-  if ((await removeIfOwned()) || !input.waitForLateCreate) return;
-  while (Date.now() + DOCKER_LATE_CREATE_POLL_MS < deadline) {
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, DOCKER_LATE_CREATE_POLL_MS));
-    if (await removeIfOwned()) return;
-  }
-  throw new Error("Endor Docker create timed out and container removal could not be confirmed");
-}
-
 function redactEndorDiagnosticText(value: string, env: NodeJS.ProcessEnv) {
   let redacted = value;
-  for (const key of [
-    "ENDOR_TOKEN",
-    "ENDOR_API_CREDENTIALS_KEY",
-    "ENDOR_API_CREDENTIALS_SECRET",
-  ] as const) {
+  for (const key of ENDOR_SECRET_ENV_KEYS) {
     const secret = env[key];
     if (secret) redacted = redacted.replaceAll(secret, "[redacted-secret]");
   }
@@ -293,16 +192,25 @@ async function resolvePackageArtifactRoot(workspace: string) {
   return undefined;
 }
 
-export function isEndorPluginScanEnabled(env: NodeJS.ProcessEnv = process.env) {
-  return env.CODEX_SECURITY_SCAN_ENDOR_ENABLED === "1";
-}
-
 export async function runEndorPluginScan(input: {
   env?: NodeJS.ProcessEnv;
   onDiagnostic?: (diagnostic: Partial<EndorCommandDiagnostic>) => void;
+  packageRelease: { package?: unknown; release?: unknown };
   workspace: string;
 }): Promise<EndorAnalysis> {
   const env = input.env ?? process.env;
+  // Only claimed release metadata identifies the saved Endor project; artifact
+  // manifests and signed download URLs are untrusted or contain credentials.
+  const release = packageReleaseSchema.parse(input.packageRelease);
+  const name = release.package.name;
+  const version = release.release.version;
+  const encodedName = name.split("/").map(encodeURIComponent).join("/");
+  const sourceUrl = `https://clawhub.ai/api/v1/packages/${encodedName}/versions/${encodeURIComponent(version)}/artifact/download`;
+  // Bundle versions can contain commas; escape tag delimiters without changing
+  // ordinary package/version labels or colliding with a literal %.
+  const tagVersion = version.replace(/[%,]/g, (character) => encodeURIComponent(character));
+  const tags = `plugin:${name},version:${tagVersion}`;
+
   const sourceRoot = await resolvePackageArtifactRoot(input.workspace);
   if (!sourceRoot) {
     return {
@@ -312,22 +220,29 @@ export async function runEndorPluginScan(input: {
     };
   }
 
+  // endorctl needs pnpm for these, and the scanner image only isolates npm and Yarn.
+  if (await isRegularFile(join(sourceRoot, "pnpm-lock.yaml"))) {
+    return {
+      status: "skipped",
+      checkedAt: Date.now(),
+      reason:
+        "Endor cannot scan pnpm packages yet. No action is needed: this does not affect publication, and a rescan will also be skipped.",
+    };
+  }
+
   const image = env.CODEX_SECURITY_SCAN_ENDOR_IMAGE?.trim();
   if (!image) throw new Error("CODEX_SECURITY_SCAN_ENDOR_IMAGE is required when Endor is enabled");
-  await assertNoExternalSymlinks(sourceRoot);
   const scanRoot = join(input.workspace, "endor-artifact");
-  await cp(sourceRoot, scanRoot, {
-    recursive: true,
-    errorOnExist: true,
-    force: false,
-    verbatimSymlinks: true,
-  });
+  await cp(sourceRoot, scanRoot, { recursive: true, errorOnExist: true, force: false });
   await normalizePackageTree(scanRoot);
-  const sandboxRunId = randomUUID().replaceAll("-", "");
-  const containerName = `clawhub-endor-${sandboxRunId}`;
+  await makeTreeReadable(scanRoot);
+
+  const containerName = `clawhub-endor-${randomUUID()}`;
   const args = [
-    "container",
-    "create",
+    "run",
+    "--rm",
+    "--name",
+    containerName,
     "--network",
     "bridge",
     // The egress guard blocks private host resolvers, including OrbStack's DNS.
@@ -335,6 +250,8 @@ export async function runEndorPluginScan(input: {
     "1.1.1.1",
     "--dns",
     "8.8.8.8",
+    // NET_ADMIN installs the egress guard; the rest let the entrypoint drop to
+    // the unprivileged node user before the scanner runs.
     "--cap-drop",
     "ALL",
     "--cap-add",
@@ -352,10 +269,6 @@ export async function runEndorPluginScan(input: {
     "--read-only",
     "--entrypoint",
     "/usr/local/bin/clawhub-endor-entrypoint",
-    "--name",
-    containerName,
-    "--label",
-    `${ENDOR_RUN_ID_LABEL}=${sandboxRunId}`,
     "--tmpfs",
     "/tmp:rw,nosuid,nodev,exec",
     "--mount",
@@ -364,43 +277,23 @@ export async function runEndorPluginScan(input: {
     image,
     "clawhub-endor-scan",
     "/workspace",
+    sourceUrl,
+    tags,
   ];
   input.onDiagnostic?.({ args: ["docker", ...args] });
-  const commandEnv = endorRuntimeEnv(input.workspace, env, ENDOR_ENV_KEYS);
-  const deadline = Date.now() + endorTimeoutMs(env);
-  let commandError: unknown;
-  let containerId: string | undefined;
-  let output: { stdout: string; stderr: string } | undefined;
+
+  let output: { stdout: string; stderr: string };
   try {
-    const created = await runWorkerCommand("docker", args, {
-      commandLabel: "Endor Docker create",
+    // docker run exits with the scanner's status, so a nonzero exit is a CommandFailure.
+    output = await runWorkerCommand("docker", args, {
+      commandLabel: "Endor scan",
       cwd: input.workspace,
-      env: commandEnv,
-      maxStdoutBytes: MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES,
-      maxStderrBytes: MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES,
-      timeoutMs: Math.max(1, deadline - Date.now()),
-    });
-    containerId = created.stdout.trim();
-    if (!/^[a-f0-9]{64}$/.test(containerId)) {
-      throw new Error("Endor Docker create did not return a valid container ID");
-    }
-    // An attached start exits with the container's own status, so a nonzero
-    // scanner exit surfaces here as a CommandFailure.
-    output = await runWorkerCommand("docker", ["container", "start", "--attach", containerId], {
-      commandLabel: "Endor Docker start",
-      cwd: input.workspace,
-      env: endorRuntimeEnv(input.workspace, env),
+      env: dockerEnv(input.workspace, env, ENDOR_ENV_KEYS),
       maxStdoutBytes: MAX_ENDOR_REPORT_BYTES,
       maxStderrBytes: MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES,
-      timeoutMs: Math.max(1, deadline - Date.now()),
-    });
-    input.onDiagnostic?.({
-      exitCode: 0,
-      stderr: redactEndorDiagnosticText(output.stderr, env),
-      stdout: redactEndorDiagnosticText(output.stdout, env),
+      timeoutMs: endorTimeoutMs(env),
     });
   } catch (error) {
-    commandError = error;
     if (error instanceof CommandFailure) {
       input.onDiagnostic?.({
         exitCode: error.exitCode,
@@ -409,55 +302,53 @@ export async function runEndorPluginScan(input: {
         timedOut: error.timedOut,
       });
     }
-  }
-
-  try {
-    await cleanupEndorContainer({
-      env,
-      runId: sandboxRunId,
-      // A killed create command can still leave the daemon to finish creating it.
-      waitForLateCreate:
-        containerId === undefined &&
-        commandError instanceof CommandFailure &&
-        commandError.timedOut,
-      workspace: input.workspace,
-    });
-  } catch (cleanupError) {
-    const message = `Endor Docker cleanup failed: ${errorMessage(cleanupError)}`;
-    throw new EndorContainerCleanupError(
-      commandError === undefined
-        ? message
-        : `Endor scan failed: ${errorMessage(commandError)}; ${message}`,
-      {
-        cause:
-          commandError === undefined
-            ? cleanupError
-            : new AggregateError([commandError, cleanupError]),
-      },
+    // Killing the Docker CLI leaves the container running, so remove it now.
+    // Removal is best effort: --rm and the disposable runner cover a failure,
+    // which is recorded with the scan error rather than failing the job.
+    const removalError = await runWorkerCommand("docker", ["rm", "--force", containerName], {
+      commandLabel: "Endor container removal",
+      cwd: input.workspace,
+      env: dockerEnv(input.workspace, env, []),
+      timeoutMs: DOCKER_REMOVE_TIMEOUT_MS,
+    }).then(
+      () => undefined,
+      (reason: unknown) => reason,
     );
+    // After a normal nonzero exit, --rm has already removed the container.
+    const alreadyRemoved =
+      removalError instanceof CommandFailure && /no such container/i.test(removalError.stderr);
+    if (removalError !== undefined && !alreadyRemoved) {
+      const scanMessage = error instanceof Error ? error.message : String(error);
+      const removalMessage =
+        removalError instanceof Error ? removalError.message : String(removalError);
+      throw new Error(`${scanMessage}; Endor container removal also failed: ${removalMessage}`, {
+        cause: error,
+      });
+    }
+    throw error;
   }
-  if (commandError !== undefined) throw commandError;
+  input.onDiagnostic?.({
+    exitCode: 0,
+    stderr: redactEndorDiagnosticText(output.stderr, env),
+    stdout: redactEndorDiagnosticText(output.stdout, env),
+  });
 
-  if (!output) throw new Error("Endor scanner did not emit findings JSON");
-  let parsedOutput: unknown;
+  let report: z.infer<typeof endorRawReportSchema>;
   try {
-    parsedOutput = JSON.parse(output.stdout);
+    report = endorRawReportSchema.parse(JSON.parse(output.stdout));
   } catch {
     throw new Error("Endor scanner did not emit valid findings JSON");
   }
-  const report = endorRawReportSchema.safeParse(parsedOutput);
-  if (!report.success) throw new Error("Endor scanner did not emit valid findings JSON");
-  const reachableFindings = report.data.all_findings.filter((finding) =>
+  const reachableFindings = report.all_findings.filter((finding) =>
     finding.spec.finding_tags?.includes(REACHABLE_FUNCTION_TAG),
   );
-  const findings = reachableFindings.slice(0, MAX_SUMMARY_FINDINGS).map((finding) => ({
-    severity: normalizeSeverity(finding.spec.level),
-    summary: normalizeFindingSummary(finding),
-  }));
   return {
     status: "completed",
     checkedAt: Date.now(),
     reachableFunctionCount: reachableFindings.length,
-    findings,
+    findings: reachableFindings.slice(0, MAX_SUMMARY_FINDINGS).map((finding) => ({
+      severity: normalizeSeverity(finding.spec.level),
+      summary: normalizeFindingSummary(finding),
+    })),
   };
 }

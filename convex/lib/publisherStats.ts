@@ -1,6 +1,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { isPublicSkillDoc } from "./globalStats";
+import { hasNoPublishedPackageVersions } from "./packageReleaseVisibility";
 import { readCanonicalStat } from "./skillStats";
 
 const MAX_BOUNDED_SKILL_METRICS_SCAN = 500;
@@ -77,7 +78,9 @@ export async function computeBoundedPublisherSkillMetrics(
 }
 
 export function getPackagePublisherContribution(pkg: Doc<"packages">): PublisherStatsContribution {
-  if (pkg.softDeletedAt) return emptyPublisherStatsContribution();
+  if (pkg.softDeletedAt || hasNoPublishedPackageVersions(pkg)) {
+    return emptyPublisherStatsContribution();
+  }
   return {
     publishedSkills: 0,
     publishedPackages: 1,
@@ -222,17 +225,18 @@ function diffPublisherStats(
   };
 }
 
-export async function adjustPublisherStatsForSkillChange(
+async function adjustPublisherStats<T extends { ownerPublisherId?: Id<"publishers"> }>(
   ctx: Pick<MutationCtx, "db">,
-  previousSkill: Doc<"skills"> | null | undefined,
-  nextSkill: Doc<"skills"> | null | undefined,
+  previous: T | null | undefined,
+  next: T | null | undefined,
+  getContribution: (value: T) => PublisherStatsContribution,
 ) {
-  if (!previousSkill && !nextSkill) return;
+  if (!previous && !next) return;
 
-  const previousPublisherId = previousSkill?.ownerPublisherId ?? null;
-  const nextPublisherId = nextSkill?.ownerPublisherId ?? null;
-  const previousContribution = previousSkill ? getSkillPublisherContribution(previousSkill) : null;
-  const nextContribution = nextSkill ? getSkillPublisherContribution(nextSkill) : null;
+  const previousPublisherId = previous?.ownerPublisherId ?? null;
+  const nextPublisherId = next?.ownerPublisherId ?? null;
+  const previousContribution = previous ? getContribution(previous) : null;
+  const nextContribution = next ? getContribution(next) : null;
 
   if (previousPublisherId && previousPublisherId === nextPublisherId) {
     await patchPublisherStats(ctx, previousPublisherId, {
@@ -253,6 +257,30 @@ export async function adjustPublisherStatsForSkillChange(
   }
 }
 
+function publishedPackageCount(contribution: PublisherStatsContribution | null) {
+  return contribution?.publishedPackages ?? 0;
+}
+
+async function recomputeAndPatchPublisherStats(
+  ctx: Pick<MutationCtx, "db">,
+  publisherId: Id<"publishers">,
+) {
+  const publisher = await ctx.db.get(publisherId);
+  if (!publisher) return;
+  // A staged parent used to increment publishedPackages. Adding one again when
+  // its first release publishes would store two packages. Read the rows.
+  // Losing a published package still uses its delta; it cannot double-count a parent.
+  await ctx.db.patch(publisherId, await recomputePublisherStats(ctx, publisherId));
+}
+
+export async function adjustPublisherStatsForSkillChange(
+  ctx: Pick<MutationCtx, "db">,
+  previousSkill: Doc<"skills"> | null | undefined,
+  nextSkill: Doc<"skills"> | null | undefined,
+) {
+  return await adjustPublisherStats(ctx, previousSkill, nextSkill, getSkillPublisherContribution);
+}
+
 export async function adjustPublisherStatsForPackageChange(
   ctx: Pick<MutationCtx, "db">,
   previousPackage: Doc<"packages"> | null | undefined,
@@ -262,26 +290,22 @@ export async function adjustPublisherStatsForPackageChange(
 
   const previousPublisherId = previousPackage?.ownerPublisherId ?? null;
   const nextPublisherId = nextPackage?.ownerPublisherId ?? null;
-  const previousContribution = previousPackage
-    ? getPackagePublisherContribution(previousPackage)
-    : null;
-  const nextContribution = nextPackage ? getPackagePublisherContribution(nextPackage) : null;
+  const previousCount = publishedPackageCount(
+    previousPackage ? getPackagePublisherContribution(previousPackage) : null,
+  );
+  const nextCount = publishedPackageCount(
+    nextPackage ? getPackagePublisherContribution(nextPackage) : null,
+  );
 
-  if (previousPublisherId && previousPublisherId === nextPublisherId) {
-    await patchPublisherStats(ctx, previousPublisherId, {
-      ...diffPublisherStats(nextContribution, previousContribution),
-    });
+  if (previousPublisherId && previousPublisherId === nextPublisherId && previousCount < nextCount) {
+    await recomputeAndPatchPublisherStats(ctx, previousPublisherId);
     return;
   }
 
-  if (previousPublisherId) {
-    await patchPublisherStats(
-      ctx,
-      previousPublisherId,
-      diffPublisherStats(null, previousContribution),
-    );
-  }
-  if (nextPublisherId) {
-    await patchPublisherStats(ctx, nextPublisherId, diffPublisherStats(nextContribution, null));
-  }
+  return await adjustPublisherStats(
+    ctx,
+    previousPackage,
+    nextPackage,
+    getPackagePublisherContribution,
+  );
 }

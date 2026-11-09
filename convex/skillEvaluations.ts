@@ -9,6 +9,7 @@ import {
   NVIDIA_SKILL_EVALUATION_CONFIG,
   NVIDIA_SKILL_EVALUATION_CONFIG_KEY,
 } from "./lib/skillEvaluationConfig";
+import { skillEvaluationMetricsValidator } from "./lib/skillEvaluationMetrics";
 import { parseSkillEvaluatorResultJson } from "./lib/skillEvaluationResult";
 import { requestSkillEvaluationDispatch } from "./skillEvaluationDispatch";
 
@@ -177,13 +178,17 @@ export const getCurrentForSkill = query({
       }
       const run = await ctx.db
         .query("skillEvaluationRuns")
-        .withIndex("by_skill_content_hash_config_key", (q) =>
+        .withIndex("by_skill_content_status_completed_at", (q) =>
           q
             .eq("skillId", skill._id)
             .eq("contentHash", skill.githubCurrentContentHash as string)
-            .eq("configKey", NVIDIA_SKILL_EVALUATION_CONFIG_KEY),
+            .eq("status", "succeeded")
+            .gt("completedAt", 0),
         )
-        .unique();
+        // A model recipe change must not hide a completed report for unchanged content.
+        .order("desc")
+        .filter((q) => q.neq(q.field("metrics"), undefined))
+        .first();
       if (run?.status !== "succeeded" || !run.metrics || !run.completedAt) return null;
       return {
         source: {
@@ -282,28 +287,7 @@ export const completeSkillEvaluationInternal = internalMutation({
     runId: v.id("skillEvaluationRuns"),
     leaseToken: v.string(),
     nativeResultStorageId: v.id("_storage"),
-    metrics: v.object({
-      sampleCount: v.number(),
-      overall: v.object({
-        withSkill: v.number(),
-        withoutSkill: v.number(),
-        delta: v.number(),
-      }),
-      cases: v.object({
-        withSkillPassed: v.number(),
-        withSkillTotal: v.number(),
-        withoutSkillPassed: v.number(),
-        withoutSkillTotal: v.number(),
-      }),
-      dimensions: v.array(
-        v.object({
-          id: v.string(),
-          withSkill: v.number(),
-          withoutSkill: v.number(),
-          delta: v.number(),
-        }),
-      ),
-    }),
+    metrics: skillEvaluationMetricsValidator,
     runIdFromEvaluator: v.optional(v.string()),
     durationMs: v.optional(v.number()),
     taskSource: v.union(v.literal("evals_json"), v.literal("native_harbor")),
@@ -535,10 +519,18 @@ export const requeueExpiredSkillEvaluationLeasesInternal = internalMutation({
 });
 
 export const startNvidiaSkillEvaluationBackfill = mutation({
-  args: { confirm: v.literal("backfill-nvidia-skill-evaluations") },
-  handler: async (ctx) => {
+  args: {
+    confirm: v.literal("backfill-nvidia-skill-evaluations"),
+    sourcePaths: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     assertAdmin(user);
+    if (args.sourcePaths && (args.sourcePaths.length === 0 || args.sourcePaths.length > 20)) {
+      throw new ConvexError(
+        "Select between 1 and 20 source paths, or omit sourcePaths for the full catalog",
+      );
+    }
     const source = await ctx.db
       .query("githubSkillSources")
       .withIndex("by_repo", (q) => q.eq("repo", "NVIDIA/skills"))
@@ -547,7 +539,11 @@ export const startNvidiaSkillEvaluationBackfill = mutation({
     await ctx.scheduler.runAfter(
       0,
       internalRefs.skillEvaluations.backfillNvidiaSkillEvaluationsPageInternal as never,
-      { sourceId: source._id, cursor: null } as never,
+      {
+        sourceId: source._id,
+        cursor: null,
+        ...(args.sourcePaths ? { sourcePaths: args.sourcePaths } : {}),
+      } as never,
     );
     return { started: true as const, sourceId: source._id };
   },
@@ -636,6 +632,7 @@ export const backfillNvidiaSkillEvaluationsPageInternal = internalMutation({
   args: {
     sourceId: v.id("githubSkillSources"),
     cursor: v.union(v.string(), v.null()),
+    sourcePaths: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const page = await ctx.db
@@ -650,6 +647,7 @@ export const backfillNvidiaSkillEvaluationsPageInternal = internalMutation({
         !skill.githubCurrentCommit ||
         !skill.githubCurrentContentHash ||
         !skill.githubPath ||
+        (args.sourcePaths && !args.sourcePaths.includes(skill.githubPath)) ||
         (skill.githubScanStatus !== "clean" && skill.githubScanStatus !== "suspicious")
       ) {
         continue;
@@ -669,7 +667,11 @@ export const backfillNvidiaSkillEvaluationsPageInternal = internalMutation({
       await ctx.scheduler.runAfter(
         0,
         internalRefs.skillEvaluations.backfillNvidiaSkillEvaluationsPageInternal as never,
-        { sourceId: args.sourceId, cursor: page.continueCursor } as never,
+        {
+          sourceId: args.sourceId,
+          cursor: page.continueCursor,
+          ...(args.sourcePaths ? { sourcePaths: args.sourcePaths } : {}),
+        } as never,
       );
     }
     return { queued, isDone: page.isDone, cursor: page.continueCursor };

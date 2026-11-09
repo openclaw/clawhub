@@ -19,7 +19,15 @@ const MAX_GITHUB_TREE_ENTRIES = 100_000;
 const MAX_CONTROLLED_DETAIL_BYTES = 1024 * 1024;
 const MAX_PROOF_METADATA_BYTES = 1024 * 1024;
 const MAX_PROOF_SNAPSHOT_BYTES = 32 * 1024;
+// Hard capacity for any measured skills.sh source and proof snapshot. The mirror window below
+// must stay inside it; Convex enforces the same capacity on run totals and cursors.
 const MAX_PROOF_SOURCE_ROWS = 50_000;
+// skills.sh ranks the all-time view by installs and serves up to a 100k-row window (2026-10), and
+// ranks the trending view by recent growth. A mirrored leaderboard row costs ~0.4s of detail and
+// audit work, so the daily sync mirrors only the top rows of each view to finish in ~35 minutes.
+// Lower-ranked rows are deliberately not mirrored; leaderboard reconciliation tombstones previously
+// mirrored rows that fall out of the window and reactivates them if they return.
+const SKILLS_SH_MIRROR_WINDOW_ROWS = 4_000;
 const GITHUB_LOCATOR_CONCURRENCY = 8;
 const MINIMUM_API_REQUEST_INTERVAL_MS = 125;
 const MAX_INLINE_RETRY_AFTER_MS = 30_000;
@@ -290,9 +298,17 @@ type SkillsShCatalogSearch = {
 
 type SkillsShCatalogPagination = SkillsShCatalogPage["pagination"];
 
+type SkillsShSourceWindow = {
+  rows: number;
+  upstreamTotal: number;
+  truncated: boolean;
+};
+
 export type SkillsShMirrorProofEvidence = {
   pagination: {
-    endpointExhausted: true;
+    // False when the upstream total exceeded the mirror window and measurement stopped there.
+    endpointExhausted: boolean;
+    window?: SkillsShSourceWindow;
     databaseCoverage: "leaderboard-only";
     page0: SkillsShCatalogPagination;
     requestedPages: Array<{
@@ -313,7 +329,7 @@ export type SkillsShMirrorProofEvidence = {
       page: number;
       count: number;
       pagination: SkillsShCatalogPagination;
-    };
+    } | null;
     uniqueIds: number;
     duplicateIds: number;
   };
@@ -731,11 +747,11 @@ export function buildSkillsShMirrorObservation(
   row: SkillsShCatalogListRow,
   sourcePageHtml?: string,
 ) {
-  const externalId = row.id.trim().toLowerCase();
-  const slug = row.slug.trim().toLowerCase();
-  const source = row.source.trim().toLowerCase();
+  const externalId = typeof row.id === "string" ? row.id.trim().toLowerCase() : "";
+  const slug = typeof row.slug === "string" ? row.slug.trim().toLowerCase() : "";
+  const source = typeof row.source === "string" ? row.source.trim().toLowerCase() : "";
   const upstreamSourceType = normalizeUpstreamSourceType(row.sourceType);
-  const installUrl = row.installUrl?.trim() || null;
+  const installUrl = typeof row.installUrl === "string" ? row.installUrl.trim() || null : null;
   const identityError = (reason: SkillsShMirrorQuarantineReason) =>
     new SkillsShMirrorIdentityError(
       reason,
@@ -746,8 +762,8 @@ export function buildSkillsShMirrorObservation(
   const base = {
     externalId,
     slug,
-    displayName: row.name.trim() || slug,
-    sourceUrl: row.url.trim(),
+    displayName: typeof row.name === "string" ? row.name.trim() || slug : slug,
+    sourceUrl: typeof row.url === "string" ? row.url.trim() : "",
     upstreamInstalls: row.installs,
     upstreamSourceType,
   };
@@ -812,11 +828,16 @@ function safeMirrorIdentityError(row: SkillsShCatalogListRow, error: unknown) {
   return quarantinedMirrorRow(row, reason);
 }
 
+function mirrorIdentityText(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return "missing";
+  return value.trim().toLowerCase().slice(0, maxLength) || "missing";
+}
+
 function quarantinedMirrorRow(row: SkillsShCatalogListRow, reason: SkillsShMirrorQuarantineReason) {
-  const externalId = row.id.trim().toLowerCase().slice(0, 512) || "missing";
+  const externalId = mirrorIdentityText(row.id, 512);
   const upstreamSourceType = normalizeUpstreamSourceType(row.sourceType);
-  const source = row.source.trim().toLowerCase().slice(0, 256) || "missing";
-  const installUrl = row.installUrl?.trim() || null;
+  const source = mirrorIdentityText(row.source, 256);
+  const installUrl = typeof row.installUrl === "string" ? row.installUrl.trim() || null : null;
   console.warn(
     `Quarantined skills.sh mirror row: ${externalId} ` +
       `(reason=${reason}, ` +
@@ -1432,8 +1453,10 @@ export type SkillsShTrendingSourceMeasurement = {
   sourceDurationMs: number;
   snapshotHash: string;
   sourcePages: SkillsShMirrorCapturedSourcePage[];
+  upstreamTotal: number;
   evidence: {
-    endpointExhausted: true;
+    endpointExhausted: boolean;
+    window: SkillsShSourceWindow;
     requestedPages: Array<{
       page: number;
       count: number;
@@ -1466,11 +1489,13 @@ export async function measureSkillsShTrendingSource(
   const pace = createRequestPacer(minimumApiRequestIntervalMs);
   const startedAt = performance.now();
   const present = new Set<string>();
+  let identityRows = 0;
   const sourcePages: SkillsShMirrorCapturedSourcePage[] = [];
   const requestedPages: SkillsShTrendingSourceMeasurement["evidence"]["requestedPages"] = [];
   let page = 0;
   let sourceRequests = 0;
   let observedRows = 0;
+  let upstreamTotal: number | null = null;
   let catalogTotal: number | null = null;
   while (true) {
     await pace();
@@ -1487,31 +1512,38 @@ export async function measureSkillsShTrendingSource(
     ) {
       throw new Error("skills.sh trending source returned an invalid page contract");
     }
-    if (catalogTotal === null) catalogTotal = response.pagination.total;
+    if (upstreamTotal === null || catalogTotal === null) {
+      upstreamTotal = response.pagination.total;
+      catalogTotal = Math.min(upstreamTotal, SKILLS_SH_MIRROR_WINDOW_ROWS);
+    }
     if (catalogTotal < 1 || catalogTotal > MAX_PROOF_SOURCE_ROWS) {
       throw new Error(
-        `skills.sh trending source total ${catalogTotal} exceeds the bounded source capacity`,
+        `skills.sh trending source window ${catalogTotal} is outside the bounded source capacity`,
       );
     }
-    if (response.pagination.total !== catalogTotal) {
+    if (response.pagination.total !== upstreamTotal) {
       throw new Error("skills.sh trending source total changed during measurement");
     }
-    const identityHash = skillsShPageIdentityHash(response.data);
-    const contentHash = skillsShPageContentHash(response.data);
+    const windowed = windowSkillsShSourcePage(response, observedRows, {
+      upstreamTotal,
+      catalogTotal,
+    });
+    const capturedRows = capturedSkillsShCatalogRows(windowed.data, page);
+    const identityHash = skillsShPageIdentityHash(capturedRows, page);
+    const contentHash = skillsShPageContentHash(windowed.data, page);
     requestedPages.push({
       page,
-      count: response.data.length,
-      hasMore: response.pagination.hasMore,
+      count: windowed.data.length,
+      hasMore: windowed.hasMore,
       identityHash,
       contentHash,
     });
-    const capturedRows = capturedSkillsShCatalogRows(response.data);
     if (capturedRows.length > 0) {
       const captured = {
         page,
         sourceTotal: catalogTotal,
         pageLength: capturedRows.length,
-        hasMore: response.pagination.hasMore,
+        hasMore: windowed.hasMore,
         identityHash,
         contentHash,
         sourceBytes: pageResponse.sourceBytes,
@@ -1522,12 +1554,16 @@ export async function measureSkillsShTrendingSource(
         serializedBytes: Buffer.byteLength(JSON.stringify(captured), "utf8"),
       });
     }
-    observedRows += response.data.length;
+    observedRows += windowed.data.length;
     if (observedRows > catalogTotal) {
       throw new Error("skills.sh trending source exceeded its reported total");
     }
-    for (const row of response.data) present.add(row.id.trim().toLowerCase());
-    if (!response.pagination.hasMore) break;
+    for (const row of windowed.data) {
+      if (typeof row.id !== "string" || !row.id.trim()) continue;
+      identityRows += 1;
+      present.add(row.id.trim().toLowerCase());
+    }
+    if (!windowed.hasMore) break;
     if (
       observedRows >= catalogTotal ||
       page + 1 >= Math.ceil(MAX_PROOF_SOURCE_ROWS / MAX_SOURCE_PAGE_SIZE)
@@ -1536,37 +1572,41 @@ export async function measureSkillsShTrendingSource(
     }
     page += 1;
   }
-  if (catalogTotal === null || observedRows !== catalogTotal) {
+  if (upstreamTotal === null || catalogTotal === null || observedRows !== catalogTotal) {
     throw new Error(
       `skills.sh trending source observed ${observedRows} of ${catalogTotal ?? 0} rows`,
     );
   }
-  const duplicateIds = observedRows - present.size;
+  const duplicateIds = identityRows - present.size;
   if (duplicateIds !== 0) {
     throw new Error(`skills.sh trending source contains ${duplicateIds} duplicate identities`);
   }
-  const beyondEndPage = page + 1;
-  await pace();
-  const beyondEnd = await fetchSkillsShCatalogPage(
-    { page: beyondEndPage, perPage: MAX_SOURCE_PAGE_SIZE, view: "trending" },
-    options,
-  );
-  sourceRequests += 1;
-  requestedPages.push({
-    page: beyondEndPage,
-    count: beyondEnd.data.length,
-    hasMore: beyondEnd.pagination.hasMore,
-    identityHash: skillsShPageIdentityHash(beyondEnd.data),
-    contentHash: skillsShPageContentHash(beyondEnd.data),
-  });
-  if (
-    beyondEnd.pagination.page !== beyondEndPage ||
-    beyondEnd.pagination.perPage !== MAX_SOURCE_PAGE_SIZE ||
-    beyondEnd.pagination.total !== catalogTotal ||
-    beyondEnd.pagination.hasMore ||
-    beyondEnd.data.length !== 0
-  ) {
-    throw new Error("skills.sh trending source did not return an empty beyond-end page");
+  const truncated = upstreamTotal > catalogTotal;
+  // A truncated window cannot prove an empty beyond-end page; it ends at the window instead.
+  if (!truncated) {
+    const beyondEndPage = page + 1;
+    await pace();
+    const beyondEnd = await fetchSkillsShCatalogPage(
+      { page: beyondEndPage, perPage: MAX_SOURCE_PAGE_SIZE, view: "trending" },
+      options,
+    );
+    sourceRequests += 1;
+    requestedPages.push({
+      page: beyondEndPage,
+      count: beyondEnd.data.length,
+      hasMore: beyondEnd.pagination.hasMore,
+      identityHash: skillsShPageIdentityHash(beyondEnd.data),
+      contentHash: skillsShPageContentHash(beyondEnd.data),
+    });
+    if (
+      beyondEnd.pagination.page !== beyondEndPage ||
+      beyondEnd.pagination.perPage !== MAX_SOURCE_PAGE_SIZE ||
+      beyondEnd.pagination.total !== catalogTotal ||
+      beyondEnd.pagination.hasMore ||
+      beyondEnd.data.length !== 0
+    ) {
+      throw new Error("skills.sh trending source did not return an empty beyond-end page");
+    }
   }
   const snapshotHash = sha256Hex(
     JSON.stringify({
@@ -1582,6 +1622,7 @@ export async function measureSkillsShTrendingSource(
   );
   return {
     catalogTotal,
+    upstreamTotal,
     observedAt,
     pageSize: MAX_SOURCE_PAGE_SIZE,
     sourceRequests,
@@ -1589,11 +1630,29 @@ export async function measureSkillsShTrendingSource(
     snapshotHash,
     sourcePages,
     evidence: {
-      endpointExhausted: true,
+      endpointExhausted: !truncated,
+      window: { rows: SKILLS_SH_MIRROR_WINDOW_ROWS, upstreamTotal, truncated },
       requestedPages,
       uniqueIds: present.size,
       duplicateIds,
     },
+  };
+}
+
+// Clip an upstream page to the mirror window. A truncated source ends at the window: its last page
+// reports hasMore=false, so the captured source is complete and the durable run finishes there.
+function windowSkillsShSourcePage(
+  response: SkillsShCatalogPage,
+  observedRows: number,
+  window: { upstreamTotal: number; catalogTotal: number },
+) {
+  if (window.upstreamTotal <= window.catalogTotal) {
+    return { data: response.data, hasMore: response.pagination.hasMore };
+  }
+  const data = response.data.slice(0, Math.max(0, window.catalogTotal - observedRows));
+  return {
+    data,
+    hasMore: response.pagination.hasMore && observedRows + data.length < window.catalogTotal,
   };
 }
 
@@ -1649,25 +1708,34 @@ function normalizedTaxonomyFields(value: unknown) {
     .sort();
 }
 
-function skillsShPageIdentityHash(rows: SkillsShCatalogListRow[]) {
-  return sha256Hex(rows.map((row) => `${row.id.trim().toLowerCase()}\n`).join(""));
+export function skillsShPageIdentityHash(rows: SkillsShCatalogListRow[], _page = 0) {
+  // Hash the id text that is already stored. A legacy blank id stays an empty
+  // line. A later capture's missing:<page>:<offset> placeholder stays itself.
+  return sha256Hex(
+    rows
+      .map((row) => `${typeof row.id === "string" ? row.id.trim().toLowerCase() : ""}\n`)
+      .join(""),
+  );
 }
 
-function capturedSkillsShCatalogRows(rows: SkillsShCatalogListRow[]) {
-  return rows.map((row) => ({
-    id: row.id,
-    installUrl: row.installUrl,
+function capturedSkillsShCatalogRows(rows: SkillsShCatalogListRow[], page = 0) {
+  return rows.map((row, index) => ({
+    // Keep source positions in the existing string-typed capture contract.
+    // A missing ID gets a per-position, non-identity value so Trending replay
+    // does not treat two quarantined rows as a repeated real skill.
+    id: typeof row.id === "string" && row.id.trim() ? row.id : `missing:${page}:${index}`,
+    installUrl: typeof row.installUrl === "string" ? row.installUrl : null,
     installs: row.installs,
-    name: row.name,
-    slug: row.slug,
-    source: row.source,
-    sourceType: row.sourceType,
-    url: row.url,
+    name: typeof row.name === "string" ? row.name : "",
+    slug: typeof row.slug === "string" ? row.slug : "",
+    source: typeof row.source === "string" ? row.source : "",
+    sourceType: typeof row.sourceType === "string" ? row.sourceType : "",
+    url: typeof row.url === "string" ? row.url : "",
   }));
 }
 
-function skillsShPageContentHash(rows: SkillsShCatalogListRow[]) {
-  return sha256Hex(JSON.stringify(capturedSkillsShCatalogRows(rows)));
+function skillsShPageContentHash(rows: SkillsShCatalogListRow[], page = 0) {
+  return sha256Hex(JSON.stringify(capturedSkillsShCatalogRows(rows, page)));
 }
 
 function parseSkillsShPageFieldEvidence(html: string) {
@@ -1830,6 +1898,7 @@ export async function measureSkillsShMirrorProofSource(
   assertIntegerInRange("minimumApiRequestIntervalMs", minimumApiRequestIntervalMs, 0, 1_000);
   const pace = createRequestPacer(minimumApiRequestIntervalMs);
   const present = new Set<string>();
+  let identityRows = 0;
   const rowKeys = new Set<string>();
   const taxonomyFields = new Set<string>();
   const requestedPages: SkillsShMirrorProofEvidence["pagination"]["requestedPages"] = [];
@@ -1837,6 +1906,7 @@ export async function measureSkillsShMirrorProofSource(
   let page = 0;
   let sourceRequests = 0;
   let observedRows = 0;
+  let upstreamTotal: number | null = null;
   let catalogTotal: number | null = null;
   let firstPage: SkillsShCatalogPage | null = null;
   let finalNonemptyPage: SkillsShMirrorProofEvidence["pagination"]["finalNonemptyPage"] | null =
@@ -1857,26 +1927,33 @@ export async function measureSkillsShMirrorProofSource(
     ) {
       throw new Error("skills.sh proof source returned an invalid page contract");
     }
-    if (catalogTotal === null) catalogTotal = response.pagination.total;
+    if (upstreamTotal === null || catalogTotal === null) {
+      upstreamTotal = response.pagination.total;
+      catalogTotal = Math.min(upstreamTotal, SKILLS_SH_MIRROR_WINDOW_ROWS);
+    }
     if (catalogTotal > MAX_PROOF_SOURCE_ROWS) {
       throw new Error(
-        `skills.sh proof source total ${catalogTotal} exceeds ${MAX_PROOF_SOURCE_ROWS} rows`,
+        `skills.sh proof source window ${catalogTotal} exceeds ${MAX_PROOF_SOURCE_ROWS} rows`,
       );
     }
-    if (response.pagination.total !== catalogTotal) {
+    if (response.pagination.total !== upstreamTotal) {
       throw new Error("skills.sh catalog source total changed during proof measurement");
     }
     firstPage ??= response;
-    const identityHash = skillsShPageIdentityHash(response.data);
-    const contentHash = skillsShPageContentHash(response.data);
-    const capturedRows = capturedSkillsShCatalogRows(response.data);
+    const windowed = windowSkillsShSourcePage(response, observedRows, {
+      upstreamTotal,
+      catalogTotal,
+    });
+    const capturedRows = capturedSkillsShCatalogRows(windowed.data, page);
+    const identityHash = skillsShPageIdentityHash(capturedRows, page);
+    const contentHash = skillsShPageContentHash(windowed.data, page);
     const captured =
-      response.data.length > 0
+      windowed.data.length > 0
         ? {
             page,
             sourceTotal: catalogTotal,
-            pageLength: response.data.length,
-            hasMore: response.pagination.hasMore,
+            pageLength: windowed.data.length,
+            hasMore: windowed.hasMore,
             identityHash,
             contentHash,
             sourceBytes: pageResponse.sourceBytes,
@@ -1888,20 +1965,20 @@ export async function measureSkillsShMirrorProofSource(
       : undefined;
     requestedPages.push({
       page,
-      count: response.data.length,
-      hasMore: response.pagination.hasMore,
+      count: windowed.data.length,
+      hasMore: windowed.hasMore,
       identityHash,
       contentHash,
       ...(captured ? { sourceBytes: pageResponse.sourceBytes, serializedBytes } : {}),
     });
-    observedRows += response.data.length;
+    observedRows += windowed.data.length;
     if (observedRows > catalogTotal || observedRows > MAX_PROOF_SOURCE_ROWS) {
       throw new Error("skills.sh proof source exceeded its reported total");
     }
     if (captured && serializedBytes !== undefined) {
       finalNonemptyPage = {
         page,
-        count: response.data.length,
+        count: windowed.data.length,
         pagination: response.pagination,
       };
       sourcePages.push({
@@ -1909,13 +1986,28 @@ export async function measureSkillsShMirrorProofSource(
         serializedBytes,
       });
     }
-    for (const row of response.data) {
-      present.add(row.id.trim().toLowerCase());
+    for (const row of windowed.data) {
+      // Missing IDs still occupy a captured row, but are not duplicate identities.
+      if (typeof row.id === "string" && row.id.trim()) {
+        identityRows += 1;
+        present.add(row.id.trim().toLowerCase());
+      }
       for (const key of sortedObjectKeys(row)) rowKeys.add(key);
       for (const key of normalizedTaxonomyFields(row)) taxonomyFields.add(key);
-      if (!sampleRow && row.id.split("/").length === 3) sampleRow = row;
+      if (
+        !sampleRow &&
+        typeof row.id === "string" &&
+        row.id.split("/").length === 3 &&
+        typeof row.source === "string" &&
+        row.source.trim() &&
+        typeof row.slug === "string" &&
+        row.slug.trim() &&
+        typeof row.url === "string" &&
+        hasExactSkillsShPagePath(row.url, row.id.trim().toLowerCase().split("/"))
+      )
+        sampleRow = row;
     }
-    if (!response.pagination.hasMore) break;
+    if (!windowed.hasMore) break;
     if (
       observedRows >= catalogTotal ||
       page + 1 >= Math.ceil(MAX_PROOF_SOURCE_ROWS / MAX_SOURCE_PAGE_SIZE)
@@ -1924,42 +2016,52 @@ export async function measureSkillsShMirrorProofSource(
     }
     page += 1;
   }
-  if (catalogTotal === null || catalogTotal < 1) {
+  if (upstreamTotal === null || catalogTotal === null || catalogTotal < 1) {
     throw new Error("skills.sh proof source is empty");
   }
   if (observedRows !== catalogTotal) {
     throw new Error(`skills.sh proof source observed ${observedRows} of ${catalogTotal} rows`);
   }
-  if (present.size !== observedRows) {
+  if (present.size !== identityRows) {
     throw new Error(
-      `skills.sh proof source contains duplicate identities: ${observedRows - present.size}`,
+      `skills.sh proof source contains duplicate identities: ${identityRows - present.size}`,
     );
   }
   if (!firstPage || !finalNonemptyPage || !sampleRow) {
     throw new Error("skills.sh proof source lacks a metadata sample");
   }
-  const beyondEndPageNumber = page + 1;
-  await pace();
-  const beyondEnd = await fetchSkillsShCatalogPage(
-    { page: beyondEndPageNumber, perPage: MAX_SOURCE_PAGE_SIZE },
-    options,
-  );
-  sourceRequests += 1;
-  requestedPages.push({
-    page: beyondEndPageNumber,
-    count: beyondEnd.data.length,
-    hasMore: beyondEnd.pagination.hasMore,
-    identityHash: skillsShPageIdentityHash(beyondEnd.data),
-    contentHash: skillsShPageContentHash(beyondEnd.data),
-  });
-  if (
-    beyondEnd.pagination.page !== beyondEndPageNumber ||
-    beyondEnd.pagination.perPage !== MAX_SOURCE_PAGE_SIZE ||
-    beyondEnd.pagination.total !== catalogTotal ||
-    beyondEnd.pagination.hasMore ||
-    beyondEnd.data.length !== 0
-  ) {
-    throw new Error("skills.sh proof source did not return an empty beyond-end page");
+  const truncated = upstreamTotal > catalogTotal;
+  let firstBeyondEndPage: SkillsShMirrorProofEvidence["pagination"]["firstBeyondEndPage"] = null;
+  // A truncated window cannot prove an empty beyond-end page; it ends at the window instead.
+  if (!truncated) {
+    const beyondEndPageNumber = page + 1;
+    await pace();
+    const beyondEnd = await fetchSkillsShCatalogPage(
+      { page: beyondEndPageNumber, perPage: MAX_SOURCE_PAGE_SIZE },
+      options,
+    );
+    sourceRequests += 1;
+    requestedPages.push({
+      page: beyondEndPageNumber,
+      count: beyondEnd.data.length,
+      hasMore: beyondEnd.pagination.hasMore,
+      identityHash: skillsShPageIdentityHash(beyondEnd.data),
+      contentHash: skillsShPageContentHash(beyondEnd.data),
+    });
+    if (
+      beyondEnd.pagination.page !== beyondEndPageNumber ||
+      beyondEnd.pagination.perPage !== MAX_SOURCE_PAGE_SIZE ||
+      beyondEnd.pagination.total !== catalogTotal ||
+      beyondEnd.pagination.hasMore ||
+      beyondEnd.data.length !== 0
+    ) {
+      throw new Error("skills.sh proof source did not return an empty beyond-end page");
+    }
+    firstBeyondEndPage = {
+      page: beyondEndPageNumber,
+      count: 0,
+      pagination: beyondEnd.pagination,
+    };
   }
   await pace();
   const search = await searchSkillsShCatalog(
@@ -2008,6 +2110,7 @@ export async function measureSkillsShMirrorProofSource(
   ).sort();
   return {
     catalogTotal,
+    upstreamTotal,
     controlledExternalIds: [...SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS],
     controlledOverlayExternalIds: SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS.filter((externalId) =>
       present.has(externalId),
@@ -2020,18 +2123,15 @@ export async function measureSkillsShMirrorProofSource(
     sourcePages,
     evidence: {
       pagination: {
-        endpointExhausted: true,
+        endpointExhausted: !truncated,
+        window: { rows: SKILLS_SH_MIRROR_WINDOW_ROWS, upstreamTotal, truncated },
         databaseCoverage: "leaderboard-only",
         page0: firstPage.pagination,
         requestedPages,
         finalNonemptyPage,
-        firstBeyondEndPage: {
-          page: beyondEndPageNumber,
-          count: 0,
-          pagination: beyondEnd.pagination,
-        },
+        firstBeyondEndPage,
         uniqueIds: present.size,
-        duplicateIds: observedRows - present.size,
+        duplicateIds: identityRows - present.size,
       },
       fields: {
         sampledExternalId: sampleRow.id,
@@ -2270,7 +2370,7 @@ export async function fetchSkillsShMirrorBatch(
     offset: args.offset,
     pageLength: sourcePage.data.length,
     sourceTotal: sourcePage.pagination.total,
-    sourcePageIdentityHash: skillsShPageIdentityHash(sourcePage.data),
+    sourcePageIdentityHash: skillsShPageIdentityHash(sourcePage.data, args.page),
     hasMore: sourcePage.pagination.hasMore,
     sourceRequests,
     sourceBytes: sourcePageResponse.sourceBytes + rowSourceBytes,

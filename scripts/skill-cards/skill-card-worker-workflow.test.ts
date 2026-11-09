@@ -1,5 +1,9 @@
 /* @vitest-environment node */
-import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
@@ -26,6 +30,88 @@ function expectSecretStepAllowlist(
 }
 
 describe("skill-card-worker workflow", () => {
+  it.each(["0.164.0", "0.160.0"])(
+    "selects or rejects installed Codex %s despite an earlier ambient CLI",
+    async (installedVersion) => {
+      const workflow = parseYaml(await readFile(".github/workflows/skill-card-worker.yml", "utf8"));
+      const step = workflow.jobs["skill-card-worker"].steps.find((entry: WorkflowStep) =>
+        entry.name?.startsWith("Install Codex CLI"),
+      );
+      let command = step?.run;
+      if (step?.uses?.startsWith("./")) {
+        const action = parseYaml(await readFile(join(step.uses, "action.yml"), "utf8"));
+        expect(action.runs.steps[0]).toMatchObject({
+          uses: "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          with: { "node-version": "24.22.1" },
+        });
+        command = action.runs.steps.find((entry: WorkflowStep) => entry.run)?.run;
+      }
+      if (!command) throw new Error("Missing worker dependency installation command");
+      const root = await mkdtemp(join(tmpdir(), "skill-card-runtime-"));
+      try {
+        const ambient = join(root, "ambient");
+        const runnerTemp = join(root, "runner-temp");
+        const githubPath = join(root, "github-path");
+        await mkdir(ambient);
+        await mkdir(runnerTemp);
+        await writeFile(githubPath, "");
+        const commands = {
+          codex: '#!/bin/sh\nprintf "%s\\n" "codex-cli ambient-old"\n',
+          python3: "#!/bin/sh\nexit 0\n",
+          npm: [
+            "#!/bin/sh",
+            "set -eu",
+            'prefix="$npm_config_prefix"',
+            'package=""',
+            "global=false",
+            'while [ "$#" -gt 0 ]; do',
+            '  case "$1" in',
+            "    install) shift;;",
+            "    -g|--global) global=true; shift;;",
+            '    @openai/codex@0.164.0) package="$1"; shift;;',
+            '    --prefix) prefix="$2"; shift 2;;',
+            "    *) exit 1;;",
+            "  esac",
+            "done",
+            'test "$global" = true && test "$package" = @openai/codex@0.164.0',
+            'mkdir -p "$prefix/bin"',
+            "printf '%s\\n' '#!/bin/sh' \"printf '%s\\\\n' 'codex-cli $WORKFLOW_TEST_CODEX_VERSION'\" > \"$prefix/bin/codex\"",
+            'chmod 755 "$prefix/bin/codex"',
+          ].join("\n"),
+        };
+        for (const [name, content] of Object.entries(commands)) {
+          await writeFile(join(ambient, name), content);
+          await chmod(join(ambient, name), 0o755);
+        }
+        const env = {
+          PATH: ambient + ":/usr/bin:/bin",
+          RUNNER_TEMP: runnerTemp,
+          GITHUB_PATH: githubPath,
+          npm_config_prefix: join(root, "npm-global"),
+          WORKFLOW_TEST_CODEX_VERSION: installedVersion,
+        };
+        if (installedVersion !== "0.164.0") {
+          await expect(promisify(execFile)("bash", ["-e", "-c", command], { env })).rejects.toThrow(
+            "Expected codex-cli 0.164.0 after installation; got codex-cli 0.160.0",
+          );
+          expect(await readFile(githubPath, "utf8")).toBe("");
+          return;
+        }
+        await promisify(execFile)("bash", ["-e", "-c", command], { env });
+        const addedPaths = (await readFile(githubPath, "utf8")).trim().split("\n").filter(Boolean);
+        const result = await promisify(execFile)("codex", ["--version"], {
+          env: { ...env, PATH: [...addedPaths.reverse(), env.PATH].join(":") },
+        });
+        expect(result.stdout.trim()).toBe("codex-cli 0.164.0");
+        expect(
+          (await promisify(execFile)(join(ambient, "codex"), ["--version"])).stdout.trim(),
+        ).toBe("codex-cli ambient-old");
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("isolates fixture dispatch from queue draining and backend credentials", async () => {
     const workflow = parseYaml(await readFile(".github/workflows/skill-card-worker.yml", "utf8"));
     expect(workflow.on.workflow_dispatch.inputs["fixture-only"]).toMatchObject({
@@ -48,6 +134,9 @@ describe("skill-card-worker workflow", () => {
     expect(JSON.stringify(fixture)).not.toMatch(
       /CONVEX_URL|VITE_CONVEX_URL|upload-artifact|run-skill-card-worker/,
     );
+    expect(
+      fixture.steps.find((step: WorkflowStep) => step.name === "Install Codex CLI")?.uses,
+    ).toBe("./.github/actions/setup-codex");
     expect(fixture.steps.at(-1).run).toBe("bun scripts/skill-cards/credential-canary.ts");
   });
 
@@ -107,10 +196,12 @@ describe("skill-card-worker workflow", () => {
     expect(job.steps.find((step) => step.name === "Run Skill Card worker")?.env).toHaveProperty(
       "SECURITY_SCAN_WORKER_TOKEN",
     );
+    expect(job.steps.find((step) => step.name === "Install Codex CLI")?.uses).toBe(
+      "./.github/actions/setup-codex",
+    );
     const dependenciesInstall = job.steps.find(
-      (step) => step.name === "Install Codex CLI and renderer dependencies",
+      (step) => step.name === "Install renderer dependencies",
     )?.run;
-    expect(dependenciesInstall).toContain("npm install -g @openai/codex@0.142.3");
     expect(dependenciesInstall).toContain(
       "python3 -m pip install --user --retries 5 --timeout 60 'jinja2==3.1.6'",
     );

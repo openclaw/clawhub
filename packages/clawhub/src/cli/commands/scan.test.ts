@@ -64,6 +64,7 @@ function completedScan(overrides: Record<string, unknown> = {}) {
         issues: [],
         checkedAt: 1_700_000_000_000,
       },
+      // Older registries may still send these retired sections; the CLI ignores them.
       staticAnalysis: {
         status: "clean",
         reasonCodes: [],
@@ -136,9 +137,16 @@ describe("cmdScan", () => {
       },
     });
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("Written back: yes"));
+    const printed = mockLog.mock.calls.map(([line]) => String(line)).join("\n");
+    expect(printed).toContain("ClawScan");
+    expect(printed).not.toContain("Static Analysis");
+    expect(printed).not.toContain("VirusTotal");
   });
 
-  it("submits an owner-qualified published skill without folding the owner into the slug", async () => {
+  it.each([
+    ["@tekoai/clawtopics-link", "tekoai", "clawtopics-link"],
+    [" @@Owner / Demo ", "Owner", "Demo"],
+  ])("submits the published owner and slug from %s unchanged", async (ref, ownerHandle, slug) => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
         ok: true,
@@ -151,7 +159,7 @@ describe("cmdScan", () => {
       .mockResolvedValueOnce(completedScan());
 
     await cmdScan(makeGlobalOpts(), undefined, {
-      slug: "@tekoai/clawtopics-link",
+      slug: ref,
       version: "1.0.2",
     });
 
@@ -162,13 +170,21 @@ describe("cmdScan", () => {
       body: {
         source: {
           kind: "published",
-          slug: "clawtopics-link",
-          ownerHandle: "tekoai",
+          slug,
+          ownerHandle,
           version: "1.0.2",
         },
         update: false,
       },
     });
+  });
+
+  it("rejects malformed published references before submitting a scan", async () => {
+    await expect(
+      cmdScan(makeGlobalOpts(), undefined, { slug: " @Owner/Demo/extra " }),
+    ).rejects.toThrow("Invalid skill: @Owner/Demo/extra");
+    expect(uiMocks.fail).toHaveBeenCalledWith("Invalid skill: @Owner/Demo/extra");
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 
   it("downloads the canonical report zip when --output is set", async () => {

@@ -58,8 +58,8 @@ structured classifier. The egress allowlist is normalized query, aggregate searc
 and official-gap counts, and at most three bounded public result names/summaries.
 No raw observation, identity, request context, URL, or provenance flag enters it.
 
-The versioned low-cost model is `gpt-5.4-nano-2026-03-17` with strict structured
-output, `store: false`, a 45-second timeout, and a fixed output budget. Its only
+The versioned low-cost model is `gpt-6-luna` with strict structured
+output, reasoning effort `none`, Standard service, `store: false`, a 45-second timeout, and a fixed output budget. Its only
 outputs are company/product, generic capability, or ambiguous intent, optional
 canonical name, and confidence. Only company/product confidence >= 0.8 qualifies.
 Invalid, incomplete, refused, or unavailable output makes enrichment unavailable;

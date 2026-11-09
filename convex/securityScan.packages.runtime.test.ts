@@ -65,9 +65,8 @@ describe("package bulk rescan runtime", () => {
     const { t, actorUserId, rows } = await fixture();
     const activeId = await t.mutation(internal.securityScan.enqueuePackageReleaseScanInternal, {
       releaseId: rows[0].releaseId,
-      source: "publish",
+      source: "manual",
       priority: 100,
-      waitForVtMs: 60_000,
     });
     const before = await t.run((ctx) => ctx.db.get(activeId.jobId!));
     const dry = await t.mutation(enqueue, { actorUserId, dryRun: true });

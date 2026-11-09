@@ -3,6 +3,23 @@ import type { MutationCtx } from "../_generated/server";
 import { toDayKey } from "./leaderboards";
 import { assertRankingMetricWritesAllowed } from "./rankingMetricsImportLock";
 
+export function createInitialSkillStats(versions = 0) {
+  return {
+    statsDownloads: 0,
+    statsStars: 0,
+    statsInstallsCurrent: 0,
+    statsInstallsAllTime: 0,
+    stats: {
+      downloads: 0,
+      installsCurrent: 0,
+      installsAllTime: 0,
+      stars: 0,
+      versions,
+      comments: 0,
+    },
+  };
+}
+
 type SkillStatDeltas = {
   downloads?: number;
   stars?: number;

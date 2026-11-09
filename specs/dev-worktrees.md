@@ -54,7 +54,14 @@ Worktrunk runs the configured pre-start hooks before starting the detached serve
 ```text
 wt step copy-ignored || true; bun run setup:worktree -- --quiet --force --prefer-fallback
 test -x node_modules/.bin/vite || bun install
+bun run --cwd packages/schema build
 ```
+
+The schema build must run even when copied dependencies avoid an install.
+Codex setup, its Convex action, and the seed entrypoints also build before
+starting a backend when they reuse dependencies.
+`packages/schema/dist` is ignored build output, so a new checkout cannot rely
+on those files being present or matching its schema sources.
 
 The copy step is best effort. Codex-managed worktrees copy ignored files when they are created, and Worktrunk-created or older worktrees may still need the setup fallback. The follow-up setup step uses `--force --prefer-fallback` because a Worktrunk copy can materialize stale regular `.env.local` / `.convex/` paths before setup selects a coherent fallback source. If `.convex` is already a symlink to the source worktree, Worktrunk may report that it refused to copy `.convex` outside the destination worktree. That is acceptable as long as `setup:worktree` validates or links `.convex` and `.env.local`, and dependencies are present.
 

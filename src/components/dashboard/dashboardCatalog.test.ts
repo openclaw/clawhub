@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { makeDashboardPackage, makeDashboardSkill } from "../../__tests__/helpers/dashboard";
 import { collectAttentionItems } from "./dashboardAttention";
 import {
-  computeDashboardStats,
   filterByAttention,
   filterByKind,
   mergeDashboardItems,
@@ -12,79 +12,19 @@ import {
 import type { DashboardPackage, DashboardSkill } from "./types";
 
 function createSkill(overrides?: Partial<DashboardSkill>): DashboardSkill {
-  return {
-    _id: "skillsa",
-    _creationTime: 1,
-    slug: "alpha",
-    displayName: "Alpha",
-    summary: "Alpha skill",
-    ownerUserId: "users:local",
-    ownerPublisherId: "publishers:local",
-    canonicalSkillId: null,
-    forkOf: null,
-    latestVersionId: null,
-    tags: {},
-    badges: {},
-    stats: {
-      downloads: 10,
-      installsCurrent: 4,
-      installsAllTime: 12,
-      stars: 0,
-      versions: 1,
-    },
-    moderationStatus: "active",
-    moderationReason: null,
-    moderationVerdict: null,
-    moderationFlags: [],
-    isSuspicious: false,
-    createdAt: 1,
-    updatedAt: 100,
-    ownerPath: "local",
-    latestVersion: {
-      version: "1.0.0",
-      createdAt: 1,
-      vtStatus: "clean",
-      llmStatus: "clean",
-      staticScanStatus: "clean",
-    },
-    ...overrides,
-  } as DashboardSkill;
+  return makeDashboardSkill({ _id: "skillsa" as Id<"skills">, ...overrides });
 }
 
 function createPackage(overrides?: Partial<DashboardPackage>): DashboardPackage {
-  return {
-    _id: "packagesb",
-    name: "beta-plugin",
-    displayName: "Beta Plugin",
-    family: "code-plugin",
-    channel: "community",
-    isOfficial: false,
-    updatedAt: 200,
-    stats: { downloads: 50, installs: 20, stars: 0, versions: 1 },
-    latestRelease: {
-      version: "1.0.0",
-      createdAt: 1,
-      vtStatus: "clean",
-      llmStatus: "clean",
-      staticScanStatus: "clean",
-    },
-    ...overrides,
-  };
+  return makeDashboardPackage({ _id: "packagesb", ...overrides });
 }
 
 describe("dashboardCatalog", () => {
-  it("merges skills and plugins with aggregate stats", () => {
+  it("merges skills and plugins", () => {
     const skills = [createSkill()];
     const packages = [createPackage()];
 
     expect(mergeDashboardItems(skills, packages)).toHaveLength(2);
-    expect(computeDashboardStats(skills, packages)).toEqual({
-      skillsCount: 1,
-      pluginsCount: 1,
-      totalInstalls: 32,
-      totalDownloads: 60,
-      needsAttentionCount: 0,
-    });
   });
 
   it("filters, searches, and sorts catalog items", () => {
@@ -121,9 +61,7 @@ describe("dashboardCatalog", () => {
         latestVersion: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "suspicious",
           llmStatus: "suspicious",
-          staticScanStatus: "suspicious",
         },
       }),
       createSkill({
@@ -138,9 +76,7 @@ describe("dashboardCatalog", () => {
         latestRelease: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "malicious",
           llmStatus: "malicious",
-          staticScanStatus: "malicious",
         },
       }),
     ];
@@ -162,9 +98,7 @@ describe("dashboardCatalog", () => {
         latestVersion: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "suspicious",
           llmStatus: "suspicious",
-          staticScanStatus: "suspicious",
         },
       }),
       createSkill({
@@ -179,9 +113,7 @@ describe("dashboardCatalog", () => {
         latestRelease: {
           version: "1.0.0",
           createdAt: 1,
-          vtStatus: "malicious",
           llmStatus: "malicious",
-          staticScanStatus: "malicious",
         },
       }),
     ];

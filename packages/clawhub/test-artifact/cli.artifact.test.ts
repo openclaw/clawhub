@@ -1,15 +1,29 @@
 /* @vitest-environment node */
 
 import { spawn, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { strToU8, zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
+import { runGit } from "../test/git.js";
 
+const require = createRequire(import.meta.url);
 const packageRoot = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(packageRoot, "..", "..");
 const binPath = join(packageRoot, "bin", "clawdhub.js");
@@ -70,17 +84,6 @@ async function runNodeAsync(args: string[], envOverrides: NodeJS.ProcessEnv = {}
   return { ...result, stdout, stderr };
 }
 
-function runGit(cwd: string, args: string[]) {
-  const result = spawnSync("git", ["-C", cwd, ...args], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  if (result.status !== 0) {
-    throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
-  }
-  return result.stdout.trim();
-}
-
 afterEach(async () => {
   while (servers.length > 0) {
     await new Promise<void>((resolveClose, rejectClose) => {
@@ -112,6 +115,16 @@ function writeJson(response: ServerResponse, status: number, body: unknown) {
   response.end(JSON.stringify(body));
 }
 
+const trustedPublisherFixture = {
+  provider: "github-actions",
+  repository: "openclaw/demo-plugin",
+  repositoryId: "1",
+  repositoryOwner: "openclaw",
+  repositoryOwnerId: "2",
+  workflowFilename: "release.yml",
+  environment: "release",
+};
+
 async function startLocalRegistry(catalogItems?: unknown[]) {
   const requests: RecordedRequest[] = [];
   const skillZip = zipSync({
@@ -128,6 +141,17 @@ async function startLocalRegistry(catalogItems?: unknown[]) {
     };
     if (bodyText) recorded.body = JSON.parse(bodyText) as unknown;
     requests.push(recorded);
+
+    if (url.pathname === "/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher") {
+      if (request.method === "POST") {
+        writeJson(response, 200, { trustedPublisher: trustedPublisherFixture });
+        return;
+      }
+      if (request.method === "DELETE") {
+        writeJson(response, 200, { ok: true });
+        return;
+      }
+    }
 
     if (request.method === "GET" && url.pathname === "/api/v1/skills" && catalogItems) {
       writeJson(response, 200, { items: catalogItems, nextCursor: null });
@@ -249,6 +273,136 @@ async function writeConfigWithToken(root: string, registry: string) {
 }
 
 describe("built CLI artifact", () => {
+  it("loads the packed CLI and shared schemas without a sibling workspace package", async () => {
+    const packedRoot = await makeTmpDir("clawhub-artifact-shared-schema-");
+    const pack = spawnSync(
+      "npm",
+      ["pack", "--ignore-scripts", "--json", "--pack-destination", packedRoot],
+      { cwd: packageRoot, encoding: "utf8", timeout: 20_000 },
+    );
+    expect(pack.status, pack.stderr).toBe(0);
+    const [{ filename }] = JSON.parse(pack.stdout) as Array<{ filename: string }>;
+    const extract = spawnSync("tar", ["-xzf", join(packedRoot, filename), "-C", packedRoot], {
+      encoding: "utf8",
+    });
+    expect(extract.status, extract.stderr).toBe(0);
+    const isolatedRoot = join(packedRoot, "package");
+    const metadata = JSON.parse(await readFile(join(isolatedRoot, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(metadata.dependencies).not.toHaveProperty("clawhub-schema");
+
+    for (const dependency of Object.keys(metadata.dependencies)) {
+      const installed = require.resolve
+        .paths(dependency)
+        ?.map((base) => join(base, dependency))
+        .find(existsSync);
+      expect(installed, dependency).toBeDefined();
+      const target = join(isolatedRoot, "node_modules", dependency);
+      await mkdir(dirname(target), { recursive: true });
+      await symlink(await realpath(installed!), target, "dir");
+    }
+
+    const modules = [
+      "ark",
+      "openclawContract",
+      "packageShared",
+      "packageUploadLimits",
+      "pluginInput",
+      "schemaShared",
+      "templatePackage",
+      "templatePaths",
+      "templates",
+      "textFiles",
+    ];
+    for (const name of modules) {
+      for (const extension of [".js", ".d.ts"]) {
+        expect(await readFile(join(isolatedRoot, "dist", "schema", name + extension), "utf8")).toBe(
+          await readFile(join(repoRoot, "packages", "schema", "dist", name + extension), "utf8"),
+        );
+      }
+      const map = JSON.parse(
+        await readFile(join(isolatedRoot, "dist", "schema", name + ".js.map"), "utf8"),
+      ) as { sources: string[]; sourcesContent: string[] };
+      expect(map.sources.every((source) => !isAbsolute(source))).toBe(true);
+      expect(map.sourcesContent).toEqual([
+        await readFile(join(repoRoot, "packages", "schema", "src", name + ".ts"), "utf8"),
+      ]);
+    }
+
+    const help = runNode([join(isolatedRoot, "bin", "clawdhub.js"), "--help"]);
+    expect(help.status, help.stderr).toBe(0);
+    expect(help.stdout).toContain("Usage: clawhub");
+    const imports = modules.map(
+      (name) => pathToFileURL(join(isolatedRoot, "dist", "schema", name + ".js")).href,
+    );
+    const load = runNode([
+      "--input-type=module",
+      "--eval",
+      `for (const url of ${JSON.stringify(imports)}) await import(url);`,
+    ]);
+    expect(load.status, load.stderr).toBe(0);
+  });
+
+  it("dispatches public trusted-publisher set and delete commands from built output", async () => {
+    const { registry, requests } = await startLocalRegistry();
+    const workdir = await makeTmpDir("clawhub-artifact-trusted-publisher-");
+    const configPath = await writeConfigWithToken(workdir, registry);
+    const args = [
+      binPath,
+      "--workdir",
+      workdir,
+      "--registry",
+      registry,
+      "--no-input",
+      "package",
+      "trusted-publisher",
+    ];
+    const env = { CLAWHUB_CONFIG_PATH: configPath };
+
+    const setResult = await runNodeAsync(
+      [
+        ...args,
+        "set",
+        "@openclaw/demo-plugin",
+        "--repository",
+        "openclaw/demo-plugin",
+        "--workflow-filename",
+        "release.yml",
+        "--environment",
+        "release",
+        "--json",
+      ],
+      env,
+    );
+    expect(setResult.status, setResult.stderr).toBe(0);
+    expect(JSON.parse(setResult.stdout)).toEqual({ trustedPublisher: trustedPublisherFixture });
+
+    const deleteResult = await runNodeAsync(
+      [...args, "delete", "@openclaw/demo-plugin", "--json"],
+      env,
+    );
+    expect(deleteResult.status, deleteResult.stderr).toBe(0);
+    expect(JSON.parse(deleteResult.stdout)).toEqual({ ok: true });
+    expect(requests).toEqual([
+      {
+        method: "POST",
+        path: "/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher",
+        authorization: "Bearer test-token",
+        body: {
+          repository: "openclaw/demo-plugin",
+          workflowFilename: "release.yml",
+          environment: "release",
+        },
+      },
+      {
+        method: "DELETE",
+        path: "/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher",
+        authorization: "Bearer test-token",
+      },
+    ]);
+  });
+
   it("explores same-slug owners, null versions, and an older custom registry", async () => {
     const item = {
       slug: "shared-fixture",

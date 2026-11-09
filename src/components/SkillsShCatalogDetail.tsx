@@ -79,7 +79,6 @@ export function SkillsShCatalogDetailPage({ entry }: { entry: SkillsShCatalogDet
   const installContent = installable ? (
     <SkillCommandLineCard
       slug={entry.slug}
-      displayName={entry.displayName}
       ownerHandle={entry.owner ?? null}
       ownerId={null}
       installTarget={entry.reference}
@@ -123,7 +122,6 @@ export function SkillsShCatalogDetailPage({ entry }: { entry: SkillsShCatalogDet
       hasPluginBundle={false}
       configRequirements={undefined}
       cliHelp={undefined}
-      clawdis={undefined}
       categories={getSkillCategoriesForSkill(skill)}
       showArchiveMetadata={false}
       showBookmarkAction={false}

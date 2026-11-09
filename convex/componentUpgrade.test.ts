@@ -31,7 +31,7 @@ it("retains consumed quota and queued reports when component implementations cha
     let upgraded = false;
     const t = convexTest(schema, import.meta.glob("./**/*.ts"));
     const implementations: Record<string, Modules> = {
-      rateLimiter: switchingModules(
+      rateLimiterV2: switchingModules(
         previousRateLimiter.modules,
         rateLimiter.modules,
         () => upgraded,
@@ -41,13 +41,12 @@ it("retains consumed quota and queued reports when component implementations cha
     // Register once: replacing registrations would erase component data and queued jobs.
     // The candidate's additive schema is used throughout; this proves runtime continuity,
     // not a backend deployment or schema migration.
-    const registration = {
+    const registration: typeof t = {
       ...t,
-      registerComponent: (
-        ...[name, componentSchema, modules]: Parameters<typeof t.registerComponent>
-      ) => t.registerComponent(name, componentSchema, implementations[name] ?? modules),
+      registerComponent: (name, componentSchema, modules) =>
+        t.registerComponent(name, componentSchema, implementations[name] ?? modules),
     };
-    rateLimiter.register(registration);
+    rateLimiter.register(registration, "rateLimiterV2");
     workpool.register(registration, "searchReports");
 
     const quota = {
@@ -70,11 +69,23 @@ it("retains consumed quota and queued reports when component implementations cha
 
     upgraded = true;
     expect(await t.run((ctx) => ctx.db.query("searchReportRuns").unique())).toEqual(before);
-    expect(
-      await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, quota),
-    ).toMatchObject({
+    const denied = await t.run(async (ctx) => ({
+      now: Date.now(),
+      status: await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, quota),
+    }));
+    const windowEnd = Date.UTC(2026, 8, 16) + quota.config.period;
+    expect(denied.status).toMatchObject({
       ok: false,
-      retryAfter: 60_000,
+      retryAfter: windowEnd - denied.now,
+    });
+    vi.setSystemTime(windowEnd - 1);
+    expect(await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, quota)).toEqual({
+      ok: false,
+      retryAfter: 1,
+    });
+    vi.setSystemTime(windowEnd);
+    expect(await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, quota)).toEqual({
+      ok: true,
     });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     const ready = await signed.action(api.searchReports.get, { reportId: queued.reportId });
@@ -84,10 +95,6 @@ it("retains consumed quota and queued reports when component implementations cha
       artifactKind: "plugin",
     });
     expect(reused).toMatchObject({ reportId: queued.reportId, status: "ready" });
-    vi.advanceTimersByTime(60_000);
-    expect(await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, quota)).toEqual({
-      ok: true,
-    });
   } finally {
     vi.useRealTimers();
   }

@@ -29,9 +29,9 @@ source hash. The operator should verify the deployed SHA around each wave.
 ## Preview and review
 
 Use a stable run ID for a complete traversal. A preview writes journal rows and
-may call `gpt-5.6-luna`; it does not change the categories people browse. The
+may call `gpt-6-luna`; it does not change the categories people browse. The
 production `OPENAI_API_KEY` must exist and `OPENAI_PLUGIN_CATEGORY_MODEL` must be
-unset or `gpt-5.6-luna`. Status reports these checks as booleans, without secrets.
+unset or `gpt-6-luna`. Status reports these checks as booleans, without secrets.
 
 ```bash
 gh workflow run plugin-category-refresh.yml --repo openclaw/clawhub --ref main \
@@ -107,7 +107,7 @@ gh workflow run plugin-category-refresh.yml --repo openclaw/clawhub --ref main \
 Accept marks reviewed rows accepted and rehearses the first ten through a
 transaction that rolls back. Category state stays unchanged. A failed rehearsal
 leaves accepted rows available for inspection. Fresh generated previews must use
-classifier `plugin-single-category-v7`; bundled previews must match the pinned
+classifier `plugin-single-category-v8`; bundled previews must match the pinned
 OpenClaw source commit and manifest hashes in the checked-out inventory.
 
 ## Apply, monitor, and undo

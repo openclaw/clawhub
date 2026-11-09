@@ -5,11 +5,14 @@ import {
   assembleSkillEvalUserMessage,
   detectInjectionPatterns,
   getLlmEvalServiceTier,
+  getLlmEvalModel,
+  getLlmEvalReasoningEffort,
   parseLlmEvalResponse,
   prepareArtifactText,
   SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
   type SkillEvalContext,
 } from "./securityPrompt";
+import { parseClawdisMetadata, parseFrontmatter } from "./skills";
 
 const baseCtx: SkillEvalContext = {
   slug: "wallet-sync",
@@ -38,23 +41,6 @@ const baseCtx: SkillEvalContext = {
   skillMdContent: "# Wallet Sync\n\nUse WALLET_API_KEY to fetch balances.",
   fileContents: [{ path: "index.ts", content: "fetch('https://api.example.com/balances')" }],
   injectionSignals: [],
-  staticScan: {
-    status: "suspicious",
-    reasonCodes: ["suspicious.env_credential_access"],
-    findings: [
-      {
-        code: "suspicious.env_credential_access",
-        severity: "warn",
-        file: "SKILL.md",
-        line: 3,
-        message: "Credential-like environment variable access.",
-        evidence: "WALLET_API_KEY",
-      },
-    ],
-    summary: "Static analysis found credential access.",
-    engineVersion: "test",
-    checkedAt: Date.UTC(2026, 0, 2),
-  },
 };
 
 function newResponse(overrides: Record<string, unknown> = {}) {
@@ -300,16 +286,27 @@ describe("securityPrompt", () => {
     expect(parsed?.verdict).toBe("suspicious");
   });
 
-  it("defaults LLM evals to OpenAI priority service tier", () => {
+  it("defaults the final judge independently and preserves valid overrides", () => {
+    expect(getLlmEvalModel({})).toBe("gpt-6.1-sol");
+    expect(getLlmEvalReasoningEffort({})).toBe("high");
+    expect(getLlmEvalModel({ OPENAI_EVAL_MODEL: "custom-judge", DEFAULT_MODEL: "aig-only" })).toBe(
+      "custom-judge",
+    );
+    expect(getLlmEvalReasoningEffort({ OPENAI_EVAL_REASONING_EFFORT: "xhigh" })).toBe("xhigh");
+    expect(getLlmEvalReasoningEffort({ OPENAI_EVAL_REASONING_EFFORT: "invalid" })).toBe("high");
+    expect(getLlmEvalServiceTier({ OPENAI_EVAL_SERVICE_TIER: "priority" })).toBe("priority");
+  });
+
+  it("defaults LLM evals to OpenAI Standard service tier", () => {
     const previous = process.env.OPENAI_EVAL_SERVICE_TIER;
     delete process.env.OPENAI_EVAL_SERVICE_TIER;
 
     try {
-      expect(getLlmEvalServiceTier()).toBe("priority");
+      expect(getLlmEvalServiceTier()).toBe("default");
       process.env.OPENAI_EVAL_SERVICE_TIER = "flex";
       expect(getLlmEvalServiceTier()).toBe("flex");
       process.env.OPENAI_EVAL_SERVICE_TIER = "not-a-tier";
-      expect(getLlmEvalServiceTier()).toBe("priority");
+      expect(getLlmEvalServiceTier()).toBe("default");
     } finally {
       if (previous === undefined) {
         delete process.env.OPENAI_EVAL_SERVICE_TIER;
@@ -374,14 +371,22 @@ describe("securityPrompt", () => {
     );
   });
 
-  it("includes static scan signals in skill eval input", () => {
+  it("includes scalar frontmatter env declarations in scanner requirements", () => {
+    const frontmatter = parseFrontmatter("---\nenv: RISKSTATE_API_KEY\n---\n");
+    const message = assembleSkillEvalUserMessage({
+      ...baseCtx,
+      parsed: { frontmatter, clawdis: parseClawdisMetadata(frontmatter) },
+    });
+    expect(message).toContain("RISKSTATE_API_KEY (required)");
+  });
+
+  it("builds skill eval input without retired static scan signals", () => {
     const message = assembleSkillEvalUserMessage(baseCtx);
 
     expect(message).toContain("### SKILL.md content (quoted artifact data)");
     expect(message).toContain('"path": "SKILL.md"');
     expect(message).toContain('"content": "# Wallet Sync');
-    expect(message).toContain("### Static scan signals");
-    expect(message).toContain("suspicious.env_credential_access");
+    expect(message).not.toContain("### Static scan signals");
     expect(message).toContain("WALLET_API_KEY");
     expect(message).not.toContain("### Capability signals");
   });

@@ -37,11 +37,13 @@ on:
       runner:
         description: "Runner label for manual recovery dispatches"
         required: true
-        default: "blacksmith-8vcpu-ubuntu-2404"
+        default: "ubuntu-22.04"
         type: choice
         options:
           - "blacksmith-8vcpu-ubuntu-2404"
-          - "ubuntu-latest"
+          # Ubuntu 24.04's AppArmor policy breaks the read-only judge's bwrap
+          # setup (RTM_NEWADDR). Keep recovery pinned to the proven host image.
+          - "ubuntu-22.04"
       target-environment:
         description: "Convex deployment to process for manual recovery"
         required: true
@@ -150,8 +152,8 @@ jobs:
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
         inputs['target-environment'] == 'test'))
     name: Pre-publication publish checks shard ${{ matrix.shard }}
-    runs-on: ${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}
-    timeout-minutes: 25
+    runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
+    timeout-minutes: 100
     environment: ${{ github.ref == 'refs/heads/staging' && 'Staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'Test' || 'Production') }}
     strategy:
       fail-fast: false
@@ -169,11 +171,18 @@ jobs:
       PREPUBLICATION_CHECK_SLUG: ${{ github.event.client_payload.slug || inputs.slug || '' }}
       PREPUBLICATION_CHECK_VERSION: ${{ github.event.client_payload.version || inputs.version || '' }}
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS: ${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '900000' }}
-      # The runner is disposable and installs the reviewed, hash-locked host scanners above.
+      # Enable only after the backend accepts scannerSource on worker claims.
+      PREPUBLICATION_REPORT_SCANNER_SOURCE: ${{ vars.PREPUBLICATION_REPORT_SCANNER_SOURCE || 'false' }}
+      # The runner is disposable and installs the reviewed, source-pinned host scanners below.
       PREPUBLICATION_CLAWSCAN_SANDBOX: "off"
+      # Only plugins use Docker; skill-specific host settings remain intact.
+      PREPUBLICATION_CLAWSCAN_PLUGIN_SANDBOX: "docker"
       PREPUBLICATION_TRUFFLEHOG_IMAGE: ${{ vars.PREPUBLICATION_TRUFFLEHOG_IMAGE || 'ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056' }}
       PREPUBLICATION_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
     steps:
+      - name: Reserve hosted worker drain deadline
+        run: echo "SECURITY_SCAN_WORKER_HOST_DEADLINE_MS=$(( $(date +%s) * 1000 + 100 * 60000 - 120000 ))" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
@@ -202,45 +211,47 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
 
       - name: Install Codex CLI
-        run: |
-          set -euo pipefail
-          npm install -g @openai/codex@0.142.3
-          codex --version
+        uses: ./.github/actions/setup-codex
 
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          npm install -g @openclaw/clawscan@0.1.8
-          clawscan --version
+          sh scripts/security/install-clawscan.sh
 
       - name: Install SkillSpector
         run: |
           set -euo pipefail
-          python -m venv "$RUNNER_TEMP/skillspector-venv"
-          source "$RUNNER_TEMP/skillspector-venv/bin/activate"
-          python -m pip install --upgrade pip
-          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc'
-          echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
-          skillspector --help >/dev/null
+          sh scripts/security/install-clawscan-scanners.sh skillspector
 
       - name: Install A.I.G scanner
         run: |
           set -euo pipefail
-          python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt
-          python -c 'from importlib.metadata import version; assert version("aig-skill-scan") == "0.2.2"'
-          python -c 'import inspect; from skill_scan.utils.llm import LLM; assert "temperature=" not in inspect.getsource(LLM.chat_stream)'
-          aig-skill-scan --help >/dev/null
+          sh scripts/security/install-clawscan-scanners.sh aig
+
+      - name: Prepare qualified plugin Docker runtime
+        run: |
+          set -eu
+          . scripts/security/clawscan-install-source.sh
+          if [ "$(cat scripts/security/clawscan-source-commit.txt)" != "$qualified_source_commit" ]; then
+            echo 'Default source has no qualified plugin Docker runtime; retaining legacy setup.'
+            exit 0
+          fi
+          sh scripts/security/install-clawscan-scanners.sh aig-mcp
 
       - name: Run Test pre-publication publish worker
+        timeout-minutes: 75
         if: github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test'
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           DEFAULT_BASE_URL: https://api.openai.com/v1
-          DEFAULT_MODEL: gpt-5.6
+          DEFAULT_MODEL: ${{ vars.DEFAULT_MODEL || 'gpt-6.1-sol' }}
+          REASONING_EFFORT: ${{ vars.REASONING_EFFORT || 'medium' }}
+          SKILLSPECTOR_MODEL: ${{ vars.SKILLSPECTOR_MODEL || 'gpt-6.1-sol' }}
+          SKILLSPECTOR_REASONING_EFFORT: ${{ vars.SKILLSPECTOR_REASONING_EFFORT || 'medium' }}
           LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
@@ -256,11 +267,15 @@ jobs:
           unset worker_token
 
       - name: Run pre-publication publish worker
+        timeout-minutes: 75
         if: github.ref != 'refs/heads/main' || inputs['target-environment'] != 'test'
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           DEFAULT_BASE_URL: https://api.openai.com/v1
-          DEFAULT_MODEL: gpt-5.6
+          DEFAULT_MODEL: ${{ vars.DEFAULT_MODEL || 'gpt-6.1-sol' }}
+          REASONING_EFFORT: ${{ vars.REASONING_EFFORT || 'medium' }}
+          SKILLSPECTOR_MODEL: ${{ vars.SKILLSPECTOR_MODEL || 'gpt-6.1-sol' }}
+          SKILLSPECTOR_REASONING_EFFORT: ${{ vars.SKILLSPECTOR_REASONING_EFFORT || 'medium' }}
           LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}

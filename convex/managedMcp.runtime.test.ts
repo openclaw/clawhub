@@ -14,7 +14,7 @@ const modules = import.meta.glob("./**/*.ts");
 
 async function fixture(role: "user" | "admin") {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const userId = await t.run(async (ctx) => {
     const id = await ctx.db.insert("users", { handle: "managed-author", role });
     await ctx.db.insert("apiTokens", {
@@ -48,7 +48,11 @@ async function publicationFixture() {
     connection: {
       url: "https://mcp.example.com/mcp",
       transport: "streamable-http",
-      auth: { kind: "none" },
+      auth: {
+        kind: "oauth",
+        scope: "events:read offline_access",
+        clientMetadataUrl: "https://client.example.com/oauth/client.json",
+      },
     },
   };
   const bytes = new TextEncoder().encode(JSON.stringify(definition));

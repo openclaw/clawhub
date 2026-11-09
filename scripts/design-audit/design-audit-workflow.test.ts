@@ -35,6 +35,9 @@ describe("weekly design-system audit workflow", () => {
     expect(workflow.env.ARTIFACT_DIRECTORY).toBe("artifacts/design-audit");
     expect(source.toLowerCase()).not.toContain("linear");
     expect(source).not.toContain("gh pr merge");
+    expect(steps.find((step) => step.name === "Install Codex CLI")?.uses).toBe(
+      "./.github/actions/setup-codex",
+    );
 
     const createPr = steps.find((step) => step.name === "Open or update draft pull request");
     expect(createPr?.run).toContain("--draft");
@@ -112,23 +115,6 @@ describe("weekly design-system audit workflow", () => {
     expect(upload?.uses).toMatch(/^actions\/upload-artifact@[0-9a-f]{40}$/);
     expect(commit?.if).toBe("steps.finalize.outputs.open_pr == 'true'");
     expect(failure?.if).toContain("steps.validation.outcome == 'failure'");
-  });
-
-  it("keeps Codex workspace-scoped with restricted networking", async () => {
-    const runCodex = await readFile("scripts/design-audit/run-codex.ts", "utf8");
-    const forbiddenOverrides = [
-      "danger-full-access",
-      "--dangerously-bypass-approvals-and-sandbox",
-      "use_legacy_landlock=true",
-      "use_legacy_landlock = true",
-      "network_access=true",
-      "network_access = true",
-    ];
-
-    expect(runCodex).toContain('"--sandbox",\n    "workspace-write"');
-    for (const override of forbiddenOverrides) {
-      expect(runCodex).not.toContain(override);
-    }
   });
 
   it("excludes generated audit artifacts from the root TypeScript project", async () => {

@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { describe, expect, it } from "vitest";
 import {
   assertValidSkillSlug,
@@ -5,29 +7,19 @@ import {
   isSearchableSkillSlugShape,
   isValidSkillSlugShape,
   normalizeSkillSlug,
-  normalizeSkillSlugOrNull,
   SKILL_SLUG_CONSTRAINTS,
 } from "./skillSlugValidator";
 
 describe("normalizeSkillSlug", () => {
   it("trims and lowercases", () => {
     expect(normalizeSkillSlug("  Hello-World  ")).toBe("hello-world");
+    expect(normalizeSkillSlug("  MySkill  ")).toBe("myskill");
   });
 
-  it("returns empty string for nullish", () => {
+  it("returns empty string for blank or nullish input", () => {
+    expect(normalizeSkillSlug("   ")).toBe("");
     expect(normalizeSkillSlug(undefined)).toBe("");
     expect(normalizeSkillSlug(null)).toBe("");
-  });
-});
-
-describe("normalizeSkillSlugOrNull", () => {
-  it("returns null for empty input", () => {
-    expect(normalizeSkillSlugOrNull("   ")).toBeNull();
-    expect(normalizeSkillSlugOrNull(null)).toBeNull();
-  });
-
-  it("returns normalized slug for non-empty input", () => {
-    expect(normalizeSkillSlugOrNull("  MySkill  ")).toBe("myskill");
   });
 });
 
@@ -107,6 +99,17 @@ describe("assertValidSkillSlug", () => {
       expect(() => assertValidSkillSlug(slug)).toThrow(/protected/i);
     },
   );
+
+  it.each(["doca-comm-channel-admin", "admin-tools", "cluster-admin"])(
+    "allows descriptive slugs that contain admin as an affix: %s",
+    (slug) => {
+      expect(assertValidSkillSlug(slug)).toBe(slug);
+    },
+  );
+
+  it("keeps the exact admin slug reserved", () => {
+    expect(() => assertValidSkillSlug("admin")).toThrow(/reserved/i);
+  });
 
   it("allows reserved and protected slugs when allowReserved is set", () => {
     expect(() => assertValidSkillSlug("admin", { allowReserved: true })).not.toThrow();

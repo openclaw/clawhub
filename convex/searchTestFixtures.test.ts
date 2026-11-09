@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import {
   cleanupCanonicalSearchTestFixture,
   readCanonicalSearchTestFixture,
@@ -26,15 +27,6 @@ const cleanupFixture = (
     runId: string;
   }>
 )._handler;
-
-function chainEq(constraints: Record<string, unknown>) {
-  return {
-    eq(field: string, value: unknown) {
-      constraints[field] = value;
-      return chainEq(constraints);
-    },
-  };
-}
 
 function createDb() {
   const tables: Record<string, Array<Record<string, unknown> & { _id: string }>> = {};

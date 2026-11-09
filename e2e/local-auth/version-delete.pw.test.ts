@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { expect, type APIRequestContext, type APIResponse, test } from "@playwright/test";
 import { buildSkillDetailHref } from "../../src/lib/ownerRoute";
 import { buildPluginDetailHref } from "../../src/lib/pluginRoutes";
+import { extractLastJsonObject } from "../helpers/convexOutput";
+import { localConvexDeployment } from "../helpers/localConvex";
 import {
   expectNoFatalErrorUi,
   recoverFromTransientErrorScreen,
@@ -22,30 +23,6 @@ const LATEST_VERSION = "2.0.0";
 
 function uniqueSuffix() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-function localConvexDeployment() {
-  const raw = readFileSync(".convex/local/default/config.json", "utf8");
-  const parsed = JSON.parse(raw) as { deploymentName?: unknown };
-  if (typeof parsed.deploymentName !== "string" || !parsed.deploymentName) {
-    throw new Error("Local Convex deployment name was not available");
-  }
-  return `local:${parsed.deploymentName}`;
-}
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      // Convex can print status lines before the JSON payload.
-    }
-  }
-  throw new Error(`No JSON object in convex run output:\n${output}`);
 }
 
 function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {

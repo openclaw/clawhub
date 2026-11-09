@@ -472,8 +472,133 @@ describe("publishAttempts", () => {
       checkClaimedAt: number;
       checkClaimExpiresAt: number;
     };
-    expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBeGreaterThanOrEqual(30 * 60 * 1000);
+    expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBe(30 * 60 * 1000);
   });
+
+  it.each([undefined, "bundle-plugin", "code-plugin"])(
+    "carries the registry family through a package check claim with stored family=%s",
+    async (storedFamily) => {
+      const attempt = {
+        _id: "publishAttempts:bundle",
+        kind: "package",
+        status: "pending_checks",
+        userId: "users:publisher",
+        packageId: "packages:bundle",
+        slug: "bundle",
+        version: "1.0.0",
+        artifactFingerprint: "exact-fingerprint",
+        files: [],
+        scanContext: {
+          ...(storedFamily ? { package: { family: storedFamily } } : {}),
+          release: { artifactKind: "legacy-zip" },
+        },
+        createdAt: Date.now(),
+      };
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) =>
+            id === attempt.packageId ? { family: "bundle-plugin" } : null,
+          ),
+          normalizeId: vi.fn(),
+          patch: vi.fn(),
+          query: vi.fn(() => ({
+            withIndex: vi.fn(() => ({
+              order: vi.fn(() => ({ take: vi.fn(async () => [attempt]) })),
+            })),
+          })),
+        },
+      };
+      const claim = claimPendingChecksHandler(ctx, { claimId: "checks:bundle" });
+      if (storedFamily === "code-plugin") {
+        await expect(claim).rejects.toThrow("does not match its registry family");
+      } else {
+        await expect(claim).resolves.toMatchObject({
+          scanContext: {
+            package: { family: "bundle-plugin" },
+            release: { artifactKind: "legacy-zip" },
+          },
+        });
+        const patch = ctx.db.patch.mock.calls.find(([id]) => id === attempt._id)?.[1] as {
+          checkClaimedAt: number;
+          checkClaimExpiresAt: number;
+        };
+        expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBe(70 * 60_000);
+      }
+    },
+  );
+
+  it.each([
+    {
+      snapshot: "bundle-plugin",
+      stored: "bundle-plugin",
+      fingerprint: "exact",
+      expected: "bundle-plugin",
+    },
+    {
+      snapshot: "code-plugin",
+      stored: "code-plugin",
+      fingerprint: "exact",
+      expected: "code-plugin",
+    },
+    {
+      snapshot: "bundle-plugin",
+      stored: "code-plugin",
+      fingerprint: "exact",
+      error: "registry family",
+    },
+    {
+      snapshot: "bundle-plugin",
+      stored: "bundle-plugin",
+      fingerprint: "changed",
+      error: "original publish artifact",
+    },
+  ])(
+    "binds historical check claims to admitted release family $snapshot/$stored/$fingerprint",
+    async ({ snapshot, stored, fingerprint, expected, error }) => {
+      const attempt = {
+        _id: "publishAttempts:historical",
+        kind: "package",
+        status: "pending_checks",
+        userId: "users:publisher",
+        packageId: "packages:native",
+        packageReleaseId: "packageReleases:old",
+        slug: "native",
+        version: "1.0.0",
+        artifactFingerprint: "exact",
+        files: [],
+        scanContext: { package: { family: stored } },
+        createdAt: Date.now(),
+      };
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) =>
+            id === attempt.packageId
+              ? { family: "code-plugin" }
+              : id === attempt.packageReleaseId
+                ? {
+                    packageId: attempt.packageId,
+                    pluginFamily: snapshot,
+                    integritySha256: fingerprint,
+                  }
+                : null,
+          ),
+          normalizeId: vi.fn(),
+          patch: vi.fn(),
+          query: vi.fn(() => ({
+            withIndex: vi.fn(() => ({
+              order: vi.fn(() => ({ take: vi.fn(async () => [attempt]) })),
+            })),
+          })),
+        },
+      };
+      const claim = claimPendingChecksHandler(ctx, { claimId: "checks:historical" });
+      if (error) await expect(claim).rejects.toThrow(error);
+      else
+        await expect(claim).resolves.toMatchObject({
+          scanContext: { package: { family: expected } },
+        });
+    },
+  );
 
   it("claims fresh staged publishes before older scanner retries", async () => {
     const now = Date.now();
@@ -1707,6 +1832,7 @@ describe("publishAttempts", () => {
   it("clears private pending skill metadata when finalization is recorded", async () => {
     const now = Date.now();
     const ctx = {
+      scheduler: { runAfter: vi.fn() },
       db: {
         delete: vi.fn(),
         get: vi.fn(async (id: string) =>
@@ -1717,6 +1843,7 @@ describe("publishAttempts", () => {
                 status: "finalizing",
                 skillVersionId: "skillVersions:pending",
                 followup: {},
+                artifactFingerprint: "fingerprint",
                 finalizationClaimId: "finalize:claim",
                 finalizationClaimExpiresAt: now + 60_000,
               }
@@ -1725,7 +1852,25 @@ describe("publishAttempts", () => {
         insert: vi.fn(),
         normalizeId: vi.fn(),
         patch: vi.fn(),
-        query: vi.fn(),
+        query: vi.fn((table: string) => {
+          const query = {
+            withIndex: vi.fn(() => query),
+            take: vi.fn(async () => []),
+            unique: vi.fn(
+              async () =>
+                ({
+                  skills: { _id: "skills:demo" },
+                  skillVersions: {
+                    _id: "skillVersions:pending",
+                    fingerprint: "fingerprint",
+                    publicationStatus: "published",
+                  },
+                  skillEmbeddings: { _id: "skillEmbeddings:demo" },
+                })[table],
+            ),
+          };
+          return query;
+        }),
         replace: vi.fn(),
         system: {},
       },

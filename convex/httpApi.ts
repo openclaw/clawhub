@@ -10,10 +10,15 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { httpAction } from "./functions";
-import { ambiguousSkillSlugMessage } from "./httpApiV1/shared";
+import {
+  ambiguousSkillSlugMessage,
+  json,
+  text,
+  toOptionalNumber,
+  transientConvexErrorResponse,
+} from "./httpApiV1/shared";
 import { requireApiTokenUser, requirePackagePublishAuth } from "./lib/apiTokenAuth";
 import { serializeCanonicalSkillSearchResults } from "./lib/canonicalSkillSearchResponse";
-import { corsHeaders, mergeHeaders } from "./lib/httpHeaders";
 import { applyRateLimit } from "./lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "./lib/httpUtils";
 import { publishVersionForUser } from "./skills";
@@ -166,7 +171,7 @@ async function cliWhoamiHandler(ctx: ActionCtx, request: Request) {
       },
     });
   } catch (error) {
-    return text(formatAuthFailure(error), 401);
+    return transientConvexErrorResponse(error) ?? text(formatAuthFailure(error), 401);
   }
 }
 
@@ -185,6 +190,9 @@ async function cliUploadUrlHandler(ctx: ActionCtx, request: Request) {
           });
     return json(upload);
   } catch (error) {
+    // A platform failure while minting the ticket is not an auth failure.
+    const transient = transientConvexErrorResponse(error);
+    if (transient) return transient;
     return text(formatAuthFailure(error), 401);
   }
 }
@@ -192,6 +200,9 @@ async function cliUploadUrlHandler(ctx: ActionCtx, request: Request) {
 export const cliUploadUrlHttp = httpAction(cliUploadUrlHandler);
 
 async function cliPublishHandler(ctx: ActionCtx, request: Request) {
+  // Once files persist, a failed publish discards them, so resending the same
+  // storage IDs can never succeed.
+  let filesPersisted = false;
   let body: unknown;
   try {
     body = await request.json();
@@ -226,9 +237,16 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
       ...(target ? { ownerPublisherId: target.publisherId } : {}),
       ...(source ? { sourceOwnerPublisherId: source.publisherId } : {}),
       ...(shouldMigrateOwner ? { migrateOwner: true } : {}),
+      onFilesPersisted: () => {
+        filesPersisted = true;
+      },
     });
     return json({ ok: true, ...result });
   } catch (error) {
+    const transient = transientConvexErrorResponse(error, undefined, {
+      restartRequired: filesPersisted,
+    });
+    if (transient) return transient;
     const message = error instanceof Error ? error.message : "Publish failed";
     if (message.toLowerCase().includes("unauthorized")) return text(formatAuthFailure(error), 401);
     return text(message, 400);
@@ -404,44 +422,10 @@ async function cliDeviceTokenHandler(ctx: ActionCtx, request: Request) {
 
 export const cliDeviceTokenHttp = httpAction(cliDeviceTokenHandler);
 
-function json(value: unknown, status = 200, headers?: HeadersInit) {
-  return new Response(JSON.stringify(value), {
-    status,
-    headers: mergeHeaders(
-      {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-      },
-      headers,
-      corsHeaders(),
-    ),
-  });
-}
-
-function text(value: string, status: number, headers?: HeadersInit) {
-  return new Response(value, {
-    status,
-    headers: mergeHeaders(
-      {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-store",
-      },
-      headers,
-      corsHeaders(),
-    ),
-  });
-}
-
 function formatAuthFailure(error: unknown) {
   const message = error instanceof Error ? error.message.trim() : "";
   if (!message || /^unauthorized$/i.test(message)) return "Unauthorized";
   return message.replace(/^ConvexError:\s*/i, "").trim() || "Unauthorized";
-}
-
-function toOptionalNumber(value: string | null) {
-  if (!value) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function parsePublishBody(body: unknown) {

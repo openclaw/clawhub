@@ -10,16 +10,86 @@ permissions:
 
 jobs:
   evaluate:
-    name: NVIDIA SkillEvaluator Tier 3
-    runs-on: blacksmith-16vcpu-ubuntu-2404
-    timeout-minutes: 180
+    name: NVIDIA SkillEvaluator Tier 3 (${{ matrix.worker }})
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 360
     environment: Production
+    strategy:
+      fail-fast: false
+      matrix:
+        worker:
+          [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63,
+            64,
+          ]
     concurrency:
-      group: clawhub-skill-evaluation-worker
+      group: clawhub-skill-evaluation-worker-${{ matrix.worker }}
       cancel-in-progress: false
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
-      SKILL_EVALUATION_WORKER_ID: github-actions:${{ github.run_id }}:${{ github.run_attempt }}
+      SKILL_EVALUATION_WORKER_ID: github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.worker }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -29,7 +99,7 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -40,21 +110,50 @@ jobs:
           SKILL_EVALUATOR_DIR: ${{ runner.temp }}/SkillEvaluator
         run: |
           set -euo pipefail
-          git clone --quiet --filter=blob:none --branch v0.1.0 --depth 1 \
+          git clone --quiet --filter=blob:none --branch v0.5.0 --depth 1 \
             https://github.com/NVIDIA/SkillEvaluator.git "$SKILL_EVALUATOR_DIR"
           test "$(git -C "$SKILL_EVALUATOR_DIR" rev-parse HEAD)" = \
-            "4975c97d49e3623eeab739248e52d83c4aa8f582"
+            "7304d76cde371287b67ea99653409d014b6b9c85"
           uv sync --project "$SKILL_EVALUATOR_DIR" --extra tier3 --frozen
+          # Harbor 0.24.0 leaves a trailing dot when truncating trial names.
+          # Compose turns it into a hyphen before __, producing an invalid image tag.
+          uv run --project "$SKILL_EVALUATOR_DIR" --frozen --extra tier3 python - <<'PY'
+          from importlib.metadata import version
+          from pathlib import Path
+          import harbor.models.trial.config as config
+
+          if version("harbor") != "0.24.0":
+              raise RuntimeError("Revalidate the trial-name compatibility fix for this Harbor version")
+          path = Path(config.__file__)
+          source = path.read_text()
+          original = "task_name[:32].rstrip('_-')"
+          corrected = "task_name[:32].rstrip('_-.')"
+          if source.count(original) != 1 or corrected in source:
+              raise RuntimeError("Unexpected Harbor trial-name implementation")
+          # Replace the installed file without modifying uv's hardlinked wheel cache.
+          staged = path.with_suffix(".clawhub-tmp")
+          staged.write_text(source.replace(original, corrected))
+          staged.replace(path)
+          print("Applied Harbor 0.24.0 trailing-dot trial-name compatibility fix")
+          PY
           uv run --project "$SKILL_EVALUATOR_DIR" skillevaluator --version
 
       - name: Install pinned Codex CLI
-        run: |
-          set -euo pipefail
-          npm install -g @openai/codex@0.148.0
-          codex --version
+        uses: ./.github/actions/setup-codex
 
       - name: Verify Docker runtime
         run: docker info >/dev/null
+
+      # Harbor uses `up --wait` with evaluator images that declare HEALTHCHECK NONE.
+      - uses: docker/setup-compose-action@54042514f505b273907334ae2b9cdbb9a0213c1a # v2.4.0
+        with:
+          version: v5.1.4
+
+      # Spread the initial claims instead of sending all claim actions at once.
+      - name: Stagger worker startup
+        env:
+          WORKER_SLOT: ${{ matrix.worker }}
+        run: sleep "$(( (WORKER_SLOT - 1) * 5 ))"
 
       - name: Run skill evaluation worker
         env:

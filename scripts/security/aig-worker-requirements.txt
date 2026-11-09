@@ -1,4 +1,5 @@
 # Hash-locked A.I.G worker environment for GitHub's Ubuntu CPython 3.12 runner.
+# Also allow PyPI macOS arm64 CPython 3.12 wheels for local acceptance checks.
 # Regenerate deliberately when upgrading aig-skill-scan or one of its dependencies.
 --only-binary=:all:
 
@@ -8,8 +9,8 @@ annotated-types==0.8.0 \
   --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
 anyio==4.15.0 \
   --hash=sha256:7ecd9937369ffce8bba0b5ccb9b3a9507b101b0ed50256aecfbab27e6c2acb99
-certifi==2026.7.22 \
-  --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775
+certifi==2026.10.23 \
+  --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
 chardet==5.2.0 \
   --hash=sha256:e1cf59446890a00105fe7b7912492ea04b6e6f06d4b742b2c788469e34c82970
 distro==1.9.0 \
@@ -23,7 +24,8 @@ httpx==0.28.1 \
 idna==3.19 \
   --hash=sha256:815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4
 jiter==0.16.0 \
-  --hash=sha256:46add52f4ad47a08bfb1219f3e673da972191489a33016edefdb5ea55bfa8c48
+  --hash=sha256:46add52f4ad47a08bfb1219f3e673da972191489a33016edefdb5ea55bfa8c48 \
+  --hash=sha256:5af7780e4a26bd7d0d989592bf9ef12ebf806b74ab709223ecca37c749872ea9
 loguru==0.7.3 \
   --hash=sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c
 openai==2.8.1 \
@@ -31,7 +33,8 @@ openai==2.8.1 \
 pydantic==2.12.4 \
   --hash=sha256:92d3d202a745d46f9be6df459ac5a064fdaa3c1c4cd8adcfa332ccf3c05f871e
 pydantic-core==2.41.5 \
-  --hash=sha256:eceb81a8d74f9267ef4081e246ffd6d129da5d87e37a77c9bde550cb04870c1c
+  --hash=sha256:eceb81a8d74f9267ef4081e246ffd6d129da5d87e37a77c9bde550cb04870c1c \
+  --hash=sha256:070259a8818988b9a84a449a2a7337c7f430a22acc0859c6b110aa7212a6d9c0
 python-dotenv==1.0.0 \
   --hash=sha256:f5971a9226b701070a4bf2c38c89e5a3f0d64de8debda981d1db98583009122a
 sniffio==1.3.1 \

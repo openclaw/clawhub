@@ -48,6 +48,7 @@ import { Route as OwnerSlugSecurityAuditRouteImport } from './routes/$owner/$slu
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
 import { Route as OwnerPluginsSlugRouteImport } from './routes/$owner/plugins/$slug'
 import { Route as OwnerSkillsSlugRouteImport } from './routes/$owner/skills/$slug'
+import { Route as OwnerTemplatesSlugRouteImport } from './routes/$owner/templates/$slug'
 import { Route as PackagesScopeNameRouteImport } from './routes/packages/$scope/$name'
 import { Route as PluginsNameSecurityAuditRouteImport } from './routes/plugins/$name/security-audit'
 import { Route as PluginsScopeNameRouteImport } from './routes/plugins/$scope/$name'
@@ -258,6 +259,11 @@ const OwnerSkillsSlugRoute = OwnerSkillsSlugRouteImport.update({
   path: '/$owner/skills/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OwnerTemplatesSlugRoute = OwnerTemplatesSlugRouteImport.update({
+  id: '/$owner/templates/$slug',
+  path: '/$owner/templates/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PackagesScopeNameRoute = PackagesScopeNameRouteImport.update({
   id: '/packages/$scope/$name',
   path: '/packages/$scope/$name',
@@ -379,6 +385,7 @@ export interface FileRoutesByFullPath {
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/$owner/plugins/$slug': typeof OwnerPluginsSlugRouteWithChildren
   '/$owner/skills/$slug': typeof OwnerSkillsSlugRouteWithChildren
+  '/$owner/templates/$slug': typeof OwnerTemplatesSlugRoute
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
   '/plugins/$name/security-audit': typeof PluginsNameSecurityAuditRoute
   '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
@@ -434,6 +441,7 @@ export interface FileRoutesByTo {
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/$owner/plugins/$slug': typeof OwnerPluginsSlugRouteWithChildren
   '/$owner/skills/$slug': typeof OwnerSkillsSlugRouteWithChildren
+  '/$owner/templates/$slug': typeof OwnerTemplatesSlugRoute
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
   '/plugins/$name/security-audit': typeof PluginsNameSecurityAuditRoute
   '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
@@ -490,6 +498,7 @@ export interface FileRoutesById {
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/$owner/plugins/$slug': typeof OwnerPluginsSlugRouteWithChildren
   '/$owner/skills/$slug': typeof OwnerSkillsSlugRouteWithChildren
+  '/$owner/templates/$slug': typeof OwnerTemplatesSlugRoute
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
   '/plugins/$name/security-audit': typeof PluginsNameSecurityAuditRoute
   '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
@@ -547,6 +556,7 @@ export interface FileRouteTypes {
     | '/$owner/$slug/settings'
     | '/$owner/plugins/$slug'
     | '/$owner/skills/$slug'
+    | '/$owner/templates/$slug'
     | '/packages/$scope/$name'
     | '/plugins/$name/security-audit'
     | '/plugins/$scope/$name'
@@ -602,6 +612,7 @@ export interface FileRouteTypes {
     | '/$owner/$slug/settings'
     | '/$owner/plugins/$slug'
     | '/$owner/skills/$slug'
+    | '/$owner/templates/$slug'
     | '/packages/$scope/$name'
     | '/plugins/$name/security-audit'
     | '/plugins/$scope/$name'
@@ -657,6 +668,7 @@ export interface FileRouteTypes {
     | '/$owner/$slug/settings'
     | '/$owner/plugins/$slug'
     | '/$owner/skills/$slug'
+    | '/$owner/templates/$slug'
     | '/packages/$scope/$name'
     | '/plugins/$name/security-audit'
     | '/plugins/$scope/$name'
@@ -711,6 +723,7 @@ export interface RootRouteChildren {
   UsersIndexRoute: typeof UsersIndexRoute
   OwnerPluginsSlugRoute: typeof OwnerPluginsSlugRouteWithChildren
   OwnerSkillsSlugRoute: typeof OwnerSkillsSlugRouteWithChildren
+  OwnerTemplatesSlugRoute: typeof OwnerTemplatesSlugRoute
   PackagesScopeNameRoute: typeof PackagesScopeNameRoute
   PluginsScopeNameRoute: typeof PluginsScopeNameRouteWithChildren
   SkillsShOwnerRepoSlugRoute: typeof SkillsShOwnerRepoSlugRoute
@@ -991,6 +1004,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerSkillsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$owner/templates/$slug': {
+      id: '/$owner/templates/$slug'
+      path: '/$owner/templates/$slug'
+      fullPath: '/$owner/templates/$slug'
+      preLoaderRoute: typeof OwnerTemplatesSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/packages/$scope/$name': {
       id: '/packages/$scope/$name'
       path: '/packages/$scope/$name'
@@ -1205,6 +1225,7 @@ const rootRouteChildren: RootRouteChildren = {
   UsersIndexRoute: UsersIndexRoute,
   OwnerPluginsSlugRoute: OwnerPluginsSlugRouteWithChildren,
   OwnerSkillsSlugRoute: OwnerSkillsSlugRouteWithChildren,
+  OwnerTemplatesSlugRoute: OwnerTemplatesSlugRoute,
   PackagesScopeNameRoute: PackagesScopeNameRoute,
   PluginsScopeNameRoute: PluginsScopeNameRouteWithChildren,
   SkillsShOwnerRepoSlugRoute: SkillsShOwnerRepoSlugRoute,

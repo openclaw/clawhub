@@ -1,29 +1,13 @@
 /* @vitest-environment jsdom */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  SkillCommandLineCard,
-  OpenClawCliInstallCommand,
-  SkillInstallSurface,
-} from "./SkillInstallSurface";
+import { OpenClawCliInstallCommand, SkillCommandLineCard } from "./SkillInstallSurface";
 import { TooltipProvider } from "./ui/tooltip";
 
 const writeTextMock = vi.fn();
 
-vi.mock("./ui/dropdown-menu", () => ({
-  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({ children, onSelect }: { children: ReactNode; onSelect?: () => void }) => (
-    <button type="button" onClick={() => onSelect?.()}>
-      {children}
-    </button>
-  ),
-}));
-
-describe("SkillInstallSurface", () => {
+describe("skill install commands", () => {
   const ownerPublisherId = "publishers:1" as never;
 
   beforeEach(() => {
@@ -37,49 +21,10 @@ describe("SkillInstallSurface", () => {
     });
   });
 
-  it("renders the default install-and-setup preview and copies the selected prompt", async () => {
-    render(
-      <SkillInstallSurface
-        slug="weather"
-        displayName="Weather"
-        ownerHandle="steipete"
-        ownerId={ownerPublisherId}
-        clawdis={
-          {
-            requires: {
-              env: ["WEATHER_API_KEY"],
-              bins: ["curl"],
-            },
-          } as never
-        }
-      />,
-    );
-
-    expect(screen.getByRole("heading", { name: "Install with OpenClaw" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "CLI Commands" })).toBeNull();
-    expect(screen.getByText(/Before installing anything/i)).toBeTruthy();
-    expect(screen.getAllByText("Install & Setup").length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByRole("button", { name: /Install Only/i }));
-
-    await waitFor(() => {
-      expect(writeTextMock).toHaveBeenCalledWith(
-        expect.stringContaining("Stop after the skill is installed."),
-      );
-    });
-    expect(screen.getByText(/Stop after the skill is installed\./i)).toBeTruthy();
-    expect(screen.getAllByText("Install Only").length).toBeGreaterThan(0);
-  });
-
   it("defaults to CLI install and can copy the compact prompt tab", async () => {
     render(
       <TooltipProvider>
-        <SkillCommandLineCard
-          slug="weather"
-          displayName="Weather"
-          ownerHandle="steipete"
-          ownerId={ownerPublisherId}
-        />
+        <SkillCommandLineCard slug="weather" ownerHandle="steipete" ownerId={ownerPublisherId} />
       </TooltipProvider>,
     );
 
@@ -106,7 +51,7 @@ describe("SkillInstallSurface", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
 
-    expect(screen.getByText(/Install the skill "Weather"/i)).toBeTruthy();
+    expect(screen.getByText("Install the @steipete/weather skill from ClawHub")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Prompt" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
@@ -115,15 +60,15 @@ describe("SkillInstallSurface", () => {
 
     await waitFor(() => {
       expect(writeTextMock).toHaveBeenCalledWith(
-        expect.stringContaining("Before installing anything"),
+        "Install the @steipete/weather skill from ClawHub",
       );
     });
   });
 
   it("splits plugin install commands into muted verb and highlighted target", () => {
-    render(<OpenClawCliInstallCommand command="openclaw plugins install clawhub:demo-plugin" />);
+    render(<OpenClawCliInstallCommand command="openclaw plugins install @composio/composio" />);
 
     expect(screen.getByText("openclaw plugins install")).toBeTruthy();
-    expect(screen.getByText("clawhub:demo-plugin")).toBeTruthy();
+    expect(screen.getByText("@composio/composio")).toBeTruthy();
   });
 });

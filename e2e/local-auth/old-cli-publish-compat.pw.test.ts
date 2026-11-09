@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type APIRequestContext, test } from "@playwright/test";
+import { buildPluginSecurityAuditHref } from "../../src/lib/pluginRoutes";
 import {
   completeMockPrePublicationChecks,
   expectSingleMockPrePublicationCheckRejected,
@@ -217,6 +218,7 @@ async function expectPluginPublic(request: APIRequestContext, registry: string, 
 
 test("released CLI publishes skills and plugins only after both security checks pass", async ({
   request,
+  page,
 }) => {
   const registry = registryUrl();
   const tokens = seedCliTokens();
@@ -349,6 +351,7 @@ test("released CLI publishes skills and plugins only after both security checks 
       slug: packageName,
       version: "1.0.0",
       claim: pluginClaim,
+      overview: false,
     });
     await expect
       .poll(
@@ -362,6 +365,51 @@ test("released CLI publishes skills and plugins only after both security checks 
       )
       .toBe(200);
     await expectPluginPublic(request, registry, packageName);
+    // Real local backend/browser; scanner/provider completion above is simulated.
+    const stored = await request.get(
+      `${registry}/api/v1/packages/${encodeURIComponent(packageName)}/versions/1.0.0`,
+    );
+    const payload = await stored.json();
+    expect(payload.version.llmAnalysis).toMatchObject({
+      verdict: "benign",
+      model: "mock-local-e2e",
+    });
+    expect(payload.version.llmAnalysis.summary).toBeUndefined();
+    await page.goto(
+      buildPluginSecurityAuditHref(packageName, {
+        ownerHandle: tokens.user.handle,
+        version: "1.0.0",
+      }),
+    );
+    await expect(
+      page.getByText("No overview is available for this completed security scan.", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("No security analysis has been recorded yet.", { exact: true }),
+    ).toHaveCount(0);
+    await mkdir(".artifacts/simple-consumer/browser-proof", { recursive: true });
+    await page.screenshot({
+      path: ".artifacts/simple-consumer/browser-proof/absent-overview-desktop.png",
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(
+      page.getByText("No overview is available for this completed security scan.", { exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: ".artifacts/simple-consumer/browser-proof/absent-overview-mobile.png",
+      fullPage: true,
+    });
+    console.log(
+      "ABSENT_OVERVIEW_BROWSER_PROOF",
+      JSON.stringify({
+        url: page.url(),
+        verdict: payload.version.llmAnalysis.verdict,
+        provider: "simulated",
+        backend: "isolated-local",
+        overview: "absent",
+      }),
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

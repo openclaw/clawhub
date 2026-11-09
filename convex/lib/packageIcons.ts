@@ -12,7 +12,7 @@ import {
   validateSkillPresentationIcon,
 } from "./skillPresentation";
 
-const PORTABLE_PLUGIN_ICON = "assets/icon.png";
+const PORTABLE_PACKAGE_ICON = "assets/icon.png";
 type IconContext = Pick<ActionCtx, "storage" | "runAction" | "runQuery" | "runMutation">;
 type IconSource = Pick<
   NonNullable<Doc<"packageReleases">["verification"]>,
@@ -26,7 +26,7 @@ export function bundledPluginIconSourceUrl(source: IconSource | undefined) {
     !/^extensions\/[a-z0-9][a-z0-9-]*$/.test(source.sourcePath ?? "")
   )
     return undefined;
-  return `https://raw.githubusercontent.com/openclaw/openclaw/${source.sourceCommit}/${source.sourcePath}/${PORTABLE_PLUGIN_ICON}`;
+  return `https://raw.githubusercontent.com/openclaw/openclaw/${source.sourceCommit}/${source.sourcePath}/${PORTABLE_PACKAGE_ICON}`;
 }
 
 /** Use the same fixed asset convention as OpenClaw; never interpret a manifest path as a URL. */
@@ -38,16 +38,16 @@ export async function resolvePackageIcon(
     dryRun?: boolean;
   },
 ): Promise<string | undefined> {
-  const file = args.files.find((entry) => entry.path === PORTABLE_PLUGIN_ICON);
+  const file = args.files.find((entry) => entry.path === PORTABLE_PACKAGE_ICON);
   let bytes: Uint8Array;
   if (file) {
     if (file.size > MAX_SKILL_PRESENTATION_ICON_BYTES) return undefined;
     const blob = await ctx.storage.get(file.storageId as Id<"_storage">);
-    if (!blob) throw new ConvexError("Plugin icon could not be read. Please retry.");
+    if (!blob) throw new ConvexError("Package icon could not be read. Please retry.");
     if (blob.size > MAX_SKILL_PRESENTATION_ICON_BYTES) return undefined;
     bytes = new Uint8Array(await blob.arrayBuffer());
     if ((await sha256Hex(bytes)) !== file.sha256.toLowerCase()) {
-      throw new ConvexError("Plugin icon changed during upload. Please retry.");
+      throw new ConvexError("Package icon changed during upload. Please retry.");
     }
   } else {
     // Older official npm archives omitted assets despite recording a source commit that has them.
@@ -60,7 +60,7 @@ export async function resolvePackageIcon(
 
   try {
     // npm archives commonly label every entry application/octet-stream; validate the bytes.
-    validateSkillPresentationIcon({ path: PORTABLE_PLUGIN_ICON, bytes });
+    validateSkillPresentationIcon({ path: PORTABLE_PACKAGE_ICON, bytes });
   } catch {
     return undefined;
   }

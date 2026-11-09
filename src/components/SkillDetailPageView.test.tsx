@@ -3,7 +3,8 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SkillDetailPageView, type SkillDetailPageViewProps } from "./SkillDetailPageView";
+import { makeSkillDetailPageViewProps } from "../__tests__/helpers/skillDetailPageView";
+import { SkillDetailPageView } from "./SkillDetailPageView";
 import { TooltipProvider } from "./ui/tooltip";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -30,8 +31,34 @@ describe("SkillDetailPageView", () => {
     }));
   });
 
+  it("tells the owner when publication checks failed and where to get help", () => {
+    render(
+      <TooltipProvider>
+        <SkillDetailPageView
+          {...makeMinimalProps()}
+          canManage
+          isAuthenticated
+          publicationProgress={{
+            version: "2.0.0",
+            stage: "checks_failed",
+            retrying: true,
+            updatedAt: 3,
+            checks: { trufflehog: "clean", clawscan: "failed" },
+          }}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.getByRole("status").textContent).toContain("Publication checks failed");
+    expect(screen.getByRole("status").textContent).toContain("2.0.0");
+    expect(screen.getByRole("status").textContent).toContain("not yet public or installable");
+    expect(screen.getByRole("status").textContent).toContain("Security check: could not complete");
+    expect(screen.getByRole("link", { name: "Contact support" }).getAttribute("href")).toBe(
+      "https://community.openclaw.ai/",
+    );
+  });
+
   it("owns the whole shared detail page while rendering source-specific slots", () => {
-    const props: SkillDetailPageViewProps = {
+    const props = makeSkillDetailPageViewProps({
       skill: {
         slug: "demo",
         displayName: "Demo Skill",
@@ -39,36 +66,10 @@ describe("SkillDetailPageView", () => {
         stats: { downloads: 12, stars: 0 },
         updatedAt: 1,
       },
-      owner: null,
-      ownerHandle: "publisher",
-      latestVersion: null,
-      modInfo: null,
-      canManage: false,
-      isAuthenticated: false,
-      isStaff: false,
-      isStarred: false,
-      onToggleStar: vi.fn(),
-      onOpenReport: vi.fn(),
-      onRequireSignIn: vi.fn(),
-      forkOf: null,
-      forkOfLabel: "fork of",
-      forkOfHref: null,
-      forkOfOwnerHandle: null,
-      canonical: null,
-      canonicalHref: null,
-      canonicalOwnerHandle: null,
-      staffVisibilityTag: null,
-      isAutoHidden: false,
-      isRemoved: false,
-      nixPlugin: undefined,
-      hasPluginBundle: false,
-      configRequirements: undefined,
-      cliHelp: undefined,
-      clawdis: undefined,
       installContent: <div>Source install</div>,
       renderSidebarContent: () => <div>Source provenance</div>,
       children: <div>Source tabs</div>,
-    };
+    });
 
     render(
       <TooltipProvider>
@@ -124,8 +125,8 @@ describe("SkillDetailPageView", () => {
   });
 });
 
-function makeMinimalProps(): SkillDetailPageViewProps {
-  return {
+function makeMinimalProps() {
+  return makeSkillDetailPageViewProps({
     skill: {
       slug: "demo",
       displayName: "Demo Skill",
@@ -134,31 +135,5 @@ function makeMinimalProps(): SkillDetailPageViewProps {
       stats: { downloads: 12, stars: 0 },
       updatedAt: 1,
     },
-    owner: null,
-    ownerHandle: "publisher",
-    latestVersion: null,
-    modInfo: null,
-    canManage: false,
-    isAuthenticated: false,
-    isStaff: false,
-    isStarred: false,
-    onToggleStar: vi.fn(),
-    onOpenReport: vi.fn(),
-    onRequireSignIn: vi.fn(),
-    forkOf: null,
-    forkOfLabel: "fork of",
-    forkOfHref: null,
-    forkOfOwnerHandle: null,
-    canonical: null,
-    canonicalHref: null,
-    canonicalOwnerHandle: null,
-    staffVisibilityTag: null,
-    isAutoHidden: false,
-    isRemoved: false,
-    nixPlugin: undefined,
-    hasPluginBundle: false,
-    configRequirements: undefined,
-    cliHelp: undefined,
-    clawdis: undefined,
-  };
+  });
 }

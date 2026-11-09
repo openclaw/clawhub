@@ -46,12 +46,18 @@ metadata before installing. Package records can include API compatibility,
 minimum gateway version, host targets, environment requirements, and artifact
 digests.
 
-Use an explicit ClawHub install source when you want the registry to be the
-source of truth:
+Released OpenClaw versions through `2026.10.4` select ClawHub with a prefix:
 
 ```bash
 openclaw plugins install clawhub:<package>
 ```
+
+Updated main/dev builds with ClawHub-default support also accept
+`openclaw plugins install @composio/composio` without a prefix. Unscoped package
+names use `@latest`, such as `episodic-claw@latest`, to avoid bundled plugin
+shortcuts. Keep the explicit `clawhub:` form on released versions through
+`2026.10.4`; it also works on updated builds. Use
+`openclaw plugins install npm:<package>` to install directly from npm.
 
 ## Publishing
 

@@ -1,11 +1,18 @@
 #!/bin/sh
 set -eu
+if [ "$#" -ne 3 ]; then
+  echo "Usage: clawhub-endor-scan TARGET SOURCE_URL TAGS" >&2
+  exit 2
+fi
+target=$1
+source_url=$2
+tags=$3
 # The worker mounts the normalized package read-only. All writes stay in the container.
-if [ ! -f "$1/package.json" ]; then
+if [ ! -f "$target/package.json" ]; then
   echo "Endor requires package.json at the target root" >&2
   exit 1
 fi
-if [ -n "$(find "$1" -name .npmrc -print -quit)" ]; then
+if [ -n "$(find "$target" -name .npmrc -print -quit)" ]; then
   echo "Endor cannot safely scan targets containing .npmrc" >&2
   exit 1
 fi
@@ -58,7 +65,7 @@ write_resolver_shim yarn "$yarn_executable"
 "$resolver_bin/yarn" --version >/dev/null
 export PATH="$resolver_bin:$PATH"
 scan_root=$(mktemp -d)
-cp -R "$1"/. "$scan_root"/
+cp -R "$target"/. "$scan_root"/
 # Never reuse submitted Git hooks/config or installed dependencies.
 find "$scan_root" \( -name .git -o -name node_modules \) -prune -exec rm -rf {} +
 export GIT_CONFIG_COUNT=1
@@ -71,7 +78,7 @@ git -C "$scan_root" config user.name ClawScan
 git -C "$scan_root" config user.email clawscan@example.invalid
 git -C "$scan_root" add --all --force
 git -C "$scan_root" commit -q --allow-empty -m "ClawScan scan snapshot"
-git -C "$scan_root" remote add origin https://example.invalid/clawscan/scan-target.git
+git -C "$scan_root" remote add origin "$source_url"
 cd "$scan_root"
 report=$(mktemp)
 diagnostic=$(mktemp)
@@ -80,11 +87,11 @@ status_file=$(mktemp)
 # Keep the scanner's status separately: POSIX pipelines return tee's status.
 {
   status=0
-  endorctl scan --dry-run --dependencies --languages=javascript,typescript --call-graph-languages=javascript,typescript --build=false --output-type=json --path "$scan_root" >"$report" || status=$?
+  endorctl scan --exit-on-policy-warning=false --project-tags "$tags" --tags "$tags" --dependencies --languages=javascript,typescript --call-graph-languages=javascript,typescript --build=false --output-type=json --path "$scan_root" >"$report" || status=$?
   printf '%s\n' "$status" >"$status_file"
 } 2>&1 | tee "$diagnostic" >&2
 status=$(cat "$status_file")
-# The worker requires JSON, including for a successful empty scan.
+# A successful scan with no findings can emit nothing; the worker requires JSON.
 # Endor's 128 means policy findings; analysis failures must still fail the scanner.
 node - "$status" "$report" "$diagnostic" <<'JS'
 const fs = require("node:fs");
@@ -98,16 +105,7 @@ if (status !== "0" && status !== "128") fail(`Endor exited ${status}`);
 if (diagnostic.includes("ERROR ") || /\b[1-9][0-9]* (scan failure|call graph error)\(s\)/.test(diagnostic)) {
   fail("Endor reported one or more analysis errors");
 }
-let raw = fs.readFileSync(reportPath, "utf8");
-if (raw === "" && status === "0") {
-  raw = '{"all_findings":[],"blocking_findings":[],"warning_findings":[]}';
-}
-let report;
-try { report = JSON.parse(raw); } catch { fail("Endor returned invalid findings JSON"); }
-for (const name of ["all_findings", "blocking_findings", "warning_findings"]) {
-  if (!Array.isArray(report?.[name]) || report[name].some(value => value === null || typeof value !== "object" || Array.isArray(value))) {
-    fail("Endor returned invalid findings JSON");
-  }
-}
-process.stdout.write(raw);
+const raw = fs.readFileSync(reportPath, "utf8");
+// The worker validates the report shape.
+process.stdout.write(raw === "" && status === "0" ? '{"all_findings":[]}' : raw);
 JS

@@ -1,7 +1,6 @@
 import { customCtx, customMutation } from "convex-helpers/server/customFunctions";
 import { Triggers, type Change } from "convex-helpers/server/triggers";
 import { v } from "convex/values";
-import semver from "semver";
 import { internal } from "./_generated/api";
 import type { DataModel, Doc, Id } from "./_generated/dataModel";
 import {
@@ -14,6 +13,7 @@ import {
   httpAction,
 } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import { comparePackageReleaseOrder } from "./lib/packageReleaseFamily";
 import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
 import {
   deletePackageSearchDigests,
@@ -26,11 +26,7 @@ import {
   adjustPublisherStatsForSkillChange,
 } from "./lib/publisherStats";
 import { assertRankingMetricWritesAllowed } from "./lib/rankingMetricsImportLock";
-import {
-  deleteSkillSearchDigests,
-  extractValidatedDigestFields,
-  upsertSkillSearchDigest,
-} from "./lib/skillSearchDigest";
+import { deleteSkillSearchDigests, syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 
 const triggers = new Triggers<DataModel>();
 
@@ -74,24 +70,6 @@ function toPackageLatestVersionSummary(
   };
 }
 
-function compareFallbackReleases(
-  family: Doc<"packages">["family"],
-  a: LatestPackageRelease,
-  b: LatestPackageRelease,
-) {
-  if (family === "bundle-plugin") {
-    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
-    return a._id.localeCompare(b._id);
-  }
-  const aSemver = semver.valid(a.version);
-  const bSemver = semver.valid(b.version);
-  if (aSemver && bSemver) return semver.compare(aSemver, bSemver);
-  if (aSemver) return 1;
-  if (bSemver) return -1;
-  if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
-  return a._id.localeCompare(b._id);
-}
-
 async function getPreferredFallbackPackageRelease(
   ctx: PackageDigestSyncCtx,
   packageId: Id<"packages">,
@@ -122,7 +100,7 @@ async function getPreferredFallbackPackageRelease(
         distTags: release.distTags,
         pluginManifestSummary: release.pluginManifestSummary,
       };
-      if (!best || compareFallbackReleases(family, candidate, best) > 0) best = candidate;
+      if (!best || comparePackageReleaseOrder(family, candidate, best) > 0) best = candidate;
     }
     if (page.isDone) return best;
     cursor = page.continueCursor;
@@ -214,26 +192,6 @@ export async function syncPackageSearchDigestsForOwnerPublisherId(
     if (isMissingTableError(error, "packages")) return;
     throw error;
   }
-}
-
-async function syncSkillSearchDigestForSkill(
-  ctx: PackageDigestSyncCtx,
-  skill: Doc<"skills"> | null | undefined,
-) {
-  if (!skill) return;
-  const fields = await extractValidatedDigestFields(ctx, skill);
-  const owner = await getOwnerPublisher(ctx, {
-    ownerPublisherId: skill.ownerPublisherId,
-    ownerUserId: skill.ownerUserId,
-  });
-  await upsertSkillSearchDigest(ctx, {
-    ...fields,
-    ownerHandle: owner?.handle ?? "",
-    ownerKind: owner?.kind,
-    ownerName: owner?.linkedUserId ? owner.handle : undefined,
-    ownerDisplayName: owner?.displayName,
-    ownerImage: owner?.image,
-  });
 }
 
 export async function syncSkillSearchDigestsForOwnerPublisherId(
@@ -442,10 +400,8 @@ triggers.register("skillVersions", async (ctx, change) => {
     change.oldDoc.softDeletedAt === change.newDoc.softDeletedAt &&
     change.oldDoc.ownerDeletedAt === change.newDoc.ownerDeletedAt &&
     change.oldDoc.publicationStatus === change.newDoc.publicationStatus &&
-    change.oldDoc.vtAnalysis?.status === change.newDoc.vtAnalysis?.status &&
     (change.oldDoc.llmAnalysis?.verdict ?? change.oldDoc.llmAnalysis?.status) ===
-      (change.newDoc.llmAnalysis?.verdict ?? change.newDoc.llmAnalysis?.status) &&
-    change.oldDoc.staticScan?.status === change.newDoc.staticScan?.status
+      (change.newDoc.llmAnalysis?.verdict ?? change.newDoc.llmAnalysis?.status)
   ) {
     return;
   }

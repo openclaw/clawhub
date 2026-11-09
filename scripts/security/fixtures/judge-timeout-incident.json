@@ -1,0 +1,461 @@
+{
+  "archiveSha256": "3c2655af3025ef69f05ddc78b331e2279c63ba4be0f72aa686514c92ab805ea6",
+  "manifestSha256": "12c0d9d193a2197d77dfe05676e6db6b9befa76f5f6da98d761df775395b2d61",
+  "files": [
+    {
+      "path": "LICENSE.md",
+      "sha256": "80f0c345dc22aed5f59c33d0354c43a27642bdf78ec1b0e054bacca4443879ec",
+      "size": 1090
+    },
+    {
+      "path": "README.md",
+      "sha256": "a3825947c232b9c3e589dd3c9b185f2dbdaaec8a6d873ab562c5273642693c08",
+      "size": 8167
+    },
+    {
+      "path": "SKILL.md",
+      "sha256": "43d566c2ad1ac651a545df73fe2b791d7d69622fdbbcbd8a87aebf50d135d27e",
+      "size": 6096
+    },
+    {
+      "path": "references/ai-compute-docs.md",
+      "sha256": "ff5a5cada137fa0a24ba55648841188994826ebcfdd09509a553fb729fe309d2",
+      "size": 4868
+    },
+    {
+      "path": "references/anti-ai-patterns.md",
+      "sha256": "cb91101a860b22051b4b3beddcd9f5d391441b79baeb1c9f52e5609201d80d7a",
+      "size": 4436
+    },
+    {
+      "path": "references/argument-chains.md",
+      "sha256": "9a239bf07c892cdda993bcd3bbf11dbbad21934ad2e4c254a92395666ad6faba",
+      "size": 1329
+    },
+    {
+      "path": "references/compression-details.md",
+      "sha256": "e786492210a06bae0b8c416f5b1d3e6171a566f5348f7bb494c9d25b2ba2579b",
+      "size": 749
+    },
+    {
+      "path": "references/emergency-plan.md",
+      "sha256": "e803c035ad9b9ea80b302ff64be222ceb65c90e6a5a312935588abd521ee6780",
+      "size": 2116
+    },
+    {
+      "path": "references/external-research.md",
+      "sha256": "4300038c2680cf8987c7b24e5305c48c330dd1224b15a620f9980d383bd0b95e",
+      "size": 2524
+    },
+    {
+      "path": "references/field-editing.md",
+      "sha256": "60ad87c92d13ecd7aaa2b630bb3aa8819a35a030835dc4710e1da33f2938f0c9",
+      "size": 1165
+    },
+    {
+      "path": "references/follow-up-supervision.md",
+      "sha256": "d68e0428d9d11635de8f1bee242faf8496da5e236b00e7ce64a8c43cfa433e0b",
+      "size": 983
+    },
+    {
+      "path": "references/formal-addressing.md",
+      "sha256": "5a0bc1f3fe82269ce4697f735d3089c497de3ebdd6d3703f54bbffc7a425532a",
+      "size": 3868
+    },
+    {
+      "path": "references/format-gbt9704.md",
+      "sha256": "4cd0efa8e5511a0a87348d4eaf28008d7df14aaf9f4ff5e0788acb3b378dd3fc",
+      "size": 12337
+    },
+    {
+      "path": "references/formulaic-language.md",
+      "sha256": "66ef29eacbd850ff88565ebc99c19256042b5393298f67eebc4199aed8d0b7e2",
+      "size": 2643
+    },
+    {
+      "path": "references/funding-budget.md",
+      "sha256": "0105f79bf020e922c7057010e7998fb062444cbe3b99580efd20c850dfc8654c",
+      "size": 2221
+    },
+    {
+      "path": "references/genre-playbook-advanced-deeds.md",
+      "sha256": "3a69ca2f1055c2ed3fdaa270d137c269aef3e166f7d0a06ae30d3750f26233ff",
+      "size": 1941
+    },
+    {
+      "path": "references/genre-playbook-advisory-feedback.md",
+      "sha256": "c33274eb21b1791cb5ee9c66306ad0e4e5dcfffacae761ee49fd63e4ecdf4456",
+      "size": 5264
+    },
+    {
+      "path": "references/genre-playbook-bulletin.md",
+      "sha256": "e0efc7e948d4f367f2da41209878bd8d2807bf336252006bd585f333b60a9a9f",
+      "size": 1447
+    },
+    {
+      "path": "references/genre-playbook-certification-introduction.md",
+      "sha256": "b713077a269be2b3dd4cfc9ed25515e8bbb739700be361f73edfdf95d8092d76",
+      "size": 1025
+    },
+    {
+      "path": "references/genre-playbook-commitment-letter.md",
+      "sha256": "bc0580ed5d9538ed16dea021345edf79b72ddb5521ff6181207b60bb66c314e7",
+      "size": 1533
+    },
+    {
+      "path": "references/genre-playbook-communique.md",
+      "sha256": "0db7a33958debd64881937a5d743389b1e83bd40ec2344eaa24a51454ee8f659",
+      "size": 708
+    },
+    {
+      "path": "references/genre-playbook-complaint-reflection.md",
+      "sha256": "48679ebe3085a35ed538d180086282d4c4ca99712699a3cee3636e9359642de4",
+      "size": 4339
+    },
+    {
+      "path": "references/genre-playbook-correspondence.md",
+      "sha256": "a38ca5e954716e318587db4db299732a8b90551a711953c7dc5ca279598b7b28",
+      "size": 1297
+    },
+    {
+      "path": "references/genre-playbook-courtesy-letter.md",
+      "sha256": "74cfcc53bb1093926e04e06e8193fa6233c31fbd46d79101d73f2aa53fe2b519",
+      "size": 2174
+    },
+    {
+      "path": "references/genre-playbook-decision.md",
+      "sha256": "f4d2c82f5fe10883238d0e788beaf8b54b62fe31fe1211a17f83e0e934dc4a25",
+      "size": 738
+    },
+    {
+      "path": "references/genre-playbook-deployment.md",
+      "sha256": "afb1b45f927d487338adaf1f1c27dcf730c7c077827d3fdee67502fe7e31bbcc",
+      "size": 1077
+    },
+    {
+      "path": "references/genre-playbook-duty-report.md",
+      "sha256": "21f7c42bee606e62e3820cc9eeeb91c2ea18e1466635e10c2933dd36f594ccf7",
+      "size": 2005
+    },
+    {
+      "path": "references/genre-playbook-editorial-note.md",
+      "sha256": "0e2c2f6ab9bc0026e3c8238b449011e1738a0e6f6f27e9dd3f07e12c4ef08982",
+      "size": 1140
+    },
+    {
+      "path": "references/genre-playbook-explanation.md",
+      "sha256": "2956b35feac9ba6817877b49d7bc4dd01cc1c6267a7b3155b307f37c4acfce65",
+      "size": 1991
+    },
+    {
+      "path": "references/genre-playbook-feasibility.md",
+      "sha256": "49d7e9e8a6bb242a232028bdc62f8c579418ff0f48b11b475b52da7ba5c92c11",
+      "size": 3873
+    },
+    {
+      "path": "references/genre-playbook-information-materials.md",
+      "sha256": "42f9f185d659538f6e1a97bdc026af1eb495788819b4a1defb06cabb97397133",
+      "size": 1625
+    },
+    {
+      "path": "references/genre-playbook-initiative.md",
+      "sha256": "f8d8094bc2fd40ebb698b350c14d34980e7d9662eb13ace36774fd01b179aa88",
+      "size": 1352
+    },
+    {
+      "path": "references/genre-playbook-institution-rules.md",
+      "sha256": "7d706aa705e22591ac652eee918c2f6bb82f05dc73a5a805fac0e35cc8953ba3",
+      "size": 3976
+    },
+    {
+      "path": "references/genre-playbook-meeting-affairs.md",
+      "sha256": "3963a47be19e47ec3a2fb0795e734f83181a30397b3fe593b327fb91cd596f63",
+      "size": 1142
+    },
+    {
+      "path": "references/genre-playbook-meeting-host.md",
+      "sha256": "2955d6824a8ee87c3d7e177e1b7fe2551d77d2eb0ca8e99d1b37dc5c0e1ad9ea",
+      "size": 1479
+    },
+    {
+      "path": "references/genre-playbook-meeting-record.md",
+      "sha256": "97e2597282d1ffe0f4365354956de96e776e6614503d5db311edb90c6d4d5d7a",
+      "size": 1841
+    },
+    {
+      "path": "references/genre-playbook-minutes.md",
+      "sha256": "079d5e823dd4551f14e5212739902935220c401efff881b19f249b89fac090e1",
+      "size": 1689
+    },
+    {
+      "path": "references/genre-playbook-motion.md",
+      "sha256": "da08fbfbfe93bb290c5d25ba840d612ed81f3cb2951abf12ac644e8ba065b2d5",
+      "size": 2263
+    },
+    {
+      "path": "references/genre-playbook-narration.md",
+      "sha256": "6cbf59776192ec4afef11ec1bc72dc48c431c3724ccd97348c1c800ac4639cc8",
+      "size": 1788
+    },
+    {
+      "path": "references/genre-playbook-news-commentary.md",
+      "sha256": "f6e46b97d7fd1a2864fcbab742cc4967b972c2c1cae006102de7470ff33559e2",
+      "size": 1019
+    },
+    {
+      "path": "references/genre-playbook-news-message.md",
+      "sha256": "f17e3ff4f70d9a55ef46935e8faa5958625d3f4bca1eb2ce0f56944621867355",
+      "size": 3812
+    },
+    {
+      "path": "references/genre-playbook-notice.md",
+      "sha256": "96ce9fff5386cfd961e7aa6edc0a3192bb18190070657ca71047d3c083a7015a",
+      "size": 1609
+    },
+    {
+      "path": "references/genre-playbook-open-letter.md",
+      "sha256": "5c5db048391f176b3178fd225fa1fd9d6431173846aca6769cb08ccbf2c92f0d",
+      "size": 1367
+    },
+    {
+      "path": "references/genre-playbook-opinion.md",
+      "sha256": "4a9e6223772b17393cb43e22912c99968a7cc84827eeee57d3d9d1961440afa6",
+      "size": 1455
+    },
+    {
+      "path": "references/genre-playbook-order.md",
+      "sha256": "4fb4ee84e4a883ed730d24bbaaf2997f622ac68cbcaaca5317dc9613460b4ef9",
+      "size": 717
+    },
+    {
+      "path": "references/genre-playbook-personnel-appraisal.md",
+      "sha256": "d8fe73390d4ea0ed1173b55d57d1ed2cc1458b639657dbc3a5101cef0edbd6b4",
+      "size": 2841
+    },
+    {
+      "path": "references/genre-playbook-plan-construction.md",
+      "sha256": "e66faa32644dc418e7c7afd600d50c86c323f75741c3d33a8f7cfd76aad208af",
+      "size": 1822
+    },
+    {
+      "path": "references/genre-playbook-procurement-announcement.md",
+      "sha256": "0c74e5b04d23a60869a6a46bca6e5d3052f3e6d0b6cec3d6232e94d27a72b7a7",
+      "size": 1529
+    },
+    {
+      "path": "references/genre-playbook-project-application.md",
+      "sha256": "f2c8db53aaf85b10e8d40e6f17d0ac0e318b5135f901b1a9df4c01ee0b6a5fa4",
+      "size": 3285
+    },
+    {
+      "path": "references/genre-playbook-publication.md",
+      "sha256": "054468838171d492f67be7915598b1a8438f7ba88827687c96f7cc2ba4687601",
+      "size": 1212
+    },
+    {
+      "path": "references/genre-playbook-remediation-plan.md",
+      "sha256": "bccf36de3c452f93aacb4ce9004bd070683ff5372fcb654819773af68ed0b79a",
+      "size": 2741
+    },
+    {
+      "path": "references/genre-playbook-reply.md",
+      "sha256": "e0520881fc98a135de2b2716dce63dbeb61de01c32a059f763ef09b5f7a5391f",
+      "size": 1053
+    },
+    {
+      "path": "references/genre-playbook-report.md",
+      "sha256": "9d74a173457345d950c703c2b2e3f6ac8efb9c0fd408708fdb8cc5330f77ea85",
+      "size": 3199
+    },
+    {
+      "path": "references/genre-playbook-request.md",
+      "sha256": "a168ce100ac382970c4ff7deb908c6dd662fb20a17c96339b454bcfd855bf58d",
+      "size": 4509
+    },
+    {
+      "path": "references/genre-playbook-research-outline.md",
+      "sha256": "abcb4f59f97c56b165ed52dc93866c18ed407a3d36c0cf75f93b86ae92cc4fa0",
+      "size": 1031
+    },
+    {
+      "path": "references/genre-playbook-research.md",
+      "sha256": "5af405a2a6c3ae890a4451631097ac02c45e2fbbf3084e38b726357e5f0fdb09",
+      "size": 1218
+    },
+    {
+      "path": "references/genre-playbook-resolution.md",
+      "sha256": "d8b29e42ea74efb44ef5b74a5fb289ee3af8c7b6a9af465a19203104d739f7a8",
+      "size": 755
+    },
+    {
+      "path": "references/genre-playbook-responsibility-letter.md",
+      "sha256": "7430ff21af1c06bccb85697891ab1efdfb752bb45d49e4b8013c1e0aa96a8be7",
+      "size": 1403
+    },
+    {
+      "path": "references/genre-playbook-review-opinion.md",
+      "sha256": "5fafd762b88f80a016079a9c62d49e28862128af6d3c891953f077299ba52a0d",
+      "size": 1884
+    },
+    {
+      "path": "references/genre-playbook-speech-address.md",
+      "sha256": "a1d49514b2cc4004ee98fbebba0aaca167b04ae20e3021da3a27472887ca87bb",
+      "size": 1343
+    },
+    {
+      "path": "references/genre-playbook-technical-requirements.md",
+      "sha256": "0bccc6644c9ca75ca0349fa59a39dbc5bf47d5b2afd6b829a28726f2bd5a2795",
+      "size": 2893
+    },
+    {
+      "path": "references/genre-playbook-work-priorities.md",
+      "sha256": "4bb70d8a157d43421b36d9d60f66a7fc398fb9cd2405d3f69ca88f647622274a",
+      "size": 1720
+    },
+    {
+      "path": "references/genre-playbook-work-summary.md",
+      "sha256": "77729234ae4c3ebd819622adbcbb23cf6ded0314e1a4338a19e6f28986030c47",
+      "size": 2528
+    },
+    {
+      "path": "references/genre-routing.md",
+      "sha256": "29f935262a08eba7f59b9331cb6ebe1774fb5ad121a8a9d92ba3c65043f39602",
+      "size": 1383
+    },
+    {
+      "path": "references/government-work-information.md",
+      "sha256": "cf79b4934da026e802a64da49b146fc0eb4993af814b675f5c5eb90889ead9e2",
+      "size": 1877
+    },
+    {
+      "path": "references/information-system-projects.md",
+      "sha256": "a50348817f0f2af13cdfc0270e456fa6199396249001e242307d2a1d27c71a28",
+      "size": 1418
+    },
+    {
+      "path": "references/internal-signoff.md",
+      "sha256": "37d41848a1406f4b0a52eba73da26afee1c01717a406d934522ec191ed6340be",
+      "size": 2209
+    },
+    {
+      "path": "references/investigation-verification.md",
+      "sha256": "dd2dd19a46816a743d1ae16f5ca4bdc19dd4dded1c724228888a4b777c135641",
+      "size": 1304
+    },
+    {
+      "path": "references/leave-application.md",
+      "sha256": "2c74d844826ccf613ffdfeeb63556972b27c721d165e6eeb5e034b83b987c778",
+      "size": 1068
+    },
+    {
+      "path": "references/material-submission.md",
+      "sha256": "99811c14fb7bf9cb867db59723571fe649aa79e55cdf5bfaae12bbb220c0534b",
+      "size": 1089
+    },
+    {
+      "path": "references/meeting-copy-slip.md",
+      "sha256": "5ee1d59a855421d65bee7ac4cc6cf084dacbc772687fb86bc3a58f49185edc00",
+      "size": 1721
+    },
+    {
+      "path": "references/party-organizational-life.md",
+      "sha256": "c8e1c007cbc68352d89e18bdfcd5657ad4bbbb29183140a44e38c7b9c3c41abb",
+      "size": 1189
+    },
+    {
+      "path": "references/performance-self-evaluation.md",
+      "sha256": "fb9da3d34683c14996a2c65152692eb1e4a4fd5ba4930744429a25eef764928b",
+      "size": 1025
+    },
+    {
+      "path": "references/procurement-review.md",
+      "sha256": "a5e5015c881aca546ef36016e79b247bf0bec467eef039e70122927f4b83db6d",
+      "size": 3023
+    },
+    {
+      "path": "references/project-acceptance.md",
+      "sha256": "001580f954b01bcd1a9e3cdf33da16cd9aaceacabe4c7afa9f9d47377a7ba09f",
+      "size": 2251
+    },
+    {
+      "path": "references/proofreading-checklist.md",
+      "sha256": "086b9df3048c6b28ab644bd160ea0a5f65ab5f59d23d97f38f01525644a48cc8",
+      "size": 1135
+    },
+    {
+      "path": "references/prose-lint-usage.md",
+      "sha256": "fa42581ca0754c3249e269ade71e3594f1c1c445a38bd779b48a41d402fadf18",
+      "size": 3916
+    },
+    {
+      "path": "references/reference-index.md",
+      "sha256": "d699614c29fd60e1d2362f3d5b82d509cee6453c912666b95b494ccfa9594edb",
+      "size": 7255
+    },
+    {
+      "path": "references/review-checklist.md",
+      "sha256": "e802cdcf4ee0295b02367563e1c199626cdd6d7b5fefa3a41071a4f141a1efef",
+      "size": 3147
+    },
+    {
+      "path": "references/speech-person-order.md",
+      "sha256": "ecb6eaf6875a76e1b6d255aa53e77080e37f52de732c59cb6ef25d06a7519274",
+      "size": 1218
+    },
+    {
+      "path": "references/structure-editing.md",
+      "sha256": "10b100c5e3ab4a61c9b69b923fb1a92e8da1aa689d8f046f912e611a0f504ec2",
+      "size": 1902
+    },
+    {
+      "path": "references/targeted-checks.md",
+      "sha256": "882a0bcdba0869362d4367c2285fed1f18a3a3546220afd936af5f4de30fa731",
+      "size": 4041
+    },
+    {
+      "path": "references/transaction-feedback-report.md",
+      "sha256": "b812d3df9f1ec8e54c335d3abb9eae3d6f815e2b831cf0c4bdd481cfa51bccd2",
+      "size": 790
+    },
+    {
+      "path": "references/transaction-remediation-report.md",
+      "sha256": "495499ecec9f7e60dbdaf7e8de7849acb28131d8f7244f887fd3136760a69b2f",
+      "size": 967
+    },
+    {
+      "path": "references/trial-draft-routing.md",
+      "sha256": "a6c1092083b84c8f4877d765c5192d2f468305b02b92b467a042e0e4aabaadb6",
+      "size": 1035
+    },
+    {
+      "path": "references/work-handover.md",
+      "sha256": "e0f77b55990b242ff2da9ff6d1ffbc8b0b02c7423b4a04598ed14c45b84879c4",
+      "size": 1625
+    },
+    {
+      "path": "references/writing-rules.md",
+      "sha256": "8ab9059368675f4f3b994f34eb2ed4c9d7d40091708b547278c62d666bdd7d07",
+      "size": 8149
+    },
+    {
+      "path": "scripts/draft_length.py",
+      "sha256": "4a81c6032bd71d16d0cb28bb818282c195ede0c792b3d5ebdfd77979f310b6d0",
+      "size": 9670
+    },
+    {
+      "path": "scripts/edit_scope.py",
+      "sha256": "9754f34fa6419b2fcfed88ec665ddc08a0a12141e1bd69afceb9b7547a00fc79",
+      "size": 5773
+    },
+    {
+      "path": "scripts/material_diff.py",
+      "sha256": "79fe5ab626298337c6c7a2ce18bf5244eea187fee8c6a9e5523e047acf207ef5",
+      "size": 3143
+    },
+    {
+      "path": "scripts/prose_lint.py",
+      "sha256": "7a3bf386e9db84a2aeb73bc2d4ee7f4d3d4e1a0b449443b1ac75e93a343e4d50",
+      "size": 95288
+    }
+  ]
+}

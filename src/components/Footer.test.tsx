@@ -88,6 +88,53 @@ describe("Footer", () => {
     expect(screen.getByText("© 2026 OpenClaw Foundation")).toBeTruthy();
   });
 
+  it("routes support to official OpenClaw support while preserving social links", () => {
+    render(<Footer />);
+
+    const community = screen.getByRole("heading", { name: "Community" }).closest(".footer-col");
+    const links = within(community as HTMLElement);
+    expect(links.getByRole("link", { name: "Support" }).getAttribute("href")).toBe(
+      "https://community.openclaw.ai/",
+    );
+    const discordLink = links.getByRole("link", { name: "Discord" });
+    expect(discordLink.getAttribute("href")).toBe(
+      "https://openclaw.ai/discord?from=clawhub-community-nav",
+    );
+    expect(discordLink.getAttribute("target")).toBe("_blank");
+    expect(discordLink.getAttribute("rel")).toBe("noreferrer nofollow");
+    expect(links.getByRole("link", { name: "GitHub" }).getAttribute("href")).toBe(
+      "https://github.com/openclaw/clawhub",
+    );
+    for (const link of screen.getAllByRole("link")) {
+      if (link !== discordLink && link.getAttribute("target") === "_blank") {
+        expect(link.getAttribute("rel")).toBe("noreferrer");
+      }
+    }
+  });
+
+  it("exposes support in the expanded mobile community section", async () => {
+    mockMatchMedia(true);
+    render(<Footer />);
+
+    const communityToggle = screen.getByRole("button", { name: "Community" });
+    await waitFor(() => expect(communityToggle.getAttribute("aria-expanded")).toBe("false"));
+    fireEvent.click(communityToggle);
+
+    expect(communityToggle.getAttribute("aria-expanded")).toBe("true");
+    const links = document.getElementById("footer-section-community-links");
+    expect(links?.getAttribute("data-open")).toBe("true");
+    expect(
+      within(links as HTMLElement)
+        .getByRole("link", { name: "Support" })
+        .getAttribute("href"),
+    ).toBe("https://community.openclaw.ai/");
+    const discordLink = within(links as HTMLElement).getByRole("link", { name: "Discord" });
+    expect(discordLink.getAttribute("href")).toBe(
+      "https://openclaw.ai/discord?from=clawhub-community-nav",
+    );
+    expect(discordLink.getAttribute("rel")).toBe("noreferrer nofollow");
+  });
+
   it("keeps offscreen imagery lazy and dimensioned", () => {
     const { container } = render(<Footer />);
     const images = Array.from(container.querySelectorAll("img"));

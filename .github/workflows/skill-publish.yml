@@ -101,7 +101,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.4
 
       - name: Resolve ClawHub workflow source
         id: clawhub_source
@@ -300,10 +300,12 @@ jobs:
                       f"got {name}={value!r}."
                   )
 
-          results = {"wouldPublish": [], "published": [], "alreadySynced": [], "skipped": [], "failed": []}
+          results = {"wouldPublish": [], "published": [], "pendingPublication": [], "submitted": [], "alreadySynced": [], "skipped": [], "failed": []}
           status_keys = {
               "would-publish": "wouldPublish",
               "published": "published",
+              "pending-publication": "pendingPublication",
+              "submitted": "submitted",
               "unchanged": "alreadySynced",
           }
 

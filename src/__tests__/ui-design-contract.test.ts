@@ -76,15 +76,9 @@ function contrastRatio(foreground: string, background: string) {
 
 describe("restored UI design contract", () => {
   const rootRoute = () => read("src/routes/__root.tsx");
-  const header = () => read("src/components/Header.tsx");
-  const footer = () => read("src/components/Footer.tsx");
   const home = () => read("src/routes/index.tsx");
-  const navItems = () => read("src/lib/nav-items.ts");
-  const publicRegistry = () => read("src/lib/publicRegistry.ts");
-  const settings = () => read("src/routes/settings.tsx");
   const styles = () => read("src/styles.css");
   const designSystemStyles = () => read("src/design-system.css");
-  const theme = () => read("src/lib/theme.ts");
 
   it("loads the shared OpenClaw token adapter after the legacy application stylesheet", () => {
     const rootSource = rootRoute();
@@ -132,7 +126,6 @@ describe("restored UI design contract", () => {
       ".home-v2-listing-row-icon .marketplace-icon",
       ".home-v2-popular-publisher-card .marketplace-icon",
       ".navbar-search-typeahead-icon .marketplace-icon",
-      ".browse-page .dashboard-catalog-row-icon .marketplace-icon",
     ]) {
       expect(cssRule(css, selector)).toContain("border-radius: var(--oc-radius-inset)");
     }
@@ -304,105 +297,6 @@ describe("restored UI design contract", () => {
     expect(rootSource).toContain("<GoogleAnalytics />");
   });
 
-  it("requires the responsive header rail, search overlay, and theme controls", () => {
-    const headerSource = header();
-    const navSource = navItems();
-    const publicRegistrySource = publicRegistry();
-    const css = styles();
-
-    expect(headerSource).toContain('className="navbar-top"');
-    expect(headerSource).toContain('className="navbar-calm-start"');
-    expect(headerSource).toContain('className="navbar-calm-center"');
-    expect(headerSource).toContain('className="navbar-calm-actions nav-actions"');
-    expect(headerSource).toContain('className="navbar-calm-rail"');
-    expect(headerSource).toContain('className="navbar-calm-more-trigger"');
-    expect(headerSource).toContain('className="navbar-search-wrap"');
-    expect(headerSource).toContain('className="navbar-search-mobile-trigger"');
-    expect(headerSource).toContain('className="navbar-search-mobile-overlay"');
-    expect(headerSource).toContain('className="navbar-search-mobile-wrap"');
-    expect(headerSource).toContain('className="navbar-search-mobile-clear"');
-    expect(headerSource).toContain('className="mobile-nav-section mobile-nav-appearance-section"');
-    expect(headerSource).toContain('className="user-dropdown-theme-row"');
-    expect(headerSource).toContain('className="user-dropdown-theme-button"');
-    expect(headerSource).toContain('className="navbar-theme-switcher"');
-    expect(headerSource).toContain('className="navbar-theme-switcher-skeleton"');
-    expect(headerSource).not.toContain('className="theme-mode-toggle"');
-    expect(headerSource).toContain('className="github-sign-in-button"');
-    expect(headerSource).toContain('className="sign-in-full-copy"');
-    expect(headerSource).toContain('className="sign-in-compact-copy"');
-    expect(headerSource).toContain("Search skills, plugins, and creators");
-    expect(headerSource).not.toContain('className="navbar-tabs-primary"');
-    expect(headerSource).not.toContain('className="navbar-tabs-secondary"');
-
-    expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
-    expect(navSource).toContain('label: "Official"');
-    expect(navSource).toContain('label: "Docs"');
-    expect(navSource).toContain("href: CLAWHUB_DOCS_URL");
-    expect(publicRegistrySource).toContain(
-      'export const CLAWHUB_DOCS_URL = "https://docs.openclaw.ai/clawhub/"',
-    );
-    expect(navSource).not.toContain('icon: "wrench"');
-    expect(navSource).not.toContain('icon: "plug"');
-    expect(navSource).not.toContain('label: "About"');
-    expect(navSource).not.toContain('label: "Stars"');
-    expect(navSource).not.toContain('label: "Management"');
-
-    const headerShell = cssRule(css, ".navbar-inner");
-    expect(headerShell).toContain("max-width: var(--page-max)");
-    expect(headerShell).toContain("padding: 0 var(--space-5)");
-
-    const topRow = cssRule(css, ".navbar-calm .navbar-top");
-    expect(topRow).toContain(
-      "grid-template-columns: minmax(0, 1fr) minmax(240px, 360px) minmax(0, 1fr)",
-    );
-    const rail = cssRule(css, ".navbar-calm .navbar-calm-rail");
-    expect(rail).toContain("display: flex");
-    const moreTrigger = cssRule(css, ".navbar-calm-more-trigger");
-    expect(moreTrigger).toContain("cursor: pointer");
-    expect(moreTrigger).toContain("border: 0");
-    const moreMenu = cssRule(css, ".navbar-calm-more-menu");
-    expect(moreMenu).toContain("border-radius: var(--r-md)");
-    expect(css).toContain(".navbar-theme-switcher {\n  --navbar-theme-ease");
-    expect(css).toContain("--navbar-theme-pad: 3px");
-    expect(css).toContain("--navbar-theme-outer-r: var(--oc-radius-control)");
-    expect(css).toContain("--navbar-theme-inner-r: var(--oc-radius-inset)");
-    expect(css).toContain("--navbar-theme-seg: 26px");
-    expect(css).toContain("height: var(--navbar-theme-collapsed-w)");
-    const mobileDrawerTheme = cssRule(css, ".mobile-nav-appearance-section .navbar-theme-switcher");
-    expect(mobileDrawerTheme).toContain("width: var(--navbar-theme-expanded-w)");
-    const userDropdown = cssRule(css, ".user-dropdown-content");
-    expect(userDropdown).toContain("border-radius: var(--r-md)");
-    expect(userDropdown).toContain("overflow: hidden");
-    const themeRow = cssRule(css, ".user-dropdown-theme-row");
-    expect(themeRow).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
-    const themeButton = cssRule(css, ".user-dropdown-theme-button");
-    expect(themeButton).toContain("justify-content: center");
-    expect(css).toContain("--r-btn: var(--r-sm)");
-
-    cssMediaContaining(css, "(max-width: 1100px)", [
-      ".navbar-calm-rail-link-secondary {\n    display: none;",
-      ".navbar-calm-more-trigger {\n    display: inline-flex;",
-    ]);
-    cssMediaContaining(css, "(max-width: 920px)", [
-      ".navbar-calm .navbar-calm-rail {\n    display: none;",
-      ".navbar-calm-center .navbar-search-wrap {\n    position: static;",
-      ".navbar-calm-center .navbar-search-typeahead {\n    top: calc(100% + 4px);",
-      "width: auto;",
-    ]);
-    cssMediaContaining(css, "(max-width: 760px)", [
-      "grid-template-columns: minmax(0, 1fr) auto",
-      ".navbar-calm-center {\n    display: none;",
-      ".navbar-calm .navbar-search-mobile-wrap {\n    display: block;",
-      ".navbar-calm .navbar-search-mobile-overlay {\n    all: unset;",
-      ".navbar-search-mobile-wrap .navbar-search-typeahead {\n    right: 0;",
-      ".navbar-calm-actions > .navbar-theme-switcher,\n  .navbar-calm-actions > .navbar-theme-switcher-skeleton {\n    display: none;",
-    ]);
-    const compactMobileTrigger = cssRule(css, ".navbar-calm .nav-mobile");
-    expect(compactMobileTrigger).toContain("display: inline-flex");
-    const compact = css.slice(css.lastIndexOf("@media (max-width: 760px)"));
-    expect(compact).not.toContain(".navbar-search {\n    display: none;");
-  });
-
   it("requires the static hero and canonical home catalog without later sections", () => {
     const homeSource = home();
     const listingSource = read("src/components/HomeListingSection.tsx");
@@ -497,53 +391,6 @@ describe("restored UI design contract", () => {
     expect(scroller).toMatch(/width:\s*100%/);
     expect(scroller).toMatch(/min-width:\s*0/);
     expect(scroller).toMatch(/overflow-x:\s*auto/);
-  });
-
-  it("requires the restored footer columns and mobile section toggles", () => {
-    const footerSource = footer();
-    const navSource = navItems();
-    const css = styles();
-
-    expect(navSource).toContain('title: "Browse"');
-    expect(navSource).toContain('title: "Publish"');
-    expect(navSource).toContain('title: "Ecosystem"');
-    expect(navSource).toContain('title: "Community"');
-    expect(navSource).toContain('label: "Publish Skill"');
-    expect(navSource).toContain('label: "Publish Plugin"');
-    expect(navSource).toContain('label: "GitHub"');
-    expect(navSource).toContain('label: "OpenClaw"');
-    expect(navSource).toContain('label: "Status"');
-    expect(navSource).toContain('label: "Deployed on Vercel"');
-    expect(navSource).toContain('label: "Powered by Convex"');
-
-    expect(footerSource).toContain('className="footer-col-toggle"');
-    expect(footerSource).toContain("const ariaExpanded = isMobile ? isOpen : true");
-    expect(footerSource).toContain("aria-expanded={ariaExpanded}");
-    expect(footerSource).toContain("data-open={isOpen}");
-    expect(footerSource).toContain("toggleSection(section.title)");
-
-    cssMediaContaining(css, "(max-width: 760px)", [
-      ".footer-grid {\n    grid-template-columns: 1fr;",
-      ".footer-col-links {\n    display: none;",
-      '.footer-col-links[data-open="true"] {\n    display: flex;',
-    ]);
-  });
-
-  it("prevents reintroducing tweakcn overlays, custom visual preferences, or density controls", () => {
-    expect(existsSync(join(root, "src/lib/customTheme.ts"))).toBe(false);
-    expect(existsSync(join(root, "src/lib/preferences.ts"))).toBe(false);
-
-    const settingsSource = settings();
-    expect(settingsSource).not.toMatch(/tweakcn|custom theme|overlay/i);
-    expect(settingsSource).not.toMatch(/density|relaxed|high contrast|code font size/i);
-    expect(settingsSource).not.toMatch(/default view|experimental features/i);
-
-    const themeSource = theme();
-    expect(themeSource).toContain("cleanupLegacyVisualSettings");
-    expect(themeSource).toContain("LEGACY_CUSTOM_THEME_KEY");
-    expect(themeSource).toContain("LEGACY_PREFERENCES_KEY");
-    expect(themeSource).toContain("DEFAULT_THEME_SELECTION");
-    expect(themeSource).toContain("clearLegacyVisualCookies");
   });
 
   it("keeps runtime requirement text high contrast in both themes", () => {

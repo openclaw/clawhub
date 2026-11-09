@@ -4,7 +4,8 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
-const DEFAULT_MAX_REQUESTS = 1_024;
+// One capability covers all subject and judge calls across both evaluation arms.
+const DEFAULT_MAX_REQUESTS = 8_192;
 const ALLOWED_PATHS = new Set(["/v1/chat/completions", "/v1/responses", "/v1/responses/compact"]);
 
 function reject(response: ServerResponse, status: number, message: string) {
@@ -57,12 +58,17 @@ export async function startOpenAiCapabilityBroker(args: {
   allowedModels: readonly string[];
   apiKey: string;
   maxRequests?: number;
+  reasoningEffort?: { responses: "medium"; chat: "high" };
+  serviceTier?: "default";
   upstreamBaseUrl?: string;
 }) {
   const allowedModels = new Set(args.allowedModels);
   const capabilityToken = randomBytes(32).toString("base64url");
   const upstreamBaseUrl = (args.upstreamBaseUrl ?? "https://api.openai.com").replace(/\/$/, "");
-  let requestsRemaining = args.maxRequests ?? DEFAULT_MAX_REQUESTS;
+  const requestLimit = args.maxRequests ?? DEFAULT_MAX_REQUESTS;
+  let requestsRemaining = requestLimit;
+  let budgetRejections = 0;
+  let providerRateLimitResponses = 0;
   const activeRequests = new Set<AbortController>();
 
   const server = createServer(async (request, response) => {
@@ -76,10 +82,6 @@ export async function startOpenAiCapabilityBroker(args: {
         reject(response, 404, "unsupported evaluation endpoint");
         return;
       }
-      if (requestsRemaining <= 0) {
-        reject(response, 429, "evaluation capability exhausted");
-        return;
-      }
       const body = await readRequestBody(request);
       let parsed: unknown;
       try {
@@ -90,7 +92,7 @@ export async function startOpenAiCapabilityBroker(args: {
       }
       const requestBody =
         parsed && typeof parsed === "object" && !Array.isArray(parsed)
-          ? (parsed as { background?: unknown; model?: unknown })
+          ? (parsed as Record<string, unknown>)
           : undefined;
       const model = requestBody?.model;
       if (typeof model !== "string" || !allowedModels.has(model)) {
@@ -106,18 +108,72 @@ export async function startOpenAiCapabilityBroker(args: {
         return;
       }
 
+      const payload = { ...requestBody };
+      // Sol tool calls require Responses. The pinned Codex adapter already uses
+      // that wire API; never silently downgrade or lossy-translate tool calls.
+      if (
+        url.pathname === "/v1/chat/completions" &&
+        /^gpt-6(?:\.\d+)?-sol(?:-|$)/.test(model) &&
+        ((Array.isArray(payload.tools) && payload.tools.length > 0) ||
+          (Array.isArray(payload.functions) && payload.functions.length > 0))
+      ) {
+        reject(response, 400, "Sol tool calls require the Responses API");
+        return;
+      }
+      if (args.reasoningEffort) {
+        if (url.pathname === "/v1/responses") {
+          const reasoning = payload.reasoning;
+          payload.reasoning = {
+            ...(reasoning && typeof reasoning === "object" && !Array.isArray(reasoning)
+              ? reasoning
+              : {}),
+            effort: args.reasoningEffort.responses,
+          };
+        } else if (url.pathname === "/v1/chat/completions") {
+          payload.reasoning_effort = args.reasoningEffort.chat;
+          // SkillEvaluator supplies temperature=0 for grading. Sol reasoning
+          // requests do not support custom sampling, so omit it at this boundary.
+          delete payload.temperature;
+          delete payload.top_p;
+        }
+      }
+      // Standard by default; an explicit caller tier remains an override.
+      if (args.serviceTier && payload.service_tier === undefined)
+        payload.service_tier = args.serviceTier;
+
+      // SkillEvaluator uses the legacy field for proxy URLs, but OpenAI's
+      // reasoning families require max_completion_tokens (not just GPT-5).
+      if (
+        url.pathname === "/v1/chat/completions" &&
+        /^(?:gpt-[5-9](?:[.-]|$)|o[134](?:-|$))/.test(model) &&
+        typeof payload.max_tokens === "number"
+      ) {
+        if (payload.max_completion_tokens === undefined)
+          payload.max_completion_tokens = payload.max_tokens;
+        delete payload.max_tokens;
+      }
+
+      // Reserve after reading/validating the body so concurrent requests cannot
+      // all pass an earlier allowance check before any of them decrements it.
+      if (requestsRemaining <= 0) {
+        budgetRejections += 1;
+        reject(response, 429, "evaluation capability exhausted");
+        return;
+      }
       requestsRemaining -= 1;
       const controller = new AbortController();
       activeRequests.add(controller);
       try {
         const upstream = await fetch(`${upstreamBaseUrl}${url.pathname}${url.search}`, {
-          body,
+          body: JSON.stringify(payload),
           headers: upstreamHeaders(request, args.apiKey),
           method: "POST",
           signal: controller.signal,
         });
+        if (upstream.status === 429) providerRateLimitResponses += 1;
         copyResponseHeaders(upstream, response);
-        response.writeHead(upstream.status);
+        // The pinned evaluator retries 502 within its judge deadline, but not 520.
+        response.writeHead(upstream.status === 520 ? 502 : upstream.status);
         if (!upstream.body) {
           response.end();
           return;
@@ -148,6 +204,14 @@ export async function startOpenAiCapabilityBroker(args: {
   return {
     capabilityToken,
     port: address.port,
+    usage() {
+      return {
+        requestLimit,
+        forwardedRequests: requestLimit - requestsRemaining,
+        budgetRejections,
+        providerRateLimitResponses,
+      };
+    },
     async close() {
       for (const controller of activeRequests) controller.abort();
       await new Promise<void>((resolvePromise, rejectPromise) => {

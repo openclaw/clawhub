@@ -22,7 +22,7 @@ export const RESERVED_CATALOG_TOPIC_SLUGS = [
 ] as const;
 const CATALOG_TOPIC_FORMAT_CONTROL_RE = /\p{Cf}/u;
 
-export const CLAW_CATEGORY_DEFINITIONS = [
+export const TEMPLATE_CATEGORY_DEFINITIONS = [
   {
     slug: "personal",
     label: "Personal",
@@ -97,11 +97,13 @@ export const CLAW_CATEGORY_DEFINITIONS = [
   },
 ] as const;
 
-export type ClawCategorySlug = (typeof CLAW_CATEGORY_DEFINITIONS)[number]["slug"];
-const CLAW_CATEGORY_SLUGS = new Set<string>(CLAW_CATEGORY_DEFINITIONS.map(({ slug }) => slug));
+export type TemplateCategorySlug = (typeof TEMPLATE_CATEGORY_DEFINITIONS)[number]["slug"];
+const TEMPLATE_CATEGORY_SLUGS = new Set<string>(
+  TEMPLATE_CATEGORY_DEFINITIONS.map(({ slug }) => slug),
+);
 
-export function isClawCategorySlug(value: string): value is ClawCategorySlug {
-  return CLAW_CATEGORY_SLUGS.has(value);
+export function isTemplateCategorySlug(value: string): value is TemplateCategorySlug {
+  return TEMPLATE_CATEGORY_SLUGS.has(value);
 }
 
 export const PLUGIN_CATEGORY_DEFINITIONS = [

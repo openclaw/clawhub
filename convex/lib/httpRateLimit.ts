@@ -1,10 +1,11 @@
 import { MINUTE, type RateLimitConfig } from "@convex-dev/rate-limiter";
-import { internal } from "../_generated/api";
+import { components, internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUser } from "./apiTokenAuth";
 import { ARCHIVE_REQUEST_IDENTITY_HEADER } from "./clawhubVercelOidc";
 import { corsHeaders, mergeHeaders } from "./httpHeaders";
+import { isRateLimiterStorageDisabled } from "./rateLimiterSwitch";
 import { getVerifiedClientIp, VERIFIED_CLIENT_IP_HEADER } from "./verifiedClientIp";
 
 export const RATE_LIMITS = {
@@ -16,14 +17,23 @@ export const RATE_LIMITS = {
 } as const;
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
+// High-volume buckets record consumption in batches: one request in N writes
+// a count of N, while every other request performs a read-only bucket check.
+// The expected consumption is unchanged and exhausted buckets still deny every
+// request, but each committed quota write now covers N requests. Low-volume
+// buckets (write, export, trusted publish) stay exactly accounted.
+const HTTP_RATE_LIMIT_BATCHED_KINDS: Partial<Record<RateLimitKind, number>> = {
+  read: 4,
+  download: 4,
+};
 const HTTP_RATE_LIMIT_SHARDS = 32;
 const HTTP_RATE_LIMIT_MIN_SHARD_CAPACITY = 10;
 const HTTP_RATE_LIMIT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 
 type RateLimitResult = {
   allowed: boolean;
-  // The component does not expose an exact global remaining count for sharded
-  // buckets, so successful responses omit this instead of guessing.
+  // Only set on denial (exactly 0). The component cannot report an exact global
+  // remaining count for sharded buckets, and admitted responses send no headers.
   remaining?: number;
   limit: number;
   resetAt: number;
@@ -56,7 +66,7 @@ function fixedWindowRateLimit(rate: number): FixedWindowRateLimitConfig {
   };
 }
 
-const HTTP_RATE_LIMIT_CONFIGS = {
+export const HTTP_RATE_LIMIT_CONFIGS = {
   readIp: fixedWindowRateLimit(RATE_LIMITS.read.ip),
   readKey: fixedWindowRateLimit(RATE_LIMITS.read.key),
   readAdminKey: fixedWindowRateLimit(RATE_LIMITS.read.adminKey),
@@ -86,12 +96,18 @@ export async function applyRateLimit(
   const preappliedHeaders = preappliedRateLimitHeaders.get(request);
   if (preappliedHeaders) return { ok: true, headers: preappliedHeaders };
 
+  const batchSize = getRateLimitBatchSize(kind);
   const auth = await getOptionalApiTokenUser(ctx, request);
   const verifiedIp = await getVerifiedClientIp(request);
   if (verifiedIp) verifiedClientIps.set(request, verifiedIp);
   const ip = verifiedIp ?? "unknown";
   const ipSource = verifiedIp ? "verified-edge" : "none";
   const hasClientIp = ip !== "unknown";
+  const rpcMode = process.env.CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE;
+  const adminProbe = rpcMode === "admin-probe" && auth?.user.role === "admin";
+  const combineMetadata =
+    rpcMode === "on" ||
+    (adminProbe && request.headers.get("x-clawhub-rate-limit-rpc") === "combined");
 
   // Authenticated requests are enforced and consumed by user bucket only to
   // avoid draining shared IP quota.
@@ -102,8 +118,12 @@ export async function applyRateLimit(
       getAuthenticatedRateLimitKey(auth.userId, kind),
       userLimit.name,
       userLimit.limit,
+      combineMetadata,
+      batchSize,
     );
-    const headers = rateHeaders(userResult);
+    const headers: Record<string, string> = adminProbe
+      ? { "X-ClawHub-RateLimit-Rpc": combineMetadata ? "combined" : "separate" }
+      : {};
     if (userResult.unavailable) return rateLimitUnavailable(headers);
     if (!userResult.allowed) {
       console.info("rate_limit_denied", {
@@ -124,6 +144,7 @@ export async function applyRateLimit(
               "Content-Type": "text/plain; charset=utf-8",
               "Cache-Control": "no-store",
             },
+            rateLimitedHeaders(userResult),
             headers,
             corsHeaders(),
           ),
@@ -142,9 +163,10 @@ export async function applyRateLimit(
     getAnonymousRateLimitKey(kind, ip),
     getHttpRateLimitName(kind, "ip"),
     RATE_LIMITS[kind].ip,
+    combineMetadata,
+    batchSize,
   );
-  const headers = rateHeaders(ipResult);
-  if (ipResult.unavailable) return rateLimitUnavailable(headers);
+  if (ipResult.unavailable) return rateLimitUnavailable({});
 
   if (!ipResult.allowed) {
     console.info("rate_limit_denied", {
@@ -164,14 +186,16 @@ export async function applyRateLimit(
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-store",
           },
-          headers,
+          rateLimitedHeaders(ipResult),
           corsHeaders(),
         ),
       }),
     };
   }
 
-  return { ok: true, headers };
+  // Admitted requests carry no rate-limit headers: they were not limited, and
+  // limit/reset hints on later 4xx/5xx responses read as a rate limit.
+  return { ok: true, headers: {} };
 }
 
 function getAnonymousRateLimitKey(kind: RateLimitKind, ip: string) {
@@ -254,20 +278,75 @@ function anonymousEdgeResponse(request: Request): ApplyRateLimitResult {
   };
 }
 
+// The component rejects any single request larger than
+// capacity / (shards / 2); a misconfigured batch would turn every sampled
+// request into a 500, so fail at module load instead.
+for (const [kind, batch] of Object.entries(HTTP_RATE_LIMIT_BATCHED_KINDS) as [
+  RateLimitKind,
+  number,
+][]) {
+  for (const subject of ["ip", "key", "adminKey"] as const) {
+    const config = HTTP_RATE_LIMIT_CONFIGS[getHttpRateLimitName(kind, subject)];
+    const shards = config.shards ?? 1;
+    const maxPerRequest = config.rate / (shards < 3 ? 1 : shards / 2);
+    if (batch > maxPerRequest) {
+      throw new Error(`Rate limit batch ${batch} exceeds ${kind}/${subject} per-request maximum`);
+    }
+  }
+}
+
+// Operators can raise the batch for high-volume buckets without a deploy
+// (`CLAWHUB_HTTP_RATE_LIMIT_BATCHING=<2-16>`), e.g. to shed quota writes while
+// write admission is saturated. A batch never exceeds the smallest per-shard
+// capacity of that kind, so every shard can still admit at least one batch.
+const MAX_HTTP_RATE_LIMIT_BATCH = 16;
+
+function maxBatchForKind(kind: RateLimitKind): number {
+  let max = MAX_HTTP_RATE_LIMIT_BATCH;
+  for (const subject of ["ip", "key", "adminKey"] as const) {
+    const config = HTTP_RATE_LIMIT_CONFIGS[getHttpRateLimitName(kind, subject)];
+    max = Math.min(max, Math.floor(config.rate / (config.shards ?? 1)));
+  }
+  return Math.max(1, max);
+}
+
+export function getRateLimitBatchSize(kind: RateLimitKind): number {
+  const defaultBatch = HTTP_RATE_LIMIT_BATCHED_KINDS[kind];
+  if (!defaultBatch) return 1;
+  const mode = process.env.CLAWHUB_HTTP_RATE_LIMIT_BATCHING?.trim().toLowerCase();
+  if (mode === "off") return 1;
+  // Emergency write-pressure switch: read/download buckets are not metered in
+  // Convex at all (no quota write, no quota read). Identity verification,
+  // anonymous-edge enforcement and exact write/export/publish limits remain.
+  if (mode === "unmetered") return 0;
+  const requested = mode && /^\d+$/.test(mode) ? Number(mode) : defaultBatch;
+  return Math.max(1, Math.min(requested, maxBatchForKind(kind)));
+}
+
 async function checkRateLimit(
   ctx: ActionCtx,
   key: string,
   name: HttpRateLimitName,
   limit: number,
+  combineMetadata: boolean,
+  batchSize: number,
 ): Promise<RateLimitResult> {
   const now = Date.now();
+  if (isRateLimiterStorageDisabled()) {
+    return { allowed: true, limit, resetAt: getCurrentWindowResetAt(now) };
+  }
+  if (batchSize === 0) {
+    return { allowed: true, limit, resetAt: getCurrentWindowResetAt(now) };
+  }
   try {
-    await touchRateLimitKeyMetadata(ctx, { name, key, now });
-    const status = await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, {
-      name,
-      key,
-      config: HTTP_RATE_LIMIT_CONFIGS[name],
-    });
+    const status =
+      batchSize > 1 && Math.random() * batchSize >= 1
+        ? await peekRateLimit(ctx, { name, key, now, count: batchSize })
+        : await consumeRateLimitWithMetadata(
+            ctx,
+            { name, key, now, count: batchSize },
+            combineMetadata,
+          );
     if (!status.ok) {
       return {
         allowed: false,
@@ -294,13 +373,67 @@ async function checkRateLimit(
   }
 }
 
+async function peekRateLimit(
+  ctx: ActionCtx,
+  args: { name: HttpRateLimitName; key: string; now: number; count: number },
+): Promise<{ ok: true; retryAfter?: number } | { ok: false; retryAfter: number }> {
+  // Read-only: an exhausted bucket denies without adding a quota write. The
+  // check must ask for the same count a sampled write consumes; a one-token
+  // check would keep passing on shard remainders that can no longer fit a
+  // batch, admitting unbounded traffic past the limit.
+  const status = await ctx.runQuery(components.rateLimiterV2.lib.checkRateLimit, {
+    name: args.name,
+    key: args.key,
+    config: HTTP_RATE_LIMIT_CONFIGS[args.name],
+    count: args.count,
+  });
+  // Denied traffic still refreshes retention metadata so cleanup cannot reset
+  // a bucket that is actively being limited. The refresh rarely writes.
+  if (!status.ok) await touchRateLimitKeyMetadata(ctx, args);
+  return status;
+}
+
+async function consumeRateLimitWithMetadata(
+  ctx: ActionCtx,
+  args: { name: HttpRateLimitName; key: string; now: number; count: number },
+  combineMetadata: boolean,
+) {
+  const counterArgs = {
+    name: args.name,
+    key: args.key,
+    config: HTTP_RATE_LIMIT_CONFIGS[args.name],
+    ...(args.count > 1 ? { count: args.count } : {}),
+  };
+  if (!combineMetadata) {
+    await touchRateLimitKeyMetadata(ctx, args);
+    return await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, counterArgs);
+  }
+  try {
+    return await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, {
+      ...counterArgs,
+      metadata: { now: args.now, ttlMs: HTTP_RATE_LIMIT_KEY_TTL_MS },
+    });
+  } catch (error) {
+    if (!isRateLimitMetadataWriteConflict(error)) throw error;
+    // The failed transaction rolled back its component counter too. Preserve
+    // metadata-contention availability by retrying the bare counter, after the
+    // competing metadata refresh or cleanup committed, as the separate path did.
+    console.warn("rate_limit_metadata_write_contention", {
+      name: args.name,
+    });
+    return await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, counterArgs);
+  }
+}
+
 async function touchRateLimitKeyMetadata(
   ctx: ActionCtx,
   args: { name: HttpRateLimitName; key: string; now: number },
 ) {
   try {
     await ctx.runMutation(internal.rateLimits.touchHttpRateLimitKeyInternal, {
-      ...args,
+      name: args.name,
+      key: args.key,
+      now: args.now,
       ttlMs: HTTP_RATE_LIMIT_KEY_TTL_MS,
     });
   } catch (error) {
@@ -335,7 +468,11 @@ function rateLimitUnavailable(headers: HeadersInit): Extract<ApplyRateLimitResul
   };
 }
 
-function rateHeaders(result: RateLimitResult): HeadersInit {
+// Rate-limit headers describe an actual denial. Admitted requests (including
+// every request while `CLAWHUB_RATE_LIMITER_DISABLED=1` or unmetered batching
+// skips the limiter) and limiter-unavailable 503s must not carry them: the CLI
+// and publishers read limit/reset hints as "you were rate limited".
+function rateLimitedHeaders(result: RateLimitResult): Record<string, string> {
   const nowMs = Date.now();
   const resetSeconds = Math.ceil(result.resetAt / 1000);
   const resetDelaySeconds = Math.max(1, Math.ceil((result.resetAt - nowMs) / 1000));
@@ -349,7 +486,7 @@ function rateHeaders(result: RateLimitResult): HeadersInit {
     headers["X-RateLimit-Remaining"] = String(result.remaining);
     headers["RateLimit-Remaining"] = String(result.remaining);
   }
-  if (!result.allowed) headers["Retry-After"] = String(resetDelaySeconds);
+  headers["Retry-After"] = String(resetDelaySeconds);
   return headers;
 }
 
@@ -382,7 +519,7 @@ function isRateLimitCounterWriteConflict(error: unknown) {
 function isRateLimitMetadataWriteConflict(error: unknown) {
   if (!(error instanceof Error)) return false;
   return (
-    error.message.includes("httpRateLimitKeys") &&
+    error.message.includes("httpRateLimitKeysV2") &&
     error.message.includes("changed while this mutation was being run")
   );
 }

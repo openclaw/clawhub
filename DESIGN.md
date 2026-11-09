@@ -2,6 +2,8 @@
 
 This document outlines the design rules, patterns, and guidelines for the ClawHub platform to ensure consistency, accessibility, and maintainability across all components.
 
+For OpenClaw and OpenClaw Foundation logos, see the [brand kit](https://github.com/openclaw/carapace/tree/main/brand-kit).
+
 ---
 
 ## Color System

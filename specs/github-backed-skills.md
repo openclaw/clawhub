@@ -148,6 +148,23 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
 - Detail storage retains at most one preferred `SKILL.md` or `README.md`,
   capped at 64 KiB. The complete upstream file tree is never persisted for an
   unclaimed mirror row.
+- The mirror source is a bounded top window, not the whole upstream feed. Each
+  sync captures at most the top 4,000 rows of the all-time view (ranked
+  by installs) and of `view=trending`. skills.sh serves up to a 100k-row
+  all-time window, and a mirrored leaderboard row costs about 0.4s of detail and
+  audit work, so mirroring the full feed would take about ten hours per run.
+  When the upstream total exceeds the window, measurement stops at the window,
+  records the upstream total, and treats the window as the complete source.
+  Rows below it are deliberately absent. Raise the window only with a matching
+  run-time budget. The 50,000-row source capacity remains a hard guard on
+  measurement, proof snapshots, and Convex run totals.
+- Malformed source identities remain at their original captured page/offset for
+  quarantine; they must not abort source measurement or shift later rows/ranks.
+  Capture keeps the existing string-typed row shape, using a per-position
+  `missing:<page>:<offset>` value for missing IDs and empty identity fields for
+  non-string values. These placeholders cannot form accepted skill identities.
+  Duplicate-ID checks count real nonempty string IDs; metadata sampling skips
+  rows that cannot supply the required string fields and exact skills.sh URL.
 - Snapshot ingestion uses bounded page/offset cursors. Pause is checked before
   another source batch is fetched; resume continues at the exact stored cursor.
   Reconciliation tombstones disappeared rows and reactivates later
@@ -160,14 +177,18 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
 - skills.sh does not expose an exact rolling-24-hour count in this response.
   `trending24hInstalls` therefore remains unavailable; lifetime totals,
   snapshot deltas, and weekly sparklines must not be relabeled as that metric.
-- Trending pages are exhausted and captured immutably before application.
+- Trending pages within the mirror window are captured immutably before application.
   Older observations cannot overwrite newer fields, identical replays are
-  idempotent, and a same-timestamp payload drift is rejected. At most ten IDs
-  missing because of pagination drift may hydrate through the existing mirror
-  normalizer in one run; exceeding that bound fails closed.
-- The mirror has no scheduler in this stage. Production activation, public
-  search/detail/install behavior, claims, and publisher attachment require
-  separately accepted work.
+  idempotent, and a same-timestamp payload drift is rejected. Trending rows
+  absent from the mirrored leaderboard window are expected (the views rank
+  differently) and are counted as `trendingMissing`. At most one batch (50) of
+  them may hydrate through the existing mirror normalizer per run; the rest are
+  skipped, and the next leaderboard run tombstones hydrated rows outside its
+  window.
+- `.github/workflows/skills-sh-sync.yml` runs the production sync once a day at
+  03:00 `America/Los_Angeles`. Canonical Trending admits skills.sh rows only
+  from a completed Trending run younger than 50 hours, so one missed daily run
+  does not drop skills.sh from Trending.
 
 ## Publisher Gate
 
@@ -200,7 +221,7 @@ fetch so a transfer cannot race source activation.
 ClawHub owns the sync loop. Upstream repositories do not push payloads into
 ClawHub.
 
-The production cron runs every 15 minutes:
+The production cron runs once per day:
 
 ```text
 github-skill-source-sync -> githubSkillSyncNode.syncGitHubSkillSourcesInternal
@@ -238,6 +259,14 @@ render time.
 
 Unsupported, invalid, or missing manifest data should not block the source sync.
 The catalog can still render skills in the normal fallback order.
+
+Public `sourceRepos` names a repository only when the public catalog items
+include at least one skill from that source. A valid `skills.sh.json` does
+not put the repo on the list by itself. If every skill from that source is
+hidden, deleted, or otherwise absent from the public items, the source
+contributes no section and `sourceRepos` omits it. A public skill that does
+not match a grouping still keeps its repo, because that skill is visible
+under Other skills.
 
 Repo labels such as `NVIDIA/skills` and "Source-backed" chrome are implementation
 details and should not be required visible UI copy.
@@ -451,17 +480,55 @@ After a new `NVIDIA/skills` version reaches a completed `clean` or `suspicious`
 security verdict, ClawHub may enqueue that exact commit, path, and content hash
 for a pinned SkillEvaluator Tier 3 run. Evaluation is asynchronous and never
 blocks promotion or installation. Unchanged syncs do not enqueue another run.
+Legacy catalog skills inherit the repository from their GitHub source when no
+per-skill repository is stored; verification must still enqueue those skills.
+
+The worker pins SkillEvaluator v0.5.0 and its release commit. Its frozen Harbor
+0.24.0 dependency receives a guarded compatibility fix that strips trailing dots
+alongside underscores and hyphens from truncated trial names. Otherwise Compose
+can generate invalid image references such as `doca-compress-explicit-positive-__…`.
+The fix changes container naming only; datasets, scoring, and paired baselines
+remain unchanged. Revalidate or remove it when upgrading Harbor.
+
+After changing the configuration, the admin backfill creates new configuration-specific jobs while
+preserving prior outcomes. Its optional `sourcePaths` selection limits a canary
+to 1–20 exact paths across every page; omitting it selects the full eligible
+catalog. Repeating the backfill does not duplicate already-observed jobs.
+Sixty-four GitHub worker lanes claim jobs independently, with one active job per
+lane across workflow dispatches. Each evaluation uses four Harbor trial slots
+across its paired arms and one model agent. Per-trial resource limits, attempts,
+and baseline scoring remain unchanged. Workers claim the next skill after each
+completed, skipped, or failed evaluation instead of exiting after one skill.
+They stop when no work is claimable or after a 60-minute claim window. Retiring
+between evaluations reduces late claims on aging runners after observed runner
+disconnects at approximately 129 minutes. It does not interrupt the current
+evaluation or guarantee a provider lifetime; each claim retains its full timeout,
+three-hour lease, and short-lived model capability. The workflow timeout remains
+six hours, so the last claim has time to finish within that limit;
+workers never reserve waiting skills in advance. One failed lane does not
+cancel the others. Initial startup is staggered by five seconds per lane to
+avoid a burst of simultaneous claim actions against the shared backend.
 
 Public evaluation maintenance mutations, including targeted prioritization and
 backfill scheduling, require an active admin before reading or changing queues.
 Anonymous callers and non-admin users cannot requeue evaluations or schedule
 worker dispatch; the existing admin scheduling behavior remains available.
+The retained internal `maintenance:prioritizeQueuedSkillEvaluationsInternal`
+operator command can move 1–20 explicitly selected, already-due NVIDIA backfill
+runs ahead of other backfill work so larger evaluations can start earlier. It
+defaults to a dry run and validates the entire batch's current configuration,
+content, queued state, and expected attempt counts before writing. It changes
+only queue priority and update time, preserving retry backoff, attempt/error
+history, active leases, terminal outcomes, and the priority of new sync work.
 
 The worker discovers only SkillEvaluator's supported upstream `evals/` layout.
 Missing, conflicting, or unsupported eval inputs produce a durable skipped
 reason instead of a guessed mapping. A completed result is published only while
 its content hash still matches the current visible skill; pending, skipped,
-failed, stale, hidden, and deleted results do not add an Evals tab.
+failed, stale, hidden, and deleted results do not add an Evals tab. The public
+lookup selects the latest successful completion for that content across model
+recipes, preserving the selected run's original evaluator and model labels.
+Changing the current recipe does not hide an existing completed result.
 
 The production credential boundary is capability-based. The trusted worker
 parent removes GitHub, Convex, and worker control-plane credentials before any
@@ -472,6 +539,27 @@ pinned subject/judge models, required OpenAI endpoints, a bounded request count,
 disabled provider-side background work, and the lifetime of that one run.
 SkillEvaluator still runs the agent in its secure Docker mode; the capability
 is closed when the evaluator exits.
+The allowance is 8,192 forwarded requests for the entire paired evaluation,
+including subject turns and judge calls. A 1,024-request allowance exhausted
+partway through larger datasets, turning otherwise successful provider calls
+into local 429 failures. Request reservations happen after body validation,
+without yielding between checking and decrementing the allowance. Worker logs
+record the forwarded count, local budget rejections, and upstream 429 responses;
+failure summaries retain the latter two counts before native error details.
+The `skill_evaluation_failed` log event includes the same bounded, redacted
+`publicReason` stored with the failed run, so CI exposes actionable diagnostics
+without logging raw errors or worker credentials.
+SkillEvaluator uses its `openai-compatible` gateway adapter so Codex selects a
+custom HTTP Responses provider instead of trying the native OpenAI WebSocket
+transport against the HTTP broker.
+For GPT-5 Chat Completions, the broker translates the legacy `max_tokens` field
+emitted for proxy URLs into OpenAI's `max_completion_tokens`, preserving its
+value. It normalizes upstream HTTP 520 to 502 so the pinned evaluator's existing
+bounded retries and judge deadline cover this gateway failure. Response bodies,
+retry headers, and the per-request capability allowance are preserved; the broker
+does not add its own retry loop.
+Native execution errors take precedence over rendered command output;
+fallback diagnostics redact both streams before retaining their bounded tails.
 
 ## UI
 

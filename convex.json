@@ -1,6 +1,7 @@
 {
   "functions": "convex",
   "node": {
+    "nodeVersion": "24",
     "externalPackages": ["sharp"]
   }
 }

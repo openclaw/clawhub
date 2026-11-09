@@ -256,6 +256,37 @@ describe("bun http client", () => {
     expect(spawnImpl).toHaveBeenCalledTimes(3);
   });
 
+  it("retries ZIP downloads through curl with scoped URLs and cleans up each attempt", async () => {
+    const { client, spawnImpl, mkdtempImpl, rmImpl } = createBunClient({
+      spawnImpl: vi
+        .fn()
+        .mockReturnValueOnce({ status: 0, stdout: "503", stderr: "" })
+        .mockReturnValueOnce({ status: 0, stdout: "200", stderr: "" }),
+    });
+
+    await expect(
+      client.downloadZip("https://registry.example/custom/path", {
+        slug: "demo+skill",
+        ownerHandle: "openclaw",
+        version: "1.0.0+build",
+        token: "clh_token",
+      }),
+    ).resolves.toEqual(new Uint8Array([1, 2, 3]));
+
+    expect(spawnImpl).toHaveBeenCalledTimes(2);
+    expect(mkdtempImpl).toHaveBeenCalledTimes(2);
+    expect(rmImpl).toHaveBeenCalledTimes(2);
+    for (const [command, args] of spawnImpl.mock.calls as [string, string[]][]) {
+      expect(command).toBe("curl");
+      expect(args).toContain("Authorization: Bearer clh_token");
+      const url = new URL(args[args.length - 1]);
+      expect(url.pathname).toBe("/custom/path/api/v1/download");
+      expect(url.searchParams.get("slug")).toBe("demo+skill");
+      expect(url.searchParams.get("ownerHandle")).toBe("openclaw");
+      expect(url.searchParams.get("version")).toBe("1.0.0+build");
+    }
+  });
+
   it("posts multipart form data via curl and cleans up temp files", async () => {
     const { client, spawnImpl, mkdirImpl, writeFileImpl, rmImpl } = createBunClient({
       spawnImpl: () => ({ status: 0, stdout: '{"ok":true}\n200', stderr: "" }),

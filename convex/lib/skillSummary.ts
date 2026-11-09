@@ -1,7 +1,7 @@
+import { applicationReasoning } from "./applicationModelPolicy";
 import { extractResponseText } from "./openaiResponse";
 import { getFrontmatterValue, parseFrontmatter } from "./skills";
 
-const SKILL_SUMMARY_MODEL = process.env.OPENAI_SKILL_SUMMARY_MODEL ?? "gpt-4.1-mini";
 const MAX_README_CHARS = 8_000;
 const MAX_SUMMARY_CHARS = 160;
 
@@ -84,6 +84,7 @@ export async function generateSkillSummary(args: {
   ].join("\n\n");
 
   try {
+    const model = process.env.OPENAI_SKILL_SUMMARY_MODEL ?? "gpt-6-luna";
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -91,11 +92,13 @@ export async function generateSkillSummary(args: {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: SKILL_SUMMARY_MODEL,
+        model,
+        reasoning: applicationReasoning(model, "low"),
+        service_tier: "default",
         instructions:
           "Write a concise public skill description. Return plain text only, one sentence, max 160 characters. No markdown. No quotes. No hype. Be specific and accurate to SKILL.md.",
         input,
-        max_output_tokens: 90,
+        max_output_tokens: 2_048,
       }),
     });
     if (!response.ok) return fallback;

@@ -4,6 +4,10 @@ ClawHub CLI — install, update, search, and publish agent skills plus OpenClaw 
 
 ## Install
 
+Requires Node.js 22.13 or newer on the 22.x line, or Node.js 24 or newer, matching Plugin Inspector's runtime requirement.
+
+The Bun shortcut supports ordinary CLI commands. For `package validate`, run the installed CLI under Node.js, or run `node packages/clawhub/bin/clawdhub.js package validate <folder>` after building the CLI in this checkout.
+
 ```bash
 # From this repo (shortcut script at repo root)
 bun clawhub --help
@@ -58,6 +62,7 @@ clawhub sync --all --dry-run
 clawhub sync --all
 clawhub package explore --family skill
 clawhub package explore --family code-plugin
+clawhub package explore --family template
 clawhub package inspect @openclaw/example-plugin
 clawhub package download @openclaw/example-plugin --tag latest
 clawhub package verify ./example-plugin-1.0.0.tgz --package @openclaw/example-plugin --version 1.0.0
@@ -91,14 +96,14 @@ For code plugins, folder publish builds and uploads a ClawPack artifact from
 the package folder. Bundle-plugin folders still use the extracted-file publish
 path.
 
-Experimental Claws use an exact-artifact flow. Build with OpenClaw, then give
-ClawHub the resulting `.tgz`; Claw source-folder publication is rejected:
+Experimental Templates use an exact-artifact flow. Build with OpenClaw, then give
+ClawHub the resulting `.tgz`; Template source-folder publication is rejected:
 
 ```bash
-openclaw claws validate .
-openclaw claws build . --out ./my-claw-1.0.0.tgz
-clawhub package publish ./my-claw-1.0.0.tgz --family claw --dry-run
-clawhub package publish ./my-claw-1.0.0.tgz --family claw --wait
+openclaw templates validate .
+openclaw templates build . --out ./my-claw-1.0.0.tgz
+clawhub package publish ./my-claw-1.0.0.tgz --family template --dry-run
+clawhub package publish ./my-claw-1.0.0.tgz --family template --wait
 ```
 
 Use `clawhub package download` to resolve the published artifact through

@@ -1,15 +1,13 @@
 import { createHash } from "node:crypto";
 import { access, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join } from "node:path";
 import { unzipSync } from "fflate";
-import ignore from "ignore";
 import mime from "mime";
+import { forEachPublishFile } from "./publishFiles.js";
 import { type Lockfile, LockfileSchema, parseArk } from "./schema/index.js";
 
 const DOT_DIR = ".clawhub";
 const LEGACY_DOT_DIR = ".clawdhub";
-const DOT_IGNORE = ".clawhubignore";
-const LEGACY_DOT_IGNORE = ".clawdhubignore";
 
 export type SkillOrigin = {
   version: 1;
@@ -93,22 +91,15 @@ export async function extractGitHubZipPathToDir(
 
 export async function listSkillFiles(root: string, limits?: SkillFileLimits): Promise<SkillFile[]> {
   const entries: SkillFileEntry[] = [];
-  const absRoot = resolve(root);
-  const ig = ignore();
-  ig.add([".git/", "node_modules/", `${DOT_DIR}/`, `${LEGACY_DOT_DIR}/`]);
-  await addIgnoreFile(ig, join(absRoot, ".gitignore"));
-  await addIgnoreFile(ig, join(absRoot, DOT_IGNORE));
-  await addIgnoreFile(ig, join(absRoot, LEGACY_DOT_IGNORE));
-
-  await walk(absRoot, async (absPath) => {
-    const relPath = normalizePath(relative(absRoot, absPath));
-    if (!relPath) return;
-    if (ig.ignores(relPath)) return;
-    if (hasDotPathSegment(relPath)) return;
-    const fileStat = await stat(absPath);
-    const contentType = mime.getType(relPath) ?? "application/octet-stream";
-    entries.push({ absPath, relPath, size: fileStat.size, contentType });
-  });
+  await forEachPublishFile(
+    root,
+    { includeDotfiles: false, respectGitignore: true },
+    async (absPath, relPath) => {
+      const fileStat = await stat(absPath);
+      const contentType = mime.getType(relPath) ?? "application/octet-stream";
+      entries.push({ absPath, relPath, size: fileStat.size, contentType });
+    },
+  );
 
   if (limits) {
     const oversized = entries.find((entry) => entry.size > limits.maxFileBytes);
@@ -131,13 +122,6 @@ export async function listSkillFiles(root: string, limits?: SkillFileLimits): Pr
     })),
   );
 }
-
-/** @deprecated Use listSkillFiles. */
-export async function listTextFiles(root: string) {
-  return await listSkillFiles(root);
-}
-
-type SkillFileHash = { path: string; sha256: string; size: number };
 
 export function sha256Hex(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -169,20 +153,6 @@ export function buildGitHubFolderContentHash(
     .map((file) => `${file.path}\0${file.size}\0${file.sha256.toLowerCase()}`)
     .join("\n");
   return createHash("sha256").update(payload).digest("hex");
-}
-
-export function hashSkillZip(zipBytes: Uint8Array) {
-  const entries = unzipSync(zipBytes);
-  const hashed = Object.entries(entries)
-    .map(([rawPath, bytes]) => {
-      const safePath = sanitizeZipPath(rawPath);
-      if (!safePath) return null;
-      if (hasDotPathSegment(safePath)) return null;
-      return { path: safePath, sha256: sha256Hex(bytes), size: bytes.byteLength };
-    })
-    .filter(Boolean) as SkillFileHash[];
-
-  return { files: hashed, fingerprint: buildSkillFingerprint(hashed) };
 }
 
 export async function readLockfile(workdir: string): Promise<Lockfile> {
@@ -255,17 +225,6 @@ export async function writeSkillOrigin(skillFolder: string, origin: SkillOrigin)
   await writeFile(path, `${JSON.stringify(origin, null, 2)}\n`, "utf8");
 }
 
-function normalizePath(path: string) {
-  return path
-    .split(sep)
-    .join("/")
-    .replace(/^\.\/+/, "");
-}
-
-function hasDotPathSegment(path: string) {
-  return path.split("/").some((segment) => segment.startsWith("."));
-}
-
 function formatByteLimit(bytes: number) {
   if (bytes % (1024 * 1024) === 0) return `${bytes / (1024 * 1024)}MB limit`;
   if (bytes % 1024 === 0) return `${bytes / 1024}KB limit`;
@@ -279,10 +238,6 @@ function sanitizeRelPath(path: string) {
   const segments = normalized.split("/");
   if (segments.some((segment) => !segment || segment === "." || segment === "..")) return null;
   return normalized;
-}
-
-function sanitizeZipPath(path: string) {
-  return sanitizeRelPath(path);
 }
 
 function normalizeGitHubSourcePath(path: string) {
@@ -300,30 +255,6 @@ function getGitHubSourceRelativePath(repoRelativePath: string, sourcePath: strin
   if (repoRelativePath === sourcePath) return null;
   if (!repoRelativePath.startsWith(`${sourcePath}/`)) return null;
   return repoRelativePath.slice(sourcePath.length + 1);
-}
-
-async function walk(dir: string, onFile: (path: string) => Promise<void>) {
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
-    if (entry.name === "node_modules") continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await walk(full, onFile);
-      continue;
-    }
-    if (!entry.isFile()) continue;
-    await onFile(full);
-  }
-}
-
-async function addIgnoreFile(ig: ReturnType<typeof ignore>, path: string) {
-  try {
-    const raw = await readFile(path, "utf8");
-    ig.add(raw.split(/\r?\n/));
-  } catch {
-    // optional
-  }
 }
 
 export async function listManualSkills(skillsDir: string, lockedSlugs: Set<string>) {

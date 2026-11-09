@@ -30,6 +30,7 @@ import {
   resolveRoleHelpTokens,
   shouldSeedRoleHelpTokens,
 } from "./helpers/clawhubCli";
+import { extractLastJsonObject } from "./helpers/convexOutput";
 
 const itIfLiveMutations = allowLiveMutations() ? it : it.skip;
 const itIfAdminAndUserTokens =
@@ -234,21 +235,6 @@ type SkillVersionsBody = {
   items?: Array<{ version?: unknown }>;
   nextCursor?: string | null;
 };
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      // Convex can print status lines before the JSON payload.
-    }
-  }
-  throw new Error(`No JSON object in convex run output:\n${output}`);
-}
 
 function runConvexJson<T>(functionName: string, args: Record<string, unknown>) {
   const result = spawnSync(
@@ -971,12 +957,12 @@ describe("clawhub e2e", () => {
     }
   }, 30_000);
 
-  it("package publish exits non-zero when Plugin Inspector hard errors block publish", async () => {
-    const root = await mkdtemp(join(tmpdir(), "clawhub-cli-inspector-hard-"));
+  it("package publish exits non-zero when the registry rejects the release", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clawhub-cli-registry-reject-"));
     const registry = await startPackagePublishRegistry(() => ({
       status: 400,
       text: true,
-      body: "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
+      body: "Published package inventory does not match the minted authorization",
     }));
     const cfg = await makeTempConfig(registry.registry, "test-token");
     try {
@@ -1010,8 +996,9 @@ describe("clawhub e2e", () => {
       );
 
       expect(result.status).not.toBe(0);
-      expect(`${result.stdout}\n${result.stderr}`).toMatch(/Plugin Inspector blocked publish/);
-      expect(`${result.stdout}\n${result.stderr}`).toMatch(/missing-expected-seam/);
+      expect(`${result.stdout}\n${result.stderr}`).toMatch(
+        /Published package inventory does not match the minted authorization/,
+      );
     } finally {
       await registry.close();
       await rm(root, { recursive: true, force: true });
@@ -1091,7 +1078,11 @@ describe("clawhub e2e", () => {
     expect(result.stdout).toMatch(/--dry-run/);
     expect(result.stdout).toMatch(/--json/);
     expect(result.stdout).toMatch(/--categories/);
-    expect(result.stdout).toMatch(/Deprecated for plugins/);
+    const help = result.stdout.replace(/\s+/g, " ");
+    expect(help).toContain(
+      "Template category overrides; deprecated and ignored for plugins (use openclaw.plugin.json)",
+    );
+    expect(help).not.toContain("plugins and Templates (ignored)");
   });
 
   it("skill verify help omits the redundant json flag", async () => {
@@ -1124,7 +1115,7 @@ describe("clawhub e2e", () => {
             displayName: "Fulcra Context",
             pageUrl: "https://clawhub.ai/arc-claw-bot/fulcra-context",
             publisherHandle: "arc-claw-bot",
-            publisherDisplayName: "Arc Claw Bot",
+            publisherDisplayName: "Arc Template Bot",
             publisherProfileUrl: "https://clawhub.ai/user/arc-claw-bot",
             version: "1.4.10",
             resolvedFrom: "version",
@@ -1160,8 +1151,6 @@ describe("clawhub e2e", () => {
               model: "gpt-5.5",
               checkedAt: 1780082252374,
               signals: {
-                staticScan: { status: "clean", rawStatus: "clean", reasonCodes: [] },
-                virusTotal: { status: "clean", rawStatus: "clean", source: "engines" },
                 skillSpector: {
                   status: "clean",
                   rawStatus: "clean",

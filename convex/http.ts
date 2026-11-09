@@ -2,6 +2,7 @@ import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
 import { httpRouter } from "convex/server";
 import { agentSkillsHttp } from "./agentSkillsHttp";
 import { auth } from "./auth";
+import { handle as downloadAnalyticsHttp } from "./downloadAnalyticsHttp";
 import { downloadZip, recordArchiveDownloadMetric } from "./downloads";
 import {
   cliPublishHttp,
@@ -62,7 +63,7 @@ import {
   promotionsPostRouterV1Http,
   catalogFeedV1Http,
   catalogSkillsFeedV1Http,
-  catalogClawsFeedV1Http,
+  catalogTemplatesFeedV1Http,
   promotionsFeedV1Http,
   usersGetRouterV1Http,
   usersListV1Http,
@@ -82,11 +83,35 @@ import {
   packageInspectorNotifyHttp,
   packageInspectorResultsHttp,
 } from "./packageInspectorHttp";
+import {
+  packageSdkUsageHttp,
+  packageSdkUsageCoverageHttp,
+  packageSdkUsagePluginHttp,
+} from "./packageSdkUsageHttp";
+import { retainHttp as retainPrepublicationReportHttp } from "./prepublicationReports";
 import { skillPresentationAssetHttp } from "./skillPresentationAssetsHttp";
+import { get as templateOverviewHttp } from "./templateOverviewHttp";
 
 const http = installRateLimitedRoutes(httpRouter());
 
+http.route({ path: "/api/v1/templates/overview", method: "GET", handler: templateOverviewHttp });
+
+http.route({
+  path: "/api/v1/admin/download-analytics",
+  method: "GET",
+  handler: downloadAnalyticsHttp,
+});
+http.route({
+  path: "/api/v1/admin/download-analytics",
+  method: "POST",
+  handler: downloadAnalyticsHttp,
+});
 auth.addHttpRoutes(http);
+http.route({
+  path: "/api/internal/prepublication-reports",
+  method: "POST",
+  handler: retainPrepublicationReportHttp,
+});
 http.route({
   path: "/api/v1/search-insights/reports",
   method: "POST",
@@ -242,9 +267,9 @@ http.route({
 });
 
 http.route({
-  path: ApiRoutes.catalogClawsFeed,
+  path: ApiRoutes.catalogTemplatesFeed,
   method: "GET",
-  handler: catalogClawsFeedV1Http,
+  handler: catalogTemplatesFeedV1Http,
 });
 
 http.route({
@@ -336,6 +361,14 @@ http.route({
   method: "POST",
   handler: packageInspectorClaimHttp,
 });
+
+http.route({ path: ApiRoutes.sdkUsage, method: "GET", handler: packageSdkUsageHttp });
+http.route({
+  path: ApiRoutes.sdkUsageCoverage,
+  method: "GET",
+  handler: packageSdkUsageCoverageHttp,
+});
+http.route({ path: ApiRoutes.sdkUsagePlugin, method: "GET", handler: packageSdkUsagePluginHttp });
 
 http.route({
   path: "/api/v1/package-inspector/acknowledge",

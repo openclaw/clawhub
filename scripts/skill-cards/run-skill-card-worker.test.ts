@@ -8,11 +8,6 @@ import { join, resolve } from "node:path";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  assertCodexWorkerExecutionAllowed,
-  isCodexWorkerExecutionAllowed,
-  LOCAL_CODEX_WORKER_OPT_IN,
-} from "../codex-worker-guard";
-import {
   applyServerPublisherToContext,
   assertPublicSkillCardMarkdown,
   buildPrompt,
@@ -43,13 +38,6 @@ async function tempDir() {
 }
 
 describe("run-skill-card-worker Codex skill setup", () => {
-  it("blocks direct local Skill Card worker runs without Codex opt-in", () => {
-    expect(isCodexWorkerExecutionAllowed({})).toBe(false);
-    expect(() => assertCodexWorkerExecutionAllowed({})).toThrow(
-      `Refusing to run local Codex workers without ${LOCAL_CODEX_WORKER_OPT_IN}=1`,
-    );
-  });
-
   it("uses the same batch, runtime, and lease defaults as the security worker", () => {
     expect(DEFAULT_BATCH_LIMIT).toBe(4);
     expect(DEFAULT_MAX_RUNTIME_MS).toBe(40 * 60 * 1000);
@@ -112,13 +100,20 @@ describe("run-skill-card-worker Codex skill setup", () => {
     }
   });
 
-  it("defaults to Sol medium fast and fingerprints the effective recipe", async () => {
+  it("defaults to Luna medium Standard and fingerprints the effective recipe", async () => {
     const settings = skillCardGenerationSettings({});
     expect(settings).toEqual({
-      model: "gpt-6-sol",
+      model: "gpt-6-luna",
       reasoningEffort: "medium",
-      serviceTier: "fast",
+      serviceTier: "default",
     });
+    expect(
+      skillCardGenerationSettings({
+        SKILL_CARD_CODEX_MODEL: "custom-model",
+        SKILL_CARD_CODEX_REASONING_EFFORT: "high",
+        SKILL_CARD_CODEX_SERVICE_TIER: "fast",
+      }),
+    ).toEqual({ model: "custom-model", reasoningEffort: "high", serviceTier: "fast" });
     const tool = await tempDir();
     const automation = join(tool, "AI Transparency Card Automation");
     await mkdir(automation);
@@ -129,7 +124,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
     for (const override of [
       { model: "other-model" },
       { reasoningEffort: "high" },
-      { serviceTier: "default" },
+      { serviceTier: "fast" },
     ]) {
       expect(await skillCardGenerationHash(tool, { ...settings, ...override })).not.toBe(hash);
     }

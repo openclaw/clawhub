@@ -32,6 +32,43 @@ function run(command: string, args: string[], input: string, logPath: string) {
   });
 }
 
+export function designAuditCodexArguments(
+  outputPath: string,
+  screenshots: string[],
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const args = [
+    "exec",
+    "--cd",
+    process.cwd(),
+    "--model",
+    env.DESIGN_AUDIT_CODEX_MODEL ?? "gpt-6.1-sol",
+    "--sandbox",
+    "workspace-write",
+    "--ignore-user-config",
+    "-c",
+    "approval_policy=never",
+    "-c",
+    `model_reasoning_effort=${env.DESIGN_AUDIT_REASONING_EFFORT ?? "high"}`,
+    "-c",
+    `service_tier=${env.DESIGN_AUDIT_SERVICE_TIER ?? "default"}`,
+    "-c",
+    'shell_environment_policy.inherit="core"',
+    "-c",
+    "shell_environment_policy.ignore_default_excludes=false",
+    "--output-schema",
+    join(process.cwd(), "scripts/design-audit/codex-output.schema.json"),
+    "--output-last-message",
+    outputPath,
+    "--ephemeral",
+    "--json",
+  ];
+  for (const screenshot of screenshots) args.push("--image", screenshot);
+  args.push("-");
+
+  return args;
+}
+
 async function main() {
   const deterministicPath = argument("--deterministic");
   const browserPath = argument("--browser");
@@ -77,35 +114,7 @@ Inspect the attached screenshots for desktop/mobile and light/dark parity. Verif
 You may apply only narrow, high-confidence fixes allowed by fix-policy.md. Edit only existing frontend files under src/ with .ts, .tsx, or .css extensions. Do not edit backend behavior, dependencies, workflows, configuration, generated files, reports, or design-audit scripts. Do not add files. Do not make broad redesign, navigation, hierarchy, or information-architecture changes. Keep subjective ideas as informational findings without source edits.
 
 Return every confirmed error. Return warnings before informational suggestions. Include precise repository-relative source locations and canonical design-system references. Report the exact files you changed.`;
-  const args = [
-    "exec",
-    "--cd",
-    process.cwd(),
-    "--model",
-    process.env.DESIGN_AUDIT_CODEX_MODEL ?? "gpt-5.5",
-    "--sandbox",
-    "workspace-write",
-    "--ignore-user-config",
-    "-c",
-    "approval_policy=never",
-    "-c",
-    `model_reasoning_effort=${process.env.DESIGN_AUDIT_REASONING_EFFORT ?? "high"}`,
-    "-c",
-    `service_tier=${process.env.DESIGN_AUDIT_SERVICE_TIER ?? "fast"}`,
-    "-c",
-    'shell_environment_policy.inherit="core"',
-    "-c",
-    "shell_environment_policy.ignore_default_excludes=false",
-    "--output-schema",
-    join(process.cwd(), "scripts/design-audit/codex-output.schema.json"),
-    "--output-last-message",
-    outputPath,
-    "--ephemeral",
-    "--json",
-  ];
-  for (const screenshot of screenshots) args.push("--image", screenshot);
-  args.push("-");
-
+  const args = designAuditCodexArguments(outputPath, screenshots);
   await run("codex", args, prompt, eventsPath);
   const parsed = JSON.parse(await readFile(outputPath, "utf8"));
   parseFindings(parsed);

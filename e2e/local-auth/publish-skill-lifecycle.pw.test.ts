@@ -1,11 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, type APIRequestContext, type Page, test } from "@playwright/test";
 import convexBrowser from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { parseArk } from "../../packages/schema/src/ark";
 import { ApiV1SkillListResponseSchema } from "../../packages/schema/src/schemas";
+import { extractLastJsonObject } from "../helpers/convexOutput";
+import { localConvexDeployment } from "../helpers/localConvex";
 import {
   expectNoFatalErrorUi,
   expectNoRuntimeErrors,
@@ -15,6 +19,7 @@ import {
 } from "../helpers/runtimeErrors";
 import {
   completeMockPrePublicationChecks,
+  claimMockPrePublicationChecks,
   expectOwnerHandleSelected,
   publishedSkillVersionExists,
   publishSkillVersion,
@@ -76,30 +81,6 @@ function convexSiteUrl() {
   const url = process.env.VITE_CONVEX_SITE_URL;
   if (!url) throw new Error("VITE_CONVEX_SITE_URL is required");
   return url.replace(/\/$/u, "");
-}
-
-function localConvexDeployment() {
-  const raw = readFileSync(".convex/local/default/config.json", "utf8");
-  const parsed = JSON.parse(raw) as { deploymentName?: unknown };
-  if (typeof parsed.deploymentName !== "string" || !parsed.deploymentName) {
-    throw new Error("Local Convex deployment name was not available");
-  }
-  return `local:${parsed.deploymentName}`;
-}
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      // Convex can print status lines before the JSON payload.
-    }
-  }
-  throw new Error(`No JSON object in convex run output:\n${output}`);
 }
 
 function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {
@@ -454,6 +435,299 @@ test("publishing a skill queues scan, queues skill-card generation, and shows th
   await expectHealthyPublishPage(page, errors);
 });
 
+async function capturePublicationState(
+  page: Page,
+  testInfo: { outputPath: (file: string) => string },
+  state: string,
+  expectedTitle: string,
+) {
+  for (const [name, viewport] of [
+    ["desktop", { width: 1440, height: 900 }],
+    ["laptop", { width: 1366, height: 768 }],
+    ["tablet", { width: 768, height: 1024 }],
+    ["mobile", { width: 390, height: 844 }],
+  ] as const) {
+    await page.setViewportSize(viewport);
+    await expect(page.getByRole("link", { name: "New version", exact: true })).toBeVisible();
+    if (process.env.CLAWHUB_OWNER_PUBLICATION_BASELINE !== "1") {
+      await expect(page.getByText(expectedTitle, { exact: true })).toBeVisible();
+    }
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`${state}-${name}.png`), fullPage: true });
+  }
+}
+
+test("owner sees failed publication checks while the version stays private", async ({
+  page,
+  request,
+}, testInfo) => {
+  const slug = "pw-owner-publication-check-failure";
+  const version = "1.0.0";
+  const ownerHandle = await signInAsLocalPublisher(page, "user");
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName: "Local Owner Publication Failure",
+    version,
+    versionLabel: "operational scanner failure",
+    changelog: "Owner can distinguish a failed check from an active scan.",
+    completeChecks: false,
+  });
+  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.getByText("Pending publication", { exact: true })).toBeVisible();
+  await capturePublicationState(page, testInfo, "owner-checks-pending", "Pending publication");
+  const completed = await completeMockPrePublicationChecks({
+    kind: "skill",
+    slug,
+    version,
+    clawscan: "failed",
+  });
+  expect(completed).toMatchObject({ status: "pending_checks" });
+  expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
+  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.locator("h1.skill-page-title")).toHaveText("Local Owner Publication Failure");
+  await capturePublicationState(page, testInfo, "owner-checks-failed", "Publication checks failed");
+  await expect(page.getByText("Publication checks failed", { exact: true })).toBeVisible();
+  await expect(page.getByText(/not yet public or installable/i)).toBeVisible();
+  await expect(page.getByRole("article", { name: "Install" })).toHaveCount(0);
+});
+
+test.describe("owner publication progress after a clean public release", () => {
+  for (const outcome of ["failed", "incomplete"] as const) {
+    test(`owner sees ${outcome} checks on a newer version`, async ({ page, request }, testInfo) => {
+      const slug = `pw-owner-update-${outcome}`;
+      const displayName = "Local Owner Public Release";
+      const ownerHandle = await signInAsLocalPublisher(page, "user");
+      const client = convexClient();
+      const cleanAnalysis = {
+        status: "completed",
+        verdict: "clean",
+        confidence: "high",
+        summary: "Local fixture completed review.",
+        model: "mock-local-e2e",
+        checkedAt: Date.now(),
+      };
+      const aigAnalysis = {
+        status: "clean",
+        issueCount: 0,
+        findings: [],
+        scannerVersion: "mock-local-e2e",
+        checkedAt: Date.now(),
+      };
+      const check = { status: "clean" as const };
+      await publishSkillVersion(page, testInfo, {
+        ownerHandle,
+        slug,
+        displayName,
+        version: "1.0.0",
+        versionLabel: "public clean baseline",
+        changelog: "Public baseline.",
+        completeChecks: false,
+      });
+      const first = await claimMockPrePublicationChecks({ kind: "skill", slug, version: "1.0.0" });
+      const published = (await client.action(api.publishAttempts.completePrePublicationChecks, {
+        token: WORKER_TOKEN,
+        attemptId: first.attemptId as Id<"publishAttempts">,
+        claimId: first.claimId,
+        artifactFingerprint: first.artifactFingerprint,
+        trufflehog: check,
+        clawscan: check,
+        clawscanAnalysis: cleanAnalysis,
+        aigAnalysis,
+      })) as { status: string };
+      expect(published.status).toBe("finalized");
+      const version =
+        "2.0.0-beta.owner-publication-progress-with-required-security-evidence-and-a-retained-private-candidate";
+      await page.goto("/skills/publish", { waitUntil: "domcontentloaded" });
+      await publishSkillVersion(page, testInfo, {
+        ownerHandle,
+        slug,
+        displayName,
+        version,
+        versionLabel: `new ${outcome} checks`,
+        changelog: "New version stays private.",
+        completeChecks: false,
+      });
+      const next = await claimMockPrePublicationChecks({ kind: "skill", slug, version });
+      const completed = (await client.action(api.publishAttempts.completePrePublicationChecks, {
+        token: WORKER_TOKEN,
+        attemptId: next.attemptId as Id<"publishAttempts">,
+        claimId: next.claimId,
+        artifactFingerprint: next.artifactFingerprint,
+        trufflehog: check,
+        clawscan: { status: outcome === "failed" ? "failed" : "clean" },
+        ...(outcome === "failed" ? { aigAnalysis } : { clawscanAnalysis: cleanAnalysis }),
+      })) as { status: string };
+      expect(completed.status).toBe("pending_checks");
+      expect(await publicSkillVersionExists(request, { ownerHandle, slug, version: "1.0.0" })).toBe(
+        true,
+      );
+      expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
+      await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+      await waitForHydration(page);
+      await expect(page.locator("h1.skill-page-title")).toHaveText(displayName);
+      await capturePublicationState(
+        page,
+        testInfo,
+        `owner-update-${outcome}`,
+        `Publication checks ${outcome}`,
+      );
+      await expect(page.getByText(`Publication checks ${outcome}`, { exact: true })).toBeVisible();
+      await expect(page.getByRole("status")).toContainText("current public version, 1.0.0");
+    });
+  }
+});
+
+test("owner sees failed publication status over HTTP and the built CLI", async ({
+  request,
+}, testInfo) => {
+  const built = spawnSync("bun", ["run", "--cwd", "packages/clawhub", "build"], {
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  expect(built.status, built.stderr).toBe(0);
+  const fixture = runDevSeed<{ user: { handle: string; token: string } }>(
+    "devSeed:seedCliRoleHelpFixtures",
+    {},
+  );
+  const root = await mkdtemp(join(tmpdir(), "clawhub-owner-status-"));
+  const registry = convexSiteUrl();
+  const slug = "pw-owner-cli-status";
+  const version = "1.0.0";
+  const ownerHandle = fixture.user.handle;
+  const configPath = join(root, "config.json");
+  const parseJson = (value: string): unknown => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return { error: value.trim() };
+    }
+  };
+  const runCli = (args: string[]) =>
+    spawnSync(
+      process.execPath,
+      [
+        "packages/clawhub/bin/clawdhub.js",
+        "--site",
+        registry,
+        "--registry",
+        registry,
+        "--workdir",
+        root,
+        ...args,
+      ],
+      {
+        encoding: "utf8",
+        timeout: 120_000,
+        env: {
+          ...process.env,
+          CLAWHUB_CONFIG_PATH: configPath,
+          CLAWHUB_DISABLE_TELEMETRY: "1",
+        },
+      },
+    );
+  try {
+    await writeFile(configPath, JSON.stringify({ registry, token: fixture.user.token }), {
+      mode: 0o600,
+    });
+    const skillDir = join(root, slug);
+    await mkdir(skillDir);
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      skillMd({
+        slug,
+        displayName: "Owner CLI Status",
+        versionLabel: "retained operational failure",
+      }),
+    );
+    const publish = runCli([
+      "publish",
+      skillDir,
+      "--slug",
+      slug,
+      "--name",
+      "Owner CLI Status",
+      "--version",
+      version,
+      "--changelog",
+      "Verify exact owner diagnostics for a retained failed upload.",
+    ]);
+    expect(publish.status, publish.stderr).toBe(0);
+    await completeMockPrePublicationChecks({ kind: "skill", slug, version, clawscan: "failed" });
+
+    const path = `${registry}/api/v1/skills/${slug}/versions/${version}/publication?ownerHandle=${ownerHandle}`;
+    const ownerStatus = await request.get(path, {
+      headers: { Authorization: `Bearer ${fixture.user.token}` },
+    });
+    const statusBody = parseJson(await ownerStatus.text());
+    const anonymous = await request.get(path);
+    const publicVersion = await request.get(path.replace("/publication?", "?"));
+    const publicDownload = await request.get(
+      `${registry}/api/v1/download?slug=${slug}&version=${version}&ownerHandle=${ownerHandle}`,
+    );
+
+    const inspectArgs = ["inspect", `@${ownerHandle}/${slug}`, "--version", version];
+    const json = runCli([...inspectArgs, "--json"]);
+    const cliBody = parseJson(json.stdout);
+    const text = runCli(inspectArgs);
+    const file = runCli([...inspectArgs, "--file", "SKILL.md", "--json"]);
+    await writeFile(
+      testInfo.outputPath("owner-publication-cli-proof.json"),
+      JSON.stringify(
+        {
+          httpStatus: ownerStatus.status(),
+          response: statusBody,
+          anonymousStatus: anonymous.status(),
+          publicVersionStatus: publicVersion.status(),
+          publicDownloadStatus: publicDownload.status(),
+          cliExit: json.status,
+          cli: cliBody,
+          cliStderr: json.stderr,
+          fileExit: file.status,
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFile(
+      testInfo.outputPath("owner-publication-cli-proof.txt"),
+      text.stdout || text.stderr,
+    );
+
+    expect(ownerStatus.status()).toBe(200);
+    expect(statusBody).toMatchObject({
+      publication: { version, stage: "checks_failed", retrying: true },
+    });
+    expect(ownerStatus.headers()["cache-control"]).toBe("private, no-store");
+    expect(anonymous.status()).toBe(401);
+    expect(publicVersion.status()).toBe(404);
+    expect(publicDownload.status()).toBe(404);
+    expect(json.status, json.stderr).toBe(0);
+    expect(cliBody).toMatchObject({
+      publication: { version, stage: "checks_failed", retrying: true },
+      version: null,
+      file: null,
+    });
+    expect(text.status, text.stderr).toBe(0);
+    expect(text.stdout).toContain("Publication checks failed");
+    expect(text.stdout).toContain("not public or installable");
+    expect(text.stdout).toContain("you do not need a new version");
+    expect(text.stdout).toContain("clawhub scan download");
+
+    expect(file.status).toBe(1);
+    expect(JSON.parse(file.stdout)).toMatchObject({
+      publication: { stage: "checks_failed" },
+      file: null,
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("clean skill publish stays private until TruffleHog and ClawScan pass", async ({
   page,
   request,
@@ -476,6 +750,20 @@ test("clean skill publish stays private until TruffleHog and ClawScan pass", asy
 
   await expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
   await expect(await publishedSkillVersionExists(page, { ownerHandle, slug, version })).toBe(false);
+
+  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.locator("h1.skill-page-title", { hasText: displayName })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByText("Pending publication", { exact: true })).toBeVisible();
+  await expect(page.getByText(/not yet public or installable/i)).toBeVisible();
+  await expect(page.getByText("Files pending security checks")).toBeVisible();
+  await expect(page.getByRole("article", { name: "Install" })).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("owner-pending-publication.png"),
+    fullPage: true,
+  });
 
   const result = (await completeMockPrePublicationChecks({
     kind: "skill",

@@ -5,13 +5,6 @@ const CATALOG_CANDIDATE_SOURCE_STORAGE_LIMIT = 8;
 const CATALOG_CANDIDATE_EVIDENCE_STORAGE_LIMIT = 12;
 
 export type CatalogClassificationConfidence = "high" | "medium" | "low";
-export type CatalogClassificationApplyStatus =
-  | "preview"
-  | "applied"
-  | "stale"
-  | "skipped-author"
-  | "error";
-
 type CatalogCategoryCandidate = {
   category: string;
   score: number;
@@ -101,62 +94,5 @@ export function prepareCatalogClassificationResult(result: CatalogClassifierResu
     topicClassifierVersion: result.topicClassifierVersion,
     inputHash: result.inputHash,
     topicInputHash: result.topicInputHash,
-  };
-}
-
-const CONFIDENCE_RANK: Record<CatalogClassificationConfidence, number> = {
-  low: 0,
-  medium: 1,
-  high: 2,
-};
-
-function confidenceAtLeast(
-  value: CatalogClassificationConfidence,
-  minimum: CatalogClassificationConfidence,
-) {
-  return CONFIDENCE_RANK[value] >= CONFIDENCE_RANK[minimum];
-}
-
-export function selectCatalogInference(input: {
-  currentSourceId?: string | null;
-  resultSourceId?: string | null;
-  authorCategories?: readonly string[] | null;
-  authorTopics?: readonly string[] | null;
-  result: Pick<CatalogClassifierResult, "categories" | "topics" | "confidence" | "topicConfidence">;
-  minimumConfidence: CatalogClassificationConfidence;
-}): {
-  status: CatalogClassificationApplyStatus;
-  categories?: string[];
-  topics?: string[];
-} {
-  if (
-    !input.currentSourceId ||
-    !input.resultSourceId ||
-    input.currentSourceId !== input.resultSourceId
-  ) {
-    return { status: "stale", categories: undefined, topics: undefined };
-  }
-
-  const categories =
-    input.authorCategories === undefined &&
-    confidenceAtLeast(input.result.confidence, input.minimumConfidence)
-      ? [...input.result.categories]
-      : undefined;
-  const topics =
-    input.authorTopics === undefined &&
-    confidenceAtLeast(input.result.topicConfidence, input.minimumConfidence)
-      ? [...input.result.topics]
-      : undefined;
-  const authorOwnsBoth = input.authorCategories !== undefined && input.authorTopics !== undefined;
-
-  return {
-    status:
-      categories !== undefined || topics !== undefined
-        ? "applied"
-        : authorOwnsBoth
-          ? "skipped-author"
-          : "preview",
-    categories,
-    topics,
   };
 }

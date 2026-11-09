@@ -43,6 +43,6 @@ zip or other read that used to finish in 24 seconds after a fast header now
 fails at 15 seconds and then retries under the same budget. Uploads keep 120
 seconds, and package publish keeps 300 seconds.
 
-Whether Node should keep this total-transfer rule for a healthy download is
-still a maintainer decision. This note records the behavior the client
-implements. It does not record approval of that tradeoff.
+This fix uses the existing 15-second total read budget. Progressing downloads
+are aborted when that budget expires; an inactivity timer or a separate
+download budget is not part of this contract.

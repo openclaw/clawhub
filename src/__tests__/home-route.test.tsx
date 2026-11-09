@@ -154,7 +154,7 @@ describe("home route", () => {
     await renderHome();
 
     expect(screen.queryByText("BUILT BY THE COMMUNITY")).toBeNull();
-    expect(screen.getByRole("heading", { level: 1, name: "Claws for your Claws" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Tools for your agents" })).toBeTruthy();
     expect(screen.getByText("Discover skills and plugins from top creators").textContent).toBe(
       "Discover skills and plugins from top creators",
     );

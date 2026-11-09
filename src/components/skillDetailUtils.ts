@@ -1,27 +1,9 @@
-import type { ClawdisSkillMetadata, SkillInstallSpec } from "clawhub-schema";
+import type { SkillInstallSpec } from "clawhub-schema";
 import type { Id } from "../../convex/_generated/dataModel";
 import { buildSkillDetailHref } from "../lib/ownerRoute";
 import { getClawHubSiteUrl } from "../lib/site";
 
-export type SkillPromptMode = "install-only" | "install-and-setup";
-type SkillPackageManager = "npm" | "pnpm" | "bun";
-
-function assertNever(value: never): never {
-  throw new Error(`Unsupported package manager: ${String(value)}`);
-}
-
 type SkillOwnerId = Id<"users"> | Id<"publishers">;
-
-type SkillPromptContext = {
-  mode: SkillPromptMode;
-  skillName: string;
-  slug: string;
-  ownerHandle: string | null;
-  ownerId: SkillOwnerId | null;
-  clawdis?: ClawdisSkillMetadata;
-  installTarget?: string;
-  skillPageUrl?: string | null;
-};
 
 export function buildSkillHref(
   ownerHandle: string | null,
@@ -187,76 +169,10 @@ export function formatSkillsCliInstallCommand(skillPageUrl: string) {
   return `npx skills add ${skillPageUrl}`;
 }
 
-export function formatClawHubInstallCommand(slug: string, pm: SkillPackageManager) {
-  switch (pm) {
-    case "npm":
-      return `npx clawhub@latest install ${slug}`;
-    case "pnpm":
-      return `pnpm dlx clawhub@latest install ${slug}`;
-    case "bun":
-      return `bunx clawhub@latest install ${slug}`;
-  }
-
-  return assertNever(pm);
-}
-
-export function formatOpenClawPrompt({
-  mode,
-  skillName,
-  slug,
-  ownerHandle,
-  ownerId,
-  clawdis,
-  installTarget,
-  skillPageUrl,
-}: SkillPromptContext) {
-  const target = installTarget?.trim() || buildSkillInstallTarget(ownerHandle, ownerId, slug);
-  const pageUrl =
-    skillPageUrl === undefined ? buildSkillPageUrl(ownerHandle, ownerId, slug) : skillPageUrl;
-  const displayName = skillName.trim() || slug;
-  const requiredEnvVars = new Set(clawdis?.requires?.env ?? []);
-
-  for (const envVar of clawdis?.envVars ?? []) {
-    const name = envVar.name?.trim();
-    if (!name) continue;
-    if (envVar.required === false) continue;
-    requiredEnvVars.add(name);
-  }
-
-  const lines = [
-    "Before installing anything, inspect the ClawHub skill metadata and setup requirements.",
-    "If the skill asks you to install a third-party package or CLI, verify its source, maintainer, and package contents before running the install command.",
-    `Install the skill "${displayName}" (${target}) from ClawHub only after those checks pass.`,
-  ];
-
-  if (pageUrl) {
-    lines.push(`Skill page: ${pageUrl}`);
-  }
-
-  lines.push("Keep the work scoped to this skill only.");
-
-  if (mode === "install-only") {
-    lines.push("Stop after the skill is installed.");
-    return lines.join("\n");
-  }
-
-  lines.push("After install, help me finish setup from verified skill metadata.");
-
-  if (requiredEnvVars.size > 0) {
-    lines.push(`Required env vars: ${Array.from(requiredEnvVars).join(", ")}`);
-  }
-  if (clawdis?.requires?.bins?.length) {
-    lines.push(`Required binaries: ${clawdis.requires.bins.join(", ")}`);
-  }
-  if (clawdis?.requires?.config?.length) {
-    lines.push(`Config paths to check: ${clawdis.requires.config.join(", ")}`);
-  }
-
-  lines.push(
-    "Use only the metadata you can verify from ClawHub; do not invent missing requirements.",
-  );
-  lines.push("Ask before making any broader environment changes.");
-  return lines.join("\n");
+// Keep the copied prompt short: the agent resolves, inspects, and installs the
+// named ClawHub skill, plugin or template through its own install flow.
+export function formatOpenClawPrompt(name: string, kind: "skill" | "package" | "template") {
+  return `Install the ${name.trim()} ${kind} from ClawHub`;
 }
 
 export function formatBytes(bytes: number) {

@@ -7,15 +7,21 @@ import {
   dispatchGitHubRepositoryEvent,
   getGitHubRepositoryDispatchPermission,
 } from "./lib/githubRepositoryDispatch";
+import {
+  isRetiredAutomaticPluginScan,
+  terminalizeRetiredAutomaticPluginScan,
+} from "./lib/pluginScanRouting";
 
 export { getGitHubRepositoryDispatchPermission } from "./lib/githubRepositoryDispatch";
 
 const DISPATCH_STATE_KEY = "codex-worker";
 const DISPATCH_LEASE_MS = 15 * 60 * 1000;
 const SCHEDULE_STALE_MS = 60 * 1000;
+const RETIRED_QUEUE_CLEANUP_LIMIT = 64;
 
 const internalRefs = internal as unknown as {
   securityScanDispatch: {
+    requestSecurityScanDispatchInternal: unknown;
     beginSecurityScanDispatchInternal: unknown;
     dispatchSecurityScanWorkerInternal: unknown;
     finishSecurityScanDispatchInternal: unknown;
@@ -49,12 +55,13 @@ export async function dispatchSecurityScanWorkflow(
   },
   fetchImpl: typeof fetch = fetch,
 ) {
+  const environment = process.env.CLAWHUB_ENV;
   return dispatchGitHubRepositoryEvent(
     installationToken,
     {
       eventType: "clawhub-security-scan",
       clientPayload: {
-        ...(process.env.CLAWHUB_ENV === "staging" ? { environment: "staging" } : {}),
+        ...(environment === "staging" || environment === "test" ? { environment } : {}),
         batch_limit: "4",
         max_runtime_minutes: "12",
       },
@@ -62,6 +69,45 @@ export async function dispatchSecurityScanWorkflow(
     },
     fetchImpl,
   );
+}
+
+async function findDispatchableQueuedJob(
+  ctx: MutationCtx,
+  now: number,
+  dueOnly = false,
+  notBefore = 0,
+) {
+  const query = () =>
+    ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_status_and_next_run_at", (q) =>
+        dueOnly ? q.eq("status", "queued").lte("nextRunAt", now) : q.eq("status", "queued"),
+      )
+      .order("asc");
+  // Preserve the single indexed head read for ordinary queues. Only retained
+  // legacy automatic plugin work needs a bounded cleanup batch.
+  const head = await query().first();
+  if (!head || !(await isRetiredAutomaticPluginScan(ctx, head))) {
+    return { job: head, cleanupPending: false };
+  }
+  const candidates = await query().take(RETIRED_QUEUE_CLEANUP_LIMIT);
+  for (const job of candidates) {
+    if (!(await isRetiredAutomaticPluginScan(ctx, job))) {
+      return { job, cleanupPending: false };
+    }
+    await terminalizeRetiredAutomaticPluginScan(ctx, job, now);
+  }
+  if (candidates.length === RETIRED_QUEUE_CLEANUP_LIMIT) {
+    // Continue inspecting queue state, not dispatching empty external workers.
+    // Terminalization advances the existing status index without a table scan.
+    await ctx.scheduler.runAfter(
+      0,
+      internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal as never,
+      { notBefore } as never,
+    );
+    return { job: null, cleanupPending: true };
+  }
+  return { job: null, cleanupPending: false };
 }
 
 export async function requestSecurityScanDispatch(ctx: MutationCtx, notBefore = 0) {
@@ -86,11 +132,12 @@ export async function requestSecurityScanDispatch(ctx: MutationCtx, notBefore = 
     return { scheduled: false as const, scheduledAt: state.scheduledAt };
   }
 
-  const earliestQueued = await ctx.db
-    .query("securityScanJobs")
-    .withIndex("by_status_and_next_run_at", (q) => q.eq("status", "queued"))
-    .order("asc")
-    .first();
+  const { job: earliestQueued } = await findDispatchableQueuedJob(
+    ctx,
+    now,
+    false,
+    earliestDispatchAt,
+  );
   if (!earliestQueued) return { scheduled: false as const };
 
   const scheduledAt = Math.max(earliestDispatchAt, earliestQueued.nextRunAt);
@@ -126,9 +173,9 @@ export async function requestSecurityScanDispatch(ctx: MutationCtx, notBefore = 
 }
 
 export const requestSecurityScanDispatchInternal = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    return requestSecurityScanDispatch(ctx);
+  args: { notBefore: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    return requestSecurityScanDispatch(ctx, args.notBefore);
   },
 });
 
@@ -148,18 +195,14 @@ export const beginSecurityScanDispatchInternal = internalMutation({
     }
 
     const now = Date.now();
-    const claimable = await ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_status_and_next_run_at", (q) => q.eq("status", "queued").lte("nextRunAt", now))
-      .order("asc")
-      .first();
+    const { job: claimable, cleanupPending } = await findDispatchableQueuedJob(ctx, now, true);
     if (!claimable) {
       await ctx.db.patch(state._id, {
         scheduledToken: undefined,
         scheduledAt: undefined,
         updatedAt: now,
       });
-      await requestSecurityScanDispatch(ctx);
+      if (!cleanupPending) await requestSecurityScanDispatch(ctx);
       return { shouldDispatch: false as const };
     }
 
