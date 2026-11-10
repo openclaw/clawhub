@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CLI login: the device page no longer fills the approval code from the link. Type the code from the terminal. The page shows the token label and that approval creates a full API token. A scope other than `read write` is rejected.
+
 - CI: verify and cache a pinned Convex backend through the release-asset API before local-auth browser tests, with bounded download retries.
 
 - Skills: recognize a single top-level `env` name as a required variable so installation guidance and scanner metadata retain the declared credential.

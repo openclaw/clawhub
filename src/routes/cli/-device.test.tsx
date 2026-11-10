@@ -6,19 +6,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const approveMock = vi.fn();
 const denyMock = vi.fn();
 const useMutationMock = vi.fn();
-const { useSearchMock } = vi.hoisted(() => ({
-  useSearchMock: vi.fn(),
-}));
+const useQueryMock = vi.fn();
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (config: { component: unknown }) => ({
-    ...config,
-    useSearch: useSearchMock,
-  }),
+  createFileRoute: () => (config: { component: unknown }) => config,
 }));
 
 vi.mock("convex/react", () => ({
   useMutation: (...args: unknown[]) => useMutationMock(...args),
+  useQuery: (...args: unknown[]) => useQueryMock(...args),
 }));
 
 vi.mock("../../../convex/_generated/api", () => ({
@@ -26,6 +22,7 @@ vi.mock("../../../convex/_generated/api", () => ({
     cliDeviceAuth: {
       approve: "approve",
       deny: "deny",
+      describePending: "describePending",
     },
   },
 }));
@@ -78,38 +75,68 @@ vi.mock("../../components/ui/label", () => ({
 
 const { CliDeviceAuth } = await import("./device");
 
+const pendingDescription = {
+  state: "pending",
+  label: "ssh box",
+  createdAt: Date.parse("2026-11-10T15:00:00.000Z"),
+  expiresAt: Date.parse("2026-11-10T15:15:00.000Z"),
+  access: "full",
+};
+
+function typeCode(value = "ABCD-2345") {
+  fireEvent.change(screen.getByLabelText("Code"), { target: { value } });
+}
+
 describe("CliDeviceAuth", () => {
   beforeEach(() => {
     approveMock.mockReset();
     denyMock.mockReset();
     useMutationMock.mockReset();
-    useSearchMock.mockReturnValue({ user_code: "ABCD-2345" });
+    useQueryMock.mockReset();
+    useQueryMock.mockImplementation((_query: unknown, args: unknown) => {
+      if (!args || args === "skip") return undefined;
+      return pendingDescription;
+    });
+    window.history.replaceState(null, "", "/cli/device?user_code=ABCD-2345");
   });
 
-  it("prefills the code from user_code", () => {
-    useMutationMock.mockReturnValue(vi.fn());
-
-    render(<CliDeviceAuth />);
-
-    expect(screen.getByLabelText("Code")).toHaveProperty("value", "ABCD-2345");
-  });
-
-  it("prefills the code from a legacy device-shaped code param", () => {
-    useSearchMock.mockReturnValue({ code: "ABCD-2345" });
-    useMutationMock.mockReturnValue(vi.fn());
-
-    render(<CliDeviceAuth />);
-
-    expect(screen.getByLabelText("Code")).toHaveProperty("value", "ABCD-2345");
-  });
-
-  it("does not prefill an OAuth completion code from the legacy param", () => {
-    useSearchMock.mockReturnValue({ code: "long-random-oauth-completion-code-1234567890" });
+  it("leaves the code blank when the link already contains user_code", () => {
     useMutationMock.mockReturnValue(vi.fn());
 
     render(<CliDeviceAuth />);
 
     expect(screen.getByLabelText("Code")).toHaveProperty("value", "");
+    expect(screen.getByText(/code is not filled in for you/)).toBeTruthy();
+  });
+
+  it("leaves the code blank for a legacy device-shaped code param", () => {
+    window.history.replaceState(null, "", "/cli/device?code=ABCD-2345");
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+
+    expect(screen.getByLabelText("Code")).toHaveProperty("value", "");
+  });
+
+  it("does not approve a code that was only present on the link", () => {
+    useMutationMock.mockReturnValue(approveMock);
+
+    render(<CliDeviceAuth />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
+
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the token label before authorization", () => {
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+    typeCode();
+
+    expect(screen.getByText("Label: ssh box")).toBeTruthy();
+    expect(screen.getByText("Started: 2026-11-10T15:00:00.000Z")).toBeTruthy();
+    expect(screen.getByText(/full API token/)).toBeTruthy();
   });
 
   it("allows only one device decision while the mutation is pending", async () => {
@@ -126,6 +153,7 @@ describe("CliDeviceAuth", () => {
     );
 
     render(<CliDeviceAuth />);
+    typeCode();
 
     const authorize = screen.getByRole("button", { name: "Authorize" });
     const deny = screen.getByRole("button", { name: "Deny" });
@@ -161,6 +189,7 @@ describe("CliDeviceAuth", () => {
     );
 
     render(<CliDeviceAuth />);
+    typeCode();
 
     fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
 

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Container } from "../../components/layout/Container";
@@ -9,7 +9,6 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
-import { isCliDeviceUserCode } from "../../lib/cliDeviceCode";
 import { getUserFacingConvexError } from "../../lib/convexError";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
@@ -18,11 +17,7 @@ export const Route = createFileRoute("/cli/device")({
 });
 
 export function CliDeviceAuth() {
-  const search = Route.useSearch() as { user_code?: string; code?: string };
-  const legacyCode = search.code ?? "";
-  const [code, setCode] = useState(
-    search.user_code ?? (isCliDeviceUserCode(legacyCode) ? legacyCode : ""),
-  );
+  const [code, setCode] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<"approve" | "deny" | null>(null);
   const [isComplete, setIsComplete] = useState(false);
@@ -30,9 +25,15 @@ export function CliDeviceAuth() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
   const approve = useMutation(api.cliDeviceAuth.approve);
   const deny = useMutation(api.cliDeviceAuth.deny);
+  const description = useQuery(
+    api.cliDeviceAuth.describePending,
+    isAuthenticated && me && code.trim() ? { userCode: code } : "skip",
+  );
+  const canDecide = description?.state === "pending" && !isComplete;
 
   const submit = async () => {
     const trimmed = code.trim();
+    if (description?.state !== "pending") return;
     if (!trimmed) {
       setStatus("Enter the code shown in your terminal.");
       return;
@@ -55,7 +56,7 @@ export function CliDeviceAuth() {
 
   const cancel = async () => {
     const trimmed = code.trim();
-    if (!trimmed) return;
+    if (description?.state !== "pending" || !trimmed) return;
     if (actionInFlight.current || isComplete) return;
     actionInFlight.current = true;
     setPendingAction("deny");
@@ -107,7 +108,7 @@ export function CliDeviceAuth() {
                   <Button
                     type="button"
                     onClick={submit}
-                    disabled={pendingAction !== null || isComplete}
+                    disabled={!canDecide || pendingAction !== null}
                   >
                     Authorize
                   </Button>
@@ -115,11 +116,35 @@ export function CliDeviceAuth() {
                     type="button"
                     variant="outline"
                     onClick={cancel}
-                    disabled={pendingAction !== null || isComplete}
+                    disabled={!canDecide || pendingAction !== null}
                   >
                     Deny
                   </Button>
                 </div>
+                <p className="text-sm text-[color:var(--ink-soft)]">
+                  Type the code from your terminal. A link does not approve this login, and the code
+                  is not filled in for you.
+                </p>
+                {description?.state === "pending" ? (
+                  <div className="space-y-1 text-sm">
+                    <p>Label: {description.label}</p>
+                    <p>Started: {new Date(description.createdAt).toISOString()}</p>
+                    <p>This creates a full API token. It can publish and delete as you.</p>
+                  </div>
+                ) : null}
+                {description?.state === "expired" ? (
+                  <p className="text-sm text-[color:var(--ink-soft)]">That code expired.</p>
+                ) : null}
+                {description?.state === "used" ? (
+                  <p className="text-sm text-[color:var(--ink-soft)]">
+                    That code was already used.
+                  </p>
+                ) : null}
+                {description?.state === "missing" ? (
+                  <p className="text-sm text-[color:var(--ink-soft)]">
+                    That code is not waiting for approval.
+                  </p>
+                ) : null}
                 {status ? <p className="text-sm text-[color:var(--ink-soft)]">{status}</p> : null}
               </>
             )}

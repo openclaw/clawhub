@@ -9,6 +9,19 @@ reserved for Convex Auth OAuth completion. Other flows must use a different quer
 parameter; CLI device login uses `user_code`. As defense in depth, the handler
 explicitly ignores device-shaped codes (`XXXX-XXXX`).
 
+## CLI device login
+
+`POST /api/cli/device/code` returns `user_code` separately from `verification_uri`.
+The verification URL does not carry the code. `/cli/device` does not copy
+`user_code` or a legacy device-shaped `code` into the form. The signed-in user
+types the code shown in their terminal. `describePending` then shows the token
+label, the start time, and that approval creates a full API token. Authorize
+stays disabled until that pending description is loaded.
+
+A requested scope other than `read write` is rejected. Device login does not
+issue a narrower token. The minted `apiTokens` row is the same full token a
+signed-in user creates in settings.
+
 Security invariant: a GitHub OAuth account may link to a ClawHub user only through
 the auth-managed GitHub `providerAccountId`, which is the immutable GitHub
 numeric account id stored in `authAccounts`. Mutable GitHub usernames and OAuth
