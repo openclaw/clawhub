@@ -40,9 +40,11 @@ export async function getRegistry(opts: GlobalOpts, params?: { cache?: boolean }
   const token = tokenForRegistry(cached, registry, cfg?.token);
   const explicit = opts.registrySource !== "default";
   // A discovered registry must not replace a saved login, and it must not
-  // keep that login's token. An explicit --registry or env registry may
-  // switch the saved registry, without carrying the old token across origins.
-  if (token || !cfg?.token || explicit || isLegacyRegistry(cached ?? "")) {
+  // keep that login's token. A legacy host is still a saved login: it
+  // migrates only when the resolved registry accepts that token. An explicit
+  // --registry or env registry may switch the saved registry, without
+  // carrying the old token across origins.
+  if (token || !cfg?.token || explicit) {
     await writeGlobalConfig({ registry, token });
   }
   return registry;

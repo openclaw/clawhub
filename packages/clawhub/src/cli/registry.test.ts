@@ -62,6 +62,19 @@ describe("registry resolution", () => {
     });
   });
 
+  it("does not replace a legacy login when discovery names another origin", async () => {
+    readGlobalConfig.mockResolvedValue({
+      registry: "https://auth.clawhub.ai",
+      token: "saved-marker",
+    });
+    discoverRegistryFromSite.mockResolvedValue({ apiBase: "http://127.0.0.1:64692" });
+
+    const registry = await getRegistry(makeOpts({ site: "http://docs.example" }), { cache: true });
+
+    expect(registry).toBe("http://127.0.0.1:64692");
+    expect(writeGlobalConfig).not.toHaveBeenCalled();
+  });
+
   it("does not keep a saved token when discovery names another origin", async () => {
     readGlobalConfig.mockResolvedValue({ registry: "https://clawhub.ai", token: "saved-marker" });
     discoverRegistryFromSite.mockResolvedValue({ apiBase: "https://evil.example" });

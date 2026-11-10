@@ -29,7 +29,7 @@ clawhub whoami
 
 - `--workdir <dir>`: working directory (default: cwd; falls back to Clawdbot workspace if configured)
 - `--dir <dir>`: install dir under workdir (default: `skills`)
-- `--site <url>`: site base URL for registry discovery and device verification (default: `https://clawhub.ai`). A saved token is sent only to the registry origin stored with it. Discovered registry URLs must be `http` or `https` and must not contain userinfo.
+- `--site <url>`: site base URL for registry discovery and device verification (default: `https://clawhub.ai`). A saved token is sent only to the registry origin stored with it. Discovery of another origin leaves that login in place, including a legacy `auth.clawhub.ai` registry. Discovered registry URLs must be `http` or `https` and must not contain userinfo.
 - `--registry <url>`: API base URL (default: discovered, else `https://clawhub.ai`)
 - `--no-input`: disable prompts
 
