@@ -87,7 +87,10 @@ function runCli(args: string[], env: NodeJS.ProcessEnv) {
   });
 }
 
-test("publishes, polls, retries, and downloads the exact Template tarball", async ({ request }) => {
+test("publishes, polls, retries, and downloads the exact Template tarball", async ({
+  request,
+  page,
+}) => {
   const root = mkdtempSync(path.join(tmpdir(), "clawhub-exact-claw-proof-"));
   const sourceDir = path.join(root, "source");
   const configPath = path.join(root, "config.json");
@@ -99,7 +102,6 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
 
   try {
     mkdirSync(path.join(sourceDir, "manifests"), { recursive: true });
-    mkdirSync(path.join(sourceDir, "profiles"), { recursive: true });
     writeFileSync(
       path.join(sourceDir, "package.json"),
       JSON.stringify({
@@ -110,11 +112,27 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
     );
     writeFileSync(
       path.join(sourceDir, "manifests", "CLAW.md"),
-      `---\nschemaVersion: 1\nagent:\n  id: ${packageName}\n  name: Exact Template Proof\n---\nPreserve the exact published artifact.\n`,
-    );
-    writeFileSync(
-      path.join(sourceDir, "profiles", "openclaw.yml"),
-      "schemaVersion: 1\nagent: {}\n",
+      `---\n${JSON.stringify({
+        schemaVersion: 1,
+        agent: {
+          id: packageName,
+          name: "Exact Template Proof",
+          tools: { profile: "minimal", allow: ["session_status"] },
+          humanDelay: { mode: "natural" },
+        },
+        skills: [{ ref: "@acme/research", version: "1.2.3" }],
+        plugins: [{ ref: "@acme/alerts", version: "2.0.0" }],
+        automations: [
+          {
+            id: "daily-brief",
+            name: "Daily brief",
+            enabled: false,
+            schedule: { cron: "0 9 * * *", timezone: "UTC" },
+            session: "isolated",
+            message: "Summarize approved sources.",
+          },
+        ],
+      })}\n---\nPreserve the exact published artifact.\n`,
     );
 
     const pack = spawnSync("npm", ["pack", "--json", "--pack-destination", root], {
@@ -195,6 +213,49 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
       publicationStatus: "published",
       artifactSha256,
     });
+
+    const expectedInventory = [
+      { kind: "skill", source: "clawhub", ref: "@acme/research", version: "1.2.3" },
+      { kind: "plugin", source: "clawhub", ref: "@acme/alerts", version: "2.0.0" },
+    ];
+    const releaseResponse = await request.get(
+      `${registry}/api/v1/packages/${packagePath}/versions/${version}`,
+    );
+    expect(releaseResponse.status()).toBe(200);
+    const release = await releaseResponse.json();
+    expect(release.version.templateInventory).toEqual(expectedInventory);
+    expect(release.version.templateManifestSummary.packages).toEqual({
+      skillCount: 1,
+      pluginCount: 1,
+    });
+    expect(release.version.artifact.sha256).toBe(artifactSha256);
+
+    await page.goto(`/cli-user/templates/${packageName}`);
+    await expect(page.getByRole("heading", { name: "Exact Template Proof" })).toBeVisible();
+    const proofDir = process.env.TEMPLATE_CONTRACT_PROOF_DIR;
+    if (proofDir) mkdirSync(proofDir, { recursive: true });
+    for (const [label, width, height] of [
+      ["desktop", 1440, 900],
+      ["laptop", 1366, 768],
+      ["tablet", 768, 1024],
+      ["mobile", 390, 844],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      for (const tab of ["Skills", "Plugins", "Automations"] as const) {
+        await page.getByRole("tab", { name: tab, exact: true }).click();
+        await expect(page.getByRole("tabpanel")).toContainText(
+          tab === "Skills" ? "@acme/research" : tab === "Plugins" ? "@acme/alerts" : "Paused",
+        );
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        ).toBe(true);
+        if (proofDir)
+          await page.screenshot({
+            path: path.join(proofDir, `candidate-${label}-${tab.toLowerCase()}.png`),
+            fullPage: true,
+          });
+      }
+    }
 
     console.log(
       `EXACT_TEMPLATE_ARTIFACT_PROOF ${JSON.stringify({

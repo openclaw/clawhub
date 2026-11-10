@@ -60,10 +60,8 @@ workspace:
   files:
     - source: workspace/reference.md
       path: reference.md
-packages:
-  - kind: skill
-    source: clawhub
-    ref: "@acme/triage"
+skills:
+  - ref: "@acme/triage"
     version: 1.2.0
 mcpServers: {}
 automations: []
@@ -74,9 +72,9 @@ automations: []
 Reviews and classifies incoming GitHub issues.
 ```
 
-Declare scheduled work under `automations`. Older published packages using
-`cronJobs` remain readable and validate as `automations`; declaring both keys is
-rejected. Existing archives and digests are preserved.
+Declare scheduled work under `automations`. Set `enabled: false` to create a paused
+job for onboarding; omission preserves enabled behavior. The retired `cronJobs` key
+is rejected with migration guidance. Existing archives and digests are preserved.
 
 `categories` is optional and accepts one to three distinct lowercase slugs.
 ClawHub accepts these categories for new releases: `personal`, `health`,
@@ -103,56 +101,40 @@ them in `workspace.files`. Package names and versions must match `package.json`,
 dependency versions must be exact, and MCP environment values must remain
 unresolved `${ENV_VAR}` references.
 
-## Bootstrap and harness profiles
+## Native settings and bootstrap
 
-An optional package-root `BOOTSTRAP.md` contains first-run instructions. It is
-seeded once by a supporting harness and remains separate from the reusable
-portable prompt in the `CLAW.md` body. Do not declare root `BOOTSTRAP.md` as a
-workspace destination; that path is reserved for the package-root file. ClawHub
-includes bootstrap presence, but never its contents, in the bounded catalog
-summary.
-
-Harness-specific tuning uses conventional package paths:
-
-```text
-profiles/openclaw.yml
-profiles/hermes.yml
-profiles/codex.yml
-```
-
-The `profiles/` namespace is reserved for these lowercase, single-file `.yml`
-paths. Each profile is a JSON-compatible YAML mapping. ClawHub validates the common shape and validates `profiles/openclaw.yml` against
-the shipped OpenClaw v1 consumer contract, including registered built-in tool
-profiles and bounded tool grants; it does not interpret foreign profiles. A
-harness discovers only its own profile and ignores the others when applying the
-package. The exact published artifact and its digest still cover every profile,
-bootstrap instruction, and asset.
-
-The retired `metadata.openclaw.config` pointer is rejected. Move that file to
-`profiles/openclaw.yml` and remove the metadata entry.
-
-OpenClaw-native extension packages belong in `profiles/openclaw.yml`, while
-portable MCP servers remain in `CLAW.md`:
+Keep native agent settings directly under `agent` in the same `CLAW.md` frontmatter.
+Supported groups are `groupChat`, `sandbox`, `tools`, `memory`, `heartbeat`, and
+`humanDelay`, alongside identity and purpose. `tools.profile` remains a native tool
+policy selection; bounded tool-grant and memory-consent checks still apply.
 
 ```yaml
 schemaVersion: 1
 agent:
+  id: github-triage
   tools:
     profile: coding
     allow: [read]
-extensions:
-  - id: issue-tools
-    kind: plugin
-    format: openclaw
-    source: clawhub
-    ref: "@acme/issue-tools"
+plugins:
+  - ref: "@acme/issue-tools"
     version: 2.3.4
 ```
 
-Extension ids and package references must be unique, and versions must be
-exact. Other harnesses may bind the same application needs using their own
-native profile model; the portable manifest does not impose a capability-name
-registry.
+Declare exact ClawHub dependencies in top-level `skills` and `plugins` arrays. Each
+entry contains only `ref` and an exact `version`; the collection determines its
+kind and ClawHub is the reference source. Duplicate references within one kind are
+rejected. Bundled directory paths are not yet supported by this contract.
+
+The `packages`, `extensions`, and `profiles` fields, package-local `profiles/`
+files, and `metadata.openclaw.config` pointer are retired. Move settings into
+`CLAW.md` `agent`, dependencies into `skills`/`plugins`, and scheduled work into
+`automations`. This simplification keeps `schemaVersion: 1`; no compatibility
+adapter interprets the retired forms.
+
+An optional package-root `BOOTSTRAP.md` contains first-run instructions. It is
+seeded once and remains separate from the reusable prompt in the `CLAW.md` body.
+Do not declare root `BOOTSTRAP.md` as a workspace destination; the path is reserved.
+ClawHub includes bootstrap presence, but never its contents, in the bounded summary.
 
 ## Validate, build, and publish
 
@@ -189,14 +171,14 @@ Publication rejects:
 - malformed `CLAW.md` frontmatter or manifest fields;
 - a non-empty `CLAW.md` body combined with an explicit `SOUL.md` destination;
 - missing workspace source files or portable path collisions;
-- invalid package-root bootstrap instructions or conventional harness profiles;
+- invalid package-root bootstrap instructions, retired profiles, or unsafe native agent settings;
 - the retired `metadata.openclaw.config` pointer;
 - floating skill/plugin versions and resolved MCP credentials.
 
 Accepted packages continue through ClawHub's existing ownership, moderation,
 security scanning, release, and artifact storage pipeline. The stored release
-retains the exact artifact plus a non-sensitive summary for later search and
-detail surfaces; downloads return those same bytes and digest, and ClawHub does
+retains the exact artifact plus a non-sensitive summary and normalized dependency
+inventory for later search and detail surfaces; downloads return those same bytes and digest, and ClawHub does
 not duplicate the full manifest into Convex storage.
 
 ## Discover published Templates

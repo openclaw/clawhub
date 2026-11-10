@@ -285,38 +285,6 @@ function assertTemplatePublishArtifactDigest(
   }
 }
 
-async function validateTemplatePublishProfilePolicy(
-  plan: PackagePublishPlan,
-  registry: string,
-  token: string,
-) {
-  if (plan.payload.family !== "template") return;
-  const { validateTemplatePackageContents } = await import("../../schema/templatePackage.js");
-  const validationInput = {
-    packageName: plan.payload.name,
-    version: plan.payload.version,
-    packageJson: plan.packageJson,
-    files: plan.filesOnDisk.map((file) => ({
-      path: file.relPath,
-      text: decodeUtf8Text(file.bytes) ?? undefined,
-    })),
-  };
-  const currentValidation = validateTemplatePackageContents({
-    ...validationInput,
-    openClawProfilePolicy: "current",
-  });
-  if (currentValidation.ok) return;
-
-  const packageDetail = await apiRequestPackageDetail(registry, plan.payload.name, token);
-  if (
-    packageDetail?.package?.family === "template" &&
-    packageDetail.package.templateProfilePolicyVersion === undefined
-  ) {
-    return;
-  }
-  fail(currentValidation.issues.map((issue) => `${issue.path}: ${issue.message}`).join(" "));
-}
-
 type PackedClawPack = {
   path: string;
   file: PackageFile;
@@ -968,7 +936,6 @@ export async function cmdPublishPackage(
         spinner,
       });
       let publishToken = resolvedPublishToken.token;
-      await validateTemplatePublishProfilePolicy(plan, registry, publishToken);
       const form = new FormData();
       const payloadJson = JSON.stringify(plan.payload);
       form.set("payload", payloadJson);
@@ -2655,7 +2622,6 @@ async function preparePackagePublishPlan(
       packageName: name,
       version,
       packageJson,
-      openClawProfilePolicy: "publication-compatible",
       files: filesOnDisk.map((file) => ({
         path: file.relPath,
         text: decodeUtf8Text(file.bytes) ?? undefined,

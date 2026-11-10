@@ -271,6 +271,23 @@
   line-height: 1.6;
 }
 
+.template-detail-original {
+  margin-top: 18px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.template-detail-original summary {
+  cursor: pointer;
+}
+
+.template-detail-original pre {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
 .template-detail-entry-list {
   margin: 0;
   padding: 0;

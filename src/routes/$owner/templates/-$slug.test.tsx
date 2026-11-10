@@ -11,7 +11,10 @@ const mocks = vi.hoisted(() => ({
   fetchPackageVersion: vi.fn(),
 }));
 
-vi.mock("../../../lib/packageApi", () => mocks);
+vi.mock("../../../lib/packageApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/packageApi")>()),
+  ...mocks,
+}));
 // Exercise the real sanitized Markdown renderer without asynchronous syntax-engine setup.
 vi.mock("../../../components/MarkdownPreview", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../components/MarkdownPreview")>();
@@ -234,14 +237,13 @@ const manifest = {
     bootstrapFiles: { "AGENTS.md": { source: "workspace/AGENTS.md" } },
     files: [{ path: "notes/checklist.txt", source: "workspace/checklist.txt" }],
   },
-  packages: [
-    { kind: "skill", source: "clawhub", ref: "@maker/release-search", version: "1.2.3" },
-    { kind: "plugin", source: "clawhub", ref: "@maker/release-alerts", version: "2.0.0" },
-  ],
+  skills: [{ ref: "@maker/release-search", version: "1.2.3" }],
+  plugins: [{ ref: "@maker/release-alerts", version: "2.0.0" }],
   automations: [
     {
       id: "weekday-brief",
       name: "Weekday release brief",
+      enabled: false,
       schedule: { cron: "0 9 * * 1-5", timezone: "America/Los_Angeles" },
       session: "isolated",
       message: "Summarize the approved release sources.",
@@ -260,12 +262,21 @@ function renderTemplate(
     contents?: string | null;
     version?: string | null;
     llmAnalysis?: LlmAnalysis | null;
+    manifestSummary?: NonNullable<PackageDetailResponse["package"]>["templateManifestSummary"];
   } = {},
 ) {
   const detail = packageDetail();
   detail.package!.scanStatus = "status" in options ? options.status : "clean";
   detail.package!.updatedAt = Date.UTC(2026, 10, 5);
   if ("version" in options) detail.package!.latestVersion = options.version;
+  if ("manifestSummary" in options)
+    detail.package!.templateManifestSummary = options.manifestSummary;
+  detail.package!.artifact = {
+    kind: "npm-pack",
+    sha256: "a".repeat(64),
+    size: 608,
+    format: "tgz",
+  };
   return render(
     <TemplateDetailPage
       detail={detail}
@@ -395,15 +406,18 @@ describe("Template detail composition and interactions", () => {
     renderTemplate();
     fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
     expect(screen.getByText("@maker/release-search")).toBeTruthy();
-    expect(screen.getByText("Version 1.2.3 · clawhub")).toBeTruthy();
+    expect(screen.getByText("Version 1.2.3 · ClawHub")).toBeTruthy();
+    expect(screen.getByText("1 declared skill")).toBeTruthy();
     expect(screen.queryByText("@maker/release-alerts")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     expect(screen.getByText("@maker/release-alerts")).toBeTruthy();
-    expect(screen.getByText("Version 2.0.0 · clawhub")).toBeTruthy();
+    expect(screen.getByText("Version 2.0.0 · ClawHub")).toBeTruthy();
+    expect(screen.getByText("1 declared plugin")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Automations" }));
     expect(screen.getByText("Weekday release brief")).toBeTruthy();
     expect(screen.getByText("0 9 * * 1-5")).toBeTruthy();
     expect(screen.getByText(/America\/Los_Angeles/)).toBeTruthy();
+    expect(screen.getByText(/Paused/)).toBeTruthy();
     expect(screen.getByText("Summarize the approved release sources.")).toBeTruthy();
   });
 
@@ -454,6 +468,63 @@ describe("Template detail composition and interactions", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "CLI" }));
     expect(screen.getByRole("button", { name: "Copy template install command" })).toBeTruthy();
+  });
+
+  it.each([
+    [
+      "retired fields",
+      '---\n{"schemaVersion":1,"agent":{"id":"historical"},"packages":[]}\n---\n# Published instructions',
+    ],
+    ["malformed YAML", "---\nagent: [\n---\n# Published instructions"],
+    ["missing document", null],
+  ])("blocks both install-copy actions and explains how to repair %s", (_label, contents) => {
+    renderTemplate({ contents });
+    const warning = screen.getByRole("status");
+    expect(warning.textContent).toContain("cannot be added");
+    expect(warning.textContent).toContain("publish a new version");
+    expect(
+      screen.getByRole("link", { name: "Template migration guide" }).getAttribute("href"),
+    ).toBe("/docs/templates");
+    expect(
+      screen.getByRole("link", { name: "Download release archive" }).getAttribute("href"),
+    ).toBe("/api/v1/packages/%40maker%2Frelease-brief/versions/0.1.0/artifact/download");
+    expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
+    expect(screen.queryByRole("button", { name: "Copy OpenClaw prompt" })).toBeNull();
+    if (contents !== null) {
+      const original = screen.getByText("View original CLAW.md").closest("details");
+      expect(original?.querySelector("code")?.textContent).toBe(contents);
+    } else {
+      expect(screen.queryByText("View original CLAW.md")).toBeNull();
+      expect(warning.textContent).toContain("Reload this page");
+    }
+  });
+
+  it("uses the stored profile count to block a retired sidecar even when CLAW.md parses", () => {
+    const contents =
+      '---\n{"schemaVersion":1,"agent":{"id":"historical"}}\n---\n# Original instructions';
+    expect(parseTemplateDocument(contents).manifest).not.toBeNull();
+    renderTemplate({
+      contents,
+      manifestSummary: {
+        ...packageDetail().package!.templateManifestSummary!,
+        profiles: { count: 1, hasOpenClaw: true },
+      },
+    });
+    expect(screen.getByRole("status").textContent).toContain("retired Template profiles");
+    expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
+    expect(screen.getByText("View original CLAW.md").closest("details")?.textContent).toContain(
+      contents,
+    );
+  });
+
+  it("shows an unsupported original document as escaped text without executing its markup", () => {
+    const contents =
+      '---\n{"schemaVersion":1,"agent":{"id":"historical"},"packages":[]}\n---\n<script>alert("archive")</script>';
+    renderTemplate({ contents });
+    const original = screen.getByText("View original CLAW.md").closest("details");
+    expect(original?.querySelector("code")?.textContent).toBe(contents);
+    expect(original?.querySelector("script")).toBeNull();
   });
 
   it("truthfully reports clipboard failure", async () => {
@@ -630,7 +701,7 @@ describe("Template detail composition and interactions", () => {
 });
 
 describe("Template document handling", () => {
-  it.each(["automations", "cronJobs"])("reads published %s as canonical automations", (key) => {
+  it.each(["automations"])("reads published %s as canonical automations", (key) => {
     const { automations, ...portable } = manifest;
     const parsed = parseTemplateDocument(
       `---\n${JSON.stringify({ ...portable, [key]: automations })}\n---\n# Instructions`,
@@ -652,7 +723,8 @@ describe("Template document handling", () => {
 
   it("strips BOM and CRLF frontmatter while retaining the published Markdown", () => {
     const parsed = parseTemplateDocument("\uFEFF" + templateContents.replace(/\n/g, "\r\n"));
-    expect(parsed.manifest?.packages).toHaveLength(2);
+    expect(parsed.manifest?.skills).toHaveLength(1);
+    expect(parsed.manifest?.plugins).toHaveLength(1);
     expect(parsed.markdown).toContain("# Release instructions");
     expect(parsed.markdown).not.toContain("schemaVersion");
   });

@@ -1775,6 +1775,16 @@ const packageReleases = defineTable({
   categoryClassification: v.optional(pluginCategoryClassificationValidator),
   // Preserve published releases and immutable archive lineage; expose templateManifestSummary on the wire.
   clawManifestSummary: v.optional(clawManifestSummaryValidator),
+  templateInventory: v.optional(
+    v.array(
+      v.object({
+        kind: v.union(v.literal("skill"), v.literal("plugin")),
+        source: v.literal("clawhub"),
+        ref: v.string(),
+        version: v.string(),
+      }),
+    ),
+  ),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
