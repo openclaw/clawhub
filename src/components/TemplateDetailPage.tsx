@@ -63,7 +63,9 @@ export function TemplateDetailPage({
             <p className="template-detail-category">{categories.join(" · ")}</p>
           ) : null}
           <h1>{summary?.agent.name || manifest?.agent.name || pkg.displayName}</h1>
-          {description ? <p className="template-detail-description">{description}</p> : null}
+          {description ? (
+            <TemplateDescription key={pkg.name + description} description={description} />
+          ) : null}
           <div className="template-detail-publisher skill-hero-creator">
             <UserBadge
               user={detail.owner}
@@ -212,6 +214,52 @@ export function TemplateDetailPage({
         </div>
       </div>
     </main>
+  );
+}
+
+function TemplateDescription({ description }: { description: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+  const id = useId();
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return undefined;
+    let disposed = false;
+    const measure = () => {
+      if (disposed) return;
+      // Measure the full text even while clamped; character counts miss narrow viewports.
+      const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight);
+      setOverflows(element.scrollHeight > Math.ceil(lineHeight * 2));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    void document.fonts?.ready.then(measure);
+    return () => {
+      disposed = true;
+      observer.disconnect();
+    };
+  }, []);
+
+  return (
+    <div className="template-detail-description-block">
+      <p id={id} ref={ref} className="template-detail-description" data-expanded={expanded}>
+        {description}
+      </p>
+      {overflows ? (
+        <button
+          type="button"
+          className="template-detail-description-toggle"
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "Show less" : "Read more"}
+        </button>
+      ) : null}
+    </div>
   );
 }
 

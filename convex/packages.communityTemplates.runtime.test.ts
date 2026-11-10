@@ -135,7 +135,7 @@ async function fixture() {
 describe("community Template discovery", () => {
   it("returns the same public featured and category selection in one overview", async () => {
     const { t, personalPublisherId } = await fixture();
-    const overview = await t.query(internal.packages.templateOverviewInternal, { limit: 8 });
+    const overview = await t.query(internal.templateOverview.get, { limit: 8 });
     expect(overview.complete).toBe(true);
     const response = await t.fetch("/api/v1/templates/overview?limit=8");
     expect(response.status).toBe(200);
@@ -153,7 +153,7 @@ describe("community Template discovery", () => {
     await t.run(async (ctx) => {
       await ctx.db.patch(personalPublisherId, { deactivatedAt: 2 });
     });
-    const deactivated = await t.query(internal.packages.templateOverviewInternal, { limit: 8 });
+    const deactivated = await t.query(internal.templateOverview.get, { limit: 8 });
     expect(deactivated.featured.map((entry) => entry.name)).toEqual([expectedNames[1]]);
     expect(deactivated.sections[0].items.map((entry) => entry.name)).toEqual([expectedNames[1]]);
   });
@@ -171,7 +171,7 @@ describe("community Template discovery", () => {
       if (!badge) throw Error("Missing badge");
       await ctx.db.delete(badge._id);
     });
-    const overview = await t.query(internal.packages.templateOverviewInternal, { limit: 1 });
+    const overview = await t.query(internal.templateOverview.get, { limit: 1 });
     expect(overview.sections[0].items.map((entry) => entry.name)).toEqual([expectedNames[0]]);
     expect(overview.featured.every((entry) => !entry.ownerOfficial)).toBe(true);
   });
@@ -200,7 +200,7 @@ describe("community Template discovery", () => {
         });
       }
     });
-    const overview = await t.query(internal.packages.templateOverviewInternal, { limit: 8 });
+    const overview = await t.query(internal.templateOverview.get, { limit: 8 });
     expect(overview.complete).toBe(true);
     expect(overview.sections[0].items.map((item) => item.name)).toEqual(
       Array.from(
@@ -226,7 +226,7 @@ describe("community Template discovery", () => {
         });
       }
     });
-    expect(await t.query(internal.packages.templateOverviewInternal, { limit: 8 })).toEqual({
+    expect(await t.query(internal.templateOverview.get, { limit: 8 })).toEqual({
       complete: false,
       featured: [],
       sections: [],
