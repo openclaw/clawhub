@@ -97,7 +97,7 @@ describe("discovery", () => {
       "fetch",
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ apiBase: "https://user:secret@evil.example" }), {
+          new Response(JSON.stringify({ apiBase: "https://user@evil.example" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           }),

@@ -63,18 +63,18 @@ describe("registry resolution", () => {
   });
 
   it("does not keep a saved token when discovery names another origin", async () => {
-    readGlobalConfig.mockResolvedValue({ registry: "https://clawhub.ai", token: "clh_saved" });
+    readGlobalConfig.mockResolvedValue({ registry: "https://clawhub.ai", token: "saved-marker" });
     discoverRegistryFromSite.mockResolvedValue({ apiBase: "https://evil.example" });
 
     const registry = await getRegistry(makeOpts(), { cache: true });
 
     expect(registry).toBe("https://evil.example");
     expect(writeGlobalConfig).not.toHaveBeenCalled();
-    expect(tokenForRegistry("https://clawhub.ai", registry, "clh_saved")).toBeUndefined();
+    expect(tokenForRegistry("https://clawhub.ai", registry, "saved-marker")).toBeUndefined();
   });
 
   it("drops the saved token when an explicit registry changes origin", async () => {
-    readGlobalConfig.mockResolvedValue({ registry: "https://clawhub.ai", token: "clh_saved" });
+    readGlobalConfig.mockResolvedValue({ registry: "https://clawhub.ai", token: "saved-marker" });
 
     const registry = await getRegistry(
       makeOpts({ registry: "https://hub.example", registrySource: "cli" }),
