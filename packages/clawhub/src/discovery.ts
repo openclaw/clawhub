@@ -5,7 +5,7 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 // A well-known document can name any string. Only an https base, or http on
 // loopback, is a registry. Credentials in the URL are rejected.
-export function acceptedDiscoveredBase(value: string | undefined): string | null {
+function acceptedDiscoveredBase(value: string | undefined): string | null {
   const trimmed = value?.trim();
   if (!trimmed) return null;
   let url: URL;

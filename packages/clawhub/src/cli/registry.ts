@@ -48,7 +48,7 @@ export async function getRegistry(opts: GlobalOpts, params?: { cache?: boolean }
   return registry;
 }
 
-export function registryOrigin(value: string | undefined): string | null {
+function registryOrigin(value: string | undefined): string | null {
   if (!value?.trim()) return null;
   try {
     const url = new URL(value.trim());
