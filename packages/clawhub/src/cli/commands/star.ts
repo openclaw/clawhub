@@ -36,8 +36,8 @@ export async function cmdStarSkill(
     if (!ok) return undefined;
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader(`Starring ${slug}`);
   return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(

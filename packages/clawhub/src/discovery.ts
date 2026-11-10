@@ -1,6 +1,24 @@
 import { parseArk, WellKnownConfigSchema } from "./schema/index.js";
 
 const DISCOVERY_TIMEOUT_MS = 15_000;
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+// A well-known document can name any string. Only an https base, or http on
+// loopback, is a registry. Credentials in the URL are rejected.
+export function acceptedDiscoveredBase(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (url.username || url.password) return null;
+  if (url.protocol === "https:") return trimmed;
+  if (url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname)) return trimmed;
+  return null;
+}
 
 // Mirrors the fetchWithTimeout pattern from ./http.js (not imported) so an
 // endpoint that accepts but never answers cannot hang discovery forever.
@@ -57,11 +75,12 @@ export async function discoverRegistryFromSite(siteUrl: string, timeoutMs = DISC
     try {
       const raw = (await response.json()) as unknown;
       const parsed = parseArk(WellKnownConfigSchema, raw, "WellKnown config");
-      const apiBase = "apiBase" in parsed ? parsed.apiBase : parsed.registry;
+      const rawBase = "apiBase" in parsed ? parsed.apiBase : parsed.registry;
+      const apiBase = acceptedDiscoveredBase(rawBase);
       if (!apiBase) return null;
       return {
         apiBase,
-        authBase: parsed.authBase,
+        authBase: acceptedDiscoveredBase(parsed.authBase) ?? undefined,
         minCliVersion: parsed.minCliVersion,
       };
     } catch (error) {

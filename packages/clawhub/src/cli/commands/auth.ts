@@ -52,8 +52,8 @@ export async function cmdLogout(opts: GlobalOpts) {
 }
 
 export async function cmdWhoami(opts: GlobalOpts) {
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
 
   const spinner = createCrabLoader("Checking token");
   return await withLoaderErrorHandling(spinner, async () => {

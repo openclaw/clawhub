@@ -306,8 +306,8 @@ export async function cmdSearch(
     fail("--cursor requires --prefix");
   }
 
-  const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   const spinner = createCrabLoader("Searching");
   return await withLoaderErrorHandling(spinner, async () => {
     const effectiveLimit =
@@ -409,9 +409,8 @@ export async function cmdInstall(
     fail("--version is not supported for skills.sh catalog references");
   }
 
-  const token = await getOptionalAuthToken();
-
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   await mkdir(opts.dir, { recursive: true });
   const lock = await readLockfile(opts.workdir);
   const lockKey = findExistingLockKey(lock, requested);
@@ -651,9 +650,8 @@ export async function cmdUpdate(
   }
   const allowPrompt = isInteractive() && inputAllowed;
 
-  const token = await getOptionalAuthToken();
-
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   const requestedSlugs = slug
     ? [requestedLockKey ?? skillIdentity(requestedRef!)]
     : Object.keys(lock.skills).filter(isSafeSkillIdentity);
@@ -1227,8 +1225,8 @@ export async function cmdExplore(
   opts: GlobalOpts,
   options: { limit?: number; sort?: string; json?: boolean } = {},
 ) {
-  const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   const spinner = createCrabLoader("Fetching latest skills");
   return await withLoaderErrorHandling(spinner, async () => {
     const url = registryUrl(ApiRoutes.skills, registry);
@@ -1286,8 +1284,8 @@ export async function cmdListSkillReports(opts: GlobalOpts, options: SkillReport
     fail("--status must be open, confirmed, dismissed, or all");
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const url = registryUrl(`${ApiRoutes.skills}/-/reports`, registry);
   url.searchParams.set("status", status);
   if (options.cursor?.trim()) url.searchParams.set("cursor", options.cursor.trim());
@@ -1337,8 +1335,8 @@ export async function cmdTriageSkillReport(
   const note = options.note?.trim();
   if (status !== "open" && !note) fail("--note required unless reopening");
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   await presentModerationPlan(
     reportModerationPlan({
       entityLabel: "skill",

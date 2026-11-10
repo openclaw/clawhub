@@ -77,4 +77,56 @@ describe("discovery", () => {
     );
     await expect(discoverRegistryFromSite("https://example.com")).resolves.toBeNull();
   });
+
+  it("ignores an apiBase that is not https", async () => {
+    globalStubs.stub(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ apiBase: "http://evil.example" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ) as unknown as typeof fetch,
+    );
+    await expect(discoverRegistryFromSite("https://example.com")).resolves.toBeNull();
+  });
+
+  it("ignores an apiBase that contains credentials", async () => {
+    globalStubs.stub(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ apiBase: "https://user:secret@evil.example" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ) as unknown as typeof fetch,
+    );
+    await expect(discoverRegistryFromSite("https://example.com")).resolves.toBeNull();
+  });
+
+  it("accepts loopback http and drops an unsafe authBase", async () => {
+    globalStubs.stub(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              apiBase: "http://127.0.0.1:3210",
+              authBase: "http://evil.example",
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+      ) as unknown as typeof fetch,
+    );
+    await expect(discoverRegistryFromSite("https://example.com")).resolves.toEqual({
+      apiBase: "http://127.0.0.1:3210",
+      authBase: undefined,
+      minCliVersion: undefined,
+    });
+  });
 });
