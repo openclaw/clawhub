@@ -1,6 +1,6 @@
-import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
+import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema/routes";
 import type { HttpRouter, PublicHttpAction, RouteSpec } from "convex/server";
-import { httpAction } from "../functions";
+import { httpAction } from "../_generated/server";
 import { getPathSegments, parsePackagePathSegments } from "./httpPathSegments";
 import { applyRateLimit, markRateLimitApplied, RATE_LIMITS } from "./httpRateLimit";
 
@@ -141,7 +141,7 @@ function addRateLimitHeaders(response: Response, headers: HeadersInit): Response
   }
 }
 
-function getRegisteredHttpHandler(action: PublicHttpAction): HttpHandler {
+export function getRegisteredHttpHandler(action: PublicHttpAction): HttpHandler {
   if (!hasRegisteredHttpHandler(action)) {
     throw new Error("HTTP action is missing its registered handler");
   }

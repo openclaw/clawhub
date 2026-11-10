@@ -4,6 +4,7 @@ import type {
   PackageVerificationTier,
 } from "clawhub-schema";
 import { getCatalogTopicSlugs } from "clawhub-schema/catalogMetadata";
+import { getPackageScopeOwnerMismatch } from "clawhub-schema/packageNames";
 import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
@@ -333,4 +334,28 @@ export async function toPublicPackageListItemFromPackage(
     verificationTier: pkg.verification?.tier ?? null,
     stats: pkg.stats,
   };
+}
+
+export async function isTemplateCatalogPublisherAvailable(
+  ctx: DbReaderCtx,
+  pkg: Pick<PackageDigestLike, "family" | "normalizedName" | "ownerPublisherId">,
+  cache?: Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>,
+) {
+  if (pkg.family !== "claw") return true;
+  if (!pkg.ownerPublisherId) return false;
+  const publisherId = pkg.ownerPublisherId;
+  let ownerPromise = cache?.get(publisherId);
+  if (!ownerPromise) {
+    ownerPromise = ctx.db.get(publisherId);
+    cache?.set(publisherId, ownerPromise);
+  }
+  const owner = await ownerPromise;
+  // Community discovery uses the same owner/scope boundary as publication;
+  // Official status belongs to the separate official feed and trust badges.
+  return Boolean(
+    owner &&
+    owner.deletedAt === undefined &&
+    owner.deactivatedAt === undefined &&
+    !getPackageScopeOwnerMismatch(pkg.normalizedName, owner.handle),
+  );
 }

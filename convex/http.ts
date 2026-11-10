@@ -1,96 +1,223 @@
-import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
+import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema/routes";
 import { httpRouter } from "convex/server";
-import { agentSkillsHttp } from "./agentSkillsHttp";
 import { auth } from "./auth";
-import { handle as downloadAnalyticsHttp } from "./downloadAnalyticsHttp";
-import { downloadZip, recordArchiveDownloadMetric } from "./downloads";
-import {
-  cliPublishHttp,
-  cliDeviceCodeHttp,
-  cliDeviceTokenHttp,
-  cliSkillDeleteHttp,
-  cliSkillUndeleteHttp,
-  cliTelemetryInstallHttp,
-  cliUploadUrlHttp,
-  cliWhoamiHttp,
-  getSkillHttp,
-  resolveSkillVersionHttp,
-  searchSkillsHttp,
-} from "./httpApi";
-import {
-  featuredV1Http,
-  searchInsightsV1Http,
-  searchReportsV1Http,
-  exportSkillsV1Http,
-  exportPluginsV1Http,
-  listBundlePluginsV1Http,
-  listCodePluginsV1Http,
-  listPackagesV1Http,
-  listPluginsV1Http,
-  listPluginOverviewV1Http,
-  listPluginCategoriesV1Http,
-  listSkillsV1Http,
-  trendingV1Http,
-  mintPublishTokenV1Http,
-  npmMirrorGetHttp,
-  packagesDeleteRouterV1Http,
-  packagesGetRouterV1Http,
-  packagesPostRouterV1Http,
-  pluginsGetRouterV1Http,
-  createPublisherV1Http,
-  publishPackageV1Http,
-  publishAttemptsGetRouterV1Http,
-  recoverPackagePublishAttemptV1Http,
-  publishSkillV1Http,
-  resolveSkillVersionV1Http,
-  searchSkillsV1Http,
-  skillScanBatchStatusV1Http,
-  skillScanJobHistoryV1Http,
-  skillScanBatchSubmitV1Http,
-  skillScanGetRouterV1Http,
-  skillScanSubmitV1Http,
-  skillSecurityVerdictsV1Http,
-  skillsDeleteRouterV1Http,
-  skillsGetRouterV1Http,
-  skillsPostRouterV1Http,
-  starsDeleteRouterV1Http,
-  starsPostRouterV1Http,
-  transfersGetRouterV1Http,
-  banAppealContextV1Http,
-  createPromotionV1Http,
-  listPromotionsV1Http,
-  promotionsGetRouterV1Http,
-  promotionsPostRouterV1Http,
-  catalogFeedV1Http,
-  catalogSkillsFeedV1Http,
-  catalogTemplatesFeedV1Http,
-  promotionsFeedV1Http,
-  usersGetRouterV1Http,
-  usersListV1Http,
-  usersPostRouterV1Http,
-  verifyDocsSessionV1Http,
-  whoamiV1Http,
-  contentRightsV1Http,
-  skillsShCatalogTestV1Http,
-  skillsShCatalogPublicV1Http,
-} from "./httpApiV1";
-import { preflightHandler } from "./httpPreflight";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
-import {
-  packageInspectorAcknowledgeHttp,
-  packageInspectorArtifactHttp,
-  packageInspectorClaimHttp,
-  packageInspectorNotifyHttp,
-  packageInspectorResultsHttp,
-} from "./packageInspectorHttp";
-import {
-  packageSdkUsageHttp,
-  packageSdkUsageCoverageHttp,
-  packageSdkUsagePluginHttp,
-} from "./packageSdkUsageHttp";
-import { retainHttp as retainPrepublicationReportHttp } from "./prepublicationReports";
-import { skillPresentationAssetHttp } from "./skillPresentationAssetsHttp";
+import { lazyHttpAction } from "./lib/lazyHttpAction";
 import { get as templateOverviewHttp } from "./templateOverviewHttp";
+
+const agentSkillsHttp = lazyHttpAction(
+  async () => (await import("./agentSkillsHttp")).agentSkillsHttp,
+);
+const downloadAnalyticsHttp = lazyHttpAction(
+  async () => (await import("./downloadAnalyticsHttp")).handle,
+);
+const downloadZip = lazyHttpAction(async () => (await import("./downloads")).downloadZip);
+const recordArchiveDownloadMetric = lazyHttpAction(
+  async () => (await import("./downloads")).recordArchiveDownloadMetric,
+);
+const cliPublishHttp = lazyHttpAction(async () => (await import("./httpApi")).cliPublishHttp);
+const cliDeviceCodeHttp = lazyHttpAction(async () => (await import("./httpApi")).cliDeviceCodeHttp);
+const cliDeviceTokenHttp = lazyHttpAction(
+  async () => (await import("./httpApi")).cliDeviceTokenHttp,
+);
+const cliSkillDeleteHttp = lazyHttpAction(
+  async () => (await import("./httpApi")).cliSkillDeleteHttp,
+);
+const cliSkillUndeleteHttp = lazyHttpAction(
+  async () => (await import("./httpApi")).cliSkillUndeleteHttp,
+);
+const cliTelemetryInstallHttp = lazyHttpAction(
+  async () => (await import("./httpApi")).cliTelemetryInstallHttp,
+);
+const cliUploadUrlHttp = lazyHttpAction(async () => (await import("./httpApi")).cliUploadUrlHttp);
+const cliWhoamiHttp = lazyHttpAction(async () => (await import("./httpApi")).cliWhoamiHttp);
+const getSkillHttp = lazyHttpAction(async () => (await import("./httpApi")).getSkillHttp);
+const resolveSkillVersionHttp = lazyHttpAction(
+  async () => (await import("./httpApi")).resolveSkillVersionHttp,
+);
+const searchSkillsHttp = lazyHttpAction(async () => (await import("./httpApi")).searchSkillsHttp);
+const featuredV1Http = lazyHttpAction(async () => (await import("./httpApiV1")).featuredV1Http);
+const searchInsightsV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).searchInsightsV1Http,
+);
+const searchReportsV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).searchReportsV1Http,
+);
+const exportSkillsV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).exportSkillsV1Http,
+);
+const exportPluginsV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).exportPluginsV1Http,
+);
+const listBundlePluginsV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).listBundlePluginsV1Http,
+);
+const listCodePluginsV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).listCodePluginsV1Http,
+);
+const listPackagesV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).listPackagesV1Http,
+);
+const listPluginsV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).listPluginsV1Http,
+);
+const listPluginOverviewV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).listPluginOverviewV1Http,
+);
+const listPluginCategoriesV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).listPluginCategoriesV1Http,
+);
+const listSkillsV1Http = lazyHttpAction(async () => (await import("./httpApiV1")).listSkillsV1Http);
+const trendingV1Http = lazyHttpAction(async () => (await import("./httpApiV1")).trendingV1Http);
+const mintPublishTokenV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).mintPublishTokenV1Http,
+);
+const npmMirrorGetHttp = lazyHttpAction(async () => (await import("./httpApiV1")).npmMirrorGetHttp);
+const packagesDeleteRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).packagesDeleteRouterV1Http,
+);
+const packagesGetRouterV1Http = lazyHttpAction(async () => (await import("./packageReadHttp")).get);
+const packagesPostRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).packagesPostRouterV1Http,
+);
+const pluginsGetRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).pluginsGetRouterV1Http,
+);
+const createPublisherV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).createPublisherV1Http,
+);
+const publishPackageV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).publishPackageV1Http,
+);
+const publishAttemptsGetRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).publishAttemptsGetRouterV1Http,
+);
+const recoverPackagePublishAttemptV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).recoverPackagePublishAttemptV1Http,
+);
+const publishSkillV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).publishSkillV1Http,
+);
+const resolveSkillVersionV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).resolveSkillVersionV1Http,
+);
+const searchSkillsV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).searchSkillsV1Http,
+);
+const skillScanBatchStatusV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).skillScanBatchStatusV1Http,
+);
+const skillScanJobHistoryV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).skillScanJobHistoryV1Http,
+);
+const skillScanBatchSubmitV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).skillScanBatchSubmitV1Http,
+);
+const skillScanGetRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).skillScanGetRouterV1Http,
+);
+const skillScanSubmitV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).skillScanSubmitV1Http,
+);
+const skillSecurityVerdictsV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).skillSecurityVerdictsV1Http,
+);
+const skillsDeleteRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).skillsDeleteRouterV1Http,
+);
+const skillsGetRouterV1Http = lazyHttpAction(async () => (await import("./skillReadHttp")).get);
+const skillsPostRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).skillsPostRouterV1Http,
+);
+const starsDeleteRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).starsDeleteRouterV1Http,
+);
+const starsPostRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).starsPostRouterV1Http,
+);
+const transfersGetRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).transfersGetRouterV1Http,
+);
+const banAppealContextV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).banAppealContextV1Http,
+);
+const createPromotionV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).createPromotionV1Http,
+);
+const listPromotionsV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).listPromotionsV1Http,
+);
+const promotionsGetRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).promotionsGetRouterV1Http,
+);
+const promotionsPostRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).promotionsPostRouterV1Http,
+);
+const catalogFeedV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).catalogFeedV1Http,
+);
+const catalogSkillsFeedV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).catalogSkillsFeedV1Http,
+);
+const catalogTemplatesFeedV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).catalogTemplatesFeedV1Http,
+);
+const promotionsFeedV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).promotionsFeedV1Http,
+);
+const usersGetRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).usersGetRouterV1Http,
+);
+const usersListV1Http = lazyHttpAction(async () => (await import("./httpApiV1")).usersListV1Http);
+const usersPostRouterV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).usersPostRouterV1Http,
+);
+const verifyDocsSessionV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).verifyDocsSessionV1Http,
+);
+const whoamiV1Http = lazyHttpAction(async () => (await import("./httpApiV1")).whoamiV1Http);
+const contentRightsV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).contentRightsV1Http,
+);
+const skillsShCatalogTestV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).skillsShCatalogTestV1Http,
+);
+const skillsShCatalogPublicV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).skillsShCatalogPublicV1Http,
+);
+const preflightHandler = lazyHttpAction(
+  async () => (await import("./httpPreflight")).preflightHandler,
+);
+const packageInspectorAcknowledgeHttp = lazyHttpAction(
+  async () => (await import("./packageInspectorHttp")).packageInspectorAcknowledgeHttp,
+);
+const packageInspectorArtifactHttp = lazyHttpAction(
+  async () => (await import("./packageInspectorHttp")).packageInspectorArtifactHttp,
+);
+const packageInspectorClaimHttp = lazyHttpAction(
+  async () => (await import("./packageInspectorHttp")).packageInspectorClaimHttp,
+);
+const packageInspectorNotifyHttp = lazyHttpAction(
+  async () => (await import("./packageInspectorHttp")).packageInspectorNotifyHttp,
+);
+const packageInspectorResultsHttp = lazyHttpAction(
+  async () => (await import("./packageInspectorHttp")).packageInspectorResultsHttp,
+);
+const packageSdkUsageHttp = lazyHttpAction(
+  async () => (await import("./packageSdkUsageHttp")).packageSdkUsageHttp,
+);
+const packageSdkUsageCoverageHttp = lazyHttpAction(
+  async () => (await import("./packageSdkUsageHttp")).packageSdkUsageCoverageHttp,
+);
+const packageSdkUsagePluginHttp = lazyHttpAction(
+  async () => (await import("./packageSdkUsageHttp")).packageSdkUsagePluginHttp,
+);
+const retainPrepublicationReportHttp = lazyHttpAction(
+  async () => (await import("./prepublicationReports")).retainHttp,
+);
+const skillPresentationAssetHttp = lazyHttpAction(
+  async () => (await import("./skillPresentationAssetsHttp")).skillPresentationAssetHttp,
+);
 
 const http = installRateLimitedRoutes(httpRouter());
 
