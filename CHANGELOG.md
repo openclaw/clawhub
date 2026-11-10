@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Publishing: run reusable package-publish plugin validation with Node.js 24. The CLI refuses `package validate` under Bun, so the workflow builds the pinned CLI and runs `node packages/clawhub/bin/clawdhub.js package validate`.
+
 - CI: verify and cache a pinned Convex backend through the release-asset API before local-auth browser tests, with bounded download retries.
 
 - Skills: recognize a single top-level `env` name as a required variable so installation guidance and scanner metadata retain the declared credential.

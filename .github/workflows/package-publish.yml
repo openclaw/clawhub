@@ -701,6 +701,11 @@ jobs:
           ref: ${{ steps.resolve_publish.outputs.inspect_checkout_ref }}
           path: clawhub-publish-source
 
+      - name: Set up Node.js for plugin validation
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+
       - name: Run plugin validation
         env:
           INSPECT_LOCAL_ROOT: ${{ steps.resolve_publish.outputs.inspect_local_root }}
@@ -723,7 +728,8 @@ jobs:
             echo "::warning::Plugin Inspector skipped because $inspect_root is not a plugin root."
             exit 0
           fi
-          bun "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/src/cli.ts" package validate "$inspect_root" --out "$RUNNER_TEMP/plugin-inspector"
+          bun run --cwd "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub" build
+          node "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/bin/clawdhub.js" package validate "$inspect_root" --out "$RUNNER_TEMP/plugin-inspector"
 
       - name: Upload plugin inspector reports
         if: always()
