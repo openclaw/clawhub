@@ -76,9 +76,7 @@ const npmMirrorGetHttp = lazyHttpAction(async () => (await import("./httpApiV1")
 const packagesDeleteRouterV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).packagesDeleteRouterV1Http,
 );
-const packagesGetRouterV1Http = lazyHttpAction(
-  async () => (await import("./httpApiV1")).packagesGetRouterV1Http,
-);
+const packagesGetRouterV1Http = lazyHttpAction(async () => (await import("./packageReadHttp")).get);
 const packagesPostRouterV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).packagesPostRouterV1Http,
 );
@@ -127,9 +125,7 @@ const skillSecurityVerdictsV1Http = lazyHttpAction(
 const skillsDeleteRouterV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).skillsDeleteRouterV1Http,
 );
-const skillsGetRouterV1Http = lazyHttpAction(
-  async () => (await import("./httpApiV1")).skillsGetRouterV1Http,
-);
+const skillsGetRouterV1Http = lazyHttpAction(async () => (await import("./skillReadHttp")).get);
 const skillsPostRouterV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).skillsPostRouterV1Http,
 );

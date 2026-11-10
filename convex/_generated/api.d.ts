@@ -271,6 +271,7 @@ import type * as packageInspectorHttp from "../packageInspectorHttp.js";
 import type * as packageLeaderboards from "../packageLeaderboards.js";
 import type * as packagePublishRecovery from "../packagePublishRecovery.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
+import type * as packageReadHttp from "../packageReadHttp.js";
 import type * as packageSdkUsage from "../packageSdkUsage.js";
 import type * as packageSdkUsageHttp from "../packageSdkUsageHttp.js";
 import type * as packages from "../packages.js";
@@ -319,6 +320,7 @@ import type * as skillPresentationAssetsHttp from "../skillPresentationAssetsHtt
 import type * as skillPresentationBackfill from "../skillPresentationBackfill.js";
 import type * as skillPresentationImageNode from "../skillPresentationImageNode.js";
 import type * as skillPublishUploads from "../skillPublishUploads.js";
+import type * as skillReadHttp from "../skillReadHttp.js";
 import type * as skillReadme from "../skillReadme.js";
 import type * as skillStatEvents from "../skillStatEvents.js";
 import type * as skillTransfers from "../skillTransfers.js";
@@ -610,6 +612,7 @@ declare const fullApi: ApiFromModules<{
   packageLeaderboards: typeof packageLeaderboards;
   packagePublishRecovery: typeof packagePublishRecovery;
   packagePublishTokens: typeof packagePublishTokens;
+  packageReadHttp: typeof packageReadHttp;
   packageSdkUsage: typeof packageSdkUsage;
   packageSdkUsageHttp: typeof packageSdkUsageHttp;
   packages: typeof packages;
@@ -658,6 +661,7 @@ declare const fullApi: ApiFromModules<{
   skillPresentationBackfill: typeof skillPresentationBackfill;
   skillPresentationImageNode: typeof skillPresentationImageNode;
   skillPublishUploads: typeof skillPublishUploads;
+  skillReadHttp: typeof skillReadHttp;
   skillReadme: typeof skillReadme;
   skillStatEvents: typeof skillStatEvents;
   skillTransfers: typeof skillTransfers;
