@@ -2,7 +2,7 @@
   "contract": "openclaw-template-v1",
   "consumer": {
     "repository": "openclaw/openclaw",
-    "commit": "2cd23960ceb5f8cd7ebb003c37cf9e0c9776ade7"
+    "commit": "f021018db951ea3a4bb37c8e5cf902c0e038b647"
   },
   "heartbeatCases": [
     {
