@@ -1,4 +1,4 @@
-import { expect, type ConsoleMessage, type Page } from "@playwright/test";
+import { expect, type ConsoleMessage, type Locator, type Page } from "@playwright/test";
 import { isKnownOpenClawMediaUrl } from "./externalMedia";
 
 type TrackRuntimeErrorsOptions = {
@@ -104,4 +104,21 @@ export async function waitForHydration(page: Page) {
     undefined,
     { timeout: 15_000 },
   );
+}
+
+export async function gotoUntilVisible(page: Page, url: string, target: Locator) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await waitForHydration(page);
+    try {
+      await expect(target).toBeVisible({ timeout: 20_000 });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 11) break;
+      await page.waitForTimeout(1_000 * (attempt + 1));
+    }
+  }
+  throw lastError;
 }
