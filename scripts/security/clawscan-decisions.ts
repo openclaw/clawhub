@@ -276,10 +276,29 @@ function completedSkillSpectorFindings(scanner: Record<string, unknown>) {
   );
 }
 
-export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: readonly string[]) {
+export type ClawHubProfile = "clawhub" | "clawhub-template";
+
+export function validateDecisionsRun(
+  run: Record<string, unknown>,
+  scannerSet: readonly string[],
+  expectedProfile: ClawHubProfile = "clawhub",
+) {
+  // The profile alone does not prove that native target detection selected the
+  // Template-aware AIG prompt (an invalid marker can resolve to another kind).
+  if (expectedProfile === "clawhub-template" && object(run.target)?.kind !== "template") {
+    throw new Error("ClawScan Template scan requires native target.kind=template");
+  }
+  if (
+    expectedProfile === "clawhub-template" &&
+    (scannerSet.length !== 1 || scannerSet[0] !== "aig-mcp" || !isEvidenceOnlyCodexRun(run))
+  ) {
+    throw new Error(
+      "ClawScan Template scan requires only aig-mcp and the evidence-only Codex judge",
+    );
+  }
   if (
     run.schemaVersion !== "clawscan-run-v1" ||
-    run.profile !== "clawhub" ||
+    run.profile !== expectedProfile ||
     run.status !== "completed" ||
     run.complete !== true ||
     run.configSource !== "built-in" ||
@@ -294,7 +313,7 @@ export function validateDecisionsRun(run: Record<string, unknown>, scannerSet: r
     throw new Error("ClawScan Decisions has no actual scanner execution");
   }
   if (scannerSet.includes("aig-mcp") && Object.keys(scanners).some((id) => id !== "aig-mcp")) {
-    throw new Error("ClawScan plugin scan must contain only aig-mcp");
+    throw new Error("ClawScan native MCP scan must contain only aig-mcp");
   }
   for (const id of scannerSet) {
     const scanner = object(scanners[id]);

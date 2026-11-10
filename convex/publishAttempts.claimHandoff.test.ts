@@ -108,6 +108,44 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("keeps a physical Template claim leased through native MCP and judge drain", async () => {
+  vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+  const t = convexTest(schema, modules);
+  const fixture = await seed(t, "package");
+  await t.run(async (ctx) => {
+    const attempt = (await ctx.db.get(fixture.attemptId))!;
+    const packageId = await ctx.db.insert("packages", {
+      name: "@fixture/template-lease",
+      normalizedName: "@fixture/template-lease",
+      displayName: "Template lease fixture",
+      ownerUserId: attempt.userId,
+      family: "claw",
+      channel: "community",
+      isOfficial: false,
+      tags: {},
+      scanStatus: "pending",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await ctx.db.patch(fixture.attemptId, { packageId });
+  });
+  await t.action(api.publishAttempts.claimPrePublicationChecks, {
+    token,
+    attemptId: fixture.attemptId,
+  });
+  const claimed = (await state(t, fixture.attemptId))!;
+  expect(claimed.checkClaimExpiresAt).toBe(claimed.checkClaimedAt! + 70 * 60_000);
+  vi.setSystemTime(claimed.checkClaimedAt! + 31 * 60_000);
+  await expect(
+    t.action(api.publishAttempts.claimPrePublicationChecks, {
+      token,
+      attemptId: fixture.attemptId,
+    }),
+  ).resolves.toBeNull();
+  expect((await state(t, fixture.attemptId))?.checkClaimId).toBe(claimed.checkClaimId);
+});
+
 describe("recovery scanner source claims", () => {
   it("leaves a protected original untouched when an old worker omits its source", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);

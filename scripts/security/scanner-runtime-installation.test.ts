@@ -19,8 +19,8 @@ import { describe, expect, it } from "vitest";
 const run = promisify(execFile);
 const scripts = resolve("scripts/security");
 const pin = "c3cfaf1515a47685786d72f031c714b1e5d9b34e";
-const candidate = "80d11a34a97a9181213c806fc3013123360f9012";
-const candidateTree = "dae6e848e052bb95f60da4af98efbe579f64c0bc";
+const candidate = "56bf1d9e3bd5247a0622acef8699dc69a10f2938";
+const candidateTree = "92d8daba5c181560b4a73e71557b8d54e67e62b9";
 const runtimeTree = "ddfec1285eaf19beb3043e9e5ad043a0d274cb53";
 const image =
   "ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c";

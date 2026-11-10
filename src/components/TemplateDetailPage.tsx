@@ -3,7 +3,7 @@ import { TEMPLATE_CATEGORY_DEFINITIONS } from "clawhub-schema/catalogMetadata";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { fetchPackageFile, type PackageDetailResponse } from "../lib/packageApi";
 import { parseTemplateDocument } from "../lib/templateDetail";
-import { isTemplateReadyToAdd, templateSecurityStatusMessage } from "../lib/templateRoutes";
+import { isTemplateReadyToAdd } from "../lib/templateRoutes";
 import { auditVerdictMeterLevel, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { aggregateAuditVerdict } from "./securityAuditModel";
@@ -87,18 +87,6 @@ export function TemplateDetailPage({
                 cliCopyAriaLabel="Copy template install command"
                 copyEnabled={ready}
               />
-              {!ready ? (
-                <p
-                  className="template-detail-install-warning"
-                  role={
-                    scanStatus === "suspicious" || scanStatus === "malicious" ? "alert" : "status"
-                  }
-                >
-                  {isTemplateReadyToAdd(scanStatus)
-                    ? "This Template has no current release available to add."
-                    : templateSecurityStatusMessage(scanStatus)}
-                </p>
-              ) : null}
             </section>
             <section className="template-detail-contents" aria-label="Template contents">
               <div className="template-detail-tabs" role="tablist" aria-label="Template contents">

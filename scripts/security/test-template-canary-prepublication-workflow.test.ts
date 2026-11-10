@@ -4,12 +4,14 @@ import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 type WorkflowStep = {
+  "timeout-minutes"?: number;
   env?: Record<string, unknown>;
   name?: string;
   run?: string;
 };
 
 type WorkflowJob = {
+  "timeout-minutes"?: number;
   env?: Record<string, unknown>;
   environment?: { name?: string } | string;
   needs?: string;
@@ -91,6 +93,7 @@ describe("Test Template canary prepublication workflow", () => {
       "Install ClawScan CLI",
       "Install SkillSpector",
       "Install A.I.G scanner",
+      "Prepare qualified plugin Docker runtime",
     ]) {
       expect(step(testJob, name)?.run).toBe(step(productionJob, name)?.run);
     }
@@ -100,5 +103,13 @@ describe("Test Template canary prepublication workflow", () => {
       )?.[0];
     expect(trufflehogDigest).toBeDefined();
     expect(testJob.env?.PREPUBLICATION_TRUFFLEHOG_IMAGE).toContain(trufflehogDigest);
+    expect(testJob["timeout-minutes"]).toBe(100);
+    expect(step(testJob, "Reserve hosted worker drain deadline")?.run).toContain(
+      "100 * 60000 - 120000",
+    );
+    expect(step(testJob, "Run exact Test Template publish checks")?.["timeout-minutes"]).toBe(75);
+    expect(step(testJob, "Run exact Test Template publish checks")?.run).toContain(
+      "--max-runtime-minutes 70",
+    );
   });
 });

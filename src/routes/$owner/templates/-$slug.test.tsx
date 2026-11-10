@@ -263,7 +263,7 @@ function renderTemplate(
   } = {},
 ) {
   const detail = packageDetail();
-  detail.package!.scanStatus = options.status ?? "clean";
+  detail.package!.scanStatus = "status" in options ? options.status : "clean";
   detail.package!.updatedAt = Date.UTC(2026, 10, 5);
   if ("version" in options) detail.package!.latestVersion = options.version;
   return render(
@@ -468,28 +468,43 @@ describe("Template detail composition and interactions", () => {
   });
 
   it.each([
-    ["pending", /Security review pending/],
-    ["not-run", /Security review has not started/],
-    ["suspicious", /Security scan flagged/],
-    ["malicious", /marked this Template as malicious/],
-  ] as const)("preserves %s warnings and gates install copy", (status, warning) => {
-    renderTemplate({ status });
-    expect(screen.getByText("Unavailable")).toBeTruthy();
-    expect(screen.getAllByText(warning).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
-    expect(document.querySelector(".skill-install-command")?.textContent).toBe(
-      "openclaw templates add @maker/release-brief",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
-    expect(screen.queryByRole("button", { name: "Copy OpenClaw prompt" })).toBeNull();
-    if (status === "suspicious" || status === "malicious")
-      expect(screen.getByRole("alert")).toBeTruthy();
-  });
+    ["pending", "pending", "Unavailable", "0"],
+    ["not-run", "pending", "Unavailable", "0"],
+    ["suspicious", "suspicious", "Review", "2"],
+    ["malicious", "malicious", "Malicious", "1"],
+    [undefined, "pending", "Unavailable", "0"],
+  ] as const)(
+    "keeps %s security in the sidebar and gates copy without inline subtext",
+    (status, auditStatus, label, level) => {
+      const summary = "Release audit details remain available.";
+      renderTemplate({ status, llmAnalysis: { status: auditStatus, checkedAt: 1, summary } });
+      const install = screen.getByRole("region", { name: "Install Template" });
+      expect(install.querySelector("p")).toBeNull();
+      expect(install.querySelector(".template-detail-install-warning")).toBeNull();
+      expect(within(install).queryByRole("alert")).toBeNull();
+      expect(within(install).queryByRole("status")).toBeNull();
+      const metadata = screen.getByRole("complementary", { name: "Template metadata" });
+      expect(within(metadata).getByText("Security audit")).toBeTruthy();
+      expect(within(metadata).getByText(label)).toBeTruthy();
+      expect(within(metadata).getByText(summary)).toBeTruthy();
+      expect(metadata.querySelector("[data-audit-verdict]")?.getAttribute("title")).toBe(summary);
+      expect(metadata.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe(
+        level,
+      );
+      expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
+      expect(document.querySelector(".skill-install-command")?.textContent).toBe(
+        "openclaw templates add @maker/release-brief",
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
+      expect(screen.queryByRole("button", { name: "Copy OpenClaw prompt" })).toBeNull();
+    },
+  );
 
   it("does not offer install copy for a clean package without a release", () => {
     renderTemplate({ version: null });
     expect(screen.getByText("Not available")).toBeTruthy();
-    expect(screen.getByText(/no current release/)).toBeTruthy();
+    expect(screen.queryByText(/no current release/)).toBeNull();
+    expect(screen.getByRole("region", { name: "Install Template" }).querySelector("p")).toBeNull();
     expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
     expect(screen.queryByRole("button", { name: "Copy OpenClaw prompt" })).toBeNull();

@@ -9,8 +9,10 @@ export async function resolvePrepublicationScannerRuntime(
   sourcePinFile: string | URL = new URL("./clawscan-source-commit.txt", import.meta.url),
 ) {
   if (env.PREPUBLICATION_REPORT_SCANNER_SOURCE !== "true") return undefined;
-  // Candidate installs are opt-in via the existing installer source argument;
-  // identify them from their embedded profile, not a mutable env/source claim.
+  // The identity is the host Go producer, not the scanner-tools image. Its
+  // ordinary built-in profile still owns plugin dispatch when the same reviewed
+  // binary also includes the separate Template profile. Never report a mutable
+  // env/source claim.
   const { usesWholePluginScan, qualifiedPluginCommand, QUALIFIED_PLUGIN_SOURCE } =
     await import("./clawscan-plugin-runtime");
   if (await usesWholePluginScan(env)) {
