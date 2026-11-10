@@ -325,6 +325,61 @@ describe("validateTemplatePackageContents", () => {
     });
     if (result.ok) expect(result.value.inventory[1]).not.toHaveProperty("version");
   });
+  it.each([
+    ".codex-plugin/plugin.json",
+    ".claude-plugin/plugin.json",
+    ".cursor-plugin/plugin.json",
+    "openclaw.plugin.json",
+  ])("matches the native 256 KiB manifest boundary for %s", (marker) => {
+    const metadata = JSON.stringify({
+      ...(marker === "openclaw.plugin.json" ? { id: "alerts", configSchema: {} } : {}),
+      name: "alerts",
+      description: "é".repeat(131000),
+    });
+    for (const [bytes, size, accepted] of [
+      [262143, undefined, true],
+      [262144, 262144, true],
+      [262145, undefined, false],
+      [262145, 1, false],
+      [262144, 262145, false],
+    ] as const) {
+      const text = metadata + " ".repeat(bytes - new TextEncoder().encode(metadata).byteLength);
+      expect(new TextEncoder().encode(text).byteLength).toBe(bytes);
+      const result = validateTemplatePackageContents({
+        packageName: "@acme/github-triage",
+        version: "1.0.0",
+        packageJson: packageJson(),
+        files: [
+          ...files(
+            `---\n${JSON.stringify({ ...manifest, plugins: [{ path: "plugins/alerts" }] })}\n---\n`,
+          ),
+          {
+            path: `plugins/alerts/${marker}`,
+            text,
+            ...(size === undefined ? {} : { size }),
+          },
+          {
+            path: "plugins/alerts/package.json",
+            text: JSON.stringify({
+              name: "@acme/alerts",
+              version: "1.0.0",
+              openclaw: { extensions: ["./index.js"] },
+            }),
+          },
+          { path: "plugins/alerts/index.js", text: "export default {};" },
+          { path: "plugins/alerts/assets/model.bin", size: 1048576 },
+        ],
+      });
+      expect(result.ok, `${marker}: ${bytes} text bytes, ${size} declared bytes`).toBe(accepted);
+      if (!result.ok)
+        expect(result.issues).toContainEqual(
+          expect.objectContaining({
+            code: "invalid_bundled_dependency",
+            message: expect.stringContaining("262144 bytes"),
+          }),
+        );
+    }
+  });
   it.each([true, false])(
     "validates bundled code-plugin entrypoints (present: %s)",
     (entryPresent) => {

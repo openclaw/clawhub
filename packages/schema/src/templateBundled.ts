@@ -11,6 +11,8 @@ import type { TemplateManifest } from "./templates.js";
 
 export type TemplatePackageFile = { path: string; text?: string; size?: number };
 const MAX_FILE_BYTES = 1024 * 1024;
+// Native plugin metadata readers have a smaller bound than ordinary support files.
+const MAX_PLUGIN_MANIFEST_BYTES = 256 * 1024;
 const MAX_DIRECTORY_BYTES = 20 * 1024 * 1024;
 const MAX_ENTRIES = 4096;
 const MAX_DEPTH = 16;
@@ -82,11 +84,16 @@ export function validateTemplateBundledSources(
         ...file,
         path: file.path.slice(path.length + 1),
       }));
-      const text = (entry: string) => {
-        const value = relative.find((file) => file.path === entry)?.text;
-        if (value === undefined)
+      const text = (entry: string, maxBytes?: number) => {
+        const file = relative.find((candidate) => candidate.path === entry);
+        if (file?.text === undefined)
           throw new Error(`Bundled dependency ${path} requires UTF-8 ${entry}.`);
-        return value;
+        if (
+          maxBytes !== undefined &&
+          Math.max(file.size ?? 0, new TextEncoder().encode(file.text).byteLength) > maxBytes
+        )
+          throw new Error(`Bundled plugin manifest ${path}/${entry} exceeds ${maxBytes} bytes.`);
+        return file.text;
       };
       let name: string | undefined;
       if (collection === "skills") {
@@ -107,7 +114,7 @@ export function validateTemplateBundledSources(
       } else {
         const paths = relative.map((file) => file.path);
         const marker = selectTemplateBundledPluginManifest(paths);
-        const metadata: unknown = JSON5.parse(text(marker.path));
+        const metadata: unknown = JSON5.parse(text(marker.path, MAX_PLUGIN_MANIFEST_BYTES));
         if (!isRecord(metadata))
           throw new Error(`Bundled plugin ${path} requires an object manifest.`);
         if (marker.format === "agent") {
