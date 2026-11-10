@@ -40,7 +40,7 @@
     "@clack/prompts": "1.8.1",
     "@openclaw/plugin-inspector": "0.4.6",
     "arktype": "2.2.9",
-    "commander": "15.0.0",
+    "commander": "15.1.0",
     "croner": "11.0.0",
     "fflate": "0.8.3",
     "ignore": "7.0.14",

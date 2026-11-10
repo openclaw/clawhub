@@ -117,7 +117,7 @@
         "@clack/prompts": "1.8.1",
         "@openclaw/plugin-inspector": "0.4.6",
         "arktype": "2.2.9",
-        "commander": "15.0.0",
+        "commander": "15.1.0",
         "croner": "11.0.0",
         "fflate": "0.8.3",
         "ignore": "7.0.14",
@@ -145,7 +145,7 @@
       "dependencies": {
         "@clack/prompts": "1.8.1",
         "arktype": "2.2.9",
-        "commander": "15.0.0",
+        "commander": "15.1.0",
         "fflate": "0.8.3",
         "ignore": "7.0.14",
         "json5": "2.2.3",
@@ -1143,7 +1143,7 @@
 
     "comma-separated-tokens": ["comma-separated-tokens@2.0.3", "", {}, "sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg=="],
 
-    "commander": ["commander@15.0.0", "", {}, "sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg=="],
+    "commander": ["commander@15.1.0", "", {}, "sha512-cgnQ88TRrWcC7pVq46RzJVRMktu3W2RcbnoidnfBsl1bmDCBwJS/udcIZpKoCrbAYYaCqsz1yZCVIgbIaU3ddQ=="],
 
     "conf": ["conf@15.1.0", "", { "dependencies": { "ajv": "^8.17.1", "ajv-formats": "^3.0.1", "atomically": "^2.0.3", "debounce-fn": "^6.0.0", "dot-prop": "^10.0.0", "env-paths": "^3.0.0", "json-schema-typed": "^8.0.1", "semver": "^7.7.2", "uint8array-extras": "^1.5.0" } }, "sha512-Uy5YN9KEu0WWDaZAVJ5FAmZoaJt9rdK6kH+utItPyGsCqCgaTKkrmZx3zoE0/3q6S3bcp3Ihkk+ZqPxWxFK5og=="],
 
