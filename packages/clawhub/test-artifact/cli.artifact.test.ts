@@ -692,6 +692,58 @@ describe("built CLI artifact", () => {
     expect(await readdir(tempRoot)).toEqual([]);
   });
 
+  async function writeDemoPlugin(dir: string, name: string, id: string) {
+    await mkdir(join(dir, "dist"), { recursive: true });
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name,
+        version: "1.0.0",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: ">=2026.3.24-beta.2" },
+          build: { openclawVersion: "2026.3.24-beta.2" },
+        },
+      }),
+    );
+    await writeFile(join(dir, "openclaw.plugin.json"), JSON.stringify({ id }));
+    await writeFile(join(dir, "dist", "index.js"), "export const demo = true;\n");
+  }
+
+  it("packs with the installed npm when the workdir contains npm.cmd", async () => {
+    const { pluginDir } = await makePackingFixture();
+    const sentinel = join(pluginDir, "sentinel-ran.txt");
+    await writeFile(
+      join(pluginDir, "npm.cmd"),
+      `@echo off\r\necho PWNED>"${sentinel}"\r\nexit /b 42\r\n`,
+    );
+
+    const pack = runNode([binPath, "--workdir", pluginDir, "package", "pack", pluginDir, "--json"]);
+    expect(pack.status).toBe(0);
+    expect(pack.stdout).toContain("@scope/demo-plugin");
+    expect(existsSync(sentinel)).toBe(false);
+
+    const publish = runNode(packingArgs(pluginDir, pluginDir));
+    expect(publish.status).toBe(0);
+    expect(publish.stdout).toContain("@scope/demo-plugin");
+    expect(existsSync(sentinel)).toBe(false);
+  });
+
+  it("packs a folder whose name contains a percent sign", async () => {
+    const root = await makeTmpDir("clawhub-artifact-percent-");
+    const literal = join(root, "plugins", "%CLAW_NPM_PERCENT%");
+    const expanded = join(root, "plugins", "EXPANDED");
+    await writeDemoPlugin(literal, "percent-literal", "percent.literal");
+    await writeDemoPlugin(expanded, "percent-expanded", "percent.expanded");
+
+    const result = runNode([binPath, "--workdir", root, "package", "pack", literal, "--json"], {
+      CLAW_NPM_PERCENT: "EXPANDED",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("percent-literal");
+    expect(result.stdout).not.toContain("percent-expanded");
+  });
+
   it("exposes the restored sync command", async () => {
     const result = runNode([binPath, "sync", "--help"]);
 

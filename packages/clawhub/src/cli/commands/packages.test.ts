@@ -2580,6 +2580,61 @@ describe("package commands", () => {
     }
   });
 
+  it("spawns the installed npm with literal arguments and no shell", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "a & b");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await mkdir(join(workdir, "packs"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      vi.mocked(spawnSync).mockClear();
+      vi.mocked(spawnSync).mockImplementationOnce(() => ({
+        status: 1,
+        stdout: "",
+        stderr: "pack failed",
+        output: [],
+        pid: 0,
+        signal: null,
+      }));
+
+      await expect(
+        cmdPackPackage(makeOpts(workdir), "a & b", { packDestination: "packs" }),
+      ).rejects.toThrow(/pack failed/);
+
+      const call = vi.mocked(spawnSync).mock.calls.at(-1);
+      expect(call).toBeTruthy();
+      const [command, args, spawnOptions] = call ?? [];
+      expect(spawnOptions).toMatchObject({ shell: false, cwd: workdir });
+      expect(args).toContain(folder);
+      expect(args).toContain("--ignore-scripts");
+      expect(String(command)).not.toMatch(/cmd\.exe$/i);
+      expect(String(command)).not.toMatch(/npm\.cmd/i);
+      if (process.platform === "win32") {
+        expect(`${command} ${(args ?? []).join(" ")}`).toMatch(/npm-cli\.js|npm\.exe/i);
+      } else {
+        expect(String(command)).toMatch(/npm$/);
+        expect(args?.[0]).toBe("pack");
+      }
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("packs local ClawPacks over the multipart publish upload budget", async () => {
     const workdir = await makeTmpWorkdir();
     try {

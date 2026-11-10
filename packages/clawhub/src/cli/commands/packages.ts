@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import mime from "mime";
 import semver from "semver";
@@ -838,35 +838,68 @@ function pluginInspectorFixtureId(rawName: string) {
   );
 }
 
-function quoteForWindowsCmd(value: string) {
-  return `"${value.replaceAll('"', '""')}"`;
-}
-
 const MISSING_NPM_MESSAGE =
   "npm was not found on PATH. Folder publishing packs the package with `npm pack`; install Node.js (which includes npm) and try again, or publish a prebuilt .tgz instead.";
 
-function spawnNpmPack(options: { sourcePath: string; packDestination: string; cwd: string }) {
-  // Windows registers npm as npm.cmd. CreateProcess rejects that launcher, so
-  // cmd.exe has to start it. Quote the paths so a folder named `a & b` stays one argument.
-  if (process.platform === "win32") {
-    const command = [
-      "npm.cmd",
-      "pack",
-      quoteForWindowsCmd(options.sourcePath),
-      "--json",
-      "--ignore-scripts",
-      "--pack-destination",
-      quoteForWindowsCmd(options.packDestination),
-    ].join(" ");
-    return spawnSync(command, {
-      cwd: options.cwd,
-      encoding: "utf8",
-      shell: true,
+function pathDirectories() {
+  const raw = process.env.PATH ?? process.env.Path ?? "";
+  return raw
+    .split(delimiter)
+    .map((entry) => entry.trim())
+    .filter((entry) => {
+      if (!entry || entry === ".") return false;
+      return entry.replaceAll("\\", "/") !== ".";
     });
+}
+
+function sameDirectory(left: string, right: string) {
+  const normalizedLeft = resolve(left);
+  const normalizedRight = resolve(right);
+  if (process.platform === "win32") {
+    return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
   }
+  return normalizedLeft === normalizedRight;
+}
+
+async function isRegularFile(path: string) {
+  const info = await stat(path).catch(() => null);
+  return Boolean(info?.isFile());
+}
+
+type NpmLaunch = { command: string; args: string[] };
+
+// cmd.exe searches the working directory before PATH and expands %NAME%
+// inside quoted arguments. Spawn the installed npm with literal argv instead.
+async function resolveInstalledNpm(packageDir: string): Promise<NpmLaunch | null> {
+  for (const dir of pathDirectories()) {
+    if (sameDirectory(dir, packageDir)) continue;
+    if (process.platform === "win32") {
+      const cli = join(dir, "node_modules", "npm", "bin", "npm-cli.js");
+      if (await isRegularFile(cli)) {
+        const nodeExe = join(dir, "node.exe");
+        return {
+          command: (await isRegularFile(nodeExe)) ? nodeExe : process.execPath,
+          args: [cli],
+        };
+      }
+      const npmExe = join(dir, "npm.exe");
+      if (await isRegularFile(npmExe)) return { command: npmExe, args: [] };
+      continue;
+    }
+    const npmBin = join(dir, "npm");
+    if (await isRegularFile(npmBin)) return { command: npmBin, args: [] };
+  }
+  return null;
+}
+
+function spawnNpmPack(
+  launch: NpmLaunch,
+  options: { sourcePath: string; packDestination: string; cwd: string },
+) {
   return spawnSync(
-    "npm",
+    launch.command,
     [
+      ...launch.args,
       "pack",
       options.sourcePath,
       "--json",
@@ -877,8 +910,20 @@ function spawnNpmPack(options: { sourcePath: string; packDestination: string; cw
     {
       cwd: options.cwd,
       encoding: "utf8",
+      shell: false,
     },
   );
+}
+
+async function assertWorkingDirectory(cwd: string) {
+  const cwdStat = await stat(cwd).catch((error: unknown) => {
+    throw new Error(`Cannot access working directory "${cwd}": ${formatError(error)}`, {
+      cause: error,
+    });
+  });
+  if (!cwdStat.isDirectory()) {
+    throw new Error(`Working directory is not a directory: ${cwd}`);
+  }
 }
 
 async function createClawPackFromFolder(options: {
@@ -886,27 +931,16 @@ async function createClawPackFromFolder(options: {
   packDestination: string;
   cwd: string;
 }): Promise<PackedClawPack> {
-  const result = spawnNpmPack(options);
+  const launch = await resolveInstalledNpm(options.cwd);
+  if (!launch) {
+    await assertWorkingDirectory(options.cwd);
+    throw new Error(MISSING_NPM_MESSAGE);
+  }
+  const result = spawnNpmPack(launch, options);
   const spawnCode = (result.error as NodeJS.ErrnoException | undefined)?.code;
-  const stderr = typeof result.stderr === "string" ? result.stderr : "";
-  const npmMissing =
-    spawnCode === "ENOENT" ||
-    (result.status !== 0 && /not recognized as an internal or external command/i.test(stderr));
-  if (npmMissing) {
-    if (spawnCode === "ENOENT") {
-      // Node also returns ENOENT when cwd is missing, even if npm is installed.
-      const cwdStat = await stat(options.cwd).catch((error: unknown) => {
-        throw new Error(`Cannot access working directory "${options.cwd}": ${formatError(error)}`, {
-          cause: error,
-        });
-      });
-      if (!cwdStat.isDirectory()) {
-        throw new Error(`Working directory is not a directory: ${options.cwd}`, {
-          cause: result.error,
-        });
-      }
-    }
-    // Throw so folder publication can remove its temporary pack directory.
+  if (spawnCode === "ENOENT") {
+    // Node also returns ENOENT when cwd is missing, even if npm is installed.
+    await assertWorkingDirectory(options.cwd);
     throw new Error(MISSING_NPM_MESSAGE, { cause: result.error });
   }
   if (result.error) throw result.error;
