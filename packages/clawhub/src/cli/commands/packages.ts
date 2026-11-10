@@ -838,12 +838,33 @@ function pluginInspectorFixtureId(rawName: string) {
   );
 }
 
-async function createClawPackFromFolder(options: {
-  sourcePath: string;
-  packDestination: string;
-  cwd: string;
-}): Promise<PackedClawPack> {
-  const result = spawnSync(
+function quoteForWindowsCmd(value: string) {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+const MISSING_NPM_MESSAGE =
+  "npm was not found on PATH. Folder publishing packs the package with `npm pack`; install Node.js (which includes npm) and try again, or publish a prebuilt .tgz instead.";
+
+function spawnNpmPack(options: { sourcePath: string; packDestination: string; cwd: string }) {
+  // Windows registers npm as npm.cmd. CreateProcess rejects that launcher, so
+  // cmd.exe has to start it. Quote the paths so a folder named `a & b` stays one argument.
+  if (process.platform === "win32") {
+    const command = [
+      "npm.cmd",
+      "pack",
+      quoteForWindowsCmd(options.sourcePath),
+      "--json",
+      "--ignore-scripts",
+      "--pack-destination",
+      quoteForWindowsCmd(options.packDestination),
+    ].join(" ");
+    return spawnSync(command, {
+      cwd: options.cwd,
+      encoding: "utf8",
+      shell: true,
+    });
+  }
+  return spawnSync(
     "npm",
     [
       "pack",
@@ -858,6 +879,36 @@ async function createClawPackFromFolder(options: {
       encoding: "utf8",
     },
   );
+}
+
+async function createClawPackFromFolder(options: {
+  sourcePath: string;
+  packDestination: string;
+  cwd: string;
+}): Promise<PackedClawPack> {
+  const result = spawnNpmPack(options);
+  const spawnCode = (result.error as NodeJS.ErrnoException | undefined)?.code;
+  const stderr = typeof result.stderr === "string" ? result.stderr : "";
+  const npmMissing =
+    spawnCode === "ENOENT" ||
+    (result.status !== 0 && /not recognized as an internal or external command/i.test(stderr));
+  if (npmMissing) {
+    if (spawnCode === "ENOENT") {
+      // Node also returns ENOENT when cwd is missing, even if npm is installed.
+      const cwdStat = await stat(options.cwd).catch((error: unknown) => {
+        throw new Error(`Cannot access working directory "${options.cwd}": ${formatError(error)}`, {
+          cause: error,
+        });
+      });
+      if (!cwdStat.isDirectory()) {
+        throw new Error(`Working directory is not a directory: ${options.cwd}`, {
+          cause: result.error,
+        });
+      }
+    }
+    // Throw so folder publication can remove its temporary pack directory.
+    throw new Error(MISSING_NPM_MESSAGE, { cause: result.error });
+  }
   if (result.error) throw result.error;
   if (result.status !== 0) {
     fail((result.stderr || result.stdout || "npm pack failed").trim());

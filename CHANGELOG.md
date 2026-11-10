@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CLI: explain a missing npm when packing a package folder, instead of a raw spawn error.
+
 - CI: verify and cache a pinned Convex backend through the release-asset API before local-auth browser tests, with bounded download retries.
 
 - Skills: recognize a single top-level `env` name as a required variable so installation guidance and scanner metadata retain the declared credential.
