@@ -51,7 +51,8 @@ recovery, and API-token auth in `requireApiTokenUserOrResponse` /
 reading a token must not tell a valid publisher to log in again).
 
 A failed `POST /api/v1/publish/token/mint` returns `400` and
-`Publish token request could not be verified.` for a missing name, a
+`Publish token request could not be verified. Ask a package manager to check the trusted-publisher configuration and the workflow's GitHub Actions OIDC claims.`
+for a missing name, a
 soft-deleted package, a private or moderation-hidden package with no trusted
 publisher, an invalid OIDC token, and a repository, repository id, owner, or
 owner id mismatch. The audit log keeps the specific reason, including

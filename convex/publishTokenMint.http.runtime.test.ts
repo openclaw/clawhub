@@ -15,7 +15,8 @@ import { mintPublishTokenV1Handler } from "./httpApiV1/packagesV1";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
-const rejection = "Publish token request could not be verified.";
+const rejection =
+  "Publish token request could not be verified. Ask a package manager to check the trusted-publisher configuration and the workflow's GitHub Actions OIDC claims.";
 
 async function postMint(
   t: ReturnType<typeof convexTest>,

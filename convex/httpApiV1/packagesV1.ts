@@ -2473,7 +2473,8 @@ async function derivePackagePublishAuthorizationTransactionKey(args: {
   );
 }
 
-const PUBLISH_TOKEN_REJECTION = "Publish token request could not be verified.";
+const PUBLISH_TOKEN_REJECTION =
+  "Publish token request could not be verified. Ask a package manager to check the trusted-publisher configuration and the workflow's GitHub Actions OIDC claims.";
 
 async function recordPublishTokenRejection(
   ctx: ActionCtx,

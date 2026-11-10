@@ -19322,7 +19322,8 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns one publish-token rejection for hidden packages and failed OIDC checks", async () => {
-    const rejection = "Publish token request could not be verified.";
+    const rejection =
+      "Publish token request could not be verified. Ask a package manager to check the trusted-publisher configuration and the workflow's GitHub Actions OIDC claims.";
     const mismatch = "GitHub OIDC repository mismatch: expected private/secret, got attacker/repo";
     const hiddenPackage = {
       _id: "packages:1",
