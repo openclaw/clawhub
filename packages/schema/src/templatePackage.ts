@@ -1,4 +1,9 @@
 import { isScalar, parseDocument, visit } from "yaml";
+import {
+  validateTemplateBundledSources,
+  selectTemplateBundledPluginManifest,
+  type TemplatePackageFile,
+} from "./templateBundled.js";
 import { hasPortablePathSegments, portablePathKey } from "./templatePaths.js";
 import {
   summarizeTemplateManifest,
@@ -7,9 +12,10 @@ import {
   validateTemplateManifest,
   type TemplateManifest,
   type TemplateManifestSummary,
+  TEMPLATE_DEPENDENCY_INVENTORY_MAX_BYTES,
 } from "./templates.js";
 
-export type TemplatePackageTextFile = { path: string; text?: string };
+export type TemplatePackageTextFile = TemplatePackageFile;
 export type TemplatePackageValidationIssue = {
   code: string;
   path: string;
@@ -144,6 +150,38 @@ function parseManifestDocument(
       ],
     };
   }
+}
+
+/** Select only declared dependency metadata before the complete package validation. */
+export function templateBundledMetadataPaths(
+  raw: string,
+  manifestPath: string,
+  packagePaths: readonly string[],
+): string[] {
+  const parsed = parseManifestDocument(raw, manifestPath);
+  if ("issues" in parsed) return [];
+  const validated = validateTemplateManifest(parsed.value);
+  if (!validated.ok) return [];
+  return [
+    ...(validated.manifest.skills ?? []).flatMap((entry) =>
+      "path" in entry ? [`${entry.path}/SKILL.md`] : [],
+    ),
+    ...(validated.manifest.plugins ?? []).flatMap((entry) => {
+      if (!("path" in entry)) return [];
+      try {
+        const paths = packagePaths
+          .filter((path) => path.startsWith(`${entry.path}/`))
+          .map((path) => path.slice(entry.path.length + 1));
+        const marker = selectTemplateBundledPluginManifest(paths);
+        return [marker.path, ...(marker.format === undefined ? ["package.json"] : [])].map(
+          (path) => `${entry.path}/${path}`,
+        );
+      } catch {
+        // Complete validation reports missing or invalid dependency metadata.
+        return [];
+      }
+    }),
+  ];
 }
 
 export function validateTemplatePackageContents(input: {
@@ -359,9 +397,41 @@ export function validateTemplatePackageContents(input: {
     }
   }
   if (issues.length > 0) return { ok: false, issues };
+  let bundledSources: ReturnType<typeof validateTemplateBundledSources>;
+  try {
+    bundledSources = validateTemplateBundledSources(validated.manifest, input.files);
+  } catch (error) {
+    return {
+      ok: false,
+      issues: [
+        issue(
+          "invalid_bundled_dependency",
+          "$.skills/plugins",
+          error instanceof Error ? error.message : "Invalid bundled dependency.",
+        ),
+      ],
+    };
+  }
   const summary = summarizeTemplateManifest(validated.manifest, {
     templateMarkdownBody: hasTemplateMarkdownBody,
   });
+  const inventory = templateDependencyInventory(validated.manifest, bundledSources);
+  // Leave document headroom for the release envelope and its other bounded metadata.
+  if (
+    new TextEncoder().encode(JSON.stringify(inventory)).byteLength >
+    TEMPLATE_DEPENDENCY_INVENTORY_MAX_BYTES
+  ) {
+    return {
+      ok: false,
+      issues: [
+        issue(
+          "template_inventory_too_large",
+          "$.skills/plugins",
+          `Template dependency inventory exceeds ${TEMPLATE_DEPENDENCY_INVENTORY_MAX_BYTES} bytes.`,
+        ),
+      ],
+    };
+  }
   if (packageBootstrap) {
     summary.workspace.bootstrapFiles = [...summary.workspace.bootstrapFiles, "BOOTSTRAP.md"].sort();
   }
@@ -371,7 +441,7 @@ export function validateTemplatePackageContents(input: {
       manifestPath,
       manifest: validated.manifest,
       summary,
-      inventory: templateDependencyInventory(validated.manifest),
+      inventory,
       hasTemplateMarkdownBody,
     },
   };

@@ -16,8 +16,10 @@ workspace:
   files:
     - source: assets/incident.schema.json
       path: assets/incident.schema.json
-skills: []
-plugins: []
+skills:
+  - path: skills/research
+plugins:
+  - path: plugins/alerts
 mcpServers: {}
 automations:
   - id: onboarding-brief

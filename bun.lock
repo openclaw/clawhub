@@ -167,6 +167,7 @@
       "dependencies": {
         "arktype": "2.2.9",
         "croner": "11.0.0",
+        "json5": "2.2.3",
         "unicode-case-folding": "1.1.2",
         "yaml": "2.9.1",
       },

@@ -357,12 +357,21 @@ function TemplatePackages({
         className="template-detail-entry-list"
         aria-label={kind === "skill" ? "Included skills" : "Included plugins"}
       >
-        {packages.map((entry) => (
-          <li key={entry.ref}>
-            <strong>{entry.ref}</strong>
-            <span className="template-detail-entry-meta">Version {entry.version} · ClawHub</span>
-          </li>
-        ))}
+        {packages.map((entry) =>
+          entry.source === "bundled" ? (
+            <li key={entry.path}>
+              <strong>{entry.name || entry.path}</strong>
+              <span className="template-detail-entry-meta">
+                Bundled · <code>{entry.path}</code>
+              </span>
+            </li>
+          ) : (
+            <li key={entry.ref}>
+              <strong>{entry.ref}</strong>
+              <span className="template-detail-entry-meta">Version {entry.version} · ClawHub</span>
+            </li>
+          ),
+        )}
       </ul>
     </>
   );

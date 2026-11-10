@@ -2,7 +2,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -187,7 +187,7 @@ function feedValue() {
               bootstrapFiles: ["BOOTSTRAP.md", "HEARTBEAT.md", "SOUL.md"],
               fileCount: 1,
             },
-            packages: { skillCount: 0, pluginCount: 0 },
+            packages: { skillCount: 1, pluginCount: 1 },
             mcpServerCount: 0,
             cronJobCount: 1,
           },
@@ -273,7 +273,14 @@ describe("published Template to OpenClaw dry-run proof", () => {
   beforeAll(async () => {
     await assertExactConsumerCheckout();
     tempRoot = await mkdtemp(join(tmpdir(), "clawhub-hosted-e2e-fixture-"));
-    const archivePath = await npmPackFixture(tempRoot);
+    const packageSource = join(tempRoot, "package");
+    await cp(join(fixtureRoot, "package"), packageSource, { recursive: true });
+    await mkdir(join(packageSource, "skills/research/assets"), { recursive: true });
+    await writeFile(
+      join(packageSource, "skills/research/assets/reference.bin"),
+      new Uint8Array([0, 255, 128, 10]),
+    );
+    const archivePath = await npmPackFixture(tempRoot, packageSource);
     archiveBytes = new Uint8Array(await readFile(archivePath));
     integrity = `sha256:${createHash("sha256").update(archiveBytes).digest("hex")}`;
     server = createServer((request, response) => {
@@ -534,6 +541,31 @@ describe("published Template to OpenClaw dry-run proof", () => {
             kind: "workspaceFile",
             id: "assets/incident.schema.json",
             blocked: false,
+          }),
+          expect.objectContaining({
+            kind: "package",
+            id: "skill:bundled:skills/research",
+            blocked: false,
+            details: expect.objectContaining({
+              source: "bundled",
+              path: "skills/research",
+              name: "hosted-research",
+              snapshot: expect.objectContaining({
+                files: expect.arrayContaining([
+                  expect.objectContaining({ path: "assets/reference.bin", byteLength: 4 }),
+                ]),
+              }),
+            }),
+          }),
+          expect.objectContaining({
+            kind: "package",
+            id: "plugin:bundled:plugins/alerts",
+            blocked: false,
+            details: expect.objectContaining({
+              source: "bundled",
+              path: "plugins/alerts",
+              name: "Hosted Alerts",
+            }),
           }),
           expect.objectContaining({
             kind: "cronJob",

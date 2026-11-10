@@ -8,6 +8,7 @@ import {
   TemplateManifestSummarySchema,
   OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1,
   summarizeTemplateManifest,
+  templateDependencyInventory,
   validateTemplateManifest,
 } from "./templates";
 
@@ -38,6 +39,36 @@ const fixture = {
 } as const;
 
 describe("Template manifest contract", () => {
+  it("projects bundled paths beside exact registry references without inventing provenance", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      skills: [{ path: "skills/research" }, ...fixture.skills],
+      plugins: [{ path: "plugins/alerts" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      templateDependencyInventory(result.manifest, [
+        { kind: "skill", path: "skills/research", name: "Research" },
+      ]),
+    ).toEqual([
+      { kind: "skill", source: "bundled", path: "skills/research", name: "Research" },
+      { kind: "skill", source: "clawhub", ref: "@openclaw/research", version: "1.2.3" },
+      { kind: "plugin", source: "bundled", path: "plugins/alerts" },
+    ]);
+    expect(summarizeTemplateManifest(result.manifest).packages).toEqual({
+      skillCount: 2,
+      pluginCount: 1,
+    });
+  });
+  it.each([
+    { skills: [{ path: "skills/research", ref: "@acme/research", version: "1.0.0" }] },
+    { skills: [{ path: "../research" }] },
+    { skills: [{ path: "skills/.GIT/research" }] },
+    { skills: [{ path: "skills/research" }], plugins: [{ path: "SKILLS/research/alerts" }] },
+  ])("rejects mixed, unsafe or overlapping bundled declarations: %j", (dependencies) => {
+    expect(validateTemplateManifest({ ...fixture, ...dependencies }).ok).toBe(false);
+  });
   it("allows Templates in storage and publication metadata contracts", () => {
     expect(PackageFamilySchema("template")).toBe("template");
     expect(

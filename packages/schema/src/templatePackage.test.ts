@@ -1,3 +1,4 @@
+import { getDocumentSize } from "convex/values";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
@@ -58,6 +59,367 @@ function files(manifestText = `---\n${JSON.stringify(manifest)}\n---\n`) {
 }
 
 describe("validateTemplatePackageContents", () => {
+  it("bounds projected native names before persisting dependency inventory", () => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(
+          `---\n${JSON.stringify({ ...manifest, skills: [{ path: "skills/a" }, { path: "skills/b" }] })}\n---\n`,
+        ),
+        ...["a", "b"].map((name) => ({
+          path: `skills/${name}/SKILL.md`,
+          text: `---\nname: ${"x".repeat(600000)}\ndescription: Research sources.\n---\n`,
+        })),
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(getDocumentSize({ templateInventory: result.value.inventory })).toBeLessThan(
+      1024 * 1024,
+    );
+    expect(result.value.inventory).toEqual([
+      { kind: "skill", source: "bundled", path: "skills/a", name: "x".repeat(128) },
+      { kind: "skill", source: "bundled", path: "skills/b", name: "x".repeat(128) },
+    ]);
+  });
+
+  it("bounds aggregate inventory metadata before persistence", () => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: files(
+        `---\n${JSON.stringify({ ...manifest, skills: Array.from({ length: 5000 }, (_, index) => ({ ref: `@acme/research-${index}`, version: "1.0.0" })) })}\n---\n`,
+      ),
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      issues: [expect.objectContaining({ code: "template_inventory_too_large" })],
+    });
+  });
+
+  it("selects native code metadata before an unrelated root plugin.json", () => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(
+          `---\n${JSON.stringify({ ...manifest, plugins: [{ path: "plugins/native" }] })}\n---\n`,
+        ),
+        {
+          path: "plugins/native/openclaw.plugin.json",
+          text: JSON.stringify({ id: "native", name: "Native", configSchema: { type: "object" } }),
+        },
+        {
+          path: "plugins/native/package.json",
+          text: JSON.stringify({
+            name: "native",
+            version: "1.0.0",
+            openclaw: { extensions: ["./index.js"] },
+          }),
+        },
+        { path: "plugins/native/index.js", text: "export default {};" },
+        {
+          path: "plugins/native/plugin.json",
+          text: JSON.stringify({ name: "build-support", purpose: "data" }),
+        },
+      ],
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        inventory: [
+          expect.anything(),
+          { kind: "plugin", source: "bundled", path: "plugins/native", name: "Native" },
+        ],
+      },
+    });
+  });
+
+  it.each([false, true])(
+    "matches native bundle precedence and rejects selected Agent bundles (Agent: %s)",
+    (agentOnly) => {
+      const result = validateTemplatePackageContents({
+        packageName: "@acme/github-triage",
+        version: "1.0.0",
+        packageJson: packageJson(),
+        files: [
+          ...files(
+            `---\n${JSON.stringify({ ...manifest, plugins: [{ path: "plugins/alerts" }] })}\n---\n`,
+          ),
+          {
+            path: "plugins/alerts/plugin.json",
+            text: JSON.stringify({
+              $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+              name: "Agent Alerts",
+            }),
+          },
+          ...(agentOnly
+            ? []
+            : [
+                {
+                  path: "plugins/alerts/.codex-plugin/plugin.json",
+                  text: '{"name":"Codex Alerts"}',
+                },
+                {
+                  path: "plugins/alerts/.cursor-plugin/plugin.json",
+                  text: '{"name":"Cursor Alerts"}',
+                },
+                {
+                  path: "plugins/alerts/.claude-plugin/plugin.json",
+                  text: '{"name":"Claude Alerts"}',
+                },
+              ]),
+        ],
+      });
+      expect(result.ok).toBe(!agentOnly);
+      if (result.ok)
+        expect(result.value.inventory[1]).toEqual({
+          kind: "plugin",
+          source: "bundled",
+          path: "plugins/alerts",
+          name: "Codex Alerts",
+        });
+      else expect(result.issues[0].message).toContain("Agent plugin bundles are not supported");
+    },
+  );
+  it("validates complete bundled skill contents and derives only declared metadata", () => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(
+          `---\n${JSON.stringify({ ...manifest, skills: [{ path: "skills/research" }] })}\n---\n`,
+        ),
+        {
+          path: "skills/research/SKILL.md",
+          text: "---\nname: Research\ndescription: Find approved sources.\n---\nUse the references.\n",
+        },
+        { path: "skills/research/references/source.md", text: "A source.\n" },
+        { path: "skills/research/assets/chart.png", size: 4 },
+      ],
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        inventory: [
+          { kind: "skill", source: "bundled", path: "skills/research", name: "Research" },
+        ],
+        summary: { packages: { skillCount: 1, pluginCount: 0 } },
+      },
+    });
+  });
+
+  it.each([
+    ["missing SKILL.md", []],
+    [
+      "oversized binary file",
+      [
+        { path: "SKILL.md", text: "---\ndescription: Research sources.\n---\n" },
+        { path: "assets/source.bin", size: 1024 * 1024 + 1 },
+      ],
+    ],
+    [
+      "unknown binary size",
+      [
+        { path: "SKILL.md", text: "---\ndescription: Research sources.\n---\n" },
+        { path: "assets/source.bin" },
+      ],
+    ],
+    [
+      "excessive depth",
+      [
+        { path: "SKILL.md", text: "---\ndescription: Research sources.\n---\n" },
+        { path: `${"d/".repeat(16)}source.bin`, size: 1 },
+      ],
+    ],
+  ])("rejects incomplete or unbounded bundled skill contents: %s", (_label, dependencyFiles) => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(
+          `---\n${JSON.stringify({ ...manifest, skills: [{ path: "skills/research" }] })}\n---\n`,
+        ),
+        ...dependencyFiles.map((file) => ({ ...file, path: `skills/research/${file.path}` })),
+      ],
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      issues: [expect.objectContaining({ code: "invalid_bundled_dependency" })],
+    });
+  });
+
+  it("allows native skill fallback identity without inventing a metadata name", () => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(
+          `---\n${JSON.stringify({ ...manifest, skills: [{ path: "skills/research" }] })}\n---\n`,
+        ),
+        { path: "skills/research/SKILL.md", text: "---\ndescription: Research sources.\n---\n" },
+      ],
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: { inventory: [{ kind: "skill", source: "bundled", path: "skills/research" }] },
+    });
+    if (result.ok) expect(result.value.inventory[0]).not.toHaveProperty("name");
+  });
+
+  it("rejects portable collisions between implicit bundled directories", () => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(
+          `---\n${JSON.stringify({ ...manifest, skills: [{ path: "skills/research" }] })}\n---\n`,
+        ),
+        { path: "skills/research/SKILL.md", text: "---\ndescription: Research sources.\n---\n" },
+        { path: "skills/research/Reference/a.md", text: "A" },
+        { path: "skills/research/reference/b.md", text: "B" },
+      ],
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      issues: [expect.objectContaining({ code: "invalid_bundled_dependency" })],
+    });
+  });
+
+  it.each([
+    ".codex-plugin/plugin.json",
+    ".claude-plugin/plugin.json",
+    ".cursor-plugin/plugin.json",
+  ])("derives bundled plugin identity from %s", (marker) => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(
+          `---\n${JSON.stringify({ ...manifest, plugins: [{ path: "plugins/alerts" }] })}\n---\n`,
+        ),
+        { path: `plugins/alerts/${marker}`, text: "{name: 'Release Alerts', version: '9.0.0'}" },
+        {
+          path: "plugins/alerts/skills/notes/SKILL.md",
+          text: "---\nname: notes\ndescription: Notes.\n---\n",
+        },
+      ],
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        inventory: [
+          { kind: "skill", source: "clawhub", ref: "@acme/triage", version: "1.2.0" },
+          { kind: "plugin", source: "bundled", path: "plugins/alerts", name: "Release Alerts" },
+        ],
+      },
+    });
+    if (result.ok) expect(result.value.inventory[1]).not.toHaveProperty("version");
+  });
+  it.each([
+    ".codex-plugin/plugin.json",
+    ".claude-plugin/plugin.json",
+    ".cursor-plugin/plugin.json",
+    "openclaw.plugin.json",
+  ])("matches the native 256 KiB manifest boundary for %s", (marker) => {
+    const metadata = JSON.stringify({
+      ...(marker === "openclaw.plugin.json" ? { id: "alerts", configSchema: {} } : {}),
+      name: "alerts",
+      description: "é".repeat(131000),
+    });
+    for (const [bytes, size, accepted] of [
+      [262143, undefined, true],
+      [262144, 262144, true],
+      [262145, undefined, false],
+      [262145, 1, false],
+      [262144, 262145, false],
+    ] as const) {
+      const text = metadata + " ".repeat(bytes - new TextEncoder().encode(metadata).byteLength);
+      expect(new TextEncoder().encode(text).byteLength).toBe(bytes);
+      const result = validateTemplatePackageContents({
+        packageName: "@acme/github-triage",
+        version: "1.0.0",
+        packageJson: packageJson(),
+        files: [
+          ...files(
+            `---\n${JSON.stringify({ ...manifest, plugins: [{ path: "plugins/alerts" }] })}\n---\n`,
+          ),
+          {
+            path: `plugins/alerts/${marker}`,
+            text,
+            ...(size === undefined ? {} : { size }),
+          },
+          {
+            path: "plugins/alerts/package.json",
+            text: JSON.stringify({
+              name: "@acme/alerts",
+              version: "1.0.0",
+              openclaw: { extensions: ["./index.js"] },
+            }),
+          },
+          { path: "plugins/alerts/index.js", text: "export default {};" },
+          { path: "plugins/alerts/assets/model.bin", size: 1048576 },
+        ],
+      });
+      expect(result.ok, `${marker}: ${bytes} text bytes, ${size} declared bytes`).toBe(accepted);
+      if (!result.ok)
+        expect(result.issues).toContainEqual(
+          expect.objectContaining({
+            code: "invalid_bundled_dependency",
+            message: expect.stringContaining("262144 bytes"),
+          }),
+        );
+    }
+  });
+  it.each([true, false])(
+    "validates bundled code-plugin entrypoints (present: %s)",
+    (entryPresent) => {
+      const result = validateTemplatePackageContents({
+        packageName: "@acme/github-triage",
+        version: "1.0.0",
+        packageJson: packageJson(),
+        files: [
+          ...files(
+            `---\n${JSON.stringify({ ...manifest, plugins: [{ path: "plugins/alerts" }] })}\n---\n`,
+          ),
+          {
+            path: "plugins/alerts/openclaw.plugin.json",
+            text: "{id: 'alerts', name: 'Release Alerts', configSchema: {type: 'object'}}",
+          },
+          {
+            path: "plugins/alerts/package.json",
+            text: JSON.stringify({
+              name: "@acme/alerts",
+              version: "9.0.0",
+              openclaw: { extensions: ["./index.js"] },
+            }),
+          },
+          ...(entryPresent
+            ? [{ path: "plugins/alerts/index.js", text: "export default {};" }]
+            : []),
+        ],
+      });
+      expect(result.ok).toBe(entryPresent);
+      if (result.ok)
+        expect(result.value.inventory[1]).toEqual({
+          kind: "plugin",
+          source: "bundled",
+          path: "plugins/alerts",
+          name: "Release Alerts",
+        });
+      else expect(result.issues[0].message).toContain("missing from the package");
+    },
+  );
+
   it.each(["automations"])("preserves scheduled work from the %s manifest key", (key) => {
     const { automations: _, ...portable } = manifest;
     const result = validateTemplatePackageContents({

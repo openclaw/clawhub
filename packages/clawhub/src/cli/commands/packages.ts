@@ -2624,6 +2624,7 @@ async function preparePackagePublishPlan(
       packageJson,
       files: filesOnDisk.map((file) => ({
         path: file.relPath,
+        size: file.bytes.byteLength,
         text: decodeUtf8Text(file.bytes) ?? undefined,
       })),
     });

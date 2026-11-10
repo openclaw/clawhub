@@ -6,6 +6,7 @@ import { hasPortablePathSegments, portablePathKey } from "./templatePaths.js";
 export const TEMPLATE_SCHEMA_VERSION = 1 as const;
 export const TEMPLATE_SUMMARY_AGENT_NAME_MAX_CHARS = 128;
 export const TEMPLATE_SUMMARY_AGENT_DESCRIPTION_MAX_CHARS = 1_024;
+export const TEMPLATE_DEPENDENCY_INVENTORY_MAX_BYTES = 256 * 1024;
 export const TEMPLATE_BOOTSTRAP_FILE_NAMES = [
   "AGENTS.md",
   "SOUL.md",
@@ -40,6 +41,11 @@ const RemoteMcpServerSchema = type({
   timeout: "number?",
   connectTimeout: "number?",
 });
+const TemplateDependencyDeclarationSchema = type({
+  "+": "reject",
+  ref: "string",
+  version: "string",
+}).or(type({ "+": "reject", path: "string" }));
 
 export const TemplateManifestSchema = type({
   "+": "reject",
@@ -72,8 +78,8 @@ export const TemplateManifestSchema = type({
     }).optional(),
     files: type({ "+": "reject", source: "string", path: "string" }).array().optional(),
   }).optional(),
-  skills: type({ "+": "reject", ref: "string", version: "string" }).array().optional(),
-  plugins: type({ "+": "reject", ref: "string", version: "string" }).array().optional(),
+  skills: TemplateDependencyDeclarationSchema.array().optional(),
+  plugins: TemplateDependencyDeclarationSchema.array().optional(),
   mcpServers: type({
     "[string]": StdioMcpServerSchema.or(RemoteMcpServerSchema),
   }).optional(),
@@ -229,7 +235,7 @@ export const OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1 = {
   contractVersion: 1,
   source: {
     repository: "openclaw/openclaw",
-    commit: "16115153f0d5e7faebb755f3fbccf81437e01b67",
+    commit: "194b7bea3730b2876e2d43c633347157da637c53",
     path: "src/infra/host-env-security-policy.json",
     sha256: "6923ab681c0e701381ea5fccebe36b7c6d2bfeadd72cfa08b0d542640d5e9601",
   },
@@ -691,9 +697,36 @@ export function validateTemplateManifest(
     }
   }
 
+  const bundledPaths = new Set<string>();
   for (const kind of ["skills", "plugins"] as const) {
     const references = new Set<string>();
     for (const [index, entry] of (parsed[kind] ?? []).entries()) {
+      if ("path" in entry) {
+        const key = portablePathKey(entry.path);
+        if (
+          !isSafePackagePath(entry.path) ||
+          key.split("/").some((part) => part === ".git" || part === "node_modules")
+        ) {
+          issues.push(
+            validationIssue(
+              TEMPLATE_MANIFEST_VALIDATION_CODES.unsafePath,
+              `$.${kind}.${index}.path`,
+              "Bundled dependency must name a safe package-relative directory.",
+            ),
+          );
+        }
+        if (conflictsWithWorkspaceTarget(bundledPaths, key)) {
+          issues.push(
+            validationIssue(
+              TEMPLATE_MANIFEST_VALIDATION_CODES.duplicatePackage,
+              `$.${kind}.${index}.path`,
+              "Bundled dependency directories must not overlap.",
+            ),
+          );
+        }
+        bundledPaths.add(key);
+        continue;
+      }
       if (!PACKAGE_NAME_PATTERN.test(entry.ref))
         issues.push(
           validationIssue(
@@ -959,19 +992,21 @@ export function summarizeTemplateManifest(
 /** The sole dependency projection used by validation, summaries and detail consumers. */
 export function templateDependencyInventory(
   manifest: TemplateManifest,
+  bundledSources: ReadonlyArray<{ kind: "skill" | "plugin"; path: string; name?: string }> = [],
 ): TemplateDependencyInventory {
-  return [
-    ...(manifest.skills ?? []).map((entry) => ({
-      kind: "skill" as const,
-      source: "clawhub" as const,
-      ...entry,
-    })),
-    ...(manifest.plugins ?? []).map((entry) => ({
-      kind: "plugin" as const,
-      source: "clawhub" as const,
-      ...entry,
-    })),
-  ];
+  return (["skills", "plugins"] as const).flatMap((collection) =>
+    (manifest[collection] ?? []).map((entry): TemplateDependencyInventory[number] => {
+      const kind = collection === "skills" ? "skill" : "plugin";
+      if ("path" in entry) {
+        const name = truncateSummaryText(
+          bundledSources.find((source) => source.kind === kind && source.path === entry.path)?.name,
+          TEMPLATE_SUMMARY_AGENT_NAME_MAX_CHARS,
+        );
+        return { kind, source: "bundled", path: entry.path, ...(name ? { name } : {}) };
+      }
+      return { kind, source: "clawhub", ref: entry.ref, version: entry.version };
+    }),
+  );
 }
 export const TemplateDependencyInventorySchema = type({
   "+": "reject",
@@ -979,5 +1014,15 @@ export const TemplateDependencyInventorySchema = type({
   source: '"clawhub"',
   ref: "string",
   version: "string",
-}).array();
+})
+  .or(
+    type({
+      "+": "reject",
+      kind: '"skill"|"plugin"',
+      source: '"bundled"',
+      path: "string",
+      name: "string?",
+    }),
+  )
+  .array();
 export type TemplateDependencyInventory = (typeof TemplateDependencyInventorySchema)[inferred];
