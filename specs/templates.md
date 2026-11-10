@@ -76,6 +76,11 @@ unchanged, and catalog metadata becomes visible only after publication.
   local Labs visibility, inspection, consent, and new-agent addition.
 - Template publication still requires validation, moderation, ownership, and
   scanner checks.
+- Detail pages present release security-audit status and details in the Security
+  audit sidebar, not repeated as inline subtext beneath the install command. This is
+  presentational only: CLI and prompt copy remain unavailable unless the package
+  scan status is clean and a current release exists. Missing, pending, not-run,
+  suspicious, and malicious scan states do not become ready to add.
 
 The public catalog (package lists and search) includes eligible community and
 official Templates. Every catalog read rechecks that the current publisher row is

@@ -88,13 +88,6 @@
   background: var(--oc-bg-surface);
 }
 
-.template-detail-install-warning {
-  margin: 12px 0 0;
-  color: var(--status-warning-fg);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
 .template-detail-contents {
   margin-top: 48px;
 }
