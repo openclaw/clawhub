@@ -92,3 +92,70 @@ matching Test backend build SHA, standard worker, and finalized clean secret and
 ClawScan checks. The canary prepares the same pinned MCP image as the standard
 workers and reserves their native scan/drain envelope. It does not weaken the
 mandatory Docker guard or expand into arbitrary production fixtures.
+
+### Fixed nonpublishing mechanical qualification
+
+The same workflow also accepts explicit `mode=qualification` with no
+`attempt_id`. This is a live native mechanical check, not a mocked verdict,
+model-accuracy benchmark, registry publication/finalization proof, or substitute
+for the exact-SHA Deploy Test integration gate. The default `mode=publication`
+still requires one existing exact pending canary attempt and proves finalization.
+No attempt is created, inferred, or selected as a fallback.
+
+Both modes require main, the fixed Test deployment `academic-chihuahua-392`,
+`CLAWHUB_ENV=test`, and its deployed backend SHA equal to `GITHUB_SHA`. The
+qualification step receives only existing model API credentials, never the
+Convex deploy key or worker token. Target verification uses the Test deploy key
+in its separate read-only step. There are no new permissions, tokens, arbitrary
+source/command/path inputs, registry/database/upload/queue/moderation writes,
+existing-content rescans, or dependency/audit fetching in the qualification path.
+Normal setup still installs the pinned scanner tooling.
+
+`scripts/security/qualify-test-template.ts` copies only the checked-in inert
+`fixtures/template-qualification` files into its own temporary artifact. The
+small fixture includes CLAW.md, bootstrap instructions, disabled automation,
+workspace notes and an embedded skill/plugin; none is executed or installed.
+It uses the existing qualified source/binary verifier, native TruffleHog and
+`runNativeClawScan` with mandatory pinned Docker and its existing cleanup.
+It reserves the normal 65-minute drain budget inside the 75-minute step and
+absolute hosted deadline. No database claim or lease is acquired. Raw reports
+remain in that owned workspace, which is removed on success and ordinary failure.
+If Docker cleanup/finality is unconfirmed, preserve its mounts under the existing
+worker custody contract, fail with `docker_cleanup` and `workspaceRemoved=false`,
+and leave teardown to the failed ephemeral runner. Never claim cleanup succeeded.
+
+Success requires unchanged fixture bytes, a clean secret gate, validated native
+Template target/profile/image, completed AIG MCP command and complete SARIF, and
+the existing evidence-only judge's validated terminal **benign** verdict. A
+suspicious or malicious result remains a completed native verdict but fails this
+known benign fixture check; it does not change normal publication policy. No
+operational failure becomes clean, and no retry seeks a preferred verdict.
+
+After Deploy Test succeeds for the exact new main SHA, an authorized operator runs:
+
+```sh
+gh workflow run test-template-canary-prepublication.yml \
+  --repo openclaw/clawhub --ref main -f mode=qualification
+```
+
+The final log JSON uses `schemaVersion=clawhub-template-native-qualification-v1`:
+
+- `mode=nonpublishing`; `status=passed|failed`; `failure` is null or a bounded
+  stage enum (configuration, deadline, runtime, fixture, secrets, native_execution,
+  native_evidence, unexpected_verdict, artifact_changed, cleanup, docker_cleanup).
+- `workerRevision` identifies the checked-out main SHA. `source` and `image`
+  give the reviewed pins above; `profile=clawhub-template` and
+  `targetKind=template` declare the required lane, not success on their own.
+- `sourceAndBinaryVerified`, `secretGate=clean`,
+  `nativeEvidence=completed`, `verdict=benign`, `fixtureUnchanged` and
+  `workspaceRemoved` must all pass. Completed evidence proves both AIG and
+  judge validation; `not_validated` never means clean.
+- `artifactSha256` hashes the validated raw native report;
+  `fixtureSha256` hashes sorted relative file names and contents, NUL-separated.
+  Absent evidence hashes/verdict are null. No raw report, error, prompt or secret
+  is printed in the receipt.
+
+Record the workflow URL, run SHA and receipt with the exact-SHA Deploy Test result.
+Do not describe this mechanical proof as full-registry finalization or broad
+scanner accuracy. Unit tests use explicitly synthetic responses and are not the
+live qualification run. Production rollout remains a separate authorized action.

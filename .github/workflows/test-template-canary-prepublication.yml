@@ -3,13 +3,21 @@ name: Test Template Canary Prepublication Check
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: Exact pending publication or fixed nonpublishing native qualification
+        required: true
+        type: choice
+        default: publication
+        options:
+          - publication
+          - qualification
       attempt_id:
         description: Exact Test publish attempt ID for @openclaw/hosted-e2e-canary
-        required: true
+        required: false
         type: string
 
 concurrency:
-  group: test-template-canary-prepublication-${{ inputs.attempt_id }}
+  group: test-template-canary-prepublication-${{ inputs.mode }}-${{ inputs.attempt_id }}
   cancel-in-progress: false
 
 permissions:
@@ -20,19 +28,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
+      MODE: ${{ inputs.mode }}
       ATTEMPT_ID: ${{ inputs.attempt_id }}
     steps:
-      - name: Require main and an exact attempt ID
+      - name: Require main and an explicit bounded mode
         run: |
           set -euo pipefail
           if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "::error::Test canary checks must run from main"
             exit 1
           fi
-          if ! [[ "$ATTEMPT_ID" =~ ^[a-z0-9]{32}$ ]]; then
-            echo "::error::attempt_id must be one exact Convex document ID"
-            exit 1
-          fi
+          case "$MODE" in
+            publication)
+              if ! [[ "$ATTEMPT_ID" =~ ^[a-z0-9]{32}$ ]]; then
+                echo "::error::attempt_id must be one exact Convex document ID"
+                exit 1
+              fi
+              ;;
+            qualification)
+              if [[ -n "$ATTEMPT_ID" ]]; then
+                echo "::error::Nonpublishing qualification cannot accept an attempt ID"
+                exit 1
+              fi
+              ;;
+            *) echo "::error::Unknown qualification mode"; exit 1 ;;
+          esac
 
   check-test-attempt:
     needs: validate-request
@@ -116,6 +136,7 @@ jobs:
           sh scripts/security/install-clawscan-scanners.sh aig-mcp
 
       - name: Run exact Test Template publish checks
+        if: inputs.mode == 'publication'
         timeout-minutes: 75
         env:
           ATTEMPT_ID: ${{ inputs.attempt_id }}
@@ -171,3 +192,15 @@ jobs:
             exit 1
           fi
           jq '{attemptId, status, checks: {trufflehog: .checks.trufflehog.status, clawscan: .checks.clawscan.status}}' <<< "$attempt_json"
+
+      - name: Qualify fixed Template without publication
+        if: inputs.mode == 'qualification'
+        timeout-minutes: 75
+        env:
+          CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEFAULT_BASE_URL: https://api.openai.com/v1
+          DEFAULT_MODEL: ${{ vars.DEFAULT_MODEL || 'gpt-6.1-sol' }}
+          REASONING_EFFORT: ${{ vars.REASONING_EFFORT || 'medium' }}
+          LLM_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: bun scripts/security/qualify-test-template.ts
