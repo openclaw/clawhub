@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { verifyInstalledClawScanSource } from "./prepublicationScannerSource";
+import { qualifiedNativeCommand, assertQualifiedNativeArtifact } from "./clawscan-native-runtime";
 
 // Exact merged EvidenceOnly source + native image from runtime run 42292655384.
 // No mutable image tag or host MCP fallback.
@@ -48,29 +48,19 @@ export async function qualifiedPluginCommand(
   lane: "PREPUBLICATION" | "CODEX_SECURITY_SCAN",
   env: NodeJS.ProcessEnv = process.env,
 ) {
-  const sandbox = (
-    env[lane + "_CLAWSCAN_PLUGIN_SANDBOX"] ?? env[lane + "_CLAWSCAN_SANDBOX"]
-  )?.trim();
-  const image = env[lane + "_CLAWSCAN_SANDBOX_IMAGE"]?.trim();
-  if ((sandbox && sandbox !== "docker") || (image && image !== QUALIFIED_PLUGIN_IMAGE)) {
-    throw new Error(
-      "A.I.G MCP requires the qualified immutable Docker runtime; host execution is unavailable",
-    );
-  }
-  const runtime = await verifyInstalledClawScanSource(
+  return qualifiedNativeCommand(
+    lane,
+    { source: QUALIFIED_PLUGIN_SOURCE, image: QUALIFIED_PLUGIN_IMAGE },
     env,
-    QUALIFIED_PLUGIN_SOURCE,
-    env[lane + "_CLAWSCAN_COMMAND"],
     true,
   );
-  return runtime.command;
 }
 
 export function assertQualifiedPluginArtifact(artifact: Record<string, unknown>) {
-  const sandbox = artifact.sandbox as Record<string, unknown> | null | undefined;
-  if (!sandbox || sandbox.mode !== "docker" || sandbox.image !== QUALIFIED_PLUGIN_IMAGE) {
-    throw new Error("A.I.G MCP artifact did not use the qualified immutable Docker runtime");
-  }
+  assertQualifiedNativeArtifact(artifact, {
+    source: QUALIFIED_PLUGIN_SOURCE,
+    image: QUALIFIED_PLUGIN_IMAGE,
+  });
 }
 
 export async function usesWholePluginScanForTarget(
