@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CLI: on Bun, send the API token to curl on stdin instead of the command line. JSON, form, text, download, and binary upload requests use the same header stdin path.
+
 - CI: verify and cache a pinned Convex backend through the release-asset API before local-auth browser tests, with bounded download retries.
 
 - Skills: recognize a single top-level `env` name as a required variable so installation guidance and scanner metadata retain the declared credential.
