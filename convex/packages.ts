@@ -2953,6 +2953,10 @@ export async function readPackageVersionForViewer(
     package: pkg,
     version: {
       ...toPublicPackageRelease(release, toStoredPackageFamily(pkg.family)),
+      // Keep download authority internal: the public Template projection omits
+      // reviewer notes, but both archive routers must still enforce moderation.
+      manualModeration: release.manualModeration,
+      staticScan: release.staticScan,
       // Internal HTTP handlers need the opaque storage id to stream exact ClawPack bytes.
       ...(release.clawpackStorageId ? { clawpackStorageId: release.clawpackStorageId } : {}),
     },

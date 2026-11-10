@@ -111,6 +111,45 @@ const withheld = [
 ] satisfies Array<Partial<Doc<"packageReleases">>>;
 
 describe("checked package release selections", () => {
+  it.each(["quarantined", "revoked"] as const)(
+    "retains %s authority through scoped Template archive reads and cookie fallback",
+    async (state) => {
+      const { t, pkg, selected, owner } = await fixture();
+      const templateName = "@visibility-owner/brief";
+      await t.run(async (ctx) => {
+        await ctx.db.patch(pkg, {
+          name: templateName,
+          normalizedName: templateName,
+          family: "claw",
+        });
+        await ctx.db.patch(selected, {
+          artifactKind: "npm-pack",
+          clawpackStorageId: await ctx.storage.store(new Blob(["must not escape moderation"])),
+          manualModeration: {
+            state,
+            reason: "private reviewer note",
+            reviewerUserId: owner,
+            updatedAt: 1,
+          },
+        });
+      });
+      const path = "/api/v1/packages/" + encodeURIComponent(templateName) + "/versions/2.0.0";
+      const internalVersion = await t.query(internal.packages.getVersionByNameForViewerInternal, {
+        name: templateName,
+        version: "2.0.0",
+      });
+      expect(internalVersion?.version).toMatchObject({ manualModeration: { state } });
+      const headerCases: Record<string, string>[] = [{}, { Cookie: "unrelated=1" }];
+      for (const headers of headerCases) {
+        const metadata = await t.fetch(path, { headers });
+        expect(metadata.status).toBe(200);
+        expect(await metadata.text()).not.toContain("private reviewer note");
+        const archive = await t.fetch(path + "/artifact/download", { headers });
+        expect(archive.status).toBe(403);
+        expect(await archive.text()).not.toContain("must not escape moderation");
+      }
+    },
+  );
   it("preserves an old bundle release family under a native current package", async () => {
     const { t, selected } = await fixture();
     await t.run((ctx) => ctx.db.patch(selected, { pluginFamily: "bundle-plugin" }));
