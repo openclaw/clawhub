@@ -869,25 +869,23 @@ async function isRegularFile(path: string) {
 type NpmLaunch = { command: string; args: string[] };
 
 // cmd.exe searches the working directory before PATH and expands %NAME%
-// inside quoted arguments. Spawn the installed npm with literal argv instead.
+// inside quoted arguments. On Windows, spawn the installed launcher with
+// literal argv. Other platforms keep spawn("npm") so lookup uses the child
+// cwd and skips a non-executable file earlier on PATH.
 async function resolveInstalledNpm(packageDir: string): Promise<NpmLaunch | null> {
+  if (process.platform !== "win32") return { command: "npm", args: [] };
   for (const dir of pathDirectories()) {
     if (sameDirectory(dir, packageDir)) continue;
-    if (process.platform === "win32") {
-      const cli = join(dir, "node_modules", "npm", "bin", "npm-cli.js");
-      if (await isRegularFile(cli)) {
-        const nodeExe = join(dir, "node.exe");
-        return {
-          command: (await isRegularFile(nodeExe)) ? nodeExe : process.execPath,
-          args: [cli],
-        };
-      }
-      const npmExe = join(dir, "npm.exe");
-      if (await isRegularFile(npmExe)) return { command: npmExe, args: [] };
-      continue;
+    const cli = join(dir, "node_modules", "npm", "bin", "npm-cli.js");
+    if (await isRegularFile(cli)) {
+      const nodeExe = join(dir, "node.exe");
+      return {
+        command: (await isRegularFile(nodeExe)) ? nodeExe : process.execPath,
+        args: [cli],
+      };
     }
-    const npmBin = join(dir, "npm");
-    if (await isRegularFile(npmBin)) return { command: npmBin, args: [] };
+    const npmExe = join(dir, "npm.exe");
+    if (await isRegularFile(npmExe)) return { command: npmExe, args: [] };
   }
   return null;
 }

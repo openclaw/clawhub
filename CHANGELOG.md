@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- CLI: explain a missing npm when packing a package folder. On Windows, packing runs the installed npm directly, so a package folder cannot substitute its own `npm.cmd`.
+- CLI: explain a missing npm when packing a package folder. On Windows, packing runs the installed npm directly, so a package folder cannot substitute its own `npm.cmd`. Other platforms keep the normal `npm` lookup.
 
 - CI: verify and cache a pinned Convex backend through the release-asset API before local-auth browser tests, with bounded download retries.
 

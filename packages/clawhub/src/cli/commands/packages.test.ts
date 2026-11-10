@@ -2627,7 +2627,7 @@ describe("package commands", () => {
       if (process.platform === "win32") {
         expect(`${command} ${(args ?? []).join(" ")}`).toMatch(/npm-cli\.js|npm\.exe/i);
       } else {
-        expect(String(command)).toMatch(/npm$/);
+        expect(command).toBe("npm");
         expect(args?.[0]).toBe("pack");
       }
     } finally {

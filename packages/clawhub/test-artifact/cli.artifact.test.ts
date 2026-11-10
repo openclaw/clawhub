@@ -3,6 +3,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -17,7 +18,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { strToU8, zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
@@ -743,6 +744,85 @@ describe("built CLI artifact", () => {
     expect(result.stdout).toContain("percent-literal");
     expect(result.stdout).not.toContain("percent-expanded");
   });
+
+  function installedNpmLaunch() {
+    const prefix = dirname(dirname(process.execPath));
+    const cli = [
+      join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+      join(prefix, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+    ].find((candidate) => existsSync(candidate));
+    if (!cli) throw new Error(`npm-cli.js not found next to ${process.execPath}`);
+    return `exec ${JSON.stringify(process.execPath)} ${JSON.stringify(cli)} "$@"`;
+  }
+
+  async function writePosixNpm(path: string, line: string, mode: number) {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, `#!/bin/sh\n${line}\n`);
+    await chmod(path, mode);
+  }
+
+  it.skipIf(process.platform === "win32")(
+    "finds a relative PATH npm from the pack workdir",
+    async () => {
+      const root = await makeTmpDir("clawhub-artifact-rel-npm-");
+      const workdir = join(root, "srv");
+      const log = join(root, "npm-log.txt");
+      const launch = installedNpmLaunch();
+      await writeDemoPlugin(workdir, "relative-npm-plugin", "relative.npm");
+      await writePosixNpm(
+        join(workdir, "tools", "npm"),
+        `printf "%s\\n" relative-npm-selected >> "$CLAWHUB_NPM_LOG"\n${launch}`,
+        0o755,
+      );
+
+      const result = runNode(
+        [binPath, "--workdir", workdir, "package", "pack", workdir, "--json"],
+        {
+          PATH: "tools",
+          CLAWHUB_NPM_LOG: log,
+        },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("relative-npm-plugin");
+      expect(await readFile(log, "utf8")).toContain("relative-npm-selected");
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "skips a non-executable npm earlier on PATH",
+    async () => {
+      const root = await makeTmpDir("clawhub-artifact-npm-x-");
+      const workdir = join(root, "srv");
+      const log = join(root, "npm-log.txt");
+      const launch = installedNpmLaunch();
+      await writeDemoPlugin(workdir, "skip-stale-npm", "skip.stale");
+      await writePosixNpm(
+        join(root, "stale", "npm"),
+        'printf "%s\\n" stale-npm-selected >> "$CLAWHUB_NPM_LOG"',
+        0o644,
+      );
+      await writePosixNpm(
+        join(root, "good", "npm"),
+        `printf "%s\\n" good-npm-selected >> "$CLAWHUB_NPM_LOG"\n${launch}`,
+        0o755,
+      );
+
+      const result = runNode(
+        [binPath, "--workdir", workdir, "package", "pack", workdir, "--json"],
+        {
+          PATH: `${join(root, "stale")}${delimiter}${join(root, "good")}`,
+          CLAWHUB_NPM_LOG: log,
+        },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("skip-stale-npm");
+      const logText = await readFile(log, "utf8");
+      expect(logText).toContain("good-npm-selected");
+      expect(logText).not.toContain("stale-npm-selected");
+    },
+  );
 
   it("exposes the restored sync command", async () => {
     const result = runNode([binPath, "sync", "--help"]);
