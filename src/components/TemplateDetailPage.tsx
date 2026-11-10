@@ -5,7 +5,12 @@ import {
 } from "clawhub-schema";
 import { TEMPLATE_CATEGORY_DEFINITIONS } from "clawhub-schema/catalogMetadata";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { fetchPackageFile, type PackageDetailResponse } from "../lib/packageApi";
+import {
+  fetchPackageFile,
+  getPackageArtifactDownloadPath,
+  getPackageDownloadPath,
+  type PackageDetailResponse,
+} from "../lib/packageApi";
 import { parseTemplateDocument } from "../lib/templateDetail";
 import { isTemplateReadyToAdd } from "../lib/templateRoutes";
 import { auditVerdictMeterLevel, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
@@ -47,7 +52,23 @@ export function TemplateDetailPage({
   );
   const description = pkg.summary ?? summary?.agent.description ?? manifest?.agent.description;
   const scanStatus = pkg.scanStatus ?? "pending";
-  const ready = isTemplateReadyToAdd(scanStatus) && Boolean(pkg.latestVersion);
+  // Historical summaries retain profile counts even when CLAW.md alone still parses.
+  const retiredProfile = (summary?.profiles?.count ?? 0) > 0;
+  const supportedManifest = Boolean(manifest) && !retiredProfile;
+  const ready = supportedManifest && isTemplateReadyToAdd(scanStatus) && Boolean(pkg.latestVersion);
+  const manifestWarning =
+    !supportedManifest && pkg.latestVersion
+      ? retiredProfile
+        ? "This release includes retired Template profiles and cannot be added."
+        : contents === null
+          ? "The CLAW.md manifest could not be loaded, so this release cannot be added. Reload this page to try again."
+          : "This release has an unsupported or invalid CLAW.md manifest and cannot be added."
+      : null;
+  const archivePath = pkg.latestVersion
+    ? pkg.artifact?.kind === "npm-pack"
+      ? getPackageArtifactDownloadPath(pkg.name, pkg.latestVersion)
+      : getPackageDownloadPath(pkg.name, pkg.latestVersion)
+    : null;
   const installCommand = "openclaw templates add " + pkg.name;
   // Package scanStatus still gates installation; an audit verdict needs release evidence.
   const auditVerdict = llmAnalysis ? aggregateAuditVerdict({ llmAnalysis }) : "unavailable";
@@ -93,6 +114,18 @@ export function TemplateDetailPage({
                 cliCopyAriaLabel="Copy template install command"
                 copyEnabled={ready}
               />
+              {manifestWarning ? (
+                <p className="template-detail-install-warning" role="status">
+                  {manifestWarning} Ask the publisher to migrate or repair CLAW.md and publish a new
+                  version. <a href="/docs/templates">Template migration guide</a>.
+                  {archivePath ? (
+                    <>
+                      {" "}
+                      <a href={archivePath}>Download release archive</a>.
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
             </section>
             <section className="template-detail-contents" aria-label="Template contents">
               <div className="template-detail-tabs" role="tablist" aria-label="Template contents">
@@ -138,19 +171,30 @@ export function TemplateDetailPage({
                 >
                   {activeTab === tab ? (
                     tab === "CLAW.md" ? (
-                      markdown ? (
-                        <MarkdownPreview className="template-detail-markdown">
-                          {markdown}
-                        </MarkdownPreview>
-                      ) : (
-                        <ContentMessage>
-                          Template instructions are unavailable for this release.
-                        </ContentMessage>
-                      )
-                    ) : !manifest ? (
+                      <>
+                        {markdown ? (
+                          <MarkdownPreview className="template-detail-markdown">
+                            {markdown}
+                          </MarkdownPreview>
+                        ) : (
+                          <ContentMessage>
+                            Template instructions are unavailable for this release.
+                          </ContentMessage>
+                        )}
+                        {!supportedManifest && contents !== null ? (
+                          <details className="template-detail-original">
+                            <summary>View original CLAW.md</summary>
+                            <pre>
+                              <code>{contents}</code>
+                            </pre>
+                          </details>
+                        ) : null}
+                      </>
+                    ) : !supportedManifest || !manifest ? (
                       <ContentMessage>
-                        The manifest is unavailable for this release. Its contents could not be
-                        read.
+                        The manifest is unavailable in the current Template format. See the original
+                        CLAW.md and migration guidance before asking the publisher for a new
+                        version.
                       </ContentMessage>
                     ) : tab === "Skills" || tab === "Plugins" ? (
                       <TemplatePackages

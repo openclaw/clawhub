@@ -11,7 +11,10 @@ const mocks = vi.hoisted(() => ({
   fetchPackageVersion: vi.fn(),
 }));
 
-vi.mock("../../../lib/packageApi", () => mocks);
+vi.mock("../../../lib/packageApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/packageApi")>()),
+  ...mocks,
+}));
 // Exercise the real sanitized Markdown renderer without asynchronous syntax-engine setup.
 vi.mock("../../../components/MarkdownPreview", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../components/MarkdownPreview")>();
@@ -259,12 +262,21 @@ function renderTemplate(
     contents?: string | null;
     version?: string | null;
     llmAnalysis?: LlmAnalysis | null;
+    manifestSummary?: NonNullable<PackageDetailResponse["package"]>["templateManifestSummary"];
   } = {},
 ) {
   const detail = packageDetail();
   detail.package!.scanStatus = "status" in options ? options.status : "clean";
   detail.package!.updatedAt = Date.UTC(2026, 10, 5);
   if ("version" in options) detail.package!.latestVersion = options.version;
+  if ("manifestSummary" in options)
+    detail.package!.templateManifestSummary = options.manifestSummary;
+  detail.package!.artifact = {
+    kind: "npm-pack",
+    sha256: "a".repeat(64),
+    size: 608,
+    format: "tgz",
+  };
   return render(
     <TemplateDetailPage
       detail={detail}
@@ -456,6 +468,63 @@ describe("Template detail composition and interactions", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "CLI" }));
     expect(screen.getByRole("button", { name: "Copy template install command" })).toBeTruthy();
+  });
+
+  it.each([
+    [
+      "retired fields",
+      '---\n{"schemaVersion":1,"agent":{"id":"historical"},"packages":[]}\n---\n# Published instructions',
+    ],
+    ["malformed YAML", "---\nagent: [\n---\n# Published instructions"],
+    ["missing document", null],
+  ])("blocks both install-copy actions and explains how to repair %s", (_label, contents) => {
+    renderTemplate({ contents });
+    const warning = screen.getByRole("status");
+    expect(warning.textContent).toContain("cannot be added");
+    expect(warning.textContent).toContain("publish a new version");
+    expect(
+      screen.getByRole("link", { name: "Template migration guide" }).getAttribute("href"),
+    ).toBe("/docs/templates");
+    expect(
+      screen.getByRole("link", { name: "Download release archive" }).getAttribute("href"),
+    ).toBe("/api/v1/packages/%40maker%2Frelease-brief/versions/0.1.0/artifact/download");
+    expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
+    expect(screen.queryByRole("button", { name: "Copy OpenClaw prompt" })).toBeNull();
+    if (contents !== null) {
+      const original = screen.getByText("View original CLAW.md").closest("details");
+      expect(original?.querySelector("code")?.textContent).toBe(contents);
+    } else {
+      expect(screen.queryByText("View original CLAW.md")).toBeNull();
+      expect(warning.textContent).toContain("Reload this page");
+    }
+  });
+
+  it("uses the stored profile count to block a retired sidecar even when CLAW.md parses", () => {
+    const contents =
+      '---\n{"schemaVersion":1,"agent":{"id":"historical"}}\n---\n# Original instructions';
+    expect(parseTemplateDocument(contents).manifest).not.toBeNull();
+    renderTemplate({
+      contents,
+      manifestSummary: {
+        ...packageDetail().package!.templateManifestSummary!,
+        profiles: { count: 1, hasOpenClaw: true },
+      },
+    });
+    expect(screen.getByRole("status").textContent).toContain("retired Template profiles");
+    expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
+    expect(screen.getByText("View original CLAW.md").closest("details")?.textContent).toContain(
+      contents,
+    );
+  });
+
+  it("shows an unsupported original document as escaped text without executing its markup", () => {
+    const contents =
+      '---\n{"schemaVersion":1,"agent":{"id":"historical"},"packages":[]}\n---\n<script>alert("archive")</script>';
+    renderTemplate({ contents });
+    const original = screen.getByText("View original CLAW.md").closest("details");
+    expect(original?.querySelector("code")?.textContent).toBe(contents);
+    expect(original?.querySelector("script")).toBeNull();
   });
 
   it("truthfully reports clipboard failure", async () => {
