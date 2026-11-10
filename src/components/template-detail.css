@@ -42,6 +42,36 @@
   overflow-wrap: anywhere;
 }
 
+.template-detail-description[data-expanded="false"] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.template-detail-description-toggle {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.template-detail-description-toggle:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.template-detail-description-toggle:focus-visible {
+  outline: 2px solid var(--ink-soft);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
 .template-detail-publisher {
   display: flex;
   align-items: center;

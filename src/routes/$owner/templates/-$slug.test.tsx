@@ -123,6 +123,17 @@ describe("publisher Template detail route loader", () => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
 });
 
 describe("publisher Template route invariants", () => {
@@ -270,6 +281,73 @@ describe("Template detail composition and interactions", () => {
     vi.resetAllMocks();
     mocks.fetchPackageVersion.mockResolvedValue(null);
     mocks.fetchPackageFile.mockResolvedValue("# Workspace instructions\n\nActual file contents.");
+  });
+
+  it("clamps overflowing descriptions and links the expand/collapse button to the full text", () => {
+    const getStyle = window.getComputedStyle.bind(window);
+    vi.spyOn(window, "getComputedStyle").mockImplementation((...args) => {
+      const style = getStyle(...args);
+      style.lineHeight = "20px";
+      return style;
+    });
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(100);
+    renderTemplate();
+    const button = screen.getByRole("button", { name: "Read more" });
+    const description = document.getElementById(button.getAttribute("aria-controls")!);
+    expect(description?.textContent).toBe("Summarizes releases for a new user.");
+    expect(description?.getAttribute("data-expanded")).toBe("false");
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(button);
+    expect(description?.getAttribute("data-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: "Show less" }).getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+    fireEvent.click(button);
+    expect(description?.getAttribute("data-expanded")).toBe("false");
+  });
+
+  it("does not show an expand button when the description fits within two lines", () => {
+    const getStyle = window.getComputedStyle.bind(window);
+    vi.spyOn(window, "getComputedStyle").mockImplementation((...args) => {
+      const style = getStyle(...args);
+      style.lineHeight = "20px";
+      return style;
+    });
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(40);
+    renderTemplate();
+    expect(screen.queryByRole("button", { name: "Read more" })).toBeNull();
+  });
+
+  it("rechecks description overflow on resize and disconnects on unmount", () => {
+    let resize = () => {};
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          resize = callback;
+        }
+        observe() {}
+        disconnect = disconnect;
+      },
+    );
+    const getStyle = window.getComputedStyle.bind(window);
+    vi.spyOn(window, "getComputedStyle").mockImplementation((...args) => {
+      const style = getStyle(...args);
+      style.lineHeight = "20px";
+      return style;
+    });
+    const height = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(40);
+    const view = renderTemplate();
+    expect(screen.queryByRole("button", { name: "Read more" })).toBeNull();
+    height.mockReturnValue(60);
+    act(() => resize());
+    expect(screen.getByRole("button", { name: "Read more" })).toBeTruthy();
+    height.mockReturnValue(40);
+    act(() => resize());
+    expect(screen.queryByRole("button", { name: "Read more" })).toBeNull();
+    view.unmount();
+    expect(disconnect).toHaveBeenCalled();
   });
 
   it("shows Unavailable and neutral bars when a clean package has no release audit evidence", () => {

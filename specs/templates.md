@@ -57,6 +57,16 @@ Schemas, templates, examples, fixtures, and static assets require no special
 registry role: they remain ordinary declared `workspace.files` covered by the
 artifact digest.
 
+## Detail description disclosure
+
+Template detail headers show at most two lines of the description by default so
+long summaries do not push the publisher and installation surface down the page.
+When the rendered text overflows two lines, a keyboard-accessible “Read more”
+button reveals the complete, unchanged description; “Show less” collapses it
+again. Short descriptions have no disclosure control. Overflow is measured from
+the actual layout and rechecked on resize and font readiness, not inferred from
+character count. Route metadata and registry descriptions remain untruncated.
+
 ## Catalog artwork
 
 A Template may package `assets/icon.png` for its catalog artwork, independently of
