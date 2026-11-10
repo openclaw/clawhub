@@ -3,6 +3,7 @@ import {
   MANAGED_MCP_DEFINITION_PATH,
   PACKAGE_CATEGORY_BATCH_LIMIT,
   validateTemplatePackageContents,
+  templateBundledMetadataPaths,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
   getPluginDiscoveryExclusion,
@@ -8532,6 +8533,18 @@ async function publishPackageImpl(
   const templateTextByPath = new Map<string, string>();
   if (templateManifestEntry) {
     templateTextByPath.set(templateManifestEntry.file.path, templateManifestEntry.text);
+    for (const path of templateBundledMetadataPaths(
+      templateManifestEntry.text,
+      templateManifestEntry.file.path,
+    )) {
+      const entry = await readOptionalTextFile(ctx, files, (candidate) => candidate === path, {
+        exactPath: true,
+        maxBytes: 1024 * 1024,
+        label: "Bundled Template metadata",
+        strictUtf8: true,
+      });
+      if (entry) templateTextByPath.set(path, entry.text);
+    }
   }
   if (family === "claw") {
     const bootstrapEntry = await readOptionalTextFile(
@@ -8551,6 +8564,7 @@ async function publishPackageImpl(
   }
   const templateValidationFiles = files.map((file) => ({
     path: file.path,
+    size: file.size,
     ...(templateTextByPath.has(file.path) ? { text: templateTextByPath.get(file.path) } : {}),
   }));
   const templatePackage =
@@ -11435,12 +11449,20 @@ export const insertReleaseInternal = internalMutation({
     clawManifestSummary: v.optional(v.any()),
     templateInventory: v.optional(
       v.array(
-        v.object({
-          kind: v.union(v.literal("skill"), v.literal("plugin")),
-          source: v.literal("clawhub"),
-          ref: v.string(),
-          version: v.string(),
-        }),
+        v.union(
+          v.object({
+            kind: v.union(v.literal("skill"), v.literal("plugin")),
+            source: v.literal("clawhub"),
+            ref: v.string(),
+            version: v.string(),
+          }),
+          v.object({
+            kind: v.union(v.literal("skill"), v.literal("plugin")),
+            source: v.literal("bundled"),
+            path: v.string(),
+            name: v.optional(v.string()),
+          }),
+        ),
       ),
     ),
     source: v.optional(v.any()),

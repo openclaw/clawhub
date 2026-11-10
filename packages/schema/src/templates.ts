@@ -40,6 +40,11 @@ const RemoteMcpServerSchema = type({
   timeout: "number?",
   connectTimeout: "number?",
 });
+const TemplateDependencyDeclarationSchema = type({
+  "+": "reject",
+  ref: "string",
+  version: "string",
+}).or(type({ "+": "reject", path: "string" }));
 
 export const TemplateManifestSchema = type({
   "+": "reject",
@@ -72,8 +77,8 @@ export const TemplateManifestSchema = type({
     }).optional(),
     files: type({ "+": "reject", source: "string", path: "string" }).array().optional(),
   }).optional(),
-  skills: type({ "+": "reject", ref: "string", version: "string" }).array().optional(),
-  plugins: type({ "+": "reject", ref: "string", version: "string" }).array().optional(),
+  skills: TemplateDependencyDeclarationSchema.array().optional(),
+  plugins: TemplateDependencyDeclarationSchema.array().optional(),
   mcpServers: type({
     "[string]": StdioMcpServerSchema.or(RemoteMcpServerSchema),
   }).optional(),
@@ -691,9 +696,36 @@ export function validateTemplateManifest(
     }
   }
 
+  const bundledPaths = new Set<string>();
   for (const kind of ["skills", "plugins"] as const) {
     const references = new Set<string>();
     for (const [index, entry] of (parsed[kind] ?? []).entries()) {
+      if ("path" in entry) {
+        const key = portablePathKey(entry.path);
+        if (
+          !isSafePackagePath(entry.path) ||
+          key.split("/").some((part) => part === ".git" || part === "node_modules")
+        ) {
+          issues.push(
+            validationIssue(
+              TEMPLATE_MANIFEST_VALIDATION_CODES.unsafePath,
+              `$.${kind}.${index}.path`,
+              "Bundled dependency must name a safe package-relative directory.",
+            ),
+          );
+        }
+        if (conflictsWithWorkspaceTarget(bundledPaths, key)) {
+          issues.push(
+            validationIssue(
+              TEMPLATE_MANIFEST_VALIDATION_CODES.duplicatePackage,
+              `$.${kind}.${index}.path`,
+              "Bundled dependency directories must not overlap.",
+            ),
+          );
+        }
+        bundledPaths.add(key);
+        continue;
+      }
       if (!PACKAGE_NAME_PATTERN.test(entry.ref))
         issues.push(
           validationIssue(
@@ -959,19 +991,20 @@ export function summarizeTemplateManifest(
 /** The sole dependency projection used by validation, summaries and detail consumers. */
 export function templateDependencyInventory(
   manifest: TemplateManifest,
+  bundledSources: ReadonlyArray<{ kind: "skill" | "plugin"; path: string; name?: string }> = [],
 ): TemplateDependencyInventory {
-  return [
-    ...(manifest.skills ?? []).map((entry) => ({
-      kind: "skill" as const,
-      source: "clawhub" as const,
-      ...entry,
-    })),
-    ...(manifest.plugins ?? []).map((entry) => ({
-      kind: "plugin" as const,
-      source: "clawhub" as const,
-      ...entry,
-    })),
-  ];
+  return (["skills", "plugins"] as const).flatMap((collection) =>
+    (manifest[collection] ?? []).map((entry): TemplateDependencyInventory[number] => {
+      const kind = collection === "skills" ? "skill" : "plugin";
+      if ("path" in entry) {
+        const name = bundledSources.find(
+          (source) => source.kind === kind && source.path === entry.path,
+        )?.name;
+        return { kind, source: "bundled", path: entry.path, ...(name ? { name } : {}) };
+      }
+      return { kind, source: "clawhub", ref: entry.ref, version: entry.version };
+    }),
+  );
 }
 export const TemplateDependencyInventorySchema = type({
   "+": "reject",
@@ -979,5 +1012,15 @@ export const TemplateDependencyInventorySchema = type({
   source: '"clawhub"',
   ref: "string",
   version: "string",
-}).array();
+})
+  .or(
+    type({
+      "+": "reject",
+      kind: '"skill"|"plugin"',
+      source: '"bundled"',
+      path: "string",
+      name: "string?",
+    }),
+  )
+  .array();
 export type TemplateDependencyInventory = (typeof TemplateDependencyInventorySchema)[inferred];

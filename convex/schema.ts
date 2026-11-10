@@ -1777,12 +1777,20 @@ const packageReleases = defineTable({
   clawManifestSummary: v.optional(clawManifestSummaryValidator),
   templateInventory: v.optional(
     v.array(
-      v.object({
-        kind: v.union(v.literal("skill"), v.literal("plugin")),
-        source: v.literal("clawhub"),
-        ref: v.string(),
-        version: v.string(),
-      }),
+      v.union(
+        v.object({
+          kind: v.union(v.literal("skill"), v.literal("plugin")),
+          source: v.literal("clawhub"),
+          ref: v.string(),
+          version: v.string(),
+        }),
+        v.object({
+          kind: v.union(v.literal("skill"), v.literal("plugin")),
+          source: v.literal("bundled"),
+          path: v.string(),
+          name: v.optional(v.string()),
+        }),
+      ),
     ),
   ),
   compatibility: packageCompatibilityValidator,
