@@ -775,11 +775,19 @@ describe("built CLI artifact", () => {
         0o755,
       );
 
-      const result = runNode(
+      // PATH is only `tools`, so the `node` name would not resolve. Start the
+      // built CLI from its absolute executable and leave npm lookup to PATH.
+      const result = spawnSync(
+        process.execPath,
         [binPath, "--workdir", workdir, "package", "pack", workdir, "--json"],
         {
-          PATH: "tools",
-          CLAWHUB_NPM_LOG: log,
+          cwd: repoRoot,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: "tools",
+            CLAWHUB_NPM_LOG: log,
+          },
         },
       );
 
@@ -808,11 +816,17 @@ describe("built CLI artifact", () => {
         0o755,
       );
 
-      const result = runNode(
+      const result = spawnSync(
+        process.execPath,
         [binPath, "--workdir", workdir, "package", "pack", workdir, "--json"],
         {
-          PATH: `${join(root, "stale")}${delimiter}${join(root, "good")}`,
-          CLAWHUB_NPM_LOG: log,
+          cwd: repoRoot,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${join(root, "stale")}${delimiter}${join(root, "good")}`,
+            CLAWHUB_NPM_LOG: log,
+          },
         },
       );
 
