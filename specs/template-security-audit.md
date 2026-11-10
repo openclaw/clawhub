@@ -115,6 +115,9 @@ Normal setup still installs the pinned scanner tooling.
 `fixtures/template-qualification` files into its own temporary artifact. The
 small fixture includes CLAW.md, bootstrap instructions, disabled automation,
 workspace notes and an embedded skill/plugin; none is executed or installed.
+Its CLAW.md follows the current unified manifest (schemaVersion, agent, workspace
+and disabled automations); tests validate the copied artifact through the real
+package contract so manifest evolution cannot silently invalidate the fixture.
 It uses the existing qualified source/binary verifier, native TruffleHog and
 `runNativeClawScan` with mandatory pinned Docker and its existing cleanup.
 It reserves the normal 65-minute drain budget inside the 75-minute step and
@@ -123,6 +126,33 @@ remain in that owned workspace, which is removed on success and ordinary failure
 If Docker cleanup/finality is unconfirmed, preserve its mounts under the existing
 worker custody contract, fail with `docker_cleanup` and `workspaceRemoved=false`,
 and leave teardown to the failed ephemeral runner. Never claim cleanup succeeded.
+
+Workspace removal first uses unprivileged recursive removal. On Linux only,
+EACCES/EPERM may invoke the fixed `cleanup-template-qualification.py` helper via
+noninteractive sudo, after that same finality gate. The caller captures the
+fresh mkdtemp root’s device/inode/owner before scanning. The helper requires that
+identity, the caller’s non-root uid, the exact generated basename and private
+0700 root; opens all ancestors/directories with O_NOFOLLOW; traverses by directory
+fd on one device; and unlinks rather than follows symlinks. It is bounded to
+10,000 entries, depth 64 and 10 seconds (15-second host process deadline).
+It never chmods/chowns host paths, launches a container, or receives credentials.
+No general cleanup input is added to the qualification command. Missing sudo,
+identity mismatch, timeout or incomplete removal still fails qualification;
+privileged exit alone is not success without a host-side absence check.
+Ordinary publication/installed-scan workers are unchanged.
+
+The failure in [run 42876751126](https://github.com/openclaw/clawhub/actions/runs/42876751126/job/130042013267)
+was after completed benign evidence and did not record the filesystem errno or
+path; those historical details remain unknown. The pinned native source
+`56bf1d9e3bd5247a0622acef8699dc69a10f2938` proves the mechanism covered here:
+`internal/runner/aig_mcp_scanner.go` creates scratch below the inherited TMPDIR,
+executes AIG with that writable cwd and ignores deferred RemoveAll errors;
+`internal/runner/sandbox.go` bind-mounts cwd writable without a user override;
+the pinned runtime Dockerfile runs as root and documents AIG’s cwd `logs/` writes.
+Root-owned nonempty directories cannot be recursively removed by the host uid.
+Real root-owned 0755 logs and 0500 directory regressions reproduce EACCES and
+verify deletion plus an unchanged external symlink sentinel. This proves the
+repair’s filesystem behavior, not the exact missing error from that old runner.
 
 Success requires unchanged fixture bytes, a clean secret gate, validated native
 Template target/profile/image, completed AIG MCP command and complete SARIF, and
@@ -150,6 +180,15 @@ The final log JSON uses `schemaVersion=clawhub-template-native-qualification-v1`
   `nativeEvidence=completed`, `verdict=benign`, `fixtureUnchanged` and
   `workspaceRemoved` must all pass. Completed evidence proves both AIG and
   judge validation; `not_validated` never means clean.
+- `workspaceCleanup` adds bounded diagnostics: `method` is `not_run`,
+  `unprivileged`, `scoped_privileged` or `preserved`; `initialError` and
+  `finalError` are null or allowlisted error enums, never paths/messages.
+  `helper_failed` covers unavailable/refused/invalid/timed-out helper execution;
+  `identity` and `limit` identify helper safety refusals. A recovered permission
+  error may coexist with success only when `finalError=null` and
+  `workspaceRemoved=true`. Cleanup failure retains native verdict/hash evidence
+  but sets `status=failed,failure=cleanup`; uncertain Docker custody remains
+  `failure=docker_cleanup,method=preserved` without invoking either remover.
 - `artifactSha256` hashes the validated raw native report;
   `fixtureSha256` hashes sorted relative file names and contents, NUL-separated.
   Absent evidence hashes/verdict are null. No raw report, error, prompt or secret
