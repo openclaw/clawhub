@@ -1,3 +1,4 @@
+import { getDocumentSize } from "convex/values";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
@@ -58,6 +59,133 @@ function files(manifestText = `---\n${JSON.stringify(manifest)}\n---\n`) {
 }
 
 describe("validateTemplatePackageContents", () => {
+  it("bounds projected native names before persisting dependency inventory", () => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(
+          `---\n${JSON.stringify({ ...manifest, skills: [{ path: "skills/a" }, { path: "skills/b" }] })}\n---\n`,
+        ),
+        ...["a", "b"].map((name) => ({
+          path: `skills/${name}/SKILL.md`,
+          text: `---\nname: ${"x".repeat(600000)}\ndescription: Research sources.\n---\n`,
+        })),
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(getDocumentSize({ templateInventory: result.value.inventory })).toBeLessThan(
+      1024 * 1024,
+    );
+    expect(result.value.inventory).toEqual([
+      { kind: "skill", source: "bundled", path: "skills/a", name: "x".repeat(128) },
+      { kind: "skill", source: "bundled", path: "skills/b", name: "x".repeat(128) },
+    ]);
+  });
+
+  it("bounds aggregate inventory metadata before persistence", () => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: files(
+        `---\n${JSON.stringify({ ...manifest, skills: Array.from({ length: 5000 }, (_, index) => ({ ref: `@acme/research-${index}`, version: "1.0.0" })) })}\n---\n`,
+      ),
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      issues: [expect.objectContaining({ code: "template_inventory_too_large" })],
+    });
+  });
+
+  it("selects native code metadata before an unrelated root plugin.json", () => {
+    const result = validateTemplatePackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(
+          `---\n${JSON.stringify({ ...manifest, plugins: [{ path: "plugins/native" }] })}\n---\n`,
+        ),
+        {
+          path: "plugins/native/openclaw.plugin.json",
+          text: JSON.stringify({ id: "native", name: "Native", configSchema: { type: "object" } }),
+        },
+        {
+          path: "plugins/native/package.json",
+          text: JSON.stringify({
+            name: "native",
+            version: "1.0.0",
+            openclaw: { extensions: ["./index.js"] },
+          }),
+        },
+        { path: "plugins/native/index.js", text: "export default {};" },
+        {
+          path: "plugins/native/plugin.json",
+          text: JSON.stringify({ name: "build-support", purpose: "data" }),
+        },
+      ],
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        inventory: [
+          expect.anything(),
+          { kind: "plugin", source: "bundled", path: "plugins/native", name: "Native" },
+        ],
+      },
+    });
+  });
+
+  it.each([false, true])(
+    "matches native bundle precedence and rejects selected Agent bundles (Agent: %s)",
+    (agentOnly) => {
+      const result = validateTemplatePackageContents({
+        packageName: "@acme/github-triage",
+        version: "1.0.0",
+        packageJson: packageJson(),
+        files: [
+          ...files(
+            `---\n${JSON.stringify({ ...manifest, plugins: [{ path: "plugins/alerts" }] })}\n---\n`,
+          ),
+          {
+            path: "plugins/alerts/plugin.json",
+            text: JSON.stringify({
+              $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+              name: "Agent Alerts",
+            }),
+          },
+          ...(agentOnly
+            ? []
+            : [
+                {
+                  path: "plugins/alerts/.codex-plugin/plugin.json",
+                  text: '{"name":"Codex Alerts"}',
+                },
+                {
+                  path: "plugins/alerts/.cursor-plugin/plugin.json",
+                  text: '{"name":"Cursor Alerts"}',
+                },
+                {
+                  path: "plugins/alerts/.claude-plugin/plugin.json",
+                  text: '{"name":"Claude Alerts"}',
+                },
+              ]),
+        ],
+      });
+      expect(result.ok).toBe(!agentOnly);
+      if (result.ok)
+        expect(result.value.inventory[1]).toEqual({
+          kind: "plugin",
+          source: "bundled",
+          path: "plugins/alerts",
+          name: "Codex Alerts",
+        });
+      else expect(result.issues[0].message).toContain("Agent plugin bundles are not supported");
+    },
+  );
   it("validates complete bundled skill contents and derives only declared metadata", () => {
     const result = validateTemplatePackageContents({
       packageName: "@acme/github-triage",

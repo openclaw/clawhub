@@ -140,7 +140,9 @@ a description. Plugin directories require an explicit supported native manifest:
 `openclaw.plugin.json`, `.codex-plugin/plugin.json`, `.claude-plugin/plugin.json`,
 or `.cursor-plugin/plugin.json`. Bundle manifests declare a name; native code
 plugins declare an id/config schema plus package metadata and loadable entrypoints.
-Root agent-bundle `plugin.json` is unsupported. OpenClaw's native installers still
+The selected root agent-bundle `plugin.json` format is unsupported. Native format
+selection prefers Codex, Cursor, Claude, then OpenClaw metadata; an unrelated
+root `plugin.json` does not override them. OpenClaw's native installers still
 own host compatibility, security review, consent and local activation.
 
 Bundled contents exclude `.git` and `node_modules` segments using portable case
@@ -224,6 +226,9 @@ the agent identity and declared resource counts. `templateInventory` identifies
 each dependency as ClawHub (`ref`, exact `version`) or bundled (`path`, optional
 metadata-derived `name`). The website shows bundled paths without inventing
 registry versions. The full manifest and dependency bytes remain in the artifact.
+Projected bundled display names use the same 128-character bound as agent names.
+The complete normalized dependency inventory is limited to 256 KiB for release
+storage; this does not change the full native identity retained in the artifact.
 Use `category=other` for Templates that could not be classified. Category filters
 require `family=template`; unrecognized categories return a validation error.
 

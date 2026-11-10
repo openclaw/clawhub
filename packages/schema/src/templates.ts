@@ -6,6 +6,7 @@ import { hasPortablePathSegments, portablePathKey } from "./templatePaths.js";
 export const TEMPLATE_SCHEMA_VERSION = 1 as const;
 export const TEMPLATE_SUMMARY_AGENT_NAME_MAX_CHARS = 128;
 export const TEMPLATE_SUMMARY_AGENT_DESCRIPTION_MAX_CHARS = 1_024;
+export const TEMPLATE_DEPENDENCY_INVENTORY_MAX_BYTES = 256 * 1024;
 export const TEMPLATE_BOOTSTRAP_FILE_NAMES = [
   "AGENTS.md",
   "SOUL.md",
@@ -234,7 +235,7 @@ export const OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1 = {
   contractVersion: 1,
   source: {
     repository: "openclaw/openclaw",
-    commit: "16115153f0d5e7faebb755f3fbccf81437e01b67",
+    commit: "2cd23960ceb5f8cd7ebb003c37cf9e0c9776ade7",
     path: "src/infra/host-env-security-policy.json",
     sha256: "6923ab681c0e701381ea5fccebe36b7c6d2bfeadd72cfa08b0d542640d5e9601",
   },
@@ -997,9 +998,10 @@ export function templateDependencyInventory(
     (manifest[collection] ?? []).map((entry): TemplateDependencyInventory[number] => {
       const kind = collection === "skills" ? "skill" : "plugin";
       if ("path" in entry) {
-        const name = bundledSources.find(
-          (source) => source.kind === kind && source.path === entry.path,
-        )?.name;
+        const name = truncateSummaryText(
+          bundledSources.find((source) => source.kind === kind && source.path === entry.path)?.name,
+          TEMPLATE_SUMMARY_AGENT_NAME_MAX_CHARS,
+        );
         return { kind, source: "bundled", path: entry.path, ...(name ? { name } : {}) };
       }
       return { kind, source: "clawhub", ref: entry.ref, version: entry.version };

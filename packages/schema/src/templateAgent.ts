@@ -5,7 +5,7 @@ export const OPENCLAW_TEMPLATE_AGENT_POLICY_V1 = {
   contractVersion: 1,
   source: {
     repository: "openclaw/openclaw",
-    commit: "16115153f0d5e7faebb755f3fbccf81437e01b67",
+    commit: "2cd23960ceb5f8cd7ebb003c37cf9e0c9776ade7",
     path: "src/templates/schema.ts",
   },
   profiles: ["minimal", "coding", "messaging", "full"],

@@ -15,6 +15,19 @@ const MAX_DIRECTORY_BYTES = 20 * 1024 * 1024;
 const MAX_ENTRIES = 4096;
 const MAX_DEPTH = 16;
 
+/** Match native directory detection precedence without narrowing ordinary package publication. */
+export function selectTemplateBundledPluginManifest(paths: readonly string[]) {
+  for (const format of ["codex", "cursor", "claude"] as const) {
+    const marker = PLUGIN_BUNDLE_MANIFESTS.find((entry) => entry.format === format);
+    if (marker && paths.includes(marker.path))
+      return selectPluginManifest({ family: "bundle-plugin", paths: [marker.path] });
+  }
+  if (paths.includes("openclaw.plugin.json"))
+    return selectPluginManifest({ family: "code-plugin", paths: [...paths] });
+  if (paths.includes("plugin.json")) return { path: "plugin.json", format: "agent" as const };
+  return selectPluginManifest({ family: "code-plugin", paths: [...paths] });
+}
+
 /** Only artifact-selected metadata is interpreted; binary support files retain their verified size. */
 export function validateTemplateBundledSources(
   manifest: TemplateManifest,
@@ -92,18 +105,19 @@ export function validateTemplateBundledSources(
           throw new Error(`Bundled skill ${path} requires valid SKILL.md with a description.`);
         name = typeof metadata.name === "string" ? metadata.name.trim() || undefined : undefined;
       } else {
-        if (relative.some((file) => file.path === "plugin.json"))
-          throw new Error("Agent plugin bundles are not supported by Templates.");
         const paths = relative.map((file) => file.path);
-        const bundle = PLUGIN_BUNDLE_MANIFESTS.some((marker) => paths.includes(marker.path));
-        const marker = selectPluginManifest({
-          family: bundle ? "bundle-plugin" : "code-plugin",
-          paths,
-        });
+        const marker = selectTemplateBundledPluginManifest(paths);
         const metadata: unknown = JSON5.parse(text(marker.path));
         if (!isRecord(metadata))
           throw new Error(`Bundled plugin ${path} requires an object manifest.`);
-        if (bundle) {
+        if (marker.format === "agent") {
+          throw new Error(
+            metadata.$schema === "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+              ? "Agent plugin bundles are not supported by Templates."
+              : `Bundled plugin ${path} requires an explicit supported native manifest.`,
+          );
+        }
+        if (marker.format) {
           bundlePluginRuntimeId(metadata);
           name = String(metadata.name).trim();
         } else {

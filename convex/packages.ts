@@ -8536,6 +8536,7 @@ async function publishPackageImpl(
     for (const path of templateBundledMetadataPaths(
       templateManifestEntry.text,
       templateManifestEntry.file.path,
+      files.map((file) => file.path),
     )) {
       const entry = await readOptionalTextFile(ctx, files, (candidate) => candidate === path, {
         exactPath: true,

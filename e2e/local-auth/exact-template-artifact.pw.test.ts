@@ -153,6 +153,10 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
       path.join(sourceDir, "plugins/alerts/README.md"),
       "Bundled plugin support files.\n",
     );
+    writeFileSync(
+      path.join(sourceDir, "plugins/alerts/plugin.json"),
+      JSON.stringify({ name: "build-support", purpose: "data" }),
+    );
 
     const pack = spawnSync("npm", ["pack", "--json", "--pack-destination", root], {
       cwd: sourceDir,
@@ -282,7 +286,7 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
         ).toBe(true);
-        if (proofDir)
+        if (proofDir && process.env.TEMPLATE_CONTRACT_CAPTURE_SCREENSHOTS !== "0")
           await page.screenshot({
             path: path.join(proofDir, `candidate-${label}-${tab.toLowerCase()}.png`),
             fullPage: true,
