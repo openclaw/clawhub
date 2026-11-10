@@ -120,10 +120,35 @@ plugins:
     version: 2.3.4
 ```
 
-Declare exact ClawHub dependencies in top-level `skills` and `plugins` arrays. Each
-entry contains only `ref` and an exact `version`; the collection determines its
-kind and ClawHub is the reference source. Duplicate references within one kind are
-rejected. Bundled directory paths are not yet supported by this contract.
+Declare dependencies in top-level `skills` and `plugins` arrays. Each entry is
+either an exact ClawHub `{ref, version}` reference or a package-local `{path}`
+directory. Do not combine both forms. The collection determines its kind;
+duplicate references within one kind and overlapping bundled directories are rejected.
+
+```yaml
+skills:
+  - path: skills/research
+  - ref: "@acme/triage"
+    version: 1.2.0
+plugins:
+  - path: plugins/alerts
+```
+
+A bundled skill includes its complete directory, including `SKILL.md`, scripts,
+references and binary assets. Its `SKILL.md` must contain valid frontmatter and
+a description. Plugin directories require an explicit supported native manifest:
+`openclaw.plugin.json`, `.codex-plugin/plugin.json`, `.claude-plugin/plugin.json`,
+or `.cursor-plugin/plugin.json`. Bundle manifests declare a name; native code
+plugins declare an id/config schema plus package metadata and loadable entrypoints.
+Root agent-bundle `plugin.json` is unsupported. OpenClaw's native installers still
+own host compatibility, security review, consent and local activation.
+
+Bundled contents exclude `.git` and `node_modules` segments using portable case
+folding. Eligible contents must be regular files with safe, noncolliding paths:
+at most 1 MiB per file, 20 MiB across dependencies, 4096 files in total, 4096
+entries per directory tree and 16 path levels. Links and nonregular archive entries
+are rejected by the package artifact boundary. Build with OpenClaw so its selected
+directory membership and bytes are preserved in the exact artifact.
 
 The `packages`, `extensions`, and `profiles` fields, package-local `profiles/`
 files, and `metadata.openclaw.config` pointer are retired. Move settings into
@@ -195,9 +220,10 @@ curl "https://clawhub.ai/api/v1/packages/@openclaw%2Fgithub-triage"
 
 List and search results use the normal package summary fields. Package and
 version detail responses may also include `templateManifestSummary`, which reports
-the agent identity, portable resource counts, harness-profile count,
-OpenClaw-profile count, and native extension count without exposing the full
-manifest or profile contents.
+the agent identity and declared resource counts. `templateInventory` identifies
+each dependency as ClawHub (`ref`, exact `version`) or bundled (`path`, optional
+metadata-derived `name`). The website shows bundled paths without inventing
+registry versions. The full manifest and dependency bytes remain in the artifact.
 Use `category=other` for Templates that could not be classified. Category filters
 require `family=template`; unrecognized categories return a validation error.
 

@@ -25,8 +25,9 @@ Its `agent` object carries identity and purpose plus supported native `groupChat
 `tools.profile` selects a bounded tool policy. The existing bounded tool, memory
 consent, path and environment restrictions remain enforced.
 
-Top-level `skills` and `plugins` contain exact `{ref, version}` ClawHub references.
-A single source-aware inventory (`kind`, `source`, `ref`, `version`) drives
+Top-level `skills` and `plugins` contain exact `{ref, version}` ClawHub references
+or strict `{path}` package-local directories. A single source-aware inventory
+(`kind`, `source`, and either `ref`/`version` or `path`/optional metadata `name`) drives
 validation output, bounded summary counts, release detail APIs and website lists.
 Template version and artifact SHA-256 remain on the existing release envelope;
 declared dependencies do not imply installed or connected state.
@@ -34,8 +35,18 @@ declared dependencies do not imply installed or connected state.
 Retired `packages`, `profiles`, `extensions`, `cronJobs`, `profiles/` files and
 `metadata.openclaw.config` fail with migration guidance. There is no profile
 compatibility mode or grandfathered publication exception. Existing archives and
-ordinary agents remain unchanged. Bundled path installation belongs to the next
-slice and is not accepted by this reference-only stage.
+ordinary agents remain unchanged. Bundled directories cannot overlap and retain
+complete eligible membership, including binary support files, under the exact
+Template artifact digest. Publication reads identity only from artifact-selected
+SKILL.md or explicit native plugin metadata; it never invents registry provenance.
+
+ClawHub and OpenClaw share the bundled selection limits: portable case-folded
+`.git`/`node_modules` segments are excluded; eligible files are bounded to 1 MiB
+each, 20 MiB aggregate and 4096 files total, with 4096 entries per tree and depth 16. Package extraction rejects links, nonregular entries and unsafe or portable
+colliding paths. Registry validation preserves verified binary sizes rather than
+coercing support files to text. OpenClaw's native skill/plugin installers own
+local compatibility, policy checks, review and activation; registry contents do
+not claim a dependency is installed or connected.
 
 Scheduled work uses `automations`. Optional `enabled: false` preserves a paused
 declaration for the native scheduler; omission retains enabled behavior. Summary

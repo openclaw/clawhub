@@ -120,8 +120,8 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
           tools: { profile: "minimal", allow: ["session_status"] },
           humanDelay: { mode: "natural" },
         },
-        skills: [{ ref: "@acme/research", version: "1.2.3" }],
-        plugins: [{ ref: "@acme/alerts", version: "2.0.0" }],
+        skills: [{ ref: "@acme/research", version: "1.2.3" }, { path: "skills/research" }],
+        plugins: [{ ref: "@acme/alerts", version: "2.0.0" }, { path: "plugins/alerts" }],
         automations: [
           {
             id: "daily-brief",
@@ -133,6 +133,25 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
           },
         ],
       })}\n---\nPreserve the exact published artifact.\n`,
+    );
+
+    mkdirSync(path.join(sourceDir, "skills/research/assets"), { recursive: true });
+    writeFileSync(
+      path.join(sourceDir, "skills/research/SKILL.md"),
+      "---\nname: Bundled Research\ndescription: Research approved sources.\n---\nUse assets/reference.bin.\n",
+    );
+    writeFileSync(
+      path.join(sourceDir, "skills/research/assets/reference.bin"),
+      Buffer.from([0, 255, 128, 10]),
+    );
+    mkdirSync(path.join(sourceDir, "plugins/alerts/.codex-plugin"), { recursive: true });
+    writeFileSync(
+      path.join(sourceDir, "plugins/alerts/.codex-plugin/plugin.json"),
+      JSON.stringify({ name: "Bundled Release Alerts", version: "9.0.0" }),
+    );
+    writeFileSync(
+      path.join(sourceDir, "plugins/alerts/README.md"),
+      "Bundled plugin support files.\n",
     );
 
     const pack = spawnSync("npm", ["pack", "--json", "--pack-destination", root], {
@@ -216,7 +235,9 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
 
     const expectedInventory = [
       { kind: "skill", source: "clawhub", ref: "@acme/research", version: "1.2.3" },
+      { kind: "skill", source: "bundled", path: "skills/research", name: "Bundled Research" },
       { kind: "plugin", source: "clawhub", ref: "@acme/alerts", version: "2.0.0" },
+      { kind: "plugin", source: "bundled", path: "plugins/alerts", name: "Bundled Release Alerts" },
     ];
     const releaseResponse = await request.get(
       `${registry}/api/v1/packages/${packagePath}/versions/${version}`,
@@ -225,15 +246,18 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
     const release = await releaseResponse.json();
     expect(release.version.templateInventory).toEqual(expectedInventory);
     expect(release.version.templateManifestSummary.packages).toEqual({
-      skillCount: 1,
-      pluginCount: 1,
+      skillCount: 2,
+      pluginCount: 2,
     });
     expect(release.version.artifact.sha256).toBe(artifactSha256);
 
     await page.goto(`/cli-user/templates/${packageName}`);
     await expect(page.getByRole("heading", { name: "Exact Template Proof" })).toBeVisible();
     const proofDir = process.env.TEMPLATE_CONTRACT_PROOF_DIR;
-    if (proofDir) mkdirSync(proofDir, { recursive: true });
+    if (proofDir) {
+      mkdirSync(proofDir, { recursive: true });
+      writeFileSync(path.join(proofDir, "bundled-template-downloaded.tgz"), downloadedBytes);
+    }
     for (const [label, width, height] of [
       ["desktop", 1440, 900],
       ["laptop", 1366, 768],
@@ -246,6 +270,15 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
         await expect(page.getByRole("tabpanel")).toContainText(
           tab === "Skills" ? "@acme/research" : tab === "Plugins" ? "@acme/alerts" : "Paused",
         );
+        if (tab !== "Automations") {
+          await expect(page.getByRole("tabpanel")).toContainText(
+            tab === "Skills" ? "Bundled Research" : "Bundled Release Alerts",
+          );
+          await expect(page.getByRole("tabpanel")).toContainText(
+            tab === "Skills" ? "skills/research" : "plugins/alerts",
+          );
+          await expect(page.getByRole("tabpanel")).toContainText("Bundled");
+        }
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
         ).toBe(true);

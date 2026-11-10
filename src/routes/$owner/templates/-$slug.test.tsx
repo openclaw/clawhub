@@ -421,6 +421,24 @@ describe("Template detail composition and interactions", () => {
     expect(screen.getByText("Summarize the approved release sources.")).toBeTruthy();
   });
 
+  it("shows bundled metadata names and paths without fabricated registry versions", () => {
+    const detail = packageDetail();
+    detail.package!.templateInventory = [
+      { kind: "skill", source: "bundled", path: "skills/research", name: "Bundled Research" },
+      { kind: "plugin", source: "bundled", path: "plugins/alerts" },
+    ];
+    render(
+      <TemplateDetailPage detail={detail} contents={templateContents} fallbackOwner="maker" />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+    expect(screen.getByText("Bundled Research")).toBeTruthy();
+    expect(screen.getByText("skills/research")).toBeTruthy();
+    expect(screen.queryByText(/Version/)).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
+    expect(screen.getAllByText("plugins/alerts")).toHaveLength(2);
+    expect(screen.queryByText(/ClawHub/)).toBeNull();
+  });
+
   it("supports roving focus, wrapping arrow keys, Home and End with linked panels", () => {
     renderTemplate();
     const claw = screen.getByRole("tab", { name: "CLAW.md" });

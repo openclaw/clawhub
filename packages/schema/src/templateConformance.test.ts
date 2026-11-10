@@ -135,7 +135,7 @@ describe(`ClawHub parity with ${cases.consumer.repository}@${cases.consumer.comm
       expect(result.ok).toBe(cases.projectArtifact.registryAccepted);
       if (result.ok) {
         expect(result.value.summary).toMatchObject({
-          packages: { skillCount: 0, pluginCount: 0 },
+          packages: { skillCount: 1, pluginCount: 1 },
         });
       }
     });
