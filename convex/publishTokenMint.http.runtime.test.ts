@@ -10,6 +10,7 @@ vi.mock("./lib/verifiedClientIp", () => ({
 }));
 
 import type { Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
 import { mintPublishTokenV1Handler } from "./httpApiV1/packagesV1";
 import schema from "./schema";
 
@@ -23,7 +24,7 @@ async function postMint(
 ) {
   return await t.action(async (ctx) => {
     const response = await mintPublishTokenV1Handler(
-      ctx,
+      ctx as unknown as ActionCtx,
       new Request("https://example.com/api/v1/publish/token/mint", {
         method: "POST",
         headers: { "content-type": "application/json" },
