@@ -1,7 +1,7 @@
 import { expect, type APIRequestContext, type APIResponse, test } from "@playwright/test";
 import { buildSkillDetailHref } from "../../src/lib/ownerRoute";
 import { buildPluginDetailHref } from "../../src/lib/pluginRoutes";
-import { runDevSeed } from "../helpers/convexSeed";
+import { pollableDevSeedState, runDevSeed } from "../helpers/convexSeed";
 import {
   expectNoFatalErrorUi,
   recoverFromTransientErrorScreen,
@@ -230,14 +230,6 @@ function clearVersionDeletionPublisherCountersForRegression(fixture: VersionDele
       expectedPublishedPackages: fixture.publisherPublishedPackages,
     },
   );
-}
-
-function pollableDevSeedState<TState extends object>(readState: () => TState) {
-  try {
-    return readState();
-  } catch {
-    return {};
-  }
 }
 
 function isExpectedVersionDeletionRuntimeError(error: string) {
