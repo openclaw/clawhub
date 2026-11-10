@@ -128,6 +128,7 @@ import type * as lib_httpUtils from "../lib/httpUtils.js";
 import type * as lib_indexCursor from "../lib/indexCursor.js";
 import type * as lib_initialPluginFamilyRead from "../lib/initialPluginFamilyRead.js";
 import type * as lib_installResolver from "../lib/installResolver.js";
+import type * as lib_lazyHttpAction from "../lib/lazyHttpAction.js";
 import type * as lib_leaderboards from "../lib/leaderboards.js";
 import type * as lib_managedMcpBundle from "../lib/managedMcpBundle.js";
 import type * as lib_mcpPublicInspection from "../lib/mcpPublicInspection.js";
@@ -168,6 +169,7 @@ import type * as lib_pluginCategoryReview from "../lib/pluginCategoryReview.js";
 import type * as lib_pluginDiscovery from "../lib/pluginDiscovery.js";
 import type * as lib_pluginDiscoveryQueries from "../lib/pluginDiscoveryQueries.js";
 import type * as lib_pluginInspectorReleaseScan from "../lib/pluginInspectorReleaseScan.js";
+import type * as lib_pluginScanRouting from "../lib/pluginScanRouting.js";
 import type * as lib_prepublicationReports from "../lib/prepublicationReports.js";
 import type * as lib_public from "../lib/public.js";
 import type * as lib_publicBrowse from "../lib/publicBrowse.js";
@@ -206,6 +208,7 @@ import type * as lib_securityAnalysisValidators from "../lib/securityAnalysisVal
 import type * as lib_securityDatasetRedaction from "../lib/securityDatasetRedaction.js";
 import type * as lib_securityPrompt from "../lib/securityPrompt.js";
 import type * as lib_securityScanPolicy from "../lib/securityScanPolicy.js";
+import type * as lib_securityWorkerBudgets from "../lib/securityWorkerBudgets.js";
 import type * as lib_skillBackfill from "../lib/skillBackfill.js";
 import type * as lib_skillCardClaims from "../lib/skillCardClaims.js";
 import type * as lib_skillCards from "../lib/skillCards.js";
@@ -330,6 +333,7 @@ import type * as skillsShPublicTestFixtures from "../skillsShPublicTestFixtures.
 import type * as stars from "../stars.js";
 import type * as statsMaintenance from "../statsMaintenance.js";
 import type * as telemetry from "../telemetry.js";
+import type * as templateOverview from "../templateOverview.js";
 import type * as templateOverviewHttp from "../templateOverviewHttp.js";
 import type * as tokens from "../tokens.js";
 import type * as uploads from "../uploads.js";
@@ -463,6 +467,7 @@ declare const fullApi: ApiFromModules<{
   "lib/indexCursor": typeof lib_indexCursor;
   "lib/initialPluginFamilyRead": typeof lib_initialPluginFamilyRead;
   "lib/installResolver": typeof lib_installResolver;
+  "lib/lazyHttpAction": typeof lib_lazyHttpAction;
   "lib/leaderboards": typeof lib_leaderboards;
   "lib/managedMcpBundle": typeof lib_managedMcpBundle;
   "lib/mcpPublicInspection": typeof lib_mcpPublicInspection;
@@ -503,6 +508,7 @@ declare const fullApi: ApiFromModules<{
   "lib/pluginDiscovery": typeof lib_pluginDiscovery;
   "lib/pluginDiscoveryQueries": typeof lib_pluginDiscoveryQueries;
   "lib/pluginInspectorReleaseScan": typeof lib_pluginInspectorReleaseScan;
+  "lib/pluginScanRouting": typeof lib_pluginScanRouting;
   "lib/prepublicationReports": typeof lib_prepublicationReports;
   "lib/public": typeof lib_public;
   "lib/publicBrowse": typeof lib_publicBrowse;
@@ -541,6 +547,7 @@ declare const fullApi: ApiFromModules<{
   "lib/securityDatasetRedaction": typeof lib_securityDatasetRedaction;
   "lib/securityPrompt": typeof lib_securityPrompt;
   "lib/securityScanPolicy": typeof lib_securityScanPolicy;
+  "lib/securityWorkerBudgets": typeof lib_securityWorkerBudgets;
   "lib/skillBackfill": typeof lib_skillBackfill;
   "lib/skillCardClaims": typeof lib_skillCardClaims;
   "lib/skillCards": typeof lib_skillCards;
@@ -665,6 +672,7 @@ declare const fullApi: ApiFromModules<{
   stars: typeof stars;
   statsMaintenance: typeof statsMaintenance;
   telemetry: typeof telemetry;
+  templateOverview: typeof templateOverview;
   templateOverviewHttp: typeof templateOverviewHttp;
   tokens: typeof tokens;
   uploads: typeof uploads;

@@ -12,7 +12,7 @@ import type { ActionCtx } from "../_generated/server";
 import { assertAdmin, assertModerator } from "../lib/access";
 import { requireApiTokenUser, requirePackagePublishAuth } from "../lib/apiTokenAuth";
 import { sha256Hex } from "../lib/hash";
-import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
+import { corsHeaders, mergeHeaders, json } from "../lib/httpHeaders";
 import { getTransientConvexErrorKind } from "../lib/httpUtils";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { isMacJunkPath } from "../lib/skills";
@@ -115,19 +115,7 @@ export async function safeStoredFilePreviewResponse(
   });
 }
 
-export function json(value: unknown, status = 200, headers?: HeadersInit) {
-  return new Response(JSON.stringify(value), {
-    status,
-    headers: mergeHeaders(
-      {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-      },
-      headers,
-      corsHeaders(),
-    ),
-  });
-}
+export { json } from "../lib/httpHeaders";
 
 export function text(value: string, status: number, headers?: HeadersInit) {
   return new Response(value, {

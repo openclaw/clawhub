@@ -15,6 +15,12 @@ GET /api/v1/templates/overview?limit=8 returns a single consistent public snapsh
 
 The OpenClaw consumer must use one gateway request for an unfiltered overview and keep the legacy route for search/category navigation and older registries. Only an absent endpoint (404) or complete: false authorizes legacy fallback; transport, authorization and rate-limit failures must not be hidden by fan-out retries.
 
+## HTTP startup boundary
+
+The overview must not initialize unrelated publishing, scanning, archive, or package-management HTTP implementations before serving its read. Register the complete route table eagerly, but resolve unrelated implementations only after their matching route passes the existing ingress and quota middleware. Preserve every method/path/prefix and pass the original request and action context through so request-scoped authentication and rate-limit deduplication remain intact. Module-load and handler failures must propagate; do not cache rejected loader promises or turn them into empty successful catalogs.
+
+Keep the overview query in a read-only module separate from package publication and moderation initialization. Its bounded selection, current publisher/official state, live statistics, transaction-budget fallback, and anonymous response contract remain unchanged. This startup optimization introduces no response cache, visibility delay, quota bypass, or install authority.
+
 ## Measurement, 2026-11-04
 
 All runs originate on the same Mac Studio with anonymous requests, no client data cache, the same explicit no-cache request header and no artificial delay. Time begins before catalog requests and ends after the complete JSON payload is available. These measure catalog data readiness, not process startup or browser navigation/paint. No cache-busting query is used: server query caching is part of real behavior.
