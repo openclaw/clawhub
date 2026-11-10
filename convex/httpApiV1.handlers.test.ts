@@ -19321,6 +19321,105 @@ describe("httpApiV1 handlers", () => {
     expect(createCall?.[1]).not.toHaveProperty("environment");
   });
 
+  it("returns one publish-token rejection for hidden packages and failed OIDC checks", async () => {
+    const rejection = "Publish token request could not be verified.";
+    const mismatch = "GitHub OIDC repository mismatch: expected private/secret, got attacker/repo";
+    const hiddenPackage = {
+      _id: "packages:1",
+      name: "@corp/secret-plugin",
+      ownerUserId: "users:owner",
+      channel: "private",
+      scanStatus: "malicious",
+    };
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:1",
+      provider: "github-actions",
+      repository: "private/secret",
+      repositoryId: "91",
+      repositoryOwner: "private",
+      repositoryOwnerId: "92",
+      workflowFilename: "release.yml",
+    };
+    const mint = async (pkg: unknown, publisher: unknown) => {
+      const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+        if ("key" in args) return okRate();
+        return "mutation:ok";
+      });
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if ("name" in args) return pkg;
+        if ("packageId" in args) return publisher;
+        return null;
+      });
+      const response = await __handlers.mintPublishTokenV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request("https://example.com/api/v1/publish/token/mint", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            packageName: "@corp/secret-plugin",
+            version: "1.0.0",
+            githubOidcToken: "gh.jwt",
+          }),
+        }),
+      );
+      return { status: response.status, body: await response.text(), runMutation };
+    };
+
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockRejectedValue(new Error(mismatch));
+    const missing = await mint(null, null);
+    const noPublisher = await mint(hiddenPackage, null);
+    const invalidSignature = await mint(hiddenPackage, trustedPublisher);
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockRejectedValue(
+      new Error("Invalid GitHub OIDC signature"),
+    );
+    const badSignature = await mint(hiddenPackage, trustedPublisher);
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockRejectedValue(new Error(mismatch));
+    const repositoryMismatch = await mint(
+      { ...hiddenPackage, channel: "community", scanStatus: "clean" },
+      trustedPublisher,
+    );
+
+    for (const result of [
+      missing,
+      noPublisher,
+      invalidSignature,
+      badSignature,
+      repositoryMismatch,
+    ]) {
+      expect(result.status).toBe(400);
+      expect(result.body).toBe(rejection);
+    }
+    expect(repositoryMismatch.body).not.toContain("private/secret");
+    expect(repositoryMismatch.body).not.toContain("Package not found");
+    expect(repositoryMismatch.body).not.toContain("Trusted publisher");
+    const loggedReason = repositoryMismatch.runMutation.mock.calls
+      .map(([, args]) => args)
+      .find((args) => args.action === "package.publish_token.mint_rejected");
+    expect(loggedReason).toMatchObject({
+      actorUserId: "users:owner",
+      metadata: { decision: "rejected", reason: mismatch, repository: "private/secret" },
+    });
+
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockResolvedValue({
+      repository: "private/secret",
+      repositoryId: "91",
+      repositoryOwner: "private",
+      repositoryOwnerId: "92",
+      workflowFilename: "release.yml",
+      runId: "101",
+      runAttempt: "1",
+      sha: "abc123",
+      ref: "refs/heads/main",
+      actor: "release-app[bot]",
+      actorId: "42",
+      jobWorkflowSha: "a".repeat(40),
+    } as never);
+    const minted = await mint(hiddenPackage, trustedPublisher);
+    expect(minted.status).toBe(200);
+    expect(minted.body).toContain("token");
+  });
+
   it("sets trusted publisher config for a package", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",

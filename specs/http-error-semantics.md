@@ -6,7 +6,9 @@ Publish-path HTTP responses must say what actually happened, so publishers and
 the CLI make the right retry decision:
 
 - `4xx` means the request itself was rejected: validation, authentication,
-  permission, conflict, or a real rate-limit `429`. The body is the real reason.
+  permission, conflict, or a real rate-limit `429`. The body is the real reason,
+  except a failed trusted-publish token mint, which uses one shared body so the
+  status and text do not reveal a hidden package or its trusted repository.
 - `503` with `Retry-After` means a transient platform failure. It is never a
   validation failure and never a rate limit, so it carries no rate-limit headers.
 - Rate-limit headers and reset hints appear only on a real `429`
@@ -47,6 +49,16 @@ package publish, package operations, trusted-publish token mint, publish
 recovery, and API-token auth in `requireApiTokenUserOrResponse` /
 `requirePackagePublishAuthOrResponse` / legacy whoami (a platform failure
 reading a token must not tell a valid publisher to log in again).
+
+A failed `POST /api/v1/publish/token/mint` returns `400` and
+`Publish token request could not be verified.` for a missing name, a
+soft-deleted package, a private or moderation-hidden package with no trusted
+publisher, an invalid OIDC token, and a repository, repository id, owner, or
+owner id mismatch. The audit log keeps the specific reason, including
+`expected <owner>/<repo>`. After the GitHub identity matches, a later
+validation error still returns its real message, and a private package can
+still receive a token. Invalid JSON and a real `429` stay distinct. Transient
+platform failures stay `503`.
 
 ## Ambiguous outcomes and one-shot state
 

@@ -2473,6 +2473,39 @@ async function derivePackagePublishAuthorizationTransactionKey(args: {
   );
 }
 
+const PUBLISH_TOKEN_REJECTION = "Publish token request could not be verified.";
+
+async function recordPublishTokenRejection(
+  ctx: ActionCtx,
+  ownerUserId: Id<"users">,
+  packageId: Id<"packages">,
+  version: string,
+  trustedPublisher: PackageTrustedPublisherLike,
+  error: unknown,
+) {
+  try {
+    await ctx.runMutation(
+      internalRefs.packages.insertAuditLogInternal as never,
+      {
+        actorUserId: ownerUserId,
+        action: "package.publish_token.mint_rejected",
+        targetType: "package",
+        targetId: String(packageId),
+        metadata: {
+          version,
+          repository: trustedPublisher.repository,
+          workflowFilename: trustedPublisher.workflowFilename,
+          ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
+          decision: "rejected",
+          reason: error instanceof Error ? error.message : "Token verification failed",
+        },
+      } as never,
+    );
+  } catch (auditError) {
+    if (transientConvexErrorResponse(auditError)) throw auditError;
+  }
+}
+
 export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "trustedPublish");
   if (!rate.ok) return rate.response;
@@ -2490,13 +2523,16 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
       ctx,
       payload.packageName,
     );
-    if (!pkg) return text("Package not found", 404, rate.headers);
-    if (!trustedPublisher) {
-      return text("Trusted publisher config is not set for this package", 403, rate.headers);
+    // Same status and body for a missing package, a hidden package, a missing
+    // trusted publisher, and a failed OIDC check. A matching identity still
+    // mints below, including when the package is private.
+    if (!pkg || !trustedPublisher) {
+      return text(PUBLISH_TOKEN_REJECTION, 400, rate.headers);
     }
 
+    let verified: Awaited<ReturnType<typeof verifyGitHubActionsTrustedPublishJwt>>;
     try {
-      const verified = await verifyGitHubActionsTrustedPublishJwt(payload.githubOidcToken, {
+      verified = await verifyGitHubActionsTrustedPublishJwt(payload.githubOidcToken, {
         repository: trustedPublisher.repository,
         repositoryId: trustedPublisher.repositoryId,
         repositoryOwner: trustedPublisher.repositoryOwner,
@@ -2504,6 +2540,21 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
         workflowFilename: trustedPublisher.workflowFilename,
         ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
       });
+    } catch (error) {
+      const transient = transientConvexErrorResponse(error, rate.headers);
+      if (transient) return transient;
+      await recordPublishTokenRejection(
+        ctx,
+        pkg.ownerUserId,
+        pkg._id,
+        payload.version,
+        trustedPublisher,
+        error,
+      );
+      return text(PUBLISH_TOKEN_REJECTION, 400, rate.headers);
+    }
+
+    try {
       const scope = payload.scope ?? "publish";
       if (payload.scope !== undefined && payload.inventoryDigest === undefined) {
         throw new Error("Scoped trusted publishes require an inventory digest");
@@ -2620,22 +2671,13 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
       );
       return json({ token, expiresAt }, 200, rate.headers);
     } catch (error) {
-      await ctx.runMutation(
-        internalRefs.packages.insertAuditLogInternal as never,
-        {
-          actorUserId: pkg.ownerUserId,
-          action: "package.publish_token.mint_rejected",
-          targetType: "package",
-          targetId: String(pkg._id),
-          metadata: {
-            version: payload.version,
-            repository: trustedPublisher.repository,
-            workflowFilename: trustedPublisher.workflowFilename,
-            ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
-            decision: "rejected",
-            reason: error instanceof Error ? error.message : "Token verification failed",
-          },
-        } as never,
+      await recordPublishTokenRejection(
+        ctx,
+        pkg.ownerUserId,
+        pkg._id,
+        payload.version,
+        trustedPublisher,
+        error,
       );
       throw error;
     }
