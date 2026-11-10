@@ -79,7 +79,7 @@ const pendingDescription = {
   state: "pending",
   label: "ssh box",
   createdAt: Date.parse("2026-11-10T15:00:00.000Z"),
-  expiresAt: Date.parse("2026-11-10T15:15:00.000Z"),
+  expiresAt: Date.parse("2099-01-01T00:00:00.000Z"),
   access: "full",
 };
 
@@ -126,6 +126,38 @@ describe("CliDeviceAuth", () => {
     fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
 
     expect(approveMock).not.toHaveBeenCalled();
+  });
+
+  it("disables approval when the pending code reaches its expiry time", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:14:00.000Z"));
+      useQueryMock.mockImplementation((_query: unknown, args: unknown) => {
+        if (!args || args === "skip") return undefined;
+        return {
+          ...pendingDescription,
+          expiresAt: Date.parse("2026-11-10T15:15:00.000Z"),
+        };
+      });
+      useMutationMock.mockReturnValue(vi.fn());
+
+      render(<CliDeviceAuth />);
+      typeCode();
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", false);
+      expect(screen.getByText("Label: ssh box")).toBeTruthy();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
+      expect(screen.getByText("That code expired.")).toBeTruthy();
+      expect(screen.queryByText("Label: ssh box")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows the token label before authorization", () => {

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Container } from "../../components/layout/Container";
 import { SignInButton } from "../../components/SignInButton";
@@ -29,11 +29,23 @@ export function CliDeviceAuth() {
     api.cliDeviceAuth.describePending,
     isAuthenticated && me && code.trim() ? { userCode: code } : "skip",
   );
-  const canDecide = description?.state === "pending" && !isComplete;
+  const pendingExpiresAt = description?.state === "pending" ? description.expiresAt : null;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const remaining = pendingExpiresAt === null ? 0 : pendingExpiresAt - now;
+    // setTimeout treats a delay above 2^31-1 ms as 1 ms.
+    const delay = remaining > 0 ? Math.min(remaining, 2_147_483_647) : 0;
+    const timer = delay > 0 ? setTimeout(() => setNow(Date.now()), delay) : undefined;
+    return () => {
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [now, pendingExpiresAt]);
+  const expiredLocally = pendingExpiresAt !== null && pendingExpiresAt <= now;
+  const canDecide = description?.state === "pending" && !expiredLocally && !isComplete;
 
   const submit = async () => {
     const trimmed = code.trim();
-    if (description?.state !== "pending") return;
+    if (description?.state !== "pending" || description.expiresAt <= Date.now()) return;
     if (!trimmed) {
       setStatus("Enter the code shown in your terminal.");
       return;
@@ -56,7 +68,7 @@ export function CliDeviceAuth() {
 
   const cancel = async () => {
     const trimmed = code.trim();
-    if (description?.state !== "pending" || !trimmed) return;
+    if (description?.state !== "pending" || description.expiresAt <= Date.now() || !trimmed) return;
     if (actionInFlight.current || isComplete) return;
     actionInFlight.current = true;
     setPendingAction("deny");
@@ -125,14 +137,14 @@ export function CliDeviceAuth() {
                   Type the code from your terminal. A link does not approve this login, and the code
                   is not filled in for you.
                 </p>
-                {description?.state === "pending" ? (
+                {description?.state === "pending" && !expiredLocally ? (
                   <div className="space-y-1 text-sm">
                     <p>Label: {description.label}</p>
                     <p>Started: {new Date(description.createdAt).toISOString()}</p>
                     <p>This creates a full API token. It can publish and delete as you.</p>
                   </div>
                 ) : null}
-                {description?.state === "expired" ? (
+                {description?.state === "expired" || expiredLocally ? (
                   <p className="text-sm text-[color:var(--ink-soft)]">That code expired.</p>
                 ) : null}
                 {description?.state === "used" ? (

@@ -43,4 +43,34 @@ describe("cli device login", () => {
     if (!accessToken) throw new Error("device poll did not return a token");
     expect(accessToken.startsWith("clh_")).toBe(true);
   });
+
+  it("keeps a past expiry pending so approval can close on the page clock", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await t.run(async (ctx) => ctx.db.insert("users", { handle: "publisher" }));
+    const created = await t.mutation(internal.cliDeviceAuth.createInternal, {
+      label: "ssh box",
+      scope: "read write",
+      siteUrl: "https://clawhub.ai",
+    });
+    const expiredAt = await t.run(async (ctx) => {
+      const row = await ctx.db.query("cliDeviceCodes").first();
+      if (!row) throw new Error("missing device code");
+      const expiresAt = row.createdAt - 1;
+      await ctx.db.patch(row._id, { expiresAt });
+      return expiresAt;
+    });
+
+    const viewer = t.withIdentity({ subject: userId });
+    const described = await viewer.query(api.cliDeviceAuth.describePending, {
+      userCode: created.user_code,
+    });
+    expect(described).toMatchObject({
+      state: "pending",
+      expiresAt: expiredAt,
+      access: "full",
+    });
+    await expect(
+      viewer.mutation(api.cliDeviceAuth.approve, { userCode: created.user_code }),
+    ).rejects.toThrow(/expired/);
+  });
 });

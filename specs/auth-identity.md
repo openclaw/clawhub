@@ -16,7 +16,10 @@ The verification URL does not carry the code. `/cli/device` does not copy
 `user_code` or a legacy device-shaped `code` into the form. The signed-in user
 types the code shown in their terminal. `describePending` then shows the token
 label, the start time, and that approval creates a full API token. Authorize
-stays disabled until that pending description is loaded.
+stays disabled until that pending description is loaded. `describePending` does
+not read the wall clock. A pending row stays pending and includes `expiresAt`.
+The page disables Authorize and Deny when that time has passed. `approve` and
+`deny` still reject an expired code.
 
 A requested scope other than `read write` is rejected. Device login does not
 issue a narrower token. The minted `apiTokens` row is the same full token a

@@ -101,14 +101,14 @@ export const describePending = query({
     const normalized = normalizeUserCode(args.userCode);
     if (!normalized) return { state: "missing" as const };
 
-    const now = Date.now();
     const userCodeHash = await hashToken(normalized);
     const rows = await ctx.db
       .query("cliDeviceCodes")
       .withIndex("by_user_code_hash", (q) => q.eq("userCodeHash", userCodeHash))
       .order("desc")
       .take(MAX_DUPLICATE_USER_CODE_ROWS);
-    const pending = pickLatestRow(rows, now, "pending");
+    // A query that reads the clock stays cached after expiry. The page uses expiresAt.
+    const pending = rows.find((row) => row.status === "pending");
     if (pending) {
       return {
         state: "pending" as const,
@@ -118,7 +118,7 @@ export const describePending = query({
         access: "full" as const,
       };
     }
-    if (rows.some((row) => row.status === "pending" || row.status === "expired")) {
+    if (rows.some((row) => row.status === "expired")) {
       return { state: "expired" as const };
     }
     if (rows.length > 0) return { state: "used" as const };
