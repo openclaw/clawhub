@@ -37,7 +37,7 @@ jobs:
   check-test-attempt:
     needs: validate-request
     runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 25
+    timeout-minutes: 100
     environment:
       name: Test
     env:
@@ -47,6 +47,13 @@ jobs:
       PREPUBLICATION_TRUFFLEHOG_IMAGE: ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056
       PREPUBLICATION_WORKER_ID: github-actions:test-canary:${{ github.run_id }}:${{ github.run_attempt }}
     steps:
+      - name: Reserve hosted worker drain deadline
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          fs.appendFileSync(process.env.GITHUB_ENV, 'SECURITY_SCAN_WORKER_HOST_DEADLINE_MS=' + (Date.now() + 100 * 60000 - 120000) + String.fromCharCode(10));
+          NODE
+
       - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
@@ -98,7 +105,18 @@ jobs:
           set -euo pipefail
           sh scripts/security/install-clawscan-scanners.sh aig
 
+      - name: Prepare qualified plugin Docker runtime
+        run: |
+          set -eu
+          . scripts/security/clawscan-install-source.sh
+          if [ "$(cat scripts/security/clawscan-source-commit.txt)" != "$qualified_source_commit" ]; then
+            echo 'Default source has no qualified plugin Docker runtime; retaining legacy setup.'
+            exit 0
+          fi
+          sh scripts/security/install-clawscan-scanners.sh aig-mcp
+
       - name: Run exact Test Template publish checks
+        timeout-minutes: 75
         env:
           ATTEMPT_ID: ${{ inputs.attempt_id }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -138,7 +156,7 @@ jobs:
               --kind package \
               --batch-limit 1 \
               --max-jobs 1 \
-              --max-runtime-minutes 20
+              --max-runtime-minutes 70
           unset worker_token
 
           attempt_json="$(bunx convex run --no-push publishAttempts:getPackagePublishAttemptStatusInternal "{\"attemptId\":\"$ATTEMPT_ID\"}" --prod)"

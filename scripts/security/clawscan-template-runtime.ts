@@ -3,14 +3,17 @@ import {
   type ClawScanWorkerLane,
   type ReviewedClawScanRuntime,
 } from "./clawscan-native-runtime";
+import { QUALIFIED_PLUGIN_IMAGE, QUALIFIED_PLUGIN_SOURCE } from "./clawscan-plugin-runtime";
 
 export type TemplateScanRuntime = ReviewedClawScanRuntime & { command: string };
 
-// Pending reviewed runtime rollout. The current reviewed host source does not
-// contain clawhub-template. Bind the new host source/binary/profile to a qualified
-// immutable scanner image (which may be reused unchanged); no environment
-// override, returned profile, or artifact marker activates it.
-const REVIEWED_RUNTIMES: { template?: ReviewedClawScanRuntime } = {};
+// The host Go producer embeds/selects this profile. Only the unchanged scanner
+// tools execute inside the already-qualified immutable Docker image. Bind both
+// lanes to the same reviewed source; artifact text cannot select a revision.
+const REVIEWED_TEMPLATE_RUNTIME: ReviewedClawScanRuntime = {
+  source: QUALIFIED_PLUGIN_SOURCE,
+  image: QUALIFIED_PLUGIN_IMAGE,
+};
 
 export async function resolveTemplateScanForTarget(
   targetKind: string,
@@ -18,13 +21,13 @@ export async function resolveTemplateScanForTarget(
   lane: ClawScanWorkerLane,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<TemplateScanRuntime | undefined> {
-  const runtime = REVIEWED_RUNTIMES.template;
+  const runtime = REVIEWED_TEMPLATE_RUNTIME;
   const family =
     pkg && typeof pkg === "object" ? (pkg as Record<string, unknown>).family : undefined;
-  if (targetKind !== "packageRelease" || (family !== "claw" && family !== "template") || !runtime)
+  if (targetKind !== "packageRelease" || (family !== "claw" && family !== "template"))
     return undefined;
   return {
     ...runtime,
-    command: await qualifiedNativeCommand(lane, runtime, env),
+    command: await qualifiedNativeCommand(lane, runtime, env, "template"),
   };
 }

@@ -908,8 +908,8 @@ describe("Decisions publication consumer", () => {
   });
 });
 
-// Synthetic qualification only: the production Template runtime is deliberately
-// unset until a reviewed source/image pair ships the native built-in profile.
+// Synthetic consumer receipts exercise trust boundaries; actual runtime
+// qualification is a separate native execution check, never a fixture claim.
 const templateExposure: ClawScanExposure = {
   scanExecution: "started",
   eligibleScanAttempt: true,
@@ -929,7 +929,7 @@ function templateFixture(verdict = "benign") {
   return artifact;
 }
 
-describe("pending Template-only native MCP consumer", () => {
+describe("Template-only native MCP consumer", () => {
   it.each([
     { label: "missing", target: undefined },
     { label: "null", target: null },

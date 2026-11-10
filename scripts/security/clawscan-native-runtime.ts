@@ -9,12 +9,18 @@ export async function qualifiedNativeCommand(
   lane: ClawScanWorkerLane,
   runtime: ReviewedClawScanRuntime,
   env: NodeJS.ProcessEnv = process.env,
-  pluginSandboxOverride = false,
+  sandboxPolicy: "configured" | "plugin" | "template" = "configured",
 ) {
-  const sandbox = (
-    (pluginSandboxOverride ? env[lane + "_CLAWSCAN_PLUGIN_SANDBOX"] : undefined) ??
-    env[lane + "_CLAWSCAN_SANDBOX"]
-  )?.trim();
+  // Templates have no host-scanner lane. The generic "off" setting belongs to
+  // ordinary skill scans; Template dispatch always supplies the pinned Docker
+  // sandbox. Keep the existing plugin-only override scoped to plugins.
+  const sandbox =
+    sandboxPolicy === "template"
+      ? "docker"
+      : (
+          (sandboxPolicy === "plugin" ? env[lane + "_CLAWSCAN_PLUGIN_SANDBOX"] : undefined) ??
+          env[lane + "_CLAWSCAN_SANDBOX"]
+        )?.trim();
   const image = env[lane + "_CLAWSCAN_SANDBOX_IMAGE"]?.trim();
   if (
     !/^[a-f0-9]{40}$/.test(runtime.source) ||

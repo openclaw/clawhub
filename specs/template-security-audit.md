@@ -36,47 +36,59 @@ execution is an operational failure, never an invented malicious verdict.
 Suspicious findings retain the existing publication behavior; malicious blocks.
 Secret scanning, claim/lease/fingerprint checks and Docker cleanup remain gates.
 
-## Qualification and rollout status
+## Qualified host producer and scanner tools
 
-**Integration prepared; Template runtime activation is pending.**
+Both workers bind Template dispatch to merged ClawScan source
+`56bf1d9e3bd5247a0622acef8699dc69a10f2938` ([ClawScan #155](https://github.com/openclaw/clawscan/pull/155)),
+source tree `92d8daba5c181560b4a73e71557b8d54e67e62b9`.
+Its ordinary skill/plugin profiles are unchanged. The native scanner-tools tree
+`ddfec1285eaf19beb3043e9e5ad043a0d274cb53` is identical to the previously
+qualified image
+`ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c`.
 
-Upstream Template contract reference: `ee3713d35a34a30374588a19d9a8f442019aa55e`
-(`docs/template-audit.md`). This is not a qualified source/image runtime binding.
+ClawHub runs the installed **host Go binary**, which embeds/selects the built-in
+Template profile and dispatches AIG/Codex commands inside the scanner-tools
+image. There is no ClawScan CLI reentry inside that image. A host-only profile
+change does not require rebuilding an unchanged tools image, but both the exact
+host source tree and tools tree must match the reviewed binding. The installer
+accepts only its fixed reviewed source selection, verifies both trees and source
+cleanliness (including ignored files), and prepares the immutable MCP image with
+its existing CLI/digest checks. No arbitrary source override is added.
 
-The current reviewed host source
-`80d11a34a97a9181213c806fc3013123360f9012` does not contain this new Template
-profile. ClawHub runs the installed host Go binary; its Docker command runner
-executes AIG/Codex inside the immutable scanner image, not a second Go CLI.
-The existing scanner image
-`sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c`
-may be reused unchanged if the new host source/binary/profile and that image are
-qualified together. Its existing plugin qualification alone is not evidence of
-Template-profile qualification.
-
-The Template runtime registry is intentionally empty. Until a reviewed native
-source commit and immutable image digest are qualified together and bound in
-code, both workers retain their prior production routing. Returned
-`clawhub-template` or AIG MCP output cannot activate or self-qualify that path.
-No mutable environment switch, arbitrary install-source allowlist expansion,
-host MCP fallback, or fabricated image digest is provided.
-
-Rollout must bind the exact source, clean installed Go binary (including ignored
-source-file checks), built-in profile/prompt, native image and no-fetch adapter
-contract. Verify actual native whole-root execution and no dependency/audit
-fetching before populating the binding; update the existing reviewed installer
-and source-reporting support as required, without broadening arbitrary sources.
-The shared runtime qualifier and artifact check preserve exact Docker binding.
-The existing plugin-only sandbox override remains plugin-only.
+Each Template claim verifies the installed binary's Go VCS revision and clean
+source against that binding before execution. Prepublication source reporting
+identifies that same host producer, not the image's original build commit.
+The generic host-scanner `SANDBOX=off` setting remains available to ordinary
+skills; Template scans always supply the pinned Docker sandbox and have no host
+fallback or new environment activation knob. The existing plugin-only sandbox
+override remains plugin-only. Unexpected source/binary/image settings fail
+closed rather than falling back to ordinary Template scanning.
 
 Both consumers receive the expected profile from the trusted caller, defaulting
 to `clawhub`. Template output requires explicit `clawhub-template` expectation,
-exactly AIG MCP, the evidence-only judge and the qualified native runtime.
-Ordinary skills/plugins keep their existing scanners and profile.
+native `target.kind === "template"`, exactly AIG MCP, the evidence-only judge
+and the qualified native runtime. Returned profiles, package text and scanner
+reports never select or self-qualify a runtime. Ordinary skills/plugins keep
+their existing scanners and profile.
 
-## Verification scope
+Physical `claw` and public `template` publication claims retain the same 70-minute
+lease as other native package scans, covering the 65-minute publication/drain
+budget rather than expiring at the old 30-minute skill-style boundary. Skill
+leases remain unchanged.
 
-Consumer regressions use explicitly synthetic source/image bindings and scanner
-responses to test both workers, both family names, artifact layouts, strict
-profiles/scanner sets, raw SARIF/provenance rejection, verdict semantics and
-fail-closed rollout. They do not certify a shipped Template runtime or prove
-Tencent's live no-fetch behavior. Native qualification remains a rollout gate.
+## Verification and release scope
+
+Consumer regressions use explicitly synthetic scanner responses to test both
+workers, both family names, artifact layouts, strict target/profile/scanner
+sets, raw SARIF/provenance rejection and verdict semantics. They are not live
+model-quality evidence. A CLI help check or image digest alone is not a complete
+Template audit. Native qualification must exercise the exact host producer and
+approved tools image, preserve the original artifact bytes, and confirm cleanup.
+
+Deployment remains manual. The existing exact-SHA Test deployment and
+`test-template-canary-prepublication.yml` provide a supported real pipeline
+qualification route: one pending Test `@openclaw/hosted-e2e-canary` attempt,
+matching Test backend build SHA, standard worker, and finalized clean secret and
+ClawScan checks. The canary prepares the same pinned MCP image as the standard
+workers and reserves their native scan/drain envelope. It does not weaken the
+mandatory Docker guard or expand into arbitrary production fixtures.
