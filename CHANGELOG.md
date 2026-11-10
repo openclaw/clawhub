@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- CLI: keep a saved API token on the registry that issued it. A `--site` well-known document cannot send that token to another origin, and only an https registry URL, or http on loopback, is accepted from that document.
+- CLI: keep a saved API token on the registry that issued it. A `--site` well-known document cannot send that token to another origin. Discovered registry URLs must be `http` or `https` and must not contain userinfo.
 
 - CI: verify and cache a pinned Convex backend through the release-asset API before local-auth browser tests, with bounded download retries.
 

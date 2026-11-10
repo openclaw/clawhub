@@ -78,12 +78,48 @@ describe("discovery", () => {
     await expect(discoverRegistryFromSite("https://example.com")).resolves.toBeNull();
   });
 
-  it("ignores an apiBase that is not https", async () => {
+  it("keeps an http apiBase on a normal host", async () => {
     globalStubs.stub(
       "fetch",
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ apiBase: "http://evil.example" }), {
+          new Response(JSON.stringify({ apiBase: "http://hub.example:8080" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ) as unknown as typeof fetch,
+    );
+    await expect(discoverRegistryFromSite("https://example.com")).resolves.toEqual({
+      apiBase: "http://hub.example:8080",
+      authBase: undefined,
+      minCliVersion: undefined,
+    });
+  });
+
+  it("keeps a bracketed IPv6 loopback apiBase", async () => {
+    globalStubs.stub(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ apiBase: "http://[::1]:3210" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ) as unknown as typeof fetch,
+    );
+    await expect(discoverRegistryFromSite("https://example.com")).resolves.toEqual({
+      apiBase: "http://[::1]:3210",
+      authBase: undefined,
+      minCliVersion: undefined,
+    });
+  });
+
+  it("ignores an apiBase that is not http or https", async () => {
+    globalStubs.stub(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ apiBase: "file:///tmp/registry" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           }),
@@ -114,7 +150,7 @@ describe("discovery", () => {
           new Response(
             JSON.stringify({
               apiBase: "http://127.0.0.1:3210",
-              authBase: "http://evil.example",
+              authBase: "file:///tmp/auth",
             }),
             {
               status: 200,

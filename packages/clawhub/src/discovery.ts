@@ -1,10 +1,9 @@
 import { parseArk, WellKnownConfigSchema } from "./schema/index.js";
 
 const DISCOVERY_TIMEOUT_MS = 15_000;
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
-// A well-known document can name any string. Only an https base, or http on
-// loopback, is a registry. Credentials in the URL are rejected.
+// A well-known document can name any string. Accept http and https only,
+// including bracketed IPv6 hosts, and reject credentials in the URL.
 function acceptedDiscoveredBase(value: string | undefined): string | null {
   const trimmed = value?.trim();
   if (!trimmed) return null;
@@ -15,9 +14,8 @@ function acceptedDiscoveredBase(value: string | undefined): string | null {
     return null;
   }
   if (url.username || url.password) return null;
-  if (url.protocol === "https:") return trimmed;
-  if (url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname)) return trimmed;
-  return null;
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  return trimmed;
 }
 
 // Mirrors the fetchWithTimeout pattern from ./http.js (not imported) so an
