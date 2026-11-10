@@ -26,3 +26,17 @@ export function json(value: unknown, status = 200, headers?: HeadersInit) {
     ),
   });
 }
+
+export function text(value: string, status: number, headers?: HeadersInit) {
+  return new Response(value, {
+    status,
+    headers: mergeHeaders(
+      {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+      headers,
+      corsHeaders(),
+    ),
+  });
+}

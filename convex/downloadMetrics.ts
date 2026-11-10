@@ -1,11 +1,10 @@
+import { getDownloadIdentity } from "./lib/downloadIdentity";
+export { getDownloadIdentity, buildDownloadMetricArgs } from "./lib/downloadIdentity";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
 import { internalMutation } from "./functions";
 import { areDownloadMetricsPaused } from "./lib/downloadMetricsSwitch";
-import { getClientIp } from "./lib/httpRateLimit";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
-import { hashToken } from "./lib/tokens";
 import { insertStatEvent } from "./skillStatEvents";
 
 const DAY_MS = 86_400_000;
@@ -18,39 +17,6 @@ const targetValidator = v.union(
   v.object({ kind: v.literal("skill"), id: v.id("skills") }),
   v.object({ kind: v.literal("package"), id: v.id("packages") }),
 );
-
-type DownloadIdentityKind = "user" | "ip";
-
-type DownloadIdentity = {
-  identityKind: DownloadIdentityKind;
-  identityValue: string;
-};
-
-export function getDownloadIdentity(
-  request: Request,
-  userId: string | null,
-): DownloadIdentity | null {
-  if (userId) return { identityKind: "user", identityValue: userId };
-  const ip = getClientIp(request);
-  if (!ip) return null;
-  return { identityKind: "ip", identityValue: ip };
-}
-
-export async function buildDownloadMetricArgs(params: {
-  target: { kind: "skill"; id: Id<"skills"> } | { kind: "package"; id: Id<"packages"> };
-  identity: DownloadIdentity;
-  now: number;
-}) {
-  return {
-    target: params.target,
-    identityKind: params.identity.identityKind,
-    identityHash: await hashToken(
-      `${params.identity.identityKind}:${params.identity.identityValue}`,
-    ),
-    dayStart: getDayStart(params.now),
-    occurredAt: params.now,
-  };
-}
 
 export const recordDownloadMetricInternal = internalMutation({
   args: {

@@ -1,3 +1,4 @@
+export { contentDispositionAttachment } from "../lib/contentDisposition";
 import {
   CliPublishRequestSchema,
   decodeUtf8Text,
@@ -12,7 +13,7 @@ import type { ActionCtx } from "../_generated/server";
 import { assertAdmin, assertModerator } from "../lib/access";
 import { requireApiTokenUser, requirePackagePublishAuth } from "../lib/apiTokenAuth";
 import { sha256Hex } from "../lib/hash";
-import { corsHeaders, mergeHeaders, json } from "../lib/httpHeaders";
+import { corsHeaders, mergeHeaders, json, text } from "../lib/httpHeaders";
 import { getTransientConvexErrorKind } from "../lib/httpUtils";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { isMacJunkPath } from "../lib/skills";
@@ -24,22 +25,6 @@ const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 
 const SAFE_TEXT_FILE_CSP =
   "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
-
-export function contentDispositionAttachment(filename: string) {
-  const leaf = filename.split(/[/\\]/).pop()?.trim() || "download";
-  // encodeURIComponent leaves * ' ( ) raw. Those are not RFC 5987 attr-chars.
-  const encoded = encodeURIComponent(leaf).replace(
-    /[*'()]/g,
-    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
-  );
-  const extension = leaf.match(/\.(?:tgz|zip)$/i)?.[0]?.toLowerCase() ?? "";
-  const stem = extension ? leaf.slice(0, -extension.length) : leaf;
-  const stemIsSafe = /^[A-Za-z0-9._+-]+$/.test(stem) && !stem.startsWith(".");
-  const asciiStem = stemIsSafe
-    ? stem
-    : stem.replace(/[^A-Za-z0-9_+-]+/g, "_").replace(/^_+|_+$/g, "") || "download";
-  return `attachment; filename="${asciiStem}${extension}"; filename*=UTF-8''${encoded}`;
-}
 
 function attachmentDisposition(path: string) {
   const leaf = path.split("/").at(-1) || "download";
@@ -117,19 +102,7 @@ export async function safeStoredFilePreviewResponse(
 
 export { json } from "../lib/httpHeaders";
 
-export function text(value: string, status: number, headers?: HeadersInit) {
-  return new Response(value, {
-    status,
-    headers: mergeHeaders(
-      {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-store",
-      },
-      headers,
-      corsHeaders(),
-    ),
-  });
-}
+export { text } from "../lib/httpHeaders";
 
 export type AmbiguousSkillSlugChoice = {
   ownerHandle: string;
