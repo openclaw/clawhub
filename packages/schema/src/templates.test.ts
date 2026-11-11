@@ -8,6 +8,7 @@ import {
   TemplateManifestSummarySchema,
   OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1,
   summarizeTemplateManifest,
+  templateDependencyInventory,
   validateTemplateManifest,
 } from "./templates";
 
@@ -18,20 +19,8 @@ const fixture = {
     bootstrapFiles: { "SOUL.md": { source: "workspace/SOUL.md" } },
     files: [{ source: "workspace/reference/policy.md", path: "reference/policy.md" }],
   },
-  packages: [
-    {
-      kind: "skill",
-      source: "clawhub",
-      ref: "@openclaw/research",
-      version: "1.2.3",
-    },
-    {
-      kind: "plugin",
-      source: "clawhub",
-      ref: "@openclaw/markets",
-      version: "2.0.0",
-    },
-  ],
+  skills: [{ ref: "@openclaw/research", version: "1.2.3" }],
+  plugins: [{ ref: "@openclaw/markets", version: "2.0.0" }],
   mcpServers: {
     filings: {
       url: "https://example.test/mcp",
@@ -39,7 +28,7 @@ const fixture = {
       auth: "oauth",
     },
   },
-  cronJobs: [
+  automations: [
     {
       id: "morning-brief",
       schedule: { cron: "0 8 * * 1-5", timezone: "America/New_York" },
@@ -50,6 +39,36 @@ const fixture = {
 } as const;
 
 describe("Template manifest contract", () => {
+  it("projects bundled paths beside exact registry references without inventing provenance", () => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      skills: [{ path: "skills/research" }, ...fixture.skills],
+      plugins: [{ path: "plugins/alerts" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      templateDependencyInventory(result.manifest, [
+        { kind: "skill", path: "skills/research", name: "Research" },
+      ]),
+    ).toEqual([
+      { kind: "skill", source: "bundled", path: "skills/research", name: "Research" },
+      { kind: "skill", source: "clawhub", ref: "@openclaw/research", version: "1.2.3" },
+      { kind: "plugin", source: "bundled", path: "plugins/alerts" },
+    ]);
+    expect(summarizeTemplateManifest(result.manifest).packages).toEqual({
+      skillCount: 2,
+      pluginCount: 1,
+    });
+  });
+  it.each([
+    { skills: [{ path: "skills/research", ref: "@acme/research", version: "1.0.0" }] },
+    { skills: [{ path: "../research" }] },
+    { skills: [{ path: "skills/.GIT/research" }] },
+    { skills: [{ path: "skills/research" }], plugins: [{ path: "SKILLS/research/alerts" }] },
+  ])("rejects mixed, unsafe or overlapping bundled declarations: %j", (dependencies) => {
+    expect(validateTemplateManifest({ ...fixture, ...dependencies }).ok).toBe(false);
+  });
   it("allows Templates in storage and publication metadata contracts", () => {
     expect(PackageFamilySchema("template")).toBe("template");
     expect(
@@ -62,10 +81,12 @@ describe("Template manifest contract", () => {
     ).not.toBeInstanceOf(ArkErrors);
   });
 
-  it("accepts the grouped OpenClaw v1 fixture and derives a safe summary", () => {
+  it("accepts canonical automations and derives a safe summary", () => {
     const result = validateTemplateManifest(fixture);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.manifest.automations).toEqual(fixture.automations);
+    expect(result.manifest).not.toHaveProperty("cronJobs");
     expect(summarizeTemplateManifest(result.manifest)).toEqual({
       schemaVersion: 1,
       agent: { id: "financial-analyst", name: "Financial Analyst" },
@@ -74,6 +95,26 @@ describe("Template manifest contract", () => {
       mcpServerCount: 1,
       cronJobCount: 1,
     });
+  });
+
+  it.each(["cronJobs", "packages", "profiles", "extensions"])(
+    "rejects retired %s with migration guidance",
+    (key) => {
+      const result = validateTemplateManifest({ ...fixture, [key]: [] });
+      expect(result).toMatchObject({
+        ok: false,
+        issues: [{ path: `$.${key}`, message: expect.stringContaining("Retired Template field") }],
+      });
+    },
+  );
+
+  it.each([true, false, undefined])("retains automation enabled %s", (enabled) => {
+    const result = validateTemplateManifest({
+      ...fixture,
+      automations: [{ ...fixture.automations[0], ...(enabled === undefined ? {} : { enabled }) }],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.manifest.automations?.[0]?.enabled).toBe(enabled);
   });
 
   it("accepts optional portable category slugs without embedding the catalog taxonomy", () => {
@@ -136,7 +177,7 @@ describe("Template manifest contract", () => {
       phase: "schema",
       path: "$.metadata.openclaw.config",
       message:
-        "metadata.openclaw.config is no longer supported; move the profile to profiles/openclaw.yml and remove the metadata entry.",
+        "metadata.openclaw.config is no longer supported; move native settings into CLAW.md agent and remove the metadata entry.",
     });
   });
 
@@ -151,7 +192,7 @@ describe("Template manifest contract", () => {
     expect(result.issues.map((issue) => issue.path)).toContain(`$.metadata.${metadataKey}`);
   });
 
-  it("rejects non-string metadata values and harness policy embedded in the portable agent", () => {
+  it("rejects non-string metadata and unbounded native tool policy", () => {
     expect(
       validateTemplateManifest({
         ...fixture,
@@ -177,7 +218,7 @@ describe("Template manifest contract", () => {
           memory: { search: { enabled: true } },
         },
       }).ok,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("reserves root BOOTSTRAP.md for package-root seed-once setup", () => {
@@ -222,14 +263,14 @@ describe("Template manifest contract", () => {
 
     const semantic = validateTemplateManifest({
       ...fixture,
-      packages: [{ kind: "skill", source: "clawhub", ref: "demo", version: "latest" }],
+      skills: [{ ref: "demo", version: "latest" }],
     });
     expect(semantic.ok).toBe(false);
     if (semantic.ok) return;
     expect(semantic.issues).toContainEqual({
       code: "template_v1_invalid_package_version",
       phase: "schema",
-      path: "$.packages.0.version",
+      path: "$.skills.0.version",
       message: "Must be an exact semantic version.",
     });
   });
@@ -238,7 +279,7 @@ describe("Template manifest contract", () => {
     const result = validateTemplateManifest({
       ...fixture,
       workspace: { files: [{ source: "../outside", path: "outside" }] },
-      packages: [{ kind: "skill", source: "clawhub", ref: "demo", version: "latest" }],
+      skills: [{ ref: "demo", version: "latest" }],
       mcpServers: {
         unsafe: { command: "server", env: { SETTING: "inline-value" } },
       },
@@ -248,7 +289,7 @@ describe("Template manifest contract", () => {
     expect(result.issues.map((issue) => issue.path)).toEqual(
       expect.arrayContaining([
         "$.workspace.files.0.source",
-        "$.packages.0.version",
+        "$.skills.0.version",
         "$.mcpServers.unsafe.env.SETTING",
       ]),
     );
@@ -258,7 +299,7 @@ describe("Template manifest contract", () => {
     expect(
       validateTemplateManifest({
         ...fixture,
-        packages: [{ kind: "skill", source: "clawhub", ref: "demo", version }],
+        skills: [{ ref: "demo", version }],
       }).ok,
     ).toBe(false);
   });
@@ -267,10 +308,8 @@ describe("Template manifest contract", () => {
     expect(
       validateTemplateManifest({
         ...fixture,
-        packages: [
+        skills: [
           {
-            kind: "skill",
-            source: "clawhub",
             ref: "not a package",
             version: "1.0.0",
           },
@@ -414,7 +453,7 @@ describe("Template manifest contract", () => {
     const result = validateTemplateManifest({
       ...fixture,
       mcpServers: { empty: { command: "   " } },
-      cronJobs: [
+      automations: [
         {
           id: "broken",
           schedule: { cron: "not-a-cron", timezone: "Not/AZone" },
@@ -426,17 +465,15 @@ describe("Template manifest contract", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.issues.map((issue) => issue.path)).toEqual(
-      expect.arrayContaining(["$.mcpServers.empty.command", "$.cronJobs.0.schedule"]),
+      expect.arrayContaining(["$.mcpServers.empty.command", "$.automations.0.schedule"]),
     );
   });
 
   it("allows one ClawHub coordinate under distinct package kinds", () => {
     const result = validateTemplateManifest({
       ...fixture,
-      packages: [
-        { kind: "skill", source: "clawhub", ref: "demo", version: "1.0.0" },
-        { kind: "plugin", source: "clawhub", ref: "demo", version: "1.0.0" },
-      ],
+      skills: [{ ref: "demo", version: "1.0.0" }],
+      plugins: [{ ref: "demo", version: "1.0.0" }],
     });
     expect(result.ok).toBe(true);
   });
@@ -493,7 +530,7 @@ describe("Template manifest contract", () => {
           transport: "streamable-http",
         },
       },
-      cronJobs: [
+      automations: [
         {
           id: "brief",
           schedule: { cron: "0 8 * * * *", timezone: "UTC" },
@@ -511,8 +548,8 @@ describe("Template manifest contract", () => {
         "$.mcpServers.floating.env.BAD-KEY",
         "$.mcpServers.floating.toolFilter.include.1",
         "$.mcpServers.remote.url",
-        "$.cronJobs.0.schedule",
-        "$.cronJobs.0.delivery",
+        "$.automations.0.schedule",
+        "$.automations.0.delivery",
       ]),
     );
   });
@@ -711,7 +748,7 @@ describe("Template manifest contract", () => {
     expect(
       validateTemplateManifest({
         ...fixture,
-        cronJobs: [
+        automations: [
           {
             id: "brief",
             schedule: { cron: "0 8 * * *" },
@@ -724,7 +761,7 @@ describe("Template manifest contract", () => {
     expect(
       validateTemplateManifest({
         ...fixture,
-        cronJobs: [
+        automations: [
           {
             id: "brief",
             schedule: { cron: "0 8 * * *", timezone: "UTC" },

@@ -6,7 +6,6 @@ import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action } from "./functions";
 import { requireUserFromAction } from "./lib/access";
-import { buildGitHubApiHeaders, isGitHubAppConfigured } from "./lib/githubAuth";
 import {
   buildGitHubImportFileList,
   computeDefaultSelectedPaths,
@@ -21,6 +20,8 @@ import {
   suggestDisplayName,
   suggestVersion,
 } from "./lib/githubImport";
+import { fetchGitHubApi } from "./lib/githubImportApi";
+import { sha256Hex } from "./lib/hash";
 import { publishVersionForUser } from "./lib/skillPublish";
 import { isMacJunkPath, sanitizePath } from "./lib/skills";
 
@@ -847,39 +848,6 @@ function toOwnedPublicSkillCandidate(repo: OwnedPublicRepoListItem, skillPath: s
   };
 }
 
-async function fetchGitHubApi(
-  url: string,
-  fetcher: typeof fetch,
-  accept = "application/vnd.github+json",
-  useGitHubApp = true,
-) {
-  const headers = await buildGitHubApiHeaders({
-    userAgent: "clawhub/github-import",
-    accept,
-    fetchImpl: fetcher,
-    useGitHubApp,
-  });
-  const response = await fetcher(url, { headers });
-  if (
-    useGitHubApp &&
-    !response.ok &&
-    isGitHubAppConfigured() &&
-    headers.Authorization &&
-    (response.status === 401 || response.status === 403 || response.status === 404)
-  ) {
-    const fallbackHeaders = await buildGitHubApiHeaders({
-      userAgent: "clawhub/github-import",
-      accept,
-      fetchImpl: fetcher,
-      useGitHubApp: false,
-    });
-    if (fallbackHeaders.Authorization !== headers.Authorization) {
-      return await fetcher(url, { headers: fallbackHeaders });
-    }
-  }
-  return response;
-}
-
 function hasGitHubApiToken() {
   return Boolean(process.env.GITHUB_TOKEN?.trim());
 }
@@ -969,18 +937,6 @@ async function suggestAvailableSlug(ctx: ActionCtx, userId: Id<"users">, base: s
     if (existing.ownerUserId === userId) return candidate;
   }
   throw new ConvexError("Could not find an available slug");
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const normalized = new Uint8Array(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", normalized.buffer);
-  return toHex(new Uint8Array(digest));
-}
-
-function toHex(bytes: Uint8Array) {
-  let out = "";
-  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
-  return out;
 }
 
 function normalizeZipPath(path: string) {

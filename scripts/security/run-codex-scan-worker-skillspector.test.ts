@@ -54,7 +54,6 @@ exit 23`,
       targetKind: "packageRelease",
       source: "publish",
       hasMaliciousSignal: false,
-      waitForVtUntil: 0,
     },
     target: {
       package: { family: "code-plugin" },

@@ -4,6 +4,7 @@ import { getFunctionName } from "convex/server";
 import { ConvexError } from "convex/values";
 import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { npmPackFixture } from "../packages/clawhub/test/npmPack";
 import { parseArk } from "../packages/schema/src/ark";
 import { ApiV1SkillListResponseSchema } from "../packages/schema/src/schemas";
 import { prepareClawPackInternal } from "./packageClawpackNode";
@@ -54,9 +55,201 @@ const { verifyOpenClawPublishAuthorization } = await import("./lib/openClawPubli
 const { buildBundleFingerprint } = await import("./lib/skillCards");
 const { sha256Hex } = await import("./lib/clawpack");
 const { publishVersionForUser } = await import("./skills");
+const { contentDispositionAttachment } = await import("./httpApiV1/shared");
 const { __handlers } = await import("./httpApiV1");
 
 type ActionCtx = import("./_generated/server").ActionCtx;
+
+function makeSkillScanQuery<TSkill, TVersion>(
+  selectedSkill: TSkill,
+  selectedVersion0: TVersion,
+  isSuspicious: boolean,
+) {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+      return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+    }
+
+    if ("slug" in args) {
+      return {
+        skill: selectedSkill,
+        latestVersion: selectedVersion0,
+        owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
+        moderationInfo: {
+          isPendingScan: false,
+          isMalwareBlocked: false,
+          isSuspicious,
+          isHiddenByMod: false,
+          isRemoved: false,
+        },
+      };
+    }
+    return null;
+  });
+}
+
+function makeVersionDetailQuery<TSkill, TVersion>(
+  selectedSkill: TSkill,
+  selectedVersion0: TVersion,
+) {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+      return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+    }
+
+    if ("slug" in args) {
+      return {
+        skill: selectedSkill,
+        latestVersion: null,
+        owner: { handle: "owner", displayName: "Owner", image: null },
+      };
+    }
+
+    return null;
+  });
+}
+
+function makeSkillFileQuery<TSkill, TVersion>(selectedSkill: TSkill, selectedVersion0: TVersion) {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+      return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+    }
+
+    if ("slug" in args) {
+      return {
+        skill: selectedSkill,
+        latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+        owner: null,
+      };
+    }
+
+    return null;
+  });
+}
+
+function makeNpmMirrorQuery() {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if ("name" in args && !("paginationOpts" in args)) {
+      return {
+        package: {
+          _id: "packages:demo-plugin",
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          tags: { latest: "packageReleases:1" },
+          latestReleaseId: "packageReleases:1",
+          channel: "community",
+          isOfficial: false,
+          summary: "Demo package",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        latestRelease: null,
+        owner: null,
+      };
+    }
+    if ("paginationOpts" in args) {
+      return {
+        page: [
+          {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "npm-pack",
+            clawpackStorageId: "storage:clawpack",
+            npmIntegrity: "sha512-demo",
+            npmShasum: "d".repeat(40),
+            npmTarballName: "demo-plugin-1.0.0.tgz",
+          },
+        ],
+        isDone: true,
+        continueCursor: null,
+      };
+    }
+    return null;
+  });
+}
+
+function makeDemoPluginLookupResult() {
+  return {
+    package: {
+      _id: "packages:demo-plugin",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      tags: { latest: "packageReleases:1" },
+      latestReleaseId: "packageReleases:1",
+      channel: "community",
+      isOfficial: false,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+    latestRelease: null,
+    owner: { _id: "publishers:demo", handle: "demo" },
+  };
+}
+
+function makePackageDownloadQuery({
+  owner,
+  makeFiles,
+}: {
+  owner?: null;
+  makeFiles?: () => Array<{
+    path: string;
+    size: number;
+    sha256: string;
+    storageId: string;
+    contentType: string;
+  }>;
+} = {}) {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
+      return {
+        package: {
+          _id: "packages:1",
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          tags: {},
+          latestReleaseId: "packageReleases:1",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        latestRelease: null,
+        owner: owner === null ? null : { _id: "users:owner", handle: "owner" },
+      };
+    }
+    if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+      expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
+      return {
+        package: { _id: "packages:1", name: "demo-plugin" },
+        release: {
+          packageId: "packages:1",
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          files: makeFiles?.() ?? [
+            {
+              path: "package.json",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:1",
+              contentType: "application/json",
+            },
+          ],
+        },
+      };
+    }
+    return null;
+  });
+}
 
 function isRateLimitArgs(args: unknown): args is RateLimitArgs {
   if (!args || typeof args !== "object") return false;
@@ -222,57 +415,6 @@ function makeSkillsShAliasTarget(scanStatus: "clean" | "suspicious" = "clean", s
     canonicalRef: `@openclaw/${slug}`,
     canonicalRoute: `/openclaw/skills/${slug}`,
   };
-}
-
-const TAR_BLOCK_SIZE = 512;
-
-function tarOctal(value: number, width: number) {
-  return value.toString(8).padStart(width - 1, "0") + "\0";
-}
-
-function writeTarString(target: Uint8Array, offset: number, width: number, value: string) {
-  const encoded = new TextEncoder().encode(value);
-  target.set(encoded.subarray(0, width), offset);
-}
-
-function tarFile(path: string, content: string | Uint8Array) {
-  const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
-  const header = new Uint8Array(TAR_BLOCK_SIZE);
-  writeTarString(header, 0, 100, path);
-  writeTarString(header, 100, 8, tarOctal(0o644, 8));
-  writeTarString(header, 108, 8, tarOctal(0, 8));
-  writeTarString(header, 116, 8, tarOctal(0, 8));
-  writeTarString(header, 124, 12, tarOctal(bytes.byteLength, 12));
-  writeTarString(header, 136, 12, tarOctal(0, 12));
-  header.fill(0x20, 148, 156);
-  header[156] = "0".charCodeAt(0);
-  writeTarString(header, 257, 6, "ustar");
-  writeTarString(header, 263, 2, "00");
-
-  let checksum = 0;
-  for (const byte of header) checksum += byte;
-  writeTarString(header, 148, 8, tarOctal(checksum, 8));
-
-  const paddedSize = Math.ceil(bytes.byteLength / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
-  const body = new Uint8Array(paddedSize);
-  body.set(bytes);
-  return [header, body];
-}
-
-function npmPackFixture(files: Record<string, string | Uint8Array>) {
-  const parts: Uint8Array[] = [];
-  for (const [path, content] of Object.entries(files)) {
-    parts.push(...tarFile(path, content));
-  }
-  parts.push(new Uint8Array(TAR_BLOCK_SIZE), new Uint8Array(TAR_BLOCK_SIZE));
-  const size = parts.reduce((sum, part) => sum + part.byteLength, 0);
-  const tar = new Uint8Array(size);
-  let offset = 0;
-  for (const part of parts) {
-    tar.set(part, offset);
-    offset += part.byteLength;
-  }
-  return gzipSync(tar);
 }
 
 function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -514,8 +656,6 @@ describe("httpApiV1 handlers", () => {
         report: {
           clawscan: { status: "malicious", checkedAt: 1 },
           skillspector: null,
-          staticAnalysis: null,
-          virustotal: null,
         },
         createdAt: 1,
         updatedAt: 1,
@@ -538,8 +678,10 @@ describe("httpApiV1 handlers", () => {
     const readme = entries["README.md"] ? strFromU8(entries["README.md"]) : "";
     expect(readme).toContain("ClawScan is the primary security verdict");
     expect(readme).toContain("`malicious` means ClawHub blocked the submitted version");
-    expect(readme).toContain("VirusTotal results are supporting reputation telemetry");
+    expect(readme).not.toMatch(/VirusTotal|static-analysis/);
     expect(readme).toContain("`clawscan.json`: final ClawScan verdict");
+    expect(Object.keys(entries)).not.toContain("virustotal.json");
+    expect(Object.keys(entries)).not.toContain("static-analysis.json");
   });
 
   it("includes the bounded Endor summary in stored plugin report downloads", async () => {
@@ -687,7 +829,10 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("X-RateLimit-Limit")).toBe(String(RATE_LIMITS.export.key));
+    expect(response.headers.get("X-RateLimit-Limit")).toBeNull();
+    expect(findRateLimitCallArgs(runMutation)).toMatchObject({
+      config: expect.objectContaining({ rate: RATE_LIMITS.export.key }),
+    });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -5612,21 +5757,7 @@ describe("httpApiV1 handlers", () => {
         },
       ],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -5705,7 +5836,7 @@ describe("httpApiV1 handlers", () => {
     expect(body).toContain("/api/v1/skills/demo/versions/1.0.0?ownerHandle=<owner>");
   });
 
-  it("returns version detail security from vt analysis", async () => {
+  it("omits retired VirusTotal data from version detail security", async () => {
     const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
     const selectedVersion0 = {
       _id: "skillVersions:1",
@@ -5722,21 +5853,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -5745,8 +5862,9 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.version.security.status).toBe("pending");
-    expect(json.version.security.scanners.vt.normalizedStatus).toBe("suspicious");
-    expect(json.version.security.virustotalUrl).toContain("virustotal.com/gui/file/");
+    expect(json.version.security.scanners.vt).toBeUndefined();
+    expect(json.version.security).not.toHaveProperty("virustotalUrl");
+    expect(json.version).not.toHaveProperty("vtAnalysis");
   });
 
   it("keeps static-scan suspicious status out of version security snapshot verdicts", async () => {
@@ -5778,21 +5896,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -5804,7 +5908,8 @@ describe("httpApiV1 handlers", () => {
     expect(json.version.security.hasWarnings).toBe(false);
     expect(json.version.security.hasScanResult).toBe(true);
     expect(json.version.security.scanners.static).toBeUndefined();
-    expect(json.version.security.scanners.vt.normalizedStatus).toBe("clean");
+    expect(json.version.security.scanners.vt).toBeUndefined();
+    expect(json.version).not.toHaveProperty("staticScan");
     expect(json.version.security.scanners.llm.normalizedStatus).toBe("clean");
   });
 
@@ -5837,21 +5942,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -5884,21 +5975,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -5934,21 +6011,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: { handle: "owner", displayName: "Owner", image: null },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -5993,27 +6056,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: selectedVersion0,
-          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
-          moderationInfo: {
-            isPendingScan: false,
-            isMalwareBlocked: false,
-            isSuspicious: true,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, true);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -6060,27 +6103,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: selectedVersion0,
-          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
-          moderationInfo: {
-            isPendingScan: false,
-            isMalwareBlocked: false,
-            isSuspicious: false,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -6206,27 +6229,7 @@ describe("httpApiV1 handlers", () => {
       capabilityTags: ["posts-externally", "requires-oauth-token"],
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: selectedVersion0,
-          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
-          moderationInfo: {
-            isPendingScan: false,
-            isMalwareBlocked: false,
-            isSuspicious: false,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -6538,7 +6541,7 @@ describe("httpApiV1 handlers", () => {
     expect(json.moderation.matchesRequestedVersion).toBe(true);
   });
 
-  it("keeps hasScanResult true when one scanner returns a definitive verdict", async () => {
+  it("reports an errored ClawScan without a definitive scan result", async () => {
     const selectedSkill = {
       _id: "skills:1",
       slug: "demo",
@@ -6568,27 +6571,7 @@ describe("httpApiV1 handlers", () => {
       },
       files: [],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: selectedVersion0,
-          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
-          moderationInfo: {
-            isPendingScan: false,
-            isMalwareBlocked: false,
-            isSuspicious: false,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -6598,7 +6581,8 @@ describe("httpApiV1 handlers", () => {
     const json = await response.json();
     expect(json.security.status).toBe("error");
     expect(json.security.hasScanResult).toBe(false);
-    expect(json.security.scanners.vt.normalizedStatus).toBe("clean");
+    // Stored VirusTotal telemetry is retired and never surfaced.
+    expect(json.security.scanners.vt).toBeUndefined();
     expect(json.security.scanners.llm.normalizedStatus).toBe("error");
   });
 
@@ -6832,21 +6816,7 @@ describe("httpApiV1 handlers", () => {
       latestVersionId: "skillVersions:1",
     };
     const selectedVersion0 = internalVersion;
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
-          owner: null,
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const terraform = 'resource "null_resource" "demo" {}\n';
     const storage = {
@@ -6930,21 +6900,7 @@ describe("httpApiV1 handlers", () => {
       latestVersionId: "skillVersions:1",
     };
     const selectedVersion0 = internalVersion;
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
-          owner: null,
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const storage = {
       get: vi.fn(async (storageId: string) => {
         if (storageId === "storage:bom") return new Blob([bomBytes], { type: "text/plain" });
@@ -7031,21 +6987,7 @@ describe("httpApiV1 handlers", () => {
       latestVersionId: "skillVersions:1",
     };
     const selectedVersion0 = internalVersion;
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
-          owner: null,
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({
         runQuery,
@@ -7712,7 +7654,6 @@ describe("httpApiV1 handlers", () => {
             rawStatus: "clean",
             verdict: "clean",
             signals: {
-              staticScan: { status: "clean", rawStatus: "clean" },
               dependencyRegistry: null,
             },
           },
@@ -7721,10 +7662,7 @@ describe("httpApiV1 handlers", () => {
     });
     expect(json.items[0].card).toBeUndefined();
     expect(json.items[0].artifact).toBeUndefined();
-    expect(json.items[0].security.signals.staticScan.findings).toBeUndefined();
     expect(Object.keys(json.items[0].security.signals)).toEqual([
-      "staticScan",
-      "virusTotal",
       "skillSpector",
       "dependencyRegistry",
     ]);
@@ -8814,21 +8752,7 @@ describe("httpApiV1 handlers", () => {
       latestVersionId: "skillVersions:1",
     };
     const selectedVersion0 = internalVersion;
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
-          owner: null,
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({
@@ -9016,6 +8940,204 @@ describe("httpApiV1 handlers", () => {
       }),
       expect.anything(),
     );
+  });
+
+  describe("truthful publish failures", () => {
+    const skillPublishRequest = () =>
+      new Request("https://example.com/api/v1/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          slug: "demo",
+          displayName: "Demo",
+          version: "1.0.0",
+          changelog: "c",
+          acceptLicenseTerms: true,
+          files: [
+            {
+              path: "SKILL.md",
+              size: 1,
+              storageId: "storage:1",
+              sha256: "abc",
+              contentType: "text/plain",
+              uploadTicket: "skillPublishUploadTickets:1",
+            },
+          ],
+        }),
+      });
+    const rateLimitHeaders = [
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Reset",
+      "RateLimit-Limit",
+      "RateLimit-Remaining",
+      "RateLimit-Reset",
+    ];
+
+    beforeEach(() => {
+      vi.mocked(requireApiTokenUser).mockResolvedValue({
+        userId: "users:1",
+        user: { handle: "p" },
+      } as never);
+    });
+
+    it.each([
+      {
+        error:
+          "[Request ID: 0123456789abcdef] Server Error\nUncaught Error: InternalServerError: Transient error while running mutation",
+        retryAfter: "2",
+      },
+      { error: "Overloaded: The deployment is overloaded. Try again later.", retryAfter: "2" },
+      { error: "Your request couldn't be completed. Try again later.", retryAfter: "2" },
+      {
+        error:
+          "CommitterFullError: Too many writes in a short period of time. Reduce your writes. (reset in 9s)",
+        retryAfter: "9",
+      },
+      {
+        error:
+          'Documents read from or written to the "skills" table changed while this mutation was being run and on every subsequent retry.',
+        retryAfter: "1",
+      },
+    ])("maps a transient Convex failure to 503 with Retry-After: $error", async (fixture) => {
+      vi.mocked(publishVersionForUser).mockRejectedValueOnce(new Error(fixture.error));
+      const response = await __handlers.publishSkillV1Handler(
+        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        skillPublishRequest(),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe(fixture.retryAfter);
+      for (const header of rateLimitHeaders) expect(response.headers.get(header)).toBeNull();
+      const body = await response.text();
+      expect(body).toMatch(/not rejected for validation/);
+      expect(body).not.toMatch(/reset in|rate limit/i);
+      if (fixture.error.includes("Request ID")) {
+        expect(body).toContain("[Request ID: 0123456789abcdef]");
+      }
+    });
+
+    it("answers 409 without Retry-After when the failure follows consumed upload tickets", async () => {
+      vi.mocked(publishVersionForUser).mockImplementationOnce(
+        async (_ctx, _userId, _args, options) => {
+          options?.onFilesPersisted?.();
+          throw new Error("InternalServerError: Transient error while running mutation");
+        },
+      );
+      const response = await __handlers.publishSkillV1Handler(
+        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        skillPublishRequest(),
+      );
+      // Resending the same tickets can never succeed, so do not invite an automatic retry.
+      expect(response.status).toBe(409);
+      expect(response.headers.get("Retry-After")).toBeNull();
+      for (const header of rateLimitHeaders) expect(response.headers.get(header)).toBeNull();
+      const body = await response.text();
+      expect(body).toContain("cannot be retried");
+      expect(body).toContain("may have completed");
+    });
+
+    it.each([
+      new Error("Version 1.0.0 already exists. Increment the version number and try again."),
+      new ConvexError("Version 1.0.0 already exists. Increment the version number and try again."),
+      // Application errors keep their status even when they quote platform text.
+      new ConvexError("InternalServerError: is a reserved skill name"),
+    ])("keeps a genuine validation error as 400 with its message: %s", async (error) => {
+      vi.mocked(publishVersionForUser).mockRejectedValueOnce(error);
+      const response = await __handlers.publishSkillV1Handler(
+        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        skillPublishRequest(),
+      );
+      expect(response.status).toBe(400);
+      expect(response.headers.get("Retry-After")).toBeNull();
+      for (const header of rateLimitHeaders) expect(response.headers.get(header)).toBeNull();
+      expect(await response.text()).toContain(error.message);
+    });
+
+    it("reports a transient failure while reading the API token as 503, not 401", async () => {
+      vi.mocked(requireApiTokenUser).mockReset();
+      vi.mocked(requireApiTokenUser).mockRejectedValueOnce(
+        new Error("Your request couldn't be completed. Try again later."),
+      );
+      const response = await __handlers.publishSkillV1Handler(
+        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        skillPublishRequest(),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe("2");
+      expect(await response.text()).not.toMatch(/unauthorized|login/i);
+      expect(publishVersionForUser).not.toHaveBeenCalled();
+    });
+
+    it("keeps a rejected API token as 401", async () => {
+      vi.mocked(requireApiTokenUser).mockReset();
+      vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new ConvexError("Unauthorized"));
+      const response = await __handlers.publishSkillV1Handler(
+        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        skillPublishRequest(),
+      );
+      expect(response.status).toBe(401);
+      expect(response.headers.get("Retry-After")).toBeNull();
+    });
+
+    it("maps a transient failure while minting a trusted publish token to 503", async () => {
+      const runQuery = vi.fn(async () => {
+        throw new Error("InternalServerError: Transient error while running query");
+      });
+      const response = await __handlers.mintPublishTokenV1Handler(
+        makeCtx({ runQuery, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        new Request("https://example.com/api/v1/publish/token/mint", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            packageName: "@openclaw/demo-plugin",
+            version: "1.0.0",
+            githubOidcToken: "gh.jwt",
+          }),
+        }),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe("2");
+    });
+
+    it("maps a transient publish-recovery failure to 503 and says the outcome is unknown", async () => {
+      const { recoverPackagePublishAttemptV1Handler } =
+        await import("./httpApiV1/packagePublishRecoveryV1");
+      const runAction = vi
+        .fn()
+        .mockRejectedValue(new Error("InternalServerError: Transient error while running action"));
+      const response = await recoverPackagePublishAttemptV1Handler(
+        makeCtx({ runAction, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        new Request("https://example.com/api/v1/publish/attempts/publishAttempts:1/recover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
+          body: JSON.stringify({ manualOverrideReason: "Retry after outage" }),
+        }),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe("2");
+      expect(await response.text()).toContain("may have completed");
+    });
+
+    it("maps a transient failure while minting a skill upload URL to 503", async () => {
+      vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        throw new Error("InternalServerError: Transient error while running mutation");
+      });
+      const response = await __handlers.skillsPostRouterV1Handler(
+        makeCtx({ runMutation }),
+        new Request("https://example.com/api/v1/skills/-/upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
+          body: JSON.stringify({ path: "SKILL.md", size: 1, sha256: "a".repeat(64) }),
+        }),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe("2");
+    });
   });
 
   it("publish json defaults omitted ownerHandle to personal publish scope", async () => {
@@ -10773,75 +10895,6 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("VT pending repair requires admin role", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      throw new Error("should not repair");
-    });
-
-    const response = await __handlers.skillsPostRouterV1Handler(
-      makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills/-/repair-vt-pending", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ batchSize: 25, dryRun: true }),
-      }),
-    );
-
-    expect(response.status).toBe(403);
-    await expect(response.text()).resolves.toBe("Admin role required.");
-    expect(runMutation).toHaveBeenCalledTimes(1);
-  });
-
-  it("VT pending repair invokes the internal repair action via admin API", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
-    const runAction = vi.fn(async () => ({
-      dryRun: true,
-      total: 2,
-      wouldUpdate: 2,
-      updated: 0,
-      noResults: 0,
-      noDecisiveStats: 0,
-      errors: 0,
-      done: false,
-      cursor: "cursor-2",
-      statusCounts: { clean: 2 },
-      sampleUpdated: [{ slug: "demo", status: "clean" }],
-    }));
-
-    const response = await __handlers.skillsPostRouterV1Handler(
-      makeCtx({ runAction }),
-      new Request("https://example.com/api/v1/skills/-/repair-vt-pending", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ batchSize: 25, cursor: null, dryRun: true }),
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      ok: true,
-      dryRun: true,
-      wouldUpdate: 2,
-      cursor: "cursor-2",
-    });
-    expect(runAction).toHaveBeenCalledWith(
-      (internal as unknown as { vt: Record<string, unknown> }).vt.repairPendingSkillVtAnalysis,
-      {
-        dryRun: true,
-        cursor: null,
-        batchSize: 25,
-      },
-    );
-  });
-
   it("package rescan enqueues owner-authorized ClawScan jobs", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
@@ -11995,7 +12048,8 @@ describe("httpApiV1 handlers", () => {
       name: "readIp",
       config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
     });
-    expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
+    // Admitted requests carry no rate-limit headers.
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
   });
 
   it("packages search ignores retired environment capability shorthands", async () => {
@@ -13197,6 +13251,52 @@ describe("httpApiV1 handlers", () => {
       "second-plugin",
     ]);
     expect(codePluginCursors).toEqual([null, "code-downloads-cursor"]);
+  });
+
+  it.each(["", "?limit=25&sort=recommended"])(
+    "shares the anonymous default plugin browse snapshot: %s",
+    async (search) => {
+      const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+        if (Object.keys(args).length === 0) return 0;
+        if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+        return { page: [], isDone: true, continueCursor: "" };
+      });
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const response = await __handlers.listPluginsV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(`https://example.com/api/v1/plugins${search}`),
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, s-maxage=30");
+      expect(runMutation).toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { search: "?limit=25&sort=recommended", cookie: "session=private" },
+    { search: "?limit=12" },
+    { search: "?limit=25&sort=downloads" },
+    { search: "?limit=25&isOfficial=true" },
+    { search: "?limit=25&channel=private" },
+    { search: "?limit=25&limit=25" },
+    { search: "?limit=25&unused=parameter" },
+  ])("keeps other default catalog responses uncacheable: %j", async ({ search, cookie }) => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 0;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+      return { page: [], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(`https://example.com/api/v1/plugins${search}`, {
+        headers: cookie ? { cookie } : {},
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).not.toContain("s-maxage");
   });
 
   it("plugins list recommended sort uses weighted scores across plugin families", async () => {
@@ -14771,22 +14871,7 @@ describe("httpApiV1 handlers", () => {
   it("packages version detail returns security scan fields for plugins", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
@@ -14857,7 +14942,11 @@ describe("httpApiV1 handlers", () => {
     );
 
     if (response.status !== 200) throw new Error(await response.text());
-    await expect(response.json()).resolves.toMatchObject({
+    const body = await response.json();
+    // Stored VirusTotal and static scan rows are retired and no longer exposed.
+    expect(body.version).not.toHaveProperty("vtAnalysis");
+    expect(body.version).not.toHaveProperty("staticScan");
+    expect(body).toMatchObject({
       package: {
         name: "demo-plugin",
         family: "code-plugin",
@@ -14865,10 +14954,6 @@ describe("httpApiV1 handlers", () => {
       version: {
         version: "1.0.0",
         sha256hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        vtAnalysis: {
-          status: "clean",
-          verdict: "benign",
-        },
         llmAnalysis: {
           status: "clean",
           verdict: "clean",
@@ -14880,10 +14965,6 @@ describe("httpApiV1 handlers", () => {
         },
         verification: {
           scanStatus: "clean",
-        },
-        staticScan: {
-          status: "malicious",
-          summary: "Static fixture only.",
         },
       },
     });
@@ -15035,22 +15116,7 @@ describe("httpApiV1 handlers", () => {
   it("packages version detail returns ClawPack artifact metadata", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
@@ -15106,25 +15172,97 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("encodes a publisher version in package download filenames", async () => {
+    const injected = `1"; filename*=UTF-8''setup.jar; x="`;
+    const tarballName = `demo-plugin-${injected}.tgz`;
+    const zipName = `demo-plugin-${injected}.zip`;
+    const pkg = {
+      _id: "packages:demo-plugin",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "bundle-plugin",
+      tags: { latest: "packageReleases:1" },
+      latestReleaseId: "packageReleases:1",
+      channel: "community",
+      isOfficial: false,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const release = {
+      _id: "packageReleases:1",
+      packageId: "packages:demo-plugin",
+      version: injected,
+      createdAt: 1,
+      changelog: "Initial release",
+      distTags: ["latest"],
+      files: [],
+      artifactKind: "npm-pack" as const,
+      clawpackStorageId: "storage:clawpack",
+      clawpackSha256: "c".repeat(64),
+      clawpackSize: 3,
+      clawpackFormat: "tgz",
+      npmTarballName: tarballName,
+    };
+    const legacyRelease = {
+      ...release,
+      artifactKind: "legacy-zip" as const,
+      npmTarballName: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("packageId" in args) return { release: legacyRelease };
+      if ("name" in args && "version" in args) return { package: pkg, version: release };
+      if ("name" in args) return { package: pkg, latestRelease: release, owner: null };
+      return null;
+    });
+    const storage = {
+      get: vi.fn().mockResolvedValue(new Blob([Uint8Array.from([1, 2, 3])])),
+    };
+    const ctx = makeCtx({
+      runQuery,
+      runMutation: vi.fn().mockResolvedValue(okRate()),
+      storage,
+    });
+
+    const tarball = await __handlers.packagesGetRouterV1Handler(
+      ctx,
+      new Request(
+        `https://example.com/api/v1/packages/demo-plugin/versions/${encodeURIComponent(injected)}/artifact/download`,
+      ),
+    );
+    expect(contentDispositionAttachment("demo-plugin-1.2.3.tgz")).toBe(
+      `attachment; filename="demo-plugin-1.2.3.tgz"; filename*=UTF-8''demo-plugin-1.2.3.tgz`,
+    );
+    expect(tarball.status).toBe(200);
+    const tarballDisposition = tarball.headers.get("Content-Disposition") ?? "";
+    expect(tarballDisposition).toBe(contentDispositionAttachment(tarballName));
+    expect(tarballDisposition.match(/filename="([^"]+)"/)?.[1]).toBe(
+      "demo-plugin-1_filename_UTF-8_setup_jar_x.tgz",
+    );
+    expect(decodeURIComponent(tarballDisposition.split("filename*=UTF-8''")[1] ?? "")).toBe(
+      tarballName,
+    );
+    expect(tarballDisposition).not.toContain("setup.jar;");
+
+    const zip = await __handlers.packagesGetRouterV1Handler(
+      ctx,
+      new Request(
+        `https://example.com/api/v1/packages/demo-plugin/download?version=${encodeURIComponent(injected)}`,
+      ),
+    );
+    expect(zip.status).toBe(200);
+    const zipDisposition = zip.headers.get("Content-Disposition") ?? "";
+    expect(zipDisposition).toBe(contentDispositionAttachment(zipName));
+    expect(zipDisposition.match(/filename="([^"]+)"/)?.[1]).toBe(
+      "demo-plugin-1_filename_UTF-8_setup_jar_x.zip",
+    );
+    expect(decodeURIComponent(zipDisposition.split("filename*=UTF-8''")[1] ?? "")).toBe(zipName);
+    expect(zipDisposition).not.toContain("setup.jar;");
+  });
+
   it("package artifact endpoint exposes ClawPack resolver URLs", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
@@ -15178,22 +15316,7 @@ describe("httpApiV1 handlers", () => {
   it("package artifact endpoint exposes legacy zip resolver compatibility aliases", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
@@ -15250,22 +15373,7 @@ describe("httpApiV1 handlers", () => {
   it("package security endpoint uses the canonical npm artifact hash", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
@@ -15516,14 +15624,15 @@ describe("httpApiV1 handlers", () => {
       },
     },
     {
-      name: "stale",
+      // Staleness came only from retired VirusTotal telemetry and is never reported now.
+      name: "retired VirusTotal stale",
       release: { sha256hash: "b".repeat(64), vtAnalysis: { status: "stale", checkedAt: 123 } },
       expected: {
         scanStatus: "pending",
         blockedFromDownload: false,
         reasons: ["scan:pending"],
         pending: true,
-        stale: true,
+        stale: false,
       },
     },
     {
@@ -15691,22 +15800,7 @@ describe("httpApiV1 handlers", () => {
   it("package artifact endpoint omits legacy zip archive aliases when archive hash is missing", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "publishers:demo", handle: "demo" },
-        };
+        return makeDemoPluginLookupResult();
       }
       if ("name" in args && "version" in args) {
         return {
@@ -16519,50 +16613,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("npm mirror uses the public host when requests arrive through Convex rewrites", async () => {
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args && !("paginationOpts" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            summary: "Demo package",
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: null,
-        };
-      }
-      if ("paginationOpts" in args) {
-        return {
-          page: [
-            {
-              _id: "packageReleases:1",
-              packageId: "packages:demo-plugin",
-              version: "1.0.0",
-              createdAt: 1,
-              changelog: "Initial release",
-              distTags: ["latest"],
-              files: [],
-              artifactKind: "npm-pack",
-              clawpackStorageId: "storage:clawpack",
-              npmIntegrity: "sha512-demo",
-              npmShasum: "d".repeat(40),
-              npmTarballName: "demo-plugin-1.0.0.tgz",
-            },
-          ],
-          isDone: true,
-          continueCursor: null,
-        };
-      }
-      return null;
-    });
+    const runQuery = makeNpmMirrorQuery();
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.npmMirrorGetHandler(
@@ -16589,50 +16640,7 @@ describe("httpApiV1 handlers", () => {
 
   it("npm mirror falls back to clawhub.ai for production Convex artifact URLs", async () => {
     vi.stubEnv("CONVEX_DEPLOYMENT", "prod:wry-manatee-359");
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args && !("paginationOpts" in args)) {
-        return {
-          package: {
-            _id: "packages:demo-plugin",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            summary: "Demo package",
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: null,
-        };
-      }
-      if ("paginationOpts" in args) {
-        return {
-          page: [
-            {
-              _id: "packageReleases:1",
-              packageId: "packages:demo-plugin",
-              version: "1.0.0",
-              createdAt: 1,
-              changelog: "Initial release",
-              distTags: ["latest"],
-              files: [],
-              artifactKind: "npm-pack",
-              clawpackStorageId: "storage:clawpack",
-              npmIntegrity: "sha512-demo",
-              npmShasum: "d".repeat(40),
-              npmTarballName: "demo-plugin-1.0.0.tgz",
-            },
-          ],
-          isDone: true,
-          continueCursor: null,
-        };
-      }
-      return null;
-    });
+    const runQuery = makeNpmMirrorQuery();
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.npmMirrorGetHandler(
@@ -16902,49 +16910,7 @@ describe("httpApiV1 handlers", () => {
 
   it("package download uses download rate limiting", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
-        return {
-          package: {
-            _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: null,
-        };
-      }
-      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
-        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
-        return {
-          package: { _id: "packages:1", name: "demo-plugin" },
-          release: {
-            packageId: "packages:1",
-            _id: "packageReleases:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "init",
-            files: [
-              {
-                path: "package.json",
-                size: 2,
-                sha256: "a".repeat(64),
-                storageId: "storage:1",
-                contentType: "application/json",
-              },
-            ],
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makePackageDownloadQuery({ owner: null });
 
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({
@@ -16958,7 +16924,8 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
+    // Admitted requests carry no rate-limit headers.
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
     expect(findRateLimitCallArgs(runMutation)).toMatchObject({
       key: expect.stringMatching(/^ip:/),
       name: "downloadIp",
@@ -16968,48 +16935,17 @@ describe("httpApiV1 handlers", () => {
 
   it("package file uses read rate limiting", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
-        return {
-          package: {
-            _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: null,
-        };
-      }
-      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
-        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
-        return {
-          package: { _id: "packages:1", name: "demo-plugin" },
-          release: {
-            packageId: "packages:1",
-            _id: "packageReleases:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "init",
-            files: [
-              {
-                path: "README.md",
-                size: 5,
-                sha256: "a".repeat(64),
-                storageId: "storage:1",
-                contentType: "text/markdown",
-              },
-            ],
-          },
-        };
-      }
-      return null;
+    const runQuery = makePackageDownloadQuery({
+      owner: null,
+      makeFiles: () => [
+        {
+          path: "README.md",
+          size: 5,
+          sha256: "a".repeat(64),
+          storageId: "storage:1",
+          contentType: "text/markdown",
+        },
+      ],
     });
 
     const response = await __handlers.packagesGetRouterV1Handler(
@@ -17024,7 +16960,8 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
+    // Admitted requests carry no rate-limit headers.
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
     expect(findRateLimitCallArgs(runMutation)).toMatchObject({
       key: expect.stringMatching(/^ip:/),
       name: "readIp",
@@ -17034,55 +16971,24 @@ describe("httpApiV1 handlers", () => {
 
   it("package file previews UTF-8 by bytes and downloads opaque artifacts", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
-        return {
-          package: {
-            _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: null,
-        };
-      }
-      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
-        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
-        return {
-          package: { _id: "packages:1", name: "demo-plugin" },
-          release: {
-            packageId: "packages:1",
-            _id: "packageReleases:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "init",
-            files: [
-              {
-                path: "main.tf",
-                size: 37,
-                sha256: "b".repeat(64),
-                storageId: "storage:text",
-                contentType: "application/octet-stream",
-              },
-              {
-                path: "assets/payload.bin",
-                size: 4,
-                sha256: "a".repeat(64),
-                storageId: "storage:1",
-                contentType: "application/octet-stream",
-              },
-            ],
-          },
-        };
-      }
-      return null;
+    const runQuery = makePackageDownloadQuery({
+      owner: null,
+      makeFiles: () => [
+        {
+          path: "main.tf",
+          size: 37,
+          sha256: "b".repeat(64),
+          storageId: "storage:text",
+          contentType: "application/octet-stream",
+        },
+        {
+          path: "assets/payload.bin",
+          size: 4,
+          sha256: "a".repeat(64),
+          storageId: "storage:1",
+          contentType: "application/octet-stream",
+        },
+      ],
     });
     const terraform = 'resource "null_resource" "demo" {}\n';
     const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
@@ -17124,48 +17030,17 @@ describe("httpApiV1 handlers", () => {
 
   it("package file resolves lowercase readme variants from the canonical request path", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
-        return {
-          package: {
-            _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: null,
-        };
-      }
-      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
-        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
-        return {
-          package: { _id: "packages:1", name: "demo-plugin" },
-          release: {
-            packageId: "packages:1",
-            _id: "packageReleases:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "init",
-            files: [
-              {
-                path: "readme.md",
-                size: 5,
-                sha256: "a".repeat(64),
-                storageId: "storage:1",
-                contentType: "text/markdown",
-              },
-            ],
-          },
-        };
-      }
-      return null;
+    const runQuery = makePackageDownloadQuery({
+      owner: null,
+      makeFiles: () => [
+        {
+          path: "readme.md",
+          size: 5,
+          sha256: "a".repeat(64),
+          storageId: "storage:1",
+          contentType: "text/markdown",
+        },
+      ],
     });
 
     const response = await __handlers.packagesGetRouterV1Handler(
@@ -17186,55 +17061,23 @@ describe("httpApiV1 handlers", () => {
   it("package download uses a package/ root without registry metadata", async () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
-        return {
-          package: {
-            _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "users:owner", handle: "owner" },
-        };
-      }
-      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
-        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
-        return {
-          package: { _id: "packages:1", name: "demo-plugin" },
-          release: {
-            packageId: "packages:1",
-            _id: "packageReleases:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "init",
-            files: [
-              {
-                path: "package.json",
-                size: 2,
-                sha256: "a".repeat(64),
-                storageId: "storage:1",
-                contentType: "application/json",
-              },
-              {
-                path: "dist/index.js",
-                size: 17,
-                sha256: "b".repeat(64),
-                storageId: "storage:2",
-                contentType: "text/javascript",
-              },
-            ],
-          },
-        };
-      }
-      return null;
+    const runQuery = makePackageDownloadQuery({
+      makeFiles: () => [
+        {
+          path: "package.json",
+          size: 2,
+          sha256: "a".repeat(64),
+          storageId: "storage:1",
+          contentType: "application/json",
+        },
+        {
+          path: "dist/index.js",
+          size: 17,
+          sha256: "b".repeat(64),
+          storageId: "storage:2",
+          contentType: "text/javascript",
+        },
+      ],
     });
 
     const response = await __handlers.packagesGetRouterV1Handler(
@@ -17277,49 +17120,7 @@ describe("httpApiV1 handlers", () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:viewer" as never);
 
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
-        return {
-          package: {
-            _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "users:owner", handle: "owner" },
-        };
-      }
-      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
-        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
-        return {
-          package: { _id: "packages:1", name: "demo-plugin" },
-          release: {
-            packageId: "packages:1",
-            _id: "packageReleases:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "init",
-            files: [
-              {
-                path: "package.json",
-                size: 2,
-                sha256: "a".repeat(64),
-                storageId: "storage:1",
-                contentType: "application/json",
-              },
-            ],
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makePackageDownloadQuery();
 
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({
@@ -17351,49 +17152,7 @@ describe("httpApiV1 handlers", () => {
   it("package downloads succeed and record download metrics", async () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
-        return {
-          package: {
-            _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "users:owner", handle: "owner" },
-        };
-      }
-      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
-        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
-        return {
-          package: { _id: "packages:1", name: "demo-plugin" },
-          release: {
-            packageId: "packages:1",
-            _id: "packageReleases:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "init",
-            files: [
-              {
-                path: "package.json",
-                size: 2,
-                sha256: "a".repeat(64),
-                storageId: "storage:1",
-                contentType: "application/json",
-              },
-            ],
-          },
-        };
-      }
-      return null;
-    });
+    const runQuery = makePackageDownloadQuery();
 
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({
@@ -17417,55 +17176,23 @@ describe("httpApiV1 handlers", () => {
 
   it("package download fails when any stored file is missing", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
-        return {
-          package: {
-            _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: { _id: "users:owner", handle: "owner" },
-        };
-      }
-      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
-        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
-        return {
-          package: { _id: "packages:1", name: "demo-plugin" },
-          release: {
-            packageId: "packages:1",
-            _id: "packageReleases:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "init",
-            files: [
-              {
-                path: "package.json",
-                size: 2,
-                sha256: "a".repeat(64),
-                storageId: "storage:1",
-                contentType: "application/json",
-              },
-              {
-                path: "dist/index.js",
-                size: 2,
-                sha256: "b".repeat(64),
-                storageId: "storage:missing",
-                contentType: "text/javascript",
-              },
-            ],
-          },
-        };
-      }
-      return null;
+    const runQuery = makePackageDownloadQuery({
+      makeFiles: () => [
+        {
+          path: "package.json",
+          size: 2,
+          sha256: "a".repeat(64),
+          storageId: "storage:1",
+          contentType: "application/json",
+        },
+        {
+          path: "dist/index.js",
+          size: 2,
+          sha256: "b".repeat(64),
+          storageId: "storage:missing",
+          contentType: "text/javascript",
+        },
+      ],
     });
     const storageGet = vi.fn(async (storageId: string) => {
       if (storageId === "storage:1") return new Blob(["{}"], { type: "application/json" });
@@ -17951,7 +17678,8 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
+    // Admitted requests carry no rate-limit headers.
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
     expect(findRateLimitCallArgs(runMutation)).toMatchObject({
       key: "user:users:1:write",
       name: "writeKey",
@@ -17965,6 +17693,112 @@ describe("httpApiV1 handlers", () => {
       }),
     );
   });
+
+  it.each([
+    { stage: "first-store", typed: true, status: 503 },
+    { stage: "first-store", typed: false, status: 400 },
+    { stage: "extracted-store", typed: true, status: 503 },
+    { stage: "publish", typed: true, status: 503 },
+    { stage: "loose-file-store", typed: true, status: 503 },
+    { stage: "none", typed: true, status: 200 },
+  ])(
+    "inline package storage classification maps $stage (typed=$typed) to $status",
+    async ({ stage, typed, status }) => {
+      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+        kind: "user",
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const message = `${typed ? "CommitterFullError: " : ""}Too many writes in a short period of time. Reduce your writes, spread your writes out over time or remove unused indexes to reduce load and avoid errors. (reset in 43s)`;
+      const runAction = vi.fn().mockImplementation(async () => {
+        if (stage === "publish") throw new Error(message);
+        return { ok: true, packageId: "pkg:1", releaseId: "rel:1" };
+      });
+      const storedIds: string[] = [];
+      let calls = 0;
+      const storageStore = vi.fn(async (_blob: Blob) => {
+        calls += 1;
+        if (
+          (["first-store", "loose-file-store"].includes(stage) && calls === 1) ||
+          (stage === "extracted-store" && calls === 2)
+        )
+          throw new Error(message);
+        const id = `storage:${calls}`;
+        storedIds.push(id);
+        return id;
+      });
+      const storageDelete = vi.fn().mockResolvedValue(undefined);
+      const form = packagePublishForm(packagePublishMetadata({ family: "code-plugin" }));
+      if (stage === "loose-file-store") {
+        form.append(
+          "files",
+          new File(["{}"], "openclaw.plugin.json", { type: "application/json" }),
+        );
+      } else {
+        const pack = npmPackFixture({
+          "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+          "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+          "package/dist/index.js": "export const demo = true;\n",
+        });
+        form.append(
+          "clawpack",
+          new File([bytesToArrayBuffer(pack)], "demo-plugin-1.0.0.tgz", {
+            type: "application/octet-stream",
+          }),
+        );
+      }
+      const response = await __handlers.publishPackageV1Handler(
+        makeCtx({
+          runAction,
+          runMutation: vi.fn().mockResolvedValue(okRate()),
+          storage: { store: storageStore, delete: storageDelete },
+        }),
+        new Request("https://example.com/api/v1/packages", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: form,
+        }),
+      );
+      expect(response.status).toBe(status);
+      if (stage === "first-store" || stage === "loose-file-store") {
+        expect(storageStore).toHaveBeenCalledTimes(1);
+        expect(runAction).not.toHaveBeenCalled();
+        expect(storageDelete).not.toHaveBeenCalled();
+      } else if (stage === "extracted-store") {
+        expect(runAction).not.toHaveBeenCalled();
+        expect(storedIds.length).toBeGreaterThan(0);
+        expect(
+          storageDelete.mock.calls
+            .map(([id]) => id)
+            .sort((left, right) => String(left).localeCompare(String(right))),
+        ).toEqual(storedIds.sort((left, right) => left.localeCompare(right)));
+      } else {
+        expect(runAction).toHaveBeenCalledTimes(1);
+        expect(storageDelete).not.toHaveBeenCalled();
+        if (stage === "none") {
+          expect(runAction.mock.calls[0]?.[1]).toMatchObject({
+            actorUserId: "users:1",
+            payload: { family: "code-plugin", artifact: { kind: "npm-pack", format: "tgz" } },
+            requestStorageIds: storedIds,
+          });
+        }
+      }
+      if (status === 400) expect(await response.text()).toContain(message);
+      if (status === 503) {
+        // Typed write-admission pressure is a platform failure, not validation
+        // or the caller's rate limit: its reset window moves into Retry-After.
+        const body = await response.text();
+        expect(body).toContain("ClawHub backend is temporarily unavailable.");
+        expect(body).toContain("CommitterFullError: Too many writes");
+        expect(body).not.toContain("reset in");
+        expect(response.headers.get("Retry-After")).toBe("30");
+        expect(response.headers.get("RateLimit-Reset")).toBeNull();
+        if (stage === "publish") expect(body).toContain("may have completed");
+        else expect(body).not.toContain("may have completed");
+      }
+    },
+  );
 
   it("package publish returns retryable status for transient Convex contention", async () => {
     vi.mocked(getOptionalApiTokenUser).mockResolvedValue({

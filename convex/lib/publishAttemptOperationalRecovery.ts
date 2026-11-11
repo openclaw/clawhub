@@ -4,6 +4,7 @@ import type { MutationCtx } from "../_generated/server";
 import { requestPublishAttemptDispatch } from "../publishAttemptDispatch";
 import { resolvePackageReleaseScanStatus } from "./packageSecurity";
 import { assertCanManageOwnedResource, isPublisherActive } from "./publishers";
+import { assertScannerSource } from "./scannerSource";
 import { normalizeSecurityScanStatus } from "./securityScanPolicy";
 import { matchesStorageSha256 } from "./storageDigests";
 
@@ -28,58 +29,16 @@ function matchesAttemptPublisher(
   );
 }
 
-// Operator maintenance, not an owner authorization or moderation override. Every
-// retry goes through the existing scanner, claim and finalization boundaries.
-export async function retryFailedPublishAttemptChecks(
-  ctx: MutationCtx,
-  args: {
-    attemptId: Id<"publishAttempts">;
-    expectedArtifactFingerprint: string;
-    expectedUpdatedAt: number;
-    reason: string;
-    dryRun?: boolean;
-  },
-) {
-  const reason = args.reason.trim();
-  if (!reason || reason.length > 500 || !Number.isFinite(args.expectedUpdatedAt)) {
-    throw new ConvexError("Supply a 1–500 character reason and the observed update time");
-  }
-  const rejected = (code: string) => ({ eligible: false, requeued: false, reason: code });
-  const attempt = await ctx.db.get(args.attemptId);
-  if (!attempt || attempt.status !== "failed") return rejected("not-failed");
-  if (
-    attempt.updatedAt !== args.expectedUpdatedAt ||
-    attempt.artifactFingerprint !== args.expectedArtifactFingerprint
-  )
-    return rejected("attempt-changed");
-  const now = Date.now();
-  if (attempt.expiresAt <= now) return rejected("attempt-expired");
-  if ((attempt.checkClaimExpiresAt ?? 0) > now || (attempt.finalizationClaimExpiresAt ?? 0) > now)
-    return rejected("active-claim");
-  // Completion also exhausts the operational retry budget when the supporting
-  // A.I.G evidence is unavailable after both primary scanners succeeded.
-  const missingAigEvidence =
-    attempt.kind === "skill" &&
-    attempt.checks.trufflehog.status === "clean" &&
-    attempt.checks.clawscan.status === "clean" &&
-    attempt.checkClaimLastError === "A.I.G evidence is required before a skill can be published.";
-  if (
-    attempt.checks.trufflehog.status === "blocked" ||
-    attempt.checks.clawscan.status === "blocked" ||
-    (!missingAigEvidence &&
-      attempt.checks.trufflehog.status !== "failed" &&
-      attempt.checks.clawscan.status !== "failed")
-  )
-    return rejected("not-operational-failure");
-  if (!Number.isSafeInteger(attempt.checkFailureCount) || (attempt.checkFailureCount ?? -1) < 0)
-    return rejected("failure-history-unavailable");
-
+// Shared admission for scanner retries and expired finalization recovery. The
+// original attempt remains the source of artifact identity and publisher scope.
+async function validateRetainedPublishAttempt(ctx: MutationCtx, attempt: Doc<"publishAttempts">) {
+  const rejected = (reason: string) => ({ eligible: false as const, requeued: false, reason });
   const user = await ctx.db.get(attempt.userId);
   if (!user || user.deletedAt || user.deactivatedAt) return rejected("publisher-unavailable");
   let ownerUserId: Id<"users">;
   let ownerPublisherId: Id<"publishers"> | undefined;
   let targetFiles: typeof attempt.files;
-  let priorRetry: Doc<"skillVersions">["operationalRetry"];
+  let priorBindings: Array<Doc<"skillVersions">["operationalRetry"]>;
   let archive: { storageId: Id<"_storage">; size?: number; sha256?: string } | undefined;
   if (attempt.kind === "skill") {
     const version = attempt.skillVersionId ? await ctx.db.get(attempt.skillVersionId) : null;
@@ -106,7 +65,7 @@ export async function retryFailedPublishAttemptChecks(
     ownerUserId = skill.ownerUserId;
     ownerPublisherId = skill.ownerPublisherId;
     targetFiles = version.files;
-    priorRetry = version.operationalRetry;
+    priorBindings = [version.operationalRetry, version.finalizationRecovery];
   } else {
     const release = attempt.packageReleaseId ? await ctx.db.get(attempt.packageReleaseId) : null;
     const pkg = attempt.packageId ? await ctx.db.get(attempt.packageId) : null;
@@ -131,7 +90,7 @@ export async function retryFailedPublishAttemptChecks(
     ownerUserId = pkg.ownerUserId;
     ownerPublisherId = pkg.ownerPublisherId;
     targetFiles = release.files;
-    priorRetry = release.operationalRetry;
+    priorBindings = [release.operationalRetry, release.finalizationRecovery];
     const insertArgs = attempt.packageInsertArgs as { clawpackStorageId?: unknown } | undefined;
     const originalArchive = attempt.clawpackStorageId ?? insertArgs?.clawpackStorageId;
     if (originalArchive !== release.clawpackStorageId) {
@@ -163,9 +122,12 @@ export async function retryFailedPublishAttemptChecks(
           .eq("version", attempt.version),
       )
       .filter((q) =>
-        q.eq(
-          q.field(attempt.kind === "skill" ? "skillVersionId" : "packageReleaseId"),
-          attempt.kind === "skill" ? attempt.skillVersionId : attempt.packageReleaseId,
+        q.and(
+          q.neq(q.field("_id"), attempt._id),
+          q.eq(
+            q.field(attempt.kind === "skill" ? "skillVersionId" : "packageReleaseId"),
+            attempt.kind === "skill" ? attempt.skillVersionId : attempt.packageReleaseId,
+          ),
         ),
       )
       .first();
@@ -183,11 +145,14 @@ export async function retryFailedPublishAttemptChecks(
   )
     return rejected("owner-changed");
   if (
-    priorRetry &&
-    (priorRetry.attemptId !== attempt._id ||
-      priorRetry.actorUserId !== attempt.userId ||
-      priorRetry.ownerUserId !== ownerUserId ||
-      priorRetry.ownerPublisherId !== ownerPublisherId)
+    priorBindings.some(
+      (binding) =>
+        binding &&
+        (binding.attemptId !== attempt._id ||
+          binding.actorUserId !== attempt.userId ||
+          binding.ownerUserId !== ownerUserId ||
+          binding.ownerPublisherId !== ownerPublisherId),
+    )
   )
     return rejected("retry-binding-changed");
   if (
@@ -232,6 +197,110 @@ export async function retryFailedPublishAttemptChecks(
     )
       return rejected("artifact-storage-unavailable");
   }
+  return { eligible: true as const, ownerUserId, ownerPublisherId };
+}
+
+// Only an explicitly targeted worker may enter this path. Do not change scanner
+// outcomes or erase diagnostic history when resuming an interrupted finalizer.
+export async function bindExpiredFinalizationRecovery(
+  ctx: MutationCtx,
+  attempt: Doc<"publishAttempts">,
+) {
+  const now = Date.now();
+  if (
+    attempt.status !== "finalizing" ||
+    attempt.expiresAt <= now ||
+    (attempt.finalizationClaimExpiresAt ?? 0) > now ||
+    (attempt.checkClaimExpiresAt ?? 0) > now ||
+    attempt.checks.trufflehog.status !== "clean" ||
+    attempt.checks.clawscan.status !== "clean"
+  ) {
+    throw new ConvexError(
+      "Expired finalization recovery requires retained bytes, expired leases and passing primary checks",
+    );
+  }
+  const admission = await validateRetainedPublishAttempt(ctx, attempt);
+  if (!admission.eligible)
+    throw new ConvexError(`Expired finalization recovery rejected: ${admission.reason}`);
+  const { ownerUserId, ownerPublisherId } = admission;
+  const targetId = attempt.kind === "skill" ? attempt.skillVersionId! : attempt.packageReleaseId!;
+  await ctx.db.patch(targetId, {
+    publishAttemptId: attempt._id,
+    finalizationRecovery: {
+      attemptId: attempt._id,
+      actorUserId: attempt.userId,
+      ownerUserId,
+      ...(ownerPublisherId ? { ownerPublisherId } : {}),
+    },
+  });
+  await ctx.db.insert("auditLogs", {
+    action: "publish_attempt.finalization_recovery",
+    targetType: "publishAttempt",
+    targetId: attempt._id,
+    metadata: {
+      artifactFingerprint: attempt.artifactFingerprint,
+      previousUpdatedAt: attempt.updatedAt,
+      previousFinalizationClaimExpiresAt: attempt.finalizationClaimExpiresAt ?? null,
+      previousChecks: attempt.checks,
+      previousFailure: attempt.finalizationLastError ?? null,
+      previousCheckFailure: attempt.checkClaimLastError ?? null,
+      previousFailureCount: attempt.checkFailureCount ?? null,
+    },
+    createdAt: now,
+  });
+}
+
+// Operator maintenance, not an owner authorization or moderation override. Every
+// retry goes through the existing scanner, claim and finalization boundaries.
+export async function retryFailedPublishAttemptChecks(
+  ctx: MutationCtx,
+  args: {
+    attemptId: Id<"publishAttempts">;
+    expectedArtifactFingerprint: string;
+    expectedUpdatedAt: number;
+    reason: string;
+    requiredScannerSource?: string;
+    dryRun?: boolean;
+  },
+) {
+  assertScannerSource(args.requiredScannerSource);
+  const reason = args.reason.trim();
+  if (!reason || reason.length > 500 || !Number.isFinite(args.expectedUpdatedAt)) {
+    throw new ConvexError("Supply a 1–500 character reason and the observed update time");
+  }
+  const rejected = (code: string) => ({ eligible: false, requeued: false, reason: code });
+  const attempt = await ctx.db.get(args.attemptId);
+  if (!attempt || attempt.status !== "failed") return rejected("not-failed");
+  if (
+    attempt.updatedAt !== args.expectedUpdatedAt ||
+    attempt.artifactFingerprint !== args.expectedArtifactFingerprint
+  )
+    return rejected("attempt-changed");
+  const now = Date.now();
+  if (attempt.expiresAt <= now) return rejected("attempt-expired");
+  if ((attempt.checkClaimExpiresAt ?? 0) > now || (attempt.finalizationClaimExpiresAt ?? 0) > now)
+    return rejected("active-claim");
+  // Completion also exhausts the operational retry budget when the supporting
+  // A.I.G evidence is unavailable after both primary scanners succeeded.
+  const missingAigEvidence =
+    attempt.kind === "skill" &&
+    attempt.checks.trufflehog.status === "clean" &&
+    attempt.checks.clawscan.status === "clean" &&
+    attempt.checkClaimLastError === "A.I.G evidence is required before a skill can be published.";
+  if (
+    attempt.checks.trufflehog.status === "blocked" ||
+    attempt.checks.clawscan.status === "blocked" ||
+    (!missingAigEvidence &&
+      attempt.checks.trufflehog.status !== "failed" &&
+      attempt.checks.clawscan.status !== "failed")
+  )
+    return rejected("not-operational-failure");
+  if (!Number.isSafeInteger(attempt.checkFailureCount) || (attempt.checkFailureCount ?? -1) < 0)
+    return rejected("failure-history-unavailable");
+
+  const admission = await validateRetainedPublishAttempt(ctx, attempt);
+  if (!admission.eligible) return admission;
+  const { ownerUserId, ownerPublisherId } = admission;
   const result = {
     eligible: true,
     requeued: false,
@@ -241,6 +310,9 @@ export async function retryFailedPublishAttemptChecks(
     version: attempt.version,
     artifactFingerprint: attempt.artifactFingerprint,
     previousFailureCount: attempt.checkFailureCount,
+    ...((args.requiredScannerSource ?? attempt.requiredScannerSource) !== undefined
+      ? { requiredScannerSource: args.requiredScannerSource ?? attempt.requiredScannerSource }
+      : {}),
   };
   if (args.dryRun !== false) return result;
   await ctx.db.insert("auditLogs", {
@@ -255,6 +327,8 @@ export async function retryFailedPublishAttemptChecks(
       previousFailureCount: attempt.checkFailureCount,
       previousFailure: attempt.checkClaimLastError ?? null,
       previousFailedAt: attempt.failedAt ?? null,
+      previousRequiredScannerSource: attempt.requiredScannerSource ?? null,
+      requiredScannerSource: args.requiredScannerSource ?? attempt.requiredScannerSource ?? null,
     },
     createdAt: now,
   });
@@ -274,6 +348,7 @@ export async function retryFailedPublishAttemptChecks(
   // retry, not a fresh automatic retry budget or a passing scanner verdict.
   await ctx.db.patch(attempt._id, {
     status: "pending_checks",
+    requiredScannerSource: args.requiredScannerSource ?? attempt.requiredScannerSource,
     checkClaimId: undefined,
     checkClaimedAt: undefined,
     checkClaimExpiresAt: now,
@@ -287,14 +362,14 @@ export async function retryFailedPublishAttemptChecks(
 }
 
 // Called by the owners of final publication, in the transaction that makes the
-// target public. An operational retry never freezes publisher authority or holds.
+// target public. Neither recovery path freezes publisher authority or holds.
 async function assertRetryFinalization(
   ctx: MutationCtx,
   parent: Pick<Doc<"skills">, "ownerUserId" | "ownerPublisherId">,
   target: Doc<"skillVersions"> | Doc<"packageReleases">,
   authorization: { publishAttemptId?: Id<"publishAttempts">; finalizationClaimId?: string },
 ) {
-  const retry = target.operationalRetry;
+  const retry = target.finalizationRecovery ?? target.operationalRetry;
   if (!retry) return null;
   const attempt = await ctx.db.get(retry.attemptId);
   if (
@@ -307,6 +382,7 @@ async function assertRetryFinalization(
     parent.ownerUserId !== retry.ownerUserId ||
     parent.ownerPublisherId !== retry.ownerPublisherId ||
     attempt.status !== "finalizing" ||
+    attempt.expiresAt <= Date.now() ||
     !attempt.finalizationClaimId ||
     (attempt.finalizationClaimExpiresAt ?? 0) <= Date.now() ||
     attempt.checks.trufflehog.status !== "clean" ||

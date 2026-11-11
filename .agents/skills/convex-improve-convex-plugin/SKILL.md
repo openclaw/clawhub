@@ -1,6 +1,6 @@
 ---
 name: convex-improve-convex-plugin
-description: "Send this coding session's transcript to the Convex team for an AI post-mortem that improves the quickstart system."
+description: "Send this coding session's transcript to the Convex team for an AI post-mortem that improves the quickstart system. Run only when the user explicitly asks."
 ---
 
 <!-- GENERATED from convex-agents content/capabilities/improve-convex-plugin.json — do not edit by hand. -->

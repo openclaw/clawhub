@@ -2,14 +2,24 @@ type SecurityAuditOverviewInput = {
   llmAnalysis?: {
     summary?: string | null;
     guidance?: string | null;
+    status?: string | null;
+    verdict?: string | null;
   } | null;
 };
 
 export function getSecurityAuditOverviewCopy({
   llmAnalysis,
 }: SecurityAuditOverviewInput): string[] {
+  const status = (llmAnalysis?.verdict ?? llmAnalysis?.status)?.trim().toLowerCase();
+  const unavailable = ["benign", "clean", "suspicious", "malicious", "completed"].includes(
+    status ?? "",
+  )
+    ? "No overview is available for this completed security scan."
+    : ["failed", "error"].includes(status ?? "")
+      ? "The security scan failed. No overview is available."
+      : "No security analysis has been recorded yet.";
   return [
-    llmAnalysis?.summary?.trim() || "No security analysis has been recorded yet.",
+    llmAnalysis?.summary?.trim() || unavailable,
     llmAnalysis?.guidance?.trim() || null,
   ].filter((copy): copy is string => Boolean(copy));
 }
@@ -80,25 +90,16 @@ export function getClawScanDisplayStatus(analysis?: AuditLlmAnalysis | null) {
   return status;
 }
 
-export function aggregateAuditVerdict(signals: {
-  llmAnalysis?: AuditLlmAnalysis | null;
-  staticScan?: { status?: string | null } | null;
-}) {
+export function aggregateAuditVerdict(signals: { llmAnalysis?: AuditLlmAnalysis | null }) {
   const clawScanStatus = getClawScanDisplayStatus(signals.llmAnalysis);
-  const staticStatus = signals.staticScan?.status?.trim().toLowerCase();
-  if (clawScanStatus === "malicious" || staticStatus === "malicious") return "malicious";
+  if (clawScanStatus === "malicious") return "malicious";
   if (
     clawScanStatus === "review" ||
     clawScanStatus === "suspicious" ||
     clawScanStatus === "warn" ||
-    clawScanStatus === "warning" ||
-    staticStatus === "suspicious" ||
-    staticStatus === "review" ||
-    staticStatus === "warn" ||
-    staticStatus === "warning"
+    clawScanStatus === "warning"
   ) {
     return "review";
   }
-  if (clawScanStatus !== "pending") return clawScanStatus;
-  return staticStatus || clawScanStatus;
+  return clawScanStatus;
 }

@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +8,9 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { parseArk } from "../../packages/schema/src/ark";
 import { ApiV1SkillListResponseSchema } from "../../packages/schema/src/schemas";
+import { extractLastJsonObject } from "../helpers/convexOutput";
+import { runDevSeed } from "../helpers/convexSeed";
+import { localConvexDeployment } from "../helpers/localConvex";
 import {
   expectNoFatalErrorUi,
   expectNoRuntimeErrors,
@@ -80,57 +82,6 @@ function convexSiteUrl() {
   const url = process.env.VITE_CONVEX_SITE_URL;
   if (!url) throw new Error("VITE_CONVEX_SITE_URL is required");
   return url.replace(/\/$/u, "");
-}
-
-function localConvexDeployment() {
-  const raw = readFileSync(".convex/local/default/config.json", "utf8");
-  const parsed = JSON.parse(raw) as { deploymentName?: unknown };
-  if (typeof parsed.deploymentName !== "string" || !parsed.deploymentName) {
-    throw new Error("Local Convex deployment name was not available");
-  }
-  return `local:${parsed.deploymentName}`;
-}
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      // Convex can print status lines before the JSON payload.
-    }
-  }
-  throw new Error(`No JSON object in convex run output:\n${output}`);
-}
-
-function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {
-  const result = spawnSync(
-    "bunx",
-    [
-      "convex",
-      "run",
-      "--typecheck",
-      "disable",
-      "--codegen",
-      "disable",
-      functionName,
-      JSON.stringify(args),
-    ],
-    {
-      cwd: process.cwd(),
-      env: { ...process.env, CONVEX_DEPLOYMENT: localConvexDeployment() },
-      encoding: "utf8",
-    },
-  );
-  if (result.status !== 0) {
-    throw new Error(
-      [`Failed to run ${functionName}.`, result.stdout.trim(), result.stderr.trim()].join("\n"),
-    );
-  }
-  return JSON.parse(extractLastJsonObject(result.stdout)) as T;
 }
 
 function getPrePublicationSkillAttemptState(attemptId: string) {

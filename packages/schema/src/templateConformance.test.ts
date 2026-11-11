@@ -1,8 +1,10 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
+import { validateTemplatePackageContents as validateCliTemplatePackageContents } from "../../clawhub/src/schema/templatePackage.js";
+import { OPENCLAW_TEMPLATE_AGENT_POLICY_V1 } from "./templateAgent.js";
 import {
-  OPENCLAW_TEMPLATE_PROFILE_POLICY_V1,
   validateTemplatePackageContents,
   type TemplatePackageTextFile,
 } from "./templatePackage.js";
@@ -21,9 +23,9 @@ type MetadataCase = {
 };
 type ConformanceCases = {
   consumer: { repository: string; commit: string };
-  profileCases: ProfileCase[];
+  agentCases: ProfileCase[];
   heartbeatCases: ProfileCase[];
-  extensionCases: ProfileCase[];
+  pluginCases: ProfileCase[];
   metadataCases: MetadataCase[];
   projectArtifact: { path: string; consumerAccepted: boolean; registryAccepted: boolean };
 };
@@ -43,8 +45,12 @@ const packageJson = {
   openclaw: { template: "CLAW.md" },
 };
 
-function validateProfile(yaml: string, metadata: Record<string, string> = {}) {
-  return validateTemplatePackageContents({
+function validateProfile(
+  validate: typeof validateTemplatePackageContents,
+  yaml: string,
+  metadata: Record<string, string> = {},
+) {
+  return validate({
     packageName: packageJson.name,
     version: packageJson.version,
     packageJson,
@@ -52,9 +58,8 @@ function validateProfile(yaml: string, metadata: Record<string, string> = {}) {
       { path: "package.json", text: JSON.stringify(packageJson) },
       {
         path: "CLAW.md",
-        text: `---\n${JSON.stringify({ ...baseManifest, metadata })}\n---\n`,
+        text: `---\n${JSON.stringify({ ...baseManifest, ...parse(yaml || "{}"), agent: { ...baseManifest.agent, ...parse(yaml || "{}").agent }, metadata })}\n---\n`,
       },
-      ...(yaml ? [{ path: "profiles/openclaw.yml", text: yaml }] : []),
     ],
   });
 }
@@ -81,16 +86,16 @@ function readProjectFiles(root: string): TemplatePackageTextFile[] {
 describe(`ClawHub parity with ${cases.consumer.repository}@${cases.consumer.commit}`, () => {
   it("pins the same shipped consumer as the profile policy artifact", () => {
     expect(cases.consumer).toEqual({
-      repository: OPENCLAW_TEMPLATE_PROFILE_POLICY_V1.source.repository,
-      commit: OPENCLAW_TEMPLATE_PROFILE_POLICY_V1.source.commit,
+      repository: OPENCLAW_TEMPLATE_AGENT_POLICY_V1.source.repository,
+      commit: OPENCLAW_TEMPLATE_AGENT_POLICY_V1.source.commit,
     });
   });
 
   it("never marks a registry-accepted vector as consumer-rejected", () => {
     const vectors = [
-      ...cases.profileCases,
+      ...cases.agentCases,
       ...cases.heartbeatCases,
-      ...cases.extensionCases,
+      ...cases.pluginCases,
       ...cases.metadataCases,
       cases.projectArtifact,
     ];
@@ -99,45 +104,40 @@ describe(`ClawHub parity with ${cases.consumer.repository}@${cases.consumer.comm
     );
   });
 
-  it.each(["templates.ts", "templatePackage.ts"])(
-    "keeps the standalone CLI %s validator identical",
-    (filename) => {
-      expect(readFileSync(resolve(repositoryRoot, "packages/schema/src", filename), "utf8")).toBe(
-        readFileSync(resolve(repositoryRoot, "packages/clawhub/src/schema", filename), "utf8"),
-      );
-    },
-  );
+  describe.each([
+    { name: "registry", validate: validateTemplatePackageContents },
+    { name: "CLI", validate: validateCliTemplatePackageContents },
+  ])("$name", ({ validate }) => {
+    it.each([...cases.agentCases, ...cases.heartbeatCases, ...cases.pluginCases])(
+      "$name",
+      ({ registryAccepted, yaml }) => {
+        expect(validateProfile(validate, yaml).ok).toBe(registryAccepted);
+      },
+    );
 
-  it.each([...cases.profileCases, ...cases.heartbeatCases, ...cases.extensionCases])(
-    "$name",
-    ({ registryAccepted, yaml }) => {
-      expect(validateProfile(yaml).ok).toBe(registryAccepted);
-    },
-  );
-
-  it.each(cases.metadataCases)("$name", ({ registryAccepted, metadata }) => {
-    expect(validateProfile("", metadata).ok).toBe(registryAccepted);
-  });
-
-  it("accepts the shared hosted project artifact", () => {
-    const root = resolve(repositoryRoot, cases.projectArtifact.path);
-    const files = readProjectFiles(root);
-    const parsedPackageJson = JSON.parse(
-      files.find((file) => file.path === "package.json")?.text ?? "null",
-    ) as { name: string; version: string };
-    const result = validateTemplatePackageContents({
-      packageName: parsedPackageJson.name,
-      version: parsedPackageJson.version,
-      packageJson: parsedPackageJson,
-      files,
+    it.each(cases.metadataCases)("$name", ({ registryAccepted, metadata }) => {
+      expect(validateProfile(validate, "", metadata).ok).toBe(registryAccepted);
     });
 
-    expect(result.ok).toBe(cases.projectArtifact.registryAccepted);
-    if (result.ok) {
-      expect(result.value.summary).toMatchObject({
-        profiles: { count: 1, hasOpenClaw: true },
-        extensions: { count: 0 },
+    it("accepts the shared hosted project artifact", () => {
+      const root = resolve(repositoryRoot, cases.projectArtifact.path);
+      const files = readProjectFiles(root);
+      const parsedPackageJson = JSON.parse(
+        files.find((file) => file.path === "package.json")?.text ?? "null",
+      ) as { name: string; version: string };
+      const result = validate({
+        packageName: parsedPackageJson.name,
+        version: parsedPackageJson.version,
+        packageJson: parsedPackageJson,
+        files,
       });
-    }
+
+      expect(result.ok).toBe(cases.projectArtifact.registryAccepted);
+      if (result.ok) {
+        expect(result.value.summary).toMatchObject({
+          packages: { skillCount: 1, pluginCount: 1 },
+        });
+      }
+    });
   });
 });

@@ -1,3 +1,5 @@
+import type { SkillEvaluationMetrics } from "../../convex/lib/skillEvaluationMetrics";
+
 export type SkillEvaluationResult = {
   source: {
     repository: string;
@@ -16,26 +18,7 @@ export type SkillEvaluationResult = {
     environment: string;
     attempts: number;
   };
-  metrics: {
-    sampleCount: number;
-    overall: {
-      withSkill: number;
-      withoutSkill: number;
-      delta: number;
-    };
-    cases: {
-      withSkillPassed: number;
-      withSkillTotal: number;
-      withoutSkillPassed: number;
-      withoutSkillTotal: number;
-    };
-    dimensions: Array<{
-      id: string;
-      withSkill: number;
-      withoutSkill: number;
-      delta: number;
-    }>;
-  };
+  metrics: SkillEvaluationMetrics;
   completedAt: number;
 };
 

@@ -1,6 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { isPluginCategorySlug } from "clawhub-schema/catalogMetadata";
-import { useQuery } from "convex/react";
+import { type RequestForQueries, useQueries, useQuery } from "convex/react";
 import { PackageSearch, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
@@ -22,6 +22,7 @@ import {
   sanitizeBrowseTopicSearch,
 } from "../../lib/browseTopicSearch";
 import { PLUGIN_CATEGORIES, resolvePluginBrowseCategorySlug } from "../../lib/categories";
+import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import {
   fetchPluginCatalog,
   isRateLimitedPackageApiError,
@@ -86,15 +87,6 @@ function createPluginsLoadingData(): PluginsLoaderData {
     isLoading: true,
     apiError: false,
   };
-}
-
-function formatRetryDelay(retryAfterSeconds: number | null) {
-  if (!retryAfterSeconds || retryAfterSeconds <= 0) return "in a moment";
-  if (retryAfterSeconds < 60) {
-    return `in about ${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
-  }
-  const minutes = Math.ceil(retryAfterSeconds / 60);
-  return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
 function parsePluginSort(value: unknown): LegacyPluginSort | undefined {
@@ -384,11 +376,16 @@ function PluginsIndex() {
   const hasActiveFilters = hasQuery || Boolean(search.category) || Boolean(activeTopic);
   const shouldResolveTotalCount =
     !hasActiveFilters && !search.cursor && catalogData.totalCount == null;
-  const totalPluginsCount = useQuery(
-    api.packages.countPublicPlugins,
-    shouldResolveTotalCount ? {} : "skip",
-  );
-  const totalCount = catalogData.totalCount ?? totalPluginsCount ?? null;
+  const totalCountQueries = useMemo(() => {
+    const queries: RequestForQueries = {};
+    if (shouldResolveTotalCount) {
+      queries.totalPluginsCount = { query: api.packages.countPublicPlugins, args: {} };
+    }
+    return queries;
+  }, [shouldResolveTotalCount]);
+  const { totalPluginsCount } = useQueries(totalCountQueries);
+  const totalCount =
+    catalogData.totalCount ?? (typeof totalPluginsCount === "number" ? totalPluginsCount : null);
   const formattedCount = !hasActiveFilters && !search.cursor ? formatBrowseCount(totalCount) : null;
 
   useEffect(() => {

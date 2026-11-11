@@ -10,6 +10,7 @@ vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
 import { internal } from "./_generated/api";
+import { sha256Hex } from "./lib/clawpack";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -22,7 +23,7 @@ describe("experimental Template feed runtime", () => {
 
   it("stores and serves the exact publication by default", async () => {
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     const publisherId = await t.run(async (ctx) => {
       const createdPublisherId = await ctx.db.insert("publishers", {
         kind: "org",
@@ -100,9 +101,56 @@ describe("experimental Template feed runtime", () => {
     expect(revoked.headers.get("cache-control")).toBe("no-store");
   });
 
+  it("rejects retired wire snapshots while retaining the physical row and normal publication sequence", async () => {
+    const t = convexTest(schema, modules);
+    registerRateLimiter(t, "rateLimiterV2");
+    const payload = JSON.stringify({
+      schemaVersion: 1,
+      id: "clawhub-official-claws",
+      sequence: 7,
+      generatedAt: "2026-10-28T00:00:00.000Z",
+      expiresAt: "2026-10-29T00:00:00.000Z",
+      entries: [],
+    });
+    const hash = await sha256Hex(new TextEncoder().encode(payload));
+    const id = await t.run((ctx) =>
+      ctx.db.insert("catalogFeedPublications", {
+        feedId: "clawhub-official-claws",
+        sequence: 7,
+        generatedAt: "2026-10-28T00:00:00.000Z",
+        expiresAt: "2026-10-29T00:00:00.000Z",
+        payload,
+        payloadSha256: hash,
+        publishedAt: 1,
+        clawPolicyVersion: 1,
+        clawEntryCount: 0,
+      }),
+    );
+    const before = await t.run((ctx) => ctx.db.get(id));
+    const rejected = await t.fetch("/api/v1/feeds/templates", {
+      headers: { "If-None-Match": '"sha256:' + hash + '"' },
+    });
+    expect(rejected.status).toBe(503);
+    expect(rejected.headers.get("cache-control")).toBe("no-store");
+    expect(await t.run((ctx) => ctx.db.get(id))).toEqual(before);
+    const stored = await t.mutation(internal.catalogFeed.storeTemplatePublication, {
+      generatedAt: "2026-10-28T00:00:00.000Z",
+      expiresAt: "2026-10-29T00:00:00.000Z",
+      entries: [],
+    });
+    expect(stored).toMatchObject({ publicationId: id, sequence: 8 });
+    const physical = await t.run((ctx) => ctx.db.get(id));
+    expect(physical?.feedId).toBe("clawhub-official-claws");
+    expect(JSON.parse(physical!.payload).id).toBe("clawhub-official-templates");
+    const served = await t.fetch("/api/v1/feeds/templates");
+    expect(served.status).toBe(200);
+    expect(await served.text()).toBe(physical!.payload);
+    expect(served.headers.get("etag")).toBe('"sha256:' + physical!.payloadSha256 + '"');
+  });
+
   it("does not serve a pre-policy snapshot before publishing a restricted replacement", async () => {
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     await t.run(async (ctx) => {
       await ctx.db.insert("catalogFeedPublications", {
         feedId: "clawhub-official-claws",
@@ -136,7 +184,7 @@ describe("experimental Template feed runtime", () => {
 describe("catalog feed pagination runtime", () => {
   it("publishes every official plugin when the catalog spans multiple pages", async () => {
     const t = convexTest(schema, modules);
-    registerRateLimiter(t);
+    registerRateLimiter(t, "rateLimiterV2");
     const packageNames: string[] = [];
     await t.run(async (ctx) => {
       const ownerUserId = await ctx.db.insert("users", { handle: "feed-publisher" });

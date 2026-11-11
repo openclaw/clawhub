@@ -16,6 +16,7 @@ const PACKAGE_NAME = "fail-closed-plugin";
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 type Kind = "skill" | "package";
@@ -25,7 +26,7 @@ type Kind = "skill" | "package";
 async function stagedFixture(kind: Kind) {
   vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", WORKER_TOKEN);
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const fixture = await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { handle: "fail-closed-owner", role: "user" });
     const storageId = await ctx.storage.store(new Blob(["# Fail closed\n"]));
@@ -44,6 +45,25 @@ async function stagedFixture(kind: Kind) {
         skillId,
         version: "1.0.0",
         publicationStatus: "pending",
+        pendingPublication: {
+          skillInsertArgs: {
+            userId,
+            displayName: "Fail Closed Skill",
+            version: "1.0.0",
+            changelog: "",
+            files: [file],
+            parsed: { frontmatter: {} },
+            embedding: [0.1],
+            staticScan: {
+              status: "clean",
+              reasonCodes: [],
+              findings: [],
+              summary: "Fixture",
+              engineVersion: "test",
+              checkedAt: 1,
+            },
+          },
+        },
         fingerprint: FINGERPRINT,
         changelog: "",
         files: [file],
@@ -133,6 +153,8 @@ async function stagedFixture(kind: Kind) {
     verdict: {
       trufflehog: { status: "clean" | "blocked" | "failed"; summary?: string };
       clawscan: { status: "clean" | "blocked" | "failed"; summary?: string };
+      skillSpectorAnalysis?: Doc<"skillVersions">["skillSpectorAnalysis"];
+      aigAnalysis?: Doc<"skillVersions">["aigAnalysis"];
       clawscanAnalysis?: { status: string; verdict?: string; summary?: string; checkedAt: number };
     },
   ) =>
@@ -180,7 +202,107 @@ async function stagedFixture(kind: Kind) {
   return { t, claim, complete, attempt, target, expectNotPublic, elapseClaim };
 }
 
+it("finalizes an old-format skill worker request without a supporting SkillSpector report", async () => {
+  vi.useFakeTimers();
+  const f = await stagedFixture("skill");
+  const before = await f.target();
+  const { claimId } = await f.claim();
+  const checkedAt = Date.now();
+
+  await expect(
+    f.complete(claimId, {
+      trufflehog: { status: "clean" },
+      clawscan: { status: "clean" },
+      clawscanAnalysis: { status: "clean", verdict: "benign", checkedAt },
+      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt },
+    }),
+  ).resolves.toMatchObject({ status: "finalized" });
+
+  expect(await f.attempt()).toMatchObject({ status: "finalized" });
+  const published = await f.target();
+  expect(published).toMatchObject({
+    publicationStatus: "published",
+    fingerprint: FINGERPRINT,
+    llmAnalysis: { verdict: "benign" },
+  });
+  expect(published?.skillSpectorAnalysis).toBeUndefined();
+  expect(published?.files).toEqual(before?.files);
+  expect(published?.createdBy).toBe(before?.createdBy);
+  expect(
+    await f.t.query(api.skills.getVersionById, {
+      versionId: published!._id as Id<"skillVersions">,
+    }),
+  ).not.toBeNull();
+});
+
 describe.each(["skill", "package"] as const)("%s pre-publication checks fail closed", (kind) => {
+  it.each(["benign", "suspicious"])(
+    "finalizes %s adjudication while retaining partial scanner findings",
+    async (verdict) => {
+      vi.useFakeTimers();
+      const f = await stagedFixture(kind);
+      const before = await f.target();
+      const { claimId } = await f.claim();
+      const checkedAt = Date.now();
+      const skillSpectorAnalysis = {
+        status: "suspicious",
+        inspectionStatus: "partial" as const,
+        issueCount: 1,
+        issues: [
+          {
+            issueId: "gap-finding",
+            severity: "high",
+            explanation: "Review dynamic import.",
+            file: "tool.js",
+          },
+        ],
+        summary: "Partial inspection; dynamic import remains a limitation.",
+        checkedAt,
+      };
+      await expect(
+        f.complete(claimId, {
+          trufflehog: { status: "clean" },
+          clawscan: { status: "clean", summary: "Completed independent adjudication." },
+          clawscanAnalysis: {
+            status: verdict === "benign" ? "clean" : verdict,
+            verdict,
+            summary: "Inspected source with residual uncertainty.",
+            checkedAt,
+          },
+          aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt },
+          skillSpectorAnalysis,
+        }),
+      ).resolves.toMatchObject({ status: "finalized" });
+      expect(await f.attempt()).toMatchObject({ status: "finalized" });
+      const published = await f.target();
+      expect(published).toMatchObject({
+        publicationStatus: "published",
+        skillSpectorAnalysis,
+        llmAnalysis: { verdict },
+      });
+      expect(published?.files).toEqual(before?.files);
+      expect(published?.createdBy).toBe(before?.createdBy);
+      if (kind === "skill") {
+        expect(published).toMatchObject({ fingerprint: FINGERPRINT });
+        const result = await f.t.query(api.skills.getVersionById, {
+          versionId: published!._id as Id<"skillVersions">,
+        });
+        expect(result).not.toBeNull();
+      } else {
+        expect(published).toMatchObject({
+          integritySha256: FINGERPRINT,
+          verification: { scanStatus: verdict === "benign" ? "clean" : "suspicious" },
+        });
+        expect(
+          await f.t.query(internal.packages.getVersionByNameForViewerInternal, {
+            name: PACKAGE_NAME,
+            version: "1.0.0",
+          }),
+        ).not.toBeNull();
+      }
+    },
+  );
+
   it("keeps the release unpublished when the scanner keeps failing or timing out", async () => {
     const f = await stagedFixture(kind);
     const outcomes: unknown[] = [];
@@ -230,11 +352,20 @@ describe.each(["skill", "package"] as const)("%s pre-publication checks fail clo
   it("blocks a release when ClawScan returns a malicious verdict", async () => {
     const f = await stagedFixture(kind);
     const { claimId } = await f.claim();
+    const skillSpectorAnalysis = {
+      status: "suspicious",
+      inspectionStatus: "partial" as const,
+      issueCount: 0,
+      issues: [],
+      checkedAt: Date.now(),
+    };
 
     await expect(
       f.complete(claimId, {
         trufflehog: { status: "clean" },
         clawscan: { status: "blocked", summary: "Malicious credential exfiltration." },
+        aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
+        skillSpectorAnalysis,
         clawscanAnalysis: {
           status: "malicious",
           verdict: "malicious",
@@ -248,6 +379,7 @@ describe.each(["skill", "package"] as const)("%s pre-publication checks fail clo
     const blocked = await f.target();
     expect(blocked?.publicationStatus).toBe("blocked");
     expect(blocked?.llmAnalysis).toMatchObject({ verdict: "malicious" });
+    expect(blocked?.skillSpectorAnalysis).toEqual(skillSpectorAnalysis);
     if (kind === "package") {
       expect(blocked).toMatchObject({ verification: { scanStatus: "malicious" } });
     }
@@ -270,4 +402,68 @@ describe.each(["skill", "package"] as const)("%s pre-publication checks fail clo
     expect((await f.target())?.publicationStatus).toBe("pending");
     await f.expectNotPublic();
   });
+});
+
+it("requires canonical plugin precheck evidence and retains that exact object after publication", async () => {
+  vi.useFakeTimers();
+  const f = await stagedFixture("package");
+  const { claimId } = await f.claim();
+  const before = await f.target();
+  const base = {
+    trufflehog: { status: "clean" as const },
+    clawscan: { status: "clean" as const },
+    aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: 12 },
+  };
+  await expect(f.complete(claimId, base)).rejects.toThrow("completed ClawScan and A.I.G evidence");
+  expect(await f.target()).toEqual(before);
+  expect((await f.attempt())?.status).toBe("pending_checks");
+  const submitted = {
+    status: "clean",
+    verdict: "benign",
+    checkedAt: 12,
+    summary: "Publication decision, not a second review",
+    guidance: "Exact guidance",
+    findings: "Exact findings",
+    model: "fixture-judge",
+    dimensions: [{ name: "intent", label: "Intent", rating: "pass", detail: "Exact evidence" }],
+    agenticRiskFindings: [],
+    riskSummary: {
+      abnormal_behavior_control: { status: "none" as const, summary: "Exact control summary" },
+      permission_boundary: { status: "note" as const, summary: "Exact permission summary" },
+      sensitive_data_protection: { status: "concern" as const, summary: "Exact data summary" },
+    },
+  };
+  await f.complete(claimId, { ...base, clawscanAnalysis: submitted });
+  expect((await f.target())?.llmAnalysis).toEqual(submitted);
+  const response = await f.t.fetch("/api/v1/packages/" + PACKAGE_NAME + "/versions/1.0.0");
+  const version = await response.json();
+  expect(version.version.llmAnalysis).toEqual(submitted);
+  const jobs = await f.t.run((ctx) => ctx.db.query("securityScanJobs").collect());
+  expect(jobs).toMatchObject([{ targetKind: "packageRelease", scanMode: "endor-report-only" }]);
+});
+
+it("keeps plugin claim custody beyond the old 30m lease through full stage/cleanup drain", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const f = await stagedFixture("package");
+  const original = await f.claim();
+  const attempt = await f.attempt();
+  const startedAt = attempt!.checkClaimedAt!;
+  expect(attempt!.checkClaimExpiresAt! - startedAt).toBe(70 * 60_000);
+  vi.setSystemTime(startedAt + 65 * 60_000);
+  await expect(
+    f.t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+      attemptId: attempt!._id,
+      claimId: "replacement-claim",
+    }),
+  ).resolves.toEqual({ outcome: "active_claim" });
+  expect((await f.attempt())?.checkClaimId).toBe(original.claimId);
+  expect((await f.target())?.publicationStatus).toBe("pending");
+  vi.setSystemTime(startedAt + 70 * 60_000 + 1);
+  await expect(
+    f.t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+      attemptId: attempt!._id,
+      claimId: "replacement-claim",
+    }),
+  ).resolves.toMatchObject({ claimId: "replacement-claim" });
+  expect((await f.target())?.publicationStatus).toBe("pending");
 });

@@ -12,6 +12,7 @@ import {
   text,
   formatUserFacingErrorMessage,
   requireApiTokenUserOrResponse,
+  transientConvexErrorResponse,
 } from "./shared";
 
 const recoverRef = makeFunctionReference<
@@ -64,6 +65,8 @@ export async function recoverPackagePublishAttemptV1Handler(ctx: ActionCtx, requ
         mergeHeaders(rate.headers, { "Retry-After": "10" }),
       );
     }
+    const transient = transientConvexErrorResponse(error, rate.headers, { outcomeUnknown: true });
+    if (transient) return transient;
     const message = formatUserFacingErrorMessage(error, "Recovery request failed");
     return text(message, message.includes("Publish attempt not found") ? 404 : 409, rate.headers);
   }

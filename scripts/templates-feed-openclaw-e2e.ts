@@ -2,9 +2,14 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
-import { parseExperimentalTemplateFeed, type ExperimentalTemplateFeedEntry } from "clawhub-schema";
+import {
+  parseExperimentalTemplateFeed,
+  decodeUtf8Text,
+  validateTemplatePackageContents,
+  type ExperimentalTemplateFeedEntry,
+} from "clawhub-schema";
 import { unzipSync } from "fflate";
 import { parseClawPack } from "../convex/lib/clawpack";
 import { isSafeTemplatePackagePath } from "../packages/clawhub/src/schema/templatePackage";
@@ -78,7 +83,7 @@ export async function assertSafeTemplateArchive(archivePath: string): Promise<vo
   await parseClawPack(bytes);
 }
 
-async function extractSafeClawPack(bytes: Uint8Array, targetDir: string): Promise<void> {
+async function extractSafeClawPack(bytes: Uint8Array, targetDir: string) {
   const parsed = await parseClawPack(bytes);
   await mkdir(targetDir, { recursive: true });
   for (const entry of parsed.entries) {
@@ -86,9 +91,10 @@ async function extractSafeClawPack(bytes: Uint8Array, targetDir: string): Promis
     await mkdir(dirname(outputPath), { recursive: true });
     await writeFile(outputPath, entry.bytes);
   }
+  return parsed.entries.map((entry) => ({ path: `package/${entry.path}`, bytes: entry.bytes }));
 }
 
-export async function extractSafeTemplateZip(bytes: Uint8Array, targetDir: string): Promise<void> {
+export async function extractSafeTemplateZip(bytes: Uint8Array, targetDir: string) {
   if (bytes.byteLength > MAX_ARCHIVE_BYTES) throw new Error("Artifact exceeds 64MB download limit");
   const portablePaths = new Set<string>();
   let entryCount = 0;
@@ -125,6 +131,9 @@ export async function extractSafeTemplateZip(bytes: Uint8Array, targetDir: strin
     await mkdir(dirname(outputPath), { recursive: true });
     await writeFile(outputPath, data);
   }
+  return Object.entries(entries)
+    .filter(([path]) => !path.endsWith("/"))
+    .map(([path, bytes]) => ({ path, bytes }));
 }
 
 export async function readResponseBytesBounded(response: Response): Promise<Uint8Array> {
@@ -200,12 +209,27 @@ export async function runPublishedTemplateDryRun(options: PublishedTemplateProof
     }
 
     const extractRoot = join(root, "extract");
-    if (artifactKind === "npm-pack") {
-      await extractSafeClawPack(artifactBytes, extractRoot);
-    } else {
-      await extractSafeTemplateZip(artifactBytes, extractRoot);
-    }
+    const extractedFiles =
+      artifactKind === "npm-pack"
+        ? await extractSafeClawPack(artifactBytes, extractRoot)
+        : await extractSafeTemplateZip(artifactBytes, extractRoot);
     const packageRoot = await findExtractedPackageRoot(extractRoot);
+    const packageJson = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
+    const validation = validateTemplatePackageContents({
+      packageName: candidate.package,
+      version: candidate.version,
+      packageJson,
+      files: extractedFiles.map((file) => ({
+        path: relative(packageRoot, join(extractRoot, file.path)).split("\\").join("/"),
+        size: file.bytes.byteLength,
+        text: decodeUtf8Text(file.bytes) ?? undefined,
+      })),
+    });
+    if (!validation.ok)
+      throw new Error(
+        "Template import rejected: " +
+          validation.issues.map((issue) => issue.code + " at " + issue.path).join("; "),
+      );
     const stateDir = join(root, "openclaw-state");
     await mkdir(stateDir, { recursive: true });
     await writeFile(

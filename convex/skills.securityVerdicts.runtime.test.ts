@@ -9,7 +9,7 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 it("withholds pending and blocked including deleted rows through query and HTTP", async () => {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const states = [
     { version: "published", publicationStatus: "published" as const },
     { version: "legacy" },

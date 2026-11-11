@@ -6,7 +6,7 @@ import {
   createHttpModuleMocks,
   createRegistryModuleMocks,
   createUiModuleMocks,
-  makeGlobalOpts,
+  makeGlobalOpts as makeOpts,
 } from "../../../test/cliCommandTestKit.js";
 import type { SkillOrigin } from "../../skills.js";
 
@@ -84,8 +84,21 @@ vi.mock("./publish.js", () => ({
 
 const { cmdSync } = await import("./sync");
 
-function makeOpts() {
-  return makeGlobalOpts();
+function mockDefaultSkillResolution() {
+  mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+    if (args.path?.startsWith("/api/v1/resolve?")) {
+      const u = new URL(`https://x.test${args.path}`);
+      const slug = u.searchParams.get("slug");
+      if (slug === "new-skill") throw new Error("Skill not found");
+      if (slug === "synced-skill") {
+        return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+      }
+      if (slug === "update-skill") {
+        return { match: null, latestVersion: { version: "1.0.0" } };
+      }
+    }
+    throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
+  });
 }
 
 afterEach(async () => {
@@ -109,20 +122,7 @@ describe("cmdSync", () => {
   it("emits CI JSON dry-run without requiring auth", async () => {
     interactive = false;
     const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
-      if (args.path?.startsWith("/api/v1/resolve?")) {
-        const u = new URL(`https://x.test${args.path}`);
-        const slug = u.searchParams.get("slug");
-        if (slug === "new-skill") throw new Error("Skill not found");
-        if (slug === "synced-skill") {
-          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
-        }
-        if (slug === "update-skill") {
-          return { match: null, latestVersion: { version: "1.0.0" } };
-        }
-      }
-      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
-    });
+    mockDefaultSkillResolution();
 
     let output = "";
     try {
@@ -272,7 +272,7 @@ describe("cmdSync", () => {
 
     try {
       await cmdSync(
-        makeGlobalOpts("/workspace"),
+        makeOpts("/workspace"),
         {
           root: ["scan"],
           all: true,
@@ -307,7 +307,7 @@ describe("cmdSync", () => {
     });
 
     await cmdSync(
-      makeGlobalOpts("/workspace"),
+      makeOpts("/workspace"),
       {
         root: ["/external/scan"],
         all: true,
@@ -326,20 +326,7 @@ describe("cmdSync", () => {
   it("keeps real sync JSON output owned by sync", async () => {
     interactive = false;
     const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
-      if (args.path?.startsWith("/api/v1/resolve?")) {
-        const u = new URL(`https://x.test${args.path}`);
-        const slug = u.searchParams.get("slug");
-        if (slug === "new-skill") throw new Error("Skill not found");
-        if (slug === "synced-skill") {
-          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
-        }
-        if (slug === "update-skill") {
-          return { match: null, latestVersion: { version: "1.0.0" } };
-        }
-      }
-      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
-    });
+    mockDefaultSkillResolution();
     mockCmdPublish.mockImplementation((_opts: unknown, _folder: unknown, options?: unknown) => {
       if (!(options as { quiet?: boolean } | undefined)?.quiet) {
         process.stdout.write("child publish output\n");
@@ -373,20 +360,7 @@ describe("cmdSync", () => {
   it("keeps pending sync submissions out of the published json summary", async () => {
     interactive = false;
     const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
-      if (args.path?.startsWith("/api/v1/resolve?")) {
-        const u = new URL(`https://x.test${args.path}`);
-        const slug = u.searchParams.get("slug");
-        if (slug === "new-skill") throw new Error("Skill not found");
-        if (slug === "synced-skill") {
-          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
-        }
-        if (slug === "update-skill") {
-          return { match: null, latestVersion: { version: "1.0.0" } };
-        }
-      }
-      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
-    });
+    mockDefaultSkillResolution();
     mockCmdPublish.mockImplementation(
       (_opts: unknown, _folder: unknown, options?: { slug?: string; version?: string }) =>
         options?.slug === "new-skill"
@@ -427,20 +401,7 @@ describe("cmdSync", () => {
 
   it("does not call pending sync submissions published in human summaries", async () => {
     interactive = false;
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
-      if (args.path?.startsWith("/api/v1/resolve?")) {
-        const u = new URL(`https://x.test${args.path}`);
-        const slug = u.searchParams.get("slug");
-        if (slug === "new-skill") throw new Error("Skill not found");
-        if (slug === "synced-skill") {
-          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
-        }
-        if (slug === "update-skill") {
-          return { match: null, latestVersion: { version: "1.0.0" } };
-        }
-      }
-      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
-    });
+    mockDefaultSkillResolution();
     mockCmdPublish.mockImplementation(
       (_opts: unknown, _folder: unknown, options?: { slug?: string; version?: string }) =>
         options?.slug === "new-skill"
@@ -464,20 +425,7 @@ describe("cmdSync", () => {
   it("does not report a raced unchanged publish as uploaded", async () => {
     interactive = false;
     const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
-      if (args.path?.startsWith("/api/v1/resolve?")) {
-        const u = new URL(`https://x.test${args.path}`);
-        const slug = u.searchParams.get("slug");
-        if (slug === "new-skill") throw new Error("Skill not found");
-        if (slug === "synced-skill") {
-          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
-        }
-        if (slug === "update-skill") {
-          return { match: null, latestVersion: { version: "1.0.0" } };
-        }
-      }
-      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
-    });
+    mockDefaultSkillResolution();
     mockCmdPublish.mockImplementation(
       (_opts: unknown, _folder: unknown, options?: { slug?: string; version?: string }) =>
         options?.slug === "new-skill"

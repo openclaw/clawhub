@@ -7,14 +7,16 @@ kept for compatibility, must pass through `applyRateLimit` before doing
 expensive work, auth parsing, publish mutations, upload ticket creation,
 telemetry writes, delete/undelete mutations, or search queries.
 
-Client IP headers are not trustworthy on direct Convex HTTP endpoints. Treat
-`cf-connecting-ip`, `x-forwarded-for`, `x-real-ip`, and `fly-client-ip` as
-trusted only when the deployment explicitly enables trusted forwarded headers.
-Do not enable that opt-in while the Convex `*.convex.site` HTTP origin remains
-publicly reachable. Without the opt-in, anonymous traffic must use conservative
-missing-IP fallback buckets scoped only by rate-limit kind. Missing-IP buckets
-must not include user-controlled paths, dynamic path segments, query parameters,
-package names, skill slugs, or artifact versions.
+Client IP headers are not trustworthy on direct Convex HTTP endpoints. Raw
+`cf-connecting-ip`, `x-forwarded-for`, `x-real-ip`, and `fly-client-ip` values do
+not establish an identity, including when the legacy forwarded-IP flag is set.
+The public edge replaces caller-supplied ClawHub identity headers. The backend
+accepts the asserted IP only alongside a verified ClawHub Vercel project and
+environment token, plus the staging edge secret where required.
+Anonymous direct callers without a verified IP are redirected to a configured
+HTTPS public edge or rejected; invalid asserted edge identities are rejected.
+They must never consume a shared unknown-IP bucket. Local proof may use the
+server-owned loopback deployment exception; the request Host cannot enable it.
 Artifact-specific download scoping is only safe after the caller has an
 authenticated identity or a trusted client IP.
 
@@ -35,8 +37,8 @@ safe: limiter checks refresh sharded metadata for the observed `(name, key)`
 with an `expiresAt`, and retention resets the exact component key only after no
 metadata shard for that `(name, key)` remains active. Active allowed and denied
 traffic must both refresh this metadata so a client that is still hitting a
-limit is not reset by cleanup. Metadata sharding is required because shared
-buckets such as missing-IP anonymous reads can receive many concurrent requests;
+limit is not reset by cleanup. Metadata sharding is required because busy
+authenticated-user and verified-IP buckets can receive many concurrent requests;
 one metadata row per key would become a separate Convex write-contention point.
 
 Component sharding is an implementation detail, not a quota multiplier. Keep
@@ -44,7 +46,107 @@ the public quota in `RATE_LIMITS`; the component's `shards` setting exists to
 spread writes across counter rows while preserving the configured limit. Low
 rate buckets should stay unsharded or keep enough per-shard capacity that
 normal clients are not randomly denied well before the public limit.
-Because the component does not expose an exact total remaining count for
-sharded buckets, successful HTTP responses must not synthesize a global
-`RateLimit-Remaining` value. Denied responses can still return an exact
-remaining value of `0`.
+
+## Truthful rate-limit headers
+
+Rate-limit headers (`X-RateLimit-*`, `RateLimit-*`) and the limiter's
+`Retry-After` are sent only on a `429` the limiter actually denied, with an
+exact remaining value of `0`. Admitted requests carry none of them, including
+every request while `CLAWHUB_RATE_LIMITER_DISABLED=1` or unmetered batching
+skips the limiter, and including admitted requests whose handler later fails.
+The route wrapper merges limiter headers into every handler response, so
+sending limit/reset headers on admission made unrelated 4xx/5xx failures read
+as rate limiting to publishers and the CLI (observed during the November 2026
+write-saturation outage while the limiter was disabled). The component also
+cannot report an exact global remaining count for sharded buckets, so there is
+no truthful remaining value to send on admission anyway.
+
+The counter-contention `503` (`Rate limit temporarily unavailable`) is a
+limiter availability failure, not a denial: it carries `Retry-After: 1` and no
+quota or reset headers. Transient backend failures elsewhere are covered in
+`http-error-semantics.md`.
+
+## Batched accounting for high-volume buckets
+
+Every consumed request used to be one committed quota write. On 2026-11-01 that
+was about 86% of all committed write transactions in production while Convex
+write admission (`CommitterFull`) was saturated, so quota accounting was
+competing with deploys, scanner acknowledgements and publication writes.
+
+The `read` and `download` buckets therefore account in batches of four: one
+request in four (chosen at random) consumes a count of four in one committed
+write and refreshes retention metadata; every other request performs a
+read-only component check for the same count of four and is denied when the
+sampled shards cannot fit it. The check must use the batch count: with sharded
+buckets, every shard can end at a remainder smaller than a batch (for example
+1.75 of `readIp`'s 93.75 per shard), so a one-token check would keep admitting
+traffic indefinitely after batched writes are denied.
+
+Expected consumption equals the request count and committed consumption never
+exceeds the limit. Admitted traffic is approximately the limit, not exactly:
+random write sampling gives a per-window standard deviation of about
+`sqrt(3 x limit)` requests (simulated worst cases at three times the load were
++5% to +13% over the limit; the overshoot does not grow with load), and random
+shard choice lets a few read-only checks pass after the last successful batch
+(under 1% in a deterministic one-in-four replay). Shard
+fragmentation can strand up to one batch per shard, so a client at the very top
+of the limit may be denied a few percent early (measured about 2,944 of 3,000
+for `readIp`, against about 2,998 with exact accounting). Read-only checks are
+Convex queries and may be served from the query cache; a cached denial can
+outlive a window rollover until a sampled write touches its shards, which fails
+closed. Denied read-only checks refresh retention metadata, preserving the
+cleanup invariant above. A module-load guard rejects any batch larger than the
+component's per-request maximum for a batched bucket.
+
+`write`, `export` and `trustedPublish` stay exactly accounted because their
+limits are low. Set `CLAWHUB_HTTP_RATE_LIMIT_BATCHING=off` to restore exact
+per-request accounting for every bucket, or to an integer from 2 to 16 to change
+the batch for `read` and `download` without a deploy. The batch is capped at the
+smallest per-shard capacity of the bucket kind, so every shard can still admit
+a batch. Larger batches shed more quota writes but strand more capacity per
+shard, so a client at the very top of a limit is denied earlier (up to one
+batch per shard); use large values only as a temporary write-pressure measure.
+
+`CLAWHUB_HTTP_RATE_LIMIT_BATCHING=unmetered` is an emergency switch for write
+saturation: `read` and `download` requests are not metered in Convex at all (no
+quota read or write). Identity verification, the verified-edge requirement for
+anonymous callers, and exact `write`, `export` and `trustedPublish` limits are
+unchanged. While it is set, abusive read traffic is limited only by upstream
+edge protection, so return to a batch value once write admission recovers.
+
+## Rate-limiter storage off switch
+
+`CLAWHUB_RATE_LIMITER_DISABLED=1` stops every HTTP quota read and write for all
+buckets, the hourly `httpRateLimitKeys` prune, and public MCP inspection (which
+fails closed as `unavailable` because its outbound provider budgets cannot be
+enforced). Nothing touches the `rateLimiter` component tables or
+`httpRateLimitKeys` while it is set, so they can be cleared or dropped and then
+recreated by a redeploy. API-token identity checks and the verified-edge
+requirement for anonymous callers are unchanged. Remove the variable to restore
+limits.
+
+## Guarded RPC comparison
+
+`CLAWHUB_HTTP_RATE_LIMIT_RPC_MODE` defaults to the existing separate metadata
+refresh and quota-consume calls. Unset, `off`, and unknown values keep that path.
+`admin-probe` allows an authenticated, active admin API-token caller to select
+the combined path with `X-ClawHub-RateLimit-Rpc: combined`; omitting that header
+selects the separate control. Only these admin probes receive the selected
+strategy in the matching response header. Anonymous, ordinary-user, inactive,
+and invalid-token callers cannot opt in. `on` selects the combined path for all
+checks and ignores caller preferences. Set `off` to roll back the strategy.
+
+The combined mutation attempts metadata refresh before consuming the same
+component bucket. If metadata-table OCC exhausts retries, the entire combined
+transaction (including component quota changes) rolls back, then the HTTP
+caller retries the unchanged bare consumer once. Counter-table OCC still fails
+closed with retryable 503. Other errors, including write-capacity failures,
+propagate. Allowed and denied checks both refresh retention metadata, and
+cleanup must still preserve an active key's quota. The response strategy labels
+the attempted path; a metadata-conflict fallback can require a second call.
+
+The switch changes RPC topology only: identity, policy, shard count, quota,
+expiry, pruning, and public rate-limit headers are independent of this choice.
+Promote from the admin-only comparison only after hosted measurements establish
+a gain and the quota/retention checks pass. Native loopback timing alone does
+not establish that gain.

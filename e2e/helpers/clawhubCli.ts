@@ -3,6 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent, setGlobalDispatcher } from "undici";
+import { extractLastJsonObject } from "./convexOutput";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -135,21 +136,6 @@ function isLocalRegistry(registry: string) {
   } catch {
     return false;
   }
-}
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      // Keep scanning for the actual JSON payload if Convex printed status lines first.
-    }
-  }
-  throw new Error(`No JSON object in convex run output:\n${output}`);
 }
 
 export async function fetchWithTimeout(

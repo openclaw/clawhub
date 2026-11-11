@@ -76,6 +76,16 @@ describe("publicBrowse", () => {
     ).toBe(true);
   });
 
+  it("keeps legacy retired-VirusTotal pending reasons pending until the moderation backfill", () => {
+    expect(
+      isSkillPendingPublicReview({
+        moderationStatus: "active",
+        moderationReason: "scanner.vt.pending",
+        moderationFlags: undefined,
+      }),
+    ).toBe(true);
+  });
+
   it("excludes first-publish pending review skills from public browse", () => {
     expect(
       shouldExcludeSkillFromPublicBrowse({
@@ -134,10 +144,32 @@ describe("publicBrowse", () => {
         changelog: "c",
         changelogSource: "user",
         parsed: { frontmatter: {}, license: "MIT-0" },
-        vtAnalysis: { status: "pending", checkedAt: 1 },
-        llmAnalysis: undefined,
-        staticScan: undefined,
+        llmAnalysis: { status: "pending", checkedAt: 1 },
       }),
+    ).toBe(false);
+  });
+
+  it("ignores retired VirusTotal and static scan results when listing versions", () => {
+    const version = {
+      _id: "skillVersions:legacy" as never,
+      skillId: "skills:1" as never,
+      softDeletedAt: undefined,
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "user" as const,
+      parsed: { frontmatter: {}, license: "MIT-0" as const },
+      llmAnalysis: { status: "clean", checkedAt: 1 },
+      // Historical rows may still carry retired scanner results.
+      vtAnalysis: { status: "pending", checkedAt: 1 },
+      staticScan: { status: "malicious" },
+    };
+    expect(isPubliclyListableSkillVersion(version as never)).toBe(true);
+    expect(
+      isPubliclyListableSkillVersion({
+        ...version,
+        llmAnalysis: { status: "malicious", checkedAt: 1 },
+      } as never),
     ).toBe(false);
   });
 
@@ -151,16 +183,7 @@ describe("publicBrowse", () => {
       changelog: "approved",
       changelogSource: "user" as const,
       parsed: { frontmatter: {}, license: "MIT-0" as const },
-      vtAnalysis: { status: "clean" as const, checkedAt: 1 },
       llmAnalysis: { status: "clean" as const, checkedAt: 1 },
-      staticScan: {
-        status: "clean" as const,
-        reasonCodes: [],
-        findings: [],
-        summary: "",
-        engineVersion: "v1",
-        checkedAt: 1,
-      },
     };
     const pendingVersion = {
       _id: "skillVersions:pending" as never,
@@ -171,7 +194,7 @@ describe("publicBrowse", () => {
       changelog: "pending",
       changelogSource: "user" as const,
       parsed: { frontmatter: {}, license: "MIT-0" as const },
-      vtAnalysis: { status: "pending" as const, checkedAt: 2 },
+      llmAnalysis: { status: "pending" as const, checkedAt: 2 },
     };
 
     const version = await resolvePublicBrowseVersionForSkill(
@@ -232,14 +255,14 @@ describe("publicBrowse", () => {
       changelog: "pending",
       changelogSource: "user" as const,
       parsed: { frontmatter: {}, license: "MIT-0" as const },
-      vtAnalysis: { status: "pending" as const, checkedAt: 2 },
+      llmAnalysis: { status: "pending" as const, checkedAt: 2 },
     };
     const approvedVersion = {
       ...pendingVersion,
       _id: "skillVersions:approved" as never,
       version: "1.0.0",
       createdAt: 1,
-      vtAnalysis: { status: "clean" as const, checkedAt: 1 },
+      llmAnalysis: { status: "clean" as const, checkedAt: 1 },
     };
 
     const state = await resolvePublicBrowseVersionState(
@@ -300,7 +323,7 @@ describe("publicBrowse", () => {
       changelog: "pending",
       changelogSource: "user" as const,
       parsed: { frontmatter: {}, license: "MIT-0" as const },
-      vtAnalysis: { status: "pending" as const, checkedAt: 2 },
+      llmAnalysis: { status: "pending" as const, checkedAt: 2 },
     };
     const pendingV1 = {
       ...pendingV2,
@@ -313,7 +336,7 @@ describe("publicBrowse", () => {
       _id: "skillVersions:approved" as never,
       version: "0.9.0",
       createdAt: 0,
-      vtAnalysis: { status: "clean" as const, checkedAt: 0 },
+      llmAnalysis: { status: "clean" as const, checkedAt: 0 },
     };
 
     const version = await resolvePublicBrowseVersionForSkill(

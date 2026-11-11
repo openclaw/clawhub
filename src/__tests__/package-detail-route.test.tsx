@@ -272,15 +272,16 @@ describe("plugin detail route", () => {
   });
 
   it.each([
-    { family: "code-plugin", name: "demo-plugin" },
-    { family: "code-plugin", name: "discord" },
-    { family: "code-plugin", name: "@shopify/ai-toolkit" },
-    { family: "code-plugin", name: "owner/plugin" },
-    { family: "bundle-plugin", name: "demo-bundle" },
-    { family: "bundle-plugin", name: "@owner/scoped-bundle" },
+    { family: "code-plugin", name: "demo-plugin", target: "demo-plugin@latest" },
+    { family: "code-plugin", name: "discord", target: "discord@latest" },
+    { family: "code-plugin", name: "@shopify/ai-toolkit", target: "@shopify/ai-toolkit" },
+    { family: "code-plugin", name: "@sliekens/voxtral", target: "@sliekens/voxtral" },
+    { family: "code-plugin", name: "owner/plugin", target: "owner/plugin" },
+    { family: "bundle-plugin", name: "demo-bundle", target: "demo-bundle@latest" },
+    { family: "bundle-plugin", name: "@owner/scoped-bundle", target: "@owner/scoped-bundle" },
   ] as const)(
-    "shows and copies one explicit ClawHub command for $name",
-    async ({ family, name }) => {
+    "shows and copies the CLI command and ClawHub prompt for $name",
+    async ({ family, name, target }) => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       vi.stubGlobal("navigator", { clipboard: { writeText } });
       loaderDataMock.detail.package = { ...loaderDataMock.detail.package!, family, name };
@@ -291,17 +292,24 @@ describe("plugin detail route", () => {
 
       const card = screen
         .getByRole("heading", { name: "Install" })
-        .closest(".skill-install-command-card")!;
-      const command = `openclaw plugins install clawhub:${name}`;
+        .closest(".skill-install-command-card") as HTMLElement;
+      const command = `openclaw plugins install clawhub:${target}`;
       expect(card.querySelectorAll("pre")).toHaveLength(1);
       expect(card.querySelector(".skill-install-command-wrap pre")).toBeTruthy();
       expect(card.querySelector("pre")?.textContent).toBe(command);
+      expect(card.querySelector("pre")?.textContent).toContain("clawhub:");
       expect(card.querySelector("p")).toBeNull();
-      expect(within(card as HTMLElement).getAllByRole("button")).toHaveLength(1);
-      fireEvent.click(
-        within(card as HTMLElement).getByRole("button", { name: "Copy plugin install command" }),
+      expect(within(card).getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe(
+        "true",
       );
+      fireEvent.click(within(card).getByRole("button", { name: "Copy plugin install command" }));
       await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
+
+      fireEvent.click(within(card).getByRole("button", { name: "Prompt" }));
+      const prompt = `Install the ${name} package from ClawHub`;
+      expect(card.querySelector("pre")?.textContent).toBe(prompt);
+      fireEvent.click(within(card).getByRole("button", { name: "Copy OpenClaw prompt" }));
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith(prompt));
     },
   );
 
@@ -1242,26 +1250,6 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
   });
 
-  it("renders canonical topics in the detail hero", async () => {
-    loaderDataMock = {
-      ...loaderDataMock,
-      detail: {
-        ...loaderDataMock.detail,
-        package: {
-          ...loaderDataMock.detail.package!,
-          topics: ["Web Search", "Research"],
-        },
-      },
-    };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
-  });
-
   it("renders the plugin 30-day downloads graph from a deferred activity query", async () => {
     loaderDataMock = {
       ...loaderDataMock,
@@ -1427,9 +1415,7 @@ describe("plugin detail route", () => {
           compatibility: null,
           verification: null,
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1709,22 +1695,10 @@ describe("plugin detail route", () => {
           compatibility: null,
           verification: { tier: "source-linked", scope: "artifact-only", scanStatus: "clean" },
           sha256hash: "a".repeat(64),
-          vtAnalysis: {
-            status: "clean",
-            checkedAt: 1,
-          },
           llmAnalysis: {
             status: "clean",
             verdict: "clean",
             summary: "Looks safe.",
-            checkedAt: 1,
-          },
-          staticScan: {
-            status: "clean",
-            reasonCodes: [],
-            findings: [],
-            summary: "No issues",
-            engineVersion: "1",
             checkedAt: 1,
           },
         },
@@ -1792,9 +1766,7 @@ describe("plugin detail route", () => {
           compatibility: null,
           verification: null,
           sha256hash: "a".repeat(64),
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1855,9 +1827,7 @@ describe("plugin detail route", () => {
             npmFileCount: 3,
           },
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1875,7 +1845,7 @@ describe("plugin detail route", () => {
     expect(screen.getByText("sha512-demo")).toBeTruthy();
     expect(screen.getAllByText("openclaw plugins install")).toHaveLength(1);
     expect(
-      screen.getByText("clawhub:demo-plugin", { selector: ".skill-install-command-target" }),
+      screen.getByText("clawhub:demo-plugin@latest", { selector: ".skill-install-command-target" }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",
@@ -1916,9 +1886,7 @@ describe("plugin detail route", () => {
             format: "zip",
           },
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -1938,7 +1906,7 @@ describe("plugin detail route", () => {
     );
   });
 
-  it("keeps public incompatibility alerts alongside API updates without exposing validation outputs", async () => {
+  it("hides retirement notices, incompatibility alerts, and validation outputs from visitors", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -1987,9 +1955,7 @@ describe("plugin detail route", () => {
           verification: null,
           artifact: null,
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,
@@ -2002,9 +1968,11 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     expect(
-      screen.getByText("This plugin is incompatible with OpenClaw versions greater than 0.9.0."),
-    ).toBeTruthy();
-    expect(screen.getByRole("region", { name: "OpenClaw API updates" })).toBeTruthy();
+      screen.queryByText("This plugin is incompatible with OpenClaw versions greater than 0.9.0."),
+    ).toBeNull();
+    expect(screen.queryByRole("region", { name: "OpenClaw API updates" })).toBeNull();
+    expect(screen.queryByText("API details")).toBeNull();
+    expect(screen.getByRole("heading", { name: /^Install$/ })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
   });
@@ -2094,9 +2062,7 @@ describe("plugin detail route", () => {
           verification: null,
           artifact: null,
           sha256hash: null,
-          vtAnalysis: null,
           llmAnalysis: null,
-          staticScan: null,
         },
       },
       versions: emptyVersions,

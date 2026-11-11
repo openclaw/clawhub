@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import type { Id } from "./_generated/dataModel";
 import {
   backfillExistingPublicCorpusBatchRows,
@@ -46,15 +47,6 @@ const seedPublicCorpusBatchHandler = (
 const backfillExistingPublicCorpusBatchRowsHandler = (
   backfillExistingPublicCorpusBatchRows as unknown as WrappedHandler<Record<string, unknown>>
 )._handler;
-
-function chainEq(constraints: Record<string, unknown>) {
-  return {
-    eq(field: string, value: unknown) {
-      constraints[field] = value;
-      return chainEq(constraints);
-    },
-  };
-}
 
 function matches(doc: Record<string, unknown>, constraints: Record<string, unknown>) {
   return Object.entries(constraints).every(([key, value]) => doc[key] === value);
@@ -172,6 +164,75 @@ function seedSkillArgs(storageId: string) {
     displayName: "Catalog Demo",
     summary: "Seeded catalog demo.",
     version: "0.1.0",
+  };
+}
+
+function makePublicCorpusSkillBatch() {
+  return {
+    rows: [
+      {
+        kind: "skill",
+        slug: "corpus-demo",
+        displayName: "Corpus Demo",
+        version: "0.1.0",
+        skillMd: "---\ndescription: Corpus demo\n---\n# Corpus demo",
+        storageId: "storage:corpus-demo",
+        embedding: [0, 1, 2],
+        dummyOwner: {
+          handle: "corpus-owner",
+          displayName: "Corpus Owner",
+          image: "https://example.invalid/avatar.png",
+        },
+      },
+    ],
+  };
+}
+
+function makeExistingCorpusSkill(userId: Id<"users">, publisherId: Id<"publishers">) {
+  return {
+    slug: "corpus-demo",
+    displayName: "Corpus Demo",
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    batch: "public-corpus-v1",
+    tags: {},
+    badges: {},
+    statsDownloads: 143,
+    statsStars: 7,
+    statsInstallsCurrent: 18,
+    statsInstallsAllTime: 23,
+    stats: {
+      downloads: 143,
+      stars: 7,
+      installsCurrent: 18,
+      installsAllTime: 23,
+      versions: 1,
+      comments: 0,
+    },
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function makePublicCorpusPluginBatch() {
+  return {
+    rows: [
+      {
+        kind: "plugin",
+        name: "gmail-agent-plugin",
+        displayName: "Gmail Agent Plugin",
+        version: "0.1.0",
+        readme: "# Gmail Agent Plugin\n\nWatches Gmail and notifies an OpenClaw channel.",
+        storageId: "storage:gmail-agent-plugin",
+        categories: ["channels", "tools"],
+        topics: ["Gmail", "Notifications"],
+        dummyOwner: {
+          handle: "corpus-owner",
+          displayName: "Corpus Owner",
+          image: "https://example.invalid/avatar.png",
+        },
+      },
+    ],
   };
 }
 
@@ -319,24 +380,7 @@ describe("devSeed local fixtures", () => {
 
     await seedPublicCorpusBatchHandler(
       createMutationCtx(db) as never,
-      {
-        rows: [
-          {
-            kind: "skill",
-            slug: "corpus-demo",
-            displayName: "Corpus Demo",
-            version: "0.1.0",
-            skillMd: "---\ndescription: Corpus demo\n---\n# Corpus demo",
-            storageId: "storage:corpus-demo",
-            embedding: [0, 1, 2],
-            dummyOwner: {
-              handle: "corpus-owner",
-              displayName: "Corpus Owner",
-              image: "https://example.invalid/avatar.png",
-            },
-          },
-        ],
-      } as never,
+      makePublicCorpusSkillBatch() as never,
     );
 
     expect(tables.skills?.[0]).toEqual(
@@ -415,50 +459,11 @@ describe("devSeed local fixtures", () => {
       updatedAt: 1,
     })) as Id<"publishers">;
 
-    await db.insert("skills", {
-      slug: "corpus-demo",
-      displayName: "Corpus Demo",
-      ownerUserId: userId,
-      ownerPublisherId: publisherId,
-      batch: "public-corpus-v1",
-      tags: {},
-      badges: {},
-      statsDownloads: 143,
-      statsStars: 7,
-      statsInstallsCurrent: 18,
-      statsInstallsAllTime: 23,
-      stats: {
-        downloads: 143,
-        stars: 7,
-        installsCurrent: 18,
-        installsAllTime: 23,
-        versions: 1,
-        comments: 0,
-      },
-      createdAt: 1,
-      updatedAt: 1,
-    });
+    await db.insert("skills", makeExistingCorpusSkill(userId, publisherId));
 
     const result = await seedPublicCorpusBatchHandler(
       createMutationCtx(db) as never,
-      {
-        rows: [
-          {
-            kind: "skill",
-            slug: "corpus-demo",
-            displayName: "Corpus Demo",
-            version: "0.1.0",
-            skillMd: "---\ndescription: Corpus demo\n---\n# Corpus demo",
-            storageId: "storage:corpus-demo",
-            embedding: [0, 1, 2],
-            dummyOwner: {
-              handle: "corpus-owner",
-              displayName: "Corpus Owner",
-              image: "https://example.invalid/avatar.png",
-            },
-          },
-        ],
-      } as never,
+      makePublicCorpusSkillBatch() as never,
     );
 
     const rows = tables.skillDailyStats ?? [];
@@ -486,29 +491,7 @@ describe("devSeed local fixtures", () => {
       updatedAt: 1,
     })) as Id<"publishers">;
 
-    await db.insert("skills", {
-      slug: "corpus-demo",
-      displayName: "Corpus Demo",
-      ownerUserId: userId,
-      ownerPublisherId: publisherId,
-      batch: "public-corpus-v1",
-      tags: {},
-      badges: {},
-      statsDownloads: 143,
-      statsStars: 7,
-      statsInstallsCurrent: 18,
-      statsInstallsAllTime: 23,
-      stats: {
-        downloads: 143,
-        stars: 7,
-        installsCurrent: 18,
-        installsAllTime: 23,
-        versions: 1,
-        comments: 0,
-      },
-      createdAt: 1,
-      updatedAt: 1,
-    });
+    await db.insert("skills", makeExistingCorpusSkill(userId, publisherId));
     await db.insert("packages", {
       name: "demo-plugin",
       normalizedName: "demo-plugin",
@@ -632,25 +615,7 @@ describe("devSeed local fixtures", () => {
 
     await seedPublicCorpusBatchHandler(
       createMutationCtx(db) as never,
-      {
-        rows: [
-          {
-            kind: "plugin",
-            name: "gmail-agent-plugin",
-            displayName: "Gmail Agent Plugin",
-            version: "0.1.0",
-            readme: "# Gmail Agent Plugin\n\nWatches Gmail and notifies an OpenClaw channel.",
-            storageId: "storage:gmail-agent-plugin",
-            categories: ["channels", "tools"],
-            topics: ["Gmail", "Notifications"],
-            dummyOwner: {
-              handle: "corpus-owner",
-              displayName: "Corpus Owner",
-              image: "https://example.invalid/avatar.png",
-            },
-          },
-        ],
-      } as never,
+      makePublicCorpusPluginBatch() as never,
     );
 
     const pkg = tables.packages?.find((candidate) => candidate.name === "gmail-agent-plugin");
@@ -775,25 +740,7 @@ describe("devSeed local fixtures", () => {
 
     await seedPublicCorpusBatchHandler(
       createMutationCtx(db) as never,
-      {
-        rows: [
-          {
-            kind: "plugin",
-            name: "gmail-agent-plugin",
-            displayName: "Gmail Agent Plugin",
-            version: "0.1.0",
-            readme: "# Gmail Agent Plugin\n\nWatches Gmail and notifies an OpenClaw channel.",
-            storageId: "storage:gmail-agent-plugin",
-            categories: ["channels", "tools"],
-            topics: ["Gmail", "Notifications"],
-            dummyOwner: {
-              handle: "corpus-owner",
-              displayName: "Corpus Owner",
-              image: "https://example.invalid/avatar.png",
-            },
-          },
-        ],
-      } as never,
+      makePublicCorpusPluginBatch() as never,
     );
 
     expect(tables.packages?.[0]).toEqual(
@@ -892,25 +839,7 @@ describe("devSeed local fixtures", () => {
 
     await backfillExistingPublicCorpusBatchRowsHandler(
       createMutationCtx(db) as never,
-      {
-        rows: [
-          {
-            kind: "plugin",
-            name: "gmail-agent-plugin",
-            displayName: "Gmail Agent Plugin",
-            version: "0.1.0",
-            readme: "# Gmail Agent Plugin\n\nWatches Gmail and notifies an OpenClaw channel.",
-            storageId: "storage:gmail-agent-plugin",
-            categories: ["channels", "tools"],
-            topics: ["Gmail", "Notifications"],
-            dummyOwner: {
-              handle: "corpus-owner",
-              displayName: "Corpus Owner",
-              image: "https://example.invalid/avatar.png",
-            },
-          },
-        ],
-      } as never,
+      makePublicCorpusPluginBatch() as never,
     );
 
     expect(tables.packages?.[0]).toEqual(

@@ -1,6 +1,6 @@
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { buildSkillPublishAttemptIdempotencyKey } from "./skillPublish";
+import { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
 
 export type SkillPublicationProgress = {
   version: string;

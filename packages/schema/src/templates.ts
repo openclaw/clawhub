@@ -1,10 +1,12 @@
 import { ArkErrors, type BaseType, type inferred, type } from "arktype";
 import { Cron } from "croner";
-import { caseFold } from "unicode-case-folding";
+import { nativeAgentSettingsFields, validateNativeAgentSettings } from "./templateAgent.js";
+import { hasPortablePathSegments, portablePathKey } from "./templatePaths.js";
 
 export const TEMPLATE_SCHEMA_VERSION = 1 as const;
 export const TEMPLATE_SUMMARY_AGENT_NAME_MAX_CHARS = 128;
 export const TEMPLATE_SUMMARY_AGENT_DESCRIPTION_MAX_CHARS = 1_024;
+export const TEMPLATE_DEPENDENCY_INVENTORY_MAX_BYTES = 256 * 1024;
 export const TEMPLATE_BOOTSTRAP_FILE_NAMES = [
   "AGENTS.md",
   "SOUL.md",
@@ -39,12 +41,18 @@ const RemoteMcpServerSchema = type({
   timeout: "number?",
   connectTimeout: "number?",
 });
+const TemplateDependencyDeclarationSchema = type({
+  "+": "reject",
+  ref: "string",
+  version: "string",
+}).or(type({ "+": "reject", path: "string" }));
 
 export const TemplateManifestSchema = type({
   "+": "reject",
   schemaVersion: "1",
   agent: {
     "+": "reject",
+    ...nativeAgentSettingsFields,
     id: "string",
     name: "string?",
     description: "string?",
@@ -70,22 +78,16 @@ export const TemplateManifestSchema = type({
     }).optional(),
     files: type({ "+": "reject", source: "string", path: "string" }).array().optional(),
   }).optional(),
-  packages: type({
-    "+": "reject",
-    kind: '"skill"|"plugin"',
-    source: '"clawhub"',
-    ref: "string",
-    version: "string",
-  })
-    .array()
-    .optional(),
+  skills: TemplateDependencyDeclarationSchema.array().optional(),
+  plugins: TemplateDependencyDeclarationSchema.array().optional(),
   mcpServers: type({
     "[string]": StdioMcpServerSchema.or(RemoteMcpServerSchema),
   }).optional(),
-  cronJobs: type({
+  automations: type({
     "+": "reject",
     id: "string",
     name: "string?",
+    enabled: "boolean?",
     schedule: { "+": "reject", cron: "string", timezone: "string" },
     session: '"main"|"isolated"',
     message: "string",
@@ -105,6 +107,7 @@ export type TemplateManifestSummary = {
   agent: { id: string; name?: string; description?: string };
   workspace: { bootstrapFiles: string[]; fileCount: number };
   packages: { skillCount: number; pluginCount: number };
+  // Historical immutable release summaries may retain these stored fields. New summaries never emit them.
   profiles?: { count: number; hasOpenClaw: boolean };
   extensions?: { count: number };
   mcpServerCount: number;
@@ -177,6 +180,7 @@ export const TemplateManifestSummarySchema = createTemplateManifestSummarySchema
 export const TEMPLATE_MANIFEST_VALIDATION_PHASE = "schema" as const;
 export const TEMPLATE_MANIFEST_VALIDATION_CODES = {
   invalidManifestShape: "template_v1_invalid_manifest_shape",
+  invalidAgentSettings: "template_v1_invalid_agent_settings",
   invalidAgentId: "template_v1_invalid_agent_id",
   invalidCategory: "template_v1_invalid_category",
   nonCanonicalString: "template_v1_non_canonical_string",
@@ -220,9 +224,6 @@ const EXACT_VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const ENV_REFERENCE_PATTERN = /^\$\{[A-Z_][A-Z0-9_]*\}$/;
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
-const WINDOWS_INVALID_PATH_CHARS = /[<>:"|?*]/;
-const WINDOWS_RESERVED_PATH_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
-const UNICODE_CONTROL_CHARACTER = /\p{Cc}/u;
 const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 const AVATAR_MAX_DATA_URL_CHARS = 2_796_230;
 const AVATAR_DATA_URL_PATTERN = /^data:image\/[^,]*,/i;
@@ -234,7 +235,7 @@ export const OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1 = {
   contractVersion: 1,
   source: {
     repository: "openclaw/openclaw",
-    commit: "bad082feced849567953588d4b1bc7ffc3188839",
+    commit: "194b7bea3730b2876e2d43c633347157da637c53",
     path: "src/infra/host-env-security-policy.json",
     sha256: "6923ab681c0e701381ea5fccebe36b7c6d2bfeadd72cfa08b0d542640d5e9601",
   },
@@ -377,23 +378,7 @@ function isSafePackagePath(value: string): boolean {
   ) {
     return false;
   }
-  return normalized
-    .split("/")
-    .every(
-      (segment) =>
-        segment !== "" &&
-        segment !== "." &&
-        segment !== ".." &&
-        !WINDOWS_INVALID_PATH_CHARS.test(segment) &&
-        !UNICODE_CONTROL_CHARACTER.test(segment) &&
-        !segment.endsWith(".") &&
-        !segment.endsWith(" ") &&
-        !WINDOWS_RESERVED_PATH_SEGMENT.test(segment),
-    );
-}
-
-function portablePathKey(value: string): string {
-  return caseFold(value.replaceAll("\\", "/").normalize("NFC"));
+  return hasPortablePathSegments(normalized);
 }
 
 function isPortableAvatar(value: string): boolean {
@@ -557,10 +542,32 @@ export function validateTemplateManifest(
 ):
   | { ok: true; manifest: TemplateManifest }
   | { ok: false; issues: TemplateManifestValidationIssue[] } {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    for (const key of ["packages", "profiles", "extensions", "cronJobs"]) {
+      if (Object.hasOwn(value, key))
+        return {
+          ok: false,
+          issues: [
+            validationIssue(
+              TEMPLATE_MANIFEST_VALIDATION_CODES.invalidManifestShape,
+              `$.${key}`,
+              "Retired Template field. Use agent for native settings, skills/plugins for exact ClawHub dependencies, and automations for scheduled work in CLAW.md.",
+            ),
+          ],
+        };
+    }
+  }
   const parsed = TemplateManifestSchema(value);
   if (parsed instanceof ArkErrors) return { ok: false, issues: arkIssues(parsed) };
 
-  const issues: TemplateManifestValidationIssue[] = [];
+  const issues: TemplateManifestValidationIssue[] = validateNativeAgentSettings(parsed.agent).map(
+    (entry) =>
+      validationIssue(
+        TEMPLATE_MANIFEST_VALIDATION_CODES.invalidAgentSettings,
+        entry.path,
+        entry.message,
+      ),
+  );
   if (!AGENT_ID_PATTERN.test(parsed.agent.id)) {
     issues.push(
       validationIssue(
@@ -607,7 +614,7 @@ export function validateTemplateManifest(
       validationIssue(
         TEMPLATE_MANIFEST_VALIDATION_CODES.legacyProfilePointer,
         "$.metadata.openclaw.config",
-        "metadata.openclaw.config is no longer supported; move the profile to profiles/openclaw.yml and remove the metadata entry.",
+        "metadata.openclaw.config is no longer supported; move native settings into CLAW.md agent and remove the metadata entry.",
       ),
     );
   }
@@ -690,38 +697,62 @@ export function validateTemplateManifest(
     }
   }
 
-  const packageKeys = new Set<string>();
-  for (const [index, pkg] of (parsed.packages ?? []).entries()) {
-    pushNonEmpty(issues, `$.packages.${index}.ref`, pkg.ref);
-    if (!PACKAGE_NAME_PATTERN.test(pkg.ref)) {
-      issues.push(
-        validationIssue(
-          TEMPLATE_MANIFEST_VALIDATION_CODES.invalidPackageReference,
-          `$.packages.${index}.ref`,
-          "Must be a lowercase ClawHub package name.",
-        ),
-      );
+  const bundledPaths = new Set<string>();
+  for (const kind of ["skills", "plugins"] as const) {
+    const references = new Set<string>();
+    for (const [index, entry] of (parsed[kind] ?? []).entries()) {
+      if ("path" in entry) {
+        const key = portablePathKey(entry.path);
+        if (
+          !isSafePackagePath(entry.path) ||
+          key.split("/").some((part) => part === ".git" || part === "node_modules")
+        ) {
+          issues.push(
+            validationIssue(
+              TEMPLATE_MANIFEST_VALIDATION_CODES.unsafePath,
+              `$.${kind}.${index}.path`,
+              "Bundled dependency must name a safe package-relative directory.",
+            ),
+          );
+        }
+        if (conflictsWithWorkspaceTarget(bundledPaths, key)) {
+          issues.push(
+            validationIssue(
+              TEMPLATE_MANIFEST_VALIDATION_CODES.duplicatePackage,
+              `$.${kind}.${index}.path`,
+              "Bundled dependency directories must not overlap.",
+            ),
+          );
+        }
+        bundledPaths.add(key);
+        continue;
+      }
+      if (!PACKAGE_NAME_PATTERN.test(entry.ref))
+        issues.push(
+          validationIssue(
+            TEMPLATE_MANIFEST_VALIDATION_CODES.invalidPackageReference,
+            `$.${kind}.${index}.ref`,
+            "Must be a lowercase ClawHub package name.",
+          ),
+        );
+      if (!EXACT_VERSION_PATTERN.test(entry.version))
+        issues.push(
+          validationIssue(
+            TEMPLATE_MANIFEST_VALIDATION_CODES.invalidPackageVersion,
+            `$.${kind}.${index}.version`,
+            "Must be an exact semantic version.",
+          ),
+        );
+      if (references.has(entry.ref))
+        issues.push(
+          validationIssue(
+            TEMPLATE_MANIFEST_VALIDATION_CODES.duplicatePackage,
+            `$.${kind}.${index}`,
+            "Dependency is declared more than once.",
+          ),
+        );
+      references.add(entry.ref);
     }
-    if (!EXACT_VERSION_PATTERN.test(pkg.version)) {
-      issues.push(
-        validationIssue(
-          TEMPLATE_MANIFEST_VALIDATION_CODES.invalidPackageVersion,
-          `$.packages.${index}.version`,
-          "Must be an exact semantic version.",
-        ),
-      );
-    }
-    const key = `${pkg.kind}:${pkg.source}:${pkg.ref.toLowerCase()}`;
-    if (packageKeys.has(key)) {
-      issues.push(
-        validationIssue(
-          TEMPLATE_MANIFEST_VALIDATION_CODES.duplicatePackage,
-          `$.packages.${index}`,
-          "Package is declared more than once.",
-        ),
-      );
-    }
-    packageKeys.add(key);
   }
 
   for (const [name, server] of Object.entries(parsed.mcpServers ?? {})) {
@@ -866,20 +897,20 @@ export function validateTemplateManifest(
   }
 
   const cronIds = new Set<string>();
-  for (const [index, job] of (parsed.cronJobs ?? []).entries()) {
+  for (const [index, job] of (parsed.automations ?? []).entries()) {
     if (!AGENT_ID_PATTERN.test(job.id)) {
       issues.push(
         validationIssue(
           TEMPLATE_MANIFEST_VALIDATION_CODES.invalidCronJobId,
-          `$.cronJobs.${index}.id`,
+          `$.automations.${index}.id`,
           "Invalid cron job id.",
         ),
       );
     }
-    pushNonEmpty(issues, `$.cronJobs.${index}.name`, job.name);
-    pushNonEmpty(issues, `$.cronJobs.${index}.schedule.cron`, job.schedule.cron);
-    pushNonEmpty(issues, `$.cronJobs.${index}.schedule.timezone`, job.schedule.timezone);
-    pushNonEmpty(issues, `$.cronJobs.${index}.message`, job.message);
+    pushNonEmpty(issues, `$.automations.${index}.name`, job.name);
+    pushNonEmpty(issues, `$.automations.${index}.schedule.cron`, job.schedule.cron);
+    pushNonEmpty(issues, `$.automations.${index}.schedule.timezone`, job.schedule.timezone);
+    pushNonEmpty(issues, `$.automations.${index}.message`, job.message);
     try {
       if (job.schedule.cron.trim().split(/\s+/).length !== 5) throw new Error("fields");
       const cron = new Cron(job.schedule.cron.trim(), {
@@ -892,7 +923,7 @@ export function validateTemplateManifest(
       issues.push(
         validationIssue(
           TEMPLATE_MANIFEST_VALIDATION_CODES.invalidCronSchedule,
-          `$.cronJobs.${index}.schedule`,
+          `$.automations.${index}.schedule`,
           "Must contain a valid cron expression and timezone.",
         ),
       );
@@ -904,7 +935,7 @@ export function validateTemplateManifest(
       issues.push(
         validationIssue(
           TEMPLATE_MANIFEST_VALIDATION_CODES.invalidCronDelivery,
-          `$.cronJobs.${index}.delivery`,
+          `$.automations.${index}.delivery`,
           'Must be { mode: "none" } or { mode: "announce", channel: "last" }.',
         ),
       );
@@ -913,7 +944,7 @@ export function validateTemplateManifest(
       issues.push(
         validationIssue(
           TEMPLATE_MANIFEST_VALIDATION_CODES.duplicateCronJob,
-          `$.cronJobs.${index}.id`,
+          `$.automations.${index}.id`,
           "Cron job id is declared more than once.",
         ),
       );
@@ -928,7 +959,7 @@ export function summarizeTemplateManifest(
   manifest: TemplateManifest,
   options: { templateMarkdownBody?: boolean } = {},
 ): TemplateManifestSummary {
-  const packages = manifest.packages ?? [];
+  const packages = templateDependencyInventory(manifest);
   const agentName = truncateSummaryText(manifest.agent.name, TEMPLATE_SUMMARY_AGENT_NAME_MAX_CHARS);
   const agentDescription = truncateSummaryText(
     manifest.agent.description,
@@ -954,6 +985,44 @@ export function summarizeTemplateManifest(
       pluginCount: packages.filter((pkg) => pkg.kind === "plugin").length,
     },
     mcpServerCount: Object.keys(manifest.mcpServers ?? {}).length,
-    cronJobCount: manifest.cronJobs?.length ?? 0,
+    cronJobCount: manifest.automations?.length ?? 0,
   };
 }
+
+/** The sole dependency projection used by validation, summaries and detail consumers. */
+export function templateDependencyInventory(
+  manifest: TemplateManifest,
+  bundledSources: ReadonlyArray<{ kind: "skill" | "plugin"; path: string; name?: string }> = [],
+): TemplateDependencyInventory {
+  return (["skills", "plugins"] as const).flatMap((collection) =>
+    (manifest[collection] ?? []).map((entry): TemplateDependencyInventory[number] => {
+      const kind = collection === "skills" ? "skill" : "plugin";
+      if ("path" in entry) {
+        const name = truncateSummaryText(
+          bundledSources.find((source) => source.kind === kind && source.path === entry.path)?.name,
+          TEMPLATE_SUMMARY_AGENT_NAME_MAX_CHARS,
+        );
+        return { kind, source: "bundled", path: entry.path, ...(name ? { name } : {}) };
+      }
+      return { kind, source: "clawhub", ref: entry.ref, version: entry.version };
+    }),
+  );
+}
+export const TemplateDependencyInventorySchema = type({
+  "+": "reject",
+  kind: '"skill"|"plugin"',
+  source: '"clawhub"',
+  ref: "string",
+  version: "string",
+})
+  .or(
+    type({
+      "+": "reject",
+      kind: '"skill"|"plugin"',
+      source: '"bundled"',
+      path: "string",
+      name: "string?",
+    }),
+  )
+  .array();
+export type TemplateDependencyInventory = (typeof TemplateDependencyInventorySchema)[inferred];

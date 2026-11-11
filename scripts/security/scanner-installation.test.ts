@@ -11,9 +11,17 @@ const run = promisify(execFile);
 const scripts = resolve("scripts/security");
 
 describe("reviewed ClawScan installation", () => {
+  it("keeps source reporting disabled until the backend rollout is explicitly enabled", async () => {
+    const workflow = parseYaml(
+      await readFile(".github/workflows/prepublication-publish-checks.yml", "utf8"),
+    );
+    expect(
+      workflow.jobs["prepublication-publish-checks"].env.PREPUBLICATION_REPORT_SCANNER_SOURCE,
+    ).toBe("${{ vars.PREPUBLICATION_REPORT_SCANNER_SOURCE || 'false' }}");
+  });
   it("ships a full immutable source lock for the workflow installers", async () => {
-    expect(await readFile(join(scripts, "clawscan-source-commit.txt"), "utf8")).toMatch(
-      /^[a-f0-9]{40}\n$/,
+    expect(await readFile(join(scripts, "clawscan-source-commit.txt"), "utf8")).toBe(
+      "56bf1d9e3bd5247a0622acef8699dc69a10f2938\n",
     );
   });
 
@@ -47,10 +55,76 @@ describe("reviewed ClawScan installation", () => {
     expect(JSON.stringify(workflow)).not.toContain("69dcdfb74487d361ba4c811d088cfdea2ff3a9dc");
   });
 
+  it.each([
+    ["prepublication-publish-checks", "prepublication-publish-checks", "PREPUBLICATION", 100, 75],
+    ["security-scan-codex", "codex-security-scan", "CODEX_SECURITY_SCAN", 125, 100],
+  ] as const)(
+    "reserves complete plugin drain coverage in %s without changing skill timeout",
+    async (file, jobId, lane, hostedMinutes, workerMinutes) => {
+      const workflow = parseYaml(await readFile(".github/workflows/" + file + ".yml", "utf8"));
+      const job = workflow.jobs[jobId];
+      expect(job["timeout-minutes"]).toBe(hostedMinutes);
+      expect(job.env[lane + "_CLAWSCAN_TIMEOUT_MS"]).toContain("900000");
+      expect(job.env[lane + "_CLAWSCAN_SANDBOX"]).toBe("off");
+      expect(job.env[lane + "_CLAWSCAN_PLUGIN_SANDBOX"]).toBe("docker");
+      const deadline = job.steps[0];
+      expect(deadline.name).toBe("Reserve hosted worker drain deadline");
+      expect(deadline.run).toContain(hostedMinutes + " * 60000 - 120000");
+      expect(deadline.run).toContain("SECURITY_SCAN_WORKER_HOST_DEADLINE_MS");
+      const workers = job.steps.filter((step: { name?: string }) => step.name?.startsWith("Run "));
+      expect(workers.length).toBeGreaterThan(0);
+      for (const worker of workers) expect(worker["timeout-minutes"]).toBe(workerMinutes);
+      expect(
+        job.steps.find(
+          (step: { name?: string }) => step.name === "Prepare qualified plugin Docker runtime",
+        )?.run,
+      ).toContain("sh scripts/security/install-clawscan-scanners.sh aig-mcp");
+    },
+  );
+
+  it.each(["prepublication-publish-checks", "security-scan-codex"])(
+    "does not prepare MCP for an unqualified default in %s",
+    async (name) => {
+      const workflow = parseYaml(await readFile(".github/workflows/" + name + ".yml", "utf8"));
+      const steps = (
+        Object.values(workflow.jobs) as Array<{ steps?: Array<{ name?: string; run?: string }> }>
+      ).flatMap((job) => job.steps ?? []);
+      const step = steps.find((step) => step.name === "Prepare qualified plugin Docker runtime");
+      if (!step?.run) throw new Error("Missing qualified plugin preparation step");
+      const root = await mkdtemp(join(tmpdir(), "legacy-workflow-mcp-"));
+      try {
+        const dir = join(root, "scripts/security");
+        await mkdir(dir, { recursive: true });
+        await writeFile(
+          join(dir, "clawscan-install-source.sh"),
+          "qualified_source_commit=" + "b".repeat(40) + "\n",
+        );
+        await writeFile(join(dir, "clawscan-source-commit.txt"), "a".repeat(40) + "\n");
+        await writeFile(
+          join(dir, "install-clawscan-scanners.sh"),
+          '#!/bin/sh\necho "$*" >> calls\nexit 91\n',
+        );
+        await run("sh", ["-c", step.run!], { cwd: root, env: { PATH: process.env.PATH } });
+        await expect(readFile(join(root, "calls"), "utf8")).rejects.toThrow();
+        await writeFile(join(dir, "clawscan-source-commit.txt"), "b".repeat(40) + "\n");
+        await expect(
+          run("sh", ["-c", step.run!], { cwd: root, env: { PATH: process.env.PATH } }),
+        ).rejects.toThrow();
+        expect(await readFile(join(root, "calls"), "utf8")).toBe("aig-mcp\n");
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("rejects mutable or missing source revisions before executing installation tools", async () => {
     const root = await mkdtemp(join(tmpdir(), "clawscan-install-reject-"));
     try {
       await copyFile(join(scripts, "install-clawscan.sh"), join(root, "install.sh"));
+      await copyFile(
+        join(scripts, "clawscan-install-source.sh"),
+        join(root, "clawscan-install-source.sh"),
+      );
       await expect(
         run("sh", [join(root, "install.sh")], { env: { PATH: process.env.PATH } }),
       ).rejects.toThrow();
@@ -88,6 +162,7 @@ describe("reviewed ClawScan installation", () => {
           join(scriptDir, "install.sh"),
         );
         for (const file of [
+          "clawscan-install-source.sh",
           "skillspector-pydantic-requirements.txt",
           "test_skillspector_serialization.py",
         ]) {
@@ -106,13 +181,23 @@ describe("reviewed ClawScan installation", () => {
         if (modern) {
           await mkdir(join(runtime, "tests"), { recursive: true });
           await writeFile(join(runtime, "tests/test_skillspector_shell_source.py"), "");
+          await writeFile(
+            join(runtime, "tests/test_skillspector_destructive_quoted_operand_boundaries.py"),
+            "",
+          );
+          await writeFile(join(runtime, "tests/test_skillspector_fragment_quote_ownership.py"), "");
+          await writeFile(
+            join(runtime, "tests/test_skillspector_javascript_parenthesized_capabilities.py"),
+            "",
+          );
         }
         const fake = [
           "#!/bin/sh",
+          'case "$*" in *"-m pytest "*) [ "${PYTHONDONTWRITEBYTECODE:-}" = 1 ] && [ "${PYTEST_ADDOPTS:-}" = "-p no:cacheprovider" ] || exit 80;; esac',
           'echo "$(basename "$0") $*" >> "$COMMAND_LOG"',
           'case "$(basename "$0")" in',
           ' git) if [ "${3:-}" = rev-parse ]; then case "$2" in */clawscan) echo "$CLAWSCAN_PIN";; *) echo "$SCANNER_PIN";; esac; elif [ "${3:-}" = apply ] && [ "${4:-}" != --check ] && [ "$HAS_SHELL_PARSER" = 1 ]; then case "$2" in */skillspector-source.*) mkdir -p "$2/src/skillspector"; : > "$2/src/skillspector/shell_source.py";; esac; fi;;',
-          ' python) if [ "${1:-}" = -c ]; then printf "%s\\n" "$SELECTED_PYTHON"; elif [ "${1:-}" = -m ] && [ "${2:-}" = venv ]; then mkdir -p "$3/bin"; cp "$0" "$3/bin/python"; cp "$0" "$3/bin/aig-skill-scan"; fi;;',
+          ' python) if [ "${1:-}" = -c ]; then printf "%s\\n" "$SELECTED_PYTHON"; elif [ "${1:-}" = -m ] && [ "${2:-}" = venv ]; then mkdir -p "$3/bin"; cp "$0" "$3/bin/python"; cp "$0" "$3/bin/aig-skill-scan"; elif [ "${FAIL_QUOTE_TESTS:-0}" = 1 ]; then case "$*" in *test_skillspector_destructive_quoted_operand_boundaries.py*) exit 79;; esac; elif [ "${FAIL_NATIVE_CALLEE_TESTS:-0}" = 1 ]; then case "$*" in *test_skillspector_javascript_parenthesized_capabilities.py*) exit 78;; esac; fi;;',
           ' uv) if [ "${1:-}" = sync ]; then for last; do :; done; mkdir -p "$last/.venv/bin"; cp "$0" "$last/.venv/bin/python"; cp "$0" "$last/.venv/bin/skillspector"; fi;;',
           ' go) mkdir -p "$GOBIN"; cp "$0" "$GOBIN/shfmt";;',
           ' shfmt) printf "%s\\n" "${SHFMT_REPORTED_VERSION:-v3.14.1}";;',
@@ -154,6 +239,23 @@ describe("reviewed ClawScan installation", () => {
         } else {
           expect(commands).not.toContain("go install");
           expect(commands).not.toContain("test_skillspector_shell_source.py");
+        }
+        const quoteTests =
+          runtime + "/tests/test_skillspector_destructive_quoted_operand_boundaries.py";
+        if (modern) {
+          expect(commands).toContain("-m pytest -q " + quoteTests);
+          expect(commands).toContain(
+            runtime + "/tests/test_skillspector_fragment_quote_ownership.py",
+          );
+          expect(commands).toContain(
+            "-m pytest -q " +
+              runtime +
+              "/tests/test_skillspector_javascript_parenthesized_capabilities.py",
+          );
+        } else {
+          expect(commands).not.toContain(
+            "test_skillspector_destructive_quoted_operand_boundaries.py",
+          );
         }
         for (const scanner of [first, second]) {
           expect(commands).toContain(
@@ -202,6 +304,18 @@ describe("reviewed ClawScan installation", () => {
           ).rejects.toThrow(/no matching scanner module/);
           return;
         }
+        await expect(
+          run("sh", [join(scriptDir, "install.sh"), "skillspector"], {
+            env: { ...retryEnv, FAIL_QUOTE_TESTS: "1" },
+          }),
+        ).rejects.toMatchObject({ code: 79 });
+        expect(await readFile(join(root, "github-path"), "utf8")).toBe(paths);
+        await expect(
+          run("sh", [join(scriptDir, "install.sh"), "skillspector"], {
+            env: { ...retryEnv, FAIL_NATIVE_CALLEE_TESTS: "1" },
+          }),
+        ).rejects.toMatchObject({ code: 78 });
+        expect(await readFile(join(root, "github-path"), "utf8")).toBe(paths);
         for (const invalidPin of ["", "latest", "v3.14.1\nARG SHFMT_VERSION=v3.14.1"]) {
           await writeFile(
             join(runtime, "Dockerfile"),
@@ -211,7 +325,7 @@ describe("reviewed ClawScan installation", () => {
             run("sh", [join(scriptDir, "install.sh"), "skillspector"], { env: retryEnv }),
           ).rejects.toThrow();
         }
-        expect((await readFile(log, "utf8")).match(/go install /g)).toHaveLength(1);
+        expect((await readFile(log, "utf8")).match(/go install /g)).toHaveLength(3);
         await writeFile(
           join(runtime, "Dockerfile"),
           "ARG SHFMT_VERSION=v3.14.1\nARG SKILLSPECTOR_REF=" + scannerPin + "\n",

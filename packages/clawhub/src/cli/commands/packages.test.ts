@@ -1,19 +1,20 @@
 /* @vitest-environment node */
 
-import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gzipSync, zipSync } from "fflate";
+import { zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
   createHttpModuleMocks,
   createRegistryModuleMocks,
   createUiModuleMocks,
-  makeGlobalOpts,
+  makeGlobalOpts as makeOpts,
 } from "../../../test/cliCommandTestKit.js";
+import { runGit } from "../../../test/git.js";
+import { npmPackFixture } from "../../../test/npmPack.js";
 
 const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
@@ -76,27 +77,12 @@ const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 const mockWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
 const mockWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
-function makeOpts(workdir = "/work") {
-  return makeGlobalOpts(workdir);
-}
-
 async function makeTmpWorkdir() {
   return await mkdtemp(join(tmpdir(), "clawhub-package-"));
 }
 
 async function listClawPackTempDirs() {
   return new Set((await readdir(tmpdir())).filter((name) => name.startsWith("clawhub-clawpack-")));
-}
-
-function runGit(cwd: string, args: string[]) {
-  const result = spawnSync("git", ["-C", cwd, ...args], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  if (result.status !== 0) {
-    throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
-  }
-  return result.stdout.trim();
 }
 
 function getPublishForm() {
@@ -160,6 +146,12 @@ function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
   });
 }
 
+// makeCodePluginPackageJson declares ./dist/index.js; publish validation requires it.
+async function writeDeclaredDistEntry(folder: string) {
+  await mkdir(join(folder, "dist"), { recursive: true });
+  await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+}
+
 async function createCodePluginFixture(workdir: string, folderName: string, packageName: string) {
   const folder = join(workdir, folderName);
   await mkdir(join(folder, "dist"), { recursive: true });
@@ -180,57 +172,6 @@ async function createCodePluginFixture(workdir: string, folderName: string, pack
   );
   await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
   return folder;
-}
-
-const TAR_BLOCK_SIZE = 512;
-
-function writeTarString(target: Uint8Array, offset: number, width: number, value: string) {
-  const encoded = new TextEncoder().encode(value);
-  target.set(encoded.subarray(0, width), offset);
-}
-
-function tarOctal(value: number, width: number) {
-  return value.toString(8).padStart(width - 1, "0") + "\0";
-}
-
-function tarFile(path: string, content: string | Uint8Array) {
-  const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
-  const header = new Uint8Array(TAR_BLOCK_SIZE);
-  writeTarString(header, 0, 100, path);
-  writeTarString(header, 100, 8, tarOctal(0o644, 8));
-  writeTarString(header, 108, 8, tarOctal(0, 8));
-  writeTarString(header, 116, 8, tarOctal(0, 8));
-  writeTarString(header, 124, 12, tarOctal(bytes.byteLength, 12));
-  writeTarString(header, 136, 12, tarOctal(0, 12));
-  header.fill(0x20, 148, 156);
-  header[156] = "0".charCodeAt(0);
-  writeTarString(header, 257, 6, "ustar");
-  writeTarString(header, 263, 2, "00");
-
-  let checksum = 0;
-  for (const byte of header) checksum += byte;
-  writeTarString(header, 148, 8, tarOctal(checksum, 8));
-
-  const paddedSize = Math.ceil(bytes.byteLength / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
-  const body = new Uint8Array(paddedSize);
-  body.set(bytes);
-  return [header, body];
-}
-
-function npmPackFixture(files: Record<string, string | Uint8Array>) {
-  const parts: Uint8Array[] = [];
-  for (const [path, content] of Object.entries(files)) {
-    parts.push(...tarFile(path, content));
-  }
-  parts.push(new Uint8Array(TAR_BLOCK_SIZE), new Uint8Array(TAR_BLOCK_SIZE));
-  const size = parts.reduce((sum, part) => sum + part.byteLength, 0);
-  const tar = new Uint8Array(size);
-  let offset = 0;
-  for (const part of parts) {
-    tar.set(part, offset);
-    offset += part.byteLength;
-  }
-  return gzipSync(tar);
 }
 
 function artifactIdentity(bytes: Uint8Array) {
@@ -2841,10 +2782,9 @@ describe("package commands", () => {
             "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
         }),
       );
-      httpMocks.apiRequest.mockResolvedValueOnce({ package: null, owner: null });
 
       await expect(cmdPublishPackage(makeOpts(workdir), packName)).rejects.toThrow(
-        "profiles/openclaw.yml.agent.tools.profile: Must name a registered OpenClaw built-in profile.",
+        "profiles/openclaw.yml: Template profiles are no longer supported.",
       );
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
@@ -2852,7 +2792,7 @@ describe("package commands", () => {
     }
   });
 
-  it("preserves a legacy-only profile for a grandfathered Template package", async () => {
+  it("rejects retired profiles even for an existing Template package", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.1.tgz";
@@ -2870,34 +2810,10 @@ describe("package commands", () => {
             "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
         }),
       );
-      const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
-      const artifactSha256 = artifactIdentity(packBytes).sha256;
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        package: {
-          name: "demo-claw",
-          displayName: "Demo Template",
-          family: "template",
-        },
-        owner: null,
-      });
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        packageId: "pkg_claw",
-        releaseId: "rel_claw",
-        artifactSha256,
-      });
-
-      await cmdPublishPackage(makeOpts(workdir), packName);
-
-      expect(httpMocks.apiRequest).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          method: "GET",
-          path: "/api/v1/packages/demo-claw",
-        }),
-        expect.anything(),
+      await expect(cmdPublishPackage(makeOpts(workdir), packName)).rejects.toThrow(
+        "Template profiles are no longer supported",
       );
-      expect(httpMocks.apiRequestForm).toHaveBeenCalledTimes(1);
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -3146,6 +3062,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("manual-token");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -3207,6 +3124,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequest.mockRejectedValueOnce(
@@ -3261,6 +3179,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequest.mockRejectedValueOnce(
@@ -3315,6 +3234,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -3667,24 +3587,6 @@ describe("package commands", () => {
       await mkdir(join(folder, "assets"), { recursive: true });
       await writeFile(join(folder, "BOOTSTRAP.md"), "Ask which repositories to triage.\n", "utf8");
       await writeFile(join(folder, "assets", "triage.schema.json"), "{}\n", "utf8");
-      await writeFile(
-        join(folder, "profiles", "openclaw.yml"),
-        [
-          "schemaVersion: 1",
-          "agent:",
-          "  tools:",
-          "    profile: coding",
-          "    allow: [read]",
-          "    fs:",
-          "      workspaceOnly: true",
-          "  memory:",
-          "    search:",
-          "      enabled: true",
-          "      rememberAcrossConversations: true",
-          "      sources: [memory, sessions]",
-        ].join("\n"),
-        "utf8",
-      );
       await expect(cmdPublishPackage(makeOpts(workdir), "github-triage")).rejects.toThrow(
         "Template publication requires an already-built package tarball (.tgz)",
       );
@@ -3835,6 +3737,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "broken.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       httpMocks.apiRequestForm.mockRejectedValueOnce(new Error("Registry rejected upload"));
 
@@ -3854,7 +3757,7 @@ describe("package commands", () => {
     }
   });
 
-  it("fails CLI publish on server Plugin Inspector hard errors", async () => {
+  it("fails CLI publish when the registry rejects the release", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "broken-plugin");
@@ -3875,9 +3778,7 @@ describe("package commands", () => {
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
       httpMocks.apiRequestForm.mockRejectedValueOnce(
-        new Error(
-          "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
-        ),
+        new Error("Published package inventory does not match the minted authorization"),
       );
 
       await expect(
@@ -3885,10 +3786,10 @@ describe("package commands", () => {
           sourceRepo: "openclaw/broken-plugin",
           sourceCommit: "deadbeef",
         }),
-      ).rejects.toThrow("Plugin Inspector blocked publish");
+      ).rejects.toThrow("Published package inventory does not match the minted authorization");
 
       expect(uiMocks.spinner.fail).toHaveBeenCalledWith(
-        "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
+        "Published package inventory does not match the minted authorization",
       );
       expect(uiMocks.spinner.succeed).not.toHaveBeenCalled();
     } finally {
@@ -4043,6 +3944,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin" }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       runGit(folder, ["init", "-b", "main"]);
       runGit(folder, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
@@ -4113,6 +4015,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin", configSchema: { type: "object" } }),
         "utf8",
       );
+      await writeDeclaredDistEntry(folder);
 
       runGit(workdir, ["init", "-b", "main"]);
       runGit(workdir, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
@@ -4403,23 +4306,6 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith("Repository: openclaw/openclaw");
     expect(mockLog).toHaveBeenCalledWith("Workflow: plugin-clawhub-release.yml");
     expect(mockLog).not.toHaveBeenCalledWith(expect.stringContaining("Environment:"));
-  });
-
-  it("owns trusted publisher set and delete commands in the public package CLI", async () => {
-    const testSource = await readFile(new URL("./packages.test.ts", import.meta.url), "utf8");
-    const cliSource = await readFile(new URL("../../cli.ts", import.meta.url), "utf8");
-    const modImportPrefix = testSource.split(
-      '} = await import("../../../../clawhub-mod/src/commands/packages");',
-    )[0];
-    const modImportBlock = modImportPrefix ? (modImportPrefix.split("const {").at(-1) ?? "") : "";
-
-    expect(modImportBlock).not.toEqual("");
-    expect(modImportBlock).not.toContain("cmdSetPackageTrustedPublisher");
-    expect(modImportBlock).not.toContain("cmdDeletePackageTrustedPublisher");
-    expect(cliSource).toContain('["package", "trusted-publisher", "set"]');
-    expect(cliSource).toContain('["package", "trusted-publisher", "delete"]');
-    expect(cliSource).toContain("cmdSetPackageTrustedPublisher(opts, name, options)");
-    expect(cliSource).toContain("cmdDeletePackageTrustedPublisher(opts, name, options)");
   });
 
   it("sets trusted publisher config for a package", async () => {

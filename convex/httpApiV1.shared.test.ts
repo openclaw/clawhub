@@ -6,7 +6,6 @@ import type { ActionCtx } from "./_generated/server";
 import {
   formatUserFacingErrorMessage,
   parseMultipartPublish,
-  parseMultipartSkillScan,
   resolvePublicSkillVersions,
   softDeleteErrorToResponse,
 } from "./httpApiV1/shared";
@@ -182,30 +181,6 @@ describe("http API v1 shared helpers", () => {
     ).toEqual([{ tags: { stable: "1.5.0" }, latestVersion: null }]);
   });
 
-  it("validates skill scan multipart payloads before storing uploaded files", async () => {
-    const form = new FormData();
-    form.set("payload", JSON.stringify({ source: { kind: "upload" }, update: true }));
-    form.append("files", new Blob(["# Demo"], { type: "text/markdown" }), "SKILL.md");
-    const request = new Request("https://clawhub.ai/api/v1/skills/-/scan", {
-      method: "POST",
-      body: form,
-    });
-    const store = vi.fn();
-    const ctx = {
-      storage: {
-        store,
-        delete: vi.fn(),
-      },
-    } as unknown as ActionCtx;
-
-    await expect(
-      parseMultipartSkillScan(ctx, request, () => {
-        throw new Error("update is not valid for uploaded scans");
-      }),
-    ).rejects.toThrow("update is not valid for uploaded scans");
-    expect(store).not.toHaveBeenCalled();
-  });
-
   it("deletes stored publish blobs when the payload fails after upload", async () => {
     const form = new FormData();
     form.set(
@@ -274,5 +249,34 @@ describe("http API v1 shared helpers", () => {
     );
     expect(store).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
+  });
+});
+
+describe("anonymousCatalogCacheHeaders", () => {
+  it("marks anonymous catalog reads edge-cacheable", async () => {
+    const { anonymousCatalogCacheHeaders } = await import("./httpApiV1/shared");
+    const headers = new Headers(
+      anonymousCatalogCacheHeaders(new Request("https://example.com/api/v1/skills"), {
+        "X-RateLimit-Limit": "3000",
+      }),
+    );
+    expect(headers.get("Cache-Control")).toBe(
+      "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+    );
+    expect(headers.get("X-RateLimit-Limit")).toBe("3000");
+  });
+
+  it.each([
+    ["authorization", "Bearer clh_x"],
+    ["cookie", "a=b"],
+  ])("never marks requests with %s cacheable", async (name, value) => {
+    const { anonymousCatalogCacheHeaders } = await import("./httpApiV1/shared");
+    const headers = new Headers(
+      anonymousCatalogCacheHeaders(
+        new Request("https://example.com/api/v1/skills", { headers: { [name]: value } }),
+        { "X-RateLimit-Limit": "3000" },
+      ),
+    );
+    expect(headers.get("Cache-Control")).toBeNull();
   });
 });

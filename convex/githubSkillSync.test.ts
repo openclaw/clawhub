@@ -3,6 +3,7 @@ import { getFunctionName } from "convex/server";
 import { ConvexError } from "convex/values";
 import { zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import {
   __test,
   applyGitHubSkillSourceSyncHandler,
@@ -36,15 +37,6 @@ afterEach(() => {
 });
 
 type Row = Record<string, unknown> & { _id: string };
-
-function chainEq(constraints: Record<string, unknown>) {
-  return {
-    eq(field: string, value: unknown) {
-      constraints[field] = value;
-      return chainEq(constraints);
-    },
-  };
-}
 
 function matches(doc: Row, constraints: Record<string, unknown>) {
   return Object.entries(constraints).every(([key, value]) => doc[key] === value);
@@ -244,6 +236,44 @@ describe("unzipToEntries", () => {
     expect(stripGitHubZipRoot(__test.unzipToEntries(zip))).toMatchObject({
       "skills/aiq-deploy/SKILL.md": expect.any(Uint8Array),
     });
+  });
+
+  it("accepts whole-repo archives above the old 7,500 entry cap", () => {
+    const files: Record<string, Uint8Array> = { "repo-main/": new Uint8Array() };
+    for (let index = 0; index < 2_500; index += 1) {
+      files[`repo-main/skills/skill-${index}/`] = new Uint8Array();
+      files[`repo-main/skills/skill-${index}/SKILL.md`] = new Uint8Array([35]);
+      files[`repo-main/skills/skill-${index}/README.md`] = new Uint8Array([35]);
+    }
+
+    expect(Object.keys(__test.unzipToEntries(zipSync(files)))).toHaveLength(5_000);
+  });
+
+  it("allows an order of magnitude more files than the old 7,500 cap", () => {
+    expect(__test.MAX_FILE_COUNT).toBe(75_000);
+  });
+
+  it("does not count directory entries toward the file cap", () => {
+    const zip = zipSync({
+      "repo-main/": new Uint8Array(),
+      "repo-main/skills/": new Uint8Array(),
+      "repo-main/skills/a/": new Uint8Array(),
+      "repo-main/skills/a/SKILL.md": new Uint8Array([35]),
+      "repo-main/skills/b/": new Uint8Array(),
+      "repo-main/skills/b/SKILL.md": new Uint8Array([35]),
+    });
+
+    expect(Object.keys(__test.unzipToEntries(zip, 2))).toHaveLength(2);
+  });
+
+  it("rejects archives with more files than the source sync cap", () => {
+    const zip = zipSync({
+      "repo-main/skills/a/SKILL.md": new Uint8Array([35]),
+      "repo-main/skills/b/SKILL.md": new Uint8Array([35]),
+      "repo-main/skills/c/SKILL.md": new Uint8Array([35]),
+    });
+
+    expect(() => __test.unzipToEntries(zip, 2)).toThrow("Repo archive has too many files");
   });
 
   it("keeps valid filenames containing dot-dot text", () => {
@@ -1159,6 +1189,213 @@ describe("verifyGitHubSkillHandler rollout", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(runMutation).not.toHaveBeenCalled();
+  });
+});
+
+describe("bounded legacy GitHub source apply", () => {
+  async function legacySnapshot(commit: string, slugs: string[]) {
+    const entries: Record<string, Uint8Array> = {
+      "skills.sh.json": new TextEncoder().encode(
+        JSON.stringify({ groupings: [{ title: "All", skills: slugs }] }),
+      ),
+    };
+    for (const slug of slugs) {
+      entries[`skills/${slug}/SKILL.md`] = new TextEncoder().encode(
+        `---\nname: ${slug}\ndescription: ${slug} at ${commit.slice(0, 1)}\n---\n\n# ${slug}\n`,
+      );
+    }
+    return await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit,
+      entries,
+    });
+  }
+
+  async function applyUntilConverged(
+    db: unknown,
+    snapshot: Awaited<ReturnType<typeof legacySnapshot>>,
+    now: number,
+    maxOperations?: number,
+  ) {
+    const ctx = { db, scheduler: { runAfter: vi.fn() } } as never;
+    const args = {
+      repo: "NVIDIA/skills",
+      ownerUserId: "users:owner" as never,
+      ownerPublisherId: "publishers:nvidia" as never,
+      snapshot,
+      now,
+      ...(maxOperations === undefined ? {} : { maxOperations }),
+    };
+    const results = [await applyGitHubSkillSourceSyncHandler(ctx, args)];
+    while ((results.at(-1)?.remaining ?? 0) > 0) {
+      expect(results.length).toBeLessThan(50);
+      results.push(await applyGitHubSkillSourceSyncHandler(ctx, args));
+    }
+    return results;
+  }
+
+  function comparableSkills(rows: Row[]) {
+    return rows
+      .map(({ _id: _ignoredId, _creationTime: _ignoredCreation, ...row }) => row)
+      .sort((left, right) => String(left.slug).localeCompare(String(right.slug)));
+  }
+
+  it("converges to the same skills as a single unbounded apply", async () => {
+    const first = await legacySnapshot("a".repeat(40), ["alpha", "beta", "gamma", "delta", "eps"]);
+    const second = await legacySnapshot("b".repeat(40), [
+      "alpha",
+      "beta",
+      "gamma",
+      "delta",
+      "zeta",
+    ]);
+
+    const unbounded = createDb();
+    await applyUntilConverged(unbounded.db, first, 100);
+    await applyUntilConverged(unbounded.db, second, 200);
+
+    const bounded = createDb();
+    const firstRun = await applyUntilConverged(bounded.db, first, 100, 2);
+    const secondRun = await applyUntilConverged(bounded.db, second, 200, 2);
+
+    expect(firstRun.map((result) => result.remaining)).toEqual([3, 1, 0]);
+    expect(firstRun.reduce((sum, result) => sum + result.stats.inserted, 0)).toBe(5);
+    expect(secondRun.length).toBeGreaterThan(1);
+    expect(secondRun.at(-1)?.remaining).toBe(0);
+    expect(comparableSkills(bounded.tables.skills)).toEqual(
+      comparableSkills(unbounded.tables.skills),
+    );
+    expect(bounded.tables.skills.find((skill) => skill.slug === "eps")).toMatchObject({
+      githubCurrentStatus: "missing",
+      githubRemovedAt: 200,
+      softDeletedAt: 200,
+    });
+    expect(bounded.tables.skills.find((skill) => skill.slug === "zeta")).toMatchObject({
+      githubCurrentStatus: "present",
+      githubCurrentCommit: "b".repeat(40),
+    });
+  });
+
+  it("loops the scheduled NVIDIA sync apply with one fixed run time until nothing remains", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const commit = "c".repeat(40);
+    const zip = zipSync({
+      [`skills-${commit}/skills.sh.json`]: new TextEncoder().encode(
+        JSON.stringify({ groupings: [{ title: "All", skills: ["alpha"] }] }),
+      ),
+      [`skills-${commit}/skills/alpha/SKILL.md`]: new TextEncoder().encode(
+        "---\nname: Alpha\ndescription: Alpha skill\n---\n\n# Alpha\n",
+      ),
+    });
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url === "https://api.github.com/repos/NVIDIA/skills") {
+        return new Response(
+          JSON.stringify({
+            id: 1,
+            full_name: "NVIDIA/skills",
+            owner: { id: 2 },
+            private: false,
+            visibility: "public",
+            default_branch: "main",
+            disabled: false,
+          }),
+          { headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.startsWith("https://api.github.com/repos/NVIDIA/skills/commits/")) {
+        return new Response(JSON.stringify({ sha: commit }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.startsWith("https://codeload.github.com/")) {
+        return new Response(zip, { headers: { "content-length": String(zip.byteLength) } });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const runQuery = vi.fn(async (ref: unknown) => {
+      const name = getFunctionName(ref as never);
+      if (name === "githubSkillSync:listSourcesForSyncInternal") {
+        return {
+          sources: [
+            {
+              _id: "githubSkillSources:nvidia",
+              repo: "NVIDIA/skills",
+              ownerPublisherId: "publishers:nvidia",
+              defaultBranch: "main",
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+          continueCursor: null,
+          isDone: true,
+        };
+      }
+      if (name === "githubSkillSync:resolveOwnerUserIdForPublisherInternal") return "users:owner";
+      if (name === "githubSkillSync:listGitHubSkillContentTargetsInternal") return [];
+      throw new Error(`unexpected query: ${name}`);
+    });
+    const remaining = [120, 70, 20, 0];
+    const applyArgs: Array<Record<string, unknown>> = [];
+    const runMutation = vi.fn(async (ref: unknown, args: Record<string, unknown>) => {
+      const name = getFunctionName(ref as never);
+      if (name !== "githubSkillSync:applyGitHubSkillSourceSyncInternal") {
+        throw new Error(`unexpected mutation: ${name}`);
+      }
+      applyArgs.push(args);
+      const call = applyArgs.length;
+      return {
+        ok: true,
+        repo: "NVIDIA/skills",
+        sourceId: "githubSkillSources:nvidia",
+        commit,
+        manifestStatus: "ok",
+        stats: {
+          discovered: 170,
+          inserted: 10,
+          changed: call === 1 ? 150 : 0,
+          unchanged: 0,
+          removed: call === 1 ? 10 : 0,
+          conflicts: 0,
+          invalid: 0,
+          revived: 0,
+        },
+        remaining: remaining[call - 1],
+      };
+    });
+
+    const result = await syncGitHubSkillSourcesHandler(
+      { runQuery, runMutation, runAction: vi.fn(), storage: { store: vi.fn() } } as never,
+      {},
+      fetcher as unknown as typeof fetch,
+    );
+
+    expect(result).toMatchObject({ ok: true, synced: 1, errors: 0 });
+    expect(applyArgs).toHaveLength(4);
+    const runNow = applyArgs[0]?.now;
+    expect(typeof runNow).toBe("number");
+    for (const args of applyArgs) {
+      expect(args).toMatchObject({ now: runNow, maxOperations: 50 });
+    }
+    expect(result.results[0]?.stats).toMatchObject({
+      discovered: 170,
+      inserted: 40,
+      changed: 150,
+      removed: 10,
+    });
+  });
+
+  it("keeps the unbounded apply as a single transaction when no batch size is given", async () => {
+    const snapshot = await legacySnapshot("a".repeat(40), ["alpha", "beta", "gamma"]);
+    const { db } = createDb();
+
+    const results = await applyUntilConverged(db, snapshot, 100);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.remaining).toBeUndefined();
+    expect(results[0]?.stats.inserted).toBe(3);
   });
 });
 
@@ -4998,10 +5235,10 @@ describe("verifyGitHubSkillHandler", () => {
             summary: "OpenAI-specific summary.",
           },
         },
-        staticScan: expect.objectContaining({ status: "clean" }),
       }),
     );
     expect(prepareArgs).not.toHaveProperty("files");
+    expect(prepareArgs).not.toHaveProperty("staticScan");
     expect(Object.values(prepareArgs ?? {})).not.toContain(undefined);
     const [appendMutation, appendArgs] = runMutation.mock.calls[1] ?? [];
     expect(getFunctionName(appendMutation as Parameters<typeof getFunctionName>[0])).toBe(

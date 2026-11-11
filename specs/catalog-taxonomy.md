@@ -2,7 +2,13 @@
 
 ## Categories
 
-- Skills and plugins use separate controlled slug registries from `clawhub-schema`.
+- Skills, plugins, and Templates use separate controlled slug registries from `clawhub-schema`.
+- Template package categories remain authoritative through search-digest construction. The shared
+  package digest preserves their assigned Template slugs (or Other for an unassigned historical
+  package); only code and bundle plugins use plugin-category normalization and plugin category
+  facet rows. Publication-to-discovery tests must build the real digest through package triggers,
+  not supply a pre-categorized index fixture. Existing stale projections require an explicit resync
+  after the corrected index builder is deployed; landing code alone does not repair stored rows.
 - Category slugs name one concept. Plugin categories combine seven core configuration surfaces
   (Channels, Models, Agent runtimes, Memory, Context, Voice, Web) with product uses and capabilities.
 - The remaining active plugin categories are Computer use, Media, Security, Integrations, Developer tools,
@@ -100,6 +106,12 @@
   ascending. Pins resolve before the shelf limit. Missing, private, and blocked pins are skipped;
   homepage shelves also skip language-ineligible pins. Official status does not change tail order. The API carries `pinnedPackages`
   with category metadata so OpenClaw can apply the same policy to trusted bundled packages.
+- Successful anonymous curated category responses share the public discovery snapshot policy used
+  by the plugin overview: browser freshness 60 seconds, shared freshness 300 seconds, and
+  stale-while-revalidate 3600 seconds. These are public discovery metadata, not installation or
+  publication authorization. Exact release/detail and installation checks retain their current
+  visibility and security checks. Requests with a resolved viewer, Authorization/Cookie header,
+  or private channel filter remain uncached; non-curated reads and errors retain `no-store`.
 - Homepage plugin discovery uses English listing text, never publisher nationality. Complete
   category browse retains all listing languages while sharing the curated ordering. Discovery shares
   Trending's title-script and text classifier; reviewed short English false negatives match the
@@ -233,6 +245,9 @@ Corpus classification was a one-time operator-run phase:
   phase uses the migrations component.
 - High- and medium-confidence rollout apply was a one-time production migration. The temporary
   apply migrations and operator wrappers were removed after the verified rollout completed.
+- The remaining classifier helper only bounds preview evidence; it does not select metadata
+  application. The retired confidence-lane selector is outside the preview contract. Historical
+  apply statuses and inferred-field compatibility remain until their separate cleanup is verified.
 - Remove the temporary catalog metadata canonicalization migration and the remaining inferred
   category/topic read/schema compatibility only after its production apply and migration-component
   status are verified.

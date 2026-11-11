@@ -153,7 +153,7 @@ jobs:
         inputs['target-environment'] == 'test'))
     name: Pre-publication publish checks shard ${{ matrix.shard }}
     runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
-    timeout-minutes: 25
+    timeout-minutes: 100
     environment: ${{ github.ref == 'refs/heads/staging' && 'Staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'Test' || 'Production') }}
     strategy:
       fail-fast: false
@@ -171,11 +171,18 @@ jobs:
       PREPUBLICATION_CHECK_SLUG: ${{ github.event.client_payload.slug || inputs.slug || '' }}
       PREPUBLICATION_CHECK_VERSION: ${{ github.event.client_payload.version || inputs.version || '' }}
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS: ${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '900000' }}
+      # Enable only after the backend accepts scannerSource on worker claims.
+      PREPUBLICATION_REPORT_SCANNER_SOURCE: ${{ vars.PREPUBLICATION_REPORT_SCANNER_SOURCE || 'false' }}
       # The runner is disposable and installs the reviewed, source-pinned host scanners below.
       PREPUBLICATION_CLAWSCAN_SANDBOX: "off"
+      # Only plugins use Docker; skill-specific host settings remain intact.
+      PREPUBLICATION_CLAWSCAN_PLUGIN_SANDBOX: "docker"
       PREPUBLICATION_TRUFFLEHOG_IMAGE: ${{ vars.PREPUBLICATION_TRUFFLEHOG_IMAGE || 'ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056' }}
       PREPUBLICATION_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
     steps:
+      - name: Reserve hosted worker drain deadline
+        run: echo "SECURITY_SCAN_WORKER_HOST_DEADLINE_MS=$(( $(date +%s) * 1000 + 100 * 60000 - 120000 ))" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
@@ -224,7 +231,18 @@ jobs:
           set -euo pipefail
           sh scripts/security/install-clawscan-scanners.sh aig
 
+      - name: Prepare qualified plugin Docker runtime
+        run: |
+          set -eu
+          . scripts/security/clawscan-install-source.sh
+          if [ "$(cat scripts/security/clawscan-source-commit.txt)" != "$qualified_source_commit" ]; then
+            echo 'Default source has no qualified plugin Docker runtime; retaining legacy setup.'
+            exit 0
+          fi
+          sh scripts/security/install-clawscan-scanners.sh aig-mcp
+
       - name: Run Test pre-publication publish worker
+        timeout-minutes: 75
         if: github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test'
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
@@ -249,6 +267,7 @@ jobs:
           unset worker_token
 
       - name: Run pre-publication publish worker
+        timeout-minutes: 75
         if: github.ref != 'refs/heads/main' || inputs['target-environment'] != 'test'
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}

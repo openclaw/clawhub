@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+/* @vitest-environment node */
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildMirrorStepRequest,
   buildMirrorProofHeaders,
+  createMirrorProofClient,
   capturedMirrorSourceRunId,
   findCompletedLiveMirrorRun,
   findRecoverableMirrorRun,
@@ -11,6 +13,38 @@ import {
   mirrorRunFromPayload,
   mirrorRunAccounting,
 } from "./prove-mirror-request";
+
+describe("mirror proof HTTP client", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps raw failures available while strict calls reject them", async () => {
+    vi.stubEnv("CLAWHUB_TEST_MIRROR_GATE_URL", " https://example.invalid/gate ");
+    vi.stubEnv("CLAWHUB_TEST_OPERATOR_TOKEN", " operator-token ");
+    const client = createMirrorProofClient();
+    vi.stubEnv("CLAWHUB_TEST_OPERATOR_TOKEN", "changed");
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("busy", { status: 429 }));
+    vi.stubGlobal("fetch", fetch);
+    expect(client.targetUrl).toBe("https://example.invalid/gate");
+    const body = { operation: "step" };
+    const result = await client.callRaw(body);
+    expect(result).toMatchObject({
+      ok: false,
+      status: 429,
+      payload: { text: "busy" },
+      retryAfter: null,
+    });
+    expect((fetch.mock.calls[0]?.[1]?.headers as Record<string, string>).Authorization).toBe(
+      "Bearer operator-token",
+    );
+    expect(client.callFailure(body, result).message).toBe(
+      'step returned HTTP 429: {"text":"busy"}',
+    );
+    await expect(client.call(body)).rejects.toThrow('step returned HTTP 429: {"text":"busy"}');
+  });
+});
 
 describe("skills.sh mirror proof request headers", () => {
   it("carries the Test deployment protection bypass without changing operator auth", () => {

@@ -3,13 +3,21 @@ name: Test Template Canary Prepublication Check
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: Exact pending publication or fixed nonpublishing native qualification
+        required: true
+        type: choice
+        default: publication
+        options:
+          - publication
+          - qualification
       attempt_id:
         description: Exact Test publish attempt ID for @openclaw/hosted-e2e-canary
-        required: true
+        required: false
         type: string
 
 concurrency:
-  group: test-template-canary-prepublication-${{ inputs.attempt_id }}
+  group: test-template-canary-prepublication-${{ inputs.mode }}-${{ inputs.attempt_id }}
   cancel-in-progress: false
 
 permissions:
@@ -20,24 +28,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
+      MODE: ${{ inputs.mode }}
       ATTEMPT_ID: ${{ inputs.attempt_id }}
     steps:
-      - name: Require main and an exact attempt ID
+      - name: Require main and an explicit bounded mode
         run: |
           set -euo pipefail
           if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "::error::Test canary checks must run from main"
             exit 1
           fi
-          if ! [[ "$ATTEMPT_ID" =~ ^[a-z0-9]{32}$ ]]; then
-            echo "::error::attempt_id must be one exact Convex document ID"
-            exit 1
-          fi
+          case "$MODE" in
+            publication)
+              if ! [[ "$ATTEMPT_ID" =~ ^[a-z0-9]{32}$ ]]; then
+                echo "::error::attempt_id must be one exact Convex document ID"
+                exit 1
+              fi
+              ;;
+            qualification)
+              if [[ -n "$ATTEMPT_ID" ]]; then
+                echo "::error::Nonpublishing qualification cannot accept an attempt ID"
+                exit 1
+              fi
+              ;;
+            *) echo "::error::Unknown qualification mode"; exit 1 ;;
+          esac
 
   check-test-attempt:
     needs: validate-request
     runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 25
+    timeout-minutes: 100
     environment:
       name: Test
     env:
@@ -47,6 +67,13 @@ jobs:
       PREPUBLICATION_TRUFFLEHOG_IMAGE: ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056
       PREPUBLICATION_WORKER_ID: github-actions:test-canary:${{ github.run_id }}:${{ github.run_attempt }}
     steps:
+      - name: Reserve hosted worker drain deadline
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          fs.appendFileSync(process.env.GITHUB_ENV, 'SECURITY_SCAN_WORKER_HOST_DEADLINE_MS=' + (Date.now() + 100 * 60000 - 120000) + String.fromCharCode(10));
+          NODE
+
       - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
@@ -98,7 +125,19 @@ jobs:
           set -euo pipefail
           sh scripts/security/install-clawscan-scanners.sh aig
 
+      - name: Prepare qualified plugin Docker runtime
+        run: |
+          set -eu
+          . scripts/security/clawscan-install-source.sh
+          if [ "$(cat scripts/security/clawscan-source-commit.txt)" != "$qualified_source_commit" ]; then
+            echo 'Default source has no qualified plugin Docker runtime; retaining legacy setup.'
+            exit 0
+          fi
+          sh scripts/security/install-clawscan-scanners.sh aig-mcp
+
       - name: Run exact Test Template publish checks
+        if: inputs.mode == 'publication'
+        timeout-minutes: 75
         env:
           ATTEMPT_ID: ${{ inputs.attempt_id }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -138,7 +177,7 @@ jobs:
               --kind package \
               --batch-limit 1 \
               --max-jobs 1 \
-              --max-runtime-minutes 20
+              --max-runtime-minutes 70
           unset worker_token
 
           attempt_json="$(bunx convex run --no-push publishAttempts:getPackagePublishAttemptStatusInternal "{\"attemptId\":\"$ATTEMPT_ID\"}" --prod)"
@@ -153,3 +192,15 @@ jobs:
             exit 1
           fi
           jq '{attemptId, status, checks: {trufflehog: .checks.trufflehog.status, clawscan: .checks.clawscan.status}}' <<< "$attempt_json"
+
+      - name: Qualify fixed Template without publication
+        if: inputs.mode == 'qualification'
+        timeout-minutes: 75
+        env:
+          CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEFAULT_BASE_URL: https://api.openai.com/v1
+          DEFAULT_MODEL: ${{ vars.DEFAULT_MODEL || 'gpt-6.1-sol' }}
+          REASONING_EFFORT: ${{ vars.REASONING_EFFORT || 'medium' }}
+          LLM_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: bun scripts/security/qualify-test-template.ts

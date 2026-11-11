@@ -70,7 +70,7 @@ bun run admin -- skills hard-delete @owner/<slug> --reason "<reason>"           
 bun run admin -- skills hard-delete @owner/<slug> --reason "<reason>" --apply --confirm "<token>" --yes
 bun run admin -- skills unhide <slug> --reason "<reason>" --yes
 bun run admin -- skills revoke-version <slug> --version <version> --reason "<reason>" --yes
-bun run admin -- skills rescan <slug> --reason "<reason>" --yes
+bun run admin -- skills rescan <slug> --version <version> --yes
 bun run admin -- skills reports --status open
 bun run admin -- skills triage-report <report-id> --status confirmed --action hide --note "<note>" --yes
 ```
@@ -80,6 +80,10 @@ only with the exact confirmation token returned by that dry-run.
 
 Pass `--owner <handle>` to `revoke-version` when more than one publisher uses
 the same slug.
+
+`skills rescan` accepts an optional exact `--version` and has no `--reason`
+flag. Keep the reason in the task record; queueing a scan is a moderation write
+and still requires authorization.
 
 ### Users
 

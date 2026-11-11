@@ -1,50 +1,18 @@
-import type { ClawdisSkillMetadata } from "clawhub-schema";
-import { ChevronDown } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
-import { captureAnalyticsOperation, emitAnalytics } from "../lib/analyticsEvents";
-import { copyText, InstallCopyButton } from "./InstallCopyButton";
+import { emitAnalytics } from "../lib/analyticsEvents";
+import { InstallCopyButton } from "./InstallCopyButton";
 import {
   buildSkillInstallTarget,
   buildSkillPageUrl,
   formatOpenClawInstallCommand,
   formatOpenClawPrompt,
   formatSkillsCliInstallCommand,
-  type SkillPromptMode,
 } from "./skillDetailUtils";
-import { Button } from "./ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
-
-const PROMPT_OPTIONS: Array<{
-  description: string;
-  label: string;
-  mode: SkillPromptMode;
-}> = [
-  {
-    mode: "install-only",
-    label: "Install Only",
-    description: "Install the skill and stop there.",
-  },
-  {
-    mode: "install-and-setup",
-    label: "Install & Setup",
-    description: "Install first, then help finish setup from skill metadata.",
-  },
-];
-
-type PromptCopyState = "idle" | "copied" | "failed";
-
-type SkillInstallSurfaceProps = {
+type SkillCommandLineCardProps = {
   slug: string;
-  displayName: string;
   ownerHandle: string | null;
   ownerId: Id<"users"> | Id<"publishers"> | null;
-  clawdis?: ClawdisSkillMetadata;
   installTarget?: string;
   skillPageUrl?: string | null;
   secondaryInstall?: {
@@ -54,160 +22,8 @@ type SkillInstallSurfaceProps = {
   };
 };
 
-export function SkillInstallSurface({
-  slug,
-  displayName,
-  ownerHandle,
-  ownerId,
-  clawdis,
-  installTarget: installTargetOverride,
-  skillPageUrl: skillPageUrlOverride,
-}: SkillInstallSurfaceProps) {
-  const headingId = useId();
-  const [promptMode, setPromptMode] = useState<SkillPromptMode>("install-and-setup");
-  const [promptCopyState, setPromptCopyState] = useState<PromptCopyState>("idle");
-  const promptResetTimeoutRef = useRef<number | null>(null);
-
-  useEffect(
-    () => () => {
-      if (promptResetTimeoutRef.current !== null) {
-        window.clearTimeout(promptResetTimeoutRef.current);
-      }
-    },
-    [],
-  );
-
-  const schedulePromptReset = () => {
-    if (promptResetTimeoutRef.current !== null) {
-      window.clearTimeout(promptResetTimeoutRef.current);
-    }
-
-    promptResetTimeoutRef.current = window.setTimeout(() => {
-      setPromptCopyState("idle");
-      promptResetTimeoutRef.current = null;
-    }, 2000);
-  };
-
-  const selectedPrompt =
-    PROMPT_OPTIONS.find((option) => option.mode === promptMode) ?? PROMPT_OPTIONS[1];
-  const installTarget =
-    installTargetOverride ?? buildSkillInstallTarget(ownerHandle, ownerId, slug);
-  const promptPreview = formatOpenClawPrompt({
-    mode: promptMode,
-    skillName: displayName,
-    slug,
-    ownerHandle,
-    ownerId,
-    clawdis,
-    installTarget: installTargetOverride,
-    skillPageUrl: skillPageUrlOverride,
-  });
-
-  const promptFeedback =
-    promptCopyState === "copied"
-      ? `${selectedPrompt.label} prompt copied.`
-      : promptCopyState === "failed"
-        ? "Copy failed. Try again."
-        : `Previewing ${selectedPrompt.label}.`;
-
-  const selectPromptMode = (mode: SkillPromptMode) => {
-    const promptText = formatOpenClawPrompt({
-      mode,
-      skillName: displayName,
-      slug,
-      ownerHandle,
-      ownerId,
-      clawdis,
-      installTarget: installTargetOverride,
-      skillPageUrl: skillPageUrlOverride,
-    });
-
-    setPromptMode(mode);
-    emitAnalytics("select_content", {
-      content_type: "install",
-      ui_location: "install",
-      method: mode,
-    });
-
-    const operation = captureAnalyticsOperation();
-    void copyText(promptText)
-      .then((didCopy) => {
-        operation?.emit("copy_action", {
-          content_type: "install",
-          action_result: didCopy ? "success" : "error",
-          ui_location: "install",
-          method: mode,
-        });
-        setPromptCopyState(didCopy ? "copied" : "failed");
-        schedulePromptReset();
-      })
-      .catch(() => {
-        operation?.emit("copy_action", {
-          content_type: "install",
-          action_result: "error",
-          ui_location: "install",
-          method: mode,
-        });
-        setPromptCopyState("failed");
-        schedulePromptReset();
-      });
-  };
-
-  return (
-    <section className="skill-install-surface" aria-labelledby={headingId}>
-      <h2 id={headingId} className="sr-only">
-        Install
-      </h2>
-
-      <article className="skill-install-panel">
-        <div className="skill-install-panel-header">
-          <p className="skill-install-kicker">OpenClaw Prompt Flow</p>
-          <h3 className="skill-install-panel-title">Install with OpenClaw</h3>
-          <p className="skill-install-panel-copy">
-            Best for remote or guided setup. Copy the exact prompt, then paste it into OpenClaw for{" "}
-            <code translate="no">{installTarget}</code>.
-          </p>
-        </div>
-
-        <div className="skill-install-actions">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" className="skill-install-prompt-trigger">
-                <span>Copy Prompt</span>
-                <ChevronDown className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="skill-install-menu">
-              {PROMPT_OPTIONS.map((option) => (
-                <DropdownMenuItem key={option.mode} onSelect={() => selectPromptMode(option.mode)}>
-                  <div className="skill-install-menu-copy">
-                    <span className="skill-install-menu-label">{option.label}</span>
-                    <span className="skill-install-menu-description">{option.description}</span>
-                  </div>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <span className="skill-install-copy-feedback" aria-live="polite">
-            {promptFeedback}
-          </span>
-        </div>
-
-        <div className="skill-install-preview-meta">
-          <span className="skill-install-preview-label">Prompt Preview</span>
-          <span className="skill-install-preview-mode">{selectedPrompt.label}</span>
-        </div>
-
-        <pre className="skill-install-prompt-preview">
-          <code translate="no">{promptPreview}</code>
-        </pre>
-      </article>
-    </section>
-  );
-}
-
 export function OpenClawCliInstallCommand({ command }: { command: string }) {
-  const match = command.match(/^(openclaw (?:skills|plugins) install)( .+)$/);
+  const match = command.match(/^(openclaw (?:(?:skills|plugins) install|templates add))( .+)$/);
   if (!match) {
     return <code translate="no">{command}</code>;
   }
@@ -222,21 +38,14 @@ export function OpenClawCliInstallCommand({ command }: { command: string }) {
 
 export function SkillCommandLineCard({
   slug,
-  displayName,
   ownerHandle,
   ownerId,
-  clawdis,
   installTarget: installTargetOverride,
   skillPageUrl: skillPageUrlOverride,
   secondaryInstall,
-}: SkillInstallSurfaceProps) {
-  const headingId = useId();
-  type InstallTab = "cli" | "skills" | "prompt";
-  const [activeInstallTab, setActiveInstallTab] = useState<InstallTab>("cli");
-  const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
+}: SkillCommandLineCardProps) {
   const installTarget =
     installTargetOverride ?? buildSkillInstallTarget(ownerHandle, ownerId, slug);
-  const openClawCommand = formatOpenClawInstallCommand(installTarget);
   const skillPageUrl =
     skillPageUrlOverride === undefined
       ? buildSkillPageUrl(ownerHandle, ownerId, slug)
@@ -244,22 +53,53 @@ export function SkillCommandLineCard({
   const skillsCliCommand =
     secondaryInstall?.command ??
     (skillPageUrl ? formatSkillsCliInstallCommand(skillPageUrl) : null);
-  const promptPreview = formatOpenClawPrompt({
-    mode: "install-and-setup",
-    skillName: displayName,
-    slug,
-    ownerHandle,
-    ownerId,
-    clawdis,
-    installTarget: installTargetOverride,
-    skillPageUrl: skillPageUrlOverride,
-  });
+
+  return (
+    <InstallCommandCard
+      cliCommand={formatOpenClawInstallCommand(installTarget)}
+      prompt={formatOpenClawPrompt(installTarget, "skill")}
+      secondaryInstall={
+        skillsCliCommand
+          ? {
+              label: secondaryInstall?.label ?? "npx skills",
+              command: skillsCliCommand,
+              copyAriaLabel: secondaryInstall?.copyAriaLabel ?? "Copy npx skills command",
+            }
+          : undefined
+      }
+    />
+  );
+}
+
+type InstallCommandCardProps = {
+  copyEnabled?: boolean;
+  cliCommand: string;
+  prompt: string;
+  cliCopyAriaLabel?: string;
+  secondaryInstall?: {
+    label: string;
+    command: string;
+    copyAriaLabel: string;
+  };
+};
+
+export function InstallCommandCard({
+  copyEnabled = true,
+  cliCommand,
+  prompt,
+  cliCopyAriaLabel = "Copy OpenClaw CLI command",
+  secondaryInstall,
+}: InstallCommandCardProps) {
+  const headingId = useId();
+  type InstallTab = "cli" | "skills" | "prompt";
+  const [activeInstallTab, setActiveInstallTab] = useState<InstallTab>("cli");
+  const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
   const activeInstallText =
     activeInstallTab === "prompt"
-      ? promptPreview
-      : activeInstallTab === "skills" && skillsCliCommand
-        ? skillsCliCommand
-        : openClawCommand;
+      ? prompt
+      : activeInstallTab === "skills" && secondaryInstall
+        ? secondaryInstall.command
+        : cliCommand;
   const installTabOrder: InstallTab[] = ["cli", "skills", "prompt"];
   const selectInstallTab = (tab: InstallTab) => {
     if (tab === activeInstallTab) {
@@ -292,14 +132,14 @@ export function SkillCommandLineCard({
           >
             CLI
           </button>
-          {skillsCliCommand ? (
+          {secondaryInstall ? (
             <button
               type="button"
               className={`skill-install-tab${activeInstallTab === "skills" ? " is-active" : ""}`}
               aria-pressed={activeInstallTab === "skills"}
               onClick={() => selectInstallTab("skills")}
             >
-              {secondaryInstall?.label ?? "npx skills"}
+              {secondaryInstall.label}
             </button>
           ) : null}
           <button
@@ -338,21 +178,23 @@ export function SkillCommandLineCard({
               <code translate="no">{activeInstallText}</code>
             )}
           </pre>
-          <InstallCopyButton
-            analyticsMethod={activeInstallTab}
-            text={activeInstallText}
-            ariaLabel={
-              activeInstallTab === "prompt"
-                ? "Copy OpenClaw prompt"
-                : activeInstallTab === "skills"
-                  ? (secondaryInstall?.copyAriaLabel ?? "Copy npx skills command")
-                  : "Copy OpenClaw CLI command"
-            }
-            className="skill-install-command-inline-button"
-            showLabel={false}
-            variant="ghost"
-            size="icon-sm"
-          />
+          {copyEnabled ? (
+            <InstallCopyButton
+              analyticsMethod={activeInstallTab}
+              text={activeInstallText}
+              ariaLabel={
+                activeInstallTab === "prompt"
+                  ? "Copy OpenClaw prompt"
+                  : activeInstallTab === "skills"
+                    ? (secondaryInstall?.copyAriaLabel ?? "Copy npx skills command")
+                    : cliCopyAriaLabel
+              }
+              className="skill-install-command-inline-button"
+              showLabel={false}
+              variant="ghost"
+              size="icon-sm"
+            />
+          ) : null}
         </div>
       </div>
     </article>

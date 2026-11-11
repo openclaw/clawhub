@@ -1,7 +1,8 @@
+/* @vitest-environment node */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -10,7 +11,7 @@ import { crc32, createDeflateRaw } from "node:zlib";
 import {
   EXPERIMENTAL_TEMPLATE_FEED_ID,
   OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1,
-  OPENCLAW_TEMPLATE_PROFILE_POLICY_V1,
+  OPENCLAW_TEMPLATE_AGENT_POLICY_V1,
   serializeExperimentalTemplateFeed,
   validateTemplatePackageContents,
 } from "clawhub-schema";
@@ -143,22 +144,14 @@ async function compactZipOfZeros(path: string, unpackedSize: number) {
   return archive;
 }
 
-async function npmPackFixture(destination: string) {
+async function npmPackFixture(destination: string, source = join(fixtureRoot, "package")) {
   const npmArgs =
     process.platform === "win32"
       ? [join(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js")]
       : [];
   const { stdout } = await execFileAsync(
     process.platform === "win32" ? process.execPath : "npm",
-    [
-      ...npmArgs,
-      "pack",
-      join(fixtureRoot, "package"),
-      "--json",
-      "--ignore-scripts",
-      "--pack-destination",
-      destination,
-    ],
+    [...npmArgs, "pack", source, "--json", "--ignore-scripts", "--pack-destination", destination],
     { cwd: destination },
   );
   const output = JSON.parse(stdout) as unknown;
@@ -194,11 +187,9 @@ function feedValue() {
               bootstrapFiles: ["BOOTSTRAP.md", "HEARTBEAT.md", "SOUL.md"],
               fileCount: 1,
             },
-            packages: { skillCount: 0, pluginCount: 0 },
-            profiles: { count: 1, hasOpenClaw: true },
-            extensions: { count: 0 },
+            packages: { skillCount: 1, pluginCount: 1 },
             mcpServerCount: 0,
-            cronJobCount: 0,
+            cronJobCount: 1,
           },
           install: {
             candidates: [
@@ -220,15 +211,15 @@ async function runOpenClawProfileConformance(openclawCheckout: string) {
   const runner = `
     import { readFileSync } from "node:fs";
     import { parse } from "yaml";
-    import { parseTemplateOpenClawProfile } from "./src/templates/schema.ts";
+    import { parseTemplateManifest } from "./src/templates/schema.ts";
     const cases = JSON.parse(readFileSync(process.env.CLAWHUB_CONFORMANCE_CASES, "utf8"));
     const vectors = [
-      ...cases.profileCases,
+      ...cases.agentCases,
       ...cases.heartbeatCases,
-      ...cases.extensionCases,
+      ...cases.pluginCases,
     ];
     const mismatches = vectors
-      .filter((vector) => parseTemplateOpenClawProfile(parse(vector.yaml)).ok !== vector.consumerAccepted)
+      .filter((vector) => parseTemplateManifest({ ...parse(vector.yaml), agent: { id: "conformance", ...parse(vector.yaml).agent } }).ok !== vector.consumerAccepted)
       .map((vector) => vector.name);
     process.stdout.write(JSON.stringify(mismatches));
   `;
@@ -245,7 +236,7 @@ async function runOpenClawProfileConformance(openclawCheckout: string) {
 async function readConsumerGrantMatrix(openclawCheckout: string) {
   const runner = `
     import { CORE_TOOL_GROUPS, resolveCoreToolProfilePolicy } from "./src/agents/tool-catalog.ts";
-    import { parseTemplateOpenClawProfile } from "./src/templates/schema.ts";
+    import { parseTemplateManifest } from "./src/templates/schema.ts";
     const profiles = ["minimal", "coding", "messaging", "full"];
     const grants = [...new Set([
       ...Object.keys(CORE_TOOL_GROUPS), ...Object.values(CORE_TOOL_GROUPS).flat(),
@@ -255,7 +246,7 @@ async function readConsumerGrantMatrix(openclawCheckout: string) {
     ])].sort();
     process.stdout.write(JSON.stringify(profiles.flatMap(profile => grants.map(grant => ({
       profile, grant,
-      accepted: parseTemplateOpenClawProfile({schemaVersion: 1, agent: {tools: {profile, allow: [grant]}}}).ok,
+      accepted: parseTemplateManifest({schemaVersion: 1, agent: {id: "conformance", tools: {profile, allow: [grant]}}}).ok,
     })))));
   `;
   const { stdout } = await execFileAsync("pnpm", ["exec", "tsx", "--eval", runner], {
@@ -266,7 +257,7 @@ async function readConsumerGrantMatrix(openclawCheckout: string) {
 
 async function assertExactConsumerCheckout() {
   if (!openclawRepo) return;
-  const commit = OPENCLAW_TEMPLATE_PROFILE_POLICY_V1.source.commit;
+  const commit = OPENCLAW_TEMPLATE_AGENT_POLICY_V1.source.commit;
   expect(OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.source.commit).toBe(commit);
   const { stdout: head } = await execFileAsync("git", ["rev-parse", "HEAD"], {
     cwd: openclawRepo,
@@ -282,7 +273,14 @@ describe("published Template to OpenClaw dry-run proof", () => {
   beforeAll(async () => {
     await assertExactConsumerCheckout();
     tempRoot = await mkdtemp(join(tmpdir(), "clawhub-hosted-e2e-fixture-"));
-    const archivePath = await npmPackFixture(tempRoot);
+    const packageSource = join(tempRoot, "package");
+    await cp(join(fixtureRoot, "package"), packageSource, { recursive: true });
+    await mkdir(join(packageSource, "skills/research/assets"), { recursive: true });
+    await writeFile(
+      join(packageSource, "skills/research/assets/reference.bin"),
+      new Uint8Array([0, 255, 128, 10]),
+    );
+    const archivePath = await npmPackFixture(tempRoot, packageSource);
     archiveBytes = new Uint8Array(await readFile(archivePath));
     integrity = `sha256:${createHash("sha256").update(archiveBytes).digest("hex")}`;
     server = createServer((request, response) => {
@@ -394,6 +392,54 @@ describe("published Template to OpenClaw dry-run proof", () => {
     await expect(readResponseBytesBounded(response)).rejects.toThrow("64MB download limit");
   });
 
+  it.each(["legacy-only", "mixed", "json"])(
+    "rejects %s package selectors before invoking any consumer",
+    async (mode) => {
+      const root = await mkdtemp(join(tmpdir(), "clawhub-retired-selector-"));
+      const originalArchive = archiveBytes;
+      const originalIntegrity = integrity;
+      try {
+        const source = join(root, "source");
+        await cp(join(fixtureRoot, "package"), source, { recursive: true });
+        const packageFile = join(source, "package.json");
+        const metadata = JSON.parse(await readFile(packageFile, "utf8"));
+        metadata.openclaw.claw = "CLAW.md";
+        if (mode === "legacy-only") delete metadata.openclaw.template;
+        if (mode === "json") {
+          delete metadata.openclaw.claw;
+          metadata.openclaw.template = "openclaw.template.json";
+          await writeFile(
+            join(source, "openclaw.template.json"),
+            JSON.stringify({
+              schemaVersion: 1,
+              agent: { id: "hosted-e2e" },
+              workspace: { bootstrapFiles: {}, files: [] },
+              packages: [],
+              mcpServers: {},
+              automations: [],
+            }),
+          );
+        }
+        await writeFile(packageFile, JSON.stringify(metadata));
+        archiveBytes = new Uint8Array(await readFile(await npmPackFixture(root, source)));
+        integrity = "sha256:" + createHash("sha256").update(archiveBytes).digest("hex");
+        const origin = "http://127.0.0.1:" + serverPort;
+        await expect(
+          runPublishedTemplateDryRun({
+            feedUrl: origin + "/v1/feeds/templates",
+            packageName: "@openclaw/hosted-e2e",
+            registryUrl: origin,
+            openclawRepo: join(root, "consumer-must-not-run"),
+          }),
+        ).rejects.toThrow("invalid_template_manifest_path");
+      } finally {
+        archiveBytes = originalArchive;
+        integrity = originalIntegrity;
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it.skipIf(!openclawRepo)(
     "matches the pinned consumer across every built-in profile, static group and tool grant",
     async () => {
@@ -412,14 +458,7 @@ describe("published Template to OpenClaw dry-run proof", () => {
             { path: "package.json", text: JSON.stringify(packageJson) },
             {
               path: "CLAW.md",
-              text: "---\nschemaVersion: 1\nagent: { id: grant-conformance }\n---\n",
-            },
-            {
-              path: "profiles/openclaw.yml",
-              text: JSON.stringify({
-                schemaVersion: 1,
-                agent: { tools: { profile, allow: [grant] } },
-              }),
+              text: `---\n${JSON.stringify({ schemaVersion: 1, agent: { id: "grant-conformance", tools: { profile, allow: [grant] } } })}\n---\n`,
             },
           ],
         });
@@ -444,7 +483,7 @@ describe("published Template to OpenClaw dry-run proof", () => {
         OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.blockedKeys,
       );
       expect(policy.blockedPrefixes).toEqual(OPENCLAW_TEMPLATE_HOST_ENV_POLICY_V1.blockedPrefixes);
-      expect(OPENCLAW_TEMPLATE_PROFILE_POLICY_V1.source.path).toBe("src/templates/schema.ts");
+      expect(OPENCLAW_TEMPLATE_AGENT_POLICY_V1.source.path).toBe("src/templates/schema.ts");
     },
   );
 
@@ -502,6 +541,37 @@ describe("published Template to OpenClaw dry-run proof", () => {
             kind: "workspaceFile",
             id: "assets/incident.schema.json",
             blocked: false,
+          }),
+          expect.objectContaining({
+            kind: "package",
+            id: "skill:bundled:skills/research",
+            blocked: false,
+            details: expect.objectContaining({
+              source: "bundled",
+              path: "skills/research",
+              name: "hosted-research",
+              snapshot: expect.objectContaining({
+                files: expect.arrayContaining([
+                  expect.objectContaining({ path: "assets/reference.bin", byteLength: 4 }),
+                ]),
+              }),
+            }),
+          }),
+          expect.objectContaining({
+            kind: "package",
+            id: "plugin:bundled:plugins/alerts",
+            blocked: false,
+            details: expect.objectContaining({
+              source: "bundled",
+              path: "plugins/alerts",
+              name: "Hosted Alerts",
+            }),
+          }),
+          expect.objectContaining({
+            kind: "cronJob",
+            id: "onboarding-brief",
+            blocked: false,
+            details: expect.objectContaining({ enabled: false }),
           }),
           // Current consumers import deprecated heartbeat input as an ordinary
           // automation plus bounded scratch, not a persistent workspace heartbeat.

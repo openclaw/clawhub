@@ -19,27 +19,41 @@ path. The exact `CLAW.md` bytes, including the body, remain in the immutable
 artifact digest and provenance input. Grouped JSON has no body, creates no
 implicit file, and may declare `SOUL.md` explicitly.
 
-The portable agent object carries only identity and purpose. Harness-specific
-settings live in package-local profiles discovered at conventional
-`profiles/<harness>.yml` paths; the manifest contains no profile pointer.
-`metadata.openclaw.config` is retired and rejected with migration guidance.
+`CLAW.md` is the single configuration entry point, retaining `schemaVersion: 1`.
+Its `agent` object carries identity and purpose plus supported native `groupChat`,
+`sandbox`, `tools`, `memory`, `heartbeat`, and `humanDelay` settings. Native
+`tools.profile` selects a bounded tool policy. The existing bounded tool, memory
+consent, path and environment restrictions remain enforced.
 
-Profiles exist only inside the Template package. ClawHub reserves the `profiles/`
-namespace for lowercase, single-file harness profiles, requires each profile to
-be a bounded UTF-8 JSON-compatible YAML mapping, and rejects aliases, anchors,
-tags, merge keys, non-string mapping keys, and non-finite values. It validates
-the strict profile-v1 structure of `profiles/openclaw.yml`, including the
-built-in profile registry pinned by the conformance artifact, without
-installing extensions or claiming compatibility beyond that pinned consumer.
-Foreign profiles remain structurally validated but uninterpreted. Applying
-harnesses discover only their own profile.
+Top-level `skills` and `plugins` contain exact `{ref, version}` ClawHub references
+or strict `{path}` package-local directories. A single source-aware inventory
+(`kind`, `source`, and either `ref`/`version` or `path`/optional metadata `name`) drives
+validation output, bounded summary counts, release detail APIs and website lists.
+Template version and artifact SHA-256 remain on the existing release envelope;
+declared dependencies do not imply installed or connected state.
 
-ClawHub validates `profiles/openclaw.yml` no more permissively than the pinned
-shipped OpenClaw v1 consumer contract. Registered built-in profiles, bounded
-tool grants, extension references, heartbeat settings, and their cross-field
-rules must pass before publication. The representative vectors in
-`fixtures/templates/conformance-v1/cases.json` record the consumer commit and keep
-observable accepted/rejected behavior aligned across repository boundaries.
+Retired `packages`, `profiles`, `extensions`, `cronJobs`, `profiles/` files and
+`metadata.openclaw.config` fail with migration guidance. There is no profile
+compatibility mode or grandfathered publication exception. Existing archives and
+ordinary agents remain unchanged. Bundled directories cannot overlap and retain
+complete eligible membership, including binary support files, under the exact
+Template artifact digest. Publication reads identity only from artifact-selected
+SKILL.md or explicit native plugin metadata; it never invents registry provenance.
+
+ClawHub and OpenClaw share the bundled selection limits: portable case-folded
+`.git`/`node_modules` segments are excluded; eligible files are bounded to 1 MiB
+each, 20 MiB aggregate and 4096 files total, with 4096 entries per tree and depth 16. Package extraction rejects links, nonregular entries and unsafe or portable
+colliding paths. Registry validation preserves verified binary sizes rather than
+coercing support files to text. OpenClaw's native skill/plugin installers own
+local compatibility, policy checks, review and activation; registry contents do
+not claim a dependency is installed or connected.
+
+Scheduled work uses `automations`. Optional `enabled: false` preserves a paused
+declaration for the native scheduler; omission retains enabled behavior. Summary
+`cronJobCount` counts all declarations, including paused jobs.
+
+The representative vectors in `fixtures/templates/conformance-v1/cases.json`
+keep observable native agent/tool/heartbeat acceptance aligned with OpenClaw.
 
 An optional package-root `BOOTSTRAP.md` carries reviewed first-run instructions.
 It must be bounded, nonempty UTF-8 text and cannot also be targeted through the
@@ -48,6 +62,16 @@ summary, while its contents remain only in the exact immutable artifact.
 Schemas, templates, examples, fixtures, and static assets require no special
 registry role: they remain ordinary declared `workspace.files` covered by the
 artifact digest.
+
+## Detail description disclosure
+
+Template detail headers show at most two lines of the description by default so
+long summaries do not push the publisher and installation surface down the page.
+When the rendered text overflows two lines, a keyboard-accessible “Read more”
+button reveals the complete, unchanged description; “Show less” collapses it
+again. Short descriptions have no disclosure control. Overflow is measured from
+the actual layout and rechecked on resize and font readiness, not inferred from
+character count. Route metadata and registry descriptions remain untruncated.
 
 ## Catalog artwork
 
@@ -68,6 +92,11 @@ unchanged, and catalog metadata becomes visible only after publication.
   local Labs visibility, inspection, consent, and new-agent addition.
 - Template publication still requires validation, moderation, ownership, and
   scanner checks.
+- Detail pages present release security-audit status and details in the Security
+  audit sidebar, not repeated as inline subtext beneath the install command. This is
+  presentational only: CLI and prompt copy remain unavailable unless the package
+  scan status is clean and a current release exists. Missing, pending, not-run,
+  suspicious, and malicious scan states do not become ready to add.
 
 The public catalog (package lists and search) includes eligible community and
 official Templates. Every catalog read rechecks that the current publisher row is
@@ -152,20 +181,16 @@ Manifest rejections expose stable `template_v1_*` diagnostic codes with phase
 `schema`, plus the field path and human-readable message. Consumers may branch
 on the code and phase; messages are explanatory text rather than identifiers.
 
-The durable version document stores only the bounded manifest summary. Its
+The durable version document stores the bounded manifest summary and normalized
+dependency inventory. Its
 field structure is built from `createTemplateManifestSummarySchema` in both the
 public ArkType contract and the Convex storage validator. Convex cannot express
 the summary text-length caps, so publication must validate or derive summaries
 through the shared schema before storage.
-New summaries also expose only the profile/extension footprint: total harness
-profiles, conventional OpenClaw profiles, and OpenClaw-native extension count.
-They never expose profile contents.
-
 Templates use the existing package publication pipeline. `package.json` declares
 the package identity, version, and package-relative `openclaw.template` manifest
-path. Publication parses `CLAW.md` YAML frontmatter or the JSON compatibility
-form and validates the grouped manifest, referenced workspace files,
-conventional harness profiles, and optional package-root bootstrap. A non-empty
+path. Publication parses `CLAW.md` YAML frontmatter and validates the manifest, native
+agent settings, exact dependency references, workspace files and optional bootstrap. A non-empty
 Markdown body is the portable agent prompt and maps to managed `SOUL.md`;
 publication rejects a body combined with any explicit `SOUL.md` workspace
 declaration. The release retains the exact artifact and a bounded derived
@@ -196,29 +221,29 @@ Experimental Template publication is exact-artifact-only:
   and historical attempt recovery remain unchanged unless they already carry
   the exact artifact metadata required by their own contract.
 
-## Live storage and immutable historical archives
+## Canonical format and independent persisted storage
 
-The public cutover is not a database rename. Production already has 150 published
-Official packages and a policy-stamped `clawhub-official-claws` snapshot (observed
-sequence 59 on 2026-10-27). Physical `family: "claw"`, `clawProfilePolicyVersion`,
-`clawManifestSummary` and feed `clawPolicyVersion`/`clawEntryCount`/`clawPublisherId`
-remain the durable database contract, including package digest indexes. New
-public filters translate `template` to that one physical family; public DTOs
-translate back and expose only canonical Template field names. New publication
-also uses those stable physical keys. Plugin and skill rows are unchanged.
+Template authoring and registry import use package.json.openclaw.template pointing
+to CLAW.md. The retired openclaw.claw selector is rejected, including packages
+that also declare the canonical selector. There is no historical archive-reader
+exception. All 150 first-party experimental Templates are owned and unused
+externally; regeneration is an explicitly owned catalog task, not a reason to
+retain obsolete format admission.
 
-The dedicated feed keeps its physical row ID and sequence. A read-only projection
-can serve a trusted historical payload as the new Template wire contract only
-after the existing policy stamp and current publisher-authority guards pass,
-with strict candidate/summary validation, matching entry count and stored-payload
-integrity. ETag/SHA headers describe the exact projected response bytes. Invalid,
-pre-policy or revoked snapshots remain unavailable. The ordinary existing feed
-publisher updates that same row; there is no required manual backfill, migration,
-archive rewrite, deletion or republishing operation for this naming change.
+This format decision does not rename the database. Physical family: "claw",
+clawProfilePolicyVersion, clawManifestSummary and the feed claw* marker columns
+remain the persisted storage contract, including package digest indexes. New
+public filters/DTOs remain canonical Template names; ordinary plugin and skill
+rows and their authority rules are unchanged.
 
-Historical `.tgz` bytes/digests and package/version coordinates must not change.
-Their `package.json.openclaw.claw` selector is an admitted historical artifact
-contract for consumers to read, not a new-authoring alias. New authors still use
-`openclaw.template`; public CLI/API family values and routes remain strictly
-`template`/`templates`. Consumer historical-reader support must be verified on its
-exact coordinated source revision, separately from strict new-authoring checks.
+The dedicated feed keeps its physical row ID and sequence. Serving requires a
+canonical Template wire payload, its exact stored checksum/count, and current
+publisher/policy authority. Old-format snapshots fail closed rather than being
+projected. The existing normal publication owner writes canonical payloads into
+the same row; no new migration, backfill or runtime policy/configuration is added.
+
+Published package/version/digest coordinates remain immutable. Regeneration must
+produce new artifact identities/versions under the catalog owner's authority;
+this source cleanup does not authorize rewriting existing bytes, republishing,
+deploying or mutating production. Generic archive safety, ownership, scanning,
+trust and installability checks remain mandatory and independent of this format.

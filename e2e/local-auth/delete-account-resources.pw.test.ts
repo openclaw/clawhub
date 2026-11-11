@@ -1,8 +1,8 @@
-import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { pollableDevSeedState, runDevSeed } from "../helpers/convexSeed";
 import {
   expectNoFatalErrorUi,
+  gotoUntilVisible,
   trackRuntimeErrors,
   waitForHydration,
 } from "../helpers/runtimeErrors";
@@ -16,57 +16,6 @@ test.setTimeout(600_000);
 
 function uniqueSuffix() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-function localConvexDeployment() {
-  const raw = readFileSync(".convex/local/default/config.json", "utf8");
-  const parsed = JSON.parse(raw) as { deploymentName?: unknown };
-  if (typeof parsed.deploymentName !== "string" || !parsed.deploymentName) {
-    throw new Error("Local Convex deployment name was not available");
-  }
-  return `local:${parsed.deploymentName}`;
-}
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      // Convex can print status lines before the JSON payload.
-    }
-  }
-  throw new Error(`No JSON object in convex run output:\n${output}`);
-}
-
-function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {
-  const result = spawnSync(
-    "bunx",
-    [
-      "convex",
-      "run",
-      "--typecheck",
-      "disable",
-      "--codegen",
-      "disable",
-      functionName,
-      JSON.stringify(args),
-    ],
-    {
-      cwd: process.cwd(),
-      env: { ...process.env, CONVEX_DEPLOYMENT: localConvexDeployment() },
-      encoding: "utf8",
-    },
-  );
-  if (result.status !== 0) {
-    throw new Error(
-      [`Failed to run ${functionName}.`, result.stdout.trim(), result.stderr.trim()].join("\n"),
-    );
-  }
-  return JSON.parse(extractLastJsonObject(result.stdout)) as T;
 }
 
 type AccountDeletionFixture = {
@@ -159,14 +108,6 @@ function getAccountRecreationState(fixture: AccountDeletionFixture) {
   });
 }
 
-function pollableDevSeedState<TState extends object>(readState: () => TState) {
-  try {
-    return readState();
-  } catch {
-    return {};
-  }
-}
-
 function isExpectedAccountDeletionRuntimeError(error: string) {
   if (error.includes("Selected isolate was not clean")) return true;
   if (error.includes("server responded with a status of 404 (Not Found)")) return true;
@@ -186,23 +127,6 @@ function isExpectedAccountDeletionRuntimeError(error: string) {
 function isExpectedAccountDeletionTransitionRuntimeError(error: string) {
   if (error.includes("pageerror:Minified React error #418")) return true;
   return isExpectedAccountDeletionRuntimeError(error);
-}
-
-async function gotoUntilVisible(page: Page, url: string, target: Locator) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-    await waitForHydration(page);
-    try {
-      await expect(target).toBeVisible({ timeout: 20_000 });
-      return;
-    } catch (error) {
-      lastError = error;
-      if (attempt === 11) break;
-      await page.waitForTimeout(1_000 * (attempt + 1));
-    }
-  }
-  throw lastError;
 }
 
 async function expectAccountDeletionResources(

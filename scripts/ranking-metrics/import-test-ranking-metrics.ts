@@ -16,6 +16,7 @@ import {
   type RankingDataset,
   type RankingMetricDay,
   type RankingMetricTarget,
+  stableStringify,
 } from "./rankingDataset";
 
 type Mode = "import" | "readback" | "cleanup" | "rollback";
@@ -265,7 +266,7 @@ export async function readCurrentTestMetadata(snapshot: string) {
     ) {
       appendMapValue(
         packagesByIdentity,
-        packageIdentity(row.normalizedName, row.family, row.channel),
+        packageTargetIdentity(row.normalizedName, row.family, row.channel),
         match,
       );
     }
@@ -294,7 +295,7 @@ export function resolveTargets(
       }
       const matches =
         current.packagesByIdentity.get(
-          packageIdentity(target.normalizedName, target.family, target.channel),
+          packageTargetIdentity(target.normalizedName, target.family, target.channel),
         ) ?? [];
       if (matches.length > 1) {
         throw new Error(
@@ -344,10 +345,6 @@ function snapshotCreatedAt(row: Record<string, unknown>) {
   return typeof creationTime === "number" && Number.isFinite(creationTime) && creationTime >= 0
     ? Math.floor(creationTime)
     : null;
-}
-
-function packageIdentity(normalizedName: string, family: string, channel: string) {
-  return packageTargetIdentity(normalizedName, family, channel);
 }
 
 function appendMapValue<Key, Value>(map: Map<Key, Value[]>, key: Key, value: Value) {
@@ -631,29 +628,6 @@ export async function assertRankingTablesUnchanged(baseline: string, current: st
   }
 }
 
-export async function rankingTableDigests(snapshot: string) {
-  const entries = await Promise.all(
-    RANKING_TABLES.map(
-      async (table) => [table, await digestSnapshotTable(snapshot, table)] as const,
-    ),
-  );
-  return Object.fromEntries(entries) as Record<RankingTable, string>;
-}
-
-export async function assertRankingTablesMatchDigests(
-  snapshot: string,
-  expected: Partial<Record<RankingTable, unknown>>,
-) {
-  for (const table of RANKING_TABLES) {
-    if (typeof expected[table] !== "string") {
-      throw new Error(`Backup manifest is missing the ${table} rollback source digest`);
-    }
-    if ((await digestSnapshotTable(snapshot, table)) !== expected[table]) {
-      throw new Error(`${table} no longer matches the rollback source state`);
-    }
-  }
-}
-
 export async function rankingTableLogicalDigests(snapshot: string) {
   const entries = await Promise.all(
     RANKING_TABLES.map(
@@ -693,17 +667,6 @@ async function logicalDigestSnapshotTable(snapshot: string, table: RankingTable)
     sum = (sum + rowHash) & mask;
   }
   return `${count}:${xor.toString(16).padStart(64, "0")}:${sum.toString(16).padStart(64, "0")}`;
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  if (isRecord(value)) {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 async function recordRollbackSourceState(

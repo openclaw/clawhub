@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { loadSmokeSkillFixture } from "../scripts/lib/smokeSkillFixture";
+import { buildSkillDetailHref } from "../src/lib/ownerRoute";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "./helpers/runtimeErrors";
 
 function seedApiUrl(path: string) {
@@ -18,7 +19,7 @@ test("browse page has no horizontal overflow on mobile", async ({ page }) => {
   await page.goto("/skills?sort=downloads", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: /^Skills/ })).toBeVisible();
   await waitForHydration(page);
-  await expect(page.locator(".skill-card, .skill-list-item").first()).toBeVisible();
+  await expect(page.locator(".skill-list-item").first()).toBeVisible();
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
@@ -27,50 +28,22 @@ test("browse page has no horizontal overflow on mobile", async ({ page }) => {
   await expectHealthyPage(page, errors);
 });
 
-test("browse sidebar toggle opens and closes filters", async ({ page }) => {
+test("mobile category picker filters and dismisses", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
-
   await page.goto("/skills?sort=downloads", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: /^Skills/ })).toBeVisible();
   await waitForHydration(page);
-
-  const filterButton = page.getByRole("button", { name: "Toggle filters" });
-  await expect(filterButton).toBeVisible();
-
-  // Sidebar should be hidden initially
-  const sidebar = page.locator(".browse-sidebar");
-  await expect(sidebar).not.toBeVisible();
-
-  await expect(async () => {
-    if (!(await sidebar.isVisible())) {
-      await filterButton.click();
-    }
-    await expect(sidebar).toBeVisible({ timeout: 500 });
-  }).toPass({ timeout: 10_000 });
-
-  await expect(async () => {
-    if (await sidebar.isVisible()) {
-      await filterButton.click();
-    }
-    await expect(sidebar).not.toBeVisible({ timeout: 500 });
-  }).toPass({ timeout: 10_000 });
-
-  await expectHealthyPage(page, errors);
-});
-
-test("card grid fits within viewport on mobile", async ({ page }) => {
-  const errors = trackRuntimeErrors(page);
-
-  await page.goto("/skills?sort=downloads&view=grid", { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".skill-card").first()).toBeVisible();
-
-  const card = page.locator(".skill-card").first();
-  const cardBox = await card.boundingBox();
-  const viewport = page.viewportSize()!;
-
-  // Card should not exceed viewport width
-  expect(cardBox!.width).toBeLessThanOrEqual(viewport.width);
-
+  const category = page.getByRole("combobox", { name: "Category" });
+  await expect(category).toHaveAttribute("aria-expanded", "false");
+  await category.click();
+  await expect(category).toHaveAttribute("aria-expanded", "true");
+  const choices = page.getByRole("radiogroup", { name: "Category", exact: true });
+  await expect(choices).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search categories" }).fill("Development");
+  await choices.getByRole("radio", { name: "Development", exact: true }).click();
+  await expect(page).toHaveURL(/category=development/);
+  await expect(category).toContainText("Development");
+  await expect(category).toHaveAttribute("aria-expanded", "false");
+  await expect(choices).toBeHidden();
   await expectHealthyPage(page, errors);
 });
 
@@ -84,7 +57,7 @@ test("skill detail page has no horizontal overflow on mobile", async ({ page, re
   const ownerHandle = payload.owner.handle;
   const slug = payload.skill.slug;
 
-  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await page.goto(buildSkillDetailHref(ownerHandle, slug), { waitUntil: "domcontentloaded" });
   await expect(page.locator("h1.skill-page-title")).toHaveText(payload.skill.displayName);
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -94,7 +67,7 @@ test("skill detail page has no horizontal overflow on mobile", async ({ page, re
   await expectHealthyPage(page, errors);
 });
 
-test("detail tabs are scrollable and touch-friendly on mobile", async ({ page, request }) => {
+test("archive detail tabs can be selected on mobile", async ({ page, request }) => {
   const errors = trackRuntimeErrors(page);
 
   const payload = await loadSmokeSkillFixture(async (path) => {
@@ -104,19 +77,22 @@ test("detail tabs are scrollable and touch-friendly on mobile", async ({ page, r
   const ownerHandle = payload.owner.handle;
   const slug = payload.skill.slug;
 
-  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await page.goto(buildSkillDetailHref(ownerHandle, slug), { waitUntil: "domcontentloaded" });
 
-  // All standard tabs should be accessible (even if scrolled)
+  await waitForHydration(page);
+  expect(
+    payload.latestVersion,
+    "mobile archive tabs require an archived skill fixture",
+  ).toBeTruthy();
+  const tabs = page.getByRole("tablist", { name: "Skill detail tabs" });
   for (const tabName of ["SKILL.md", "Files", "Versions"]) {
-    const tab = page
-      .getByRole("tablist", { name: "Skill detail tabs" })
-      .getByRole("tab", { name: tabName });
+    const tab = tabs.getByRole("tab", { name: tabName, exact: true });
     await tab.scrollIntoViewIfNeeded();
-    await expect(tab).toBeVisible();
-
-    // Touch target should be at least 44px
-    const box = await tab.boundingBox();
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    await tab.click();
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    const panelId = await tab.getAttribute("aria-controls");
+    expect(panelId).toBeTruthy();
+    await expect(page.locator(`[id="${panelId}"]`)).toBeVisible();
   }
 
   await expectHealthyPage(page, errors);

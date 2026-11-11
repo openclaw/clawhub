@@ -5,7 +5,7 @@ import {
   createAuthTokenModuleMocks,
   createHttpModuleMocks,
   createRegistryModuleMocks,
-  makeGlobalOpts,
+  makeGlobalOpts as makeOpts,
 } from "../../../test/cliCommandTestKit.js";
 
 const authTokenMocks = createAuthTokenModuleMocks();
@@ -20,10 +20,6 @@ const { cmdCreatePublisher } = await import("./publishers");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 const mockWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-
-function makeOpts(workdir = "/work") {
-  return makeGlobalOpts(workdir);
-}
 
 describe("publisher CLI commands", () => {
   it("creates an org publisher through the v1 publishers API", async () => {

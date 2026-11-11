@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readGitCommitFromFiles, shortCommit } from "../../clawhub/src/cli/buildInfo.js";
 
 type PackageJson = { version?: string };
 
@@ -34,13 +35,6 @@ function findPackageJson(start: string) {
   }
 }
 
-function shortCommit(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (trimmed.length <= 8) return trimmed;
-  return trimmed.slice(0, 8);
-}
-
 function getCliCommit() {
   const candidates = [
     process.env.CLAWHUB_ADMIN_COMMIT,
@@ -55,7 +49,7 @@ function getCliCommit() {
     const short = shortCommit(candidate);
     if (short) return short;
   }
-  return readGitCommitFromCwd();
+  return readGitCommitFromFiles();
 }
 
 export function getAdminCliVersion() {
@@ -66,50 +60,4 @@ export function getAdminCliBuildLabel() {
   const version = getAdminCliVersion();
   const commit = getCliCommit();
   return commit ? `v${version} (${commit})` : `v${version}`;
-}
-
-function readGitCommitFromCwd() {
-  try {
-    const gitDir = findGitDir(process.cwd());
-    if (!gitDir) return null;
-    const headPath = join(gitDir, "HEAD");
-    if (!existsSync(headPath)) return null;
-    const head = readFileSync(headPath, "utf8").trim();
-    if (!head) return null;
-    if (!head.startsWith("ref:")) return shortCommit(head);
-    const ref = head.replace(/^ref:\s*/, "").trim();
-    if (!ref) return null;
-    const refPath = join(gitDir, ref);
-    if (!existsSync(refPath)) return null;
-    const sha = readFileSync(refPath, "utf8").trim();
-    return shortCommit(sha);
-  } catch {
-    return null;
-  }
-}
-
-function findGitDir(start: string) {
-  let current = resolve(start);
-  for (;;) {
-    const dotGit = join(current, ".git");
-    if (existsSync(dotGit)) {
-      try {
-        const stat = statSync(dotGit);
-        if (stat.isDirectory()) return dotGit;
-      } catch {
-        // ignore
-      }
-      try {
-        const content = readFileSync(dotGit, "utf8").trim();
-        const match = content.match(/^gitdir:\s*(.+)$/);
-        if (match?.[1]) return resolve(current, match[1]);
-      } catch {
-        return dotGit;
-      }
-      return dotGit;
-    }
-    const parent = resolve(current, "..");
-    if (parent === current) return null;
-    current = parent;
-  }
 }

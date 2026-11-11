@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { describe, expect, it } from "vitest";
 import { buildManagedMcpBundle } from "./managedMcpBundle";
 
@@ -80,6 +82,53 @@ describe("managed MCP bundle", () => {
     });
     expect(JSON.stringify(old)).toEqual(baseline);
     expect(next.files).not.toEqual(old.files);
+  });
+
+  it("preserves explicit CIMD identity and OAuth scope in immutable bundle artifacts", () => {
+    const input = {
+      ...definition,
+      connection: {
+        ...definition.connection,
+        auth: {
+          kind: "oauth",
+          scope: "events:read offline_access",
+          clientMetadataUrl: "https://client.example.com/oauth/client.json",
+        },
+      },
+    };
+    const bundle = buildManagedMcpBundle(input);
+    const json = (path: string) =>
+      JSON.parse(new TextDecoder().decode(bundle.files.find((file) => file.path === path)?.bytes));
+    for (const path of ["openclaw.plugin.json", ".mcp.json"]) {
+      expect(json(path).mcpServers.posthog).toMatchObject({
+        auth: "oauth",
+        oauth: {
+          scope: "events:read offline_access",
+          clientMetadataUrl: "https://client.example.com/oauth/client.json",
+        },
+      });
+    }
+    expect(json("clawhub-mcp.json")).toEqual(input);
+    expect(buildManagedMcpBundle(input)).toEqual(bundle);
+  });
+
+  it.each([
+    { kind: "oauth" },
+    { kind: "oauth", scope: "events:read" },
+    { kind: "oauth", clientMetadataUrl: "https://client.example.com/oauth/client.json" },
+  ])("preserves optional OAuth settings without fabricating others: %j", (auth) => {
+    const { files } = buildManagedMcpBundle({
+      ...definition,
+      connection: { ...definition.connection, auth },
+    });
+    const { kind: _kind, ...settings } = auth;
+    for (const path of ["openclaw.plugin.json", ".mcp.json"]) {
+      const server = JSON.parse(
+        new TextDecoder().decode(files.find((file) => file.path === path)?.bytes),
+      ).mcpServers.posthog;
+      expect(server.auth).toBe("oauth");
+      expect(server.oauth).toEqual(Object.keys(settings).length ? settings : undefined);
+    }
   });
 
   it("preserves legacy SSE in both supported manifest formats", () => {

@@ -1,0 +1,8 @@
+{
+  "name": "@openclaw/template-native-qualification",
+  "version": "0.0.0",
+  "private": true,
+  "openclaw": {
+    "template": "CLAW.md"
+  }
+}

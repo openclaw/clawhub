@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
+import { CliTelemetryInstallRequestSchema as cliTelemetrySchema } from "../../clawhub/src/schema/schemas";
 import { parseArk } from "./ark";
 import { DocsLinks, openClawDocsUrl } from "./docsLinks";
 import {
@@ -232,6 +233,33 @@ describe("clawhub-schema", () => {
     );
   });
 
+  it("retains explicit partial inspection separately from a benign package verdict", () => {
+    const response = parseArk(
+      ApiV1PackageVersionResponseSchema,
+      {
+        package: { name: "demo", displayName: "Demo", family: "code-plugin" },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "",
+          files: [],
+          llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 1 },
+          skillSpectorAnalysis: {
+            status: "suspicious",
+            inspectionStatus: "partial",
+            issueCount: 0,
+            issues: [],
+            checkedAt: 1,
+          },
+        },
+      },
+      "Package version response",
+    );
+    expect(response.version?.llmAnalysis?.verdict).toBe("benign");
+    expect(response.version?.skillSpectorAnalysis?.inspectionStatus).toBe("partial");
+    expect(response.version?.skillSpectorAnalysis?.status).toBe("suspicious");
+  });
+
   it.each([
     {},
     {
@@ -341,9 +369,12 @@ describe("clawhub-schema", () => {
     expect(blocked.ok).toBe(false);
   });
 
-  it("accepts skill, plugin, and legacy install telemetry payloads", () => {
+  it.each([
+    { name: "registry", schema: CliTelemetryInstallRequestSchema },
+    { name: "CLI", schema: cliTelemetrySchema },
+  ])("$name accepts skill, plugin, and legacy install telemetry payloads", ({ schema }) => {
     const current = parseArk(
-      CliTelemetryInstallRequestSchema,
+      schema,
       {
         event: "install",
         slug: "demo",
@@ -361,7 +392,7 @@ describe("clawhub-schema", () => {
       "Install telemetry",
     );
     const plugin = parseArk(
-      CliTelemetryInstallRequestSchema,
+      schema,
       {
         event: "plugin_install",
         packageName: "@openclaw/voice-call",
@@ -370,7 +401,7 @@ describe("clawhub-schema", () => {
       "Install telemetry",
     );
     const legacy = parseArk(
-      CliTelemetryInstallRequestSchema,
+      schema,
       {
         roots: [
           {

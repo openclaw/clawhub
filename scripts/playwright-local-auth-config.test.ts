@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildLocalAuthBackendEnv,
+  buildLocalAuthBackendVersionArgs,
   buildLocalAuthTrendingSnapshotArgs,
   createLocalAuthTempDir,
   resolveLocalAuthDeployment,
@@ -14,6 +15,20 @@ import {
 } from "./playwright-local-auth-config";
 
 describe("playwright local-auth runner config", () => {
+  it.each([undefined, "", "  "])("keeps the default backend for an unset pin (%s)", (version) => {
+    expect(
+      buildLocalAuthBackendVersionArgs({ PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION: version }),
+    ).toEqual([]);
+  });
+
+  it("passes the explicitly pinned backend to Convex", () => {
+    expect(
+      buildLocalAuthBackendVersionArgs({
+        PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION: " precompiled-2026-10-22-1447815 ",
+      }),
+    ).toEqual(["--local-backend-version", "precompiled-2026-10-22-1447815"]);
+  });
+
   it.skipIf(process.platform === "win32")(
     "shortens a deep same-volume TMPDIR for Unix sockets",
     async () => {

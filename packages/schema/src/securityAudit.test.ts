@@ -19,3 +19,18 @@ describe("security audit overview", () => {
     );
   });
 });
+
+it.each(["benign", "suspicious", "malicious"])(
+  "does not invent an overview or hide a completed %s verdict",
+  (verdict) => {
+    expect(getSecurityAuditOverviewCopy({ llmAnalysis: { verdict } })).toEqual([
+      "No overview is available for this completed security scan.",
+    ]);
+  },
+);
+it("distinguishes scanner failure from an unrecorded analysis", () => {
+  expect(getSecurityAuditOverviewCopy({ llmAnalysis: { status: "failed" } })).toEqual([
+    "The security scan failed. No overview is available.",
+  ]);
+  expect(getSecurityAuditOverviewCopy({})).toEqual(["No security analysis has been recorded yet."]);
+});

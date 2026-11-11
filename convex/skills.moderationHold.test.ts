@@ -107,12 +107,13 @@ describe("skills moderation holds", () => {
     );
   });
 
-  it("restores from current scanner verdicts but keeps unscanned skills pending", async () => {
+  it("restores from current ClawScan verdicts but keeps unscanned skills pending", async () => {
     vi.spyOn(Date, "now").mockReturnValue(2_000);
-    const { ctx, patch } = makeCtx({
+    const { ctx, patch, scheduler } = makeCtx({
       user: { _id: "users:owner", requiresModerationAt: undefined },
       versions: {
-        "versions:clean": { _id: "versions:clean", vtAnalysis: { status: "clean" } },
+        // Retired VirusTotal results no longer count as a completed scan.
+        "versions:vt-only": { _id: "versions:vt-only", vtAnalysis: { status: "clean" } },
         "versions:clawscan-clean": {
           _id: "versions:clawscan-clean",
           llmAnalysis: { status: "clean" },
@@ -125,9 +126,9 @@ describe("skills moderation holds", () => {
       },
       skills: [
         {
-          _id: "skills:clean",
+          _id: "skills:vt-only",
           ownerUserId: "users:owner",
-          latestVersionId: "versions:clean",
+          latestVersionId: "versions:vt-only",
           moderationStatus: "hidden",
           moderationReason: "user.moderation",
           moderationFlags: undefined,
@@ -174,10 +175,10 @@ describe("skills moderation holds", () => {
 
     expect(result.restoredCount).toBe(4);
     expect(patch).toHaveBeenCalledWith(
-      "skills:clean",
+      "skills:vt-only",
       expect.objectContaining({
-        moderationStatus: "active",
-        moderationReason: "scanner.vt.clean",
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan",
         hiddenAt: undefined,
       }),
     );
@@ -204,6 +205,11 @@ describe("skills moderation holds", () => {
         hiddenAt: undefined,
       }),
     );
+    // Versions without a completed ClawScan result get a scan so they can resolve.
+    const enqueuedVersionIds = scheduler.runAfter.mock.calls
+      .filter(([, , args]) => (args as { source?: string })?.source === "backfill")
+      .map(([, , args]) => (args as { versionId: string }).versionId);
+    expect(enqueuedVersionIds).toEqual(["versions:vt-only", "versions:pending"]);
   });
 
   it("aborts restore when the user was re-held", async () => {

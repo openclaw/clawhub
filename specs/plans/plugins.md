@@ -958,6 +958,13 @@ Practical design:
 
 - canonical API remains ClawHub-native
 - npm facade is an adapter, not the source of truth
+- npm metadata and tarballs must use bounded release-query pages: full stored
+  plugin releases include files, manifests, and scanner reports, so row count
+  alone does not bound query CPU or bytes. Follow short-page cursors without
+  reducing the supported history to an arbitrary number of small pages.
+- npm delivery serves the exact uploaded tarball and preserves native package
+  visibility, private-owner access, release-publication, and download-moderation
+  checks; scanner verdicts are not changed to repair a delivery failure.
 - official-only npm views or endpoints can exist later if OpenClaw needs a
   trusted-only install surface
 - remote/virtual-repository-style composition is a good mental model for
@@ -980,12 +987,17 @@ or:
 openclaw plugins install clawhub:@scope/pkg
 ```
 
-The plugin detail Install card shows only the `Install` heading and one copyable
-command block. Code and bundle plugins use the explicit
-`openclaw plugins install clawhub:<package-name>` command, which works across
-released and updated OpenClaw versions without bundled-shortcut ambiguity. Do not
-add version labels, an alternate command, or explanatory subtext to this card.
-Keep CLI compatibility guidance in the public docs instead.
+The plugin detail Install card uses the same shared install card as skills: an
+`Install` heading, `CLI` and `Prompt` tabs, and one copyable block. The CLI tab
+shows `openclaw plugins install clawhub:<package-name>` so the displayed and
+copied command selects ClawHub on released clients as well as main/dev builds.
+OpenClaw 2026.11.2 still routes unprefixed package specs to npm; the default-source
+change on main is not a released-client compatibility guarantee (see #4491).
+Unscoped names retain `@latest` (`clawhub:discord@latest`) to distinguish registry
+packages from bundled plugin IDs; scoped names stay as-is after the prefix.
+The Prompt tab shows only `Install the <package-name> package from ClawHub`. Do not add
+version labels or explanatory subtext to this card. Skill commands and prompts
+remain unchanged. Keep additional CLI compatibility guidance in the public docs.
 
 Skills should also install directly from ClawHub:
 

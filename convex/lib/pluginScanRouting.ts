@@ -1,0 +1,72 @@
+import { ConvexError } from "convex/values";
+import type { Doc } from "../_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { reusableAigAnalysis } from "./aigAnalysis";
+
+export function isSingleScanPlugin(family: Doc<"packages">["family"] | undefined) {
+  return family === "code-plugin" || family === "bundle-plugin";
+}
+
+/** Automatic plugin work supplements the admitted verdict; it never re-judges it. */
+export function isExplicitPluginScanSource(source: Doc<"securityScanJobs">["source"]) {
+  return source === "manual" || source === "bulk-rescan";
+}
+
+export function assertPluginScanEvidence(
+  llmAnalysis: Doc<"packageReleases">["llmAnalysis"],
+  aigAnalysis: Doc<"packageReleases">["aigAnalysis"],
+  expectedCheck?: "clean" | "blocked",
+) {
+  const status = llmAnalysis?.status.trim().toLowerCase();
+  const verdict = (llmAnalysis?.verdict ?? status)?.trim().toLowerCase();
+  if (
+    !llmAnalysis ||
+    !Number.isFinite(llmAnalysis.checkedAt) ||
+    !["clean", "benign", "suspicious", "malicious"].includes(verdict ?? "") ||
+    !["completed", "clean", "benign", "suspicious", "malicious"].includes(status ?? "") ||
+    // The production c3cfaf15 package lane never executes AIG. Preserve that
+    // historical/pinned contract; any supplied AIG must be usable. The new MCP
+    // lane requires scanner provenance in the worker and is still fenced off.
+    (aigAnalysis !== undefined && !reusableAigAnalysis(aigAnalysis)) ||
+    (expectedCheck === "clean" && verdict === "malicious") ||
+    (expectedCheck === "blocked" && verdict !== "malicious")
+  ) {
+    throw new ConvexError(
+      "Plugin scans require completed ClawScan and A.I.G evidence matching the publication decision.",
+    );
+  }
+}
+
+/** Legacy automatic plugin ClawScan work has no authority to adjudicate a release. */
+export async function isRetiredAutomaticPluginScan(
+  ctx: Pick<QueryCtx, "db">,
+  job: Doc<"securityScanJobs">,
+) {
+  if (
+    job.targetKind !== "packageRelease" ||
+    !job.packageReleaseId ||
+    job.scanMode === "endor-report-only" ||
+    isExplicitPluginScanSource(job.source)
+  )
+    return false;
+  const release = await ctx.db.get(job.packageReleaseId);
+  const pkg = release ? await ctx.db.get(release.packageId) : null;
+  return isSingleScanPlugin(pkg?.family);
+}
+
+/** Retain the row and prior error/evidence, but remove it from active queue indexes. */
+export async function terminalizeRetiredAutomaticPluginScan(
+  ctx: Pick<MutationCtx, "db">,
+  job: Doc<"securityScanJobs">,
+  now: number,
+) {
+  await ctx.db.patch(job._id, {
+    status: "failed",
+    lastError: job.lastError ?? "Automatic plugin ClawScan retired; explicit rescan required",
+    completedAt: job.completedAt ?? now,
+    leaseToken: undefined,
+    leaseExpiresAt: undefined,
+    workerId: undefined,
+    updatedAt: now,
+  });
+}

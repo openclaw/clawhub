@@ -1,10 +1,10 @@
+import { getDownloadIdentity } from "./lib/downloadIdentity";
+export { getDownloadIdentity, buildDownloadMetricArgs } from "./lib/downloadIdentity";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
 import { internalMutation } from "./functions";
-import { getClientIp } from "./lib/httpRateLimit";
+import { areDownloadMetricsPaused } from "./lib/downloadMetricsSwitch";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
-import { hashToken } from "./lib/tokens";
 import { insertStatEvent } from "./skillStatEvents";
 
 const DAY_MS = 86_400_000;
@@ -18,39 +18,6 @@ const targetValidator = v.union(
   v.object({ kind: v.literal("package"), id: v.id("packages") }),
 );
 
-type DownloadIdentityKind = "user" | "ip";
-
-type DownloadIdentity = {
-  identityKind: DownloadIdentityKind;
-  identityValue: string;
-};
-
-export function getDownloadIdentity(
-  request: Request,
-  userId: string | null,
-): DownloadIdentity | null {
-  if (userId) return { identityKind: "user", identityValue: userId };
-  const ip = getClientIp(request);
-  if (!ip) return null;
-  return { identityKind: "ip", identityValue: ip };
-}
-
-export async function buildDownloadMetricArgs(params: {
-  target: { kind: "skill"; id: Id<"skills"> } | { kind: "package"; id: Id<"packages"> };
-  identity: DownloadIdentity;
-  now: number;
-}) {
-  return {
-    target: params.target,
-    identityKind: params.identity.identityKind,
-    identityHash: await hashToken(
-      `${params.identity.identityKind}:${params.identity.identityValue}`,
-    ),
-    dayStart: getDayStart(params.now),
-    occurredAt: params.now,
-  };
-}
-
 export const recordDownloadMetricInternal = internalMutation({
   args: {
     target: targetValidator,
@@ -60,6 +27,8 @@ export const recordDownloadMetricInternal = internalMutation({
     occurredAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Queued jobs become no-ops while metrics are paused for write pressure.
+    if (areDownloadMetricsPaused()) return;
     const targetId = args.target.id;
     const existing = await ctx.db
       .query("downloadMetricDedupes")
@@ -93,12 +62,46 @@ export const recordDownloadMetricInternal = internalMutation({
       return;
     }
 
-    await ctx.db.insert("packageStatEvents", {
+    const eventId = await ctx.db.insert("packageStatEvents", {
       packageId: args.target.id,
       kind: "download",
       occurredAt: args.occurredAt ?? now,
       processedAt: undefined,
     });
+    const pkg = await ctx.db.get(args.target.id);
+    if (pkg?.family === "claw" && pkg.channel !== "private" && !pkg.softDeletedAt) {
+      // Scheduling is atomic with the stat insert: a rolled-back count cannot emit.
+      await ctx.scheduler.runAfter(
+        0,
+        internal.downloadMetrics.emitTemplateDownloadCountedInternal,
+        { eventId, dayStart: args.dayStart },
+      );
+    }
+  },
+});
+
+/** Log only committed counts. Consumers dedupe delivery/OCC retries by eventId. */
+export const emitTemplateDownloadCountedInternal = internalMutation({
+  args: { eventId: v.id("packageStatEvents"), dayStart: v.number() },
+  handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId);
+    if (!event || event.kind !== "download") return;
+    const pkg = await ctx.db.get(event.packageId);
+    if (!pkg || pkg.family !== "claw" || pkg.channel === "private" || pkg.softDeletedAt) return;
+
+    // Explicit allowlist: never include download identities or other listing fields.
+    console.info(
+      JSON.stringify({
+        event: "template_download_counted",
+        schemaVersion: 1,
+        eventId: event._id,
+        packageId: pkg._id,
+        packageName: pkg.name,
+        family: "template",
+        occurredAt: event.occurredAt,
+        dayStart: args.dayStart,
+      }),
+    );
   },
 });
 

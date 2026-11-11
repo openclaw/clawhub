@@ -1,4 +1,10 @@
 import { isDeepStrictEqual } from "node:util";
+import {
+  type ClawHubProfile,
+  decisionsJudgeAccounting,
+  hasScannerExecution,
+  isTypedScannerJudgeRun,
+} from "./clawscan-decisions";
 
 export type ClawScanExposure = {
   scanExecution: "started" | "not_started" | "unknown";
@@ -51,7 +57,10 @@ function receiptFailure(error: string) {
   );
 }
 
-export function clawScanExposure(artifact?: unknown): ClawScanExposure {
+export function clawScanExposure(
+  artifact?: unknown,
+  expectedProfile: ClawHubProfile = "clawhub",
+): ClawScanExposure {
   const unknown: ClawScanExposure = {
     ...unknownClawScanExposure(),
     scanExecution: "started",
@@ -59,14 +68,52 @@ export function clawScanExposure(artifact?: unknown): ClawScanExposure {
   const run = record(artifact);
   if (
     run?.schemaVersion !== "clawscan-run-v1" ||
-    run.profile !== "clawhub" ||
+    run.profile !== expectedProfile ||
     typeof run.completedAt !== "string" ||
     !Number.isFinite(Date.parse(run.completedAt))
   )
     return unknown;
+  if (
+    isTypedScannerJudgeRun(run) ||
+    record(run.judge)?.command?.toString().includes("clawscan-decisions-judge")
+  ) {
+    const accounting = decisionsJudgeAccounting(run);
+    const scanners = record(run.scanners);
+    const completed =
+      run.status === "completed" &&
+      run.complete === true &&
+      typeof run.startedAt === "string" &&
+      Number.isFinite(Date.parse(run.startedAt)) &&
+      Date.parse(run.completedAt as string) >= Date.parse(run.startedAt);
+    return {
+      scanExecution: "started",
+      eligibleScanAttempt:
+        completed && Boolean(scanners && Object.values(scanners).some(hasScannerExecution)),
+      judgeInvocations: accounting?.judgeInvocations ?? null,
+      judgeOperationalFailures: accounting?.judgeOperationalFailures ?? null,
+      recoveredReceiptRetries: accounting?.recoveredReceiptRetries ?? null,
+    };
+  }
   const staticStatus = record(record(run.scanners)?.["clawscan-static"])?.status;
   if (staticStatus === "completed" || staticStatus === "failed") unknown.eligibleScanAttempt = true;
   const judge = record(run.judge);
+  // ClawScan refuses an oversized judge prompt before starting the judge
+  // command: the judge failed, never started, and has no attempts.
+  if (
+    judge?.status === "failed" &&
+    judge.commandStarted === false &&
+    typeof judge.error === "string" &&
+    judge.error.startsWith("judge prompt too large:") &&
+    (judge.attempts === undefined || (Array.isArray(judge.attempts) && judge.attempts.length === 0))
+  ) {
+    return {
+      scanExecution: "started",
+      eligibleScanAttempt: unknown.eligibleScanAttempt,
+      judgeInvocations: 0,
+      judgeOperationalFailures: 0,
+      recoveredReceiptRetries: 0,
+    };
+  }
   if (!Array.isArray(judge?.attempts) || judge.attempts.length < 1 || judge.attempts.length > 2) {
     return unknown;
   }

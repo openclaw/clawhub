@@ -294,7 +294,15 @@ function ManagedMcpForm({
           transport: text("transport"),
           auth:
             auth === "oauth"
-              ? { kind: auth, ...(text("scope") ? { scope: text("scope") } : {}) }
+              ? {
+                  kind: auth,
+                  ...(text("scope") ? { scope: text("scope") } : {}),
+                  // Preserve CLI-authored CIMD identity when editing other fields.
+                  ...(initial?.connection.auth.kind === "oauth" &&
+                  initial.connection.auth.clientMetadataUrl
+                    ? { clientMetadataUrl: initial.connection.auth.clientMetadataUrl }
+                    : {}),
+                }
               : auth === "api-key"
                 ? { kind: auth, header: text("header"), placeholder: text("placeholder") }
                 : { kind: "none" },

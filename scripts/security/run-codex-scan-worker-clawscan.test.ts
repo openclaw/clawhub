@@ -7,15 +7,20 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
+import * as dockerCleanup from "./clawscan-docker-cleanup";
+import * as pluginRuntime from "./clawscan-plugin-runtime";
+import completeReport from "./fixtures/skillspector-completed.json";
+import partialReport from "./fixtures/skillspector-usable-partial.json";
 import type { ClaimedJob, ClawScanCommandDiagnostic } from "./run-codex-scan-worker";
 import {
   aggregateSkillSpectorAnalyses,
+  clawScanTimeoutMs,
   normalizeAigAnalysis,
   processJob,
   resolveClawScanTarget,
   resolveBundledSkillSpectorScanInputs,
   runClawScan,
+  runBundledSkillSpector,
   writeJobDiagnostic,
 } from "./run-codex-scan-worker";
 import {
@@ -135,7 +140,6 @@ function skillVersionJob(jobId: string): ClaimedJob {
     hasMaliciousSignal: false,
     source: "publish",
     targetKind: "skillVersion" as const,
-    waitForVtUntil: 0,
     [leaseField]: "lease-fixture",
   } as ClaimedJob["job"];
 
@@ -173,7 +177,6 @@ function claimedJob(input: {
     hasMaliciousSignal: false,
     source: input.source,
     targetKind: input.targetKind,
-    waitForVtUntil: 0,
     [leaseField]: "lease-fixture",
   } as ClaimedJob["job"];
   return {
@@ -283,7 +286,6 @@ function completeJudgeResult(verdict: ClawScanVerdict) {
 function clawScanArtifactJson(options?: {
   aigRaw?: unknown;
   completedAt?: string;
-  endorAnalysis?: EndorAnalysis;
   includeCompletedAt?: boolean;
   judgeResult?: Record<string, unknown>;
   configuredJudgeModel?: string;
@@ -347,9 +349,6 @@ function clawScanArtifactJson(options?: {
           status: scannerStatuses["clawscan-static"] === "completed" ? "clean" : "failed",
         },
       },
-      ...(options?.endorAnalysis
-        ? { endor: { status: "completed", raw: options.endorAnalysis } }
-        : {}),
     },
     judge: {
       status: "completed",
@@ -378,15 +377,16 @@ function endorArtifactJson() {
         },
       },
     ],
-    blocking_findings: [],
-    warning_findings: [],
   });
 }
 
-async function writeCombinedFakeClawScan(input: {
+// A ClawScan stand-in that runs only after Endor finishes and proves the judge
+// never receives Endor credentials or Endor evidence.
+async function writeFakeClawScanAfterEndor(input: {
   artifactJson: string;
   callLog: string;
-  cleanupMarker: string;
+  endorDoneMarker: string;
+  metadataLog?: string;
   path: string;
   skillReadyMarker?: string;
 }) {
@@ -394,34 +394,24 @@ async function writeCombinedFakeClawScan(input: {
   await writeFile(baseArtifactPath, input.artifactJson);
   await writeFakeClawScanCommand(
     input.path,
-    `test -f ${JSON.stringify(input.cleanupMarker)}
+    `test -f ${JSON.stringify(input.endorDoneMarker)}
 ${input.skillReadyMarker ? `test -f ${JSON.stringify(input.skillReadyMarker)}` : ""}
+${input.metadataLog ? `cp metadata.json ${JSON.stringify(input.metadataLog)}` : ""}
 test -z "\${ENDOR_TOKEN:-}"
 test -z "\${ENDOR_API_CREDENTIALS_KEY:-}"
 test -z "\${ENDOR_API_CREDENTIALS_SECRET:-}"
 printf 'called\\n' >> ${JSON.stringify(input.callLog)}
 out=""
-endor=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --config) exit 98 ;;
+    --context) grep -q '"trustedOpenClawPlugin":' "$2" || exit 98; [[ "$(cat "$2")" != *endor* ]] || exit 99; shift 2 ;;
+    --scanner-result) [[ "$2" != endor=* ]] || exit 99; shift 2 ;;
     --output) out="$2"; shift 2 ;;
-    --scanner-result)
-      if [[ "$2" == endor=* ]]; then endor="\${2#endor=}"; fi
-      shift 2 ;;
     *) shift ;;
   esac
 done
-python3 - "$endor" "$out" ${JSON.stringify(baseArtifactPath)} <<'PY'
-import json
-import sys
-with open(sys.argv[3], encoding="utf-8") as source:
-    artifact = json.load(source)
-with open(sys.argv[1], encoding="utf-8") as source:
-    analysis = json.load(source)
-artifact["scanners"]["endor"] = {"status": "completed", "raw": analysis}
-with open(sys.argv[2], "w", encoding="utf-8") as output:
-    json.dump(artifact, output)
-PY`,
+cp ${JSON.stringify(baseArtifactPath)} "$out"`,
   );
 }
 
@@ -433,7 +423,7 @@ function pluginPackageJob(jobId: string): ClaimedJob {
     source: "publish",
     targetKind: "packageRelease",
     target: {
-      package: { name: "@openclaw/fixture-plugin" },
+      package: { name: "@openclaw/fixture-plugin", family: "code-plugin" },
       release: { version: "1.0.0" },
       files: [
         {
@@ -477,42 +467,25 @@ function pluginPackageJobWithBundledSkill(jobId: string): ClaimedJob {
   };
 }
 
+// Fake `docker run` for the Endor container. The done marker appears once the
+// scan exits or a failed container is force-removed.
 function fakeEndorDockerBody(input: {
-  cleanupMarker: string;
-  cleanupFails?: boolean;
+  endorDoneMarker: string;
   exitCode: number;
-  onStart?: string;
-  startOutput: string;
+  onRun?: string;
+  stdout: string;
 }) {
-  return `case "$2" in
-  create)
-    printf '%s\\n' "$@" > ${JSON.stringify(join(dirname(input.cleanupMarker), "endor-create-args"))}
-    args=("$@")
-    for ((index = 0; index < \${#args[@]}; index++)); do
-      if [[ "\${args[$index]}" == "--mount" ]]; then
-        mount="\${args[$((index + 1))]}"
-        source="\${mount#type=bind,source=}"
-        source="\${source%%,target=*}"
-        printf '%s' "$source" > ${JSON.stringify(join(dirname(input.cleanupMarker), "endor-mounted-source"))}
-        break
-      fi
-    done
-    printf '%064d\\n' 0
-    ;;
-  start)
-    ${input.onStart ?? ""}
+  return `case "$1" in
+  run)
+    printf '%s\\n' "$@" > ${JSON.stringify(join(dirname(input.endorDoneMarker), "endor-run-args"))}
+    ${input.onRun ?? ""}
     cat <<'JSON'
-${input.startOutput}
+${input.stdout}
 JSON
+    touch ${JSON.stringify(input.endorDoneMarker)}
     exit ${input.exitCode}
     ;;
-  inspect)
-    name="\${@: -1}"
-    printf '%064d\\n/%s\\n%s\\n' 0 "$name" "\${name#clawhub-endor-}"
-    ;;
-  rm)
-    ${input.cleanupFails ? 'echo "container removal failed" >&2; exit 23' : `touch ${JSON.stringify(input.cleanupMarker)}`}
-    ;;
+  rm) touch ${JSON.stringify(input.endorDoneMarker)} ;;
   *) exit 99 ;;
 esac`;
 }
@@ -525,7 +498,6 @@ async function configureEndorFakeCommands(input: {
 }) {
   vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", input.clawScan);
   vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "1");
-  vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", "");
   vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_IMAGE", "clawscan-endor:test");
   vi.stubEnv("ENDOR_NAMESPACE", "fixture-namespace");
   vi.stubEnv("ENDOR_TOKEN", "fixture-token");
@@ -539,6 +511,111 @@ async function configureEndorFakeCommands(input: {
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
+  it.each([false, true])(
+    "stops and preserves the MCP workspace after cleanup failure (backend unavailable: %s)",
+    async (backendUnavailable) => {
+      vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "0");
+      vi.spyOn(pluginRuntime, "usesWholePluginScanForTarget").mockResolvedValue(true);
+      vi.spyOn(pluginRuntime, "qualifiedPluginCommand").mockResolvedValue("/qualified/clawscan");
+      let preserved: string | undefined;
+      vi.spyOn(dockerCleanup, "withClawScanDockerCleanup").mockImplementation(async (input) => {
+        preserved = input.workspace;
+        throw new dockerCleanup.ClawScanContainerCleanupError(
+          "ClawScan Docker cleanup unconfirmed",
+        );
+      });
+      const client = {
+        action: vi.fn(async (..._args: unknown[]) => {
+          if (backendUnavailable) throw new Error("backend transport unavailable");
+          return { retry: true };
+        }),
+      };
+      await expect(
+        processJob(client, "fixture", pluginPackageJob("securityScanJobs:owned-mcp"), undefined),
+      ).resolves.toMatchObject({
+        completed: false,
+        workerMustStop: true,
+        hardFailed: true,
+        retryableFailed: false,
+      });
+      expect(preserved).toBeTruthy();
+      tempDirs.push(preserved!);
+      expect(
+        await readFile(join(preserved!, "artifact/package/openclaw.plugin.json"), "utf8"),
+      ).toContain("fixture-plugin");
+      expect(client.action).toHaveBeenCalledTimes(1);
+      expect(client.action.mock.calls[0]?.[1]).toHaveProperty("error");
+    },
+  );
+
+  it("completes automatic Endor-only work without launching ClawScan or bundled scanners", async () => {
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "0");
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", "/missing/must-not-launch-clawscan");
+    const job: ClaimedJob = {
+      job: {
+        _id: "securityScanJobs:report-only",
+        targetKind: "packageRelease",
+        source: "publish",
+        leaseToken: "fixture-lease",
+        hasMaliciousSignal: false,
+        scanMode: "endor-report-only",
+      },
+      target: {
+        ...fileTarget("package.json", '{"name":"fixture","version":"1.0.0"}'),
+        package: { name: "fixture", family: "code-plugin" },
+        release: { artifactKind: "legacy-zip" },
+      },
+    };
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+    const health = vi.fn();
+    await expect(
+      processJob(client, "fixture-token", job, undefined, health),
+    ).resolves.toMatchObject({ completed: true });
+    expect(client.action).toHaveBeenCalledTimes(1);
+    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+      endorAnalysis: { status: "skipped" },
+    });
+    expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("llmAnalysis");
+    expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("aigAnalysis");
+    expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("skillSpectorAnalysis");
+    expect(health).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exposure: expect.objectContaining({ scanExecution: "not_started", judgeInvocations: 0 }),
+      }),
+    );
+  });
+
+  it("saves a failed Endor-only scan on the release instead of failing the job", async () => {
+    const workspace = await tempDir();
+    await configureEndorFakeCommands({
+      clawScan: "/missing/must-not-launch-clawscan",
+      dockerBody: fakeEndorDockerBody({
+        endorDoneMarker: join(workspace, "endor-done"),
+        exitCode: 1,
+        stdout: "",
+      }),
+      workspace,
+    });
+    const job = pluginPackageJob("securityScanJobs:report-only-failed");
+    job.job.scanMode = "endor-report-only";
+    job.target.package = { name: "@community/fixture-plugin", family: "code-plugin" };
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+
+    await expect(processJob(client, "worker-auth", job, undefined)).resolves.toEqual({
+      completed: true,
+      hardFailed: false,
+      retryableFailed: false,
+    });
+    expect(client.action).toHaveBeenCalledTimes(1);
+    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+      endorAnalysis: {
+        status: "failed",
+        reason: "Endor analysis failed. Request a rescan to try again.",
+      },
+    });
+    expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("error");
+  });
+
   it("keeps scan eligibility unknown when artifact preparation fails before any judge call", async () => {
     const job = skillVersionJob("securityScanJobs:input-unproven");
     job.target.files![0]!.sha256 = "0".repeat(64);
@@ -989,6 +1066,103 @@ JSON`,
   });
 
   it.each([0, 1])(
+    "retains original partial bundled reports for adjudication on exit %s without findings",
+    async (exitCode) => {
+      const workspace = await tempDir();
+      const partial = { ...structuredClone(partialReport), issues: [] };
+      const complete = structuredClone(completeReport);
+      const command = join(workspace, "skillspector");
+      await writeFakeClawScanCommand(
+        command,
+        `target="$2"
+while [[ "$1" != --output ]]; do shift; done
+case "$target" in
+  *alpha) printf '%s' '${JSON.stringify(partial)}' > "$2"; exit ${exitCode} ;;
+  *) printf '%s' '${JSON.stringify(complete)}' > "$2" ;;
+esac`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH ?? ""}`);
+      const onDiagnostic = vi.fn();
+      const result = await runBundledSkillSpector(
+        workspace,
+        [
+          { rootPath: "skills/alpha", scanPath: "artifact/skills/alpha" },
+          { rootPath: "skills/beta", scanPath: "artifact/skills/beta" },
+        ],
+        onDiagnostic,
+      );
+      expect(result).toMatchObject({
+        status: "suspicious",
+        analysis_completeness: { status: "partial", is_complete: false },
+        bundled_reports: [
+          { rootPath: "skills/alpha", report: partial },
+          { rootPath: "skills/beta", report: complete },
+        ],
+      });
+      expect(onDiagnostic).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["no-partial", "partial"])(
+    "requires explicit complete-child controls only in a partial bundle (%s)",
+    async (mode) => {
+      const workspace = await tempDir();
+      const command = join(workspace, "skillspector");
+      const alpha = mode === "partial" ? partialReport : { status: "clean", issues: [] };
+      await writeFakeClawScanCommand(
+        command,
+        `target="$2"
+while [[ "$1" != --output ]]; do shift; done
+case "$target" in
+  *alpha) printf '%s' '${JSON.stringify(alpha)}' > "$2" ;;
+  *) printf '%s' '{"status":"clean","issues":[]}' > "$2" ;;
+esac`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH ?? ""}`);
+      const result = runBundledSkillSpector(
+        workspace,
+        [
+          { rootPath: "skills/alpha", scanPath: "artifact/skills/alpha" },
+          { rootPath: "skills/beta", scanPath: "artifact/skills/beta" },
+        ],
+        vi.fn(),
+      );
+      if (mode === "partial") await expect(result).rejects.toThrow();
+      else await expect(result).resolves.toMatchObject({ status: "clean" });
+    },
+  );
+
+  it.each(["crashed", "malformed", "duplicate-keys", "unsuccessful"])(
+    "rejects %s bundled evidence before the judge",
+    async (mode) => {
+      const workspace = await tempDir();
+      let raw = JSON.stringify(partialReport);
+      if (mode === "malformed") raw = "[]";
+      if (mode === "duplicate-keys")
+        raw = raw.replace(
+          '"execution_successful":true',
+          '"execution_successful":false,"execution_successful":true',
+        );
+      if (mode === "unsuccessful")
+        raw = JSON.stringify({ ...partialReport, execution_successful: false });
+      await writeFakeClawScanCommand(
+        join(workspace, "skillspector"),
+        `while [[ "$1" != --output ]]; do shift; done
+printf '%s' '${raw}' > "$2"
+exit ${mode === "crashed" ? 2 : 0}`,
+      );
+      vi.stubEnv("PATH", `${workspace}:${process.env.PATH ?? ""}`);
+      await expect(
+        runBundledSkillSpector(
+          workspace,
+          [{ rootPath: "skills/alpha", scanPath: "artifact/skills/alpha" }],
+          vi.fn(),
+        ),
+      ).rejects.toThrow();
+    },
+  );
+
+  it.each([0, 1])(
     "never passes a package root to SkillSpector (findings exit %s)",
     async (exitCode) => {
       const workspace = await tempDir();
@@ -1420,7 +1594,7 @@ JSON`,
         expect(invocationArgs).toEqual(
           expect.arrayContaining(["--profile", "clawhub", "--output"]),
         );
-        expect(invocationArgs).not.toContain("--context");
+        expect(invocationArgs.includes("--context")).toBe(targetKind === "packageRelease");
         if (targetKind === "packageRelease") {
           expect(invocationArgs).toContain("--scanner-result");
           expect(invocationArgs.some((arg) => arg.startsWith("skillspector="))).toBe(true);
@@ -1498,78 +1672,77 @@ JSON`,
   it.each([
     { status: "completed", exitCode: 0, output: endorArtifactJson() },
     { status: "failed", exitCode: 17, output: "{}" },
-  ])("saves $status Endor analysis without passing it to the judge by default", async (scan) => {
-    const workspace = await tempDir();
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    const cleanupMarker = join(workspace, "endor-cleaned");
-    const metadataLog = join(workspace, "judge-metadata.json");
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `test -f ${JSON.stringify(cleanupMarker)}
-test ! -f endor-analysis.json
-cp metadata.json ${JSON.stringify(metadataLog)}
-out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --config|--context) exit 98 ;;
-    --scanner-result) [[ "$2" != endor=* ]] || exit 99; shift 2 ;;
-    --output) out="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-cat > "$out" <<'JSON'
-${clawScanArtifactJson({ verdict: "benign" })}
-JSON`,
-    );
-    await configureEndorFakeCommands({
-      clawScan: fakeClawScan,
-      dockerBody: fakeEndorDockerBody({
-        cleanupMarker,
-        exitCode: scan.exitCode,
-        startOutput: scan.output,
-      }),
-      workspace,
-    });
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "");
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", " @openclaw/other, @openclaw/fixture-plugin ");
-    const job = pluginPackageJob(`securityScanJobs:endor-report-only-${scan.status}`);
-    job.target.release = {
-      ...job.target.release,
-      endorAnalysis: { status: "completed", reachableFunctionCount: 99 },
-    };
-    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+  ])(
+    "saves $status community code-plugin Endor analysis without passing it to the judge",
+    async (scan) => {
+      const workspace = await tempDir();
+      const fakeClawScan = join(workspace, "fake-clawscan");
+      const endorDoneMarker = join(workspace, "endor-done");
+      const metadataLog = join(workspace, "judge-metadata.json");
+      await writeFakeClawScanAfterEndor({
+        artifactJson: clawScanArtifactJson({ verdict: "benign" }),
+        callLog: join(workspace, "clawscan-calls.log"),
+        endorDoneMarker,
+        metadataLog,
+        path: fakeClawScan,
+      });
+      await configureEndorFakeCommands({
+        clawScan: fakeClawScan,
+        dockerBody: fakeEndorDockerBody({
+          endorDoneMarker,
+          exitCode: scan.exitCode,
+          stdout: scan.output,
+        }),
+        workspace,
+      });
+      const job = pluginPackageJob(`securityScanJobs:endor-report-only-${scan.status}`);
+      job.target.trustedOpenClawPlugin = false;
+      job.target.package = { name: "@community/fixture-plugin", family: "code-plugin" };
+      job.target.release = {
+        ...job.target.release,
+        endorAnalysis: { status: "completed", reachableFunctionCount: 99 },
+      };
+      const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
 
-    await expect(processJob(client, "worker-auth", job, undefined)).resolves.toEqual({
-      completed: true,
-      hardFailed: false,
-      retryableFailed: false,
-    });
-    expect(client.action).toHaveBeenCalledTimes(1);
-    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-      endorAnalysis:
-        scan.status === "completed"
-          ? {
-              status: "completed",
-              reachableFunctionCount: 1,
-              findings: [{ severity: "high", summary: "GHSA-reachable" }],
-            }
-          : { status: "failed", reason: "Endor analysis failed. Request a rescan to try again." },
-      llmAnalysis: { status: "clean", verdict: "benign" },
-    });
-    const metadata = JSON.parse(await readFile(metadataLog, "utf8"));
-    expect(metadata.target.release).not.toHaveProperty("endorAnalysis");
-    const createArgs = (await readFile(join(workspace, "endor-create-args"), "utf8"))
-      .trim()
-      .split("\n");
-    expect(createArgs.slice(-4)).toEqual([
-      "clawhub-endor-scan",
-      "/workspace",
-      "https://clawhub.ai/api/v1/packages/%40openclaw/fixture-plugin/versions/1.0.0/artifact/download",
-      "plugin:@openclaw/fixture-plugin,version:1.0.0",
-    ]);
-  });
+      await expect(processJob(client, "worker-auth", job, undefined)).resolves.toEqual({
+        completed: true,
+        hardFailed: false,
+        retryableFailed: false,
+      });
+      expect(client.action).toHaveBeenCalledTimes(1);
+      expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+        endorAnalysis:
+          scan.status === "completed"
+            ? {
+                status: "completed",
+                reachableFunctionCount: 1,
+                findings: [{ severity: "high", summary: "GHSA-reachable" }],
+              }
+            : { status: "failed", reason: "Endor analysis failed. Request a rescan to try again." },
+        llmAnalysis: { status: "clean", verdict: "benign" },
+      });
+      const metadata = JSON.parse(await readFile(metadataLog, "utf8"));
+      expect(metadata.target.release).not.toHaveProperty("endorAnalysis");
+      const runArgs = (await readFile(join(workspace, "endor-run-args"), "utf8"))
+        .trim()
+        .split("\n");
+      expect(runArgs.slice(-4)).toEqual([
+        "clawhub-endor-scan",
+        "/workspace",
+        "https://clawhub.ai/api/v1/packages/%40community/fixture-plugin/versions/1.0.0/artifact/download",
+        "plugin:@community/fixture-plugin,version:1.0.0",
+      ]);
+    },
+  );
 
-  it("does not launch Endor for a plugin outside the configured rollout cohort", async () => {
+  it.each([
+    { excluded: "a bundle plugin", enabled: "1", family: "bundle-plugin" },
+    {
+      excluded: "a code plugin while the master switch is off",
+      enabled: "0",
+      family: "code-plugin",
+    },
+  ])("does not launch Endor for $excluded", async (cohort) => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const dockerLog = join(workspace, "unexpected-docker-call");
@@ -1587,16 +1760,15 @@ JSON`,
       dockerBody: `touch ${JSON.stringify(dockerLog)}; exit 99`,
       workspace,
     });
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_PACKAGES", " @openclaw/discord, @openclaw/codex ");
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", cohort.enabled);
+    const job = pluginPackageJob("securityScanJobs:outside-cohort");
+    job.target.package = { name: "@openclaw/fixture-plugin", family: cohort.family };
     const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
-    await expect(
-      processJob(
-        client,
-        "worker-auth",
-        pluginPackageJob("securityScanJobs:outside-cohort"),
-        undefined,
-      ),
-    ).resolves.toEqual({ completed: true, hardFailed: false, retryableFailed: false });
+    await expect(processJob(client, "worker-auth", job, undefined)).resolves.toEqual({
+      completed: true,
+      hardFailed: false,
+      retryableFailed: false,
+    });
     expect(client.action).toHaveBeenCalledTimes(1);
     expect(client.action.mock.calls[0]?.[1]).toMatchObject({
       llmAnalysis: { status: "clean", verdict: "benign" },
@@ -1605,190 +1777,39 @@ JSON`,
     await expect(readFile(dockerLog)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("judges reachable Endor evidence after Docker cleanup with one ClawScan call", async () => {
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "1");
-    const workspace = await tempDir();
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    const callLog = join(workspace, "clawscan-calls.log");
-    const cleanupMarker = join(workspace, "endor-cleaned");
-    await writeCombinedFakeClawScan({
-      artifactJson: clawScanArtifactJson({ verdict: "malicious" }),
-      callLog,
-      cleanupMarker,
-      path: fakeClawScan,
-    });
-    await configureEndorFakeCommands({
-      clawScan: fakeClawScan,
-      dockerBody: fakeEndorDockerBody({
-        cleanupMarker,
-        exitCode: 0,
-        startOutput: endorArtifactJson(),
-      }),
-      workspace,
-    });
-
-    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
-    await expect(
-      processJob(
-        client,
-        "worker-auth",
-        pluginPackageJob("securityScanJobs:endor-reachable"),
-        undefined,
-      ),
-    ).resolves.toEqual({
-      completed: true,
-      hardFailed: false,
-      retryableFailed: false,
-    });
-    expect((await readFile(callLog, "utf8")).trim().split("\n")).toEqual(["called"]);
-    expect(client.action).toHaveBeenCalledTimes(1);
-    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-      endorAnalysis: {
-        status: "completed",
-        reachableFunctionCount: 1,
-        findings: [{ severity: "high", summary: "GHSA-reachable" }],
-      },
-      llmAnalysis: { status: "malicious", verdict: "malicious" },
-    });
-    expect(await readFile(cleanupMarker, "utf8")).toBe("");
-  });
-
-  it("fails closed and stops the worker when Endor container cleanup fails", async () => {
-    const workspace = await tempDir();
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    const callLog = join(workspace, "clawscan-calls.log");
-    await writeFakeClawScanCommand(fakeClawScan, `touch ${JSON.stringify(callLog)}\nexit 0`);
-    await configureEndorFakeCommands({
-      clawScan: fakeClawScan,
-      dockerBody: fakeEndorDockerBody({
-        cleanupFails: true,
-        cleanupMarker: join(workspace, "endor-cleaned"),
-        exitCode: 0,
-        startOutput: endorArtifactJson(),
-      }),
-      workspace,
-    });
-
-    const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry: true })) };
-    await expect(
-      processJob(
-        client,
-        "worker-auth",
-        pluginPackageJob("securityScanJobs:endor-cleanup-failure"),
-        undefined,
-      ),
-    ).resolves.toEqual({
-      completed: false,
-      hardFailed: true,
-      retryableFailed: false,
-      workerMustStop: true,
-    });
-    expect(client.action).toHaveBeenCalledTimes(1);
-    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-      error: expect.stringContaining("Docker cleanup failed"),
-    });
-    await expect(readFile(callLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    const mountedWorkspace = await readFile(join(workspace, "endor-mounted-source"), "utf8");
-    tempDirs.push(dirname(mountedWorkspace));
-    await expect(readFile(join(mountedWorkspace, "package.json"), "utf8")).resolves.toContain(
-      "name",
-    );
-  });
-
-  it("passes failed Endor analysis to the judge and completes the moderation result", async () => {
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "1");
-    const workspace = await tempDir();
-    const diagnosticsRoot = await tempDir();
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    const callLog = join(workspace, "clawscan-calls.log");
-    const cleanupMarker = join(workspace, "endor-cleaned");
-    await writeCombinedFakeClawScan({
-      artifactJson: clawScanArtifactJson({ verdict: "benign" }),
-      callLog,
-      cleanupMarker,
-      path: fakeClawScan,
-    });
-    await configureEndorFakeCommands({
-      clawScan: fakeClawScan,
-      dockerBody: fakeEndorDockerBody({ cleanupMarker, exitCode: 17, startOutput: "{}" }),
-      workspace,
-    });
-
-    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
-    const onHealth = vi.fn();
-    await expect(
-      processJob(
-        client,
-        "worker-auth",
-        pluginPackageJob("securityScanJobs:endor-failed-summary"),
-        diagnosticsRoot,
-        onHealth,
-      ),
-    ).resolves.toEqual({
-      completed: true,
-      hardFailed: false,
-      retryableFailed: false,
-    });
-    expect((await readFile(callLog, "utf8")).trim().split("\n")).toEqual(["called"]);
-    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-      endorAnalysis: {
-        status: "failed",
-        checkedAt: expect.any(Number),
-        reason: "Endor analysis failed. Request a rescan to try again.",
-      },
-      llmAnalysis: { status: "clean", verdict: "benign" },
-    });
-    expect(onHealth).toHaveBeenCalledWith(
-      expect.objectContaining({ completed: true, scannerStageFailed: true }),
-    );
-    const diagnostic = JSON.parse(
-      await readFile(
-        join(diagnosticsRoot, "securityScanJobs_endor-failed-summary", "diagnostic.json"),
-        "utf8",
-      ),
-    );
-    expect(diagnostic.endorResult).toMatchObject({
-      error: expect.stringContaining("Endor Docker start exited 17"),
-      exitCode: 17,
-      timedOut: false,
-    });
-    expect(await readFile(cleanupMarker, "utf8")).toBe("");
-  });
-
   it("prepares bundled SkillSpector while Endor is active, then judges after both finish", async () => {
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "1");
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const callLog = join(workspace, "clawscan-calls.log");
     const endorStarted = join(workspace, "endor-started");
     const skillReady = join(workspace, "skill-ready");
-    const cleanupMarker = join(workspace, "endor-cleaned");
-    await writeCombinedFakeClawScan({
+    const endorDoneMarker = join(workspace, "endor-done");
+    await writeFakeClawScanAfterEndor({
       artifactJson: clawScanArtifactJson({ verdict: "benign" }),
       callLog,
-      cleanupMarker,
+      endorDoneMarker,
       path: fakeClawScan,
       skillReadyMarker: skillReady,
     });
     await configureEndorFakeCommands({
       clawScan: fakeClawScan,
       dockerBody: fakeEndorDockerBody({
-        cleanupMarker,
+        endorDoneMarker,
         exitCode: 0,
-        onStart: `touch ${JSON.stringify(endorStarted)}
+        onRun: `touch ${JSON.stringify(endorStarted)}
 for attempt in {1..100}; do
   [[ -f ${JSON.stringify(skillReady)} ]] && break
   sleep 0.05
 done
 test -f ${JSON.stringify(skillReady)}`,
-        startOutput: endorArtifactJson(),
+        stdout: endorArtifactJson(),
       }),
       skillSpectorBody: `for attempt in {1..100}; do
   [[ -f ${JSON.stringify(endorStarted)} ]] && break
   sleep 0.05
 done
 test -f ${JSON.stringify(endorStarted)}
-test ! -f ${JSON.stringify(cleanupMarker)}
+test ! -f ${JSON.stringify(endorDoneMarker)}
 printf '%s\\n' '{"status":"clean","issues":[]}' > "\${@: -1}"
 touch ${JSON.stringify(skillReady)}`,
       workspace,
@@ -1805,7 +1826,7 @@ touch ${JSON.stringify(skillReady)}`,
     expect(result).toEqual({ completed: true, hardFailed: false, retryableFailed: false });
     expect((await readFile(callLog, "utf8")).trim().split("\n")).toEqual(["called"]);
     expect(await readFile(skillReady, "utf8")).toBe("");
-    expect(await readFile(cleanupMarker, "utf8")).toBe("");
+    expect(await readFile(endorDoneMarker, "utf8")).toBe("");
     expect(client.action.mock.calls[0]?.[1]).toMatchObject({
       endorAnalysis: { status: "completed" },
       llmAnalysis: { status: "clean" },
@@ -1819,7 +1840,7 @@ touch ${JSON.stringify(skillReady)}`,
     const callLog = join(workspace, "clawscan-calls.log");
     const skillFailed = join(workspace, "skill-failed");
     const releaseEndor = join(workspace, "release-endor");
-    const cleanupMarker = join(workspace, "endor-cleaned");
+    const endorDoneMarker = join(workspace, "endor-done");
     await writeFakeClawScanCommand(
       fakeClawScan,
       `touch ${JSON.stringify(callLog)}
@@ -1828,14 +1849,14 @@ exit 99`,
     await configureEndorFakeCommands({
       clawScan: fakeClawScan,
       dockerBody: fakeEndorDockerBody({
-        cleanupMarker,
+        endorDoneMarker,
         exitCode: 0,
-        onStart: `for attempt in {1..100}; do
+        onRun: `for attempt in {1..100}; do
   [[ -f ${JSON.stringify(releaseEndor)} ]] && break
   sleep 0.05
 done
 test -f ${JSON.stringify(releaseEndor)}`,
-        startOutput: endorArtifactJson(),
+        stdout: endorArtifactJson(),
       }),
       skillSpectorBody: `touch ${JSON.stringify(skillFailed)}
 echo "SkillSpector fixture failure" >&2
@@ -1863,7 +1884,7 @@ exit 7`,
         { timeout: 10_000 },
       );
       expect(settled).toBe(false);
-      await expect(readFile(cleanupMarker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(endorDoneMarker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await writeFile(releaseEndor, "");
     }
@@ -1872,7 +1893,7 @@ exit 7`,
       hardFailed: false,
       retryableFailed: true,
     });
-    expect(await readFile(cleanupMarker, "utf8")).toBe("");
+    expect(await readFile(endorDoneMarker, "utf8")).toBe("");
     await expect(readFile(callLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     expect(client.action).toHaveBeenCalledTimes(1);
     expect(client.action.mock.calls[0]?.[1]).toMatchObject({
@@ -2048,6 +2069,7 @@ exit 2`,
       const diagnosticsRoot = await tempDir();
       const callLog = join(workspace, "clawscan-called");
       const started = join(workspace, "skillspector-started");
+      const timeoutMs = 2_000;
       const fakeClawScan = join(workspace, "fake-clawscan");
       const contentCanary = "synthetic-private-scan-content";
       const credentialCanary = "synthetic-private-scanner-token";
@@ -2056,12 +2078,13 @@ exit 2`,
         join(workspace, "skillspector"),
         `echo ${contentCanary}
 echo ${credentialCanary} >&2
-touch ${JSON.stringify(started)}
+: > ${JSON.stringify(started)}
 exec sleep 10`,
       );
       vi.stubEnv("PATH", `${workspace}:${process.env.PATH}`);
       vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", fakeClawScan);
-      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "500");
+      // Allow the instrumented child to launch before testing its ten-second hang.
+      vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", String(timeoutMs));
       vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "0");
       const client = { action: vi.fn(async (..._args: unknown[]) => ({ retry })) };
       const onHealth = vi.fn();
@@ -2096,7 +2119,7 @@ exec sleep 10`,
           rootIndex: 0,
           rootCount: 1,
           completedRoots: 0,
-          childBudgetMs: 500,
+          childBudgetMs: timeoutMs,
           remainingStageBudgetMs: expect.any(Number),
           terminal: { presence: "invalid", executionSuccessful: null },
         },
@@ -2113,10 +2136,10 @@ exec sleep 10`,
     const workspace = await tempDir();
     const diagnosticsRoot = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
-    const cleanupMarker = join(workspace, "endor-cleaned");
+    const endorDoneMarker = join(workspace, "endor-done");
     await writeFakeClawScanCommand(
       fakeClawScan,
-      `test -f ${JSON.stringify(cleanupMarker)}
+      `test -f ${JSON.stringify(endorDoneMarker)}
 printf '%25000s' '' | tr ' ' x >&2
 printf '%s\\n' 'primary fixture-token failure' >&2
 exit 19`,
@@ -2124,10 +2147,10 @@ exit 19`,
     await configureEndorFakeCommands({
       clawScan: fakeClawScan,
       dockerBody: fakeEndorDockerBody({
-        cleanupMarker,
+        endorDoneMarker,
         exitCode: 17,
-        onStart: "echo 'Endor fixture-token failure' >&2",
-        startOutput: "{}",
+        onRun: "echo 'Endor fixture-token failure' >&2",
+        stdout: "{}",
       }),
       workspace,
     });
@@ -2167,29 +2190,28 @@ exit 19`,
     expect(`${JSON.stringify(diagnostic)}${clawscanStderr}${endorStderr}`).not.toContain(
       "fixture-token",
     );
-    expect(await readFile(cleanupMarker, "utf8")).toBe("");
+    expect(await readFile(endorDoneMarker, "utf8")).toBe("");
   });
 
   it("records an Endor timeout as scanner health while completing moderation", async () => {
-    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_JUDGE_ENABLED", "1");
     const workspace = await tempDir();
     const diagnosticsRoot = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const callLog = join(workspace, "clawscan-calls.log");
-    const cleanupMarker = join(workspace, "endor-cleaned");
-    await writeCombinedFakeClawScan({
+    const endorDoneMarker = join(workspace, "endor-done");
+    await writeFakeClawScanAfterEndor({
       artifactJson: clawScanArtifactJson({ verdict: "benign" }),
       callLog,
-      cleanupMarker,
+      endorDoneMarker,
       path: fakeClawScan,
     });
     await configureEndorFakeCommands({
       clawScan: fakeClawScan,
       dockerBody: fakeEndorDockerBody({
-        cleanupMarker,
+        endorDoneMarker,
         exitCode: 0,
-        onStart: "sleep 1",
-        startOutput: endorArtifactJson(),
+        onRun: "sleep 1",
+        stdout: endorArtifactJson(),
       }),
       workspace,
     });
@@ -2222,7 +2244,7 @@ exit 19`,
       ),
     );
     expect(diagnostic.endorResult).toMatchObject({ timedOut: true });
-    expect(await readFile(cleanupMarker, "utf8")).toBe("");
+    expect(await readFile(endorDoneMarker, "utf8")).toBe("");
   });
 
   it("fails the job when SkillSpector scanner status is skipped", async () => {
@@ -2877,4 +2899,13 @@ wait "$child_pid"`,
       }
     }
   });
+});
+
+it("preserves skill subprocess settings independently of the qualified plugin deadline", () => {
+  vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "900000");
+  expect(clawScanTimeoutMs()).toBe(900000);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
+  vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "123456");
+  expect(clawScanTimeoutMs()).toBe(123456);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
 });

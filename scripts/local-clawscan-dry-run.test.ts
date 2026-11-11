@@ -178,7 +178,7 @@ describe("runLocalClawScanDryRun", () => {
     },
   );
 
-  it("runs static scan and mocked LLM scan for a plugin folder", async () => {
+  it("runs a mocked LLM scan for a plugin folder without a static scan", async () => {
     const root = await makeTmpWorkdir();
     try {
       const plugin = await writePlugin(root);
@@ -201,7 +201,7 @@ describe("runLocalClawScanDryRun", () => {
       });
 
       expect(result.kind).toBe("plugin");
-      expect(result.staticScan.status).toBe("clean");
+      expect(result).not.toHaveProperty("staticScan");
       expect(result.llmAnalysis).toMatchObject({
         status: "clean",
         verdict: "benign",

@@ -158,6 +158,13 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
   Rows below it are deliberately absent. Raise the window only with a matching
   run-time budget. The 50,000-row source capacity remains a hard guard on
   measurement, proof snapshots, and Convex run totals.
+- Malformed source identities remain at their original captured page/offset for
+  quarantine; they must not abort source measurement or shift later rows/ranks.
+  Capture keeps the existing string-typed row shape, using a per-position
+  `missing:<page>:<offset>` value for missing IDs and empty identity fields for
+  non-string values. These placeholders cannot form accepted skill identities.
+  Duplicate-ID checks count real nonempty string IDs; metadata sampling skips
+  rows that cannot supply the required string fields and exact skills.sh URL.
 - Snapshot ingestion uses bounded page/offset cursors. Pause is checked before
   another source batch is fetched; resume continues at the exact stored cursor.
   Reconciliation tombstones disappeared rows and reactivates later
@@ -214,7 +221,7 @@ fetch so a transfer cannot race source activation.
 ClawHub owns the sync loop. Upstream repositories do not push payloads into
 ClawHub.
 
-The production cron runs every 15 minutes:
+The production cron runs once per day:
 
 ```text
 github-skill-source-sync -> githubSkillSyncNode.syncGitHubSkillSourcesInternal
@@ -252,6 +259,14 @@ render time.
 
 Unsupported, invalid, or missing manifest data should not block the source sync.
 The catalog can still render skills in the normal fallback order.
+
+Public `sourceRepos` names a repository only when the public catalog items
+include at least one skill from that source. A valid `skills.sh.json` does
+not put the repo on the list by itself. If every skill from that source is
+hidden, deleted, or otherwise absent from the public items, the source
+contributes no section and `sourceRepos` omits it. A public skill that does
+not match a grouping still keeps its repo, because that skill is visible
+under Other skills.
 
 Repo labels such as `NVIDIA/skills` and "Source-backed" chrome are implementation
 details and should not be required visible UI copy.

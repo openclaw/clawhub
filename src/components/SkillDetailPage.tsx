@@ -23,6 +23,7 @@ import { getSkillCategoriesForSkill, getSkillCategoryForSkill } from "../lib/cat
 import { getUserFacingConvexError } from "../lib/convexError";
 import { isPublicAnalyticsSkill } from "../lib/googleAnalytics";
 import { buildSkillSecurityAuditHref } from "../lib/ownerRoute";
+import { hasPostPublishSearch } from "../lib/postPublishSearch";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { skillCardLoadKey } from "../lib/skillCards";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
@@ -91,15 +92,6 @@ function tabFromHash(hash: string): DetailTab {
     return normalized;
   }
   return "readme";
-}
-
-function isPostPublishSearchValue(value: unknown) {
-  const normalized = typeof value === "string" ? value.trim().replace(/^"|"$/g, "") : value;
-  return normalized === "1" || normalized === "true" || normalized === 1 || normalized === true;
-}
-
-function hasPostPublishSearch(searchStr: string) {
-  return isPostPublishSearchValue(new URLSearchParams(searchStr).get("published"));
 }
 
 function formatReportError(error: unknown) {
@@ -243,7 +235,7 @@ export function SkillDetailPage({
   const reportSkill = useMutation(api.skills.report);
   const updateSummary = useMutation(api.skills.updateSummary);
   const setCatalogMetadata = useMutation(api.skills.setCatalogMetadata);
-  const getReadme = useAction(api.skills.getReadme);
+  const getReadme = useAction(api.skillReadme.getReadme);
   const getSkillCard = useAction(api.skills.getSkillCard);
   const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
@@ -256,7 +248,6 @@ export function SkillDetailPage({
   );
   const [skillCard, setSkillCard] = useState<string | null>(null);
   const [skillCardError, setSkillCardError] = useState<string | null>(null);
-  const [loadedSkillCardKey, setLoadedSkillCardKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTab>("readme");
   const [shouldPrefetchCompare, setShouldPrefetchCompare] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
@@ -658,18 +649,11 @@ export function SkillDetailPage({
 
   useEffect(() => {
     let cancelled = false;
+    // The effect owns one request per card identity. Loading/result state must
+    // not restart it and discard the request it just began.
     if (!latestVersionId || !hasArchiveSkillCard || !currentSkillCardKey) {
       setSkillCard(null);
       setSkillCardError(null);
-      setLoadedSkillCardKey(currentSkillCardKey);
-      return () => {
-        cancelled = true;
-      };
-    }
-    if (
-      loadedSkillCardKey === currentSkillCardKey &&
-      (skillCard !== null || skillCardError !== null)
-    ) {
       return () => {
         cancelled = true;
       };
@@ -677,32 +661,21 @@ export function SkillDetailPage({
 
     setSkillCard(null);
     setSkillCardError(null);
-    setLoadedSkillCardKey(currentSkillCardKey);
     void getSkillCard({ versionId: latestVersionId })
       .then((data) => {
         if (cancelled) return;
         setSkillCard(data.text);
-        setLoadedSkillCardKey(currentSkillCardKey);
       })
       .catch((error) => {
         if (cancelled) return;
         setSkillCardError(error instanceof Error ? error.message : "Failed to load Skill Card");
         setSkillCard(null);
-        setLoadedSkillCardKey(currentSkillCardKey);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [
-    getSkillCard,
-    currentSkillCardKey,
-    hasArchiveSkillCard,
-    latestVersionId,
-    loadedSkillCardKey,
-    skillCard,
-    skillCardError,
-  ]);
+  }, [getSkillCard, currentSkillCardKey, hasArchiveSkillCard, latestVersionId]);
 
   useEffect(() => {
     if (!skill || !activeOptimisticStar) return;
@@ -874,7 +847,6 @@ export function SkillDetailPage({
     latestVersion || githubScanStatus ? (
       <DetailSecuritySummary
         auditHref={buildSkillSecurityAuditHref(ownerParam ?? ownerHandle ?? "unknown", skill.slug)}
-        vtAnalysis={latestVersion?.vtAnalysis ?? null}
         llmAnalysis={latestVersion?.llmAnalysis ?? null}
         githubScanStatus={githubScanStatus}
       />
@@ -978,7 +950,6 @@ export function SkillDetailPage({
       hasPluginBundle={hasPluginBundle}
       configRequirements={configRequirements}
       cliHelp={cliHelp}
-      clawdis={clawdis}
       category={relatedCategory}
       categories={relatedCategories}
       staffVisibilityAlert={staffVisibilityAlert}

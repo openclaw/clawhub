@@ -1,6 +1,11 @@
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import {
+  isPackageInspectorFailureOutcome,
+  type PackageInspectorFailure,
+  type PackageInspectorOutcome,
+} from "./packageInspectorOutcome";
 import { isPublishedPackageRelease } from "./packageReleaseVisibility";
 import {
   MAX_SDK_USAGE_ENTRIES,
@@ -101,8 +106,12 @@ export async function recordPackageInspectorScan(
     inspectorVersion: string;
     targetOpenClawVersion: string;
     notificationComplete?: boolean;
+    inspectionFailed?: boolean;
     report?: SdkUsageReport;
     artifactSha256?: string;
+    outcome?: PackageInspectorOutcome;
+    failure?: PackageInspectorFailure;
+    scanSource?: "publish" | "nightly";
   },
 ) {
   const { pkg, release, inspectorVersion, targetOpenClawVersion } = args;
@@ -116,16 +125,48 @@ export async function recordPackageInspectorScan(
     )
     .unique();
   const completedAt = Date.now();
-  const values = {
+  const identity = {
     packageId: pkg._id,
     releaseId: release._id,
     inspectorVersion,
     targetOpenClawVersion,
     completedAt,
     ...(args.notificationComplete ? { notificationCompletedAt: completedAt } : {}),
+    ...(args.outcome ? { outcome: args.outcome } : {}),
+    ...(args.failure ? { failure: args.failure } : {}),
+    ...(args.scanSource ? { scanSource: args.scanSource } : {}),
   };
-  const scanId = existing?._id ?? (await ctx.db.insert("packageInspectorScanStates", values));
-  if (existing) await ctx.db.patch(scanId, values);
+  // Only an explicit successful inspection can establish a clean verdict.
+  // Legacy completedAt-only rows may also have come from a crashed attempt.
+  const failed = args.inspectionFailed === true || isPackageInspectorFailureOutcome(args.outcome);
+  const succeeded = args.outcome === "clean" || args.outcome === "findings";
+  const existingSucceeded =
+    existing?.findingsCompletedAt !== undefined ||
+    existing?.outcome === "clean" ||
+    existing?.outcome === "findings";
+  let scanId = existing?._id;
+  const values = failed
+    ? {
+        ...identity,
+        inspectionFailed: true as const,
+        failure: args.failure,
+        // Source describes the retained verdict, not this failed attempt.
+        ...(existing ? { scanSource: existing.scanSource } : {}),
+        // A failed retry changes the attempt, never the last verified findings.
+        ...(existingSucceeded && existing
+          ? {
+              outcome: existing.outcome,
+              findingsCompletedAt: existing.findingsCompletedAt ?? existing.completedAt,
+            }
+          : {}),
+      }
+    : {
+        ...identity,
+        ...(succeeded ? { findingsCompletedAt: completedAt } : {}),
+        ...(existing && succeeded ? { inspectionFailed: undefined, failure: undefined } : {}),
+      };
+  if (scanId) await ctx.db.patch(scanId, values);
+  else scanId = await ctx.db.insert("packageInspectorScanStates", values);
   if (args.report && args.artifactSha256) {
     return await replacePackageSdkUsage(ctx, {
       pkg,

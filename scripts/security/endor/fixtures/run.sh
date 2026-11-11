@@ -1,12 +1,62 @@
 #!/bin/sh
 set -eu
-# Manual isolation proof for the scanner image's real npm and Yarn. A stand-in
-# endorctl installs registry and Git dependencies through scan.sh's shims and
-# fails if a synthetic secret or dependency script escapes. Run it inside the
-# image with this directory at /fixture and ENDOR_FIXTURE_OUTPUT=/output,
-# passing the installed clawhub-endor-scan path as the only argument.
+# Manual isolation proof for the scanner image. Run it before changing the
+# image, npm/Yarn, scan.sh or the egress guard. Inside the real container and
+# behind the real entrypoint, it checks that the scan runs unprivileged, that
+# private-network destinations are rejected, and that the real npm and Yarn
+# neither send a synthetic secret to a registry nor run dependency scripts. A
+# stand-in endorctl does the installs, so no Endor credentials are needed.
+#
+# From the repository root, with IMAGE set to the pinned scanner image, start a
+# private listener and then run the scan with the worker's container flags:
+#   docker run -d --rm --name endor-fixture-listener --entrypoint python3 \
+#     "$IMAGE" -m http.server 8000
+#   listener=$(docker inspect -f \
+#     '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' endor-fixture-listener)
+#   docker run --rm --network bridge --cap-drop ALL \
+#     --cap-add NET_ADMIN --cap-add SETUID --cap-add SETGID --cap-add SETPCAP \
+#     --cap-add CHOWN --security-opt no-new-privileges:true --read-only \
+#     --tmpfs /tmp:rw,nosuid,nodev,exec --tmpfs /output:rw,mode=1777 \
+#     --mount type=bind,source="$PWD/scripts/security/endor/fixtures",target=/fixture,readonly \
+#     --mount type=bind,source="$PWD/scripts/security/endor/scan.sh",target=/scan.sh,readonly \
+#     --env ENDOR_FIXTURE_OUTPUT=/output \
+#     --env ENDOR_FIXTURE_PRIVATE_LISTENER="$listener:8000" \
+#     --entrypoint /usr/local/bin/clawhub-endor-entrypoint \
+#     "$IMAGE" sh /fixture/run.sh /scan.sh
+#   docker stop endor-fixture-listener
+# It prints fixture-ok on success. Pass /usr/local/bin/clawhub-endor-scan as
+# the last argument to test the scan.sh already in the image instead.
 
 scan_script=$1
+
+if test "$(id -u)" = 0; then
+	echo "Endor scan ran as root" >&2
+	exit 1
+fi
+# No private destination may accept a connection. ENDOR_FIXTURE_PRIVATE_LISTENER
+# (host:port) should be a listener that is reachable without the egress guard,
+# so a passing run proves the guard, not an unreachable address.
+node - <<'EGRESS_PROBE'
+const net = require("node:net");
+const targets = ["169.254.169.254:80", "10.0.0.1:80", "172.17.0.1:80"];
+if (process.env.ENDOR_FIXTURE_PRIVATE_LISTENER) targets.push(process.env.ENDOR_FIXTURE_PRIVATE_LISTENER);
+const probes = targets.map(
+  (target) =>
+    new Promise((resolve) => {
+      const [host, port] = target.split(":");
+      const socket = net.connect({ host, port: Number(port), timeout: 5000 });
+      socket.on("connect", () => resolve(`${target} connected`));
+      socket.on("timeout", () => resolve(`${target} blocked (timed out)`));
+      socket.on("error", (error) => resolve(`${target} blocked (${error.code})`));
+    }).then((result) => {
+      console.error(`egress ${result}`);
+      return result;
+    }),
+);
+Promise.all(probes).then((results) => {
+  process.exit(results.some((result) => result.endsWith("connected")) ? 1 : 0);
+});
+EGRESS_PROBE
 work=$(mktemp -d)
 mkdir -p "$work/bin" "$work/source"
 printf '%s\n' '{"name":"endor-fixture","private":true}' > "$work/source/package.json"
@@ -51,7 +101,13 @@ cleanup_server() {
 	wait "$server_pid" 2>/dev/null || true
 }
 trap cleanup_server EXIT
-while test ! -s "$ENDOR_FIXTURE_OUTPUT/port"; do sleep 0.05; done
+while test ! -s "$ENDOR_FIXTURE_OUTPUT/port"; do
+	if ! kill -0 "$server_pid" 2>/dev/null; then
+		echo "Probe registry server exited before listening" >&2
+		exit 1
+	fi
+	sleep 0.05
+done
 port=$(cat "$ENDOR_FIXTURE_OUTPUT/port")
 
 cat > "$probe/gitdep/package.json" <<'PACKAGE_JSON'
@@ -186,6 +242,6 @@ export ENDOR_API_CREDENTIALS_SECRET=synthetic-endor-secret
 export VIRUSTOTAL_API_KEY=synthetic-virustotal-key
 export UNKNOWN_ADDITIONAL_SECRET=synthetic-unknown-secret
 mkdir -p "$ENDOR_FIXTURE_OUTPUT"
-scan_output=$(/bin/sh "$scan_script" "$work/source")
+scan_output=$(/bin/sh "$scan_script" "$work/source" https://clawhub.ai/fixture plugin:fixture,version:1.0.0)
 test "$scan_output" = '{"all_findings":[],"blocking_findings":[],"warning_findings":[]}'
 printf '%s\n' fixture-ok

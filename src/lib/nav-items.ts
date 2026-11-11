@@ -183,7 +183,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
       {
         kind: "external",
         label: "Discord",
-        href: "https://discord.gg/clawd",
+        href: "https://openclaw.ai/discord?from=clawhub-community-nav",
         icon: "discord",
       },
     ],

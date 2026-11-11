@@ -4,10 +4,16 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, mutation, query } from "./functions";
-import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
+import {
+  assertAdmin,
+  getOptionalActiveAuthUserId,
+  requireActiveUserById,
+  requireUser,
+} from "./lib/access";
 import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
+import { hasNoPublishedPackageVersions } from "./lib/packageReleaseVisibility";
 import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
@@ -52,6 +58,9 @@ const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
 const LEGACY_PUBLISHER_DOWNLOAD_FALLBACK_LIMIT = MAX_PUBLIC_PUBLISHER_LIST_LIMIT;
 const MAX_PUBLISHER_HANDLE_PREFIX_CANDIDATES = 100;
 const PUBLISHER_LIST_PREVIEW_LIMIT = 3;
+// Directory cards show a few public packages. Read past private rows so a
+// high-download private package cannot take those slots.
+const PUBLISHER_LIST_PREVIEW_SCAN_LIMIT = 50;
 const GITHUB_AUTH_ACCOUNT_RECOVERY_MATCH_LIMIT = 10;
 const PERSONAL_PUBLISHER_RECOVERY_OWNER_MIGRATION_LIMIT = 100;
 const PUBLISHER_IMAGE_UPLOAD_TTL_MS = 15 * 60_000;
@@ -144,6 +153,19 @@ type PublisherListSummary = {
 
 function isPublicPublishedSkill(skill: Doc<"skills">) {
   return isPublicSkillDoc(skill);
+}
+
+function isPublicPublisherCatalogPackage(
+  pkg: Pick<Doc<"packages">, "channel" | "latestReleaseId" | "latestVersionSummary" | "stats">,
+) {
+  return pkg.channel !== "private" && !hasNoPublishedPackageVersions(pkg);
+}
+
+function withoutPrivatePackages(rows: PublisherPublishedRows): PublisherPublishedRows {
+  return {
+    skills: rows.skills,
+    packages: rows.packages.filter(isPublicPublisherCatalogPackage),
+  };
 }
 
 type PublicPublisherKindFilter = "user" | "org";
@@ -339,6 +361,7 @@ type PublisherPublishedRows = {
 async function getPublisherPublishedRows(
   ctx: Pick<QueryCtx, "db">,
   publisherId: Id<"publishers">,
+  options?: { includeUnpublishedPackages?: boolean },
 ): Promise<PublisherPublishedRows> {
   const [skills, packages] = await Promise.all([
     ctx.db
@@ -354,7 +377,12 @@ async function getPublisherPublishedRows(
       )
       .collect(),
   ]);
-  return { skills: skills.filter(isPublicPublishedSkill), packages };
+  return {
+    skills: skills.filter(isPublicPublishedSkill),
+    packages: options?.includeUnpublishedPackages
+      ? packages
+      : packages.filter((pkg) => !hasNoPublishedPackageVersions(pkg)),
+  };
 }
 
 async function getPublisherPublishedPreviewRows(
@@ -375,9 +403,14 @@ async function getPublisherPublishedPreviewRows(
         q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
       )
       .order("desc")
-      .take(PUBLISHER_LIST_PREVIEW_LIMIT),
+      .take(PUBLISHER_LIST_PREVIEW_SCAN_LIMIT),
   ]);
-  return { skills: skills.filter(isPublicPublishedSkill), packages };
+  return {
+    skills: skills.filter(isPublicPublishedSkill),
+    packages: packages
+      .filter(isPublicPublisherCatalogPackage)
+      .slice(0, PUBLISHER_LIST_PREVIEW_LIMIT),
+  };
 }
 
 function getIndexedPublisherStatsFromRows(rows: PublisherPublishedRows): PublisherListStats {
@@ -659,7 +692,11 @@ async function toPublisherListItem(
     return publishedRows;
   };
   const getPreviewRows = async () =>
-    publishedRows ?? (await getPublisherPublishedPreviewRows(ctx, publisher._id));
+    // Full rows stay unfiltered for owner inventory and computed counts.
+    // Public previews must not reuse private names from that cache.
+    publishedRows
+      ? withoutPrivatePackages(publishedRows)
+      : await getPublisherPublishedPreviewRows(ctx, publisher._id);
   const stats =
     !options.forceComputedStats && hasPublisherStats(publisher)
       ? getPublisherDenormalizedStats(publisher)
@@ -1095,8 +1132,7 @@ async function migrateLegacyPublisherHandleToOrgWithActor(
     displayName?: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
   assertAdmin(actor);
 
   const orgHandle = validateHandle(args.handle, { allowReservedOpenClawPublisherHandle: true });
@@ -1256,8 +1292,7 @@ async function ensureOrgPublisherHandleWithActor(
     memberRole?: "owner" | "admin" | "publisher";
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  const actor = await requireActiveUserById(ctx, args.actorUserId);
   assertAdmin(actor);
 
   const handle = validateHandle(args.handle, { allowReservedOpenClawPublisherHandle: true });
@@ -1660,8 +1695,7 @@ export const recoverPersonalPublisherInternal = internalMutation({
     dryRun: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const publisherHandle = validateHandle(args.publisherHandle);
@@ -1925,8 +1959,7 @@ async function createOrgPublisherForUser(
     bio?: string;
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  await requireActiveUserById(ctx, args.actorUserId);
 
   const handle = validateHandle(args.handle);
   const existingPublisher = await getPublisherByHandle(ctx, handle);
@@ -2064,8 +2097,7 @@ async function deleteOrgPublisherForOwner(
     source: "settings" | "account.delete";
   },
 ) {
-  const actor = await ctx.db.get(args.actorUserId);
-  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  await requireActiveUserById(ctx, args.actorUserId);
 
   const publisher = await ctx.db.get(args.publisherId);
   if (!publisher || publisher.kind !== "org" || publisher.deletedAt || publisher.deactivatedAt) {
@@ -2189,8 +2221,7 @@ export const resolvePublishTargetForUserInternal = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     const minimumRole = args.minimumRole ?? "publisher";
     const requestedHandle = normalizePublisherHandle(args.ownerHandle);
     const personal = await ensurePersonalPublisherForUser(ctx, actor, {
@@ -2320,7 +2351,9 @@ async function toPublisherDeletionInventory(
   publisher: Doc<"publishers">,
 ) {
   if (!(await getPublicPublisherVisibility(ctx, publisher))) return null;
-  const rows = await getPublisherPublishedRows(ctx, publisher._id);
+  const rows = await getPublisherPublishedRows(ctx, publisher._id, {
+    includeUnpublishedPackages: true,
+  });
   const stats = getIndexedPublisherStatsFromRows(rows);
   return {
     handle: publisher.handle,
@@ -2523,7 +2556,7 @@ export const getOgMetaByHandle = query({
     const stats = hasPublisherStats(visibility.publisher)
       ? getPublisherDenormalizedStats(visibility.publisher)
       : getIndexedPublisherStatsFromRows(
-          await getPublisherPublishedRows(ctx, visibility.publisher._id),
+          withoutPrivatePackages(await getPublisherPublishedRows(ctx, visibility.publisher._id)),
         );
     return {
       ...publicPublisher,
@@ -2634,7 +2667,7 @@ export const listPublishedPage = query({
       const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
       const items = getPublisherCatalogItems(
         visiblePublisher,
-        await getPublisherPublishedRows(ctx, visiblePublisher._id),
+        withoutPrivatePackages(await getPublisherPublishedRows(ctx, visiblePublisher._id)),
         publisherOfficial,
         sort,
       );
@@ -2721,12 +2754,14 @@ export const listPublishedPage = query({
 
     const cursorState = parsePublisherPageCursor(paginationOpts.cursor);
     if (cursorState.mode === "legacy" || cursorState.mode === "preindex") {
-      const packages = await ctx.db
-        .query("packages")
-        .withIndex("by_owner_publisher_active_updated", (q) =>
-          q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
-        )
-        .collect();
+      const packages = (
+        await ctx.db
+          .query("packages")
+          .withIndex("by_owner_publisher_active_updated", (q) =>
+            q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
+          )
+          .collect()
+      ).filter(isPublicPublisherCatalogPackage);
       const items =
         cursorState.mode === "preindex"
           ? packages
@@ -2755,7 +2790,9 @@ export const listPublishedPage = query({
     return {
       ...result,
       continueCursor: encodePublisherPageCursor("indexed", result.continueCursor, result.isDone),
-      page: result.page.map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial)),
+      page: result.page
+        .filter(isPublicPublisherCatalogPackage)
+        .map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial)),
     };
   },
 });
@@ -2780,7 +2817,7 @@ export const getPublishedDisplayManifest = query({
       .collect();
     if (sources.length === 0) return null;
 
-    const rows = await getPublisherPublishedRows(ctx, visiblePublisher._id);
+    const rows = withoutPrivatePackages(await getPublisherPublishedRows(ctx, visiblePublisher._id));
     if (!args.kind && rows.packages.length > 0) return null;
 
     const sourceById = new Map(sources.map((source) => [String(source._id), source]));
@@ -3312,8 +3349,7 @@ export const updateOrgPublisherProfileInternal = internalMutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -3399,8 +3435,7 @@ export const removeOrgPublisherMemberInternal = internalMutation({
     memberHandle: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -3477,8 +3512,7 @@ export const deleteEmptyOrgPublisherInternal = internalMutation({
     dryRun: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -3575,8 +3609,7 @@ export const reclaimDeletedOrgHandleInternal = internalMutation({
     confirmationToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -3683,8 +3716,7 @@ export const listOfficialPublishersInternal = internalQuery({
     actorUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const rows = await ctx.db
@@ -3724,8 +3756,7 @@ export const addOfficialPublisherInternal = internalMutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -3798,8 +3829,7 @@ export const removeOfficialPublisherInternal = internalMutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
 
     const handle = normalizePublisherHandle(args.handle);
@@ -4257,8 +4287,7 @@ export const setTrustedPublisherInternal = internalMutation({
     trustedPublisher: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    const actor = await requireActiveUserById(ctx, args.actorUserId);
     assertAdmin(actor);
     const publisher = await ctx.db.get(args.publisherId);
     const now = Date.now();

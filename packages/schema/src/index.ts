@@ -1,6 +1,8 @@
 export type { ArkValidator } from "./ark.js";
 export { formatArkErrors, parseArk } from "./ark.js";
 export * from "./templates.js";
+export { OPENCLAW_TEMPLATE_AGENT_POLICY_V1 } from "./templateAgent.js";
+export * from "./downloadAnalytics.js";
 export * from "./templatePackage.js";
 export * from "./catalogFeed.js";
 export * from "./experimentalTemplateFeed.js";

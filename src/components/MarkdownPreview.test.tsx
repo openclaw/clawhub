@@ -64,6 +64,36 @@ describe("MarkdownPreview — raw HTML passthrough", () => {
     );
   });
 
+  it.each([
+    "//unlisted.example/pixel.png",
+    "/\\unlisted.example/pixel.png",
+    "\\\\unlisted.example/pixel.png",
+    "\\/unlisted.example/pixel.png",
+    "/&#9;/unlisted.example/pixel.png",
+    "/&#10;/unlisted.example/pixel.png",
+    "&#1;//unlisted.example/pixel.png",
+    "https:/\\unlisted.example/pixel.png",
+  ])("proxies browser-normalized external HTML image source %s after sanitization", (src) => {
+    const container = renderMarkdown(`<img src="${src}" alt="external image"/>`);
+    const rewritten = container.querySelector("img")?.getAttribute("src");
+    expect(rewritten).toBe(
+      "/_vercel/image?url=https%3A%2F%2Funlisted.example%2Fpixel.png&w=1024&q=75",
+    );
+  });
+
+  it("proxies protocol-relative Markdown images and picture sources", () => {
+    const container = renderMarkdown(
+      `![external](//unlisted.example/pixel.png)\n\n<picture><source srcset="//unlisted.example/dark.png 1x, /site.png 2x"/><img src="/site.png" alt="local"/></picture>`,
+    );
+    expect(container.querySelector('img[alt="external"]')?.getAttribute("src")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Funlisted.example%2Fpixel.png&w=1024&q=75",
+    );
+    expect(container.querySelector("source")?.getAttribute("srcset")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Funlisted.example%2Fdark.png&w=1024&q=75 1x, /site.png 2x",
+    );
+    expect(container.querySelector('img[alt="local"]')?.getAttribute("src")).toBe("/site.png");
+  });
+
   it("leaves relative <img src> alone when no assetBaseUrl is provided", () => {
     const { container } = render(
       <MarkdownPreview highlight={false}>{`![diagram](./images/foo.png)`}</MarkdownPreview>,

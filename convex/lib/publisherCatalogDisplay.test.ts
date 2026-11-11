@@ -1,3 +1,5 @@
+/* @vitest-environment node */
+
 import { describe, expect, it } from "vitest";
 import { buildGitHubSkillCatalogDisplay } from "./publisherCatalogDisplay";
 
@@ -119,6 +121,72 @@ describe("buildGitHubSkillCatalogDisplay", () => {
       "Physical AI",
     ]);
     expect(display?.sections[0]?.items.map((item) => item.displayName)).toEqual(["Extra Skill"]);
+  });
+
+  it("omits a renderable source whose skills are absent from the public catalog", () => {
+    const display = buildGitHubSkillCatalogDisplay({
+      sources: [
+        {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+          displayManifestStatus: "ok",
+          displayManifest: {
+            notGrouped: "bottom",
+            groupings: [{ title: "Agentic AI", skills: ["aiq-deploy"] }],
+          },
+        },
+        {
+          _id: "githubSkillSources:hidden",
+          repo: "secret-org/hidden-skills",
+          displayManifestStatus: "ok",
+          displayManifest: {
+            notGrouped: "bottom",
+            groupings: [{ title: "Private", skills: ["hidden-skill"] }],
+          },
+        },
+      ],
+      items: [
+        {
+          ...baseItem,
+          _id: "skills:aiq-deploy",
+          displayName: "AIQ Deploy",
+          slug: "aiq-deploy",
+          sourceId: "githubSkillSources:nvidia",
+        },
+      ],
+    });
+
+    expect(display?.sourceRepos).toEqual(["NVIDIA/skills"]);
+    expect(JSON.stringify(display)).not.toContain("secret-org/hidden-skills");
+    expect(display?.sections.map((section) => section.title)).toEqual(["Agentic AI"]);
+  });
+
+  it("keeps a repo when its public skills are only in Other skills", () => {
+    const display = buildGitHubSkillCatalogDisplay({
+      sources: [
+        {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+          displayManifestStatus: "ok",
+          displayManifest: {
+            notGrouped: "bottom",
+            groupings: [{ title: "Agentic AI", skills: ["not-published"] }],
+          },
+        },
+      ],
+      items: [
+        {
+          ...baseItem,
+          _id: "skills:extra",
+          displayName: "Extra Skill",
+          slug: "extra",
+          sourceId: "githubSkillSources:nvidia",
+        },
+      ],
+    });
+
+    expect(display?.sourceRepos).toEqual(["NVIDIA/skills"]);
+    expect(display?.sections.map((section) => section.title)).toEqual(["Other skills"]);
   });
 
   it("falls back to the normal catalog when the source manifest is missing or invalid", () => {

@@ -24,8 +24,12 @@ into `docs/` and leave only the design record here.
 - `diffing.md`: skill version diffing UI/API design.
 - `slug-routing.md`: internal web route precedence and plugin alias contract.
 - `og-routes.md`: public OG card metadata fetches and hang timeouts.
+- `cli-request-deadlines.md`: CLI HTTP total-transfer deadlines, retries, and the package-publish override.
+- `content-rights-proxy.md`: Hermit content-rights proxy deadline, body coverage, and archive recovery.
 - `catalog-taxonomy.md`: stored category, author topic, browse ordering, and correction contract.
 - `ci.md`: PR check and production deploy audit-tag policy.
+- `rate-limiting.md`: HTTP quota buckets, batching, switches, and truthful rate-limit headers.
+- `http-error-semantics.md`: publish-path 4xx/503 mapping for transient Convex failures and the CLI retry contract.
 - `manual-testing.md`: maintainer CLI smoke checklist.
 - `dev-worktrees.md`: disposable Worktrunk/Codex worktree lifecycle contract.
 - `dev-seeding.md`: local development fixture seeding ownership rules.
@@ -34,6 +38,7 @@ into `docs/` and leave only the design record here.
 - `openclaw-docs-extraction.md`: CLAW-89 extraction classification.
 - `deploy.md`: maintainer deploy checklist for the ClawHub project.
 - `security-moderation.md`: detailed moderation implementation and scanner behavior notes.
+- `readme-image-proxy.md`: README image host allow-list, `img` and `source` handling, and package-relative resolution.
 - `webhook.md`: Discord webhook environment and payload notes.
 - `plans/plugins.md`: long-term OpenClaw plugin hosting plan.
 - `regression-notes/`: regression guard notes.

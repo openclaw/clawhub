@@ -1,10 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import ignore from "ignore";
 import mime from "mime";
 import semver from "semver";
 import { parseClawPack } from "../../clawpack.js";
@@ -18,6 +17,8 @@ import {
   registryUrl,
   uploadBinary,
 } from "../../http.js";
+import { LEGACY_AUTHOR_REMEDIATION_SUMMARIES } from "../../packageInspectorRemediation.js";
+import { forEachPublishFile } from "../../publishFiles.js";
 import {
   ApiCliUploadUrlResponseSchema,
   ApiRoutes,
@@ -60,6 +61,7 @@ import {
 } from "../../schema/index.js";
 import { buildGitHubFolderContentHash, hashSkillFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
 import { titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
@@ -79,10 +81,6 @@ import {
   resolveSourceInput,
 } from "./github.js";
 
-const DOT_DIR = ".clawhub";
-const LEGACY_DOT_DIR = ".clawdhub";
-const DOT_IGNORE = ".clawhubignore";
-const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const PACKAGE_PUBLISH_RETRY_COUNT = 5;
 const PACKAGE_PUBLISH_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_PACKAGE_PUBLISH_WAIT_TIMEOUT_SECONDS = 30 * 60;
@@ -91,56 +89,6 @@ const DEFAULT_PACKAGE_PUBLISH_WAIT_TIMEOUT_SECONDS = 30 * 60;
 // default upload timeout; 5 minutes matches the front-end function budget.
 const PACKAGE_PUBLISH_REQUEST_TIMEOUT_MS = 5 * 60_000;
 const AUTHOR_REMEDIATION_DOCS_BASE = "https://docs.openclaw.ai/clawhub/plugin-validation-fixes";
-const LEGACY_AUTHOR_REMEDIATION_SUMMARIES = {
-  "channel-env-vars":
-    "Move legacy channel environment variable metadata into the current setup/config metadata.",
-  "legacy-before-agent-start":
-    "Replace the legacy before_agent_start hook with the current prompt/model hooks.",
-  "legacy-root-sdk-import":
-    "Prefer focused public plugin SDK subpath imports instead of the legacy root barrel.",
-  "manifest-name-missing": "Add a display name to the plugin manifest.",
-  "manifest-unknown-contracts":
-    "Remove unsupported manifest contract keys or move them to a documented OpenClaw contract field.",
-  "manifest-unknown-fields":
-    "Move unsupported top-level manifest fields into supported package metadata or remove them.",
-  "package-entrypoint-missing":
-    "Publish the entrypoint declared in OpenClaw package metadata or update the metadata to point at an existing file.",
-  "package-install-metadata-incomplete":
-    "Complete the OpenClaw install metadata so ClawHub can identify the install target.",
-  "package-json-missing": "Add a package.json to the plugin package.",
-  "package-manifest-version-drift":
-    "Align the plugin version declared in package.json and openclaw.plugin.json.",
-  "package-min-host-version-drift":
-    "Set the package minimum host version to the OpenClaw version range the plugin was built and tested against.",
-  "package-npm-pack-entrypoint-missing":
-    "Include the declared OpenClaw entrypoints in the npm-packed artifact.",
-  "package-npm-pack-metadata-missing":
-    "Include OpenClaw metadata files in the npm-packed artifact.",
-  "package-npm-pack-unavailable": "Make the package packable before publishing it through ClawHub.",
-  "package-openclaw-entry-missing":
-    "Declare the plugin runtime entrypoint in package.json OpenClaw metadata.",
-  "package-openclaw-metadata-missing": "Add the package.json openclaw metadata block.",
-  "package-openclaw-unsupported-metadata": "Remove unsupported OpenClaw package metadata fields.",
-  "package-plugin-api-compat-missing":
-    "Declare the OpenClaw plugin API range this package supports.",
-  "provider-auth-env-vars":
-    "Move legacy provider authentication environment variables into current provider setup metadata.",
-  "reserved-sdk-import": "Stop importing reserved bundled-plugin SDK compatibility paths.",
-  "security-manifest-schema-unavailable":
-    "Remove or update the unsupported security manifest schema reference.",
-  "sdk-load-session-store":
-    "Replace deprecated loadSessionStore whole-store access with row-scoped session helpers.",
-  "sdk-session-file-helper":
-    "Replace deprecated session file-path helpers with session entry and transcript identity APIs.",
-  "sdk-session-store-write":
-    "Replace deprecated whole-store session writes with row-scoped session helpers.",
-  "sdk-session-transcript-file-target":
-    "Replace legacy transcript file targets with public transcript identity or target helpers.",
-  "sdk-session-transcript-low-level":
-    "Replace low-level transcript writes with the structured transcript runtime helpers.",
-  "unrecognized-security-manifest":
-    "Remove unsupported security manifest files until OpenClaw documents a versioned security manifest schema.",
-} as const;
 
 type PackageInspectOptions = {
   version?: string;
@@ -337,38 +285,6 @@ function assertTemplatePublishArtifactDigest(
   }
 }
 
-async function validateTemplatePublishProfilePolicy(
-  plan: PackagePublishPlan,
-  registry: string,
-  token: string,
-) {
-  if (plan.payload.family !== "template") return;
-  const { validateTemplatePackageContents } = await import("../../schema/templatePackage.js");
-  const validationInput = {
-    packageName: plan.payload.name,
-    version: plan.payload.version,
-    packageJson: plan.packageJson,
-    files: plan.filesOnDisk.map((file) => ({
-      path: file.relPath,
-      text: decodeUtf8Text(file.bytes) ?? undefined,
-    })),
-  };
-  const currentValidation = validateTemplatePackageContents({
-    ...validationInput,
-    openClawProfilePolicy: "current",
-  });
-  if (currentValidation.ok) return;
-
-  const packageDetail = await apiRequestPackageDetail(registry, plan.payload.name, token);
-  if (
-    packageDetail?.package?.family === "template" &&
-    packageDetail.package.templateProfilePolicyVersion === undefined
-  ) {
-    return;
-  }
-  fail(currentValidation.issues.map((issue) => `${issue.path}: ${issue.message}`).join(" "));
-}
-
 type PackedClawPack = {
   path: string;
   file: PackageFile;
@@ -402,7 +318,7 @@ export async function cmdExplorePackages(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader(trimmedQuery ? "Searching packages" : "Listing packages");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const limit = clampLimit(options.limit ?? 25, 100);
     if (trimmedQuery) {
       const url = registryUrl(`${ApiRoutes.packages}/search`, registry);
@@ -459,10 +375,7 @@ export async function cmdExplorePackages(
     for (const item of result.items) {
       console.log(formatPackageLine(item));
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdInspectPackage(
@@ -476,7 +389,7 @@ export async function cmdInspectPackage(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching package");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const detail = await apiRequestPackageDetail(registry, trimmed, token);
     if (!detail.package) {
       spinner.fail("Package not found");
@@ -587,10 +500,7 @@ export async function cmdInspectPackage(
       process.stdout.write(fileContent);
       if (!fileContent.endsWith("\n")) process.stdout.write("\n");
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdGetPackageTrustedPublisher(
@@ -602,7 +512,7 @@ export async function cmdGetPackageTrustedPublisher(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching trusted publisher");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequestPackageTrustedPublisher(registry, trimmed, token);
     spinner.stop();
     if (options.json) {
@@ -614,10 +524,7 @@ export async function cmdGetPackageTrustedPublisher(
       return;
     }
     printTrustedPublisher(result.trustedPublisher);
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdSetPackageTrustedPublisher(
@@ -635,7 +542,7 @@ export async function cmdSetPackageTrustedPublisher(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Saving trusted publisher");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -659,10 +566,7 @@ export async function cmdSetPackageTrustedPublisher(
     if (result.trustedPublisher) {
       printTrustedPublisher(result.trustedPublisher);
     }
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdDeletePackageTrustedPublisher(
@@ -674,7 +578,7 @@ export async function cmdDeletePackageTrustedPublisher(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Deleting trusted publisher");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -690,10 +594,7 @@ export async function cmdDeletePackageTrustedPublisher(
       return;
     }
     console.log(`Trusted publisher deleted for ${trimmed}.`);
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdPackPackage(
@@ -733,7 +634,7 @@ export async function cmdPackPackage(
   const spinner = options.json
     ? null
     : createCrabLoader(`Packing ${packageName}@${packageVersion}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const packed = await createClawPackFromFolder({
       sourcePath,
       packDestination,
@@ -768,10 +669,7 @@ export async function cmdPackPackage(
       console.log(`SHA-256: ${packed.identity.sha256}`);
       console.log(`npm integrity: ${packed.identity.npmIntegrity}`);
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdValidatePackage(
@@ -1038,7 +936,6 @@ export async function cmdPublishPackage(
         spinner,
       });
       let publishToken = resolvedPublishToken.token;
-      await validateTemplatePublishProfilePolicy(plan, registry, publishToken);
       const form = new FormData();
       const payloadJson = JSON.stringify(plan.payload);
       form.set("payload", payloadJson);
@@ -1205,7 +1102,7 @@ export async function cmdRecoverPackage(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json ? null : createCrabLoader("Recovering staged publication");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1244,10 +1141,7 @@ export async function cmdRecoverPackage(
         `Recovery submitted for ${result.name}@${result.version}; pending security checks. Attempt ${result.attemptId}.`,
       );
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function revalidateTrustedToolingIdentityAtMutationBoundary() {
@@ -1524,7 +1418,7 @@ export async function cmdDownloadPackage(
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json ? null : createCrabLoader("Resolving package artifact");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const targetVersion = await resolvePackageVersion(registry, trimmed, {
       token,
       version: options.version,
@@ -1567,10 +1461,7 @@ export async function cmdDownloadPackage(
       console.log(`npm integrity: ${identity.npmIntegrity}`);
       console.log(`npm shasum: ${identity.npmShasum}`);
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdVerifyPackage(
@@ -1585,7 +1476,7 @@ export async function cmdVerifyPackage(
   }
 
   const spinner = options.json ? null : createCrabLoader("Reading artifact");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const bytes = new Uint8Array(await readFile(targetFile));
     const identity = computeArtifactIdentity(bytes);
     let artifactResult: PackageArtifactResponse | null = null;
@@ -1644,10 +1535,7 @@ export async function cmdVerifyPackage(
     } else {
       console.log("Computed artifact digests. Pass --package or expected digests to verify.");
     }
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdDeletePackage(
@@ -1674,7 +1562,7 @@ export async function cmdDeletePackage(
   const registry = await getRegistry(opts, { cache: true });
   const target = version ? `${name} version ${version}` : name;
   const spinner = createCrabLoader(`Deleting ${target}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1692,10 +1580,7 @@ export async function cmdDeletePackage(
       console.log(JSON.stringify(result, null, 2));
     }
     return result;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function normalizeDeleteVersion(value: string | undefined) {
@@ -1729,7 +1614,7 @@ export async function cmdUndeletePackage(
   const registry = await getRegistry(opts, { cache: true });
   const target = version ? `${name} version ${version}` : name;
   const spinner = createCrabLoader(`Restoring ${target}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1747,10 +1632,7 @@ export async function cmdUndeletePackage(
       console.log(JSON.stringify(result, null, 2));
     }
     return result;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdTransferPackage(
@@ -1766,7 +1648,7 @@ export async function cmdTransferPackage(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader(`Transferring ${name} to @${toOwner}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1785,10 +1667,7 @@ export async function cmdTransferPackage(
       console.log(JSON.stringify(result, null, 2));
     }
     return result;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdReportPackage(
@@ -1804,7 +1683,7 @@ export async function cmdReportPackage(
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json ? null : createCrabLoader(`Reporting ${trimmed}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -1829,10 +1708,7 @@ export async function cmdReportPackage(
     }
     const versionSuffix = version ? `@${version}` : "";
     console.log(`OK. Reported ${trimmed}${versionSuffix} for moderator review.`);
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdPackageModerationStatus(
@@ -2746,9 +2622,9 @@ async function preparePackagePublishPlan(
       packageName: name,
       version,
       packageJson,
-      openClawProfilePolicy: "publication-compatible",
       files: filesOnDisk.map((file) => ({
         path: file.relPath,
+        size: file.bytes.byteLength,
         text: decodeUtf8Text(file.bytes) ?? undefined,
       })),
     });
@@ -3093,50 +2969,17 @@ function formatByteCount(value: number) {
 
 async function listPackageFiles(root: string) {
   const files: PackageFile[] = [];
-  const absRoot = resolve(root);
-  const ig = ignore();
-  ig.add([".git/", "node_modules/", `${DOT_DIR}/`, `${LEGACY_DOT_DIR}/`]);
-  await addIgnoreFile(ig, join(absRoot, DOT_IGNORE));
-  await addIgnoreFile(ig, join(absRoot, LEGACY_DOT_IGNORE));
-  await walk(absRoot, async (absPath) => {
-    const relPath = normalizePath(relative(absRoot, absPath));
-    if (!relPath || ig.ignores(relPath)) return;
-    const bytes = new Uint8Array(await readFile(absPath));
-    files.push({
-      relPath,
-      bytes,
-      contentType: mime.getType(relPath) ?? "application/octet-stream",
-    });
-  });
+  await forEachPublishFile(
+    root,
+    { includeDotfiles: true, respectGitignore: false },
+    async (absPath, relPath) => {
+      const bytes = new Uint8Array(await readFile(absPath));
+      files.push({
+        relPath,
+        bytes,
+        contentType: mime.getType(relPath) ?? "application/octet-stream",
+      });
+    },
+  );
   return files;
-}
-
-function normalizePath(path: string) {
-  return path
-    .split(sep)
-    .join("/")
-    .replace(/^\.\/+/, "");
-}
-
-async function walk(dir: string, onFile: (path: string) => Promise<void>) {
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name === ".git" || entry.name === "node_modules") continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await walk(full, onFile);
-      continue;
-    }
-    if (!entry.isFile()) continue;
-    await onFile(full);
-  }
-}
-
-async function addIgnoreFile(ig: ReturnType<typeof ignore>, path: string) {
-  try {
-    const raw = await readFile(path, "utf8");
-    ig.add(raw.split(/\r?\n/));
-  } catch {
-    // optional
-  }
 }

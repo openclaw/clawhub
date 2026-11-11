@@ -472,7 +472,7 @@ describe("publishAttempts", () => {
       checkClaimedAt: number;
       checkClaimExpiresAt: number;
     };
-    expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBeGreaterThanOrEqual(30 * 60 * 1000);
+    expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBe(30 * 60 * 1000);
   });
 
   it.each([undefined, "bundle-plugin", "code-plugin"])(
@@ -518,6 +518,11 @@ describe("publishAttempts", () => {
             release: { artifactKind: "legacy-zip" },
           },
         });
+        const patch = ctx.db.patch.mock.calls.find(([id]) => id === attempt._id)?.[1] as {
+          checkClaimedAt: number;
+          checkClaimExpiresAt: number;
+        };
+        expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBe(70 * 60_000);
       }
     },
   );
@@ -1827,6 +1832,7 @@ describe("publishAttempts", () => {
   it("clears private pending skill metadata when finalization is recorded", async () => {
     const now = Date.now();
     const ctx = {
+      scheduler: { runAfter: vi.fn() },
       db: {
         delete: vi.fn(),
         get: vi.fn(async (id: string) =>
@@ -1837,6 +1843,7 @@ describe("publishAttempts", () => {
                 status: "finalizing",
                 skillVersionId: "skillVersions:pending",
                 followup: {},
+                artifactFingerprint: "fingerprint",
                 finalizationClaimId: "finalize:claim",
                 finalizationClaimExpiresAt: now + 60_000,
               }
@@ -1845,7 +1852,25 @@ describe("publishAttempts", () => {
         insert: vi.fn(),
         normalizeId: vi.fn(),
         patch: vi.fn(),
-        query: vi.fn(),
+        query: vi.fn((table: string) => {
+          const query = {
+            withIndex: vi.fn(() => query),
+            take: vi.fn(async () => []),
+            unique: vi.fn(
+              async () =>
+                ({
+                  skills: { _id: "skills:demo" },
+                  skillVersions: {
+                    _id: "skillVersions:pending",
+                    fingerprint: "fingerprint",
+                    publicationStatus: "published",
+                  },
+                  skillEmbeddings: { _id: "skillEmbeddings:demo" },
+                })[table],
+            ),
+          };
+          return query;
+        }),
         replace: vi.fn(),
         system: {},
       },

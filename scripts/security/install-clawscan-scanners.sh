@@ -1,15 +1,24 @@
 #!/bin/sh
 # Install the exact scanner sources and Responses adapters tested with ClawScan.
 set -eu
+# Startup checks must not add generated Python code or pytest state to the
+# reviewed ClawScan checkout before the worker verifies its source identity.
+export PYTHONDONTWRITEBYTECODE=1
+export PYTEST_ADDOPTS='-p no:cacheprovider'
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${CLAWSCAN_SOURCE_DIR:?Run install-clawscan.sh first}"
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
 : "${GITHUB_PATH:?GITHUB_PATH is required}"
-expected_commit=$(cat "$script_dir/clawscan-source-commit.txt")
-[ "$(git -C "$CLAWSCAN_SOURCE_DIR" rev-parse HEAD)" = "$expected_commit" ] || { echo "ClawScan source revision mismatch" >&2; exit 1; }
+[ "$#" -ge 1 ] && [ "$#" -le 2 ] || { echo 'Usage: install-clawscan-scanners.sh skillspector|aig|aig-mcp [reviewed-source-commit]' >&2; exit 1; }
+scanner=$1
+shift
+. "$script_dir/clawscan-install-source.sh"
+select_clawscan_source "$@"
+expected_commit=$selected_commit
+verify_clawscan_source "$CLAWSCAN_SOURCE_DIR"
 runtime_dir="$CLAWSCAN_SOURCE_DIR/docker/clawscan-runtime"
 bin_dir="$RUNNER_TEMP/clawscan-scanner-bin"
-case "${1:-}" in
+case "$scanner" in
   skillspector)
     pin_name=SKILLSPECTOR_REF
     repository=https://github.com/NVIDIA/skillspector.git
@@ -18,9 +27,27 @@ case "${1:-}" in
     pin_name=AIG_SKILL_SCAN_REF
     repository=https://github.com/Tencent/AI-Infra-Guard.git
     ;;
-  *) echo "Usage: install-clawscan-scanners.sh skillspector|aig" >&2; exit 1 ;;
+  aig-mcp)
+    # No host installation or unpatched fallback. The immutable image was built
+    # with the source's exact static-tools patch and its 28 static/entry-network
+    # tests plus the pinned Codex 0.164.0 EvidenceOnly harness. Qualify CLIs locally
+    # without granting network access or mounting the host/plugin under test.
+    [ "$expected_commit" = "$qualified_source_commit" ] || {
+      echo 'aig-mcp requires the exact qualified source and immutable runtime image' >&2; exit 1;
+    }
+    docker pull "$qualified_runtime_image"
+    image_digests=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$qualified_runtime_image")
+    printf '%s\n' "$image_digests" | LC_ALL=C grep -Fx -- "$qualified_runtime_image" >/dev/null || {
+      echo 'Qualified ClawScan runtime image digest mismatch' >&2; exit 1;
+    }
+    docker run --rm --pull never --network none --entrypoint /bin/sh "$qualified_runtime_image" -ec \
+      'aig-mcp-scan --help >/dev/null; test "$(codex --version)" = "codex-cli 0.164.0"'
+    # This prepares a Docker sandbox image, not a host aig-mcp-scan command.
+    printf 'Qualified ClawScan aig-mcp runtime: %s\n' "$qualified_runtime_image"
+    exit 0
+    ;;
+  *) echo "Usage: install-clawscan-scanners.sh skillspector|aig|aig-mcp" >&2; exit 1 ;;
 esac
-scanner=$1
 source_commit=$(sed -n "s/^ARG $pin_name=//p" "$runtime_dir/Dockerfile")
 case "$source_commit" in
   *[!a-f0-9]*|'') echo 'Scanner requires a full reviewed source commit' >&2; exit 1 ;;
@@ -81,6 +108,15 @@ fi
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_${scanner}_responses.py"
 if [ "$needs_bash_parser" = 1 ]; then
   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_skillspector_shell_source.py"
+fi
+# Historical incident pins predate these controls. Current source includes both;
+# verify them in the installed scanner environment before exposing its entrypoint.
+if [ "$scanner" = skillspector ] && [ -f "$runtime_dir/tests/test_skillspector_destructive_quoted_operand_boundaries.py" ]; then
+  test -f "$runtime_dir/tests/test_skillspector_fragment_quote_ownership.py"
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_skillspector_destructive_quoted_operand_boundaries.py" "$runtime_dir/tests/test_skillspector_fragment_quote_ownership.py"
+fi
+if [ "$scanner" = skillspector ] && [ -f "$runtime_dir/tests/test_skillspector_javascript_parenthesized_capabilities.py" ]; then
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$runtime_dir/tests/test_skillspector_javascript_parenthesized_capabilities.py"
 fi
 uv pip check --python "$venv/bin/python"
 if [ "$scanner" = aig ]; then command_name=aig-skill-scan; else command_name=skillspector; fi

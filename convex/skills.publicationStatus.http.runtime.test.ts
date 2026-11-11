@@ -13,7 +13,7 @@ const headers = { Authorization: "Bearer owner-publication-status-fixture" };
 
 async function fixture() {
   const t = convexTest(schema, modules);
-  registerRateLimiter(t);
+  registerRateLimiter(t, "rateLimiterV2");
   const ids = await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { handle: "progress-owner" });
     const publisherId = await ctx.db.insert("publishers", {

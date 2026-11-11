@@ -33,7 +33,7 @@ describe("retention policies", () => {
   });
 
   it("documents active expiring operational tables", () => {
-    expect(getRetentionPolicy("httpRateLimitKeys")).toMatchObject({
+    expect(getRetentionPolicy("httpRateLimitKeysV2")).toMatchObject({
       classification: "ephemeral",
       expirationField: "expiresAt",
       expirationIndex: "by_expires_at",
@@ -50,6 +50,12 @@ describe("retention policies", () => {
       expirationField: "expiresAt",
       expirationIndex: "by_expires_at",
       prune: "retention.pruneExpiredSkillPublishUploadsInternal",
+    });
+  });
+
+  it("classifies the single replaceable download report as derived state", () => {
+    expect(getRetentionPolicy("downloadAnalyticsReports")).toMatchObject({
+      classification: "derived",
     });
   });
 

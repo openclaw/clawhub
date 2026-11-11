@@ -30,7 +30,7 @@ jobs:
   skill-card-worker:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture-only != true }}
     name: Skill Card worker shard ${{ matrix.shard }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 60
     environment: Production
     strategy:
@@ -93,7 +93,7 @@ jobs:
   fixture:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture-only == true }}
     name: Skill Card credential canary
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 20
     environment: Production
     steps:

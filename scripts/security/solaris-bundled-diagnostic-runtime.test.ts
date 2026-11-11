@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
-const probe = vi.hoisted(() => ({ calls: 0, leakedEnvironment: false }));
+const probe = vi.hoisted(() => ({
+  calls: 0,
+  leakedEnvironment: false,
+  scannerCommit: "",
+  adoptedCommitOverride: null as string | null,
+}));
 vi.mock("./fixtures/solaris-069-bundled.json", async () => {
   const { createHash } = await import("node:crypto");
   const hash = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -23,10 +28,17 @@ vi.mock("node:fs/promises", async (original) => {
   const actual = await original<typeof import("node:fs/promises")>();
   return {
     ...actual,
-    readFile: (...args: Parameters<typeof readFile>) =>
-      args[0] === "/etc/os-release"
+    readFile: (...args: Parameters<typeof readFile>) => {
+      if (
+        probe.adoptedCommitOverride !== null &&
+        args[0] instanceof URL &&
+        args[0].href === new URL("./clawscan-source-commit.txt", import.meta.url).href
+      )
+        return Promise.resolve(`${probe.adoptedCommitOverride}\n`);
+      return args[0] === "/etc/os-release"
         ? Promise.resolve('VERSION_ID="22.04"\n')
-        : actual.readFile(...args),
+        : actual.readFile(...args);
+    },
   };
 });
 vi.mock("../lib/runWorkerCommand", async (original) => {
@@ -44,7 +56,7 @@ vi.mock("../lib/runWorkerCommand", async (original) => {
             ? "f197f4566f8a3c11755bc6688ec92a2c3347b4dd\nbcf058341b9cfa6290525a3980eab50e6b4b356f\n"
             : args.includes("status")
               ? ""
-              : "e14f9960cc290d47f99fd3416b0589bbc0080f24\n",
+              : `${probe.scannerCommit}\n`,
           stderr: "",
         };
       }
@@ -112,6 +124,10 @@ afterEach(async () => {
 async function setup(corrupt = false) {
   probe.calls = 0;
   probe.leakedEnvironment = false;
+  // This diagnostic intentionally admits only its historical incident runtime.
+  // A later production rollout must not silently rewrite that diagnostic scope.
+  probe.adoptedCommitOverride = "c3cfaf1515a47685786d72f031c714b1e5d9b34e";
+  probe.scannerCommit = probe.adoptedCommitOverride;
   const root = await mkdtemp(join(tmpdir(), "solaris-diagnostic-test-"));
   roots.push(root);
   const source = join(root, "solaris-source/harnesses/openclaw/skills/control");
@@ -194,4 +210,38 @@ it("rejects a changed original before invoking any model and still cleans up", a
     validationFailed: true,
     cleanup: true,
   });
+});
+
+it("rejects a scanner checkout that differs from the adopted production pin before any model", async () => {
+  const root = await setup();
+  probe.scannerCommit = "0".repeat(40);
+  await main([]);
+  expect(probe.calls).toBe(0);
+  const output = (await readFile(join(root, "output"), "utf8")).trim().split("=")[1];
+  expect(JSON.parse(await readFile(join(output, "summary.json"), "utf8"))).toMatchObject({
+    status: "validation_failed",
+    validationFailed: true,
+    cleanup: true,
+  });
+});
+
+it("rejects an unreviewed production pin before invoking any model", async () => {
+  const root = await setup();
+  probe.adoptedCommitOverride = "0".repeat(40);
+  await main([]);
+  expect(probe.calls).toBe(0);
+  const output = (await readFile(join(root, "output"), "utf8")).trim().split("=")[1];
+  expect(JSON.parse(await readFile(join(output, "summary.json"), "utf8"))).toMatchObject({
+    status: "validation_failed",
+    validationFailed: true,
+    cleanup: true,
+  });
+});
+
+it("keeps the historical diagnostic closed after production adopts a different runtime", async () => {
+  await setup();
+  probe.adoptedCommitOverride = null;
+  await main([]);
+  expect(probe.calls).toBe(0);
+  expect(process.exitCode).toBe(1);
 });

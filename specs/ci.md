@@ -8,12 +8,29 @@ The `CI` workflow runs the non-browser gates as independent jobs so their wall
 times overlap and each required check reports its own failure:
 
 - `static` runs peer dependency validation, dependency audit, formatting, lint,
-  and dead-code checks.
+  and dead-code checks. It uses a single-commit checkout because these checks
+  inspect the current tree and installed packages, not Git history.
 - `unit` runs the Vitest coverage suite. This replaces a separate `test` run
   because coverage already executes the test suite.
-- `packages` builds `packages/schema` and verifies the ClawHub CLI package.
-- `types-build` typechecks the app, schema package, and CLI package, then builds
-  the app.
+  It also records the complete initial test inventory, final file outcomes and
+  native Vitest dependency records for adaptive-CI experiments. The seven-day
+  artifact contains repository-relative paths, counts, hashes and timings; it
+  excludes assertion text, logs and test names. Missing or incomplete evidence
+  stays unknown. Recording never changes test selection or coverage thresholds.
+  Script suites explicitly use the Node environment used by the commands they
+  exercise, avoiding a jsdom startup for filesystem and data-processing tests.
+  Backend helper suites without browser dependencies also use Node. Keep the
+  environment explicit per file so browser and Convex runtime suites retain
+  their own environment requirements.
+  Suites exercising Convex through `convex-test` use `edge-runtime`, matching
+  the generated Convex testing guidelines instead of inheriting jsdom.
+- `packages` builds `packages/schema` and verifies both CLI packages, including
+  their native TypeScript checks.
+- CLI source and artifact tests belong to `ci:packages`. Root unit coverage
+  excludes both CLI workspaces so their source tests run once, using each
+  package's Node environment instead of also running under root jsdom.
+- `types-build` typechecks and builds the app. Package typechecks belong to
+  `packages` so CI runs them once.
 - `e2e-http` runs the secretless HTTP and CLI end-to-end subset.
   GitHub-backed package publish fixtures use bounded retries for network errors,
   HTTP 408/5xx responses, and server-declared 403/429 rate limits whose retry
@@ -27,6 +44,12 @@ allocation before coverage and has a ten-minute timeout to accommodate hosted
 runner capacity. The short `static`, `packages`, `types-build`, and `e2e-http`
 jobs also run on GitHub-hosted Ubuntu runners. Other non-browser gates retain
 their five-minute timeout.
+
+The pinned OpenClaw contract job caches only the pnpm package store, keyed by
+OS, architecture, actual Node/pnpm versions, the pinned source commit and its
+lockfile/package manifest. It always performs the frozen install and full
+contract proof. Pull requests only restore; successful main pushes may save an
+exact-key miss. There are no fallback keys or cached installed workspaces.
 
 - `playwright-smoke` builds the app and runs a chromium browser smoke against the
   public read backend.
@@ -42,10 +65,23 @@ their five-minute timeout.
   profile-context shard's metadata layout checks, so those assertions do not
   depend on the availability of a live public skill.
 
+Every local-auth spec must appear in the PR matrix. When several shards split a
+spec with `grep`, their combined patterns must cover every test title, including
+the pre-publication security checks. The selection guard uses Playwright discovery
+to compare unfiltered tests with the combined filters, including parameterized
+titles and describe groups, without starting a backend. Keep the exact-artifact
+and official-feed boundary cases in the isolated template shard.
+
+Browser jobs cache downloads by the installed `playwright-core` version, runner
+OS, and architecture. Unrelated Bun lockfile updates reuse those downloads.
+There is no fallback across Playwright versions; `playwright install chromium`
+still runs on every job to validate and install the requested browser revision.
+
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 covers the non-browser PR gates. Linux CI uses pinned tsrs for the root typecheck;
-local `ci:types-build` keeps native TypeScript for cross-platform support. Both
-use `ci:types:packages` for native package checks. To reproduce the Linux root
+local `ci:types-build` keeps native TypeScript for cross-platform support. The local
+aggregate also uses `ci:types:packages` for native package checks; CI delegates
+those checks to the required `packages` job. To reproduce the Linux root
 check, run `bunx --no-install tsrs --noEmit` on a supported Linux host.
 `bun run ci:playwright-smoke` assumes the chromium Playwright browser has already
 been installed.
@@ -57,6 +93,21 @@ All Vercel-created preview names carry a `-vercel` suffix: `--preview-create`
 replaces (deletes) any same-name deployment, so a second deploy-key consumer
 using raw branch names would otherwise delete Vercel's deployment mid-push
 (observed 2026-07-17 as get_config_hashes/wait_for_schema 404s on every PR).
+
+Preview cleanup runs only trusted main-branch code with a dedicated preview-only
+key, pinned to ClawHub project 1479485. Raw branch identifiers can overlap another
+branch's Vercel/retry namespace (for example, closing `feature/demo-vercel` must
+not delete the preview of an open `feature/demo` PR). Every open PR head claims its
+raw, `-vercel` and numeric `-vercel-retry-N` identifiers; ambiguous/fork head names
+are preserved conservatively. Cleanup reads all open-PR pages for selection and
+again after the deployment identity check, immediately before **each** deletion.
+A reopened branch revokes authorization; failed/malformed GitHub reads abort
+without that deletion. This is a fresh-read guard, not an atomic transaction
+between GitHub and Convex. Deployment project/type/nondefault/ID/name/stable-reference
+guards remain separate from branch authorization; the single-deployment endpoint
+omits previewIdentifier, so it must not be required there. Manual workflow runs
+are branch-scoped and dry-run by default; the script's explicit all-preview scope
+also preserves open-branch claims and is not an ongoing purge policy.
 
 To reproduce the local-auth browser gate locally, install the chromium
 Playwright browser once and run:
@@ -86,6 +137,14 @@ environment variables during publication, so `CLAWHUB_DISABLE_CRONS=1` must be
 set before the first push. Application readiness checks never republish code,
 and no development watcher can push again while the app builds. A persistent
 launcher retains ownership of the backend process group through cleanup.
+
+CI pins the local-auth backend with `PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION`.
+Before bootstrap, it restores the versioned binary cache or downloads the Linux
+x64 release asset through GitHub's asset API with bounded retries. The archive's
+SHA-256 must match before extraction and installation. Update the version,
+asset ID, digest, and cache key together. This avoids the release web URL's
+intermittent HTTP failures and keeps all shards on the same backend. Local runs
+without the variable retain Convex's default backend selection.
 
 The disposable backend defaults `FUNRUN_ISOLATE_ACTIVE_THREADS` to `2` before
 bootstrap, limiting simultaneous V8 execution on small runners. Convex pauses

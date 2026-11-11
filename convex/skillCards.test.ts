@@ -494,7 +494,7 @@ describe("skillCards queue", () => {
     expect(patch).toHaveBeenCalledTimes(2);
   });
 
-  it("does not enqueue before static and ClawScan inputs settle", async () => {
+  it("does not enqueue before the ClawScan verdict settles", async () => {
     const version = makeSettledVersion({ llmAnalysis: undefined });
     const ctx = {
       db: completeDb({
@@ -512,8 +512,8 @@ describe("skillCards queue", () => {
     expect(ctx.db.insert).not.toHaveBeenCalled();
   });
 
-  it("enqueues after static and ClawScan inputs settle", async () => {
-    const version = makeSettledVersion();
+  it("enqueues once ClawScan settles without waiting for a retired static scan", async () => {
+    const version = makeSettledVersion({ staticScan: undefined });
     const insert = vi.fn(async () => "skillCardGenerationJobs:1");
     const ctx = {
       db: completeDb({

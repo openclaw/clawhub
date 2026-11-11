@@ -49,18 +49,17 @@ import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
-import { PluginApiRetirementNotice } from "../../components/PluginApiRetirementNotice";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
 } from "../../components/PluginVersionsPanel";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
-import { OpenClawCliInstallCommand } from "../../components/SkillInstallSurface";
+import { formatOpenClawPrompt } from "../../components/skillDetailUtils";
+import { InstallCommandCard } from "../../components/SkillInstallSurface";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -78,7 +77,7 @@ import {
   getPluginCategoryBySlug,
 } from "../../lib/categories";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
-import { buildPluginMeta } from "../../lib/og";
+import { buildPluginMeta, buildSocialMetaHead } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import { buildPublisherProfileHref } from "../../lib/ownerRoute";
 import {
@@ -238,24 +237,7 @@ export function pluginDetailHead(name: string, loaderData?: PluginDetailLoaderDa
     owner: loaderData?.detail.owner?.handle,
     latestVersion: loaderData?.detail.package?.latestVersion,
   });
-  return {
-    meta: [
-      { title: meta.title },
-      { name: "description", content: meta.description },
-      { property: "og:title", content: meta.title },
-      { property: "og:description", content: meta.description },
-      { property: "og:url", content: meta.url },
-      { property: "og:image", content: meta.image },
-      { property: "og:image:width", content: "1200" },
-      { property: "og:image:height", content: "630" },
-      { property: "og:image:alt", content: meta.title },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: meta.title },
-      { name: "twitter:description", content: meta.description },
-      { name: "twitter:image", content: meta.image },
-    ],
-    links: [{ rel: "canonical", href: meta.url }],
-  };
+  return buildSocialMetaHead(meta);
 }
 
 export const Route = createFileRoute("/plugins/$name")({
@@ -1111,7 +1093,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     | Error
     | undefined;
   const validationSummaryUnavailable = validationSummaryResult instanceof Error;
-  const validationSummary = validationSummaryUnavailable ? undefined : validationSummaryResult;
   const activityTrendEndDay = getActivityTrendEndDay();
   const { trend: activityTrend, loading: activityTrendLoading } = useDeferredPackageActivityTrend(
     detail.package ? { name: detail.package.name, endDay: activityTrendEndDay } : null,
@@ -1227,9 +1208,14 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     pkg.scanStatus === "malicious" || latestRelease?.verification?.scanStatus === "malicious";
   const skillInstallOwner = owner?.handle ?? pkg.ownerHandle ?? "owner";
   const isPlugin = pkg.family === "code-plugin" || pkg.family === "bundle-plugin";
-  const installCommand = isPlugin
-    ? `openclaw plugins install clawhub:${pkg.name}`
-    : `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
+  const installTarget = isPlugin
+    ? pkg.name
+    : `@${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
+  // Keep unscoped targets distinct from bundled plugin IDs such as `discord`.
+  // The explicit source below also supports released clients that default to npm.
+  const cliInstallTarget =
+    isPlugin && !installTarget.includes("/") ? `${installTarget}@latest` : installTarget;
+  const installCommand = `openclaw ${isPlugin ? "plugins" : "skills"} install ${isPlugin ? "clawhub:" : ""}${cliInstallTarget}`;
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
@@ -1342,21 +1328,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         skills={pluginManifestSummary.bundledSkills}
       />
     ) : null;
-  const incompatibilityAlert = validationSummaryUnavailable ? (
+  const validationAvailabilityAlert = validationSummaryUnavailable ? (
     <Alert variant="warn" className="plugin-validation-alert">
       <AlertTriangle size={16} aria-hidden="true" />
       <AlertDescription>
         Compatibility details are temporarily unavailable. Please try again later.
-      </AlertDescription>
-    </Alert>
-  ) : validationSummary &&
-    validationSummary.errorCount > 0 &&
-    validationSummary.incompatibleAfterOpenClawVersion ? (
-    <Alert variant="destructive" className="plugin-validation-alert">
-      <AlertTriangle size={16} aria-hidden="true" />
-      <AlertDescription>
-        This plugin is incompatible with OpenClaw versions greater than{" "}
-        {validationSummary.incompatibleAfterOpenClawVersion}.
       </AlertDescription>
     </Alert>
   ) : null;
@@ -1542,7 +1518,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const securitySummary = latestRelease ? (
     <DetailSecuritySummary
       auditHref={buildPluginSecurityAuditHref(name, { ownerHandle: owner?.handle })}
-      vtAnalysis={latestRelease.vtAnalysis ?? null}
       llmAnalysis={latestRelease.llmAnalysis ?? null}
     />
   ) : null;
@@ -1838,36 +1813,14 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
             >
               {validationPanel}
               <div className="plugin-install-stack detail-mobile-install">
-                {incompatibilityAlert}
-                <PluginApiRetirementNotice
-                  id="api-updates"
-                  retirements={validationSummary?.apiRetirements ?? []}
+                {validationAvailabilityAlert}
+                <InstallCommandCard
+                  cliCommand={installCommand}
+                  prompt={formatOpenClawPrompt(installTarget, isPlugin ? "package" : "skill")}
+                  cliCopyAriaLabel={
+                    isPlugin ? "Copy plugin install command" : "Copy skill install command"
+                  }
                 />
-                <Card className="skill-install-command-card">
-                  <CardHeader className="detail-hero-summary-row plugin-install-card-header">
-                    <CardTitle className="skill-install-panel-title">Install</CardTitle>
-                  </CardHeader>
-                  <CardContent className="skill-install-command-wrap">
-                    <div className="skill-install-command-shell skill-install-command-shell-cli">
-                      <span className="skill-install-command-prompt" aria-hidden="true">
-                        $
-                      </span>
-                      <pre className="skill-install-command">
-                        <OpenClawCliInstallCommand command={installCommand} />
-                      </pre>
-                      <InstallCopyButton
-                        text={installCommand}
-                        ariaLabel={
-                          isPlugin ? "Copy plugin install command" : "Copy skill install command"
-                        }
-                        showLabel={false}
-                        variant="ghost"
-                        size="icon-sm"
-                        className="skill-install-command-inline-button"
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
               </div>
               <PluginDetailTabs
                 activeTab={activeTab}

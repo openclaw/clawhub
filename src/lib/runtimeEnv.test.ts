@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getRequiredRuntimeEnv, getRuntimeEnv, isDevRuntime } from "./runtimeEnv";
+import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -43,13 +43,5 @@ describe("runtimeEnv", () => {
     expect(() => getRequiredRuntimeEnv("VITE_MISSING_VALUE")).toThrow(
       "Missing required environment variable: VITE_MISSING_VALUE",
     );
-  });
-
-  it("uses NODE_ENV to detect server dev mode", () => {
-    vi.stubEnv("NODE_ENV", "production");
-    expect(isDevRuntime()).toBe(false);
-
-    vi.stubEnv("NODE_ENV", "development");
-    expect(isDevRuntime()).toBe(true);
   });
 });
