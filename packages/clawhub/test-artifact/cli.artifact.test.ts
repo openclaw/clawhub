@@ -18,7 +18,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { strToU8, zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
@@ -745,14 +745,18 @@ describe("built CLI artifact", () => {
     expect(result.stdout).not.toContain("percent-expanded");
   });
 
-  function installedNpmLaunch() {
+  function installedNpmCli() {
     const prefix = dirname(dirname(process.execPath));
     const cli = [
       join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
       join(prefix, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
     ].find((candidate) => existsSync(candidate));
     if (!cli) throw new Error(`npm-cli.js not found next to ${process.execPath}`);
-    return `exec ${JSON.stringify(process.execPath)} ${JSON.stringify(cli)} "$@"`;
+    return cli;
+  }
+
+  function installedNpmLaunch() {
+    return `exec ${JSON.stringify(process.execPath)} ${JSON.stringify(installedNpmCli())} "$@"`;
   }
 
   async function writePosixNpm(path: string, line: string, mode: number) {
@@ -835,6 +839,77 @@ describe("built CLI artifact", () => {
       const logText = await readFile(log, "utf8");
       expect(logText).toContain("good-npm-selected");
       expect(logText).not.toContain("stale-npm-selected");
+    },
+  );
+
+  // A stand-in for an npm install directory: records which launcher ran, then
+  // hands over to the real npm.
+  async function writeWindowsNpmLauncher(dir: string, label: string) {
+    const cli = join(dir, "node_modules", "npm", "bin", "npm-cli.js");
+    await mkdir(dirname(cli), { recursive: true });
+    await writeFile(
+      cli,
+      [
+        `require("node:fs").appendFileSync(process.env.CLAWHUB_NPM_LOG, ${JSON.stringify(`${label}\n`)});`,
+        `require(${JSON.stringify(installedNpmCli())});`,
+        "",
+      ].join("\n"),
+    );
+  }
+
+  function packFromDirectory(cliCwd: string, workdir: string, path: string, log: string) {
+    return spawnSync(
+      process.execPath,
+      [binPath, "--workdir", workdir, "package", "pack", workdir, "--json"],
+      {
+        cwd: cliCwd,
+        encoding: "utf8",
+        env: { ...process.env, PATH: path, Path: path, CLAWHUB_NPM_LOG: log },
+      },
+    );
+  }
+
+  it.skipIf(process.platform !== "win32")(
+    "runs the relative PATH launcher it found under the pack workdir on Windows",
+    async () => {
+      const root = await makeTmpDir("clawhub-artifact-win-rel-npm-");
+      const workdir = join(root, "srv");
+      const cliCwd = join(root, "cli-cwd");
+      const log = join(root, "npm-log.txt");
+      await mkdir(cliCwd);
+      await writeDemoPlugin(workdir, "relative-npm-plugin", "relative.npm");
+      await writeWindowsNpmLauncher(join(workdir, "tools"), "workdir-tools-launcher");
+
+      // The CLI starts in a directory that has no `tools`; npm runs in workdir.
+      const result = packFromDirectory(cliCwd, workdir, `.${sep}tools`, log);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("relative-npm-plugin");
+      expect(await readFile(log, "utf8")).toBe("workdir-tools-launcher\n");
+    },
+  );
+
+  it.skipIf(process.platform !== "win32")(
+    "does not reach a pack workdir launcher through relative PATH entries on Windows",
+    async () => {
+      const root = await makeTmpDir("clawhub-artifact-win-planted-npm-");
+      const workdir = join(root, "srv");
+      const cliCwd = join(root, "cli-cwd");
+      const installed = join(root, "installed");
+      const log = join(root, "npm-log.txt");
+      await writeDemoPlugin(workdir, "planted-npm-plugin", "planted.npm");
+      await writeWindowsNpmLauncher(workdir, "workdir-launcher");
+      await writeWindowsNpmLauncher(cliCwd, "cli-cwd-launcher");
+      await writeWindowsNpmLauncher(installed, "installed-launcher");
+
+      // Each relative entry names the CLI's directory from here and the pack
+      // workdir from the child. Neither launcher may run; the absolute one does.
+      const path = [`.${sep}`, `tools${sep}..`, "", installed].join(delimiter);
+      const result = packFromDirectory(cliCwd, workdir, path, log);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("planted-npm-plugin");
+      expect(await readFile(log, "utf8")).toBe("installed-launcher\n");
     },
   );
 
