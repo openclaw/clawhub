@@ -169,6 +169,22 @@ describe("publish token mint verifier failures through the real handler and veri
     );
   });
 
+  it("stores a bounded audit reason for an oversized unsigned token", async () => {
+    const { t, configuredId } = await setupConfiguredPackage();
+
+    const result = await postMintWithHeaders(
+      t,
+      "configured-plugin",
+      unsignedToken({ alg: `oversized\ud800${"x".repeat(2_000_000)}` }),
+    );
+
+    expect(result).toEqual({ status: 400, body: rejection, retryAfter: null });
+    const reasons = await rejectionReasons(t, configuredId);
+    expect(reasons).toEqual([
+      `${`Unsupported GitHub OIDC signing algorithm: oversized\ufffd${"x".repeat(2_000_000)}`.slice(0, 1000)}…`,
+    ]);
+  });
+
   it("answers a retryable 503 for a signing-key outage, then mints once the keys load", async () => {
     const { t, configuredId } = await setupConfiguredPackage();
     // A key id no earlier test cached, so the verifier must fetch the keys.

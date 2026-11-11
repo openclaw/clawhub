@@ -19449,7 +19449,7 @@ describe("httpApiV1 handlers", () => {
       repositoryOwnerId: "92",
       workflowFilename: "release.yml",
     };
-    const mintWithVerifierError = async (error: Error) => {
+    const mintWithVerifierError = async (error: Error, version = "1.0.0") => {
       vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockRejectedValue(error);
       const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
         if ("key" in args) return okRate();
@@ -19467,7 +19467,7 @@ describe("httpApiV1 handlers", () => {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             packageName: "@corp/secret-plugin",
-            version: "1.0.0",
+            version,
             githubOidcToken: "gh.jwt",
           }),
         }),
@@ -19521,6 +19521,45 @@ describe("httpApiV1 handlers", () => {
       expect(result.body).not.toContain("private/secret");
       expect(result.rejectionAudits).toHaveLength(0);
       expect(result.mintedTokens).toHaveLength(0);
+    });
+
+    // Convex rejects a document over 1 MiB and a string with an unpaired
+    // surrogate. Token text that large or malformed must not fail the audit
+    // write, because a failed write leaves no record of the attempt.
+    it("bounds token text in the rejection audit", async () => {
+      const reason = `Unsupported GitHub OIDC signing algorithm: ${"x".repeat(2_000_000)}`;
+      const result = await mintWithVerifierError(new Error(reason), "9".repeat(2_000_000));
+
+      expect(result.status).toBe(400);
+      expect(result.body).toBe(rejection);
+      expect(result.rejectionAudits).toHaveLength(1);
+      expect(result.rejectionAudits[0]?.metadata).toMatchObject({
+        reason: `${reason.slice(0, 1000)}…`,
+        version: `${"9".repeat(1000)}…`,
+      });
+    });
+
+    it("replaces unpaired surrogates in the rejection audit", async () => {
+      const result = await mintWithVerifierError(
+        new Error("Unknown GitHub OIDC signing key: bad\ud800key"),
+        "1.0.0\udc00",
+      );
+
+      expect(result.status).toBe(400);
+      expect(result.rejectionAudits).toHaveLength(1);
+      expect(result.rejectionAudits[0]?.metadata).toMatchObject({
+        reason: "Unknown GitHub OIDC signing key: bad\ufffdkey",
+        version: "1.0.0\ufffd",
+      });
+    });
+
+    it("does not leave half a surrogate pair when it truncates the audit reason", async () => {
+      const result = await mintWithVerifierError(new Error(`${"a".repeat(999)}\u{1F600}tail`));
+
+      expect(result.rejectionAudits).toHaveLength(1);
+      expect(result.rejectionAudits[0]?.metadata).toMatchObject({
+        reason: `${"a".repeat(999)}\ufffd…`,
+      });
     });
 
     it("does not treat an untyped error with the outage text as an outage", async () => {

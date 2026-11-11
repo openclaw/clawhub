@@ -73,6 +73,12 @@ the token was never judged. Every other verifier error, including an unexpected
 exception, gets the shared `400` and the audit record. Convex platform failures
 from the handler's own queries and mutations stay `503`.
 
+The rejection audit stores text from the unverified request (`reason` and
+`version`). Convex rejects a document over 1 MiB and a string with an unpaired
+surrogate, and a failed audit write is not allowed to change the response, so
+both fields are cut to 1000 characters and unpaired surrogates are replaced.
+Without that bound an oversized or malformed token would leave no record.
+
 Known limit: the key fetch runs only after the package and its trusted publisher
 are found, so while GitHub's keys are unavailable a `503` is distinguishable
 from the shared `400`. Closing that needs the signature check to run before the

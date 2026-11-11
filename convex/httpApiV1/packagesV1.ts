@@ -2481,6 +2481,22 @@ const PUBLISH_TOKEN_SIGNING_KEYS_UNAVAILABLE =
   "GitHub Actions OIDC signing keys are temporarily unavailable. The request was not rejected for validation; retrying usually succeeds.";
 const PUBLISH_TOKEN_SIGNING_KEYS_RETRY_AFTER_SECONDS = 2;
 
+const PUBLISH_TOKEN_REJECTION_AUDIT_TEXT_MAX_LENGTH = 1000;
+const UNPAIRED_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+// The rejection audit stores text from an unverified request. Convex rejects a
+// document over 1 MiB and a string with an unpaired surrogate, so unbounded
+// text would fail the write and leave no record of the attempt. Truncate
+// first: a cut can leave half a surrogate pair behind.
+function publishTokenRejectionAuditText(value: string) {
+  const bounded =
+    value.length > PUBLISH_TOKEN_REJECTION_AUDIT_TEXT_MAX_LENGTH
+      ? `${value.slice(0, PUBLISH_TOKEN_REJECTION_AUDIT_TEXT_MAX_LENGTH)}…`
+      : value;
+  return bounded.replace(UNPAIRED_SURROGATE, "\uFFFD");
+}
+
 async function recordPublishTokenRejection(
   ctx: ActionCtx,
   ownerUserId: Id<"users">,
@@ -2498,12 +2514,14 @@ async function recordPublishTokenRejection(
         targetType: "package",
         targetId: String(packageId),
         metadata: {
-          version,
+          version: publishTokenRejectionAuditText(version),
           repository: trustedPublisher.repository,
           workflowFilename: trustedPublisher.workflowFilename,
           ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
           decision: "rejected",
-          reason: error instanceof Error ? error.message : "Token verification failed",
+          reason: publishTokenRejectionAuditText(
+            error instanceof Error ? error.message : "Token verification failed",
+          ),
         },
       } as never,
     );
