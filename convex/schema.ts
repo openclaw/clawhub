@@ -638,6 +638,30 @@ const packageCompatibilityValidator = v.optional(
   }),
 );
 
+// Portable OpenClaw palette subset read by ClawHub's theme chip and preview (convex/lib/pluginThemes.ts).
+const themePreviewPaletteValidator = v.object({
+  background: v.string(),
+  foreground: v.string(),
+  card: v.string(),
+  primary: v.string(),
+  "primary-foreground": v.string(),
+  secondary: v.string(),
+  "secondary-foreground": v.string(),
+  "muted-foreground": v.string(),
+  accent: v.string(),
+  "accent-foreground": v.string(),
+  border: v.string(),
+  "font-sans": v.optional(v.string()),
+  "font-mono": v.optional(v.string()),
+});
+
+const themePreviewValidator = v.object({
+  id: v.string(),
+  name: v.string(),
+  light: v.optional(themePreviewPaletteValidator),
+  dark: v.optional(themePreviewPaletteValidator),
+});
+
 export const pluginManifestSummaryValidator = v.object({
   schemaVersion: v.literal(1),
   contracts: v.optional(v.record(v.string(), v.array(v.string()))),
@@ -646,6 +670,7 @@ export const pluginManifestSummaryValidator = v.object({
   categories: v.optional(v.array(v.string())),
   icon: v.optional(v.string()),
   recommendedPrompts: v.optional(v.array(v.string())),
+  themes: v.optional(v.array(themePreviewValidator)),
   compatibility: v.optional(
     v.object({
       pluginApiRange: v.optional(v.string()),
@@ -1620,6 +1645,8 @@ const packages = defineTable({
       createdAt: v.number(),
       changelog: v.string(),
       icon: v.optional(v.string()),
+      // First theme of a theme-only latest release; the catalog draws it instead of a photo.
+      themePreview: v.optional(themePreviewValidator),
       compatibility: packageCompatibilityValidator,
       verification: packageVerificationValidator,
       artifact: packageArtifactSummaryValidator,

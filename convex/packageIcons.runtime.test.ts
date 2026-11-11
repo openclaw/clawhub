@@ -142,6 +142,67 @@ describe("plugin icon repair", () => {
     ).toEqual({ ...rebuilt, icon: newerIcon, categories: ["tools"] });
   });
 
+  it("backfills theme previews from release theme files into the catalog chip", async () => {
+    const { t, releaseId } = await fixture();
+    const description = "Carbon-black panels and sage-green signals.";
+    const dark = Object.fromEntries(
+      [
+        "background",
+        "foreground",
+        "card",
+        "card-foreground",
+        "popover",
+        "popover-foreground",
+        "primary",
+        "primary-foreground",
+        "secondary",
+        "secondary-foreground",
+        "muted",
+        "muted-foreground",
+        "accent",
+        "accent-foreground",
+        "destructive",
+        "destructive-foreground",
+        "border",
+        "input",
+        "ring",
+      ].map((key) => [key, key === "accent" ? "#243e2c" : "#061009"]),
+    );
+    const text = JSON.stringify({ name: "Artemis Canopy", description, dark });
+    await t.run(async (ctx) => {
+      const storageId = await ctx.storage.store(new Blob([text]));
+      await ctx.db.patch(releaseId, {
+        files: [
+          { path: "themes/canopy-dark.json", size: text.length, sha256: "d".repeat(64), storageId },
+        ],
+        extractedPluginManifest: {
+          id: "artemis-canopy-theme",
+          themes: [
+            {
+              id: "canopy-dark",
+              name: "Artemis Canopy",
+              description,
+              source: "themes/canopy-dark.json",
+            },
+          ],
+        },
+      });
+    });
+    await t.action(internal.migrations.runPluginManifestSummaryBackfillPage, {
+      family: "code-plugin",
+      dryRun: false,
+      confirm: "backfill-plugin-manifest-summaries",
+    });
+    const response = await t.fetch("/api/v1/plugins");
+    const [item] = (await response.json()).items;
+    expect(item.themePreview).toMatchObject({
+      id: "canopy-dark",
+      name: "Artemis Canopy",
+      dark: { background: "#061009", accent: "#243e2c" },
+    });
+    expect(item.themePreview.light).toBeUndefined();
+  });
+
   it("updates the release, latest summary, and every public catalog projection atomically and idempotently", async () => {
     const { t, ...ids } = await fixture();
     const before = await t.fetch("/api/v1/plugins");

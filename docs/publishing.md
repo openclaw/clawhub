@@ -200,6 +200,15 @@ for example `["List what's assigned to me and update me on their status."]`.
 ClawHub and OpenClaw show them on your plugin's page. An invalid list is ignored;
 your release still publishes.
 
+### Theme Plugins
+
+OpenClaw theme plugins list their themes in `openclaw.plugin.json` as
+`themes: [{ id, name, description, source }]`, where `source` is a theme JSON file
+in the package with a full `light` and/or `dark` palette. If a plugin ships only
+themes, ClawHub shows the theme's color chip as its catalog icon and previews it in
+an OpenClaw window on the plugin page, with a Light/Dark switch for the modes it
+ships. Themes OpenClaw would reject are not previewed; your release still publishes.
+
 ### Plugin Icons
 
 ClawHub uses the bundled `assets/icon.png` for plugin catalog artwork. Manifest

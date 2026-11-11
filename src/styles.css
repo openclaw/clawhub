@@ -3080,6 +3080,61 @@ code {
 }
 
 /* Keep the artwork inset on its own dark tile, even in muted catalog containers. */
+/* Settings > Appearance theme chip: two text lines, accent pill and secondary dot. */
+.marketplace-icon-theme {
+  --theme-chip-bg: var(--theme-chip-light-bg, var(--theme-chip-dark-bg));
+  --theme-chip-accent: var(--theme-chip-light-accent, var(--theme-chip-dark-accent));
+  --theme-chip-accent-2: var(--theme-chip-light-accent-2, var(--theme-chip-dark-accent-2));
+  --theme-chip-ink: var(--theme-chip-light-ink, var(--theme-chip-dark-ink));
+
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  align-content: space-between;
+  gap: 12%;
+  width: 100%;
+  height: 100%;
+  padding: 18%;
+  background: var(--theme-chip-bg);
+}
+
+:root[data-theme-resolved="dark"] .marketplace-icon-theme {
+  --theme-chip-bg: var(--theme-chip-dark-bg, var(--theme-chip-light-bg));
+  --theme-chip-accent: var(--theme-chip-dark-accent, var(--theme-chip-light-accent));
+  --theme-chip-accent-2: var(--theme-chip-dark-accent-2, var(--theme-chip-light-accent-2));
+  --theme-chip-ink: var(--theme-chip-dark-ink, var(--theme-chip-light-ink));
+}
+
+.marketplace-icon-theme > i {
+  width: 62%;
+  height: 3px;
+  border-radius: var(--oc-radius-full);
+  background: color-mix(in srgb, var(--theme-chip-ink) 45%, transparent);
+}
+
+.marketplace-icon-theme > i + i {
+  width: 38%;
+  background: color-mix(in srgb, var(--theme-chip-ink) 22%, transparent);
+}
+
+.marketplace-icon-theme > span {
+  display: flex;
+  align-items: center;
+  align-self: end;
+  gap: 3px;
+}
+
+.marketplace-icon-theme > span i {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--oc-radius-full);
+  background: var(--theme-chip-accent-2);
+}
+
+.marketplace-icon-theme > span i:first-child {
+  width: 15px;
+  background: var(--theme-chip-accent);
+}
+
 .marketplace-icon-openclaw .marketplace-icon-image {
   box-sizing: border-box;
   padding: 10%;
@@ -3916,6 +3971,117 @@ code {
 .plugin-prompt-preview-choices button[aria-pressed="true"] {
   border-color: var(--oc-text-muted);
   color: var(--oc-text-primary);
+}
+
+/* Theme previews: the palette arrives as inline --oc-* tokens on the window. */
+.plugin-prompt-preview-themed {
+  color: var(--oc-text-primary);
+  font-family: var(--oc-font-body);
+}
+
+.plugin-prompt-preview-themed .plugin-prompt-preview-composer svg {
+  background: var(--oc-accent-primary);
+  color: var(--oc-text-on-accent);
+}
+
+.plugin-prompt-preview-body {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+  gap: var(--oc-space-4);
+}
+
+.plugin-prompt-preview-chat {
+  display: grid;
+  align-content: start;
+  gap: var(--oc-space-4);
+  min-width: 0;
+}
+
+.plugin-prompt-preview-sessions {
+  display: grid;
+  align-content: start;
+  gap: var(--oc-space-1);
+  margin: 0;
+  padding: var(--oc-space-2) var(--oc-space-3) 0 0;
+  border-right: 1px solid var(--oc-border-subtle);
+  color: var(--oc-text-muted);
+  font-size: 0.84rem;
+  list-style: none;
+}
+
+.plugin-prompt-preview-sessions li {
+  overflow: hidden;
+  padding: var(--oc-space-1) var(--oc-space-2);
+  border-radius: var(--oc-radius-control);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-prompt-preview-sessions li[aria-current] {
+  background: var(--oc-surface-accent-soft);
+  color: var(--oc-accent-secondary);
+}
+
+.plugin-prompt-preview-reply {
+  display: grid;
+  justify-items: start;
+  gap: var(--oc-space-2);
+  max-width: 90%;
+}
+
+.plugin-prompt-preview-reply p {
+  margin: 0;
+}
+
+.plugin-prompt-preview-muted {
+  color: var(--oc-text-muted);
+}
+
+.plugin-prompt-preview-link {
+  color: var(--oc-text-link);
+  text-decoration: underline;
+}
+
+.plugin-prompt-preview-reply code {
+  padding: var(--oc-space-2) var(--oc-space-3);
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-bg-surface);
+  font-family: var(--oc-font-mono);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.plugin-prompt-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--oc-space-2);
+}
+
+.plugin-prompt-preview-actions span {
+  padding: var(--oc-space-1) var(--oc-space-3);
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-surface-interactive);
+  color: var(--oc-text-secondary);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.plugin-prompt-preview-actions span:first-child {
+  border-color: var(--oc-accent-primary);
+  background: var(--oc-accent-primary);
+  color: var(--oc-text-on-accent);
+}
+
+@media (max-width: 560px) {
+  .plugin-prompt-preview-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .plugin-prompt-preview-sessions {
+    display: none;
+  }
 }
 
 .plugin-detail-page .skill-hero-main-extra {

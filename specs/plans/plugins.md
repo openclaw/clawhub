@@ -145,6 +145,27 @@ invalid list is dropped whole and never blocks publication. OpenClaw's Gateway
 already reads this summary field for catalog plugins, so keep it the only copy.
 Existing releases gain prompts through the plugin manifest summary backfill.
 
+### Theme previews
+
+Publication reads each `themes[].source` JSON file declared in `openclaw.plugin.json`
+and stores a compact preview in `pluginManifestSummary.themes`: id, name, and per
+shipped mode only the palette keys ClawHub's chip and compact preview read (plus
+`font-sans`/`font-mono` when declared). The modes are the palettes present. Validation
+mirrors OpenClaw's portable theme rules (`convex/lib/pluginThemes.ts`): safe local id
+and `.json` source path, matching name and description, complete light and/or dark
+palettes with safe color and font values. Invalid themes are dropped one by one and
+never block publication. Values reach the page only as inline `--oc-*` custom
+properties on the preview, so they must stay limited to those validated colors and fonts.
+
+A plugin is theme-only when it has themes and no contracts, providers, channels, MCP
+servers, or bundled skills. Only those plugins replace the catalog icon (and its
+publisher photo fallback) with the Settings > Appearance chip, and show the themed
+compact window on the detail page. Catalog cards never read release summaries, so the
+first theme of a theme-only latest release is copied into the package's
+`latestVersionSummary.themePreview`. The plugin manifest summary backfill reads theme
+files like `SKILL.md` and refreshes both copies for existing releases. There is no
+Themes category, table, or endpoint.
+
 ### ClawHub today
 
 ClawHub is currently a text-bundle registry for skills.

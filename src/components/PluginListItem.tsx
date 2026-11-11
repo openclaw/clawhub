@@ -77,6 +77,7 @@ export function PluginListItem({
             imageUrl={item.icon}
             rasterAssetUrl={item.iconAssetUrl}
             publisherImageUrl={item.ownerImage}
+            theme={item.themePreview}
             categorySlug={primaryCategory?.slug}
             size="md"
           />
@@ -137,6 +138,7 @@ export function PluginListItem({
         imageUrl={item.icon}
         rasterAssetUrl={item.iconAssetUrl}
         publisherImageUrl={item.ownerImage}
+        theme={item.themePreview}
         categorySlug={primaryCategory?.slug}
       />
       <div className="skill-list-item-body">

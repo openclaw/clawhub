@@ -12,6 +12,11 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import { syncPackageSearchDigestForPackageId } from "./functions";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
 import { derivePluginManifestSummary, normalizePackageName } from "./lib/packageRegistry";
+import {
+  declaredThemeSourcePaths,
+  MAX_THEME_SOURCE_BYTES,
+  packageThemePreviewFields,
+} from "./lib/pluginThemes";
 import { adjustPublisherStatsForSkillChange, recomputePublisherStats } from "./lib/publisherStats";
 import {
   buildSkillDownloadBackfillPatch,
@@ -1193,11 +1198,15 @@ async function resolvePluginManifestForSummaryBackfill(
 async function withSkillMarkdownTextsForPluginManifestSummaryBackfill(
   ctx: Pick<ActionCtx, "storage">,
   files: Doc<"packageReleases">["files"],
+  pluginManifest: unknown,
 ) {
+  // Theme JSON is read like SKILL.md so existing releases gain theme previews too.
+  const themeSources = new Set(declaredThemeSourcePaths(pluginManifest));
   let readErrors = 0;
   const nextFiles = await Promise.all(
     files.map(async (file) => {
-      if (!isSkillMarkdownPath(file.path)) return file;
+      const isThemeSource = themeSources.has(file.path) && file.size <= MAX_THEME_SOURCE_BYTES;
+      if (!isSkillMarkdownPath(file.path) && !isThemeSource) return file;
       try {
         return {
           ...file,
@@ -1290,6 +1299,17 @@ export const applyPluginManifestSummaryBackfillPatch = internalMutation({
         release.pluginManifestSummary,
       ),
     });
+    // Catalog cards read the theme chip from the package's latest-version summary.
+    const pkg = await ctx.db.get(release.packageId);
+    if (pkg?.latestReleaseId === release._id && pkg.latestVersionSummary) {
+      const { themePreview: _previous, ...latestVersionSummary } = pkg.latestVersionSummary;
+      await ctx.db.patch(pkg._id, {
+        latestVersionSummary: {
+          ...latestVersionSummary,
+          ...packageThemePreviewFields(args.pluginManifestSummary),
+        },
+      });
+    }
     return true;
   },
 });
@@ -1335,6 +1355,7 @@ async function processPluginManifestSummaryBackfillCandidates(
     const filesResult = await withSkillMarkdownTextsForPluginManifestSummaryBackfill(
       ctx,
       candidate.release.files,
+      pluginManifest,
     );
     progress.skillMarkdownReadErrors += filesResult.readErrors;
     if (filesResult.readErrors > 0) {

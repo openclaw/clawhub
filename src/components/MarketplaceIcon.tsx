@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import type { ThemePreview } from "../../convex/lib/pluginThemes";
 import { getPluginCategoryBySlug, getSkillIconCategoryForSkill } from "../lib/categories";
 import { getCategoryIconComponent, UNRESOLVED_SKILL_CATEGORY_ICON } from "../lib/categoryIcons";
 import { MARKETPLACE_KIND_ICONS, type MarketplaceIconKind } from "../lib/marketplaceIcons";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
+import { themeChipStyle } from "../lib/themePreviewTokens";
 
 type MarketplaceIconProps = {
   kind: MarketplaceIconKind;
@@ -10,6 +12,8 @@ type MarketplaceIconProps = {
   imageUrl?: string | null;
   rasterAssetUrl?: string | null;
   publisherImageUrl?: string | null;
+  /** Theme-only plugins show their Settings-style theme chip instead of any image. */
+  theme?: ThemePreview | null;
   categorySlug?: string | null;
   skill?: {
     categories?: readonly string[] | null;
@@ -48,6 +52,7 @@ export function MarketplaceIcon({
   imageUrl,
   rasterAssetUrl,
   publisherImageUrl,
+  theme,
   categorySlug,
   skill,
   size = "sm",
@@ -83,9 +88,10 @@ export function MarketplaceIcon({
       : null;
   // Try the verified raster, then the original sandboxed endpoint once. Retain
   // both failures so errors cannot alternate indefinitely between the sources.
-  const visibleImageUrl =
-    [directRasterUrl, supportedImageUrl].find((url) => url && !failedImageUrls.includes(url)) ??
-    null;
+  const visibleImageUrl = theme
+    ? null
+    : ([directRasterUrl, supportedImageUrl].find((url) => url && !failedImageUrls.includes(url)) ??
+      null);
 
   useEffect(() => {
     // SSR images can fail before React attaches onError. Recover the completed
@@ -115,7 +121,16 @@ export function MarketplaceIcon({
       }
       aria-hidden="true"
     >
-      {visibleImageUrl ? (
+      {theme ? (
+        <span className="marketplace-icon-theme" style={themeChipStyle(theme)}>
+          <i />
+          <i />
+          <span>
+            <i />
+            <i />
+          </span>
+        </span>
+      ) : visibleImageUrl ? (
         <img
           ref={imageRef}
           className="marketplace-icon-image"

@@ -11,6 +11,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./officialPublishers";
 import { extractPackageDigestFields } from "./packageSearchDigest";
 import { isPackageBlockedFromPublic } from "./packageSecurity";
+import type { ThemePreview } from "./pluginThemes";
 import { toPublicPublisher } from "./public";
 import { canAccessPublisherOwnerScope, getOwnerPublisher } from "./publishers";
 import { toPublicPackageFamily, type StoredPackageFamily } from "./templateStorage";
@@ -41,6 +42,7 @@ export type PublicPackageListItem = {
   isOfficial: boolean;
   summary: string | null;
   icon: string | null;
+  themePreview?: ThemePreview;
   ownerHandle: string | null;
   ownerImage: string | null;
   ownerOfficial: boolean;
@@ -202,12 +204,13 @@ function defaultPackageStats(): Doc<"packages">["stats"] {
   return { downloads: 0, installs: 0, stars: 0, versions: 0 };
 }
 
-async function resolvePackageListStats(
-  ctx: DbReaderCtx,
-  digest: PackageDigestLike,
-): Promise<Doc<"packages">["stats"]> {
+async function resolvePackageListStats(ctx: DbReaderCtx, digest: PackageDigestLike) {
   const pkg = await ctx.db.get(digest.packageId);
-  return pkg?.stats ?? digest.stats ?? defaultPackageStats();
+  return {
+    stats: pkg?.stats ?? digest.stats ?? defaultPackageStats(),
+    // The package row is already read for stats; it also carries the theme chip.
+    themePreview: pkg?.latestVersionSummary?.themePreview,
+  };
 }
 
 type PackageListReadCache = {
@@ -241,7 +244,10 @@ export async function toPublicPackageListItem(
     officialPromise = isOfficialPublisher(ctx, publisher);
     if (publisher) cache?.officialPublishers.set(publisher._id, officialPromise);
   }
-  const [stats, ownerOfficial] = await Promise.all([statsPromise, officialPromise]);
+  const [{ stats, themePreview }, ownerOfficial] = await Promise.all([
+    statsPromise,
+    officialPromise,
+  ]);
   return {
     name: digest.name,
     displayName: digest.displayName,
@@ -251,6 +257,7 @@ export async function toPublicPackageListItem(
     isOfficial: digest.isOfficial,
     summary: digest.summary ?? null,
     icon: digest.icon ?? null,
+    ...(themePreview ? { themePreview } : {}),
     ownerHandle: digest.ownerHandle || null,
     ownerImage: toPublicPublisher(publisher)?.image ?? null,
     ownerOfficial,
@@ -323,6 +330,9 @@ export async function toPublicPackageListItemFromPackage(
     isOfficial: pkg.isOfficial,
     summary: pkg.summary ?? null,
     icon: pkg.icon ?? null,
+    ...(pkg.latestVersionSummary?.themePreview
+      ? { themePreview: pkg.latestVersionSummary.themePreview }
+      : {}),
     ownerHandle: owner?.handle ?? null,
     ownerImage: owner?.image ?? null,
     ownerOfficial: owner?.official === true,

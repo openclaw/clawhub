@@ -683,6 +683,62 @@ describe("plugin detail route", () => {
     expect(preview.textContent).not.toContain("List what's assigned to me");
   });
 
+  it("previews a theme-only plugin in the theme's colors for the modes it ships", async () => {
+    const palette = {
+      background: "#061009",
+      foreground: "#e1f1e5",
+      card: "#0a1710",
+      primary: "#e6c178",
+      "primary-foreground": "#171207",
+      secondary: "#16281d",
+      "secondary-foreground": "#e6c178",
+      "muted-foreground": "#afc9b8",
+      accent: "#243e2c",
+      "accent-foreground": "#f0d79d",
+      border: "#35523e",
+    };
+    loaderDataMock = {
+      ...loaderDataMock,
+      version: {
+        package: { name: "demo-plugin", displayName: "Demo Plugin", family: "code-plugin" },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Adds themes",
+          files: [],
+          pluginManifestSummary: {
+            schemaVersion: 1,
+            themes: [
+              {
+                id: "canopy",
+                name: "Canopy",
+                light: { ...palette, background: "#ffffff" },
+                dark: palette,
+              },
+              { id: "night", name: "Night", dark: palette },
+            ],
+            configFields: [],
+            mcpServers: [],
+            bundledSkills: [],
+          },
+        },
+      },
+    };
+    const { PluginDetailPage } = await import("../routes/plugins/$name");
+
+    render(<PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />);
+
+    const preview = screen.getByRole("figure", { name: "OpenClaw chat preview" });
+    expect(preview.style.getPropertyValue("--oc-bg-page")).toBe("#ffffff");
+    expect(preview.textContent).toContain("Canopy");
+    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+    expect(preview.style.getPropertyValue("--oc-bg-page")).toBe("#061009");
+
+    fireEvent.click(screen.getByRole("button", { name: "Night" }));
+    expect(screen.queryByRole("button", { name: "Light" })).toBeNull();
+    expect(screen.getByText("Dark only")).toBeTruthy();
+  });
+
   it("omits the prompt section when a plugin has no recommended prompts", async () => {
     const { PluginDetailPage } = await import("../routes/plugins/$name");
 

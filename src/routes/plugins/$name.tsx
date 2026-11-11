@@ -8,7 +8,6 @@ import {
 import { useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import {
   AlertTriangle,
-  ArrowUp,
   Braces,
   ChevronRight,
   Download,
@@ -34,7 +33,9 @@ import {
   pluginApiRetirement,
   type PluginApiRetirement,
 } from "../../../convex/lib/pluginApiRetirements";
+import { getThemeOnlyPreviews, type ThemePreview } from "../../../convex/lib/pluginThemes";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
+import { CompactOpenClawPreview } from "../../components/CompactOpenClawPreview";
 import {
   DetailHero,
   DETAIL_HERO_TOPIC_LIMIT,
@@ -594,18 +595,7 @@ function PluginRecommendedPrompts({ prompts }: { prompts: readonly string[] }) {
           size="icon-sm"
         />
       </div>
-      <figure className="plugin-prompt-preview" aria-label="OpenClaw chat preview">
-        <div className="plugin-prompt-preview-bar" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </div>
-        <p className="plugin-prompt-preview-message">{prompt}</p>
-        <div className="plugin-prompt-preview-composer" aria-hidden="true">
-          <span>Message OpenClaw</span>
-          <ArrowUp size={14} />
-        </div>
-      </figure>
+      <CompactOpenClawPreview messages={[{ role: "user", content: prompt }]} />
       {prompts.length > 1 ? (
         <div className="plugin-prompt-preview-choices" role="group" aria-label="Example prompts">
           {prompts.map((choice, index) => (
@@ -616,6 +606,93 @@ function PluginRecommendedPrompts({ prompts }: { prompts: readonly string[] }) {
               onClick={() => setSelected(index)}
             >
               {choice}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+// Static sample content that exercises the palette; this is a theme demo, not a real reply.
+function PluginThemePreview({
+  themes,
+  installCommand,
+}: {
+  themes: ThemePreview[];
+  installCommand: string;
+}) {
+  const [selected, setSelected] = useState(0);
+  const theme = themes[selected] ?? themes[0];
+  const modes = (["light", "dark"] as const).filter((mode) => theme?.[mode]);
+  const [mode, setMode] = useState<"light" | "dark">(modes[0] ?? "light");
+  useEffect(() => {
+    // Start in the site's resolved mode when the theme ships it; SSR cannot know it.
+    const siteMode = document.documentElement.dataset.themeResolved;
+    if ((siteMode === "light" || siteMode === "dark") && themes[0]?.[siteMode]) setMode(siteMode);
+  }, [themes]);
+  const palette = theme?.[mode] ?? (modes[0] ? theme?.[modes[0]] : undefined);
+  if (!theme || !palette) return null;
+  return (
+    <section className="plugin-manifest-section" aria-labelledby="plugin-theme-preview-title">
+      <div className="plugin-prompt-preview-heading">
+        <h3 id="plugin-theme-preview-title">Theme preview</h3>
+        {modes.length > 1 ? (
+          <div className="plugin-prompt-preview-choices" role="group" aria-label="Color mode">
+            {modes.map((choice) => (
+              <button
+                key={choice}
+                type="button"
+                aria-pressed={choice === mode}
+                onClick={() => setMode(choice)}
+              >
+                {choice === "light" ? "Light" : "Dark"}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <Badge variant="compact">{modes[0] === "dark" ? "Dark" : "Light"} only</Badge>
+        )}
+      </div>
+      <CompactOpenClawPreview
+        palette={palette}
+        sessions={[theme.name, "Release notes", "Inbox triage"]}
+        messages={[
+          { role: "user", content: "Show me what this theme looks like." },
+          {
+            role: "assistant",
+            content: (
+              <>
+                <p>
+                  This is <strong>{theme.name}</strong> in {mode} mode.
+                </p>
+                <p className="plugin-prompt-preview-muted">
+                  Secondary text is muted, and{" "}
+                  <span className="plugin-prompt-preview-link">links</span> use the primary color.
+                </p>
+                <code>{installCommand}</code>
+                <span className="plugin-prompt-preview-actions" aria-hidden="true">
+                  <span>Primary</span>
+                  <span>Secondary</span>
+                </span>
+              </>
+            ),
+          },
+        ]}
+      />
+      {themes.length > 1 ? (
+        <div className="plugin-prompt-preview-choices" role="group" aria-label="Themes">
+          {themes.map((choice, index) => (
+            <button
+              key={choice.id}
+              type="button"
+              aria-pressed={index === selected}
+              onClick={() => {
+                setSelected(index);
+                if (!choice[mode]) setMode(choice.light ? "light" : "dark");
+              }}
+            >
+              {choice.name}
             </button>
           ))}
         </div>
@@ -1269,6 +1346,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
+  const themePreviews = getThemeOnlyPreviews(pluginManifestSummary);
   const verification = latestRelease?.verification ?? pkg.verification;
   const readmeAssetBaseUrl = buildReadmeAssetBaseUrl(
     verification?.sourceRepo,
@@ -1871,7 +1949,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     isPlugin ? "Copy plugin install command" : "Copy skill install command"
                   }
                 />
-                {pluginManifestSummary?.recommendedPrompts?.length ? (
+                {themePreviews ? (
+                  <PluginThemePreview themes={themePreviews} installCommand={installCommand} />
+                ) : pluginManifestSummary?.recommendedPrompts?.length ? (
                   <PluginRecommendedPrompts prompts={pluginManifestSummary.recommendedPrompts} />
                 ) : null}
               </div>
