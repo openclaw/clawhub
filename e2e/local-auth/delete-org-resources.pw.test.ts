@@ -1,7 +1,8 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
-import { runDevSeed } from "../helpers/convexSeed";
+import { expect, test, type Page } from "@playwright/test";
+import { pollableDevSeedState, runDevSeed } from "../helpers/convexSeed";
 import {
   expectNoFatalErrorUi,
+  gotoUntilVisible,
   trackRuntimeErrors,
   waitForHydration,
 } from "../helpers/runtimeErrors";
@@ -57,14 +58,6 @@ function getOrgDeletionFixtureState(fixture: OrgDeletionFixture) {
     skillId: fixture.skillId,
     packageId: fixture.packageId,
   });
-}
-
-function pollableDevSeedState<TState extends object>(readState: () => TState) {
-  try {
-    return readState();
-  } catch {
-    return {};
-  }
 }
 
 function clearExpectedNotFoundNavigationErrors(
@@ -125,23 +118,6 @@ function isExpectedOrgDeletionRuntimeError(error: string) {
     "[CONVEX M(functions:syncSkillSearchDigestsForOwnerPublisherIdInternal)]",
     "[CONVEX M(users:ensure)]",
   ].some((prefix) => error.includes(prefix));
-}
-
-async function gotoUntilVisible(page: Page, url: string, target: Locator) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-    await waitForHydration(page);
-    try {
-      await expect(target).toBeVisible({ timeout: 20_000 });
-      return;
-    } catch (error) {
-      lastError = error;
-      if (attempt === 11) break;
-      await page.waitForTimeout(1_000 * (attempt + 1));
-    }
-  }
-  throw lastError;
 }
 
 async function expectPublisherProfileSkillLink(

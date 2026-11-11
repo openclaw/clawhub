@@ -14,6 +14,7 @@ export type WorkerCommandTermination = {
 
 export class CommandFailure extends Error {
   exitCode: number | null;
+  failureKind: "exit" | "timeout" | "output_limit" | "observer" | "cleanup" | "cancelled";
   outputLimitExceeded?: "stdout" | "stderr";
   stderr: string;
   stdout: string;
@@ -26,10 +27,16 @@ export class CommandFailure extends Error {
     stderr: string,
     timedOut: boolean,
     outputLimitExceeded?: "stdout" | "stderr",
+    failureKind: CommandFailure["failureKind"] = timedOut
+      ? "timeout"
+      : outputLimitExceeded
+        ? "output_limit"
+        : "exit",
   ) {
     super(message);
     this.name = "CommandFailure";
     this.exitCode = exitCode;
+    this.failureKind = failureKind;
     this.stdout = stdout;
     this.stderr = stderr;
     this.timedOut = timedOut;
@@ -53,6 +60,7 @@ export async function runWorkerCommand(
     cleanupProcessGroup?: boolean;
     onStderrChunk?: (chunk: Buffer) => void;
     onTermination?: (termination: WorkerCommandTermination) => void;
+    signal?: AbortSignal;
     timeoutMs: number;
   },
 ) {
@@ -69,6 +77,17 @@ export async function runWorkerCommand(
       throw new RangeError(`${stream} output limit must be a non-negative safe integer`);
     }
   }
+  if (options.signal?.aborted) {
+    throw new CommandFailure(
+      "Worker command cancelled",
+      null,
+      "",
+      "",
+      false,
+      undefined,
+      "cancelled",
+    );
+  }
   return await new Promise<{ stdout: string; stderr: string }>((resolvePromise, reject) => {
     const startedAt = performance.now();
     const child = spawn(command, args, {
@@ -82,6 +101,7 @@ export async function runWorkerCommand(
     let outputLimitExceeded: "stdout" | "stderr" | undefined;
     let observerFailed = false;
     let timedOut = false;
+    let cancelled = false;
     let settled = false;
     let forceKillTimeout: NodeJS.Timeout | undefined;
     let cleanupTimeout: NodeJS.Timeout | undefined;
@@ -141,6 +161,7 @@ export async function runWorkerCommand(
             output.stderr,
             timedOut,
             outputLimitExceeded,
+            "cleanup",
           ),
         );
       }, 60_000);
@@ -174,14 +195,23 @@ export async function runWorkerCommand(
       clearTimeout(timeout);
       if (forceKillTimeout) clearTimeout(forceKillTimeout);
       if (cleanupTimeout) clearTimeout(cleanupTimeout);
+      options.signal?.removeEventListener("abort", handleAbort);
     };
+    function handleAbort() {
+      if (settled) return;
+      cancelled = true;
+      clearTimeout(timeout);
+      terminateProcessTree();
+    }
+    options.signal?.addEventListener("abort", handleAbort, { once: true });
+    if (options.signal?.aborted) handleAbort();
     child.stdout.on("data", (chunk: Buffer) => appendOutput("stdout", chunk));
     child.stderr.on("data", (chunk: Buffer) => appendOutput("stderr", chunk));
     child.on("error", (error) => {
       if (settled) return;
       settled = true;
       clearTimers();
-      if (timedOut) killProcessTree("SIGKILL");
+      if (timedOut || cancelled) killProcessTree("SIGKILL");
       reportTermination(null);
       reject(error);
     });
@@ -190,7 +220,11 @@ export async function runWorkerCommand(
       settled = true;
       clearTimers();
       const cleanupRequired =
-        timedOut || outputLimitExceeded || observerFailed || options.cleanupProcessGroup;
+        timedOut ||
+        cancelled ||
+        outputLimitExceeded ||
+        observerFailed ||
+        options.cleanupProcessGroup;
       if (cleanupRequired) {
         cleanupStartedAt ??= performance.now();
         killProcessTree("SIGKILL");
@@ -219,6 +253,8 @@ export async function runWorkerCommand(
             output.stdout,
             output.stderr,
             timedOut,
+            undefined,
+            "observer",
           ),
         );
         return;
@@ -233,6 +269,7 @@ export async function runWorkerCommand(
             output.stderr,
             timedOut,
             outputLimitExceeded,
+            "output_limit",
           ),
         );
         return;
@@ -245,6 +282,22 @@ export async function runWorkerCommand(
             output.stdout,
             output.stderr,
             timedOut,
+            undefined,
+            "cleanup",
+          ),
+        );
+        return;
+      }
+      if (cancelled && !timedOut) {
+        reject(
+          new CommandFailure(
+            "Worker command cancelled",
+            code,
+            output.stdout,
+            output.stderr,
+            false,
+            undefined,
+            "cancelled",
           ),
         );
         return;

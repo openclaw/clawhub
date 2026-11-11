@@ -41,6 +41,7 @@ describe("new downloads command", () => {
     http.apiRequest.mockResolvedValueOnce(pending);
     await cmdDownloads(makeGlobalOpts(), { json: true });
     expect(auth.requireAuthToken).toHaveBeenCalledOnce();
+    expect(auth.requireAuthToken).toHaveBeenCalledWith("https://clawhub.ai");
     expect(http.apiRequest).toHaveBeenCalledWith(
       "https://clawhub.ai",
       expect.objectContaining({

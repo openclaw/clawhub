@@ -54,8 +54,8 @@ export async function cmdRevokeSkillVersion(
     if (!ok) return undefined;
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Revoking ${slug}@${version}`);
   try {
     const result = await apiRequest(
@@ -97,8 +97,8 @@ export async function cmdBanUser(
 
   const reason = options.reason?.trim() || undefined;
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const allowPrompt = isInteractive() && inputAllowed !== false;
   const resolved = await resolveUserIdentifier(
     registry,
@@ -154,8 +154,8 @@ export async function cmdUnbanUser(
 
   const reason = options.reason?.trim() || undefined;
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const allowPrompt = isInteractive() && inputAllowed !== false;
   const resolved = await resolveUserIdentifier(
     registry,
@@ -221,8 +221,8 @@ export async function cmdLiftModerationHold(
   if (!reason) fail("--reason required");
   if (reason.length > 500) fail("--reason must be 500 characters or fewer");
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const allowPrompt = isInteractive() && inputAllowed !== false;
   const resolved = await resolveUserIdentifier(
     registry,
@@ -285,8 +285,8 @@ export async function cmdSetRole(
   if (!raw) fail("Handle or user id required");
   const role = normalizeRole(roleArg);
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const allowPrompt = isInteractive() && inputAllowed !== false;
   const resolved = await resolveUserIdentifier(
     registry,
@@ -369,8 +369,8 @@ export async function cmdRecoverPersonalPublisher(
     if (!ok) return undefined;
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning" : "Applying"} publisher recovery for @${handle}`);
@@ -437,8 +437,8 @@ export async function cmdRescanSkill(
     if (!ok) return undefined;
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Queueing ClawScan rescan for ${slug}`);
   try {
     const result = await apiRequest(
@@ -516,8 +516,8 @@ export async function cmdRescanAllSkills(
 
   const batchPath =
     target === "packages" ? `${ApiRoutes.packages}/-/scan/batch` : `${ApiRoutes.skillScans}/batch`;
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   let cursor = options.cursor?.trim() || null;
   let processed = 0;
   let batches = 0;
@@ -715,8 +715,8 @@ export async function cmdReclassifyBan(
   if (reason.length > 500) fail("Reason too long (max 500 chars)");
 
   const dryRun = options.apply !== true;
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const allowPrompt = isInteractive() && inputAllowed !== false;
   const resolved = await resolveUserIdentifier(
     registry,

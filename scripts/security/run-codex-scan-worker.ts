@@ -36,6 +36,8 @@ import {
 } from "./bundled-skillspector-diagnostic";
 import {
   isTypedScannerJudgeRun,
+  isEvidenceOnlyCodexRun,
+  type ClawHubProfile,
   validateDecisionsRun,
   validateAigMcpReport,
 } from "./clawscan-decisions";
@@ -51,6 +53,7 @@ import {
   noClawScanExposure,
   unknownClawScanExposure,
 } from "./clawscan-exposure";
+import { assertQualifiedNativeArtifact } from "./clawscan-native-runtime";
 import {
   usesWholePluginScanForTarget,
   qualifiedPluginCommand,
@@ -62,6 +65,7 @@ import {
   parseClawScanProgress,
   type SafeClawScanProgress,
 } from "./clawscan-progress";
+import { resolveTemplateScanForTarget } from "./clawscan-template-runtime";
 import {
   isEndorPluginScanEnabled,
   runEndorPluginScan,
@@ -1021,10 +1025,15 @@ async function runCommand(
     onStderrChunk?: (chunk: Buffer) => void;
     onTermination?: (termination: WorkerCommandTermination) => void;
     cleanupProcessGroup?: boolean;
+    signal?: AbortSignal;
+    skillspectorMaxLlmConcurrency?: number;
   },
 ) {
   const env = codexEnv(options.cwd);
   for (const name of options.omitEnv ?? []) delete env[name];
+  if (options.skillspectorMaxLlmConcurrency !== undefined) {
+    env.SKILLSPECTOR_MAX_LLM_CONCURRENCY = String(options.skillspectorMaxLlmConcurrency);
+  }
   return await runWorkerCommand(command, args, {
     cwd: options.cwd,
     env,
@@ -1034,6 +1043,7 @@ async function runCommand(
     onStderrChunk: options.onStderrChunk,
     onTermination: options.onTermination,
     cleanupProcessGroup: options.cleanupProcessGroup,
+    signal: options.signal,
   });
 }
 
@@ -1728,13 +1738,45 @@ export function aggregateSkillSpectorAnalyses(
   };
 }
 
+// Returns the cleanup failure a settled root must report when its process group
+// was never confirmed absent, whatever kind its own error carried.
+function bundledCleanupUnconfirmedFailure(
+  error: unknown,
+  termination: WorkerCommandTermination | undefined,
+) {
+  if (error instanceof CommandFailure) {
+    if (error.failureKind === "cleanup") return error;
+  } else if (
+    // Node reports a failed spawn as an error whose syscall names the spawn.
+    // No process group was created, though the command cannot claim absence.
+    error instanceof Error &&
+    (error as NodeJS.ErrnoException).syscall?.startsWith("spawn")
+  ) {
+    return undefined;
+  }
+  // Without a termination report the command was rejected before it spawned.
+  if (!termination || termination.processGroup === "absent") return undefined;
+  return new CommandFailure(
+    "Worker cleanup could not be confirmed",
+    error instanceof CommandFailure ? error.exitCode : null,
+    "",
+    "",
+    error instanceof CommandFailure && error.timedOut,
+    undefined,
+    "cleanup",
+  );
+}
+
 export async function runBundledSkillSpector(
   workspace: string,
   scanInputs: BundledSkillSpectorScanInput[],
   onDiagnostic: (diagnostic: Partial<ClawScanCommandDiagnostic>) => void,
 ) {
-  const analyses: SkillSpectorAnalysis[] = [];
-  const reports: Array<{ rootPath: string; report: unknown }> = [];
+  // Index-addressed so concurrent completion cannot reorder the display
+  // aggregate or the retained per-root reports.
+  const results: Array<{ analysis: SkillSpectorAnalysis; report: unknown } | undefined> = new Array(
+    scanInputs.length,
+  );
   const readReport = (raw: string, scanInput: BundledSkillSpectorScanInput) => {
     const report = parseSkillSpectorReport(raw);
     if (!isUsableSkillSpectorReport(report))
@@ -1748,20 +1790,32 @@ export async function runBundledSkillSpector(
     };
   };
   const rootTimeoutMs = clawScanTimeoutMs();
-  // Keep roots sequential to avoid multiplying SkillSpector's own API fan-out.
-  // The total ceiling preserves room for the judge within the hosted job/lease.
+  // The pinned HTTP scanner allows ten model calls. Share that ceiling between
+  // two roots instead of multiplying it; retain serial execution for other providers.
+  const parallel =
+    scanInputs.length > 1 &&
+    securityScannerEnvironment(process.env).SKILLSPECTOR_PROVIDER === "openai";
+  const concurrency = parallel ? 2 : 1;
+  const controller = new AbortController();
+  const diagnostics = new Map<number, Partial<ClawScanCommandDiagnostic>>();
+  const cleanupUnconfirmed = new Map<number, CommandFailure>();
+  let completedRoots = 0;
+  let nextIndex = 0;
+  let firstFailure: { index: number; error: unknown } | undefined;
+  // Preserve the aggregate ceiling and leave room for the judge in the job/lease.
   const deadlineMs = Date.now() + MAX_BUNDLED_SKILLSPECTOR_TOTAL_MS;
-  for (const [index, scanInput] of scanInputs.entries()) {
+  const runRoot = async (index: number) => {
+    const scanInput = scanInputs[index]!;
     const remainingMs = deadlineMs - Date.now();
     const context: BundledSkillSpectorFailureContext = {
       rootIndex: index,
       rootCount: scanInputs.length,
-      completedRoots: analyses.length,
+      completedRoots,
       childBudgetMs: Math.max(0, Math.min(rootTimeoutMs, remainingMs)),
       remainingStageBudgetMs: Math.max(0, remainingMs),
     };
     if (remainingMs <= 0) {
-      onDiagnostic({
+      diagnostics.set(index, {
         bundledSkillSpector: { failed: true, timedOut: true, exitCode: null, context },
       });
       throw new Error("SkillSpector bundled-skill scan deadline exceeded");
@@ -1779,14 +1833,17 @@ export async function runBundledSkillSpector(
         // just as the ClawScan adapter and direct diagnostic probe do.
         discardStderr: true,
         timeoutMs: context.childBudgetMs,
+        cleanupProcessGroup: true,
+        signal: controller.signal,
+        skillspectorMaxLlmConcurrency: parallel ? 5 : undefined,
         onTermination: (next) => {
           termination = next;
         },
       });
-      const { report, analysis } = readReport(await readFile(resultPath, "utf8"), scanInput);
-      analyses.push(analysis);
-      reports.push({ rootPath: scanInput.rootPath, report });
+      return readReport(await readFile(resultPath, "utf8"), scanInput);
     } catch (error) {
+      const cleanupFailure = bundledCleanupUnconfirmedFailure(error, termination);
+      if (cleanupFailure) cleanupUnconfirmed.set(index, cleanupFailure);
       let acceptedFindings = false;
       try {
         if (error instanceof CommandFailure) {
@@ -1794,6 +1851,9 @@ export async function runBundledSkillSpector(
           if (rawResult) {
             const { report, analysis } = readReport(rawResult, scanInput);
             const validFindingsExit =
+              !controller.signal.aborted &&
+              error.failureKind === "exit" &&
+              termination?.processGroup === "absent" &&
               !error.timedOut &&
               error.exitCode === 1 &&
               (isUsableSkillSpectorPartial(report) ||
@@ -1801,16 +1861,14 @@ export async function runBundledSkillSpector(
                   analysis.issueCount > 0 &&
                   analysis.issues.length > 0));
             if (validFindingsExit) {
-              analyses.push(analysis);
-              reports.push({ rootPath: scanInput.rootPath, report });
               acceptedFindings = true;
-              continue;
+              return { report, analysis };
             }
           }
         }
       } finally {
         if (!acceptedFindings) {
-          onDiagnostic({
+          diagnostics.set(index, {
             bundledSkillSpector: {
               failed: true,
               timedOut: error instanceof CommandFailure && error.timedOut,
@@ -1828,8 +1886,62 @@ export async function runBundledSkillSpector(
       }
       throw error;
     }
+  };
+  const worker = async () => {
+    while (!firstFailure) {
+      const index = nextIndex++;
+      if (index >= scanInputs.length) return;
+      try {
+        results[index] = await runRoot(index);
+        completedRoots += 1;
+      } catch (error) {
+        if (!firstFailure) {
+          firstFailure = { index, error };
+          controller.abort();
+        }
+        return;
+      }
+    }
+  };
+  // Join every worker after cancellation so no sibling can outlive the scan.
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  // A joined root can still settle without confirming that its process group is
+  // gone. That outranks the failure that triggered cancellation, so an ordinary
+  // error from one root can never stand in for a sibling that may still be running.
+  const [unconfirmedIndex] = [...cleanupUnconfirmed.keys()].sort((left, right) => left - right);
+  const failure =
+    unconfirmedIndex === undefined
+      ? firstFailure
+      : { index: unconfirmedIndex, error: cleanupUnconfirmed.get(unconfirmedIndex) };
+  if (failure) {
+    const diagnostic = diagnostics.get(failure.index);
+    const context = diagnostic?.bundledSkillSpector?.context;
+    if (context) {
+      context.completedRoots = completedRoots;
+      context.remainingStageBudgetMs = Math.max(0, deadlineMs - Date.now());
+    }
+    onDiagnostic(
+      diagnostic ?? {
+        bundledSkillSpector: {
+          failed: true,
+          timedOut: failure.error instanceof CommandFailure && failure.error.timedOut,
+          exitCode: failure.error instanceof CommandFailure ? failure.error.exitCode : null,
+        },
+      },
+    );
+    throw failure.error;
   }
-  const aggregate = aggregateSkillSpectorAnalyses(analyses);
+  if (completedRoots !== scanInputs.length) {
+    throw new Error("SkillSpector bundled-skill scans did not complete");
+  }
+  // Canonical declared-root order, independent of completion order.
+  const completed = scanInputs.map((scanInput, index) => {
+    const result = results[index];
+    if (!result) throw new Error("SkillSpector bundled-skill scans did not complete");
+    return { rootPath: scanInput.rootPath, ...result };
+  });
+  const aggregate = aggregateSkillSpectorAnalyses(completed.map(({ analysis }) => analysis));
+  const reports = completed.map(({ rootPath, report }) => ({ rootPath, report }));
   if (reports.some(({ report }) => isUsableSkillSpectorPartial(report))) {
     if (
       reports.some(
@@ -2078,13 +2190,21 @@ function clawScanDiagnosticMapping(
 export function validateClawScanArtifactForClawHubProfile(
   artifact: Record<string, unknown>,
   scannerSet = REQUIRED_CLAWHUB_SCANNERS,
+  expectedProfile: ClawHubProfile = "clawhub",
 ) {
+  if (expectedProfile === "clawhub-template" && !isEvidenceOnlyCodexRun(artifact)) {
+    throw new Error("ClawScan Template scan requires the evidence-only Codex judge");
+  }
   if (isTypedScannerJudgeRun(artifact)) {
     // Requirements come from the claim, never from returned scanner IDs.
     const required = scannerSet.includes("aig-mcp")
       ? ["aig-mcp"]
       : scannerSet.filter((id) => id !== "clawscan-static");
-    const llmAnalysis = validateDecisionsRun(artifact, required);
+    const llmAnalysis = validateDecisionsRun(
+      artifact,
+      scannerSet.includes("aig-mcp") ? scannerSet : required,
+      expectedProfile,
+    );
     const scanners = asRecord(artifact.scanners)!;
     const aig = asRecord(scanners[required.includes("aig-mcp") ? "aig-mcp" : "aig"]);
     const raw = required.includes("aig-mcp") ? validateAigMcpReport(aig?.raw) : asRecord(aig?.raw);
@@ -2106,7 +2226,7 @@ export function validateClawScanArtifactForClawHubProfile(
     const aigAnalysis = normalized
       ? normalizeAigAnalysis(JSON.stringify(normalized), llmAnalysis.checkedAt)
       : undefined;
-    // Templates require ordinary SkillSpector evidence, not plugin MCP or AIG.
+    // The legacy Template lane still requires ordinary SkillSpector evidence.
     // Only project/require AIG when the claim actually requires that scanner.
     if (
       required.some((id) => id === "aig" || id === "aig-mcp") &&
@@ -2136,7 +2256,7 @@ export function validateClawScanArtifactForClawHubProfile(
     throw new Error(`ClawScan artifact schemaVersion was ${schemaVersion ?? "missing"}`);
   }
   const profile = readString(artifact, ["profile"]);
-  if (profile !== "clawhub") {
+  if (profile !== expectedProfile) {
     throw new Error(`ClawScan artifact profile was ${profile ?? "missing"}`);
   }
 
@@ -2182,7 +2302,7 @@ export function validateClawScanArtifactForClawHubProfile(
     throw new Error("ClawScan partial evidence requires a v2 artifact inspection receipt");
   }
   if (inspection.version === 2) {
-    const exposure = clawScanExposure(artifact);
+    const exposure = clawScanExposure(artifact, expectedProfile);
     const attempts = Array.isArray(judge.attempts) ? judge.attempts : [];
     const last = asRecord(attempts.at(-1));
     if (
@@ -2246,17 +2366,25 @@ export async function runClawScan(
   let command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
   const artifactPath = join(workspace, "clawscan-artifact.json");
   const target = await resolveClawScanTarget(workspace, job);
+  const templateScan = await resolveTemplateScanForTarget(
+    job.job.targetKind,
+    job.target.package,
+    "CODEX_SECURITY_SCAN",
+  );
   const wholePlugin = await usesWholePluginScanForTarget(job.job.targetKind, job.target.package);
-  if (wholePlugin) command = await qualifiedPluginCommand("CODEX_SECURITY_SCAN");
-  const scannerSet = wholePlugin ? ["aig-mcp"] : requiredClawHubScanners(job.job.targetKind);
+  const nativeMcp = Boolean(templateScan) || wholePlugin;
+  const expectedProfile = templateScan ? "clawhub-template" : "clawhub";
+  if (templateScan) command = templateScan.command;
+  else if (wholePlugin) command = await qualifiedPluginCommand("CODEX_SECURITY_SCAN");
+  const scannerSet = nativeMcp ? ["aig-mcp"] : requiredClawHubScanners(job.job.targetKind);
   if (scannerSet.includes("aig")) {
     assertAigFilePathsHaveNoCompiledPython(job.target.files?.map((file) => file.path) ?? []);
   }
-  const args = [target, "--profile", "clawhub"];
+  const args = [target, "--profile", expectedProfile];
   if (
     job.job.targetKind === "packageRelease" &&
     asRecord(job.target.package)?.family !== "claw" &&
-    !wholePlugin
+    !nativeMcp
   ) {
     // SkillSpector only understands skills. ClawHub owns the plugin manifest
     // boundary, so never let ClawScan fall back to scanning the whole package.
@@ -2265,7 +2393,7 @@ export async function runClawScan(
     args.push("--scanner-result", `skillspector=${skillSpectorResultPath}`);
   }
   args.push("--output", artifactPath);
-  if (job.job.targetKind === "packageRelease") {
+  if (job.job.targetKind === "packageRelease" && !templateScan) {
     const contextPath = join(workspace, "clawscan-publisher-context.json");
     // Trust is already derived from persisted ownership (including forced-check
     // suppression); never infer it from an artifact name or pass stored reports.
@@ -2277,8 +2405,13 @@ export async function runClawScan(
     args.push("--context", contextPath);
   }
   const sandbox = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX?.trim();
-  if (wholePlugin) {
-    args.push("--sandbox", "docker", "--sandbox-image", QUALIFIED_PLUGIN_IMAGE);
+  if (nativeMcp) {
+    args.push(
+      "--sandbox",
+      "docker",
+      "--sandbox-image",
+      templateScan?.image ?? QUALIFIED_PLUGIN_IMAGE,
+    );
   } else if (sandbox) {
     args.push("--sandbox", sandbox);
     const sandboxImage = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX_IMAGE?.trim();
@@ -2315,13 +2448,13 @@ export async function runClawScan(
     if (artifact)
       onDiagnostic({
         mapping: clawScanDiagnosticMapping(artifact, scannerSet),
-        exposure: clawScanExposure(artifact),
+        exposure: clawScanExposure(artifact, expectedProfile),
       });
     return artifact;
   };
 
   try {
-    const output = wholePlugin
+    const output = nativeMcp
       ? await withClawScanDockerCleanup({
           workspace,
           confirmChildFinality: async () =>
@@ -2377,13 +2510,14 @@ export async function runClawScan(
   const artifact = await captureArtifact();
   if (!artifact) throw new Error("ClawScan did not emit a valid JSON artifact");
 
-  if (wholePlugin) assertQualifiedPluginArtifact(artifact);
+  if (templateScan) assertQualifiedNativeArtifact(artifact, templateScan);
+  else if (wholePlugin) assertQualifiedPluginArtifact(artifact);
   else if (Object.hasOwn(asRecord(artifact.scanners) ?? {}, "aig-mcp")) {
     throw new Error(
       "A.I.G MCP evidence requires the qualified source and immutable Docker runtime",
     );
   }
-  const mapped = validateClawScanArtifactForClawHubProfile(artifact, scannerSet);
+  const mapped = validateClawScanArtifactForClawHubProfile(artifact, scannerSet, expectedProfile);
   onDiagnostic({ mapping: mapped.mapping });
   return mapped;
 }
@@ -2559,7 +2693,13 @@ export async function processJob(
       });
       return { completed: true, hardFailed: false, retryableFailed: false };
     }
+    const templateScan = await resolveTemplateScanForTarget(
+      job.job.targetKind,
+      job.target.package,
+      "CODEX_SECURITY_SCAN",
+    );
     const shouldRunEndor =
+      !templateScan &&
       job.job.targetKind === "packageRelease" &&
       isEndorPluginScanEnabled(readString(asRecord(job.target.package) ?? {}, ["family"]));
     // Endor is report-only: its result is saved on the release and never
@@ -2568,6 +2708,7 @@ export async function processJob(
       shouldRunEndor ? runEndorReport(job, workspace, endor) : Promise.resolve(undefined),
       job.job.targetKind === "packageRelease" &&
       asRecord(job.target.package)?.family !== "claw" &&
+      !templateScan &&
       !(await usesWholePluginScanForTarget(job.job.targetKind, job.target.package))
         ? prepareBundledSkillSpector(job, workspace, (next) => {
             Object.assign(clawscan, next);

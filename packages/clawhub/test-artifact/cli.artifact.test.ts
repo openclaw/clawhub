@@ -3,6 +3,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -17,7 +18,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { strToU8, zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
@@ -310,6 +311,8 @@ describe("built CLI artifact", () => {
       "packageUploadLimits",
       "pluginInput",
       "schemaShared",
+      "templateAgent",
+      "templateBundled",
       "templatePackage",
       "templatePaths",
       "templates",
@@ -603,6 +606,314 @@ describe("built CLI artifact", () => {
     expect(result.stdout).toContain("Usage: clawhub");
     expect(requests).toHaveLength(0);
   });
+
+  async function makePackingFixture() {
+    const root = await makeTmpDir("clawhub-artifact-pack-");
+    const pluginDir = join(root, "demo-plugin");
+    const tempRoot = join(root, "tmp");
+    const emptyPath = join(root, "empty-path");
+    await mkdir(join(pluginDir, "dist"), { recursive: true });
+    await mkdir(tempRoot);
+    await mkdir(emptyPath);
+    await writeFile(
+      join(pluginDir, "package.json"),
+      JSON.stringify({
+        name: "@scope/demo-plugin",
+        version: "1.0.0",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: ">=2026.3.24-beta.2" },
+          build: { openclawVersion: "2026.3.24-beta.2" },
+        },
+      }),
+    );
+    await writeFile(join(pluginDir, "openclaw.plugin.json"), '{"id":"demo.plugin"}');
+    await writeFile(join(pluginDir, "dist", "index.js"), "export const demo = true;\n");
+    return { root, pluginDir, tempRoot, emptyPath };
+  }
+
+  function packingArgs(workdir: string, pluginDir: string) {
+    return [
+      binPath,
+      "--workdir",
+      workdir,
+      "--registry",
+      "http://127.0.0.1:1",
+      "package",
+      "publish",
+      pluginDir,
+      "--source-repo",
+      "openclaw/demo-plugin",
+      "--source-commit",
+      "abc123",
+      "--dry-run",
+      "--json",
+    ];
+  }
+
+  it("cleans folder-publish temporary packs when npm is missing in the real CLI process", async () => {
+    const { root, pluginDir, tempRoot, emptyPath } = await makePackingFixture();
+    const env = {
+      ...process.env,
+      PATH: emptyPath,
+      Path: emptyPath,
+      TMPDIR: tempRoot,
+      TMP: tempRoot,
+      TEMP: tempRoot,
+    };
+    const result = spawnSync(process.execPath, packingArgs(root, pluginDir), {
+      encoding: "utf8",
+      env,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("npm was not found on PATH");
+    expect(result.stderr).toContain("prebuilt .tgz");
+    expect(await readdir(tempRoot)).toEqual([]);
+
+    const pack = spawnSync(
+      process.execPath,
+      [binPath, "--workdir", root, "package", "pack", pluginDir, "--json"],
+      { encoding: "utf8", env },
+    );
+    expect(pack.status).toBe(1);
+    expect(pack.stderr).toContain("npm was not found on PATH");
+  });
+
+  it("reports a missing explicit workdir without npm installation advice in the real CLI", async () => {
+    const { root, pluginDir, tempRoot } = await makePackingFixture();
+    const missingWorkdir = join(root, "missing-workdir");
+    const result = runNode(packingArgs(missingWorkdir, pluginDir), {
+      TMPDIR: tempRoot,
+      TMP: tempRoot,
+      TEMP: tempRoot,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Cannot access working directory");
+    expect(result.stderr).toContain(missingWorkdir);
+    expect(result.stderr).not.toContain("install Node.js");
+    expect(await readdir(tempRoot)).toEqual([]);
+  });
+
+  async function writeDemoPlugin(dir: string, name: string, id: string) {
+    await mkdir(join(dir, "dist"), { recursive: true });
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name,
+        version: "1.0.0",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: ">=2026.3.24-beta.2" },
+          build: { openclawVersion: "2026.3.24-beta.2" },
+        },
+      }),
+    );
+    await writeFile(join(dir, "openclaw.plugin.json"), JSON.stringify({ id }));
+    await writeFile(join(dir, "dist", "index.js"), "export const demo = true;\n");
+  }
+
+  it("packs with the installed npm when the workdir contains npm.cmd", async () => {
+    const { pluginDir } = await makePackingFixture();
+    const sentinel = join(pluginDir, "sentinel-ran.txt");
+    await writeFile(
+      join(pluginDir, "npm.cmd"),
+      `@echo off\r\necho PWNED>"${sentinel}"\r\nexit /b 42\r\n`,
+    );
+
+    const pack = runNode([binPath, "--workdir", pluginDir, "package", "pack", pluginDir, "--json"]);
+    expect(pack.status).toBe(0);
+    expect(pack.stdout).toContain("@scope/demo-plugin");
+    expect(existsSync(sentinel)).toBe(false);
+
+    const publish = runNode(packingArgs(pluginDir, pluginDir));
+    expect(publish.status).toBe(0);
+    expect(publish.stdout).toContain("@scope/demo-plugin");
+    expect(existsSync(sentinel)).toBe(false);
+  });
+
+  it("packs a folder whose name contains a percent sign", async () => {
+    const root = await makeTmpDir("clawhub-artifact-percent-");
+    const literal = join(root, "plugins", "%CLAW_NPM_PERCENT%");
+    const expanded = join(root, "plugins", "EXPANDED");
+    await writeDemoPlugin(literal, "percent-literal", "percent.literal");
+    await writeDemoPlugin(expanded, "percent-expanded", "percent.expanded");
+
+    const result = runNode([binPath, "--workdir", root, "package", "pack", literal, "--json"], {
+      CLAW_NPM_PERCENT: "EXPANDED",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("percent-literal");
+    expect(result.stdout).not.toContain("percent-expanded");
+  });
+
+  function installedNpmCli() {
+    const prefix = dirname(dirname(process.execPath));
+    const cli = [
+      join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+      join(prefix, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+    ].find((candidate) => existsSync(candidate));
+    if (!cli) throw new Error(`npm-cli.js not found next to ${process.execPath}`);
+    return cli;
+  }
+
+  function installedNpmLaunch() {
+    return `exec ${JSON.stringify(process.execPath)} ${JSON.stringify(installedNpmCli())} "$@"`;
+  }
+
+  async function writePosixNpm(path: string, line: string, mode: number) {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, `#!/bin/sh\n${line}\n`);
+    await chmod(path, mode);
+  }
+
+  it.skipIf(process.platform === "win32")(
+    "finds a relative PATH npm from the pack workdir",
+    async () => {
+      const root = await makeTmpDir("clawhub-artifact-rel-npm-");
+      const workdir = join(root, "srv");
+      const log = join(root, "npm-log.txt");
+      const launch = installedNpmLaunch();
+      await writeDemoPlugin(workdir, "relative-npm-plugin", "relative.npm");
+      await writePosixNpm(
+        join(workdir, "tools", "npm"),
+        `printf "%s\\n" relative-npm-selected >> "$CLAWHUB_NPM_LOG"\n${launch}`,
+        0o755,
+      );
+
+      // PATH is only `tools`, so the `node` name would not resolve. Start the
+      // built CLI from its absolute executable and leave npm lookup to PATH.
+      const result = spawnSync(
+        process.execPath,
+        [binPath, "--workdir", workdir, "package", "pack", workdir, "--json"],
+        {
+          cwd: repoRoot,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: "tools",
+            CLAWHUB_NPM_LOG: log,
+          },
+        },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("relative-npm-plugin");
+      expect(await readFile(log, "utf8")).toContain("relative-npm-selected");
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "skips a non-executable npm earlier on PATH",
+    async () => {
+      const root = await makeTmpDir("clawhub-artifact-npm-x-");
+      const workdir = join(root, "srv");
+      const log = join(root, "npm-log.txt");
+      const launch = installedNpmLaunch();
+      await writeDemoPlugin(workdir, "skip-stale-npm", "skip.stale");
+      await writePosixNpm(
+        join(root, "stale", "npm"),
+        'printf "%s\\n" stale-npm-selected >> "$CLAWHUB_NPM_LOG"',
+        0o644,
+      );
+      await writePosixNpm(
+        join(root, "good", "npm"),
+        `printf "%s\\n" good-npm-selected >> "$CLAWHUB_NPM_LOG"\n${launch}`,
+        0o755,
+      );
+
+      const result = spawnSync(
+        process.execPath,
+        [binPath, "--workdir", workdir, "package", "pack", workdir, "--json"],
+        {
+          cwd: repoRoot,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${join(root, "stale")}${delimiter}${join(root, "good")}`,
+            CLAWHUB_NPM_LOG: log,
+          },
+        },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("skip-stale-npm");
+      const logText = await readFile(log, "utf8");
+      expect(logText).toContain("good-npm-selected");
+      expect(logText).not.toContain("stale-npm-selected");
+    },
+  );
+
+  // A stand-in for an npm install directory: records which launcher ran, then
+  // hands over to the real npm.
+  async function writeWindowsNpmLauncher(dir: string, label: string) {
+    const cli = join(dir, "node_modules", "npm", "bin", "npm-cli.js");
+    await mkdir(dirname(cli), { recursive: true });
+    await writeFile(
+      cli,
+      [
+        `require("node:fs").appendFileSync(process.env.CLAWHUB_NPM_LOG, ${JSON.stringify(`${label}\n`)});`,
+        `require(${JSON.stringify(installedNpmCli())});`,
+        "",
+      ].join("\n"),
+    );
+  }
+
+  function packFromDirectory(cliCwd: string, workdir: string, path: string, log: string) {
+    return spawnSync(
+      process.execPath,
+      [binPath, "--workdir", workdir, "package", "pack", workdir, "--json"],
+      {
+        cwd: cliCwd,
+        encoding: "utf8",
+        env: { ...process.env, PATH: path, Path: path, CLAWHUB_NPM_LOG: log },
+      },
+    );
+  }
+
+  it.skipIf(process.platform !== "win32")(
+    "runs the relative PATH launcher it found under the pack workdir on Windows",
+    async () => {
+      const root = await makeTmpDir("clawhub-artifact-win-rel-npm-");
+      const workdir = join(root, "srv");
+      const cliCwd = join(root, "cli-cwd");
+      const log = join(root, "npm-log.txt");
+      await mkdir(cliCwd);
+      await writeDemoPlugin(workdir, "relative-npm-plugin", "relative.npm");
+      await writeWindowsNpmLauncher(join(workdir, "tools"), "workdir-tools-launcher");
+
+      // The CLI starts in a directory that has no `tools`; npm runs in workdir.
+      const result = packFromDirectory(cliCwd, workdir, `.${sep}tools`, log);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("relative-npm-plugin");
+      expect(await readFile(log, "utf8")).toBe("workdir-tools-launcher\n");
+    },
+  );
+
+  it.skipIf(process.platform !== "win32")(
+    "does not reach a pack workdir launcher through relative PATH entries on Windows",
+    async () => {
+      const root = await makeTmpDir("clawhub-artifact-win-planted-npm-");
+      const workdir = join(root, "srv");
+      const cliCwd = join(root, "cli-cwd");
+      const installed = join(root, "installed");
+      const log = join(root, "npm-log.txt");
+      await writeDemoPlugin(workdir, "planted-npm-plugin", "planted.npm");
+      await writeWindowsNpmLauncher(workdir, "workdir-launcher");
+      await writeWindowsNpmLauncher(cliCwd, "cli-cwd-launcher");
+      await writeWindowsNpmLauncher(installed, "installed-launcher");
+
+      // Each relative entry names the CLI's directory from here and the pack
+      // workdir from the child. Neither launcher may run; the absolute one does.
+      const path = [`.${sep}`, `tools${sep}..`, "", installed].join(delimiter);
+      const result = packFromDirectory(cliCwd, workdir, path, log);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("planted-npm-plugin");
+      expect(await readFile(log, "utf8")).toBe("installed-launcher\n");
+    },
+  );
 
   it("exposes the restored sync command", async () => {
     const result = runNode([binPath, "sync", "--help"]);

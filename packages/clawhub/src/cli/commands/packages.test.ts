@@ -1,9 +1,10 @@
 /* @vitest-environment node */
 
+import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join, sep } from "node:path";
 import { zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -42,6 +43,10 @@ vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
 vi.mock("@openclaw/plugin-inspector", () => inspectorMocks);
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+});
 
 const {
   cmdDeletePackage,
@@ -2527,6 +2532,292 @@ describe("package commands", () => {
     }
   });
 
+  it.each(["ENOENT", "EACCES"])("preserves thrown npm packing errors (%s)", async (code) => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await mkdir(join(workdir, "packs"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      const spawnError = Object.assign(new Error(`spawnSync npm ${code}`), { code });
+      vi.mocked(spawnSync).mockImplementationOnce(() => ({
+        error: spawnError,
+        status: null,
+        stdout: "",
+        stderr: "",
+        output: [],
+        pid: 0,
+        signal: null,
+      }));
+
+      const packed = cmdPackPackage(makeOpts(workdir), "demo-plugin", { packDestination: "packs" });
+      if (code === "ENOENT") {
+        await expect(packed).rejects.toMatchObject({
+          message: expect.stringContaining("npm was not found on PATH"),
+          cause: spawnError,
+        });
+      } else {
+        await expect(packed).rejects.toBe(spawnError);
+      }
+      expect(uiMocks.fail).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("spawns the installed npm with literal arguments and no shell", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "a & b");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await mkdir(join(workdir, "packs"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      vi.mocked(spawnSync).mockClear();
+      vi.mocked(spawnSync).mockImplementationOnce(() => ({
+        status: 1,
+        stdout: "",
+        stderr: "pack failed",
+        output: [],
+        pid: 0,
+        signal: null,
+      }));
+
+      await expect(
+        cmdPackPackage(makeOpts(workdir), "a & b", { packDestination: "packs" }),
+      ).rejects.toThrow(/pack failed/);
+
+      const call = vi.mocked(spawnSync).mock.calls.at(-1);
+      expect(call).toBeTruthy();
+      const [command, args, spawnOptions] = call ?? [];
+      expect(spawnOptions).toMatchObject({ shell: false, cwd: workdir });
+      expect(args).toContain(folder);
+      expect(args).toContain("--ignore-scripts");
+      expect(String(command)).not.toMatch(/cmd\.exe$/i);
+      expect(String(command)).not.toMatch(/npm\.cmd/i);
+      if (process.platform === "win32") {
+        expect(`${command} ${(args ?? []).join(" ")}`).toMatch(/npm-cli\.js|npm\.exe/i);
+      } else {
+        expect(command).toBe("npm");
+        expect(args?.[0]).toBe("pack");
+      }
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  describe("Windows npm launcher lookup", () => {
+    const npmCliSegments = ["node_modules", "npm", "bin", "npm-cli.js"];
+
+    async function touch(path: string) {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, "", "utf8");
+    }
+
+    async function makeLauncherFixture() {
+      // The CLI's own directory and the pack workdir differ whenever --workdir,
+      // CLAWHUB_WORKDIR, or the default workspace fallback is in play.
+      const cliCwd = await makeTmpWorkdir();
+      const workdir = await makeTmpWorkdir();
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await mkdir(join(workdir, "packs"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+      return { cliCwd, workdir };
+    }
+
+    // Runs the pack command as Windows would see it: PATH set to `path`, the
+    // CLI process in `cliCwd`, and npm (mocked) started in `workdir`.
+    async function packWithWindowsLookup(options: {
+      cliCwd: string;
+      workdir: string;
+      path: string;
+    }) {
+      const platform = Object.getOwnPropertyDescriptor(process, "platform");
+      if (!platform) throw new Error("process.platform is not an own property");
+      const previousCwd = process.cwd();
+      const previousPath = process.env.PATH;
+      vi.mocked(spawnSync).mockClear();
+      vi.mocked(spawnSync).mockImplementation(() => ({
+        status: 1,
+        stdout: "",
+        stderr: "pack failed",
+        output: [],
+        pid: 0,
+        signal: null,
+      }));
+      Object.defineProperty(process, "platform", { ...platform, value: "win32" });
+      process.env.PATH = options.path;
+      process.chdir(options.cliCwd);
+      try {
+        const error = await cmdPackPackage(makeOpts(options.workdir), "demo-plugin", {
+          packDestination: "packs",
+        }).then(
+          () => null,
+          (thrown: unknown) => thrown,
+        );
+        return { error, calls: [...vi.mocked(spawnSync).mock.calls] };
+      } finally {
+        process.chdir(previousCwd);
+        if (previousPath === undefined) delete process.env.PATH;
+        else process.env.PATH = previousPath;
+        Object.defineProperty(process, "platform", platform);
+        vi.mocked(spawnSync).mockReset();
+      }
+    }
+
+    async function removeFixture(fixture: { cliCwd: string; workdir: string }) {
+      await rm(fixture.cliCwd, { recursive: true, force: true });
+      await rm(fixture.workdir, { recursive: true, force: true });
+    }
+
+    it("spawns the same absolute launcher it checked for a relative PATH entry", async () => {
+      const fixture = await makeLauncherFixture();
+      try {
+        const { cliCwd, workdir } = fixture;
+        // The same relative entry names a launcher in both directories.
+        await touch(join(cliCwd, "tools", ...npmCliSegments));
+        await touch(join(workdir, "tools", ...npmCliSegments));
+        await touch(join(workdir, "tools", "node.exe"));
+
+        const { error, calls } = await packWithWindowsLookup({ cliCwd, workdir, path: "tools" });
+
+        expect(error).toMatchObject({ message: expect.stringContaining("pack failed") });
+        expect(calls).toHaveLength(1);
+        const [command, args, spawnOptions] = calls[0] ?? [];
+        expect(spawnOptions).toMatchObject({ shell: false, cwd: workdir });
+        expect(args?.[0]).toBe(join(workdir, "tools", ...npmCliSegments));
+        expect(args?.[1]).toBe("pack");
+        expect(command).toBe(join(workdir, "tools", "node.exe"));
+      } finally {
+        await removeFixture(fixture);
+      }
+    });
+
+    it("finds a relative PATH npm.exe that exists only under the pack workdir", async () => {
+      const fixture = await makeLauncherFixture();
+      try {
+        const { cliCwd, workdir } = fixture;
+        await touch(join(workdir, "tools", "npm.exe"));
+
+        const { error, calls } = await packWithWindowsLookup({
+          cliCwd,
+          workdir,
+          path: `.${sep}tools`,
+        });
+
+        expect(error).toMatchObject({ message: expect.stringContaining("pack failed") });
+        expect(calls).toHaveLength(1);
+        const [command, args, spawnOptions] = calls[0] ?? [];
+        expect(spawnOptions).toMatchObject({ shell: false, cwd: workdir });
+        expect(command).toBe(join(workdir, "tools", "npm.exe"));
+        expect(args?.[0]).toBe("pack");
+      } finally {
+        await removeFixture(fixture);
+      }
+    });
+
+    it.each([
+      ["an empty entry", () => ""],
+      ["a dot", () => "."],
+      ["a dot with a separator", () => `.${sep}`],
+      ["a path that climbs back to the workdir", () => `tools${sep}..`],
+      ["the absolute workdir", (workdir: string) => workdir],
+      ["the absolute workdir with a trailing separator", (workdir: string) => `${workdir}${sep}`],
+    ])("never runs a launcher from the pack workdir (PATH is %s)", async (_label, pathFor) => {
+      const fixture = await makeLauncherFixture();
+      try {
+        const { cliCwd, workdir } = fixture;
+        // A launcher sits in the CLI's directory and a planted one in the workdir.
+        for (const dir of [cliCwd, workdir]) {
+          await touch(join(dir, ...npmCliSegments));
+          await touch(join(dir, "npm.exe"));
+        }
+
+        const { error, calls } = await packWithWindowsLookup({
+          cliCwd,
+          workdir,
+          path: pathFor(workdir),
+        });
+
+        expect(calls).toEqual([]);
+        expect(error).toMatchObject({
+          message: expect.stringContaining("npm was not found on PATH"),
+        });
+      } finally {
+        await removeFixture(fixture);
+      }
+    });
+
+    it("skips the pack workdir and uses the next absolute PATH launcher", async () => {
+      const fixture = await makeLauncherFixture();
+      const installDir = await makeTmpWorkdir();
+      try {
+        const { cliCwd, workdir } = fixture;
+        await touch(join(workdir, ...npmCliSegments));
+        await touch(join(installDir, ...npmCliSegments));
+
+        const { error, calls } = await packWithWindowsLookup({
+          cliCwd,
+          workdir,
+          path: [`.${sep}`, installDir].join(delimiter),
+        });
+
+        expect(error).toMatchObject({ message: expect.stringContaining("pack failed") });
+        expect(calls).toHaveLength(1);
+        const [command, args] = calls[0] ?? [];
+        expect(command).toBe(process.execPath);
+        expect(args?.[0]).toBe(join(installDir, ...npmCliSegments));
+      } finally {
+        await removeFixture(fixture);
+        await rm(installDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   it("packs local ClawPacks over the multipart publish upload budget", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -2782,10 +3073,9 @@ describe("package commands", () => {
             "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
         }),
       );
-      httpMocks.apiRequest.mockResolvedValueOnce({ package: null, owner: null });
 
       await expect(cmdPublishPackage(makeOpts(workdir), packName)).rejects.toThrow(
-        "profiles/openclaw.yml.agent.tools.profile: Must name a registered OpenClaw built-in profile.",
+        "profiles/openclaw.yml: Template profiles are no longer supported.",
       );
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
@@ -2793,7 +3083,7 @@ describe("package commands", () => {
     }
   });
 
-  it("preserves a legacy-only profile for a grandfathered Template package", async () => {
+  it("rejects retired profiles even for an existing Template package", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.1.tgz";
@@ -2811,34 +3101,10 @@ describe("package commands", () => {
             "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
         }),
       );
-      const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
-      const artifactSha256 = artifactIdentity(packBytes).sha256;
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        package: {
-          name: "demo-claw",
-          displayName: "Demo Template",
-          family: "template",
-        },
-        owner: null,
-      });
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        packageId: "pkg_claw",
-        releaseId: "rel_claw",
-        artifactSha256,
-      });
-
-      await cmdPublishPackage(makeOpts(workdir), packName);
-
-      expect(httpMocks.apiRequest).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          method: "GET",
-          path: "/api/v1/packages/demo-claw",
-        }),
-        expect.anything(),
+      await expect(cmdPublishPackage(makeOpts(workdir), packName)).rejects.toThrow(
+        "Template profiles are no longer supported",
       );
-      expect(httpMocks.apiRequestForm).toHaveBeenCalledTimes(1);
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -3612,24 +3878,6 @@ describe("package commands", () => {
       await mkdir(join(folder, "assets"), { recursive: true });
       await writeFile(join(folder, "BOOTSTRAP.md"), "Ask which repositories to triage.\n", "utf8");
       await writeFile(join(folder, "assets", "triage.schema.json"), "{}\n", "utf8");
-      await writeFile(
-        join(folder, "profiles", "openclaw.yml"),
-        [
-          "schemaVersion: 1",
-          "agent:",
-          "  tools:",
-          "    profile: coding",
-          "    allow: [read]",
-          "    fs:",
-          "      workspaceOnly: true",
-          "  memory:",
-          "    search:",
-          "      enabled: true",
-          "      rememberAcrossConversations: true",
-          "      sources: [memory, sessions]",
-        ].join("\n"),
-        "utf8",
-      );
       await expect(cmdPublishPackage(makeOpts(workdir), "github-triage")).rejects.toThrow(
         "Template publication requires an already-built package tarball (.tgz)",
       );

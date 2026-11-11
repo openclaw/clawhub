@@ -76,9 +76,26 @@ async function loadRootHead() {
 }
 
 describe("root route head", () => {
+  it("matches the homepage message in search, Open Graph and Twitter", async () => {
+    const head = (await loadRootHead()) ?? {};
+    const title = "Tools for your agents";
+    const description = "Discover skills and plugins from top creators";
+
+    expect(metaContent(head, "property", "og:site_name")).toBe("ClawHub");
+    expect(metaContent(head, "name", "description")).toBe(description);
+    for (const [key, prefix] of [
+      ["property", "og"],
+      ["name", "twitter"],
+    ] as const) {
+      expect(metaContent(head, key, `${prefix}:title`)).toBe(title);
+      expect(metaContent(head, key, `${prefix}:description`)).toBe(description);
+      expect(metaContent(head, key, `${prefix}:image:alt`)).toBe(`${title}. ${description}`);
+    }
+  });
+
   it("uses the versioned default social image for Open Graph and Twitter", async () => {
     const head = await loadRootHead();
-    const expectedImage = "https://clawhub.ai/og.png?v=20260723-1";
+    const expectedImage = "https://clawhub.ai/og.png?v=20261111-1";
 
     expect(metaContent(head ?? {}, "property", "og:image")).toBe(expectedImage);
     expect(metaContent(head ?? {}, "name", "twitter:image")).toBe(expectedImage);

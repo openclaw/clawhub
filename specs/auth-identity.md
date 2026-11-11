@@ -9,6 +9,37 @@ reserved for Convex Auth OAuth completion. Other flows must use a different quer
 parameter; CLI device login uses `user_code`. As defense in depth, the handler
 explicitly ignores device-shaped codes (`XXXX-XXXX`).
 
+## CLI device login
+
+`POST /api/cli/device/code` returns `user_code` separately from `verification_uri`.
+The verification URL does not carry the code. `/cli/device` does not copy
+`user_code` or a legacy device-shaped `code` into the form. The signed-in user
+types the code shown in their terminal. `describePending` then shows the token
+label, the start time, and that approval creates a full API token. Authorize
+stays disabled until that pending description is loaded. `describePending` does
+not read the wall clock. A pending row stays pending and includes `expiresAt`.
+The page disables Authorize and Deny when that time has passed. `approve` and
+`deny` still reject an expired code.
+
+The page reads the browser clock each time it arms the expiry timer, and again
+when the tab becomes visible, because timers do not run while a device sleeps.
+It does not schedule from a time kept in React state: a page opened before the
+code was typed would then count from the older time and leave the buttons on
+past expiry. The browser clock is compared with the server's `expiresAt` as is.
+A browser clock that runs ahead turns the buttons off early, and one that runs
+behind leaves them on until `approve` or `deny` rejects the code. The page has
+no server time to correct this with, and `describePending` cannot supply one.
+
+Expired, used, and unknown codes each say what to do next: retype a mistyped
+code, or run `clawhub login` again for a new one. After this page approves or
+denies a code, the row leaves `pending` and `describePending` reports it as
+used. The page then shows only the result of that decision, not the used-code
+message.
+
+A requested scope other than `read write` is rejected. Device login does not
+issue a narrower token. The minted `apiTokens` row is the same full token a
+signed-in user creates in settings.
+
 Security invariant: a GitHub OAuth account may link to a ClawHub user only through
 the auth-managed GitHub `providerAccountId`, which is the immutable GitHub
 numeric account id stored in `authAccounts`. Mutable GitHub usernames and OAuth

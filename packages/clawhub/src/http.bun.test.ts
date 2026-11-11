@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { once } from "node:events";
+import { dirname, join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { describe, expect, it, vi } from "vitest";
 import { createHttpClient } from "./http.js";
@@ -301,6 +302,9 @@ describe("bun http client", () => {
       spawnImpl: () => ({ status: 0, stdout: '{"ok":true}\n200', stderr: "" }),
       mkdtempValue: "/tmp/clawhub-upload-abc",
     });
+    // The client stages uploads with node:path, so the staged path uses the
+    // host separator (backslashes on Windows). Derive it the same way.
+    const stagedFilePath = join("/tmp/clawhub-upload-abc", "dist/demo.txt");
 
     const form = new FormData();
     form.append("name", "demo");
@@ -313,7 +317,7 @@ describe("bun http client", () => {
     });
 
     expect(result).toEqual({ ok: true });
-    expect(mkdirImpl).toHaveBeenCalledWith("/tmp/clawhub-upload-abc/dist", { recursive: true });
+    expect(mkdirImpl).toHaveBeenCalledWith(dirname(stagedFilePath), { recursive: true });
     expect(writeFileImpl).toHaveBeenCalled();
     expect(rmImpl).toHaveBeenCalledWith("/tmp/clawhub-upload-abc", {
       recursive: true,
@@ -322,9 +326,7 @@ describe("bun http client", () => {
     const [, args] = spawnImpl.mock.calls[0] as [string, string[]];
     expect(args).toContain("-F");
     expect(args.some((arg) => arg.includes("name=demo"))).toBe(true);
-    expect(args.some((arg) => arg.includes("file=@/tmp/clawhub-upload-abc/dist/demo.txt"))).toBe(
-      true,
-    );
+    expect(args).toContain(`file=@${stagedFilePath};filename=dist/demo.txt`);
     expect(args.slice(args.indexOf("--max-time"), args.indexOf("--max-time") + 2)).toEqual([
       "--max-time",
       "120",

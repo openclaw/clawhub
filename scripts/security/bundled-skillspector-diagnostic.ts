@@ -21,6 +21,7 @@ export type BundledSkillSpectorFailureContext = {
   /** Index in the worker's sorted, deduplicated declared-root list. */
   rootIndex: number;
   rootCount: number;
+  /** Accepted terminal reports; concurrent roots need not finish in index order. */
   completedRoots: number;
   childBudgetMs: number;
   remainingStageBudgetMs: number;

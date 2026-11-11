@@ -77,15 +77,17 @@ export function createRegistryModuleMocks() {
 }
 
 export function createAuthTokenModuleMocks() {
-  const requireAuthToken = vi.fn(async () => "tkn");
-  const getOptionalAuthToken = vi.fn(async () => undefined as string | undefined);
+  const requireAuthToken = vi.fn(async (_registry: string) => "tkn");
+  const getOptionalAuthToken = vi.fn(async (_registry: string) => undefined as string | undefined);
 
   return {
     requireAuthToken,
     getOptionalAuthToken,
     moduleFactory: () => ({
-      requireAuthToken: () => requireAuthToken(),
-      getOptionalAuthToken: () => getOptionalAuthToken(),
+      // Forward the registry so command tests can assert which origin the
+      // saved token was requested for.
+      requireAuthToken: (registry: string) => requireAuthToken(registry),
+      getOptionalAuthToken: (registry: string) => getOptionalAuthToken(registry),
     }),
   };
 }

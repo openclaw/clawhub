@@ -29,7 +29,7 @@ clawhub whoami
 
 - `--workdir <dir>`: working directory (default: cwd; falls back to Clawdbot workspace if configured)
 - `--dir <dir>`: install dir under workdir (default: `skills`)
-- `--site <url>`: site base URL for registry discovery and device verification (default: `https://clawhub.ai`)
+- `--site <url>`: site base URL for registry discovery and device verification (default: `https://clawhub.ai`). A saved token is sent only to the registry origin stored with it. Discovery of another origin leaves that login in place, including a legacy `auth.clawhub.ai` registry. Discovered registry URLs must be `http` or `https` and must not contain userinfo.
 - `--registry <url>`: API base URL (default: discovered, else `https://clawhub.ai`)
 - `--no-input`: disable prompts
 
@@ -82,7 +82,9 @@ Stores your API token + cached registry URL.
 ### `login` / `auth login`
 
 - Default: prints a one-time code and verification URL. Open the printed URL
-  on this or another device, sign in with GitHub if needed, and select **Authorize**.
+  on this or another device, sign in with GitHub if needed, type the code from
+  the terminal, and select **Authorize**. The page does not fill the code in
+  from the link.
   The CLI polls for approval, verifies the API token via `whoami`, and saves it
   in your config. It does not open a browser or start a local callback server.
 - `--device`: explicitly selects the default device flow.

@@ -50,8 +50,8 @@ export async function cmdHardDeleteSkill(
     if (!confirmed) return undefined;
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning hard delete for" : "Hard-deleting"} ${label}`);

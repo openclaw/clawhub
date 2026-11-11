@@ -118,13 +118,6 @@
   background: var(--oc-bg-surface);
 }
 
-.template-detail-install-warning {
-  margin: 12px 0 0;
-  color: var(--status-warning-fg);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
 .template-detail-contents {
   margin-top: 48px;
 }
@@ -276,6 +269,23 @@
   color: var(--ink-soft);
   font-size: 14px;
   line-height: 1.6;
+}
+
+.template-detail-original {
+  margin-top: 18px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.template-detail-original summary {
+  cursor: pointer;
+}
+
+.template-detail-original pre {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
 }
 
 .template-detail-entry-list {

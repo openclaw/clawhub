@@ -29,10 +29,15 @@ vi.mock("./lib/apiTokenAuth", () => ({
   requirePackagePublishAuth: vi.fn(),
 }));
 
-vi.mock("./lib/githubActionsOidc", () => ({
-  fetchGitHubRepositoryIdentity: vi.fn(),
-  verifyGitHubActionsTrustedPublishJwt: vi.fn(),
-}));
+vi.mock("./lib/githubActionsOidc", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./lib/githubActionsOidc")>();
+  return {
+    // The mint handler tells a signing-key outage apart by this class.
+    GitHubActionsOidcJwksUnavailableError: original.GitHubActionsOidcJwksUnavailableError,
+    fetchGitHubRepositoryIdentity: vi.fn(),
+    verifyGitHubActionsTrustedPublishJwt: vi.fn(),
+  };
+});
 
 vi.mock("./lib/openClawPublishAuthorization", () => ({
   verifyOpenClawPublishAuthorization: vi.fn(),
@@ -49,8 +54,11 @@ const {
   requireApiTokenUser,
   requirePackagePublishAuth,
 } = await import("./lib/apiTokenAuth");
-const { fetchGitHubRepositoryIdentity, verifyGitHubActionsTrustedPublishJwt } =
-  await import("./lib/githubActionsOidc");
+const {
+  fetchGitHubRepositoryIdentity,
+  GitHubActionsOidcJwksUnavailableError,
+  verifyGitHubActionsTrustedPublishJwt,
+} = await import("./lib/githubActionsOidc");
 const { verifyOpenClawPublishAuthorization } = await import("./lib/openClawPublishAuthorization");
 const { buildBundleFingerprint } = await import("./lib/skillCards");
 const { sha256Hex } = await import("./lib/clawpack");
@@ -19319,6 +19327,250 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     expect(createCall?.[1]).not.toHaveProperty("environment");
+  });
+
+  it("returns one publish-token rejection for hidden packages and failed OIDC checks", async () => {
+    const rejection =
+      "Publish token request could not be verified. Ask a package manager to check the trusted-publisher configuration and the workflow's GitHub Actions OIDC claims.";
+    const mismatch = "GitHub OIDC repository mismatch: expected private/secret, got attacker/repo";
+    const hiddenPackage = {
+      _id: "packages:1",
+      name: "@corp/secret-plugin",
+      ownerUserId: "users:owner",
+      channel: "private",
+      scanStatus: "malicious",
+    };
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:1",
+      provider: "github-actions",
+      repository: "private/secret",
+      repositoryId: "91",
+      repositoryOwner: "private",
+      repositoryOwnerId: "92",
+      workflowFilename: "release.yml",
+    };
+    const mint = async (pkg: unknown, publisher: unknown) => {
+      const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+        if ("key" in args) return okRate();
+        return "mutation:ok";
+      });
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if ("name" in args) return pkg;
+        if ("packageId" in args) return publisher;
+        return null;
+      });
+      const response = await __handlers.mintPublishTokenV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request("https://example.com/api/v1/publish/token/mint", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            packageName: "@corp/secret-plugin",
+            version: "1.0.0",
+            githubOidcToken: "gh.jwt",
+          }),
+        }),
+      );
+      return { status: response.status, body: await response.text(), runMutation };
+    };
+
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockRejectedValue(new Error(mismatch));
+    const missing = await mint(null, null);
+    const noPublisher = await mint(hiddenPackage, null);
+    const invalidSignature = await mint(hiddenPackage, trustedPublisher);
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockRejectedValue(
+      new Error("Invalid GitHub OIDC signature"),
+    );
+    const badSignature = await mint(hiddenPackage, trustedPublisher);
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockRejectedValue(new Error(mismatch));
+    const repositoryMismatch = await mint(
+      { ...hiddenPackage, channel: "community", scanStatus: "clean" },
+      trustedPublisher,
+    );
+
+    for (const result of [
+      missing,
+      noPublisher,
+      invalidSignature,
+      badSignature,
+      repositoryMismatch,
+    ]) {
+      expect(result.status).toBe(400);
+      expect(result.body).toBe(rejection);
+    }
+    expect(repositoryMismatch.body).not.toContain("private/secret");
+    expect(repositoryMismatch.body).not.toContain("Package not found");
+    expect(repositoryMismatch.body).not.toContain("Trusted publisher");
+    const loggedReason = repositoryMismatch.runMutation.mock.calls
+      .map(([, args]) => args)
+      .find((args) => args.action === "package.publish_token.mint_rejected");
+    expect(loggedReason).toMatchObject({
+      actorUserId: "users:owner",
+      metadata: { decision: "rejected", reason: mismatch, repository: "private/secret" },
+    });
+
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockResolvedValue({
+      repository: "private/secret",
+      repositoryId: "91",
+      repositoryOwner: "private",
+      repositoryOwnerId: "92",
+      workflowFilename: "release.yml",
+      runId: "101",
+      runAttempt: "1",
+      sha: "abc123",
+      ref: "refs/heads/main",
+      actor: "release-app[bot]",
+      actorId: "42",
+      jobWorkflowSha: "a".repeat(40),
+    } as never);
+    const minted = await mint(hiddenPackage, trustedPublisher);
+    expect(minted.status).toBe(200);
+    expect(minted.body).toContain("token");
+  });
+
+  describe("publish-token mint verifier failures", () => {
+    const rejection =
+      "Publish token request could not be verified. Ask a package manager to check the trusted-publisher configuration and the workflow's GitHub Actions OIDC claims.";
+    const configuredPackage = {
+      _id: "packages:1",
+      name: "@corp/secret-plugin",
+      ownerUserId: "users:owner",
+      channel: "private",
+      scanStatus: "clean",
+    };
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:1",
+      provider: "github-actions",
+      repository: "private/secret",
+      repositoryId: "91",
+      repositoryOwner: "private",
+      repositoryOwnerId: "92",
+      workflowFilename: "release.yml",
+    };
+    const mintWithVerifierError = async (error: Error, version = "1.0.0") => {
+      vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockRejectedValue(error);
+      const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+        if ("key" in args) return okRate();
+        return "mutation:ok";
+      });
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if ("name" in args) return configuredPackage;
+        if ("packageId" in args) return trustedPublisher;
+        return null;
+      });
+      const response = await __handlers.mintPublishTokenV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request("https://example.com/api/v1/publish/token/mint", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            packageName: "@corp/secret-plugin",
+            version,
+            githubOidcToken: "gh.jwt",
+          }),
+        }),
+      );
+      const mutations = runMutation.mock.calls.map(([, args]) => args);
+      return {
+        status: response.status,
+        retryAfter: response.headers.get("Retry-After"),
+        body: await response.text(),
+        rejectionAudits: mutations.filter(
+          (args) => args.action === "package.publish_token.mint_rejected",
+        ),
+        mintedTokens: mutations.filter((args) => "tokenHash" in args),
+      };
+    };
+
+    // Each message is one the verifier builds from the caller's own token
+    // (`alg`, `kid`, `aud`), filled with text that Convex platform failures use.
+    it.each([
+      "Unsupported GitHub OIDC signing algorithm: InternalServerError: Your request couldn't be completed. Try again later.",
+      "Unsupported GitHub OIDC signing algorithm: CommitterFullError: Too many writes in a short period of time.",
+      "Unknown GitHub OIDC signing key: Transient error while executing action",
+      "Unknown GitHub OIDC signing key: OverloadedError: backend busy",
+      "Unexpected GitHub OIDC audience: write conflict",
+      "Unexpected GitHub OIDC audience: optimistic concurrency",
+    ])("rejects and audits a token-derived verifier error: %s", async (message) => {
+      const result = await mintWithVerifierError(new Error(message));
+
+      expect(result.status).toBe(400);
+      expect(result.body).toBe(rejection);
+      expect(result.retryAfter).toBeNull();
+      expect(result.rejectionAudits).toHaveLength(1);
+      expect(result.rejectionAudits[0]).toMatchObject({
+        actorUserId: "users:owner",
+        targetId: "packages:1",
+        metadata: { decision: "rejected", reason: message, repository: "private/secret" },
+      });
+      expect(result.mintedTokens).toHaveLength(0);
+    });
+
+    it("answers 503 without a rejection audit only for the typed signing-key outage", async () => {
+      const result = await mintWithVerifierError(
+        new GitHubActionsOidcJwksUnavailableError("Failed to fetch GitHub OIDC JWKS: 503"),
+      );
+
+      expect(result.status).toBe(503);
+      expect(result.retryAfter).toBe("2");
+      expect(result.body).toBe(
+        "GitHub Actions OIDC signing keys are temporarily unavailable. The request was not rejected for validation; retrying usually succeeds.",
+      );
+      expect(result.body).not.toContain("private/secret");
+      expect(result.rejectionAudits).toHaveLength(0);
+      expect(result.mintedTokens).toHaveLength(0);
+    });
+
+    // Convex rejects a document over 1 MiB and a string with an unpaired
+    // surrogate. Token text that large or malformed must not fail the audit
+    // write, because a failed write leaves no record of the attempt.
+    it("bounds token text in the rejection audit", async () => {
+      const reason = `Unsupported GitHub OIDC signing algorithm: ${"x".repeat(2_000_000)}`;
+      const result = await mintWithVerifierError(new Error(reason), "9".repeat(2_000_000));
+
+      expect(result.status).toBe(400);
+      expect(result.body).toBe(rejection);
+      expect(result.rejectionAudits).toHaveLength(1);
+      expect(result.rejectionAudits[0]?.metadata).toMatchObject({
+        reason: `${reason.slice(0, 1000)}…`,
+        version: `${"9".repeat(1000)}…`,
+      });
+    });
+
+    it("replaces unpaired surrogates in the rejection audit", async () => {
+      const result = await mintWithVerifierError(
+        new Error("Unknown GitHub OIDC signing key: bad\ud800key"),
+        "1.0.0\udc00",
+      );
+
+      expect(result.status).toBe(400);
+      expect(result.rejectionAudits).toHaveLength(1);
+      expect(result.rejectionAudits[0]?.metadata).toMatchObject({
+        reason: "Unknown GitHub OIDC signing key: bad\ufffdkey",
+        version: "1.0.0\ufffd",
+      });
+    });
+
+    it("does not leave half a surrogate pair when it truncates the audit reason", async () => {
+      const result = await mintWithVerifierError(new Error(`${"a".repeat(999)}\u{1F600}tail`));
+
+      expect(result.rejectionAudits).toHaveLength(1);
+      expect(result.rejectionAudits[0]?.metadata).toMatchObject({
+        reason: `${"a".repeat(999)}\ufffd…`,
+      });
+    });
+
+    it("does not treat an untyped error with the outage text as an outage", async () => {
+      const result = await mintWithVerifierError(
+        new Error("Unknown GitHub OIDC signing key: Failed to fetch GitHub OIDC JWKS: 503"),
+      );
+
+      expect(result.status).toBe(400);
+      expect(result.body).toBe(rejection);
+      expect(result.rejectionAudits).toHaveLength(1);
+    });
   });
 
   it("sets trusted publisher config for a package", async () => {

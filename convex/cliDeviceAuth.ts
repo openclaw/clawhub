@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { internalMutation, mutation } from "./functions";
+import { internalMutation, mutation, query } from "./functions";
 import { requireUser } from "./lib/access";
 import { generateToken, hashToken } from "./lib/tokens";
 
@@ -9,6 +9,17 @@ const DEVICE_CODE_TTL_MS = 15 * 60_000;
 const DEVICE_POLL_INTERVAL_SECONDS = 5;
 const MAX_DUPLICATE_USER_CODE_ROWS = 50;
 const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const FULL_DEVICE_SCOPE = "read write";
+
+export function assertFullDeviceScope(scope: string | undefined) {
+  const requested = scope?.trim() ?? "";
+  if (requested && requested !== FULL_DEVICE_SCOPE) {
+    throw new ConvexError(
+      "Device login creates a full API token. Omit scope or request read write.",
+    );
+  }
+  return FULL_DEVICE_SCOPE;
+}
 
 export const createInternal = internalMutation({
   args: {
@@ -21,7 +32,7 @@ export const createInternal = internalMutation({
     const userCode = generateUserCode();
     const now = Date.now();
     const label = (args.label?.trim() || "CLI device login").slice(0, 120);
-    const scope = (args.scope?.trim() || "read write").slice(0, 200);
+    const scope = assertFullDeviceScope(args.scope);
 
     await ctx.db.insert("cliDeviceCodes", {
       deviceCodeHash: await hashToken(deviceCode),
@@ -34,7 +45,7 @@ export const createInternal = internalMutation({
       expiresAt: now + DEVICE_CODE_TTL_MS,
     });
 
-    const verificationUrl = getVerificationUrl(args.siteUrl, userCode);
+    const verificationUrl = getVerificationUrl(args.siteUrl);
 
     return {
       device_code: deviceCode,
@@ -80,6 +91,38 @@ export const pollInternal = internalMutation({
     });
     await ctx.db.patch(row._id, { status: "consumed", consumedAt: now });
     return { access_token: token, token_type: "bearer" as const, scope: row.scope };
+  },
+});
+
+export const describePending = query({
+  args: { userCode: v.string() },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+    const normalized = normalizeUserCode(args.userCode);
+    if (!normalized) return { state: "missing" as const };
+
+    const userCodeHash = await hashToken(normalized);
+    const rows = await ctx.db
+      .query("cliDeviceCodes")
+      .withIndex("by_user_code_hash", (q) => q.eq("userCodeHash", userCodeHash))
+      .order("desc")
+      .take(MAX_DUPLICATE_USER_CODE_ROWS);
+    // A query that reads the clock stays cached after expiry. The page uses expiresAt.
+    const pending = rows.find((row) => row.status === "pending");
+    if (pending) {
+      return {
+        state: "pending" as const,
+        label: pending.label,
+        createdAt: pending.createdAt,
+        expiresAt: pending.expiresAt,
+        access: "full" as const,
+      };
+    }
+    if (rows.some((row) => row.status === "expired")) {
+      return { state: "expired" as const };
+    }
+    if (rows.length > 0) return { state: "used" as const };
+    return { state: "missing" as const };
   },
 });
 
@@ -138,7 +181,7 @@ function normalizeUserCode(value: string) {
     .replace(/[^A-Z0-9]/g, "");
 }
 
-async function getRowsByUserCodeHash(ctx: MutationCtx, userCodeHash: string) {
+async function getRowsByUserCodeHash(ctx: Pick<MutationCtx, "db">, userCodeHash: string) {
   return await ctx.db
     .query("cliDeviceCodes")
     .withIndex("by_user_code_hash", (q) => q.eq("userCodeHash", userCodeHash))
@@ -186,7 +229,7 @@ function generateOpaqueCode() {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function getVerificationUrl(siteUrlValue: string | undefined, userCode: string) {
+function getVerificationUrl(siteUrlValue: string | undefined) {
   const baseUrl = siteUrlValue?.trim() || "https://clawhub.ai";
   let verificationUrl: URL;
   try {
@@ -197,6 +240,6 @@ function getVerificationUrl(siteUrlValue: string | undefined, userCode: string) 
   } catch {
     verificationUrl = new URL("/cli/device", "https://clawhub.ai");
   }
-  verificationUrl.searchParams.set("user_code", userCode);
+  verificationUrl.search = "";
   return verificationUrl;
 }

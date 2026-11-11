@@ -23,23 +23,6 @@ export function buildTemplateDetailHref(name: string, ownerHandle?: string | nul
   return `/${routeSegment(owner)}/templates/${routeSegment(slug)}`;
 }
 
-export function templateSecurityStatusMessage(
-  status: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | null | undefined,
-) {
-  switch (status) {
-    case "clean":
-      return "Security checks passed";
-    case "suspicious":
-      return "Security scan flagged this Template. Wait for review before adding it.";
-    case "malicious":
-      return "ClawHub marked this Template as malicious. Do not add it.";
-    case "not-run":
-      return "Security review has not started. This Template is not ready to add yet.";
-    default:
-      return "Security review pending. This Template is not ready to add yet.";
-  }
-}
-
 export function isTemplateReadyToAdd(
   status: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | null | undefined,
 ) {

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   extractWorkflowFilenameFromWorkflowRef,
   fetchGitHubRepositoryIdentity,
+  GitHubActionsOidcJwksUnavailableError,
   verifyGitHubActionsSkillsShSyncJwt,
   verifyGitHubActionsTrustedPublishJwt,
   type TrustedGitHubActionsPublisher,
@@ -596,6 +597,110 @@ describe("verifyGitHubActionsSkillsShSyncJwt", () => {
     });
   });
 });
+
+describe("GitHub Actions signing-key availability", () => {
+  // The key cache is module state. Each call moves the clock past its TTL so
+  // the verifier fetches again whatever an earlier test cached.
+  let clock = Date.now() + 60 * 60_000;
+  const nextColdCacheNow = () => {
+    clock += 10 * 60_000;
+    return clock;
+  };
+  const wellFormedToken = () => unsignedToken({ alg: "RS256", kid: "test-key" });
+
+  it.each<[string, typeof fetch]>([
+    [
+      "a network failure",
+      async () => {
+        throw new TypeError("fetch failed");
+      },
+    ],
+    ["a non-OK status", async () => new Response("unavailable", { status: 503 })],
+    ["a body that is not JSON", async () => new Response("<html>bad gateway</html>")],
+    ["a body without a key list", async () => Response.json({ message: "rate limited" })],
+    ["a null body", async () => Response.json(null)],
+  ])("reports %s as a typed signing-key outage", async (_label, fetchImpl) => {
+    const now = nextColdCacheNow();
+
+    await expect(
+      verifyGitHubActionsTrustedPublishJwt(wellFormedToken(), trustedPublisher, {
+        fetchImpl,
+        now: () => now,
+      }),
+    ).rejects.toBeInstanceOf(GitHubActionsOidcJwksUnavailableError);
+  });
+
+  it("reports a failed refresh for an uncached key id as a typed outage", async () => {
+    const now = nextColdCacheNow();
+    const { jwks } = await createSignedToken({});
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ keys: [jwks] }))
+      .mockResolvedValueOnce(new Response("unavailable", { status: 503 }));
+
+    await expect(
+      verifyGitHubActionsTrustedPublishJwt(
+        unsignedToken({ alg: "RS256", kid: "rotated-key" }),
+        trustedPublisher,
+        { fetchImpl: fetchMock, now: () => now },
+      ),
+    ).rejects.toBeInstanceOf(GitHubActionsOidcJwksUnavailableError);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a malformed key set", async () => {
+    const now = nextColdCacheNow();
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ message: "rate limited" }));
+    const verify = () =>
+      verifyGitHubActionsTrustedPublishJwt(wellFormedToken(), trustedPublisher, {
+        fetchImpl: fetchMock,
+        now: () => now,
+      });
+
+    await expect(verify()).rejects.toBeInstanceOf(GitHubActionsOidcJwksUnavailableError);
+    await expect(verify()).rejects.toBeInstanceOf(GitHubActionsOidcJwksUnavailableError);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  // Text the caller puts in the token must never look like an outage, even
+  // when it copies the outage message or a Convex platform error.
+  it.each<[string, string, string]>([
+    ["a token that is not a JWT", "not-a-jwt", "Invalid GitHub OIDC token format"],
+    ["a header that is not JSON", "bm90LWpzb24.e30.AAAA", "Invalid GitHub OIDC header"],
+    [
+      "an unsupported algorithm",
+      unsignedToken({ alg: "InternalServerError: Transient error while executing action" }),
+      "Unsupported GitHub OIDC signing algorithm: InternalServerError: Transient error while executing action",
+    ],
+    ["a missing key id", unsignedToken({ alg: "RS256" }), "Missing GitHub OIDC claim: kid"],
+    [
+      "an unknown key id",
+      unsignedToken({ alg: "RS256", kid: "Failed to fetch GitHub OIDC JWKS: 503" }),
+      "Unknown GitHub OIDC signing key: Failed to fetch GitHub OIDC JWKS: 503",
+    ],
+    [
+      "a signature that does not verify",
+      unsignedToken({ alg: "RS256", kid: "test-key" }),
+      "Invalid GitHub OIDC signature",
+    ],
+  ])("keeps %s an ordinary rejection", async (_label, token, message) => {
+    const now = nextColdCacheNow();
+    const { jwks } = await createSignedToken({});
+
+    const error = await verifyGitHubActionsTrustedPublishJwt(token, trustedPublisher, {
+      fetchImpl: async () => Response.json({ keys: [jwks] }),
+      now: () => now,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(GitHubActionsOidcJwksUnavailableError);
+    expect((error as Error).message).toBe(message);
+  });
+});
+
+function unsignedToken(header: Record<string, unknown>) {
+  return `${base64UrlEncodeJson(header)}.${base64UrlEncodeJson({})}.AAAA`;
+}
 
 async function createSignedToken(payload: Record<string, unknown>, kid = "test-key") {
   const keyPair = await signingKeyPairPromise;

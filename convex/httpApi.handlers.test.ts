@@ -554,6 +554,27 @@ describe("httpApi handlers", () => {
     });
   });
 
+  it("cliDeviceCodeHttp rejects a narrower device scope", async () => {
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValueOnce(null);
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValueOnce({ ok: true });
+
+    const response = await __handlers.cliDeviceCodeHandler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://x/api/cli/device/code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "read" }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe(
+      "Device login creates a full API token. Omit scope or request read write.",
+    );
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
   it("cliDeviceTokenHttp requires the device grant type", async () => {
     vi.mocked(getOptionalApiTokenUser).mockResolvedValueOnce(null);
     const runQuery = vi.fn();

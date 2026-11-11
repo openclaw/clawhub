@@ -549,6 +549,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   against a live foreign lease returns no work. It preserves the existing claim
   ID and expiry without falling through to another claim path; the same claim
   may resume its own lease.
+- Retriable finalization failures release both the finalization claim and the
+  finalization-only worker’s check reservation, so the next worker can retry
+  immediately without waiting for the scan lease. Cleanup requires the current
+  finalizing status and matching finalization claim ID; stale cleanup must not
+  release a replacement worker’s reservation. Passing checks and retained
+  artifacts are preserved, and scan lease durations are unchanged.
 - An explicitly targeted worker can resume an expired finalizing attempt while
   its retained artifacts remain available and both primary checks have passed.
   Admission validates the same current authority, original scope, inventory,
@@ -702,6 +708,29 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   summary. The plugin package root is never a fallback SkillSpector target;
   packages with no bundled roots provide ClawScan an explicit not-applicable
   result. This is not a prepublication-worker contract.
+- Bundled-skill execution may run at most two OpenAI roots concurrently, with
+  five process-wide model requests per root, preserving the pinned scanner's
+  existing total ceiling of ten. Other providers retain serial roots and their
+  existing defaults. Keep each child deadline and the 20-minute aggregate
+  deadline. Findings aggregate in canonical root order; every root must finish
+  before handing off to ClawScan. After a failure, stop admitting roots, cancel
+  in-flight siblings and join their confirmed process-group cleanup before
+  returning failure. Only normal exit-1 findings with confirmed process-group
+  absence can be accepted; cancellation, timeout, output-limit, observer and
+  cleanup failures cannot supply findings-exit results. Command cancellation
+  must reject already-cancelled work
+  without spawning and remove its listener after termination; arbitrary abort
+  reasons must not enter errors or diagnostics.
+- The bundled-skill stage must not report any outcome while a spawned root's
+  process group is unconfirmed. Joining a cancelled sibling is not confirmation:
+  its command can settle after the cleanup deadline expires, with an
+  output-limit or observer failure that outranks the unconfirmed group, or
+  because the group could not be signalled. When any spawned root settles
+  without a termination report of process-group absence, the stage fails with
+  the cleanup failure kind and that root's diagnostic, in place of the failure
+  that triggered cancellation, and never hands off to ClawScan. The lowest such
+  root index is reported. A root rejected before spawning, or whose spawn
+  failed, created no process group and keeps its own error.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
 - VirusTotal is retired. ClawHub no longer uploads skill ZIPs or package

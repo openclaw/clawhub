@@ -37,8 +37,8 @@ export async function cmdScan(opts: GlobalOpts, pathArg: string | undefined, opt
   validateScanOptions(pathArg, options);
   if (pathArg?.trim()) rejectLocalScan();
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader("Submitting scan");
 
   return await withLoaderErrorHandling(spinner, async () => {
@@ -84,8 +84,8 @@ export async function cmdScanDownload(
   if (kind !== "skill" && kind !== "plugin") fail('--kind must be "skill" or "plugin"');
   const requested = kind === "skill" ? parsePublishedSkillRef(name) : { slug: name };
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const output = resolve(
     opts.workdir,
     options.output ?? `clawhub-scan-${safeOutputName(name)}-${safeOutputName(version)}.zip`,

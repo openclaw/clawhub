@@ -52,8 +52,8 @@ export async function cmdLogout(opts: GlobalOpts) {
 }
 
 export async function cmdWhoami(opts: GlobalOpts) {
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
 
   const spinner = createCrabLoader("Checking token");
   return await withLoaderErrorHandling(spinner, async () => {
@@ -67,8 +67,11 @@ export async function cmdWhoami(opts: GlobalOpts) {
 }
 
 export async function cmdToken() {
-  const token = await requireAuthToken();
-  console.log(token);
+  // Prints the saved token locally. No request is made, so there is no
+  // registry origin to bind it to.
+  const cfg = await readGlobalConfig();
+  if (!cfg?.token) fail("Not logged in. Run: clawhub login");
+  console.log(cfg.token);
 }
 
 /**

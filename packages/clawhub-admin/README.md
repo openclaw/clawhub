@@ -79,6 +79,10 @@ bun run admin -- login
 bun run admin -- whoami
 ```
 
+The saved token is sent only to the registry origin it was saved with. A command
+run against another `--registry`, `CLAWHUB_REGISTRY`, or discovered `--site`
+origin fails with `Not logged in to this registry` until you log in there.
+
 User administration:
 
 ```bash

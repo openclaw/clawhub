@@ -34,7 +34,9 @@ What happens:
 
 1. The CLI prints a one-time code and verification URL.
 2. Open the printed URL on this or another device and sign in with GitHub if needed.
-3. Confirm the code matches your terminal, then select **Authorize**.
+3. Type the code from your terminal. The page leaves the field empty, then shows
+   the token label and that this creates a full API token. Select **Authorize**
+   only if you started that login.
 4. The CLI polls for approval, receives an API token, verifies it via `whoami`,
    and stores it in your ClawHub config file.
 

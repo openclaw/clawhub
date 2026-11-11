@@ -70,8 +70,8 @@ export async function cmdPublishManagedMcp(
     );
     return;
   }
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   // A batch uses exactly the single-entry operation. Already-published immutable versions
   // are handled by normal publication retries; no second import-only publication path.
   for (const definition of definitions) {
@@ -81,8 +81,8 @@ export async function cmdPublishManagedMcp(
 }
 
 export async function cmdGetManagedMcp(opts: GlobalOpts, id: string) {
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   console.log(
     JSON.stringify(
       await apiRequest(registry, {
@@ -97,8 +97,8 @@ export async function cmdGetManagedMcp(opts: GlobalOpts, id: string) {
 }
 
 export async function cmdUnpublishManagedMcp(opts: GlobalOpts, id: string) {
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   console.log(
     JSON.stringify(
       await apiRequest(registry, {

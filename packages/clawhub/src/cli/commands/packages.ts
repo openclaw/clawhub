@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import mime from "mime";
 import semver from "semver";
@@ -285,38 +285,6 @@ function assertTemplatePublishArtifactDigest(
   }
 }
 
-async function validateTemplatePublishProfilePolicy(
-  plan: PackagePublishPlan,
-  registry: string,
-  token: string,
-) {
-  if (plan.payload.family !== "template") return;
-  const { validateTemplatePackageContents } = await import("../../schema/templatePackage.js");
-  const validationInput = {
-    packageName: plan.payload.name,
-    version: plan.payload.version,
-    packageJson: plan.packageJson,
-    files: plan.filesOnDisk.map((file) => ({
-      path: file.relPath,
-      text: decodeUtf8Text(file.bytes) ?? undefined,
-    })),
-  };
-  const currentValidation = validateTemplatePackageContents({
-    ...validationInput,
-    openClawProfilePolicy: "current",
-  });
-  if (currentValidation.ok) return;
-
-  const packageDetail = await apiRequestPackageDetail(registry, plan.payload.name, token);
-  if (
-    packageDetail?.package?.family === "template" &&
-    packageDetail.package.templateProfilePolicyVersion === undefined
-  ) {
-    return;
-  }
-  fail(currentValidation.issues.map((issue) => `${issue.path}: ${issue.message}`).join(" "));
-}
-
 type PackedClawPack = {
   path: string;
   file: PackageFile;
@@ -347,8 +315,8 @@ export async function cmdExplorePackages(
   options: PackageExploreOptions = {},
 ) {
   const trimmedQuery = query.trim();
-  const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   const spinner = createCrabLoader(trimmedQuery ? "Searching packages" : "Listing packages");
   return await withLoaderErrorHandling(spinner, async () => {
     const limit = clampLimit(options.limit ?? 25, 100);
@@ -418,8 +386,8 @@ export async function cmdInspectPackage(
   const trimmed = normalizePackageNameOrFail(packageName);
   if (options.version && options.tag) fail("Use either --version or --tag");
 
-  const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   const spinner = createCrabLoader("Fetching package");
   return await withLoaderErrorHandling(spinner, async () => {
     const detail = await apiRequestPackageDetail(registry, trimmed, token);
@@ -541,8 +509,8 @@ export async function cmdGetPackageTrustedPublisher(
   options: PackageTrustedPublisherGetOptions = {},
 ) {
   const trimmed = normalizePackageNameOrFail(packageName);
-  const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   const spinner = createCrabLoader("Fetching trusted publisher");
   return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequestPackageTrustedPublisher(registry, trimmed, token);
@@ -571,8 +539,8 @@ export async function cmdSetPackageTrustedPublisher(
   if (!repository) fail("--repository required");
   if (!workflowFilename) fail("--workflow-filename required");
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader("Saving trusted publisher");
   return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
@@ -607,8 +575,8 @@ export async function cmdDeletePackageTrustedPublisher(
   options: PackageTrustedPublisherDeleteOptions = {},
 ) {
   const trimmed = normalizePackageNameOrFail(packageName);
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader("Deleting trusted publisher");
   return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
@@ -838,14 +806,64 @@ function pluginInspectorFixtureId(rawName: string) {
   );
 }
 
-async function createClawPackFromFolder(options: {
-  sourcePath: string;
-  packDestination: string;
-  cwd: string;
-}): Promise<PackedClawPack> {
-  const result = spawnSync(
-    "npm",
+const MISSING_NPM_MESSAGE =
+  "npm was not found on PATH. Folder publishing packs the package with `npm pack`; install Node.js (which includes npm) and try again, or publish a prebuilt .tgz instead.";
+
+// Every PATH entry as an absolute directory. A relative, drive-relative, or
+// empty entry is resolved once, against the directory npm will run in, which is
+// where a by-name spawn looks it up.
+function pathDirectories(baseDir: string) {
+  const raw = process.env.PATH ?? process.env.Path ?? "";
+  return raw.split(delimiter).map((entry) => resolve(baseDir, entry.trim()));
+}
+
+function sameDirectory(left: string, right: string) {
+  if (process.platform === "win32") return left.toLowerCase() === right.toLowerCase();
+  return left === right;
+}
+
+async function isRegularFile(path: string) {
+  const info = await stat(path).catch(() => null);
+  return Boolean(info?.isFile());
+}
+
+type NpmLaunch = { command: string; args: string[] };
+
+// cmd.exe searches the working directory before PATH and expands %NAME%
+// inside quoted arguments. On Windows, spawn the installed launcher with
+// literal argv. Other platforms keep spawn("npm") so lookup uses the child
+// cwd and skips a non-executable file earlier on PATH.
+//
+// The Windows launcher is always an absolute path. A relative one would be
+// checked from this process's directory and then run from the child's, so the
+// file that passed the check need not be the file that runs.
+async function resolveInstalledNpm(workingDir: string): Promise<NpmLaunch | null> {
+  if (process.platform !== "win32") return { command: "npm", args: [] };
+  const baseDir = resolve(workingDir);
+  for (const dir of pathDirectories(baseDir)) {
+    if (sameDirectory(dir, baseDir)) continue;
+    const cli = join(dir, "node_modules", "npm", "bin", "npm-cli.js");
+    if (await isRegularFile(cli)) {
+      const nodeExe = join(dir, "node.exe");
+      return {
+        command: (await isRegularFile(nodeExe)) ? nodeExe : process.execPath,
+        args: [cli],
+      };
+    }
+    const npmExe = join(dir, "npm.exe");
+    if (await isRegularFile(npmExe)) return { command: npmExe, args: [] };
+  }
+  return null;
+}
+
+function spawnNpmPack(
+  launch: NpmLaunch,
+  options: { sourcePath: string; packDestination: string; cwd: string },
+) {
+  return spawnSync(
+    launch.command,
     [
+      ...launch.args,
       "pack",
       options.sourcePath,
       "--json",
@@ -856,8 +874,39 @@ async function createClawPackFromFolder(options: {
     {
       cwd: options.cwd,
       encoding: "utf8",
+      shell: false,
     },
   );
+}
+
+async function assertWorkingDirectory(cwd: string) {
+  const cwdStat = await stat(cwd).catch((error: unknown) => {
+    throw new Error(`Cannot access working directory "${cwd}": ${formatError(error)}`, {
+      cause: error,
+    });
+  });
+  if (!cwdStat.isDirectory()) {
+    throw new Error(`Working directory is not a directory: ${cwd}`);
+  }
+}
+
+async function createClawPackFromFolder(options: {
+  sourcePath: string;
+  packDestination: string;
+  cwd: string;
+}): Promise<PackedClawPack> {
+  const launch = await resolveInstalledNpm(options.cwd);
+  if (!launch) {
+    await assertWorkingDirectory(options.cwd);
+    throw new Error(MISSING_NPM_MESSAGE);
+  }
+  const result = spawnNpmPack(launch, options);
+  const spawnCode = (result.error as NodeJS.ErrnoException | undefined)?.code;
+  if (spawnCode === "ENOENT") {
+    // Node also returns ENOENT when cwd is missing, even if npm is installed.
+    await assertWorkingDirectory(options.cwd);
+    throw new Error(MISSING_NPM_MESSAGE, { cause: result.error });
+  }
   if (result.error) throw result.error;
   if (result.status !== 0) {
     fail((result.stderr || result.stdout || "npm pack failed").trim());
@@ -968,7 +1017,6 @@ export async function cmdPublishPackage(
         spinner,
       });
       let publishToken = resolvedPublishToken.token;
-      await validateTemplatePublishProfilePolicy(plan, registry, publishToken);
       const form = new FormData();
       const payloadJson = JSON.stringify(plan.payload);
       form.set("payload", payloadJson);
@@ -1132,8 +1180,8 @@ export async function cmdRecoverPackage(
     fail("--manual-override-reason must contain 1 through 500 characters");
   }
   const waitTimeoutSeconds = resolvePackagePublishWaitTimeout(options);
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader("Recovering staged publication");
   return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
@@ -1448,8 +1496,8 @@ export async function cmdDownloadPackage(
   const trimmed = normalizePackageNameOrFail(packageName);
   if (options.version && options.tag) fail("Use either --version or --tag");
 
-  const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader("Resolving package artifact");
   return await withLoaderErrorHandling(spinner, async () => {
     const targetVersion = await resolvePackageVersion(registry, trimmed, {
@@ -1516,8 +1564,8 @@ export async function cmdVerifyPackage(
 
     if (options.packageName?.trim()) {
       const packageName = normalizePackageNameOrFail(options.packageName);
-      const token = await getOptionalAuthToken();
       const registry = await getRegistry(opts, { cache: true });
+      const token = await getOptionalAuthToken(registry);
       spinnerText(spinner, `Resolving ${packageName}`);
       const targetVersion = await resolvePackageVersion(registry, packageName, {
         token,
@@ -1591,8 +1639,8 @@ export async function cmdDeletePackage(
     if (!ok) return undefined;
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const target = version ? `${name} version ${version}` : name;
   const spinner = createCrabLoader(`Deleting ${target}`);
   return await withLoaderErrorHandling(spinner, async () => {
@@ -1643,8 +1691,8 @@ export async function cmdUndeletePackage(
     if (!ok) return undefined;
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const target = version ? `${name} version ${version}` : name;
   const spinner = createCrabLoader(`Restoring ${target}`);
   return await withLoaderErrorHandling(spinner, async () => {
@@ -1678,8 +1726,8 @@ export async function cmdTransferPackage(
   if (!toOwner) fail("--to required");
   const reason = options.reason?.trim();
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader(`Transferring ${name} to @${toOwner}`);
   return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
@@ -1713,8 +1761,8 @@ export async function cmdReportPackage(
   const version = options.version?.trim();
   if (!reason) fail("--reason required");
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Reporting ${trimmed}`);
   return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
@@ -1750,8 +1798,8 @@ export async function cmdPackageModerationStatus(
   options: PackageModerationStatusOptions = {},
 ) {
   const trimmed = normalizePackageNameOrFail(packageName);
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const result = await apiRequest(
     registry,
     {
@@ -1793,8 +1841,8 @@ export async function cmdPackageReadiness(
   options: PackageReadinessOptions = {},
 ) {
   const trimmed = normalizePackageNameOrFail(packageName);
-  const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   const result = await apiRequest(
     registry,
     {
@@ -1825,8 +1873,8 @@ export async function cmdPackageMigrationStatus(
   options: PackageMigrationStatusOptions = {},
 ) {
   const trimmed = normalizePackageNameOrFail(packageName);
-  const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   const result = await apiRequest(
     registry,
     {
@@ -2655,9 +2703,9 @@ async function preparePackagePublishPlan(
       packageName: name,
       version,
       packageJson,
-      openClawProfilePolicy: "publication-compatible",
       files: filesOnDisk.map((file) => ({
         path: file.relPath,
+        size: file.bytes.byteLength,
         text: decodeUtf8Text(file.bytes) ?? undefined,
       })),
     });
@@ -2874,11 +2922,11 @@ async function resolvePackagePublishToken(params: {
   spinner: ReturnType<typeof createCrabLoader> | null;
 }) {
   if (params.manualOverrideReason?.trim()) {
-    return { kind: "user" as const, token: await requireAuthToken() };
+    return { kind: "user" as const, token: await requireAuthToken(params.registry) };
   }
 
   if (!hasGitHubActionsOidcEnv()) {
-    return { kind: "user" as const, token: await requireAuthToken() };
+    return { kind: "user" as const, token: await requireAuthToken(params.registry) };
   }
 
   if (params.spinner) {
@@ -2911,7 +2959,7 @@ async function resolvePackagePublishToken(params: {
     if (params.spinner) {
       params.spinner.text = "Trusted publishing unavailable, falling back to ClawHub token";
     }
-    return { kind: "user" as const, token: await requireAuthToken() };
+    return { kind: "user" as const, token: await requireAuthToken(params.registry) };
   }
 }
 
