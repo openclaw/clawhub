@@ -179,6 +179,175 @@ describe("CliDeviceAuth", () => {
     }
   });
 
+  it("disables approval at expiry when the code is typed long after the page opened", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:00:00.000Z"));
+      describeCodeAs(() => ({
+        ...pendingDescription,
+        createdAt: Date.parse("2026-11-10T15:09:00.000Z"),
+        expiresAt: Date.parse("2026-11-10T15:24:00.000Z"),
+      }));
+      useMutationMock.mockReturnValue(vi.fn());
+
+      render(<CliDeviceAuth />);
+      // The page sits open for 23 minutes before the code is typed, one minute before expiry.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(23 * 60_000);
+      });
+      typeCode();
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
+      expect(screen.getByText(paragraph(EXPIRED_MESSAGE))).toBeTruthy();
+      expect(screen.queryByText("Label: ssh box")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("treats a still-pending code as expired when its expiry passed after the page opened", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:00:00.000Z"));
+      describeCodeAs(() => ({
+        ...pendingDescription,
+        expiresAt: Date.parse("2026-11-10T15:05:00.000Z"),
+      }));
+      useMutationMock.mockReturnValue(approveMock);
+
+      render(<CliDeviceAuth />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10 * 60_000);
+      });
+      typeCode();
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
+      expect(screen.getByText(paragraph(EXPIRED_MESSAGE))).toBeTruthy();
+      expect(screen.queryByText("Label: ssh box")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-checks the expiry when the tab becomes visible after its timer was suspended", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:14:00.000Z"));
+      describeCodeAs(() => ({
+        ...pendingDescription,
+        expiresAt: Date.parse("2026-11-10T15:15:00.000Z"),
+      }));
+      useMutationMock.mockReturnValue(vi.fn());
+
+      render(<CliDeviceAuth />);
+      typeCode();
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", false);
+
+      // A sleeping laptop or frozen tab moves the clock without running the timer.
+      vi.setSystemTime(new Date("2026-11-10T15:20:00.000Z"));
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
+      expect(screen.getByText(paragraph(EXPIRED_MESSAGE))).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-arms the expiry timer when a different pending code is described", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:00:00.000Z"));
+      const expiresAtByCode: Record<string, number> = {
+        "ABCD-2345": Date.parse("2026-11-10T15:10:00.000Z"),
+        "WXYZ-6789": Date.parse("2026-11-10T15:02:00.000Z"),
+      };
+      useQueryMock.mockImplementation((_query: unknown, args: unknown) => {
+        if (!args || args === "skip") return undefined;
+        const { userCode } = args as { userCode: string };
+        return { ...pendingDescription, label: userCode, expiresAt: expiresAtByCode[userCode] };
+      });
+      useMutationMock.mockReturnValue(vi.fn());
+
+      render(<CliDeviceAuth />);
+      typeCode("ABCD-2345");
+      typeCode("WXYZ-6789");
+      expect(vi.getTimerCount()).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2 * 60_000);
+      });
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+
+      // The first code is still inside its own window.
+      typeCode("ABCD-2345");
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", false);
+      expect(screen.getByText("Label: ABCD-2345")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits out an expiry beyond the setTimeout delay limit", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:00:00.000Z"));
+      const day = 24 * 60 * 60_000;
+      // 30 days is past the 2^31-1 ms (about 24.8 days) setTimeout limit.
+      const farExpiry = Date.parse("2026-11-10T15:00:00.000Z") + 30 * day;
+      describeCodeAs(() => ({ ...pendingDescription, expiresAt: farExpiry }));
+      useMutationMock.mockReturnValue(vi.fn());
+
+      render(<CliDeviceAuth />);
+      typeCode();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(25 * day);
+      });
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5 * day);
+      });
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops the expiry timer when the page unmounts before expiry", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:14:00.000Z"));
+      describeCodeAs(() => ({
+        ...pendingDescription,
+        expiresAt: Date.parse("2026-11-10T15:15:00.000Z"),
+      }));
+      useMutationMock.mockReturnValue(vi.fn());
+
+      const view = render(<CliDeviceAuth />);
+      typeCode();
+      expect(vi.getTimerCount()).toBe(1);
+
+      view.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     ["expired", EXPIRED_MESSAGE],
     ["used", USED_MESSAGE],

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Container } from "../../components/layout/Container";
 import { SignInButton } from "../../components/SignInButton";
@@ -16,6 +16,43 @@ export const Route = createFileRoute("/cli/device")({
   component: CliDeviceAuth,
 });
 
+// setTimeout treats a delay above 2^31-1 ms as 1 ms.
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+/**
+ * True once the browser clock reaches `deadline`.
+ *
+ * The clock is read each time the timer is armed, never kept in state: a stored "now" is as old
+ * as the render that set it, so a page opened before the code was typed would schedule from that
+ * older time and leave the buttons on after expiry. The result is recorded per deadline, so a new
+ * code or a new expiry starts again from the current time.
+ */
+function useDeadlinePassed(deadline: number | null) {
+  const [passedDeadline, setPassedDeadline] = useState<number | null>(null);
+  // A layout effect, so a deadline that already passed never paints as approvable.
+  useLayoutEffect(() => {
+    if (deadline === null) return undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+      clearTimeout(timer);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        setPassedDeadline(deadline);
+        return;
+      }
+      timer = setTimeout(check, Math.min(remaining, MAX_TIMER_DELAY_MS));
+    };
+    check();
+    // Timers do not run while the device sleeps or the tab is frozen. Check again on return.
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [deadline]);
+  return deadline !== null && passedDeadline === deadline;
+}
+
 export function CliDeviceAuth() {
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -29,18 +66,9 @@ export function CliDeviceAuth() {
     api.cliDeviceAuth.describePending,
     isAuthenticated && me && code.trim() ? { userCode: code } : "skip",
   );
-  const pendingExpiresAt = description?.state === "pending" ? description.expiresAt : null;
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const remaining = pendingExpiresAt === null ? 0 : pendingExpiresAt - now;
-    // setTimeout treats a delay above 2^31-1 ms as 1 ms.
-    const delay = remaining > 0 ? Math.min(remaining, 2_147_483_647) : 0;
-    const timer = delay > 0 ? setTimeout(() => setNow(Date.now()), delay) : undefined;
-    return () => {
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [now, pendingExpiresAt]);
-  const expiredLocally = pendingExpiresAt !== null && pendingExpiresAt <= now;
+  const expiredLocally = useDeadlinePassed(
+    description?.state === "pending" ? description.expiresAt : null,
+  );
   const canDecide = description?.state === "pending" && !expiredLocally && !isComplete;
   // After this page approves or denies, the row leaves pending and the query reports "used".
   // That is the decision just made here, not a problem with the code.

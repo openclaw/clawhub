@@ -21,6 +21,15 @@ not read the wall clock. A pending row stays pending and includes `expiresAt`.
 The page disables Authorize and Deny when that time has passed. `approve` and
 `deny` still reject an expired code.
 
+The page reads the browser clock each time it arms the expiry timer, and again
+when the tab becomes visible, because timers do not run while a device sleeps.
+It does not schedule from a time kept in React state: a page opened before the
+code was typed would then count from the older time and leave the buttons on
+past expiry. The browser clock is compared with the server's `expiresAt` as is.
+A browser clock that runs ahead turns the buttons off early, and one that runs
+behind leaves them on until `approve` or `deny` rejects the code. The page has
+no server time to correct this with, and `describePending` cannot supply one.
+
 Expired, used, and unknown codes each say what to do next: retype a mistyped
 code, or run `clawhub login` again for a new one. After this page approves or
 denies a code, the row leaves `pending` and `describePending` reports it as
