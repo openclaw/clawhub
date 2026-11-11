@@ -36,6 +36,8 @@ import {
 } from "./bundled-skillspector-diagnostic";
 import {
   isTypedScannerJudgeRun,
+  isEvidenceOnlyCodexRun,
+  type ClawHubProfile,
   validateDecisionsRun,
   validateAigMcpReport,
 } from "./clawscan-decisions";
@@ -51,6 +53,7 @@ import {
   noClawScanExposure,
   unknownClawScanExposure,
 } from "./clawscan-exposure";
+import { assertQualifiedNativeArtifact } from "./clawscan-native-runtime";
 import {
   usesWholePluginScanForTarget,
   qualifiedPluginCommand,
@@ -62,6 +65,7 @@ import {
   parseClawScanProgress,
   type SafeClawScanProgress,
 } from "./clawscan-progress";
+import { resolveTemplateScanForTarget } from "./clawscan-template-runtime";
 import {
   isEndorPluginScanEnabled,
   runEndorPluginScan,
@@ -2078,13 +2082,21 @@ function clawScanDiagnosticMapping(
 export function validateClawScanArtifactForClawHubProfile(
   artifact: Record<string, unknown>,
   scannerSet = REQUIRED_CLAWHUB_SCANNERS,
+  expectedProfile: ClawHubProfile = "clawhub",
 ) {
+  if (expectedProfile === "clawhub-template" && !isEvidenceOnlyCodexRun(artifact)) {
+    throw new Error("ClawScan Template scan requires the evidence-only Codex judge");
+  }
   if (isTypedScannerJudgeRun(artifact)) {
     // Requirements come from the claim, never from returned scanner IDs.
     const required = scannerSet.includes("aig-mcp")
       ? ["aig-mcp"]
       : scannerSet.filter((id) => id !== "clawscan-static");
-    const llmAnalysis = validateDecisionsRun(artifact, required);
+    const llmAnalysis = validateDecisionsRun(
+      artifact,
+      scannerSet.includes("aig-mcp") ? scannerSet : required,
+      expectedProfile,
+    );
     const scanners = asRecord(artifact.scanners)!;
     const aig = asRecord(scanners[required.includes("aig-mcp") ? "aig-mcp" : "aig"]);
     const raw = required.includes("aig-mcp") ? validateAigMcpReport(aig?.raw) : asRecord(aig?.raw);
@@ -2106,7 +2118,7 @@ export function validateClawScanArtifactForClawHubProfile(
     const aigAnalysis = normalized
       ? normalizeAigAnalysis(JSON.stringify(normalized), llmAnalysis.checkedAt)
       : undefined;
-    // Templates require ordinary SkillSpector evidence, not plugin MCP or AIG.
+    // The legacy Template lane still requires ordinary SkillSpector evidence.
     // Only project/require AIG when the claim actually requires that scanner.
     if (
       required.some((id) => id === "aig" || id === "aig-mcp") &&
@@ -2136,7 +2148,7 @@ export function validateClawScanArtifactForClawHubProfile(
     throw new Error(`ClawScan artifact schemaVersion was ${schemaVersion ?? "missing"}`);
   }
   const profile = readString(artifact, ["profile"]);
-  if (profile !== "clawhub") {
+  if (profile !== expectedProfile) {
     throw new Error(`ClawScan artifact profile was ${profile ?? "missing"}`);
   }
 
@@ -2182,7 +2194,7 @@ export function validateClawScanArtifactForClawHubProfile(
     throw new Error("ClawScan partial evidence requires a v2 artifact inspection receipt");
   }
   if (inspection.version === 2) {
-    const exposure = clawScanExposure(artifact);
+    const exposure = clawScanExposure(artifact, expectedProfile);
     const attempts = Array.isArray(judge.attempts) ? judge.attempts : [];
     const last = asRecord(attempts.at(-1));
     if (
@@ -2246,17 +2258,25 @@ export async function runClawScan(
   let command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
   const artifactPath = join(workspace, "clawscan-artifact.json");
   const target = await resolveClawScanTarget(workspace, job);
+  const templateScan = await resolveTemplateScanForTarget(
+    job.job.targetKind,
+    job.target.package,
+    "CODEX_SECURITY_SCAN",
+  );
   const wholePlugin = await usesWholePluginScanForTarget(job.job.targetKind, job.target.package);
-  if (wholePlugin) command = await qualifiedPluginCommand("CODEX_SECURITY_SCAN");
-  const scannerSet = wholePlugin ? ["aig-mcp"] : requiredClawHubScanners(job.job.targetKind);
+  const nativeMcp = Boolean(templateScan) || wholePlugin;
+  const expectedProfile = templateScan ? "clawhub-template" : "clawhub";
+  if (templateScan) command = templateScan.command;
+  else if (wholePlugin) command = await qualifiedPluginCommand("CODEX_SECURITY_SCAN");
+  const scannerSet = nativeMcp ? ["aig-mcp"] : requiredClawHubScanners(job.job.targetKind);
   if (scannerSet.includes("aig")) {
     assertAigFilePathsHaveNoCompiledPython(job.target.files?.map((file) => file.path) ?? []);
   }
-  const args = [target, "--profile", "clawhub"];
+  const args = [target, "--profile", expectedProfile];
   if (
     job.job.targetKind === "packageRelease" &&
     asRecord(job.target.package)?.family !== "claw" &&
-    !wholePlugin
+    !nativeMcp
   ) {
     // SkillSpector only understands skills. ClawHub owns the plugin manifest
     // boundary, so never let ClawScan fall back to scanning the whole package.
@@ -2265,7 +2285,7 @@ export async function runClawScan(
     args.push("--scanner-result", `skillspector=${skillSpectorResultPath}`);
   }
   args.push("--output", artifactPath);
-  if (job.job.targetKind === "packageRelease") {
+  if (job.job.targetKind === "packageRelease" && !templateScan) {
     const contextPath = join(workspace, "clawscan-publisher-context.json");
     // Trust is already derived from persisted ownership (including forced-check
     // suppression); never infer it from an artifact name or pass stored reports.
@@ -2277,8 +2297,13 @@ export async function runClawScan(
     args.push("--context", contextPath);
   }
   const sandbox = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX?.trim();
-  if (wholePlugin) {
-    args.push("--sandbox", "docker", "--sandbox-image", QUALIFIED_PLUGIN_IMAGE);
+  if (nativeMcp) {
+    args.push(
+      "--sandbox",
+      "docker",
+      "--sandbox-image",
+      templateScan?.image ?? QUALIFIED_PLUGIN_IMAGE,
+    );
   } else if (sandbox) {
     args.push("--sandbox", sandbox);
     const sandboxImage = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX_IMAGE?.trim();
@@ -2315,13 +2340,13 @@ export async function runClawScan(
     if (artifact)
       onDiagnostic({
         mapping: clawScanDiagnosticMapping(artifact, scannerSet),
-        exposure: clawScanExposure(artifact),
+        exposure: clawScanExposure(artifact, expectedProfile),
       });
     return artifact;
   };
 
   try {
-    const output = wholePlugin
+    const output = nativeMcp
       ? await withClawScanDockerCleanup({
           workspace,
           confirmChildFinality: async () =>
@@ -2377,13 +2402,14 @@ export async function runClawScan(
   const artifact = await captureArtifact();
   if (!artifact) throw new Error("ClawScan did not emit a valid JSON artifact");
 
-  if (wholePlugin) assertQualifiedPluginArtifact(artifact);
+  if (templateScan) assertQualifiedNativeArtifact(artifact, templateScan);
+  else if (wholePlugin) assertQualifiedPluginArtifact(artifact);
   else if (Object.hasOwn(asRecord(artifact.scanners) ?? {}, "aig-mcp")) {
     throw new Error(
       "A.I.G MCP evidence requires the qualified source and immutable Docker runtime",
     );
   }
-  const mapped = validateClawScanArtifactForClawHubProfile(artifact, scannerSet);
+  const mapped = validateClawScanArtifactForClawHubProfile(artifact, scannerSet, expectedProfile);
   onDiagnostic({ mapping: mapped.mapping });
   return mapped;
 }
@@ -2559,7 +2585,13 @@ export async function processJob(
       });
       return { completed: true, hardFailed: false, retryableFailed: false };
     }
+    const templateScan = await resolveTemplateScanForTarget(
+      job.job.targetKind,
+      job.target.package,
+      "CODEX_SECURITY_SCAN",
+    );
     const shouldRunEndor =
+      !templateScan &&
       job.job.targetKind === "packageRelease" &&
       isEndorPluginScanEnabled(readString(asRecord(job.target.package) ?? {}, ["family"]));
     // Endor is report-only: its result is saved on the release and never
@@ -2568,6 +2600,7 @@ export async function processJob(
       shouldRunEndor ? runEndorReport(job, workspace, endor) : Promise.resolve(undefined),
       job.job.targetKind === "packageRelease" &&
       asRecord(job.target.package)?.family !== "claw" &&
+      !templateScan &&
       !(await usesWholePluginScanForTarget(job.job.targetKind, job.target.package))
         ? prepareBundledSkillSpector(job, workspace, (next) => {
             Object.assign(clawscan, next);

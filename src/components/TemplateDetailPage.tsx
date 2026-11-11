@@ -1,9 +1,18 @@
-import type { TemplateManifest } from "clawhub-schema";
+import {
+  templateDependencyInventory,
+  type TemplateDependencyInventory,
+  type TemplateManifest,
+} from "clawhub-schema";
 import { TEMPLATE_CATEGORY_DEFINITIONS } from "clawhub-schema/catalogMetadata";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { fetchPackageFile, type PackageDetailResponse } from "../lib/packageApi";
+import {
+  fetchPackageFile,
+  getPackageArtifactDownloadPath,
+  getPackageDownloadPath,
+  type PackageDetailResponse,
+} from "../lib/packageApi";
 import { parseTemplateDocument } from "../lib/templateDetail";
-import { isTemplateReadyToAdd, templateSecurityStatusMessage } from "../lib/templateRoutes";
+import { isTemplateReadyToAdd } from "../lib/templateRoutes";
 import { auditVerdictMeterLevel, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { aggregateAuditVerdict } from "./securityAuditModel";
@@ -35,13 +44,31 @@ export function TemplateDetailPage({
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const id = useId();
   const summary = pkg.templateManifestSummary;
+  const inventory =
+    pkg.templateInventory ?? (manifest ? templateDependencyInventory(manifest) : null);
   const categories = (pkg.categories ?? manifest?.categories ?? []).map(
     (slug) =>
       TEMPLATE_CATEGORY_DEFINITIONS.find((category) => category.slug === slug)?.label ?? slug,
   );
   const description = pkg.summary ?? summary?.agent.description ?? manifest?.agent.description;
   const scanStatus = pkg.scanStatus ?? "pending";
-  const ready = isTemplateReadyToAdd(scanStatus) && Boolean(pkg.latestVersion);
+  // Historical summaries retain profile counts even when CLAW.md alone still parses.
+  const retiredProfile = (summary?.profiles?.count ?? 0) > 0;
+  const supportedManifest = Boolean(manifest) && !retiredProfile;
+  const ready = supportedManifest && isTemplateReadyToAdd(scanStatus) && Boolean(pkg.latestVersion);
+  const manifestWarning =
+    !supportedManifest && pkg.latestVersion
+      ? retiredProfile
+        ? "This release includes retired Template profiles and cannot be added."
+        : contents === null
+          ? "The CLAW.md manifest could not be loaded, so this release cannot be added. Reload this page to try again."
+          : "This release has an unsupported or invalid CLAW.md manifest and cannot be added."
+      : null;
+  const archivePath = pkg.latestVersion
+    ? pkg.artifact?.kind === "npm-pack"
+      ? getPackageArtifactDownloadPath(pkg.name, pkg.latestVersion)
+      : getPackageDownloadPath(pkg.name, pkg.latestVersion)
+    : null;
   const installCommand = "openclaw templates add " + pkg.name;
   // Package scanStatus still gates installation; an audit verdict needs release evidence.
   const auditVerdict = llmAnalysis ? aggregateAuditVerdict({ llmAnalysis }) : "unavailable";
@@ -87,16 +114,16 @@ export function TemplateDetailPage({
                 cliCopyAriaLabel="Copy template install command"
                 copyEnabled={ready}
               />
-              {!ready ? (
-                <p
-                  className="template-detail-install-warning"
-                  role={
-                    scanStatus === "suspicious" || scanStatus === "malicious" ? "alert" : "status"
-                  }
-                >
-                  {isTemplateReadyToAdd(scanStatus)
-                    ? "This Template has no current release available to add."
-                    : templateSecurityStatusMessage(scanStatus)}
+              {manifestWarning ? (
+                <p className="template-detail-install-warning" role="status">
+                  {manifestWarning} Ask the publisher to migrate or repair CLAW.md and publish a new
+                  version. <a href="/docs/templates">Template migration guide</a>.
+                  {archivePath ? (
+                    <>
+                      {" "}
+                      <a href={archivePath}>Download release archive</a>.
+                    </>
+                  ) : null}
                 </p>
               ) : null}
             </section>
@@ -144,23 +171,34 @@ export function TemplateDetailPage({
                 >
                   {activeTab === tab ? (
                     tab === "CLAW.md" ? (
-                      markdown ? (
-                        <MarkdownPreview className="template-detail-markdown">
-                          {markdown}
-                        </MarkdownPreview>
-                      ) : (
-                        <ContentMessage>
-                          Template instructions are unavailable for this release.
-                        </ContentMessage>
-                      )
-                    ) : !manifest ? (
+                      <>
+                        {markdown ? (
+                          <MarkdownPreview className="template-detail-markdown">
+                            {markdown}
+                          </MarkdownPreview>
+                        ) : (
+                          <ContentMessage>
+                            Template instructions are unavailable for this release.
+                          </ContentMessage>
+                        )}
+                        {!supportedManifest && contents !== null ? (
+                          <details className="template-detail-original">
+                            <summary>View original CLAW.md</summary>
+                            <pre>
+                              <code>{contents}</code>
+                            </pre>
+                          </details>
+                        ) : null}
+                      </>
+                    ) : !supportedManifest || !manifest ? (
                       <ContentMessage>
-                        The manifest is unavailable for this release. Its contents could not be
-                        read.
+                        The manifest is unavailable in the current Template format. See the original
+                        CLAW.md and migration guidance before asking the publisher for a new
+                        version.
                       </ContentMessage>
                     ) : tab === "Skills" || tab === "Plugins" ? (
                       <TemplatePackages
-                        manifest={manifest}
+                        inventory={inventory ?? []}
                         kind={tab === "Skills" ? "skill" : "plugin"}
                       />
                     ) : tab === "Automations" ? (
@@ -178,6 +216,23 @@ export function TemplateDetailPage({
               ariaLabel="Template metadata"
               density="compact"
               blocks={[
+                {
+                  key: "provenance",
+                  label: "Declared contents",
+                  value: (
+                    <span>
+                      Template {pkg.latestVersion ? "v" + pkg.latestVersion : "release unavailable"}
+                      {pkg.artifact?.sha256 ? (
+                        <>
+                          <br />
+                          <code title={pkg.artifact.sha256}>
+                            SHA-256 {pkg.artifact.sha256.slice(0, 12)}…
+                          </code>
+                        </>
+                      ) : null}
+                    </span>
+                  ),
+                },
                 {
                   key: "security",
                   label: <DetailSecuritySummaryLabel />,
@@ -280,13 +335,13 @@ function ContentMessage({ children }: { children: React.ReactNode }) {
 }
 
 function TemplatePackages({
-  manifest,
+  inventory,
   kind,
 }: {
-  manifest: TemplateManifest;
+  inventory: TemplateDependencyInventory;
   kind: "skill" | "plugin";
 }) {
-  const packages = manifest.packages?.filter((entry) => entry.kind === kind) ?? [];
+  const packages = inventory.filter((entry) => entry.kind === kind);
   if (!packages.length)
     return (
       <ContentMessage>
@@ -294,19 +349,31 @@ function TemplatePackages({
       </ContentMessage>
     );
   return (
-    <ul
-      className="template-detail-entry-list"
-      aria-label={kind === "skill" ? "Included skills" : "Included plugins"}
-    >
-      {packages.map((entry) => (
-        <li key={entry.ref}>
-          <strong>{entry.ref}</strong>
-          <span className="template-detail-entry-meta">
-            Version {entry.version} · {entry.source}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <p className="template-detail-entry-meta">
+        {packages.length} declared {packages.length === 1 ? kind : kind + "s"}
+      </p>
+      <ul
+        className="template-detail-entry-list"
+        aria-label={kind === "skill" ? "Included skills" : "Included plugins"}
+      >
+        {packages.map((entry) =>
+          entry.source === "bundled" ? (
+            <li key={entry.path}>
+              <strong>{entry.name || entry.path}</strong>
+              <span className="template-detail-entry-meta">
+                Bundled · <code>{entry.path}</code>
+              </span>
+            </li>
+          ) : (
+            <li key={entry.ref}>
+              <strong>{entry.ref}</strong>
+              <span className="template-detail-entry-meta">Version {entry.version} · ClawHub</span>
+            </li>
+          ),
+        )}
+      </ul>
+    </>
   );
 }
 
@@ -319,7 +386,8 @@ function TemplateAutomations({ manifest }: { manifest: TemplateManifest }) {
         <li key={job.id}>
           <strong>{job.name || job.id}</strong>
           <span className="template-detail-entry-meta">
-            <code>{job.schedule.cron}</code> · {job.schedule.timezone} · {job.session} session
+            {job.enabled === false ? "Paused" : "Enabled"} · <code>{job.schedule.cron}</code> ·{" "}
+            {job.schedule.timezone} · {job.session} session
           </span>
           <p className="template-detail-job-message">{job.message}</p>
           {job.delivery ? (

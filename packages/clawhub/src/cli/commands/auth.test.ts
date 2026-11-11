@@ -170,4 +170,11 @@ describe("cmdToken", () => {
 
     expect(mockLog).toHaveBeenCalledWith("clh_test");
   });
+
+  it("fails when no token is stored", async () => {
+    mockReadGlobalConfig.mockResolvedValueOnce({ registry: "https://clawhub.ai" });
+
+    await expect(cmdToken()).rejects.toThrow("Not logged in. Run: clawhub login");
+    expect(mockLog).not.toHaveBeenCalled();
+  });
 });

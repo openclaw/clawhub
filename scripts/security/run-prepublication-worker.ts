@@ -24,6 +24,7 @@ import {
   redactWorkerPublicErrorMessage,
   redactWorkerPublicText,
 } from "../lib/workerRedaction";
+import type { ClawHubProfile } from "./clawscan-decisions";
 import { isTypedScannerJudgeRun } from "./clawscan-decisions";
 import { projectSkillSpectorReport } from "./clawscan-diagnostic-skillspector";
 import {
@@ -38,12 +39,14 @@ import {
   noClawScanExposure,
   summarizeClawScanExposure,
 } from "./clawscan-exposure";
+import { assertQualifiedNativeArtifact } from "./clawscan-native-runtime";
 import {
   usesWholePluginScanForTarget,
   qualifiedPluginCommand,
   QUALIFIED_PLUGIN_IMAGE,
   assertQualifiedPluginArtifact,
 } from "./clawscan-plugin-runtime";
+import { resolveTemplateScanForTarget } from "./clawscan-template-runtime";
 import { resolvePrepublicationScannerRuntime } from "./prepublicationScannerSource";
 import {
   type AigAnalysis,
@@ -505,6 +508,7 @@ function storedAnalysisFromClawScanArtifact(
   artifact: unknown,
   targetKind: ClaimedJob["job"]["targetKind"],
   requiredScannerOverride?: string[],
+  expectedProfile: ClawHubProfile = "clawhub",
 ): {
   analysis?: StoredLlmAnalysis;
   aigAnalysis?: AigAnalysis;
@@ -512,12 +516,18 @@ function storedAnalysisFromClawScanArtifact(
   error?: string;
 } {
   const record = asRecord(artifact);
-  if (record && (isTypedScannerJudgeRun(record) || requiredScannerOverride)) {
+  if (
+    record &&
+    (isTypedScannerJudgeRun(record) ||
+      requiredScannerOverride ||
+      expectedProfile === "clawhub-template")
+  ) {
     try {
       const mapped = validateClawScanArtifactForClawHubProfile(
         record,
         requiredScannerOverride ??
           (targetKind === "packageRelease" ? ["aig-mcp"] : ["skillspector", "aig"]),
+        expectedProfile,
       );
       return {
         analysis: mapped.llmAnalysis,
@@ -702,10 +712,19 @@ export async function runNativeClawScan(
   if (job.job.targetKind !== "packageRelease") {
     assertAigFilePathsHaveNoCompiledPython(job.target.files?.map((file) => file.path) ?? []);
   }
+  const templateScan = await resolveTemplateScanForTarget(
+    job.job.targetKind,
+    job.target.package,
+    "PREPUBLICATION",
+  );
   const wholePlugin = await usesWholePluginScanForTarget(job.job.targetKind, job.target.package);
-  const command = wholePlugin ? await qualifiedPluginCommand("PREPUBLICATION") : clawScanCommand();
-  const args = [target, "--profile", "clawhub", "--output", artifactPath];
-  if (job.job.targetKind === "packageRelease") {
+  const nativeMcp = Boolean(templateScan) || wholePlugin;
+  const expectedProfile = templateScan ? "clawhub-template" : "clawhub";
+  const command =
+    templateScan?.command ??
+    (wholePlugin ? await qualifiedPluginCommand("PREPUBLICATION") : clawScanCommand());
+  const args = [target, "--profile", expectedProfile, "--output", artifactPath];
+  if (job.job.targetKind === "packageRelease" && !templateScan) {
     // Only the backend-verified boolean enters the judge; package text and
     // existing scanner reports cannot elevate publisher trust.
     const contextPath = join(workspace, "clawscan-publisher-context.json");
@@ -717,8 +736,13 @@ export async function runNativeClawScan(
     args.push("--context", contextPath);
   }
   const sandbox = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX?.trim();
-  if (wholePlugin) {
-    args.push("--sandbox", "docker", "--sandbox-image", QUALIFIED_PLUGIN_IMAGE);
+  if (nativeMcp) {
+    args.push(
+      "--sandbox",
+      "docker",
+      "--sandbox-image",
+      templateScan?.image ?? QUALIFIED_PLUGIN_IMAGE,
+    );
   } else if (sandbox) {
     args.push("--sandbox", sandbox);
     const sandboxImage = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX_IMAGE?.trim();
@@ -733,7 +757,7 @@ export async function runNativeClawScan(
     "missing";
   let failure: NativeExecutionReport["failure"] = null;
   try {
-    output = wholePlugin
+    output = nativeMcp
       ? await withClawScanDockerCleanup({
           workspace,
           confirmChildFinality: async () =>
@@ -781,7 +805,7 @@ export async function runNativeClawScan(
       artifact = JSON.parse(artifactBytes.toString("utf8"));
       const root = asRecord(artifact);
       artifactPresence =
-        root?.schemaVersion === "clawscan-run-v1" && root.profile === "clawhub"
+        root?.schemaVersion === "clawscan-run-v1" && root.profile === expectedProfile
           ? "present"
           : "invalid_schema";
     } catch (error) {
@@ -790,7 +814,7 @@ export async function runNativeClawScan(
           (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable";
       artifact = undefined;
     }
-    onExposure?.(clawScanExposure(artifact));
+    onExposure?.(clawScanExposure(artifact, expectedProfile));
     const logFailureDiagnostic = () => {
       const root = artifactPresence === "present" ? asRecord(artifact) : undefined;
       const scanners = asRecord(root?.scanners);
@@ -825,13 +849,14 @@ export async function runNativeClawScan(
       };
     }
 
-    if (wholePlugin || Object.hasOwn(asRecord(asRecord(artifact)?.scanners) ?? {}, "aig-mcp")) {
+    if (nativeMcp || Object.hasOwn(asRecord(asRecord(artifact)?.scanners) ?? {}, "aig-mcp")) {
       try {
-        if (!wholePlugin)
+        if (!nativeMcp)
           throw new Error(
             "A.I.G MCP evidence requires the qualified source and immutable Docker runtime",
           );
-        assertQualifiedPluginArtifact(asRecord(artifact)!);
+        if (templateScan) assertQualifiedNativeArtifact(asRecord(artifact)!, templateScan);
+        else assertQualifiedPluginArtifact(asRecord(artifact)!);
       } catch (error) {
         return {
           check: {
@@ -844,11 +869,12 @@ export async function runNativeClawScan(
     const parsed = storedAnalysisFromClawScanArtifact(
       artifact,
       job.job.targetKind,
-      wholePlugin
+      nativeMcp
         ? ["aig-mcp"]
         : job.job.targetKind === "packageRelease" && asRecord(job.target.package)?.family === "claw"
           ? REQUIRED_PACKAGE_SCANNERS
           : undefined,
+      expectedProfile,
     );
     if (parsed.error || !parsed.analysis) {
       logFailureDiagnostic();
@@ -882,7 +908,7 @@ export async function runNativeClawScan(
             try {
               const root = asRecord(JSON.parse(artifactBytes.toString("utf8")));
               artifactPresence =
-                root?.schemaVersion === "clawscan-run-v1" && root.profile === "clawhub"
+                root?.schemaVersion === "clawscan-run-v1" && root.profile === expectedProfile
                   ? "present"
                   : "invalid_schema";
             } catch {

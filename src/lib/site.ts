@@ -5,7 +5,8 @@ const LEGACY_CLAWDHUB_HOSTS = new Set(["clawdhub.com", "www.clawdhub.com", "auth
 const LOCAL_SITE_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
 
 export const SITE_NAME = "ClawHub";
-export const SITE_DESCRIPTION = "ClawHub — a fast skill registry for agents, with vector search.";
+export const SITE_TAGLINE = "Tools for your agents";
+export const SITE_DESCRIPTION = "Discover skills and plugins from top creators";
 
 export function normalizeClawHubSiteOrigin(value?: string | null) {
   if (!value) return null;

@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import {
+  type ClawHubProfile,
   decisionsJudgeAccounting,
   hasScannerExecution,
   isTypedScannerJudgeRun,
@@ -56,7 +57,10 @@ function receiptFailure(error: string) {
   );
 }
 
-export function clawScanExposure(artifact?: unknown): ClawScanExposure {
+export function clawScanExposure(
+  artifact?: unknown,
+  expectedProfile: ClawHubProfile = "clawhub",
+): ClawScanExposure {
   const unknown: ClawScanExposure = {
     ...unknownClawScanExposure(),
     scanExecution: "started",
@@ -64,7 +68,7 @@ export function clawScanExposure(artifact?: unknown): ClawScanExposure {
   const run = record(artifact);
   if (
     run?.schemaVersion !== "clawscan-run-v1" ||
-    run.profile !== "clawhub" ||
+    run.profile !== expectedProfile ||
     typeof run.completedAt !== "string" ||
     !Number.isFinite(Date.parse(run.completedAt))
   )

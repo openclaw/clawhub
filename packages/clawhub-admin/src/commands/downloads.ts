@@ -8,8 +8,8 @@ export async function cmdDownloads(
   opts: GlobalOpts,
   options: { json?: boolean; refresh?: boolean },
 ) {
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const result = await apiRequest(
     registry,
     {

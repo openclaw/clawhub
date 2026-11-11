@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTemplateDetailHref,
-  templateSecurityStatusMessage,
   isTemplateReadyToAdd,
   packageNameFromPublisherTemplateRoute,
 } from "./templateRoutes";
@@ -27,14 +26,13 @@ describe("Template detail routes", () => {
     expect(packageNameFromPublisherTemplateRoute("maker", "nested/name")).toBeNull();
   });
 
-  it("shows adverse scan results explicitly and only offers Add for clean Templates", () => {
-    expect(templateSecurityStatusMessage("clean")).toBe("Security checks passed");
-    expect(templateSecurityStatusMessage("suspicious")).toContain("Wait for review");
-    expect(templateSecurityStatusMessage("malicious")).toContain("Do not add it");
-    expect(templateSecurityStatusMessage("pending")).toContain("not ready to add");
+  it("only offers Add for clean Templates", () => {
     expect(isTemplateReadyToAdd("clean")).toBe(true);
     expect(isTemplateReadyToAdd("suspicious")).toBe(false);
     expect(isTemplateReadyToAdd("malicious")).toBe(false);
     expect(isTemplateReadyToAdd("pending")).toBe(false);
+    expect(isTemplateReadyToAdd("not-run")).toBe(false);
+    expect(isTemplateReadyToAdd(null)).toBe(false);
+    expect(isTemplateReadyToAdd(undefined)).toBe(false);
   });
 });

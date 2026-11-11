@@ -6,6 +6,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
   parseExperimentalTemplateFeed,
+  decodeUtf8Text,
   validateTemplatePackageContents,
   type ExperimentalTemplateFeedEntry,
 } from "clawhub-schema";
@@ -221,7 +222,7 @@ export async function runPublishedTemplateDryRun(options: PublishedTemplateProof
       files: extractedFiles.map((file) => ({
         path: relative(packageRoot, join(extractRoot, file.path)).split("\\").join("/"),
         size: file.bytes.byteLength,
-        text: new TextDecoder().decode(file.bytes),
+        text: decodeUtf8Text(file.bytes) ?? undefined,
       })),
     });
     if (!validation.ok)

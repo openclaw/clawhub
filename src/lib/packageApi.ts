@@ -6,6 +6,8 @@ import type {
   PackageEndorAnalysis,
   PluginManifestSummary,
   PackageVerificationSummary,
+  TemplateDependencyInventory,
+  TemplateManifestSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
 import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
@@ -69,6 +71,8 @@ export type PackageVersionDetail = {
     }>;
     compatibility?: PackageCompatibility | null;
     pluginManifestSummary?: PluginManifestSummary | null;
+    templateManifestSummary?: TemplateManifestSummary | null;
+    templateInventory?: TemplateDependencyInventory;
     verification?: PackageVerificationSummary | null;
     artifact?: {
       kind: "legacy-zip" | "npm-pack";

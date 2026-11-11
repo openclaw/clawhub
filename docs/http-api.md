@@ -1078,6 +1078,14 @@ Notes:
   included when scan data exists.
 - Private packages return `404` unless the caller can read the owning publisher.
 
+Template responses also expose `templateInventory`, an array of declared
+`{kind, source: "clawhub", ref, version}` references or
+`{kind, source: "bundled", path, name?}` directories for that exact release.
+The package-level inventory describes its current release. Counts in
+`templateManifestSummary.packages` are derived from the same inventory. These are
+declarations, not evidence of local installation; artifact provenance remains in
+`artifact.sha256` and the exact release version.
+
 ### `GET /api/v1/packages/{name}/versions/{version}/publication`
 
 Returns publication state for an exact package version. This is a public read

@@ -32,8 +32,10 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
   const allowPrompt = !jsonMode && isInteractive() && inputAllowed !== false;
   if (!jsonMode) intro("ClawHub sync");
 
-  const token = options.dryRun ? await getOptionalAuthToken() : await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = options.dryRun
+    ? await getOptionalAuthToken(registry)
+    : await requireAuthToken(registry);
   const ownerHandle = await resolveSyncOwnerHandle(registry, token, options.owner);
   const selectedRoots = buildScanRoots(opts, options.root);
   const concurrency = normalizeConcurrency(options.concurrency);

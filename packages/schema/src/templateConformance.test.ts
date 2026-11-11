@@ -1,9 +1,10 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import { validateTemplatePackageContents as validateCliTemplatePackageContents } from "../../clawhub/src/schema/templatePackage.js";
+import { OPENCLAW_TEMPLATE_AGENT_POLICY_V1 } from "./templateAgent.js";
 import {
-  OPENCLAW_TEMPLATE_PROFILE_POLICY_V1,
   validateTemplatePackageContents,
   type TemplatePackageTextFile,
 } from "./templatePackage.js";
@@ -22,9 +23,9 @@ type MetadataCase = {
 };
 type ConformanceCases = {
   consumer: { repository: string; commit: string };
-  profileCases: ProfileCase[];
+  agentCases: ProfileCase[];
   heartbeatCases: ProfileCase[];
-  extensionCases: ProfileCase[];
+  pluginCases: ProfileCase[];
   metadataCases: MetadataCase[];
   projectArtifact: { path: string; consumerAccepted: boolean; registryAccepted: boolean };
 };
@@ -57,9 +58,8 @@ function validateProfile(
       { path: "package.json", text: JSON.stringify(packageJson) },
       {
         path: "CLAW.md",
-        text: `---\n${JSON.stringify({ ...baseManifest, metadata })}\n---\n`,
+        text: `---\n${JSON.stringify({ ...baseManifest, ...parse(yaml || "{}"), agent: { ...baseManifest.agent, ...parse(yaml || "{}").agent }, metadata })}\n---\n`,
       },
-      ...(yaml ? [{ path: "profiles/openclaw.yml", text: yaml }] : []),
     ],
   });
 }
@@ -86,16 +86,16 @@ function readProjectFiles(root: string): TemplatePackageTextFile[] {
 describe(`ClawHub parity with ${cases.consumer.repository}@${cases.consumer.commit}`, () => {
   it("pins the same shipped consumer as the profile policy artifact", () => {
     expect(cases.consumer).toEqual({
-      repository: OPENCLAW_TEMPLATE_PROFILE_POLICY_V1.source.repository,
-      commit: OPENCLAW_TEMPLATE_PROFILE_POLICY_V1.source.commit,
+      repository: OPENCLAW_TEMPLATE_AGENT_POLICY_V1.source.repository,
+      commit: OPENCLAW_TEMPLATE_AGENT_POLICY_V1.source.commit,
     });
   });
 
   it("never marks a registry-accepted vector as consumer-rejected", () => {
     const vectors = [
-      ...cases.profileCases,
+      ...cases.agentCases,
       ...cases.heartbeatCases,
-      ...cases.extensionCases,
+      ...cases.pluginCases,
       ...cases.metadataCases,
       cases.projectArtifact,
     ];
@@ -108,7 +108,7 @@ describe(`ClawHub parity with ${cases.consumer.repository}@${cases.consumer.comm
     { name: "registry", validate: validateTemplatePackageContents },
     { name: "CLI", validate: validateCliTemplatePackageContents },
   ])("$name", ({ validate }) => {
-    it.each([...cases.profileCases, ...cases.heartbeatCases, ...cases.extensionCases])(
+    it.each([...cases.agentCases, ...cases.heartbeatCases, ...cases.pluginCases])(
       "$name",
       ({ registryAccepted, yaml }) => {
         expect(validateProfile(validate, yaml).ok).toBe(registryAccepted);
@@ -135,8 +135,7 @@ describe(`ClawHub parity with ${cases.consumer.repository}@${cases.consumer.comm
       expect(result.ok).toBe(cases.projectArtifact.registryAccepted);
       if (result.ok) {
         expect(result.value.summary).toMatchObject({
-          profiles: { count: 1, hasOpenClaw: true },
-          extensions: { count: 0 },
+          packages: { skillCount: 1, pluginCount: 1 },
         });
       }
     });

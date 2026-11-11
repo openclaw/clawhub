@@ -6,7 +6,9 @@ Publish-path HTTP responses must say what actually happened, so publishers and
 the CLI make the right retry decision:
 
 - `4xx` means the request itself was rejected: validation, authentication,
-  permission, conflict, or a real rate-limit `429`. The body is the real reason.
+  permission, conflict, or a real rate-limit `429`. The body is the real reason,
+  except a failed trusted-publish token mint, which uses one shared body so the
+  status and text do not reveal a hidden package or its trusted repository.
 - `503` with `Retry-After` means a transient platform failure. It is never a
   validation failure and never a rate limit, so it carries no rate-limit headers.
 - Rate-limit headers and reset hints appear only on a real `429`
@@ -47,6 +49,40 @@ package publish, package operations, trusted-publish token mint, publish
 recovery, and API-token auth in `requireApiTokenUserOrResponse` /
 `requirePackagePublishAuthOrResponse` / legacy whoami (a platform failure
 reading a token must not tell a valid publisher to log in again).
+
+A failed `POST /api/v1/publish/token/mint` returns `400` and
+`Publish token request could not be verified. Ask a package manager to check the trusted-publisher configuration and the workflow's GitHub Actions OIDC claims.`
+for a missing name, a
+soft-deleted package, a private or moderation-hidden package with no trusted
+publisher, an invalid OIDC token, and a repository, repository id, owner, or
+owner id mismatch. The audit log keeps the specific reason, including
+`expected <owner>/<repo>`. After the GitHub identity matches, a later
+validation error still returns its real message, and a private package can
+still receive a token. Invalid JSON and a real `429` stay distinct.
+
+Verifier errors (`convex/lib/githubActionsOidc.ts`) are never classified by
+message. Most of them quote the unverified token (`alg`, `kid`, `aud`, and
+other claims), and anyone can send an unsigned token whose text copies a Convex
+platform error. Message matching would answer `503` only when the package and
+its trusted publisher exist, which reveals both, and would skip the audit
+record. The only retryable verifier failure is the typed
+`GitHubActionsOidcJwksUnavailableError`: GitHub's signing keys did not load
+(network failure, non-OK status, or a body without a key list). It answers `503`
+with `Retry-After: 2` and a fixed body, and writes no rejection audit, because
+the token was never judged. Every other verifier error, including an unexpected
+exception, gets the shared `400` and the audit record. Convex platform failures
+from the handler's own queries and mutations stay `503`.
+
+The rejection audit stores text from the unverified request (`reason` and
+`version`). Convex rejects a document over 1 MiB and a string with an unpaired
+surrogate, and a failed audit write is not allowed to change the response, so
+both fields are cut to 1000 characters and unpaired surrogates are replaced.
+Without that bound an oversized or malformed token would leave no record.
+
+Known limit: the key fetch runs only after the package and its trusted publisher
+are found, so while GitHub's keys are unavailable a `503` is distinguishable
+from the shared `400`. Closing that needs the signature check to run before the
+package lookup.
 
 ## Ambiguous outcomes and one-shot state
 

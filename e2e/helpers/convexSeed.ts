@@ -28,3 +28,11 @@ export function runDevSeed<T>(functionName: string, args: Record<string, unknown
   }
   return JSON.parse(extractLastJsonObject(result.stdout)) as T;
 }
+
+export function pollableDevSeedState<TState extends object>(readState: () => TState) {
+  try {
+    return readState();
+  } catch {
+    return {};
+  }
+}
