@@ -6,9 +6,11 @@ import {
   CliSkillDeleteRequestSchema,
   parseArk,
 } from "clawhub-schema";
+import { ConvexError } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
+import { assertFullDeviceScope } from "./cliDeviceAuth";
 import { httpAction } from "./functions";
 import {
   ambiguousSkillSlugMessage,
@@ -378,8 +380,17 @@ async function cliDeviceCodeHandler(ctx: ActionCtx, request: Request) {
     label?: unknown;
     site_url?: unknown;
   };
+  const scope = typeof body.scope === "string" ? body.scope : undefined;
+  try {
+    assertFullDeviceScope(scope);
+  } catch (error) {
+    if (error instanceof ConvexError && typeof error.data === "string") {
+      return text(error.data, 400, rate.headers);
+    }
+    throw error;
+  }
   const result = await ctx.runMutation(internal.cliDeviceAuth.createInternal, {
-    scope: typeof body.scope === "string" ? body.scope : undefined,
+    scope,
     label: typeof body.label === "string" ? body.label : undefined,
     siteUrl: typeof body.site_url === "string" ? body.site_url : undefined,
   });
