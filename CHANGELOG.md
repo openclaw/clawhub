@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- CLI: add `clawhub package publication <name> --version <version>`. It prints whether that exact version is published, still pending, failed, or was never accepted. The public version list hides a pending release, and `package readiness` remains the official-migration check.
+- CLI: add `clawhub package publication <name> --version <version>`. It prints whether that exact version is published, still pending, failed, or was never accepted. The public version list hides a pending release, and `package readiness` remains the official-migration check. Older registries that answer the publication URL with a version document or 404 are checked through the version endpoint. A failed attempt says an authorized publisher may recover it with `package recover` and a reason.
 
 - Publishing: run reusable package-publish plugin validation with Node.js 24. The CLI refuses `package validate` under Bun, so the workflow builds the pinned CLI and runs `node packages/clawhub/bin/clawdhub.js package validate`.
 

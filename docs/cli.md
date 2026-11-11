@@ -679,9 +679,16 @@ clawhub package moderation-status @openclaw/example-plugin
 - `--version` is required. The public latest version is a different question:
   a pending release is omitted from the public version list.
 - Prints `published`, `absent`, `pending` (`staging`, `checks`, or
-  `finalization`), or `failed`. A failed response says whether recovery can
-  be retried. The text does not include scan findings, report bodies, or
-  digests.
+  `finalization`), or `failed`. The text does not include scan findings,
+  report bodies, or digests.
+- A registry that predates this route can answer `404`, or `200` with the
+  version document and no `state`. The command then reads
+  `GET /api/v1/packages/{name}/versions/{version}`. A public version is
+  reported as published. A response that already has `state` but does not
+  match the publication contract still fails.
+- `recoverable: true` means an authorized publisher may recover the attempt.
+  It does not mean the current login can. The text shows
+  `clawhub package recover <attempt-id> --manual-override-reason "<reason>"`.
 - This does not say whether the package is an official migration candidate.
   Use `package readiness` for that check.
 - Flags:
