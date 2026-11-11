@@ -62,7 +62,12 @@ exit 23`,
       },
     },
   };
-  return { workspace, handoff, run: () => runClawScan(job, workspace, vi.fn()) };
+  return {
+    workspace,
+    handoff,
+    run: (onDiagnostic: Parameters<typeof runClawScan>[2] = vi.fn()) =>
+      runClawScan(job, workspace, onDiagnostic),
+  };
 }
 
 const findings = {
@@ -209,6 +214,181 @@ it("counts accepted reports independently of the failed root's sorted index", as
       context: expect.objectContaining({ rootIndex: 0, rootCount: 4, completedRoots: 1 }),
     }),
   });
+});
+
+const settledTermination = {
+  elapsedMs: 1,
+  cleanupMs: 1,
+  timedOut: false,
+  outputLimitExceeded: null,
+} as const;
+
+// The first root fails normally once the sibling is in flight; the sibling then
+// settles its cancellation however the case dictates.
+function failFirstRootThenSettleSibling(
+  settleSibling: (options: Parameters<typeof workerCommand.runWorkerCommand>[2]) => unknown,
+) {
+  const originalRun = workerCommand.runWorkerCommand;
+  let siblingInFlight!: () => void;
+  const siblingStarted = new Promise<void>((resolve) => {
+    siblingInFlight = resolve;
+  });
+  vi.spyOn(workerCommand, "runWorkerCommand").mockImplementation(async (command, args, options) => {
+    if (command !== "skillspector") return await originalRun(command, args, options);
+    if (args[1]!.endsWith("first")) {
+      await siblingStarted;
+      options.onTermination?.({ ...settledTermination, processGroup: "absent", exitCode: 2 });
+      throw new workerCommand.CommandFailure("fixture root failed", 2, "", "", false);
+    }
+    return await new Promise<never>((_resolve, reject) => {
+      options.signal?.addEventListener("abort", () => reject(settleSibling(options)), {
+        once: true,
+      });
+      siblingInFlight();
+    });
+  });
+}
+
+it.each([
+  {
+    label: "its cleanup deadline expires",
+    siblingFailure: () =>
+      new workerCommand.CommandFailure(
+        "Worker cleanup could not be confirmed",
+        null,
+        "",
+        "",
+        false,
+        undefined,
+        "cleanup",
+      ),
+  },
+  {
+    // The shared command reports output-limit and observer kinds ahead of an
+    // unconfirmed group, so only the termination report reveals the uncertainty.
+    label: "another failure kind outranks its unconfirmed cleanup",
+    siblingFailure: () =>
+      new workerCommand.CommandFailure(
+        "fixture sibling output limit",
+        null,
+        "",
+        "",
+        false,
+        "stdout",
+        "output_limit",
+      ),
+  },
+  {
+    label: "its process group cannot be signalled",
+    siblingFailure: () =>
+      Object.assign(new Error("kill EPERM"), { code: "EPERM", syscall: "kill" }),
+  },
+])(
+  "fails cleanup-uncertain, not with the first root's error, when a cancelled sibling settles after $label",
+  async ({ siblingFailure }) => {
+    failFirstRootThenSettleSibling((options) => {
+      options.onTermination?.({ ...settledTermination, processGroup: "unknown", exitCode: null });
+      return siblingFailure();
+    });
+    const { run, handoff } = await fixture("", ["skills/first", "skills/second"]);
+    const onDiagnostic = vi.fn();
+    const failure = await run(onDiagnostic).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(workerCommand.CommandFailure);
+    expect(failure).toMatchObject({
+      failureKind: "cleanup",
+      message: "Worker cleanup could not be confirmed",
+    });
+    // The diagnostic names the root whose group is unconfirmed, not the root
+    // whose ordinary failure triggered the cancellation.
+    expect(onDiagnostic).toHaveBeenCalledExactlyOnceWith({
+      bundledSkillSpector: expect.objectContaining({
+        failed: true,
+        termination: expect.objectContaining({ processGroup: "unknown" }),
+        context: expect.objectContaining({ rootIndex: 1, rootCount: 2, completedRoots: 0 }),
+      }),
+    });
+    await expect(readFile(handoff)).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
+
+it("reports unconfirmed cleanup over the failing root's own failure kind", async () => {
+  const message = "fixture output limit";
+  vi.spyOn(workerCommand, "runWorkerCommand").mockImplementationOnce(
+    async (_command, _args, options) => {
+      options.onTermination?.({
+        ...settledTermination,
+        processGroup: "unknown",
+        exitCode: null,
+        outputLimitExceeded: "stdout",
+      });
+      throw new workerCommand.CommandFailure(
+        message,
+        null,
+        "",
+        "",
+        false,
+        "stdout",
+        "output_limit",
+      );
+    },
+  );
+  const { run, handoff } = await fixture("");
+  const failure = await run().catch((error: unknown) => error);
+  expect(failure).toMatchObject({
+    failureKind: "cleanup",
+    message: "Worker cleanup could not be confirmed",
+  });
+  await expect(readFile(handoff)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("keeps the first root's failure when the cancelled sibling was admitted but never spawned", async () => {
+  const originalRun = workerCommand.runWorkerCommand;
+  const siblingTermination = vi.fn();
+  vi.spyOn(workerCommand, "runWorkerCommand").mockImplementation(async (command, args, options) => {
+    if (command !== "skillspector") return await originalRun(command, args, options);
+    if (args[1]!.endsWith("first")) {
+      options.onTermination?.({ ...settledTermination, processGroup: "absent", exitCode: 2 });
+      throw new workerCommand.CommandFailure("fixture root failed", 2, "", "", false);
+    }
+    // Hold the admitted sibling just before its spawn until cancellation
+    // fires, then let the real command decide.
+    if (!options.signal?.aborted) {
+      await new Promise((resolve) =>
+        options.signal?.addEventListener("abort", resolve, { once: true }),
+      );
+    }
+    return await originalRun(command, args, { ...options, onTermination: siblingTermination });
+  });
+  const { run, handoff, workspace } = await fixture("touch sibling-spawned", [
+    "skills/first",
+    "skills/second",
+  ]);
+  const failure = await run().catch((error: unknown) => error);
+  expect(failure).toMatchObject({ failureKind: "exit", message: "fixture root failed" });
+  expect(siblingTermination).not.toHaveBeenCalled();
+  await expect(readFile(join(workspace, "sibling-spawned"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  await expect(readFile(handoff)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("reports a scanner that cannot be spawned as its spawn failure, not as unconfirmed cleanup", async () => {
+  const { workspace } = await fixture("", ["skills/first", "skills/second"]);
+  const emptyPath = join(workspace, "empty-path");
+  await mkdir(emptyPath);
+  vi.stubEnv("PATH", emptyPath);
+  const onDiagnostic = vi.fn();
+  await expect(
+    runBundledSkillSpector(
+      workspace,
+      ["skills/first", "skills/second"].map((rootPath) => ({
+        rootPath,
+        scanPath: join(workspace, "artifact", rootPath),
+      })),
+      onDiagnostic,
+    ),
+  ).rejects.toMatchObject({ code: "ENOENT", syscall: "spawn skillspector" });
+  expect(onDiagnostic).toHaveBeenCalledOnce();
 });
 
 it.each([0, 1])(

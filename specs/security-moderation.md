@@ -721,6 +721,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   must reject already-cancelled work
   without spawning and remove its listener after termination; arbitrary abort
   reasons must not enter errors or diagnostics.
+- The bundled-skill stage must not report any outcome while a spawned root's
+  process group is unconfirmed. Joining a cancelled sibling is not confirmation:
+  its command can settle after the cleanup deadline expires, with an
+  output-limit or observer failure that outranks the unconfirmed group, or
+  because the group could not be signalled. When any spawned root settles
+  without a termination report of process-group absence, the stage fails with
+  the cleanup failure kind and that root's diagnostic, in place of the failure
+  that triggered cancellation, and never hands off to ClawScan. The lowest such
+  root index is reported. A root rejected before spawning, or whose spawn
+  failed, created no process group and keeps its own error.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
 - VirusTotal is retired. ClawHub no longer uploads skill ZIPs or package

@@ -1738,6 +1738,35 @@ export function aggregateSkillSpectorAnalyses(
   };
 }
 
+// Returns the cleanup failure a settled root must report when its process group
+// was never confirmed absent, whatever kind its own error carried.
+function bundledCleanupUnconfirmedFailure(
+  error: unknown,
+  termination: WorkerCommandTermination | undefined,
+) {
+  if (error instanceof CommandFailure) {
+    if (error.failureKind === "cleanup") return error;
+  } else if (
+    // Node reports a failed spawn as an error whose syscall names the spawn.
+    // No process group was created, though the command cannot claim absence.
+    error instanceof Error &&
+    (error as NodeJS.ErrnoException).syscall?.startsWith("spawn")
+  ) {
+    return undefined;
+  }
+  // Without a termination report the command was rejected before it spawned.
+  if (!termination || termination.processGroup === "absent") return undefined;
+  return new CommandFailure(
+    "Worker cleanup could not be confirmed",
+    error instanceof CommandFailure ? error.exitCode : null,
+    "",
+    "",
+    error instanceof CommandFailure && error.timedOut,
+    undefined,
+    "cleanup",
+  );
+}
+
 export async function runBundledSkillSpector(
   workspace: string,
   scanInputs: BundledSkillSpectorScanInput[],
@@ -1769,6 +1798,7 @@ export async function runBundledSkillSpector(
   const concurrency = parallel ? 2 : 1;
   const controller = new AbortController();
   const diagnostics = new Map<number, Partial<ClawScanCommandDiagnostic>>();
+  const cleanupUnconfirmed = new Map<number, CommandFailure>();
   let completedRoots = 0;
   let nextIndex = 0;
   let firstFailure: { index: number; error: unknown } | undefined;
@@ -1812,6 +1842,8 @@ export async function runBundledSkillSpector(
       });
       return readReport(await readFile(resultPath, "utf8"), scanInput);
     } catch (error) {
+      const cleanupFailure = bundledCleanupUnconfirmedFailure(error, termination);
+      if (cleanupFailure) cleanupUnconfirmed.set(index, cleanupFailure);
       let acceptedFindings = false;
       try {
         if (error instanceof CommandFailure) {
@@ -1873,8 +1905,16 @@ export async function runBundledSkillSpector(
   };
   // Join every worker after cancellation so no sibling can outlive the scan.
   await Promise.all(Array.from({ length: concurrency }, worker));
-  if (firstFailure) {
-    const diagnostic = diagnostics.get(firstFailure.index);
+  // A joined root can still settle without confirming that its process group is
+  // gone. That outranks the failure that triggered cancellation, so an ordinary
+  // error from one root can never stand in for a sibling that may still be running.
+  const [unconfirmedIndex] = [...cleanupUnconfirmed.keys()].sort((left, right) => left - right);
+  const failure =
+    unconfirmedIndex === undefined
+      ? firstFailure
+      : { index: unconfirmedIndex, error: cleanupUnconfirmed.get(unconfirmedIndex) };
+  if (failure) {
+    const diagnostic = diagnostics.get(failure.index);
     const context = diagnostic?.bundledSkillSpector?.context;
     if (context) {
       context.completedRoots = completedRoots;
@@ -1884,13 +1924,12 @@ export async function runBundledSkillSpector(
       diagnostic ?? {
         bundledSkillSpector: {
           failed: true,
-          timedOut: firstFailure.error instanceof CommandFailure && firstFailure.error.timedOut,
-          exitCode:
-            firstFailure.error instanceof CommandFailure ? firstFailure.error.exitCode : null,
+          timedOut: failure.error instanceof CommandFailure && failure.error.timedOut,
+          exitCode: failure.error instanceof CommandFailure ? failure.error.exitCode : null,
         },
       },
     );
-    throw firstFailure.error;
+    throw failure.error;
   }
   if (completedRoots !== scanInputs.length) {
     throw new Error("SkillSpector bundled-skill scans did not complete");
