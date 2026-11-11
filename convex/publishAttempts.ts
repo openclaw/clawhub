@@ -185,6 +185,11 @@ function releaseFinalizationClaimPatch(error: string | undefined, now: number) {
   if (!isTerminalFinalizationConflict(error)) {
     return {
       status: "ready_to_finalize" as const,
+      // A finalization-only worker also holds a check lease. The callers verify
+      // the current finalization claim before releasing either reservation.
+      checkClaimId: undefined,
+      checkClaimedAt: undefined,
+      checkClaimExpiresAt: undefined,
       finalizationClaimId: undefined,
       finalizationClaimedAt: undefined,
       finalizationClaimExpiresAt: undefined,
