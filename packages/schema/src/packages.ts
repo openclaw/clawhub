@@ -276,30 +276,6 @@ export const ApiV1PackageVersionResponseSchema = type({
 });
 export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];
 
-export const ApiV1PackageVersionPublicationResponseSchema = type({
-  name: "string",
-  version: "string",
-  state: '"published"|"absent"',
-})
-  .or({ name: "string", version: "string", state: '"pending"', stage: '"staging"' })
-  .or({
-    name: "string",
-    version: "string",
-    state: '"pending"',
-    stage: '"checks"|"finalization"',
-    attemptId: "string",
-  })
-  .or({
-    name: "string",
-    version: "string",
-    state: '"failed"',
-    "attemptId?": "string",
-    recoverable: "boolean",
-  })
-  .onUndeclaredKey("reject");
-export type ApiV1PackageVersionPublicationResponse =
-  (typeof ApiV1PackageVersionPublicationResponseSchema)[inferred];
-
 export const ApiV1PluginDetailResponseSchema = ApiV1PackageResponseSchema.and({
   versions: ApiV1PackageVersionListResponseSchema,
   version: ApiV1PackageVersionResponseSchema.get("version"),

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CLI: add `clawhub package publication <name> --version <version>`. It prints whether that exact version is published, still pending, failed, or was never accepted. The public version list hides a pending release, and `package readiness` remains the official-migration check.
+
 - Publishing: run reusable package-publish plugin validation with Node.js 24. The CLI refuses `package validate` under Bun, so the workflow builds the pinned CLI and runs `node packages/clawhub/bin/clawdhub.js package validate`.
 
 - CLI login: the device page no longer fills the approval code from the link. Type the code from the terminal. The page shows the token label and that approval creates a full API token. A scope other than `read write` is rejected. Authorize and Deny turn off when the code's expiry time passes, including when the page was already open before the code was typed, and the pending query does not read the clock. Expired, used, and mistyped codes say how to continue, and a finished approval no longer shows the code as already used.

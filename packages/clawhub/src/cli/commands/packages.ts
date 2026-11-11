@@ -34,6 +34,8 @@ import {
   ApiV1PackagePublishResponseSchema,
   type ApiV1PackagePublishResponse,
   ApiV1PackageReadinessResponseSchema,
+  ApiV1PackageVersionPublicationResponseSchema,
+  type ApiV1PackageVersionPublicationResponse,
   ApiV1PackageReportResponseSchema,
   ApiV1PackageResponseSchema,
   ApiV1PackageSearchResponseSchema,
@@ -1832,6 +1834,78 @@ export async function cmdPackageModerationStatus(
   }
   if (result.latestRelease.moderationReason) {
     console.log(`  note: ${result.latestRelease.moderationReason}`);
+  }
+}
+
+export async function cmdPackagePublication(
+  opts: GlobalOpts,
+  packageName: string,
+  options: { version?: string; json?: boolean } = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const version = options.version?.trim();
+  if (!version) {
+    fail(
+      "Pass --version. Publication state is for one exact version, not the public latest version.",
+    );
+  }
+  const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
+  const result = await apiRequest(
+    registry,
+    {
+      method: "GET",
+      path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(version)}/publication`,
+      token,
+    },
+    ApiV1PackageVersionPublicationResponseSchema,
+  );
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+
+  console.log(`${result.name}@${result.version}`);
+  printPackagePublication(result);
+}
+
+function printPackagePublication(result: ApiV1PackageVersionPublicationResponse) {
+  if (result.state === "published") {
+    console.log("Published.");
+    console.log("This version is in the public version list.");
+    return;
+  }
+  if (result.state === "absent") {
+    console.log("Not accepted.");
+    console.log(
+      "This version was not accepted. A pending release is also missing from the public version list, so check the exact version you submitted.",
+    );
+    return;
+  }
+  if (result.state === "pending") {
+    console.log(
+      result.stage === "checks"
+        ? "Pending publication checks."
+        : result.stage === "finalization"
+          ? "Pending final publication."
+          : "Pending publication.",
+    );
+    console.log("This version is not public yet. The upload is still recorded.");
+    if (result.stage !== "staging") {
+      console.log(`Attempt: ${result.attemptId}`);
+    }
+    return;
+  }
+  if (result.state !== "failed") return;
+  console.log("Publication failed.");
+  console.log(
+    result.recoverable
+      ? "Recovery can be retried with the current publisher token."
+      : "This attempt cannot be recovered.",
+  );
+  if (result.attemptId) {
+    console.log(`Attempt: ${result.attemptId}`);
   }
 }
 

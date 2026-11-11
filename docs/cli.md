@@ -672,9 +672,33 @@ Example:
 clawhub package moderation-status @openclaw/example-plugin
 ```
 
+### `package publication <name>`
+
+- Shows the publication state of one exact package version.
+- Calls `GET /api/v1/packages/{name}/versions/{version}/publication`.
+- `--version` is required. The public latest version is a different question:
+  a pending release is omitted from the public version list.
+- Prints `published`, `absent`, `pending` (`staging`, `checks`, or
+  `finalization`), or `failed`. A failed response says whether recovery can
+  be retried. The text does not include scan findings, report bodies, or
+  digests.
+- This does not say whether the package is an official migration candidate.
+  Use `package readiness` for that check.
+- Flags:
+  - `--version <version>`: exact version.
+  - `--json`: machine-readable output, the response object unchanged.
+
+Example:
+
+```bash
+clawhub package publication @openclaw/example-plugin --version 1.2.3
+```
+
 ### `package readiness <name>`
 
 - Checks whether a package is ready for future OpenClaw consumption.
+- A community package fails the `official` check here even when its latest
+  version is public. Use `package publication` for an exact version.
 - Calls `GET /api/v1/packages/{name}/readiness`.
 - Reports blockers for official status, ClawPack availability, artifact digest,
   source provenance, OpenClaw compatibility, host targets, environment metadata,
