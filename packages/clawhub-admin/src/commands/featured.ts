@@ -84,8 +84,8 @@ export async function cmdSetPackageFeatured(
   options: FeaturedOptions = {},
 ) {
   const name = normalizePackageNameOrFail(packageName);
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const result = await apiRequest<FeaturedPackageResult>(registry, {
     method: "POST",
     path: `${ApiRoutes.packages}/${encodeURIComponent(name)}/featured`,
@@ -108,8 +108,8 @@ export async function cmdSetSkillFeatured(
   options: FeaturedOptions = {},
 ) {
   const ref = parseSkillRefOrFail(skillRef);
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const result = await apiRequest<FeaturedSkillResult>(registry, {
     method: "POST",
     path: ref.externalId

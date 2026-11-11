@@ -51,7 +51,7 @@ export async function cmdListPromotions(
   options: { all?: boolean; json?: boolean },
 ) {
   const registry = await getRegistry(opts, { cache: true });
-  const token = options.all ? await requireAuthToken() : undefined;
+  const token = options.all ? await requireAuthToken(registry) : undefined;
   const promotions: ApiV1Promotion[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | null = null;
@@ -98,8 +98,8 @@ export async function cmdCreatePromotion(
   options: { json?: boolean },
 ) {
   const body = await readPromotionInputFile(file);
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
 
   const spinner = options.json ? null : createCrabLoader("Creating promotion");
   try {
@@ -127,8 +127,8 @@ export async function cmdUpdatePromotion(
 ) {
   const slug = normalizeSlugOrFail(slugArg);
   const body = await readPromotionInputFile(file);
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
 
   const spinner = options.json ? null : createCrabLoader(`Updating promotion ${slug}`);
   try {
@@ -157,8 +157,8 @@ export async function cmdSetPromotionStatus(
   if (!PROMOTION_STATUSES.includes(status)) {
     fail(`Status must be one of: ${PROMOTION_STATUSES.join(", ")}`);
   }
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
 
   const spinner = options.json ? null : createCrabLoader(`Setting ${slug} to ${status}`);
   try {

@@ -132,8 +132,8 @@ export async function cmdExportPackageValidationReport(
   opts: GlobalOpts,
   options: PackageValidationReportOptions = {},
 ) {
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const plugins: PackageValidationReportItem[] = [];
   let cursor: string | null = null;
   let pages = 0;
@@ -223,8 +223,8 @@ export async function cmdHardDeletePackage(
     if (!confirmed) return undefined;
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning hard delete for" : "Hard-deleting"} ${name}`);
@@ -264,8 +264,8 @@ export async function cmdDeletePackageTrustedPublisher(
   options: PackageTrustedPublisherDeleteOptions = {},
 ) {
   const trimmed = normalizePackageNameOrFail(packageName);
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader("Deleting trusted publisher");
   try {
     const result = await apiRequest<{ ok: boolean }>(registry, {
@@ -300,8 +300,8 @@ export async function cmdModeratePackageRelease(
   }
   if (!reason) fail("--reason required");
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Moderating ${trimmed}@${version}`);
   try {
     const result = await apiRequest(
@@ -336,8 +336,8 @@ export async function cmdListPackageReports(
     fail("--status must be open, confirmed, dismissed, or all");
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const url = registryUrl(`${ApiRoutes.packages}/reports`, registry);
   url.searchParams.set("status", status);
   if (options.cursor?.trim()) url.searchParams.set("cursor", options.cursor.trim());
@@ -405,8 +405,8 @@ export async function cmdTriagePackageReport(
     options,
   );
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Updating report ${trimmed}`);
   try {
     const result = await apiRequest(
@@ -446,8 +446,8 @@ export async function cmdPackageModerationQueue(
     fail("--status must be open, blocked, manual, or all");
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const url = registryUrl(`${ApiRoutes.packages}/moderation/queue`, registry);
   url.searchParams.set("status", status);
   if (options.cursor?.trim()) url.searchParams.set("cursor", options.cursor.trim());
@@ -506,8 +506,8 @@ export async function cmdRepairPackageName(
   const dryRun = options.apply !== true;
   if (!reason) fail("--reason required");
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package name repair`);
@@ -564,8 +564,8 @@ export async function cmdRepairPackageRuntimeId(
   if (!nextRuntimeId) fail("--next-runtime-id required");
   if (!reason) fail("--reason required");
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package runtime id repair`);
@@ -623,8 +623,8 @@ export async function cmdListPackageMigrations(
     );
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const url = registryUrl(`${ApiRoutes.packages}/migrations`, registry);
   url.searchParams.set("phase", phase);
   if (options.cursor?.trim()) url.searchParams.set("cursor", options.cursor.trim());
@@ -676,8 +676,8 @@ export async function cmdUpsertPackageMigration(
   if (!packageName) fail("--package required");
   const blockers = parseCsv(options.blockers);
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Updating migration ${trimmed}`);
   try {
     const result = await apiRequest(
@@ -736,8 +736,8 @@ export async function cmdTransferPackageOwner(
   if (!owner) fail("--to required");
   if (!reason) fail("--reason required");
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package owner transfer`);
