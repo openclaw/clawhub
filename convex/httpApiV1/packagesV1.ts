@@ -68,6 +68,7 @@ import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
 import { areDownloadMetricsPaused } from "../lib/downloadMetricsSwitch";
 import {
   fetchGitHubRepositoryIdentity,
+  GitHubActionsOidcJwksUnavailableError,
   verifyGitHubActionsTrustedPublishJwt,
 } from "../lib/githubActionsOidc";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
@@ -2475,6 +2476,10 @@ async function derivePackagePublishAuthorizationTransactionKey(args: {
 
 const PUBLISH_TOKEN_REJECTION =
   "Publish token request could not be verified. Ask a package manager to check the trusted-publisher configuration and the workflow's GitHub Actions OIDC claims.";
+// Fixed text: this response must not carry anything read from the token.
+const PUBLISH_TOKEN_SIGNING_KEYS_UNAVAILABLE =
+  "GitHub Actions OIDC signing keys are temporarily unavailable. The request was not rejected for validation; retrying usually succeeds.";
+const PUBLISH_TOKEN_SIGNING_KEYS_RETRY_AFTER_SECONDS = 2;
 
 async function recordPublishTokenRejection(
   ctx: ActionCtx,
@@ -2542,8 +2547,21 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
         ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
       });
     } catch (error) {
-      const transient = transientConvexErrorResponse(error, rate.headers);
-      if (transient) return transient;
+      // Only the typed signing-key outage is retryable. Every other verifier
+      // error quotes the unverified token (`alg`, `kid`, `aud`, ...), whose
+      // text can imitate a Convex platform message. Classifying those by
+      // message would answer 503 only when the package and its trusted
+      // publisher exist, and would skip the audit record.
+      if (error instanceof GitHubActionsOidcJwksUnavailableError) {
+        console.warn("publish_token_mint_jwks_unavailable", { reason: error.message });
+        return text(
+          PUBLISH_TOKEN_SIGNING_KEYS_UNAVAILABLE,
+          503,
+          mergeHeaders(rate.headers, {
+            "Retry-After": String(PUBLISH_TOKEN_SIGNING_KEYS_RETRY_AFTER_SECONDS),
+          }),
+        );
+      }
       await recordPublishTokenRejection(
         ctx,
         pkg.ownerUserId,

@@ -84,6 +84,19 @@ const SKILLS_SH_SYNC_WORKFLOW: TrustedGitHubActionsPublisher = {
 
 let cachedJwks: { value: JwkSet; fetchedAt: number } | null = null;
 
+/**
+ * GitHub's signing keys could not be loaded, so the token was never judged.
+ * This is the only verifier failure the caller's token does not cause. Every
+ * other error quotes or depends on the unverified token, so callers must tell
+ * the two apart by this type and never by message text.
+ */
+export class GitHubActionsOidcJwksUnavailableError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "GitHubActionsOidcJwksUnavailableError";
+  }
+}
+
 export async function verifyGitHubActionsTrustedPublishJwt(
   jwt: string,
   trustedPublisher: TrustedGitHubActionsPublisher,
@@ -453,16 +466,37 @@ async function fetchGitHubActionsJwks(fetchImpl: typeof fetch, now: number, forc
   if (!forceRefresh && cachedJwks && now - cachedJwks.fetchedAt < JWKS_CACHE_TTL_MS) {
     return cachedJwks.value;
   }
-  const response = await fetchImpl(GITHUB_ACTIONS_JWKS_URL, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "clawhub/github-actions-oidc",
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch GitHub OIDC JWKS: ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetchImpl(GITHUB_ACTIONS_JWKS_URL, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "clawhub/github-actions-oidc",
+      },
+    });
+  } catch (cause) {
+    throw new GitHubActionsOidcJwksUnavailableError("Failed to fetch GitHub OIDC JWKS", {
+      cause,
+    });
   }
-  const jwks = (await response.json()) as JwkSet;
+  if (!response.ok) {
+    throw new GitHubActionsOidcJwksUnavailableError(
+      `Failed to fetch GitHub OIDC JWKS: ${response.status}`,
+    );
+  }
+  let jwks: JwkSet | null;
+  try {
+    jwks = (await response.json()) as JwkSet | null;
+  } catch (cause) {
+    throw new GitHubActionsOidcJwksUnavailableError("Invalid GitHub OIDC JWKS response", {
+      cause,
+    });
+  }
+  // A body without a key list is GitHub's failure, not the token's. Do not
+  // cache it, or every mint would fail until the cache expires.
+  if (!jwks || !Array.isArray(jwks.keys)) {
+    throw new GitHubActionsOidcJwksUnavailableError("Invalid GitHub OIDC JWKS response");
+  }
   cachedJwks = { value: jwks, fetchedAt: now };
   return jwks;
 }

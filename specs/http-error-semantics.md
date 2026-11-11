@@ -58,8 +58,25 @@ publisher, an invalid OIDC token, and a repository, repository id, owner, or
 owner id mismatch. The audit log keeps the specific reason, including
 `expected <owner>/<repo>`. After the GitHub identity matches, a later
 validation error still returns its real message, and a private package can
-still receive a token. Invalid JSON and a real `429` stay distinct. Transient
-platform failures stay `503`.
+still receive a token. Invalid JSON and a real `429` stay distinct.
+
+Verifier errors (`convex/lib/githubActionsOidc.ts`) are never classified by
+message. Most of them quote the unverified token (`alg`, `kid`, `aud`, and
+other claims), and anyone can send an unsigned token whose text copies a Convex
+platform error. Message matching would answer `503` only when the package and
+its trusted publisher exist, which reveals both, and would skip the audit
+record. The only retryable verifier failure is the typed
+`GitHubActionsOidcJwksUnavailableError`: GitHub's signing keys did not load
+(network failure, non-OK status, or a body without a key list). It answers `503`
+with `Retry-After: 2` and a fixed body, and writes no rejection audit, because
+the token was never judged. Every other verifier error, including an unexpected
+exception, gets the shared `400` and the audit record. Convex platform failures
+from the handler's own queries and mutations stay `503`.
+
+Known limit: the key fetch runs only after the package and its trusted publisher
+are found, so while GitHub's keys are unavailable a `503` is distinguishable
+from the shared `400`. Closing that needs the signature check to run before the
+package lookup.
 
 ## Ambiguous outcomes and one-shot state
 
