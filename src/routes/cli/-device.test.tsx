@@ -87,6 +87,25 @@ function typeCode(value = "ABCD-2345") {
   fireEvent.change(screen.getByLabelText("Code"), { target: { value } });
 }
 
+function describeCodeAs(result: () => unknown) {
+  useQueryMock.mockImplementation((_query: unknown, args: unknown) => {
+    if (!args || args === "skip") return undefined;
+    return result();
+  });
+}
+
+// Messages wrap the command in <code>, so match on the paragraph's full text.
+function paragraph(text: string) {
+  return (_content: string, element: Element | null) =>
+    element?.tagName === "P" && element.textContent === text;
+}
+
+const EXPIRED_MESSAGE = "That code expired. Run clawhub login again and type the new code.";
+const USED_MESSAGE =
+  "That code was already used. If your terminal is not signed in, run clawhub login again and type the new code.";
+const MISSING_MESSAGE =
+  "That code is not waiting for approval. Check the code in your terminal and type it again. If it still does not match, run clawhub login for a new code.";
+
 describe("CliDeviceAuth", () => {
   beforeEach(() => {
     approveMock.mockReset();
@@ -153,11 +172,27 @@ describe("CliDeviceAuth", () => {
 
       expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
       expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
-      expect(screen.getByText("That code expired.")).toBeTruthy();
+      expect(screen.getByText(paragraph(EXPIRED_MESSAGE))).toBeTruthy();
       expect(screen.queryByText("Label: ssh box")).toBeNull();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it.each([
+    ["expired", EXPIRED_MESSAGE],
+    ["used", USED_MESSAGE],
+    ["missing", MISSING_MESSAGE],
+  ])("tells the user how to recover from a %s code", (state, message) => {
+    describeCodeAs(() => ({ state }));
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+    typeCode();
+
+    expect(screen.getByText(paragraph(message))).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
   });
 
   it("shows the token label before authorization", () => {

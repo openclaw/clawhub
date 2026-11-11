@@ -145,16 +145,21 @@ export function CliDeviceAuth() {
                   </div>
                 ) : null}
                 {description?.state === "expired" || expiredLocally ? (
-                  <p className="text-sm text-[color:var(--ink-soft)]">That code expired.</p>
+                  <p className="text-sm text-[color:var(--ink-soft)]">
+                    That code expired. Run <code>clawhub login</code> again and type the new code.
+                  </p>
                 ) : null}
                 {description?.state === "used" ? (
                   <p className="text-sm text-[color:var(--ink-soft)]">
-                    That code was already used.
+                    That code was already used. If your terminal is not signed in, run{" "}
+                    <code>clawhub login</code> again and type the new code.
                   </p>
                 ) : null}
                 {description?.state === "missing" ? (
                   <p className="text-sm text-[color:var(--ink-soft)]">
-                    That code is not waiting for approval.
+                    That code is not waiting for approval. Check the code in your terminal and type
+                    it again. If it still does not match, run <code>clawhub login</code> for a new
+                    code.
                   </p>
                 ) : null}
                 {status ? <p className="text-sm text-[color:var(--ink-soft)]">{status}</p> : null}

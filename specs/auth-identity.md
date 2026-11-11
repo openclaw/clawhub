@@ -21,6 +21,9 @@ not read the wall clock. A pending row stays pending and includes `expiresAt`.
 The page disables Authorize and Deny when that time has passed. `approve` and
 `deny` still reject an expired code.
 
+Expired, used, and unknown codes each say what to do next: retype a mistyped
+code, or run `clawhub login` again for a new one.
+
 A requested scope other than `read write` is rejected. Device login does not
 issue a narrower token. The minted `apiTokens` row is the same full token a
 signed-in user creates in settings.
