@@ -638,7 +638,7 @@ describe("plugin detail route", () => {
     expect(container.querySelector(".skill-hero-title-row .marketplace-icon")).toBeNull();
   });
 
-  it("shows the plugin's recommended prompts with copy actions", async () => {
+  it("previews recommended prompts in a compact chat window", async () => {
     loaderDataMock = {
       ...loaderDataMock,
       version: {
@@ -669,14 +669,18 @@ describe("plugin detail route", () => {
 
     render(<PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />);
 
-    const section = screen.getByRole("region", { name: "Try asking OpenClaw" });
-    expect(section.textContent).toContain(
+    const preview = screen.getByRole("figure", { name: "OpenClaw chat preview" });
+    expect(preview.textContent).toContain(
       "List what's assigned to me and update me on their status.",
     );
-    expect(section.textContent).toContain("Summarize my open pull requests.");
-    expect(
-      screen.getByRole("button", { name: "Copy prompt: Summarize my open pull requests." }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy prompt" })).toBeTruthy();
+
+    const next = screen.getByRole("button", { name: "Summarize my open pull requests." });
+    expect(next.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(next);
+    expect(next.getAttribute("aria-pressed")).toBe("true");
+    expect(preview.textContent).toContain("Summarize my open pull requests.");
+    expect(preview.textContent).not.toContain("List what's assigned to me");
   });
 
   it("omits the prompt section when a plugin has no recommended prompts", async () => {

@@ -8,6 +8,7 @@ import {
 import { useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import {
   AlertTriangle,
+  ArrowUp,
   Braces,
   ChevronRight,
   Download,
@@ -574,25 +575,51 @@ function formatCompatibilityLabel(key: string): string {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase());
 }
 
+// A compact OpenClaw chat window, modeled on Carapace's compact application preview.
+// It shows only the author's prompt; ClawHub never invents a reply.
 function PluginRecommendedPrompts({ prompts }: { prompts: readonly string[] }) {
+  const [selected, setSelected] = useState(0);
+  const prompt = prompts[selected] ?? prompts[0];
   return (
     <section className="plugin-manifest-section" aria-labelledby="plugin-prompts-title">
-      <h3 id="plugin-prompts-title">Try asking OpenClaw</h3>
-      <div className="plugin-manifest-list">
-        {prompts.map((prompt) => (
-          <div key={prompt} className="plugin-manifest-row">
-            <span>{prompt}</span>
-            <InstallCopyButton
-              text={prompt}
-              ariaLabel={`Copy prompt: ${prompt}`}
-              tooltip="Copy prompt"
-              showLabel={false}
-              variant="ghost"
-              size="icon-sm"
-            />
-          </div>
-        ))}
+      <div className="plugin-prompt-preview-heading">
+        <h3 id="plugin-prompts-title">Try asking OpenClaw</h3>
+        <InstallCopyButton
+          text={prompt}
+          ariaLabel="Copy prompt"
+          tooltip="Copy prompt"
+          className="plugin-validation-toolbar-copy"
+          showLabel={false}
+          variant="ghost"
+          size="icon-sm"
+        />
       </div>
+      <figure className="plugin-prompt-preview" aria-label="OpenClaw chat preview">
+        <div className="plugin-prompt-preview-bar" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </div>
+        <p className="plugin-prompt-preview-message">{prompt}</p>
+        <div className="plugin-prompt-preview-composer" aria-hidden="true">
+          <span>Message OpenClaw</span>
+          <ArrowUp size={14} />
+        </div>
+      </figure>
+      {prompts.length > 1 ? (
+        <div className="plugin-prompt-preview-choices" role="group" aria-label="Example prompts">
+          {prompts.map((choice, index) => (
+            <button
+              key={choice}
+              type="button"
+              aria-pressed={index === selected}
+              onClick={() => setSelected(index)}
+            >
+              {choice}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1844,10 +1871,10 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     isPlugin ? "Copy plugin install command" : "Copy skill install command"
                   }
                 />
+                {pluginManifestSummary?.recommendedPrompts?.length ? (
+                  <PluginRecommendedPrompts prompts={pluginManifestSummary.recommendedPrompts} />
+                ) : null}
               </div>
-              {pluginManifestSummary?.recommendedPrompts?.length ? (
-                <PluginRecommendedPrompts prompts={pluginManifestSummary.recommendedPrompts} />
-              ) : null}
               <PluginDetailTabs
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
