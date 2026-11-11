@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import mime from "mime";
 import semver from "semver";
@@ -806,14 +806,64 @@ function pluginInspectorFixtureId(rawName: string) {
   );
 }
 
-async function createClawPackFromFolder(options: {
-  sourcePath: string;
-  packDestination: string;
-  cwd: string;
-}): Promise<PackedClawPack> {
-  const result = spawnSync(
-    "npm",
+const MISSING_NPM_MESSAGE =
+  "npm was not found on PATH. Folder publishing packs the package with `npm pack`; install Node.js (which includes npm) and try again, or publish a prebuilt .tgz instead.";
+
+// Every PATH entry as an absolute directory. A relative, drive-relative, or
+// empty entry is resolved once, against the directory npm will run in, which is
+// where a by-name spawn looks it up.
+function pathDirectories(baseDir: string) {
+  const raw = process.env.PATH ?? process.env.Path ?? "";
+  return raw.split(delimiter).map((entry) => resolve(baseDir, entry.trim()));
+}
+
+function sameDirectory(left: string, right: string) {
+  if (process.platform === "win32") return left.toLowerCase() === right.toLowerCase();
+  return left === right;
+}
+
+async function isRegularFile(path: string) {
+  const info = await stat(path).catch(() => null);
+  return Boolean(info?.isFile());
+}
+
+type NpmLaunch = { command: string; args: string[] };
+
+// cmd.exe searches the working directory before PATH and expands %NAME%
+// inside quoted arguments. On Windows, spawn the installed launcher with
+// literal argv. Other platforms keep spawn("npm") so lookup uses the child
+// cwd and skips a non-executable file earlier on PATH.
+//
+// The Windows launcher is always an absolute path. A relative one would be
+// checked from this process's directory and then run from the child's, so the
+// file that passed the check need not be the file that runs.
+async function resolveInstalledNpm(workingDir: string): Promise<NpmLaunch | null> {
+  if (process.platform !== "win32") return { command: "npm", args: [] };
+  const baseDir = resolve(workingDir);
+  for (const dir of pathDirectories(baseDir)) {
+    if (sameDirectory(dir, baseDir)) continue;
+    const cli = join(dir, "node_modules", "npm", "bin", "npm-cli.js");
+    if (await isRegularFile(cli)) {
+      const nodeExe = join(dir, "node.exe");
+      return {
+        command: (await isRegularFile(nodeExe)) ? nodeExe : process.execPath,
+        args: [cli],
+      };
+    }
+    const npmExe = join(dir, "npm.exe");
+    if (await isRegularFile(npmExe)) return { command: npmExe, args: [] };
+  }
+  return null;
+}
+
+function spawnNpmPack(
+  launch: NpmLaunch,
+  options: { sourcePath: string; packDestination: string; cwd: string },
+) {
+  return spawnSync(
+    launch.command,
     [
+      ...launch.args,
       "pack",
       options.sourcePath,
       "--json",
@@ -824,8 +874,39 @@ async function createClawPackFromFolder(options: {
     {
       cwd: options.cwd,
       encoding: "utf8",
+      shell: false,
     },
   );
+}
+
+async function assertWorkingDirectory(cwd: string) {
+  const cwdStat = await stat(cwd).catch((error: unknown) => {
+    throw new Error(`Cannot access working directory "${cwd}": ${formatError(error)}`, {
+      cause: error,
+    });
+  });
+  if (!cwdStat.isDirectory()) {
+    throw new Error(`Working directory is not a directory: ${cwd}`);
+  }
+}
+
+async function createClawPackFromFolder(options: {
+  sourcePath: string;
+  packDestination: string;
+  cwd: string;
+}): Promise<PackedClawPack> {
+  const launch = await resolveInstalledNpm(options.cwd);
+  if (!launch) {
+    await assertWorkingDirectory(options.cwd);
+    throw new Error(MISSING_NPM_MESSAGE);
+  }
+  const result = spawnNpmPack(launch, options);
+  const spawnCode = (result.error as NodeJS.ErrnoException | undefined)?.code;
+  if (spawnCode === "ENOENT") {
+    // Node also returns ENOENT when cwd is missing, even if npm is installed.
+    await assertWorkingDirectory(options.cwd);
+    throw new Error(MISSING_NPM_MESSAGE, { cause: result.error });
+  }
   if (result.error) throw result.error;
   if (result.status !== 0) {
     fail((result.stderr || result.stdout || "npm pack failed").trim());
