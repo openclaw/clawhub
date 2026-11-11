@@ -645,6 +645,7 @@ export const pluginManifestSummaryValidator = v.object({
   channels: v.optional(v.array(v.string())),
   categories: v.optional(v.array(v.string())),
   icon: v.optional(v.string()),
+  recommendedPrompts: v.optional(v.array(v.string())),
   compatibility: v.optional(
     v.object({
       pluginApiRange: v.optional(v.string()),

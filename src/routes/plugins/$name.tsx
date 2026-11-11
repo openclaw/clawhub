@@ -574,6 +574,34 @@ function formatCompatibilityLabel(key: string): string {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase());
 }
 
+function PluginRecommendedPrompts({ prompts }: { prompts: readonly string[] }) {
+  return (
+    <section
+      className="plugin-recommended-prompts"
+      aria-labelledby="plugin-recommended-prompts-title"
+    >
+      <h2 id="plugin-recommended-prompts-title" className="plugin-recommended-prompts-title">
+        Try asking OpenClaw
+      </h2>
+      <ul className="plugin-recommended-prompts-list">
+        {prompts.map((prompt) => (
+          <li key={prompt} className="plugin-recommended-prompt">
+            <span className="plugin-recommended-prompt-text">{prompt}</span>
+            <InstallCopyButton
+              text={prompt}
+              ariaLabel={`Copy prompt: ${prompt}`}
+              tooltip="Copy prompt"
+              showLabel={false}
+              variant="ghost"
+              size="icon-sm"
+            />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function PluginManifestConfigurationPanel({ fields }: { fields: PluginConfigField[] }) {
   return (
     <div className="plugin-manifest-capabilities">
@@ -1822,6 +1850,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   }
                 />
               </div>
+              {pluginManifestSummary?.recommendedPrompts?.length ? (
+                <PluginRecommendedPrompts prompts={pluginManifestSummary.recommendedPrompts} />
+              ) : null}
               <PluginDetailTabs
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}

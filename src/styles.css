@@ -3819,6 +3819,44 @@ code {
   min-width: 0;
 }
 
+.plugin-recommended-prompts {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.plugin-recommended-prompts-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 750;
+}
+
+.plugin-recommended-prompts-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugin-recommended-prompt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+}
+
+.plugin-recommended-prompt-text {
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 .plugin-detail-page .skill-hero-main-extra {
   gap: var(--space-7);
   overflow-x: clip;

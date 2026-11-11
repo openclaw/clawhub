@@ -193,6 +193,25 @@ outcome, not as a problem with your plugin, and scans the release again later.
 Run `clawhub package validate <source>` to see the same findings before you
 publish.
 
+### Example Prompts
+
+Add up to three short example prompts to `openclaw.plugin.json` so people can see
+how to use your plugin with OpenClaw:
+
+```json
+{
+  "recommendedPrompts": [
+    "List what's assigned to me and update me on their status.",
+    "Summarize my open pull requests."
+  ]
+}
+```
+
+Each prompt can be at most 128 characters. ClawHub shows them on your plugin's
+page, and OpenClaw shows them when people browse plugins. If the list has more
+than three prompts or any prompt is empty or too long, ClawHub ignores the whole
+list; your release still publishes.
+
 ### Plugin Icons
 
 ClawHub uses the bundled `assets/icon.png` for plugin catalog artwork. Manifest

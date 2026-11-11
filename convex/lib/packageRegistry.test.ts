@@ -209,6 +209,40 @@ describe("packageRegistry", () => {
     expect(absent).not.toHaveProperty("channels");
   });
 
+  it("publishes valid recommended prompts with the same rules as OpenClaw", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        recommendedPrompts: [
+          "  List what's assigned\nto me  and update me on their status. ",
+          "Summarize my open pull requests.",
+          "😀".repeat(128),
+        ],
+      },
+      files: [],
+    });
+    expect(summary.recommendedPrompts).toEqual([
+      "List what's assigned to me and update me on their status.",
+      "Summarize my open pull requests.",
+      "😀".repeat(128),
+    ]);
+  });
+
+  it.each([
+    { recommendedPrompts: undefined },
+    { recommendedPrompts: [] },
+    { recommendedPrompts: null },
+    { recommendedPrompts: "Plan my week." },
+    { recommendedPrompts: ["one", "two", "three", "four"] },
+    { recommendedPrompts: ["Valid", ""] },
+    { recommendedPrompts: ["Valid", " \n "] },
+    { recommendedPrompts: ["Valid", 1] },
+    { recommendedPrompts: ["Valid", "x".repeat(129)] },
+    { recommendedPrompts: ["Valid", "😀".repeat(129)] },
+  ])("omits absent or invalid recommended prompts as a whole: $recommendedPrompts", (manifest) => {
+    const summary = derivePluginManifestSummary({ pluginManifest: manifest, files: [] });
+    expect(summary).not.toHaveProperty("recommendedPrompts");
+  });
+
   it("derives a safe bundled plugin manifest summary from dummy plugin metadata", () => {
     const summary = derivePluginManifestSummary({
       compatibility: { pluginApiRange: "^1.2.0" },

@@ -137,6 +137,19 @@ It changes presentation metadata only, without changing release artifacts,
 versions, moderation, or download statistics. Keep it as maintenance tooling for
 imports created before portable icon support.
 
+### Recommended prompts
+
+A plugin manifest may declare `recommendedPrompts`: up to 3 author-written starter
+prompts of at most 128 Unicode code points each. Publication copies them into the
+release's `pluginManifestSummary` using OpenClaw's rules: collapse whitespace, and
+drop the whole field when any entry is invalid or the list is too long. Never
+truncate or keep a partial list, and never block publication for this advisory
+field. OpenClaw's Gateway already reads `pluginManifestSummary.recommendedPrompts`
+for catalog plugins, so the summary is the only source; do not add a separate
+package-level copy. Plugin detail pages show them as copyable prompts. Existing
+releases gain them through the plugin manifest summary backfill, which re-derives
+summaries from the stored manifest.
+
 ### ClawHub today
 
 ClawHub is currently a text-bundle registry for skills.
