@@ -841,24 +841,17 @@ function pluginInspectorFixtureId(rawName: string) {
 const MISSING_NPM_MESSAGE =
   "npm was not found on PATH. Folder publishing packs the package with `npm pack`; install Node.js (which includes npm) and try again, or publish a prebuilt .tgz instead.";
 
-function pathDirectories() {
+// Every PATH entry as an absolute directory. A relative, drive-relative, or
+// empty entry is resolved once, against the directory npm will run in, which is
+// where a by-name spawn looks it up.
+function pathDirectories(baseDir: string) {
   const raw = process.env.PATH ?? process.env.Path ?? "";
-  return raw
-    .split(delimiter)
-    .map((entry) => entry.trim())
-    .filter((entry) => {
-      if (!entry || entry === ".") return false;
-      return entry.replaceAll("\\", "/") !== ".";
-    });
+  return raw.split(delimiter).map((entry) => resolve(baseDir, entry.trim()));
 }
 
 function sameDirectory(left: string, right: string) {
-  const normalizedLeft = resolve(left);
-  const normalizedRight = resolve(right);
-  if (process.platform === "win32") {
-    return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
-  }
-  return normalizedLeft === normalizedRight;
+  if (process.platform === "win32") return left.toLowerCase() === right.toLowerCase();
+  return left === right;
 }
 
 async function isRegularFile(path: string) {
@@ -872,10 +865,15 @@ type NpmLaunch = { command: string; args: string[] };
 // inside quoted arguments. On Windows, spawn the installed launcher with
 // literal argv. Other platforms keep spawn("npm") so lookup uses the child
 // cwd and skips a non-executable file earlier on PATH.
-async function resolveInstalledNpm(packageDir: string): Promise<NpmLaunch | null> {
+//
+// The Windows launcher is always an absolute path. A relative one would be
+// checked from this process's directory and then run from the child's, so the
+// file that passed the check need not be the file that runs.
+async function resolveInstalledNpm(workingDir: string): Promise<NpmLaunch | null> {
   if (process.platform !== "win32") return { command: "npm", args: [] };
-  for (const dir of pathDirectories()) {
-    if (sameDirectory(dir, packageDir)) continue;
+  const baseDir = resolve(workingDir);
+  for (const dir of pathDirectories(baseDir)) {
+    if (sameDirectory(dir, baseDir)) continue;
     const cli = join(dir, "node_modules", "npm", "bin", "npm-cli.js");
     if (await isRegularFile(cli)) {
       const nodeExe = join(dir, "node.exe");

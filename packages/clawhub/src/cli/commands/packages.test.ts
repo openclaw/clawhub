@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join, sep } from "node:path";
 import { zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -2633,6 +2633,189 @@ describe("package commands", () => {
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
+  });
+
+  describe("Windows npm launcher lookup", () => {
+    const npmCliSegments = ["node_modules", "npm", "bin", "npm-cli.js"];
+
+    async function touch(path: string) {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, "", "utf8");
+    }
+
+    async function makeLauncherFixture() {
+      // The CLI's own directory and the pack workdir differ whenever --workdir,
+      // CLAWHUB_WORKDIR, or the default workspace fallback is in play.
+      const cliCwd = await makeTmpWorkdir();
+      const workdir = await makeTmpWorkdir();
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await mkdir(join(workdir, "packs"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+      return { cliCwd, workdir };
+    }
+
+    // Runs the pack command as Windows would see it: PATH set to `path`, the
+    // CLI process in `cliCwd`, and npm (mocked) started in `workdir`.
+    async function packWithWindowsLookup(options: {
+      cliCwd: string;
+      workdir: string;
+      path: string;
+    }) {
+      const platform = Object.getOwnPropertyDescriptor(process, "platform");
+      if (!platform) throw new Error("process.platform is not an own property");
+      const previousCwd = process.cwd();
+      const previousPath = process.env.PATH;
+      vi.mocked(spawnSync).mockClear();
+      vi.mocked(spawnSync).mockImplementation(() => ({
+        status: 1,
+        stdout: "",
+        stderr: "pack failed",
+        output: [],
+        pid: 0,
+        signal: null,
+      }));
+      Object.defineProperty(process, "platform", { ...platform, value: "win32" });
+      process.env.PATH = options.path;
+      process.chdir(options.cliCwd);
+      try {
+        const error = await cmdPackPackage(makeOpts(options.workdir), "demo-plugin", {
+          packDestination: "packs",
+        }).then(
+          () => null,
+          (thrown: unknown) => thrown,
+        );
+        return { error, calls: [...vi.mocked(spawnSync).mock.calls] };
+      } finally {
+        process.chdir(previousCwd);
+        if (previousPath === undefined) delete process.env.PATH;
+        else process.env.PATH = previousPath;
+        Object.defineProperty(process, "platform", platform);
+        vi.mocked(spawnSync).mockReset();
+      }
+    }
+
+    async function removeFixture(fixture: { cliCwd: string; workdir: string }) {
+      await rm(fixture.cliCwd, { recursive: true, force: true });
+      await rm(fixture.workdir, { recursive: true, force: true });
+    }
+
+    it("spawns the same absolute launcher it checked for a relative PATH entry", async () => {
+      const fixture = await makeLauncherFixture();
+      try {
+        const { cliCwd, workdir } = fixture;
+        // The same relative entry names a launcher in both directories.
+        await touch(join(cliCwd, "tools", ...npmCliSegments));
+        await touch(join(workdir, "tools", ...npmCliSegments));
+        await touch(join(workdir, "tools", "node.exe"));
+
+        const { error, calls } = await packWithWindowsLookup({ cliCwd, workdir, path: "tools" });
+
+        expect(error).toMatchObject({ message: expect.stringContaining("pack failed") });
+        expect(calls).toHaveLength(1);
+        const [command, args, spawnOptions] = calls[0] ?? [];
+        expect(spawnOptions).toMatchObject({ shell: false, cwd: workdir });
+        expect(args?.[0]).toBe(join(workdir, "tools", ...npmCliSegments));
+        expect(args?.[1]).toBe("pack");
+        expect(command).toBe(join(workdir, "tools", "node.exe"));
+      } finally {
+        await removeFixture(fixture);
+      }
+    });
+
+    it("finds a relative PATH npm.exe that exists only under the pack workdir", async () => {
+      const fixture = await makeLauncherFixture();
+      try {
+        const { cliCwd, workdir } = fixture;
+        await touch(join(workdir, "tools", "npm.exe"));
+
+        const { error, calls } = await packWithWindowsLookup({
+          cliCwd,
+          workdir,
+          path: `.${sep}tools`,
+        });
+
+        expect(error).toMatchObject({ message: expect.stringContaining("pack failed") });
+        expect(calls).toHaveLength(1);
+        const [command, args, spawnOptions] = calls[0] ?? [];
+        expect(spawnOptions).toMatchObject({ shell: false, cwd: workdir });
+        expect(command).toBe(join(workdir, "tools", "npm.exe"));
+        expect(args?.[0]).toBe("pack");
+      } finally {
+        await removeFixture(fixture);
+      }
+    });
+
+    it.each([
+      ["an empty entry", () => ""],
+      ["a dot", () => "."],
+      ["a dot with a separator", () => `.${sep}`],
+      ["a path that climbs back to the workdir", () => `tools${sep}..`],
+      ["the absolute workdir", (workdir: string) => workdir],
+      ["the absolute workdir with a trailing separator", (workdir: string) => `${workdir}${sep}`],
+    ])("never runs a launcher from the pack workdir (PATH is %s)", async (_label, pathFor) => {
+      const fixture = await makeLauncherFixture();
+      try {
+        const { cliCwd, workdir } = fixture;
+        // A launcher sits in the CLI's directory and a planted one in the workdir.
+        for (const dir of [cliCwd, workdir]) {
+          await touch(join(dir, ...npmCliSegments));
+          await touch(join(dir, "npm.exe"));
+        }
+
+        const { error, calls } = await packWithWindowsLookup({
+          cliCwd,
+          workdir,
+          path: pathFor(workdir),
+        });
+
+        expect(calls).toEqual([]);
+        expect(error).toMatchObject({
+          message: expect.stringContaining("npm was not found on PATH"),
+        });
+      } finally {
+        await removeFixture(fixture);
+      }
+    });
+
+    it("skips the pack workdir and uses the next absolute PATH launcher", async () => {
+      const fixture = await makeLauncherFixture();
+      const installDir = await makeTmpWorkdir();
+      try {
+        const { cliCwd, workdir } = fixture;
+        await touch(join(workdir, ...npmCliSegments));
+        await touch(join(installDir, ...npmCliSegments));
+
+        const { error, calls } = await packWithWindowsLookup({
+          cliCwd,
+          workdir,
+          path: [`.${sep}`, installDir].join(delimiter),
+        });
+
+        expect(error).toMatchObject({ message: expect.stringContaining("pack failed") });
+        expect(calls).toHaveLength(1);
+        const [command, args] = calls[0] ?? [];
+        expect(command).toBe(process.execPath);
+        expect(args?.[0]).toBe(join(installDir, ...npmCliSegments));
+      } finally {
+        await removeFixture(fixture);
+        await rm(installDir, { recursive: true, force: true });
+      }
+    });
   });
 
   it("packs local ClawPacks over the multipart publish upload budget", async () => {
