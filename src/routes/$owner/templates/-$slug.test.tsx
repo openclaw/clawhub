@@ -256,6 +256,22 @@ const templateContents =
   JSON.stringify(manifest) +
   "\n---\n# Release instructions\n\nRead the actual release notes.";
 
+// Computed style declarations are read-only, and jsdom 31 enforces that, so
+// layer the line-height override over the real declaration instead of assigning.
+function mockComputedLineHeight(lineHeight: string) {
+  const getStyle = window.getComputedStyle.bind(window);
+  vi.spyOn(window, "getComputedStyle").mockImplementation((...args) => {
+    const style = getStyle(...args);
+    return new Proxy(style, {
+      get(target, property) {
+        if (property === "lineHeight") return lineHeight;
+        const value: unknown = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  });
+}
+
 function renderTemplate(
   options: {
     status?: NonNullable<PackageDetailResponse["package"]>["scanStatus"];
@@ -295,12 +311,7 @@ describe("Template detail composition and interactions", () => {
   });
 
   it("clamps overflowing descriptions and links the expand/collapse button to the full text", () => {
-    const getStyle = window.getComputedStyle.bind(window);
-    vi.spyOn(window, "getComputedStyle").mockImplementation((...args) => {
-      const style = getStyle(...args);
-      style.lineHeight = "20px";
-      return style;
-    });
+    mockComputedLineHeight("20px");
     vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(100);
     renderTemplate();
     const button = screen.getByRole("button", { name: "Read more" });
@@ -318,12 +329,7 @@ describe("Template detail composition and interactions", () => {
   });
 
   it("does not show an expand button when the description fits within two lines", () => {
-    const getStyle = window.getComputedStyle.bind(window);
-    vi.spyOn(window, "getComputedStyle").mockImplementation((...args) => {
-      const style = getStyle(...args);
-      style.lineHeight = "20px";
-      return style;
-    });
+    mockComputedLineHeight("20px");
     vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(40);
     renderTemplate();
     expect(screen.queryByRole("button", { name: "Read more" })).toBeNull();
@@ -342,12 +348,7 @@ describe("Template detail composition and interactions", () => {
         disconnect = disconnect;
       },
     );
-    const getStyle = window.getComputedStyle.bind(window);
-    vi.spyOn(window, "getComputedStyle").mockImplementation((...args) => {
-      const style = getStyle(...args);
-      style.lineHeight = "20px";
-      return style;
-    });
+    mockComputedLineHeight("20px");
     const height = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(40);
     const view = renderTemplate();
     expect(screen.queryByRole("button", { name: "Read more" })).toBeNull();
