@@ -1,0 +1,10 @@
+{
+  "id": "local-checklist",
+  "name": "Local checklist",
+  "description": "Formats user-provided task titles.",
+  "configSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  }
+}

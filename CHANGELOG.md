@@ -2,13 +2,17 @@
 
 ## Unreleased
 
-- CLI: explain a missing npm when packing a package folder. On Windows, packing runs the installed npm directly, so a package folder cannot substitute its own `npm.cmd`. Other platforms keep the normal `npm` lookup.
+- Publishing: run reusable package-publish plugin validation with Node.js 24. The CLI refuses `package validate` under Bun, so the workflow builds the pinned CLI and runs `node packages/clawhub/bin/clawdhub.js package validate`.
 
 - CI: verify and cache a pinned Convex backend through the release-asset API before local-auth browser tests, with bounded download retries.
+
+- CLI: keep a saved API token on the registry that issued it. A `--site` well-known document cannot send that token to another origin, and it does not replace the saved login, including a legacy `auth.clawhub.ai` registry. Discovered registry URLs must be `http` or `https` and must not contain userinfo. `clawhub-admin` commands follow the same rule.
 
 - Skills: recognize a single top-level `env` name as a required variable so installation guidance and scanner metadata retain the declared credential.
 
 - CI: right-size Skill Card workers and credential canaries to two-vCPU runners, retaining four-vCPU skill evaluations and existing resource checks.
+
+- CLI: explain a missing npm when packing a package folder. On Windows, packing runs the installed npm directly, so a package folder cannot substitute its own `npm.cmd`. Other platforms keep the normal `npm` lookup.
 
 - Security: retire VirusTotal entirely. ClawHub no longer uploads skill or plugin artifacts to VirusTotal, polls or backfills its results, re-queues ClawScan from VirusTotal updates, delays ClawScan for it, or shows VirusTotal data in the UI, CLI, public API, scan reports, or audit exports. The `clawhub-admin skills repair-vt-pending` command and its API route are removed.
 - Publishing: remove the in-publish static scan, which ran out of memory on large plugin packages and duplicated the ClawScan pre-publication gate. Static results are no longer computed, sent to ClawScan, or displayed; Skill Cards now wait only for ClawScan.

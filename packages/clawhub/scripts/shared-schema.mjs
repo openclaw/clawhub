@@ -12,6 +12,8 @@ const sharedSchemaModules = [
   "packageUploadLimits",
   "pluginInput",
   "schemaShared",
+  "templateAgent",
+  "templateBundled",
   "templatePackage",
   "templatePaths",
   "templates",

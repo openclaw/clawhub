@@ -1,9 +1,7 @@
-import { spawnSync } from "node:child_process";
 import { expect, type APIRequestContext, type APIResponse, test } from "@playwright/test";
 import { buildSkillDetailHref } from "../../src/lib/ownerRoute";
 import { buildPluginDetailHref } from "../../src/lib/pluginRoutes";
-import { extractLastJsonObject } from "../helpers/convexOutput";
-import { localConvexDeployment } from "../helpers/localConvex";
+import { pollableDevSeedState, runDevSeed } from "../helpers/convexSeed";
 import {
   expectNoFatalErrorUi,
   recoverFromTransientErrorScreen,
@@ -23,33 +21,6 @@ const LATEST_VERSION = "2.0.0";
 
 function uniqueSuffix() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {
-  const result = spawnSync(
-    "bunx",
-    [
-      "convex",
-      "run",
-      "--typecheck",
-      "disable",
-      "--codegen",
-      "disable",
-      functionName,
-      JSON.stringify(args),
-    ],
-    {
-      cwd: process.cwd(),
-      env: { ...process.env, CONVEX_DEPLOYMENT: localConvexDeployment() },
-      encoding: "utf8",
-    },
-  );
-  if (result.status !== 0) {
-    throw new Error(
-      [`Failed to run ${functionName}.`, result.stdout.trim(), result.stderr.trim()].join("\n"),
-    );
-  }
-  return JSON.parse(extractLastJsonObject(result.stdout)) as T;
 }
 
 type VersionDeletionFixture = {
@@ -259,14 +230,6 @@ function clearVersionDeletionPublisherCountersForRegression(fixture: VersionDele
       expectedPublishedPackages: fixture.publisherPublishedPackages,
     },
   );
-}
-
-function pollableDevSeedState<TState extends object>(readState: () => TState) {
-  try {
-    return readState();
-  } catch {
-    return {};
-  }
 }
 
 function isExpectedVersionDeletionRuntimeError(error: string) {

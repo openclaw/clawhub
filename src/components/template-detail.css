@@ -42,6 +42,36 @@
   overflow-wrap: anywhere;
 }
 
+.template-detail-description[data-expanded="false"] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.template-detail-description-toggle {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.template-detail-description-toggle:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.template-detail-description-toggle:focus-visible {
+  outline: 2px solid var(--ink-soft);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
 .template-detail-publisher {
   display: flex;
   align-items: center;
@@ -86,13 +116,6 @@
 .template-detail-install .skill-install-command-shell {
   min-height: 54px;
   background: var(--oc-bg-surface);
-}
-
-.template-detail-install-warning {
-  margin: 12px 0 0;
-  color: var(--status-warning-fg);
-  font-size: 14px;
-  line-height: 1.5;
 }
 
 .template-detail-contents {
@@ -246,6 +269,23 @@
   color: var(--ink-soft);
   font-size: 14px;
   line-height: 1.6;
+}
+
+.template-detail-original {
+  margin-top: 18px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.template-detail-original summary {
+  cursor: pointer;
+}
+
+.template-detail-original pre {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
 }
 
 .template-detail-entry-list {

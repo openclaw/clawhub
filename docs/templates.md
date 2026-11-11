@@ -60,10 +60,8 @@ workspace:
   files:
     - source: workspace/reference.md
       path: reference.md
-packages:
-  - kind: skill
-    source: clawhub
-    ref: "@acme/triage"
+skills:
+  - ref: "@acme/triage"
     version: 1.2.0
 mcpServers: {}
 automations: []
@@ -74,9 +72,9 @@ automations: []
 Reviews and classifies incoming GitHub issues.
 ```
 
-Declare scheduled work under `automations`. Older published packages using
-`cronJobs` remain readable and validate as `automations`; declaring both keys is
-rejected. Existing archives and digests are preserved.
+Declare scheduled work under `automations`. Set `enabled: false` to create a paused
+job for onboarding; omission preserves enabled behavior. The retired `cronJobs` key
+is rejected with migration guidance. Existing archives and digests are preserved.
 
 `categories` is optional and accepts one to three distinct lowercase slugs.
 ClawHub accepts these categories for new releases: `personal`, `health`,
@@ -103,56 +101,67 @@ them in `workspace.files`. Package names and versions must match `package.json`,
 dependency versions must be exact, and MCP environment values must remain
 unresolved `${ENV_VAR}` references.
 
-## Bootstrap and harness profiles
+## Native settings and bootstrap
 
-An optional package-root `BOOTSTRAP.md` contains first-run instructions. It is
-seeded once by a supporting harness and remains separate from the reusable
-portable prompt in the `CLAW.md` body. Do not declare root `BOOTSTRAP.md` as a
-workspace destination; that path is reserved for the package-root file. ClawHub
-includes bootstrap presence, but never its contents, in the bounded catalog
-summary.
-
-Harness-specific tuning uses conventional package paths:
-
-```text
-profiles/openclaw.yml
-profiles/hermes.yml
-profiles/codex.yml
-```
-
-The `profiles/` namespace is reserved for these lowercase, single-file `.yml`
-paths. Each profile is a JSON-compatible YAML mapping. ClawHub validates the common shape and validates `profiles/openclaw.yml` against
-the shipped OpenClaw v1 consumer contract, including registered built-in tool
-profiles and bounded tool grants; it does not interpret foreign profiles. A
-harness discovers only its own profile and ignores the others when applying the
-package. The exact published artifact and its digest still cover every profile,
-bootstrap instruction, and asset.
-
-The retired `metadata.openclaw.config` pointer is rejected. Move that file to
-`profiles/openclaw.yml` and remove the metadata entry.
-
-OpenClaw-native extension packages belong in `profiles/openclaw.yml`, while
-portable MCP servers remain in `CLAW.md`:
+Keep native agent settings directly under `agent` in the same `CLAW.md` frontmatter.
+Supported groups are `groupChat`, `sandbox`, `tools`, `memory`, `heartbeat`, and
+`humanDelay`, alongside identity and purpose. `tools.profile` remains a native tool
+policy selection; bounded tool-grant and memory-consent checks still apply.
 
 ```yaml
 schemaVersion: 1
 agent:
+  id: github-triage
   tools:
     profile: coding
     allow: [read]
-extensions:
-  - id: issue-tools
-    kind: plugin
-    format: openclaw
-    source: clawhub
-    ref: "@acme/issue-tools"
+plugins:
+  - ref: "@acme/issue-tools"
     version: 2.3.4
 ```
 
-Extension ids and package references must be unique, and versions must be
-exact. Other harnesses may bind the same application needs using their own
-native profile model; the portable manifest does not impose a capability-name
-registry.
+Declare dependencies in top-level `skills` and `plugins` arrays. Each entry is
+either an exact ClawHub `{ref, version}` reference or a package-local `{path}`
+directory. Do not combine both forms. The collection determines its kind;
+duplicate references within one kind and overlapping bundled directories are rejected.
+
+```yaml
+skills:
+  - path: skills/research
+  - ref: "@acme/triage"
+    version: 1.2.0
+plugins:
+  - path: plugins/alerts
+```
+
+A bundled skill includes its complete directory, including `SKILL.md`, scripts,
+references and binary assets. Its `SKILL.md` must contain valid frontmatter and
+a description. Plugin directories require an explicit supported native manifest:
+`openclaw.plugin.json`, `.codex-plugin/plugin.json`, `.claude-plugin/plugin.json`,
+or `.cursor-plugin/plugin.json`. Bundle manifests declare a name; native code
+plugins declare an id/config schema plus package metadata and loadable entrypoints.
+The selected root agent-bundle `plugin.json` format is unsupported. Native format
+selection prefers Codex, Cursor, Claude, then OpenClaw metadata; an unrelated
+root `plugin.json` does not override them. OpenClaw's native installers still
+own host compatibility, security review, consent and local activation.
+
+Bundled contents exclude `.git` and `node_modules` segments using portable case
+folding. Eligible contents must be regular files with safe, noncolliding paths:
+at most 1 MiB per file, 20 MiB across dependencies, 4096 files in total, 4096
+entries per directory tree and 16 path levels. Links and nonregular archive entries
+are rejected by the package artifact boundary. Build with OpenClaw so its selected
+directory membership and bytes are preserved in the exact artifact.
+
+The `packages`, `extensions`, and `profiles` fields, package-local `profiles/`
+files, and `metadata.openclaw.config` pointer are retired. Move settings into
+`CLAW.md` `agent`, dependencies into `skills`/`plugins`, and scheduled work into
+`automations`. This simplification keeps `schemaVersion: 1`; no compatibility
+adapter interprets the retired forms.
+
+An optional package-root `BOOTSTRAP.md` contains first-run instructions. It is
+seeded once and remains separate from the reusable prompt in the `CLAW.md` body.
+Do not declare root `BOOTSTRAP.md` as a workspace destination; the path is reserved.
+ClawHub includes bootstrap presence, but never its contents, in the bounded summary.
 
 ## Validate, build, and publish
 
@@ -189,14 +198,14 @@ Publication rejects:
 - malformed `CLAW.md` frontmatter or manifest fields;
 - a non-empty `CLAW.md` body combined with an explicit `SOUL.md` destination;
 - missing workspace source files or portable path collisions;
-- invalid package-root bootstrap instructions or conventional harness profiles;
+- invalid package-root bootstrap instructions, retired profiles, or unsafe native agent settings;
 - the retired `metadata.openclaw.config` pointer;
 - floating skill/plugin versions and resolved MCP credentials.
 
 Accepted packages continue through ClawHub's existing ownership, moderation,
 security scanning, release, and artifact storage pipeline. The stored release
-retains the exact artifact plus a non-sensitive summary for later search and
-detail surfaces; downloads return those same bytes and digest, and ClawHub does
+retains the exact artifact plus a non-sensitive summary and normalized dependency
+inventory for later search and detail surfaces; downloads return those same bytes and digest, and ClawHub does
 not duplicate the full manifest into Convex storage.
 
 ## Discover published Templates
@@ -213,9 +222,13 @@ curl "https://clawhub.ai/api/v1/packages/@openclaw%2Fgithub-triage"
 
 List and search results use the normal package summary fields. Package and
 version detail responses may also include `templateManifestSummary`, which reports
-the agent identity, portable resource counts, harness-profile count,
-OpenClaw-profile count, and native extension count without exposing the full
-manifest or profile contents.
+the agent identity and declared resource counts. `templateInventory` identifies
+each dependency as ClawHub (`ref`, exact `version`) or bundled (`path`, optional
+metadata-derived `name`). The website shows bundled paths without inventing
+registry versions. The full manifest and dependency bytes remain in the artifact.
+Projected bundled display names use the same 128-character bound as agent names.
+The complete normalized dependency inventory is limited to 256 KiB for release
+storage; this does not change the full native identity retained in the artifact.
 Use `category=other` for Templates that could not be classified. Category filters
 require `family=template`; unrecognized categories return a validation error.
 

@@ -22,8 +22,8 @@ export async function cmdCreatePublisher(
 ) {
   const normalizedHandle = normalizePublisherHandleOrFail(handle);
   const displayName = options.displayName?.trim();
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const result = await apiRequest(
     registry,
     {

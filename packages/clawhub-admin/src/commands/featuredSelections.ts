@@ -33,8 +33,8 @@ export async function cmdFeaturedSelection(
             "Featured publication",
           );
   }
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const result = await apiRequest(registry, {
     method: operation === "get" ? "GET" : "POST",
     path: `${ApiRoutes.featured}/${catalog}${operation === "get" ? "" : `/${operation}`}`,

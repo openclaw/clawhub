@@ -1,3 +1,5 @@
+import { tryNormalizePackageName } from "./packageReadName";
+export { tryNormalizePackageName } from "./packageReadName";
 import {
   assertManagedMcpUrl,
   bundlePluginRuntimeId,
@@ -19,8 +21,6 @@ import {
 import { getFrontmatterValue, parseFrontmatter, sanitizePath } from "./skills";
 
 export { PLUGIN_BUNDLE_MANIFESTS as REAL_BUNDLE_MANIFESTS } from "clawhub-schema";
-
-const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 
 type PublishFile = {
   path: string;
@@ -418,14 +418,6 @@ export function normalizePackageName(name: string) {
   if (!normalized.startsWith("@") && isReservedUnscopedPackageName(normalized)) {
     throw new ConvexError(formatReservedUnscopedPackageNameMessage(normalized));
   }
-  return normalized;
-}
-
-export function tryNormalizePackageName(name: string) {
-  const trimmed = name.trim();
-  if (!trimmed) return null;
-  const normalized = trimmed.toLowerCase();
-  if (!PACKAGE_NAME_PATTERN.test(normalized)) return null;
   return normalized;
 }
 

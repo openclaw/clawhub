@@ -106,7 +106,6 @@ function templateFixture(root: string, owner: string, slug: string) {
       openclaw: { template: "manifests/CLAW.md" },
     }),
     "manifests/CLAW.md": `---\nschemaVersion: 1\nagent:\n  id: ${slug}\n  name: ${slug}\n---\n# ${slug}\n\nLocal Template publication proof.\n`,
-    "profiles/openclaw.yml": "schemaVersion: 1\nagent: {}\n",
   });
 }
 

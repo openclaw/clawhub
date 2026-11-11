@@ -1,6 +1,6 @@
 import { makeFunctionReference } from "convex/server";
-import { httpAction } from "./functions";
-import { json } from "./httpApiV1/shared";
+import { httpAction } from "./_generated/server";
+import { json } from "./lib/httpHeaders";
 import { applyRateLimit } from "./lib/httpRateLimit";
 
 export const get = httpAction(async (ctx, request) => {
@@ -12,10 +12,9 @@ export const get = httpAction(async (ctx, request) => {
     return json({ error: "limit must be an integer from 1 to 8" }, 400, rate.headers);
   }
   try {
-    const result = await ctx.runQuery(
-      makeFunctionReference<"query">("packages:templateOverviewInternal"),
-      { limit },
-    );
+    const result = await ctx.runQuery(makeFunctionReference<"query">("templateOverview:get"), {
+      limit,
+    });
     return json(result, 200, rate.headers);
   } catch (error) {
     // Full package documents can exhaust the read-byte budget below the row cap.

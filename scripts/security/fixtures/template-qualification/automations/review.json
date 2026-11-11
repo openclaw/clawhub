@@ -1,0 +1,5 @@
+{
+  "name": "Weekly checklist review",
+  "enabled": false,
+  "prompt": "Summarize open tasks in workspace/PLAN.md and ask which to prioritize."
+}
