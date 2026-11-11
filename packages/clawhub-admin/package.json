@@ -31,7 +31,7 @@
   "dependencies": {
     "@clack/prompts": "1.8.1",
     "arktype": "2.2.9",
-    "commander": "15.0.0",
+    "commander": "15.1.0",
     "fflate": "0.8.3",
     "ignore": "7.0.14",
     "json5": "2.2.3",
