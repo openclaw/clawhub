@@ -338,28 +338,16 @@ function parseSkillMarkdownMetadata(text: string | undefined) {
   };
 }
 
-// Mirrors OpenClaw's validatePluginRecommendedPrompts so ClawHub publishes exactly
-// what the OpenClaw Control UI accepts for catalog plugins.
-const MAX_PLUGIN_RECOMMENDED_PROMPTS = 3;
-const MAX_PLUGIN_RECOMMENDED_PROMPT_LENGTH = 128;
-
-/**
- * Author-written starter prompts are advisory display metadata. Invalid values are
- * dropped as a whole, never truncated or partially kept, and never block publication.
- */
+// Mirrors OpenClaw's validatePluginRecommendedPrompts (max 3, 128 code points each):
+// an invalid list is dropped whole, never truncated, and never blocks publication.
 function extractRecommendedPrompts(value: unknown): string[] | undefined {
-  if (!Array.isArray(value) || value.length === 0) return undefined;
-  if (value.length > MAX_PLUGIN_RECOMMENDED_PROMPTS) return undefined;
-  const prompts: string[] = [];
-  for (const entry of value) {
-    if (typeof entry !== "string") return undefined;
-    const prompt = entry.replace(/\s+/gu, " ").trim();
-    if (!prompt || Array.from(prompt).length > MAX_PLUGIN_RECOMMENDED_PROMPT_LENGTH) {
-      return undefined;
-    }
-    prompts.push(prompt);
-  }
-  return prompts;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 3) return undefined;
+  const prompts = value.map((entry) =>
+    typeof entry === "string" ? entry.replace(/\s+/gu, " ").trim() : "",
+  );
+  return prompts.every((prompt) => prompt && Array.from(prompt).length <= 128)
+    ? prompts
+    : undefined;
 }
 
 function declaredCapabilityNames(value: unknown): string[] {

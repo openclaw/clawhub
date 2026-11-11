@@ -139,16 +139,11 @@ imports created before portable icon support.
 
 ### Recommended prompts
 
-A plugin manifest may declare `recommendedPrompts`: up to 3 author-written starter
-prompts of at most 128 Unicode code points each. Publication copies them into the
-release's `pluginManifestSummary` using OpenClaw's rules: collapse whitespace, and
-drop the whole field when any entry is invalid or the list is too long. Never
-truncate or keep a partial list, and never block publication for this advisory
-field. OpenClaw's Gateway already reads `pluginManifestSummary.recommendedPrompts`
-for catalog plugins, so the summary is the only source; do not add a separate
-package-level copy. Plugin detail pages show them as copyable prompts. Existing
-releases gain them through the plugin manifest summary backfill, which re-derives
-summaries from the stored manifest.
+Publication copies a manifest's `recommendedPrompts` into the release's
+`pluginManifestSummary` with OpenClaw's rules (max 3, 128 code points each); an
+invalid list is dropped whole and never blocks publication. OpenClaw's Gateway
+already reads this summary field for catalog plugins, so keep it the only copy.
+Existing releases gain prompts through the plugin manifest summary backfill.
 
 ### ClawHub today
 
