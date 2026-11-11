@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { pluginScanBudget, securityWorkerDeadline } from "../../convex/lib/securityWorkerBudgets";
@@ -13,6 +12,10 @@ import {
   validateClawScanArtifactForClawHubProfile,
 } from "./run-codex-scan-worker";
 import { runNativeClawScan, runNativeTruffleHog } from "./run-prepublication-worker";
+import {
+  createTemplateQualificationWorkspace,
+  type WorkspaceCleanup,
+} from "./template-qualification-workspace";
 
 const fixtureRoot = new URL("./fixtures/template-qualification/", import.meta.url);
 // No caller-selected artifact, command, source, attempt, or output path.
@@ -58,6 +61,7 @@ type QualificationReceipt = {
   fixtureSha256: string | null;
   fixtureUnchanged: boolean;
   workspaceRemoved: boolean;
+  workspaceCleanup: WorkspaceCleanup;
 };
 
 async function fixtureDigest(root: string): Promise<string> {
@@ -103,8 +107,10 @@ export async function qualifyTestTemplate(
     fixtureSha256: null,
     fixtureUnchanged: false,
     workspaceRemoved: false,
+    workspaceCleanup: { method: "not_run", initialError: null, finalError: null },
   };
   let workspace: string | undefined;
+  let ownedWorkspace: Awaited<ReturnType<typeof createTemplateQualificationWorkspace>> | undefined;
   let preserveWorkspace = false;
   let stage: Failure = "configuration";
   try {
@@ -144,7 +150,8 @@ export async function qualifyTestTemplate(
     if (!runtime) throw new Error("No qualified Template runtime");
     receipt.sourceAndBinaryVerified = true;
     stage = "fixture";
-    workspace = await mkdtemp(join(tmpdir(), "template-qualification-"));
+    ownedWorkspace = await createTemplateQualificationWorkspace();
+    workspace = ownedWorkspace.path;
     const artifact = join(workspace, "artifact");
     for (const file of fixtureFiles) {
       const source = new URL(file, fixtureRoot);
@@ -218,11 +225,12 @@ export async function qualifyTestTemplate(
   } finally {
     // Match the worker custody contract: never delete mounts while daemon
     // cleanup/finality is uncertain. The failed hosted runner owns teardown.
-    if (workspace && !preserveWorkspace) {
-      try {
-        await rm(workspace, { recursive: true, force: true });
-        receipt.workspaceRemoved = true;
-      } catch {
+    if (preserveWorkspace) receipt.workspaceCleanup.method = "preserved";
+    if (ownedWorkspace && !preserveWorkspace) {
+      const cleanup = await ownedWorkspace.remove();
+      receipt.workspaceCleanup = cleanup.diagnostic;
+      receipt.workspaceRemoved = cleanup.removed;
+      if (!cleanup.removed) {
         receipt.status = "failed";
         receipt.failure = "cleanup";
       }
