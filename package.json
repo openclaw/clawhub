@@ -134,7 +134,7 @@
     "ignore": "7.0.14",
     "jose": "6.2.15",
     "lucide-react": "1.70.0",
-    "mermaid": "^11.17.2",
+    "mermaid": "^12.3.0",
     "mime": "4.1.2",
     "monaco-editor": "0.57.0",
     "parse5": "8.1.0",
