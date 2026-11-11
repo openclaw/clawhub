@@ -77,8 +77,8 @@ export async function cmdDeleteSkill(
     if (!ok) return undefined;
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const target = version ? `${formatSkillRef(ref)} version ${version}` : formatSkillRef(ref);
   const spinner = createCrabLoader(`${labels.progress} ${target}`);
   return await withLoaderErrorHandling(spinner, async () => {
@@ -126,8 +126,8 @@ export async function cmdUndeleteSkill(
     if (!ok) return undefined;
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const target = version ? `${formatSkillRef(ref)} version ${version}` : formatSkillRef(ref);
   const spinner = createCrabLoader(`${labels.progress} ${target}`);
   return await withLoaderErrorHandling(spinner, async () => {

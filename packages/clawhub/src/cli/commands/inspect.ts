@@ -75,8 +75,8 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
   if (!trimmed) fail("Skill required");
   if (options.version && options.tag) fail("Use either --version or --tag");
 
-  const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   const spinner = createCrabLoader("Fetching skill");
   return await withLoaderErrorHandling(spinner, async () => {
     let skillResult: Awaited<ReturnType<typeof fetchSkillDetail>> | null = null;
@@ -304,8 +304,8 @@ export async function cmdVerifySkill(
   if (!trimmed) fail("Skill required");
   if (options.version && options.tag) fail("Use either --version or --tag");
 
-  const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
   const spinner = createCrabLoader("Fetching skill verification");
   return await withLoaderErrorHandling(spinner, async () => {
     const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/verify`, registry);

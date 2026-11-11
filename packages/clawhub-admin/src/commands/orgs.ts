@@ -133,8 +133,8 @@ export async function cmdCreateOrg(opts: GlobalOpts, handle: string, options: Or
   const memberRole = normalizeRoleOrFail(options.role);
   const trusted = options.trusted === true ? true : undefined;
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Creating @${orgHandle}`);
   try {
     const result = await apiRequest(
@@ -178,8 +178,8 @@ export async function cmdRemoveOrgMember(
   const orgHandle = normalizeHandleOrFail(handle, "Org handle");
   const normalizedMemberHandle = normalizeHandleOrFail(memberHandle, "Member handle");
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json
     ? null
     : createCrabLoader(`Removing @${normalizedMemberHandle} from @${orgHandle}`);
@@ -246,8 +246,8 @@ export async function cmdUpdateOrgProfile(
     form.set("logo", new File([new Uint8Array(bytes)], basename(logoFile), { type: contentType }));
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Updating @${orgHandle} profile`);
   try {
     const result = await apiRequestForm(
@@ -280,8 +280,8 @@ export async function cmdDeleteOrg(
   if (!reason) fail("--reason required");
   const dryRun = options.apply !== true;
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning delete for" : "Deleting"} @${orgHandle}`);
@@ -329,8 +329,8 @@ export async function cmdReclaimDeletedOrgHandle(
   const confirmationToken = options.confirm?.trim();
   if (!dryRun && !confirmationToken) fail("--confirm required when using --apply");
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning reclaim for" : "Reclaiming"} @${orgHandle}`);
@@ -368,8 +368,8 @@ export async function cmdReclaimDeletedOrgHandle(
 }
 
 export async function cmdListOfficialOrgs(opts: GlobalOpts, options: OrgOfficialListOptions = {}) {
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader("Listing official publishers");
   try {
     const result = await apiRequest(
@@ -443,8 +443,8 @@ async function updateOfficialOrg(
     inputAllowed,
   );
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json
     ? null
     : createCrabLoader(
@@ -512,8 +512,8 @@ export async function cmdRepairScopedPackages(
         });
       }
     } else {
-      const token = await requireAuthToken();
       const registry = await getRegistry(opts, { cache: true });
+      const token = await requireAuthToken(registry);
       for (const row of selectedRows) {
         try {
           await apiRequest(

@@ -50,8 +50,8 @@ export async function cmdGetContentRightsCase(
   options: GetOptions = {},
 ) {
   const caseId = normalizeCaseId(rawCaseId);
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const result = await apiRequest(registry, {
     method: "GET",
     path: `${ApiRoutes.contentRights}/${encodeURIComponent(caseId)}`,
@@ -100,8 +100,8 @@ export async function cmdRecordContentRightsCorrespondence(
     );
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const result = await apiRequestForm(registry, {
     method: "POST",
     path: `${ApiRoutes.contentRights}/${encodeURIComponent(caseId)}/correspondence`,
