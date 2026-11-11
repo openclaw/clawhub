@@ -10,6 +10,8 @@
 
 - Skills: recognize a single top-level `env` name as a required variable so installation guidance and scanner metadata retain the declared credential.
 
+- API: return one publish-token rejection when a package is missing, hidden, or the GitHub identity does not match, without naming the trusted repository. The body tells the caller to ask a package manager to check the trusted-publisher configuration and the workflow OIDC claims. A GitHub signing-key outage answers a retryable `503` instead of a rejection.
+
 - CI: right-size Skill Card workers and credential canaries to two-vCPU runners, retaining four-vCPU skill evaluations and existing resource checks.
 
 - Security: retire VirusTotal entirely. ClawHub no longer uploads skill or plugin artifacts to VirusTotal, polls or backfills its results, re-queues ClawScan from VirusTotal updates, delays ClawScan for it, or shows VirusTotal data in the UI, CLI, public API, scan reports, or audit exports. The `clawhub-admin skills repair-vt-pending` command and its API route are removed.
