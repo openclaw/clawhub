@@ -6,12 +6,12 @@ const palette = {
   foreground: "#e1f1e5",
   card: "#0a1710",
   primary: "#e6c178",
-  "primary-foreground": "#171207",
+  primaryForeground: "#171207",
   secondary: "#16281d",
-  "secondary-foreground": "#e6c178",
-  "muted-foreground": "#afc9b8",
+  secondaryForeground: "#e6c178",
+  mutedForeground: "#afc9b8",
   accent: "#243e2c",
-  "accent-foreground": "#f0d79d",
+  accentForeground: "#f0d79d",
   border: "#35523e",
 };
 
@@ -38,8 +38,8 @@ describe("themePaletteToPreviewTokens", () => {
     expect(
       themePaletteToPreviewTokens({
         ...palette,
-        "font-sans": '"JetBrains Mono", monospace',
-        "font-mono": "ui-monospace",
+        fontSans: '"JetBrains Mono", monospace',
+        fontMono: "ui-monospace",
       }),
     ).toMatchObject({
       "--oc-font-body": '"JetBrains Mono", monospace',

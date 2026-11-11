@@ -150,7 +150,8 @@ Existing releases gain prompts through the plugin manifest summary backfill.
 Publication reads each `themes[].source` JSON file declared in `openclaw.plugin.json`
 and stores a compact preview in `pluginManifestSummary.themes`: id, name, and per
 shipped mode only the palette keys ClawHub's chip and compact preview read (plus
-`font-sans`/`font-mono` when declared). The modes are the palettes present. Validation
+`font-sans`/`font-mono` when declared), stored in camelCase because Convex object
+validators reject hyphenated field names. The modes are the palettes present. Validation
 mirrors OpenClaw's portable theme rules (`convex/lib/pluginThemes.ts`): safe local id
 and `.json` source path, matching name and description, complete light and/or dark
 palettes with safe color and font values. Invalid themes are dropped one by one and

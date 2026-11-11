@@ -32,15 +32,15 @@ const ThemePreviewPaletteSchema = type({
   foreground: "string",
   card: "string",
   primary: "string",
-  "primary-foreground": "string",
+  primaryForeground: "string",
   secondary: "string",
-  "secondary-foreground": "string",
-  "muted-foreground": "string",
+  secondaryForeground: "string",
+  mutedForeground: "string",
   accent: "string",
-  "accent-foreground": "string",
+  accentForeground: "string",
   border: "string",
-  "font-sans?": "string",
-  "font-mono?": "string",
+  fontSans: "string?",
+  fontMono: "string?",
 });
 
 export const ThemePreviewSchema = type({

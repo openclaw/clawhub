@@ -12,18 +12,18 @@ export function themePaletteToPreviewTokens(palette: ThemePreviewPalette): CSSPr
     "--oc-bg-surface": palette.card,
     "--oc-border-subtle": palette.border,
     "--oc-text-primary": palette.foreground,
-    "--oc-text-muted": palette["muted-foreground"],
+    "--oc-text-muted": palette.mutedForeground,
     "--oc-surface-interactive": palette.secondary,
-    "--oc-text-secondary": palette["secondary-foreground"],
+    "--oc-text-secondary": palette.secondaryForeground,
     "--oc-accent-primary": palette.primary,
-    "--oc-text-on-accent": palette["primary-foreground"],
+    "--oc-text-on-accent": palette.primaryForeground,
     // Carapace derives links from the root accent, so the scoped value is set directly.
     "--oc-text-link": palette.primary,
     "--oc-surface-accent-soft": palette.accent,
     // Text on accent surfaces (the active session row), paired like the portable palette.
-    "--oc-accent-secondary": palette["accent-foreground"],
-    ...(palette["font-sans"] ? { "--oc-font-body": palette["font-sans"] } : {}),
-    ...(palette["font-mono"] ? { "--oc-font-mono": palette["font-mono"] } : {}),
+    "--oc-accent-secondary": palette.accentForeground,
+    ...(palette.fontSans ? { "--oc-font-body": palette.fontSans } : {}),
+    ...(palette.fontMono ? { "--oc-font-mono": palette.fontMono } : {}),
   } as CSSProperties;
 }
 

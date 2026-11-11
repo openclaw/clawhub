@@ -18,10 +18,14 @@ const THEME_PREVIEW_COLOR_KEYS = [
   "border",
 ] as const;
 
-type ThemePreviewColorKey = (typeof THEME_PREVIEW_COLOR_KEYS)[number];
+// Stored with camelCase keys: Convex object validators reject hyphenated field names.
+type CamelCase<T extends string> = T extends `${infer Head}-${infer Tail}`
+  ? `${Head}${Capitalize<CamelCase<Tail>>}`
+  : T;
+type ThemePreviewColorKey = CamelCase<(typeof THEME_PREVIEW_COLOR_KEYS)[number]>;
 export type ThemePreviewPalette = Record<ThemePreviewColorKey, string> & {
-  "font-sans"?: string;
-  "font-mono"?: string;
+  fontSans?: string;
+  fontMono?: string;
 };
 export type ThemePreview = {
   id: string;
@@ -108,6 +112,10 @@ const GENERIC_FONT_FAMILIES = new Set([
 type JsonRecord = Record<string, unknown>;
 type ThemeSourceFile = { path: string; size: number; text?: string };
 
+function camelCase(key: string) {
+  return key.replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+}
+
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -146,16 +154,17 @@ function previewPalette(value: unknown): ThemePreviewPalette | undefined | null 
   const colors = THEME_COLOR_KEYS.map((key) => [key, themeText(value[key], 120)] as const);
   if (colors.some(([, color]) => !color || !COLOR_PATTERNS.some((pattern) => pattern.test(color))))
     return null;
-  const palette = Object.fromEntries(
-    colors.filter(([key]) => PREVIEW_COLOR_KEYS.has(key)),
-  ) as ThemePreviewPalette;
+  const palette: Record<string, string> = {};
+  for (const [key, color] of colors)
+    if (PREVIEW_COLOR_KEYS.has(key)) palette[camelCase(key)] = color!;
   for (const key of THEME_FONT_KEYS) {
     if (value[key] === undefined) continue;
     const font = themeText(value[key], 120);
     if (!font || !isFontFamilyList(font)) return null;
-    palette[key] = font;
+    palette[camelCase(key)] = font;
   }
-  return palette;
+  // SAFETY: every preview color was validated above; fonts are optional.
+  return palette as ThemePreviewPalette;
 }
 
 function themeSourcePath(entry: unknown) {

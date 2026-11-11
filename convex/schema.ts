@@ -638,21 +638,22 @@ const packageCompatibilityValidator = v.optional(
   }),
 );
 
-// Portable OpenClaw palette subset read by ClawHub's theme chip and preview (convex/lib/pluginThemes.ts).
+// Portable OpenClaw palette subset read by ClawHub's theme chip and preview, in camelCase
+// (muted-foreground -> mutedForeground). See convex/lib/pluginThemes.ts.
 const themePreviewPaletteValidator = v.object({
   background: v.string(),
   foreground: v.string(),
   card: v.string(),
   primary: v.string(),
-  "primary-foreground": v.string(),
+  primaryForeground: v.string(),
   secondary: v.string(),
-  "secondary-foreground": v.string(),
-  "muted-foreground": v.string(),
+  secondaryForeground: v.string(),
+  mutedForeground: v.string(),
   accent: v.string(),
-  "accent-foreground": v.string(),
+  accentForeground: v.string(),
   border: v.string(),
-  "font-sans": v.optional(v.string()),
-  "font-mono": v.optional(v.string()),
+  fontSans: v.optional(v.string()),
+  fontMono: v.optional(v.string()),
 });
 
 const themePreviewValidator = v.object({
