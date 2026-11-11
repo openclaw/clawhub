@@ -16,8 +16,10 @@ it
     "nonzero_exit",
     "output_limit",
     "observer_failure",
+    "abort",
   ])("confirms descendant group absence after %s", async (trigger) => {
   const shouldTimeout = trigger === "timeout" || trigger === "inherited_pipes";
+  const controller = new AbortController();
   let groupPid: number | undefined;
   let termination: WorkerCommandTermination | undefined;
   try {
@@ -48,9 +50,11 @@ it
         captureOutput: false,
         maxStdoutBytes: 128,
         cleanupProcessGroup: true,
+        signal: controller.signal,
         onStderrChunk: (chunk) => {
           groupPid = Number(chunk.toString());
           if (trigger === "observer_failure") throw new Error("PRIVATE observer failure");
+          if (trigger === "abort") controller.abort();
         },
         onTermination: (value) => {
           termination = value;
@@ -61,6 +65,16 @@ it
     else {
       expect(failure).toBeInstanceOf(CommandFailure);
       expect(failure).toMatchObject({ timedOut: shouldTimeout });
+      const failureKind = shouldTimeout
+        ? "timeout"
+        : trigger === "nonzero_exit"
+          ? "exit"
+          : trigger === "observer_failure"
+            ? "observer"
+            : trigger === "abort"
+              ? "cancelled"
+              : "output_limit";
+      expect(failure).toMatchObject({ failureKind });
       if (trigger === "nonzero_exit") expect(failure).toMatchObject({ exitCode: 7 });
       if (trigger === "output_limit")
         expect(failure).toMatchObject({ outputLimitExceeded: "stdout" });

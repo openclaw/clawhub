@@ -1103,6 +1103,41 @@ esac`,
     },
   );
 
+  it("retains partial bundled reports in declared-root order when roots finish out of order", async () => {
+    const workspace = await tempDir();
+    const partial = { ...structuredClone(partialReport), issues: [] };
+    const complete = structuredClone(completeReport);
+    // Two roots run together; the first declared root cannot finish until the
+    // second has, so completion order is the reverse of declared order.
+    await writeFakeClawScanCommand(
+      join(workspace, "skillspector"),
+      `target="$2"
+while [[ "$1" != --output ]]; do shift; done
+case "$target" in
+  *alpha)
+    while [[ ! -e beta-completed ]]; do sleep 0.02; done
+    printf '%s' '${JSON.stringify(partial)}' > "$2" ;;
+  *)
+    printf '%s' '${JSON.stringify(complete)}' > "$2"
+    touch beta-completed ;;
+esac`,
+    );
+    vi.stubEnv("PATH", `${workspace}:${process.env.PATH ?? ""}`);
+    vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "5000");
+    const result = await runBundledSkillSpector(
+      workspace,
+      [
+        { rootPath: "skills/alpha", scanPath: "artifact/skills/alpha" },
+        { rootPath: "skills/beta", scanPath: "artifact/skills/beta" },
+      ],
+      vi.fn(),
+    );
+    expect(result.bundled_reports).toEqual([
+      { rootPath: "skills/alpha", report: partial },
+      { rootPath: "skills/beta", report: complete },
+    ]);
+  });
+
   it.each(["no-partial", "partial"])(
     "requires explicit complete-child controls only in a partial bundle (%s)",
     async (mode) => {
@@ -1255,7 +1290,7 @@ JSON`,
           false,
         );
 
-        expect((await readFile(skillSpectorTargets, "utf8")).trim().split("\n")).toEqual([
+        expect((await readFile(skillSpectorTargets, "utf8")).trim().split("\n").sort()).toEqual([
           "artifact/package/skills/alpha",
           "artifact/package/skills/beta",
         ]);
@@ -1930,6 +1965,9 @@ exit 7`,
       const fakeClawScan = join(workspace, "fake-clawscan");
       const callLog = join(workspace, "clawscan-called");
       const firstRootCompleted = join(workspace, "first-root-completed");
+      // Keep these exact serial-provider budget and redaction contracts;
+      // parallel out-of-order accounting is covered separately.
+      vi.stubEnv("SKILLSPECTOR_PROVIDER", "anthropic");
       if (failure === "shared deadline") {
         const now = Date.now.bind(Date);
         vi.spyOn(Date, "now").mockImplementation(

@@ -1025,10 +1025,15 @@ async function runCommand(
     onStderrChunk?: (chunk: Buffer) => void;
     onTermination?: (termination: WorkerCommandTermination) => void;
     cleanupProcessGroup?: boolean;
+    signal?: AbortSignal;
+    skillspectorMaxLlmConcurrency?: number;
   },
 ) {
   const env = codexEnv(options.cwd);
   for (const name of options.omitEnv ?? []) delete env[name];
+  if (options.skillspectorMaxLlmConcurrency !== undefined) {
+    env.SKILLSPECTOR_MAX_LLM_CONCURRENCY = String(options.skillspectorMaxLlmConcurrency);
+  }
   return await runWorkerCommand(command, args, {
     cwd: options.cwd,
     env,
@@ -1038,6 +1043,7 @@ async function runCommand(
     onStderrChunk: options.onStderrChunk,
     onTermination: options.onTermination,
     cleanupProcessGroup: options.cleanupProcessGroup,
+    signal: options.signal,
   });
 }
 
@@ -1732,13 +1738,45 @@ export function aggregateSkillSpectorAnalyses(
   };
 }
 
+// Returns the cleanup failure a settled root must report when its process group
+// was never confirmed absent, whatever kind its own error carried.
+function bundledCleanupUnconfirmedFailure(
+  error: unknown,
+  termination: WorkerCommandTermination | undefined,
+) {
+  if (error instanceof CommandFailure) {
+    if (error.failureKind === "cleanup") return error;
+  } else if (
+    // Node reports a failed spawn as an error whose syscall names the spawn.
+    // No process group was created, though the command cannot claim absence.
+    error instanceof Error &&
+    (error as NodeJS.ErrnoException).syscall?.startsWith("spawn")
+  ) {
+    return undefined;
+  }
+  // Without a termination report the command was rejected before it spawned.
+  if (!termination || termination.processGroup === "absent") return undefined;
+  return new CommandFailure(
+    "Worker cleanup could not be confirmed",
+    error instanceof CommandFailure ? error.exitCode : null,
+    "",
+    "",
+    error instanceof CommandFailure && error.timedOut,
+    undefined,
+    "cleanup",
+  );
+}
+
 export async function runBundledSkillSpector(
   workspace: string,
   scanInputs: BundledSkillSpectorScanInput[],
   onDiagnostic: (diagnostic: Partial<ClawScanCommandDiagnostic>) => void,
 ) {
-  const analyses: SkillSpectorAnalysis[] = [];
-  const reports: Array<{ rootPath: string; report: unknown }> = [];
+  // Index-addressed so concurrent completion cannot reorder the display
+  // aggregate or the retained per-root reports.
+  const results: Array<{ analysis: SkillSpectorAnalysis; report: unknown } | undefined> = new Array(
+    scanInputs.length,
+  );
   const readReport = (raw: string, scanInput: BundledSkillSpectorScanInput) => {
     const report = parseSkillSpectorReport(raw);
     if (!isUsableSkillSpectorReport(report))
@@ -1752,20 +1790,32 @@ export async function runBundledSkillSpector(
     };
   };
   const rootTimeoutMs = clawScanTimeoutMs();
-  // Keep roots sequential to avoid multiplying SkillSpector's own API fan-out.
-  // The total ceiling preserves room for the judge within the hosted job/lease.
+  // The pinned HTTP scanner allows ten model calls. Share that ceiling between
+  // two roots instead of multiplying it; retain serial execution for other providers.
+  const parallel =
+    scanInputs.length > 1 &&
+    securityScannerEnvironment(process.env).SKILLSPECTOR_PROVIDER === "openai";
+  const concurrency = parallel ? 2 : 1;
+  const controller = new AbortController();
+  const diagnostics = new Map<number, Partial<ClawScanCommandDiagnostic>>();
+  const cleanupUnconfirmed = new Map<number, CommandFailure>();
+  let completedRoots = 0;
+  let nextIndex = 0;
+  let firstFailure: { index: number; error: unknown } | undefined;
+  // Preserve the aggregate ceiling and leave room for the judge in the job/lease.
   const deadlineMs = Date.now() + MAX_BUNDLED_SKILLSPECTOR_TOTAL_MS;
-  for (const [index, scanInput] of scanInputs.entries()) {
+  const runRoot = async (index: number) => {
+    const scanInput = scanInputs[index]!;
     const remainingMs = deadlineMs - Date.now();
     const context: BundledSkillSpectorFailureContext = {
       rootIndex: index,
       rootCount: scanInputs.length,
-      completedRoots: analyses.length,
+      completedRoots,
       childBudgetMs: Math.max(0, Math.min(rootTimeoutMs, remainingMs)),
       remainingStageBudgetMs: Math.max(0, remainingMs),
     };
     if (remainingMs <= 0) {
-      onDiagnostic({
+      diagnostics.set(index, {
         bundledSkillSpector: { failed: true, timedOut: true, exitCode: null, context },
       });
       throw new Error("SkillSpector bundled-skill scan deadline exceeded");
@@ -1783,14 +1833,17 @@ export async function runBundledSkillSpector(
         // just as the ClawScan adapter and direct diagnostic probe do.
         discardStderr: true,
         timeoutMs: context.childBudgetMs,
+        cleanupProcessGroup: true,
+        signal: controller.signal,
+        skillspectorMaxLlmConcurrency: parallel ? 5 : undefined,
         onTermination: (next) => {
           termination = next;
         },
       });
-      const { report, analysis } = readReport(await readFile(resultPath, "utf8"), scanInput);
-      analyses.push(analysis);
-      reports.push({ rootPath: scanInput.rootPath, report });
+      return readReport(await readFile(resultPath, "utf8"), scanInput);
     } catch (error) {
+      const cleanupFailure = bundledCleanupUnconfirmedFailure(error, termination);
+      if (cleanupFailure) cleanupUnconfirmed.set(index, cleanupFailure);
       let acceptedFindings = false;
       try {
         if (error instanceof CommandFailure) {
@@ -1798,6 +1851,9 @@ export async function runBundledSkillSpector(
           if (rawResult) {
             const { report, analysis } = readReport(rawResult, scanInput);
             const validFindingsExit =
+              !controller.signal.aborted &&
+              error.failureKind === "exit" &&
+              termination?.processGroup === "absent" &&
               !error.timedOut &&
               error.exitCode === 1 &&
               (isUsableSkillSpectorPartial(report) ||
@@ -1805,16 +1861,14 @@ export async function runBundledSkillSpector(
                   analysis.issueCount > 0 &&
                   analysis.issues.length > 0));
             if (validFindingsExit) {
-              analyses.push(analysis);
-              reports.push({ rootPath: scanInput.rootPath, report });
               acceptedFindings = true;
-              continue;
+              return { report, analysis };
             }
           }
         }
       } finally {
         if (!acceptedFindings) {
-          onDiagnostic({
+          diagnostics.set(index, {
             bundledSkillSpector: {
               failed: true,
               timedOut: error instanceof CommandFailure && error.timedOut,
@@ -1832,8 +1886,62 @@ export async function runBundledSkillSpector(
       }
       throw error;
     }
+  };
+  const worker = async () => {
+    while (!firstFailure) {
+      const index = nextIndex++;
+      if (index >= scanInputs.length) return;
+      try {
+        results[index] = await runRoot(index);
+        completedRoots += 1;
+      } catch (error) {
+        if (!firstFailure) {
+          firstFailure = { index, error };
+          controller.abort();
+        }
+        return;
+      }
+    }
+  };
+  // Join every worker after cancellation so no sibling can outlive the scan.
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  // A joined root can still settle without confirming that its process group is
+  // gone. That outranks the failure that triggered cancellation, so an ordinary
+  // error from one root can never stand in for a sibling that may still be running.
+  const [unconfirmedIndex] = [...cleanupUnconfirmed.keys()].sort((left, right) => left - right);
+  const failure =
+    unconfirmedIndex === undefined
+      ? firstFailure
+      : { index: unconfirmedIndex, error: cleanupUnconfirmed.get(unconfirmedIndex) };
+  if (failure) {
+    const diagnostic = diagnostics.get(failure.index);
+    const context = diagnostic?.bundledSkillSpector?.context;
+    if (context) {
+      context.completedRoots = completedRoots;
+      context.remainingStageBudgetMs = Math.max(0, deadlineMs - Date.now());
+    }
+    onDiagnostic(
+      diagnostic ?? {
+        bundledSkillSpector: {
+          failed: true,
+          timedOut: failure.error instanceof CommandFailure && failure.error.timedOut,
+          exitCode: failure.error instanceof CommandFailure ? failure.error.exitCode : null,
+        },
+      },
+    );
+    throw failure.error;
   }
-  const aggregate = aggregateSkillSpectorAnalyses(analyses);
+  if (completedRoots !== scanInputs.length) {
+    throw new Error("SkillSpector bundled-skill scans did not complete");
+  }
+  // Canonical declared-root order, independent of completion order.
+  const completed = scanInputs.map((scanInput, index) => {
+    const result = results[index];
+    if (!result) throw new Error("SkillSpector bundled-skill scans did not complete");
+    return { rootPath: scanInput.rootPath, ...result };
+  });
+  const aggregate = aggregateSkillSpectorAnalyses(completed.map(({ analysis }) => analysis));
+  const reports = completed.map(({ rootPath, report }) => ({ rootPath, report }));
   if (reports.some(({ report }) => isUsableSkillSpectorPartial(report))) {
     if (
       reports.some(
