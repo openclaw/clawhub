@@ -1,13 +1,16 @@
 /* @vitest-environment node */
-import { access, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { validateTemplatePackageContents } from "clawhub-schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runWorkerCommand } from "../lib/runWorkerCommand";
 import { ClawScanContainerCleanupError } from "./clawscan-docker-cleanup";
 import { QUALIFIED_PLUGIN_IMAGE, QUALIFIED_PLUGIN_SOURCE } from "./clawscan-plugin-runtime";
 import { resolveTemplateScanForTarget } from "./clawscan-template-runtime";
 import { qualifyTestTemplate } from "./qualify-test-template";
 import { runNativeClawScan, runNativeTruffleHog } from "./run-prepublication-worker";
 
+vi.mock("../lib/runWorkerCommand", () => ({ runWorkerCommand: vi.fn() }));
 vi.mock("./clawscan-template-runtime", () => ({ resolveTemplateScanForTarget: vi.fn() }));
 vi.mock("./run-prepublication-worker", () => ({
   runNativeClawScan: vi.fn(),
@@ -110,6 +113,23 @@ beforeEach(() => {
     expect(await readFile(join(path, "artifact/CLAW.md"), "utf8")).toContain(
       "Project notes assistant",
     );
+    const artifact = join(path, "artifact");
+    const files = [];
+    for (const file of await readdir(artifact, { recursive: true })) {
+      if ((await lstat(join(artifact, file))).isFile())
+        files.push({ path: file, text: await readFile(join(artifact, file), "utf8") });
+    }
+    const packageJson = JSON.parse(await readFile(join(artifact, "package.json"), "utf8"));
+    // The fixed fixture must remain valid under the current unified manifest,
+    // not merely be accepted by a synthetic scanner response. Nothing is installed.
+    expect(
+      validateTemplatePackageContents({
+        packageName: packageJson.name,
+        version: packageJson.version,
+        packageJson,
+        files,
+      }),
+    ).toMatchObject({ ok: true });
     await writeFile(join(path, "clawscan-result.json"), JSON.stringify(nativeReport));
     return {
       check: { status: nativeReport.judge.result.verdict === "malicious" ? "blocked" : "clean" },
@@ -289,14 +309,52 @@ describe("fixed nonpublishing Template native qualification", () => {
         status: "failed",
         failure: "docker_cleanup",
         workspaceRemoved: false,
+        workspaceCleanup: { method: "preserved", initialError: null, finalError: null },
         nativeEvidence: "not_validated",
       });
       expect(JSON.stringify(receipt)).not.toContain("private-test-placeholder");
       await expect(access(workspace)).resolves.toBeUndefined();
+      expect(runWorkerCommand).not.toHaveBeenCalled();
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
   });
+  it.skipIf(process.platform !== "linux" || process.getuid?.() === 0)(
+    "retains validated evidence but fails when permission cleanup is unavailable",
+    async () => {
+      const original = vi.mocked(runNativeClawScan).getMockImplementation()!;
+      vi.mocked(runNativeClawScan).mockImplementation(async (...args) => {
+        const result = await original(...args);
+        const logs = join(args[1], "logs");
+        await mkdir(logs);
+        await writeFile(join(logs, "private-test-placeholder"), "inert");
+        await chmod(logs, 0o500);
+        return result;
+      });
+      vi.mocked(runWorkerCommand).mockRejectedValue(new Error("private-test-placeholder"));
+      try {
+        const receipt = await qualifyTestTemplate([]);
+        expect(receipt).toMatchObject({
+          status: "failed",
+          failure: "cleanup",
+          workspaceRemoved: false,
+          nativeEvidence: "completed",
+          verdict: "benign",
+          fixtureUnchanged: true,
+          workspaceCleanup: {
+            method: "scoped_privileged",
+            initialError: "EACCES",
+            finalError: "helper_failed",
+          },
+        });
+        expect(receipt.artifactSha256).toMatch(/^[a-f0-9]{64}$/);
+        expect(JSON.stringify(receipt)).not.toContain("private-test-placeholder");
+      } finally {
+        await chmod(join(workspace, "logs"), 0o700);
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
   it("rejects scanner edits to the artifact", async () => {
     const original = vi.mocked(runNativeClawScan).getMockImplementation()!;
     vi.mocked(runNativeClawScan).mockImplementation(async (...args) => {

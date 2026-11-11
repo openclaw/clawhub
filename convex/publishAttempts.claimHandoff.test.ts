@@ -146,6 +146,104 @@ it("keeps a physical Template claim leased through native MCP and judge drain", 
   expect((await state(t, fixture.attemptId))?.checkClaimId).toBe(claimed.checkClaimId);
 });
 
+describe("failed finalization claim handoff", () => {
+  async function seedFinalization(t: TestBackend, kind: "skill" | "package") {
+    const fixture = await seed(t, kind, true);
+    await t.run((ctx) =>
+      ctx.db.patch(
+        fixture.attemptId,
+        kind === "skill" ? { skillInsertArgs: {}, followup: {} } : { packageInsertArgs: {} },
+      ),
+    );
+    return fixture;
+  }
+
+  const finalizers = {
+    skill: {
+      claim: internal.publishAttempts.claimSkillPublishAttemptForFinalizationInternal,
+      release: internal.publishAttempts.releaseSkillPublishAttemptFinalizationClaimInternal,
+    },
+    package: {
+      claim: internal.publishAttempts.claimPackagePublishAttemptForFinalizationInternal,
+      release: internal.publishAttempts.releasePackagePublishAttemptFinalizationClaimInternal,
+    },
+  };
+
+  it.each(["skill", "package"] as const)(
+    "lets a new worker retry %s finalization immediately after failure",
+    async (kind) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+      const t = convexTest(schema, modules);
+      const { attemptId } = await seedFinalization(t, kind);
+      const before = (await state(t, attemptId))!;
+      const claim = await t.action(api.publishAttempts.claimPrePublicationChecks, {
+        token,
+        attemptId,
+      });
+      expect(claim).toMatchObject({ attemptId, status: "ready_to_finalize" });
+      const claimed = (await state(t, attemptId))!;
+      expect(claimed.checkClaimExpiresAt).toBe(
+        claimed.checkClaimedAt! + (kind === "package" ? 70 : 30) * 60_000,
+      );
+      await t.mutation(finalizers[kind].claim, { attemptId, claimId: "finalizer:failed" });
+      await t.mutation(finalizers[kind].release, {
+        attemptId,
+        claimId: "finalizer:failed",
+        error: "Synthetic transient finalization failure",
+      });
+      const released = (await state(t, attemptId))!;
+      expect(released.status).toBe("ready_to_finalize");
+      expect(released.finalizationClaimId).toBeUndefined();
+      expect(released.finalizationClaimedAt).toBeUndefined();
+      expect(released.finalizationClaimExpiresAt).toBeUndefined();
+      expect(released.finalizationLastError).toBe("Synthetic transient finalization failure");
+      expect(released.checks).toEqual(before.checks);
+      expect(released.files).toEqual(before.files);
+      const retry = await t.action(api.publishAttempts.claimPrePublicationChecks, {
+        token,
+        attemptId,
+      });
+      expect(retry).toMatchObject({ attemptId, status: "ready_to_finalize" });
+      expect(retry!.claimId).not.toBe(claim!.claimId);
+      expect(released.checkClaimId).toBeUndefined();
+      expect(released.checkClaimedAt).toBeUndefined();
+      expect(released.checkClaimExpiresAt).toBeUndefined();
+    },
+  );
+
+  it.each(["skill", "package"] as const)(
+    "ignores stale %s cleanup after another worker acquires the retry",
+    async (kind) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
+      const t = convexTest(schema, modules);
+      const { attemptId } = await seedFinalization(t, kind);
+      await t.action(api.publishAttempts.claimPrePublicationChecks, { token, attemptId });
+      await t.mutation(finalizers[kind].claim, { attemptId, claimId: "finalizer:old" });
+      await t.mutation(finalizers[kind].release, {
+        attemptId,
+        claimId: "finalizer:old",
+        error: "Synthetic transient finalization failure",
+      });
+      // Also exercise replacement after the old lease expires on the unfixed baseline.
+      vi.advanceTimersByTime(70 * 60_000 + 1);
+      expect(
+        await t.action(api.publishAttempts.claimPrePublicationChecks, { token, attemptId }),
+      ).toMatchObject({ attemptId, status: "ready_to_finalize" });
+      const retryClaimed = await state(t, attemptId);
+      await t.mutation(finalizers[kind].release, { attemptId, claimId: "finalizer:old" });
+      expect(await state(t, attemptId)).toEqual(retryClaimed);
+      await t.mutation(finalizers[kind].claim, { attemptId, claimId: "finalizer:new" });
+      const finalizing = await state(t, attemptId);
+      await t.mutation(finalizers[kind].release, { attemptId, claimId: "finalizer:old" });
+      expect(await state(t, attemptId)).toEqual(finalizing);
+      expect(
+        await t.action(api.publishAttempts.claimPrePublicationChecks, { token, attemptId }),
+      ).toBeNull();
+      expect(await state(t, attemptId)).toEqual(finalizing);
+    },
+  );
+});
+
 describe("recovery scanner source claims", () => {
   it("leaves a protected original untouched when an old worker omits its source", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
