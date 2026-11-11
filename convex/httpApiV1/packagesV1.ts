@@ -74,6 +74,7 @@ import {
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { verifyOpenClawPublishAuthorization } from "../lib/openClawPublishAuthorization";
+import { streamClawPackRelease } from "../lib/packageArchiveHttp";
 import { getPackageReleaseArtifactSha256 } from "../lib/packageArtifacts";
 import {
   assertClawPackPublicationIdentity,
@@ -83,6 +84,11 @@ import {
   settlePackageFileStores,
   storeRequestPackageBlob,
 } from "../lib/packageClawpackPublish";
+import {
+  readPackageDetailForRequest,
+  readPackageVersionForRequest,
+  resolvePackageTags,
+} from "../lib/packageHttpRead";
 import {
   toPackageMetadataResponse,
   toPackageVersionResponse,
@@ -689,87 +695,6 @@ function releaseArtifactUrls(request: Request, packageName: string, release: Rel
     tarballUrl,
     legacyDownloadUrl,
   };
-}
-
-async function streamClawPackRelease(
-  ctx: ActionCtx,
-  request: Request,
-  rateHeaders: HeadersInit,
-  pkg: PublicPackageDocLike,
-  release: ReleaseLike,
-  viewerUserId: Id<"users"> | null,
-  statKind: "download" | "install" = "download",
-) {
-  const securityBlock = getReleaseSecurityBlock(release);
-  if (securityBlock) return text(securityBlock.message, securityBlock.status, rateHeaders);
-  if (release.artifactKind !== "npm-pack" || !release.clawpackStorageId) {
-    return text("ClawPack artifact not found", 404, rateHeaders);
-  }
-  const blob = await ctx.storage.get(release.clawpackStorageId);
-  if (!blob) return text("ClawPack artifact not found", 404, rateHeaders);
-  try {
-    const identity = getDownloadIdentity(request, viewerUserId ? String(viewerUserId) : null);
-    const now = Date.now();
-    const metricArgs = identity
-      ? await buildDownloadMetricArgs({
-          target: { kind: "package", id: pkg._id },
-          identity,
-          now,
-        })
-      : null;
-    if (statKind === "install") {
-      await runMutationRef(ctx, internalRefs.packages.recordPackageInstallInternal, {
-        packageId: pkg._id,
-        ...(metricArgs
-          ? {
-              identityKind: metricArgs.identityKind,
-              identityHash: metricArgs.identityHash,
-              dayStart: metricArgs.dayStart,
-              occurredAt: metricArgs.occurredAt,
-            }
-          : {}),
-      });
-    }
-
-    if (metricArgs && !areDownloadMetricsPaused()) {
-      await runMutationRef(
-        ctx,
-        internalRefs.downloadMetrics.recordDownloadMetricInternal,
-        metricArgs,
-      );
-    }
-  } catch {
-    // Best-effort metric path; never fail package downloads.
-  }
-  const headers: Record<string, string> = {
-    "Content-Type": "application/octet-stream",
-    "Content-Disposition": contentDispositionAttachment(
-      release.npmTarballName ?? `${pkg.name.replaceAll("/", "-")}-${release.version}.tgz`,
-    ),
-    "X-ClawHub-Artifact-Type": "npm-pack-tarball",
-  };
-  if (release.clawpackSha256) {
-    headers.ETag = `"sha256:${release.clawpackSha256}"`;
-    headers["X-ClawHub-Artifact-Sha256"] = release.clawpackSha256;
-  }
-  if (release.npmIntegrity) headers["X-ClawHub-Npm-Integrity"] = release.npmIntegrity;
-  if (release.npmShasum) headers["X-ClawHub-Npm-Shasum"] = release.npmShasum;
-  return new Response(blob, {
-    status: 200,
-    headers: mergeHeaders(rateHeaders, headers, corsHeaders()),
-  });
-}
-
-async function resolvePackageTags(
-  ctx: ActionCtx,
-  pkg: Pick<PublicPackageDocLike, "_id" | "name">,
-  viewerUserId?: Id<"users">,
-): Promise<Record<string, string>> {
-  return await runQueryRef(ctx, internalRefs.packages.getTagsForViewerInternal, {
-    name: pkg.name,
-    packageId: pkg._id,
-    viewerUserId,
-  });
 }
 
 type CatalogListItem = PackageListItem & {
@@ -4160,14 +4085,12 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   const ownerHandle = getOwnerHandleParam(request);
   const isExactVersionRequest =
     packageSegments[0] === "versions" && packageSegments[1] && packageSegments.length === 2;
-  const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
-    name: normalizedPackageName,
-    viewerUserId: viewerUserId ?? undefined,
-  })) as {
-    package: PublicPackageDocLike | null;
-    latestRelease: ReleaseLike | null;
-    owner: PublicPublisher | null;
-  } | null;
+  const detail = await readPackageDetailForRequest(
+    ctx,
+    request,
+    normalizedPackageName,
+    viewerUserId ?? undefined,
+  );
   const skillDetail = detail?.package
     ? null
     : await getSkillDetailForRequest(ctx, normalizedPackageName, ownerHandle);
@@ -4294,15 +4217,13 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     packageSegments[2] === "artifact"
   ) {
     if (skillDetail?.skill) return text("Artifact not found", 404, rate.headers);
-    const result = (await runQueryRef(
+    const result = await readPackageVersionForRequest(
       ctx,
-      internalRefs.packages.getVersionByNameForViewerInternal,
-      {
-        name: packageName,
-        version: packageSegments[1],
-        viewerUserId: viewerUserId ?? undefined,
-      },
-    )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
+      request,
+      packageName,
+      packageSegments[1],
+      viewerUserId ?? undefined,
+    );
     const release = result?.version ?? null;
     if (!release) return text("Version not found", 404, rate.headers);
     if (packageSegments[3] === "download") {
@@ -4388,15 +4309,13 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         rate.headers,
       );
     }
-    const result = (await runQueryRef(
+    const result = await readPackageVersionForRequest(
       ctx,
-      internalRefs.packages.getVersionByNameForViewerInternal,
-      {
-        name: packageName,
-        version: packageSegments[1],
-        viewerUserId: viewerUserId ?? undefined,
-      },
-    )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
+      request,
+      packageName,
+      packageSegments[1],
+      viewerUserId ?? undefined,
+    );
     if (!result) return text("Version not found", 404, rate.headers);
     return json(
       {

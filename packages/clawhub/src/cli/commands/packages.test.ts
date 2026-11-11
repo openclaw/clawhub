@@ -2782,10 +2782,9 @@ describe("package commands", () => {
             "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
         }),
       );
-      httpMocks.apiRequest.mockResolvedValueOnce({ package: null, owner: null });
 
       await expect(cmdPublishPackage(makeOpts(workdir), packName)).rejects.toThrow(
-        "profiles/openclaw.yml.agent.tools.profile: Must name a registered OpenClaw built-in profile.",
+        "profiles/openclaw.yml: Template profiles are no longer supported.",
       );
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
@@ -2793,7 +2792,7 @@ describe("package commands", () => {
     }
   });
 
-  it("preserves a legacy-only profile for a grandfathered Template package", async () => {
+  it("rejects retired profiles even for an existing Template package", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "demo-claw-1.0.1.tgz";
@@ -2811,34 +2810,10 @@ describe("package commands", () => {
             "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
         }),
       );
-      const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
-      const artifactSha256 = artifactIdentity(packBytes).sha256;
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        package: {
-          name: "demo-claw",
-          displayName: "Demo Template",
-          family: "template",
-        },
-        owner: null,
-      });
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        packageId: "pkg_claw",
-        releaseId: "rel_claw",
-        artifactSha256,
-      });
-
-      await cmdPublishPackage(makeOpts(workdir), packName);
-
-      expect(httpMocks.apiRequest).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          method: "GET",
-          path: "/api/v1/packages/demo-claw",
-        }),
-        expect.anything(),
+      await expect(cmdPublishPackage(makeOpts(workdir), packName)).rejects.toThrow(
+        "Template profiles are no longer supported",
       );
-      expect(httpMocks.apiRequestForm).toHaveBeenCalledTimes(1);
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -3612,24 +3587,6 @@ describe("package commands", () => {
       await mkdir(join(folder, "assets"), { recursive: true });
       await writeFile(join(folder, "BOOTSTRAP.md"), "Ask which repositories to triage.\n", "utf8");
       await writeFile(join(folder, "assets", "triage.schema.json"), "{}\n", "utf8");
-      await writeFile(
-        join(folder, "profiles", "openclaw.yml"),
-        [
-          "schemaVersion: 1",
-          "agent:",
-          "  tools:",
-          "    profile: coding",
-          "    allow: [read]",
-          "    fs:",
-          "      workspaceOnly: true",
-          "  memory:",
-          "    search:",
-          "      enabled: true",
-          "      rememberAcrossConversations: true",
-          "      sources: [memory, sessions]",
-        ].join("\n"),
-        "utf8",
-      );
       await expect(cmdPublishPackage(makeOpts(workdir), "github-triage")).rejects.toThrow(
         "Template publication requires an already-built package tarball (.tgz)",
       );

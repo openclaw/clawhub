@@ -147,7 +147,7 @@ major version; incompatible wire changes require a new versioned route and
 schema version.
 
 `/.well-known/openclaw-registry.json` advertises the plugin and skill feeds.
-`/.well-known/clawhub.json` remains the ClawHub API discovery document.
+`/.well-known/clawhub.json` remains the ClawHub API discovery document. The CLI accepts `apiBase` and `authBase` when they are `http` or `https` URLs, including bracketed IPv6 hosts, and they contain no userinfo. A token saved for one registry origin is not sent to a different origin named by that document. Discovery of another origin does not replace a saved login, including a legacy host such as `auth.clawhub.ai`. An explicit `--registry` or `CLAWHUB_REGISTRY` may switch the saved registry and then requires a new login. Every command that sends the saved token, including `clawhub-admin`, resolves the request registry first and reads the token through helpers that require that registry; only `clawhub token`, which prints the token locally, reads it unbound.
 
 Do not make the feed request-time dynamic. Refresh the stored publication first,
 then let Vercel or the configured CDN cache the immutable response by ETag.

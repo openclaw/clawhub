@@ -2,11 +2,15 @@
 
 ## Unreleased
 
-- API: return one publish-token rejection when a package is missing, hidden, or the GitHub identity does not match, without naming the trusted repository. The body tells the caller to ask a package manager to check the trusted-publisher configuration and the workflow OIDC claims. A GitHub signing-key outage answers a retryable `503` instead of a rejection.
+- Publishing: run reusable package-publish plugin validation with Node.js 24. The CLI refuses `package validate` under Bun, so the workflow builds the pinned CLI and runs `node packages/clawhub/bin/clawdhub.js package validate`.
 
 - CI: verify and cache a pinned Convex backend through the release-asset API before local-auth browser tests, with bounded download retries.
 
+- CLI: keep a saved API token on the registry that issued it. A `--site` well-known document cannot send that token to another origin, and it does not replace the saved login, including a legacy `auth.clawhub.ai` registry. Discovered registry URLs must be `http` or `https` and must not contain userinfo. `clawhub-admin` commands follow the same rule.
+
 - Skills: recognize a single top-level `env` name as a required variable so installation guidance and scanner metadata retain the declared credential.
+
+- API: return one publish-token rejection when a package is missing, hidden, or the GitHub identity does not match, without naming the trusted repository. The body tells the caller to ask a package manager to check the trusted-publisher configuration and the workflow OIDC claims. A GitHub signing-key outage answers a retryable `503` instead of a rejection.
 
 - CI: right-size Skill Card workers and credential canaries to two-vCPU runners, retaining four-vCPU skill evaluations and existing resource checks.
 

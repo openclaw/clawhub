@@ -162,8 +162,8 @@ export async function cmdSendStaffEmail(opts: GlobalOpts, options: StaffEmailSen
   }
 
   requireSendSignoff(options);
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader("Sending staff email");
   try {
     const result = await apiRequest(

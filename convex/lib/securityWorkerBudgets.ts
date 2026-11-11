@@ -1,4 +1,4 @@
-// Plugin-only native MCP gets 30m; judge (20m) and optional overview (5m)
+// Whole-package native MCP gets 30m; judge (20m) and optional overview (5m)
 // are sequential native stages. Never reuse the skill subprocess timeout here.
 const minute = 60_000;
 export const pluginScanBudget = {
@@ -13,11 +13,10 @@ export const pluginScanBudget = {
   manualWorkerMs: 100 * minute,
 } as const;
 
-export function publicationCheckLeaseMs(kind: string, family: string | undefined) {
-  // Historical package attempts without family still need conservative custody.
-  return kind === "package" && family !== "claw"
-    ? pluginScanBudget.publicationLeaseMs
-    : 30 * minute;
+export function publicationCheckLeaseMs(kind: string, _family: string | undefined) {
+  // Physical `claw` Templates now use the same whole-package native MCP budget.
+  // Their former 30m lease must not expire during a valid 65m publication job.
+  return kind === "package" ? pluginScanBudget.publicationLeaseMs : 30 * minute;
 }
 
 export function securityScanLeaseMs(

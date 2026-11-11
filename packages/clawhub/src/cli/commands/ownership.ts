@@ -74,8 +74,8 @@ export async function cmdRenameSkill(
   );
   if (!confirmed) return undefined;
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader(`Renaming ${formatSkillRef(source)} to ${newSlug}`);
 
   return await withLoaderErrorHandling(spinner, async () => {
@@ -121,8 +121,8 @@ export async function cmdMergeSkill(
   );
   if (!confirmed) return undefined;
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader(
     `Merging ${formatSkillRef(source)} into ${formatSkillRef(target)}`,
   );
@@ -173,8 +173,8 @@ export async function cmdSetSkillTag(
   );
   if (!confirmed) return undefined;
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader(
     `Setting ${tag} for ${formatSkillRef(skill)} to version ${version}`,
   );

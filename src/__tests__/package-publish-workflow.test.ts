@@ -31,6 +31,19 @@ describe("package publish workflow", () => {
     expect(workflow).toContain('delimiter = f"ghadelimiter_{uuid.uuid4().hex}"');
     expect(workflow).toContain('write_output(fh, "inspect_subdir", inspect_subdir)');
     expect(workflow).toContain("package validate");
+    expect(workflow).toContain(
+      "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0",
+    );
+    expect(workflow).toContain("node-version: 24.22.1");
+    expect(workflow).toContain(
+      'bun run --cwd "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub" build',
+    );
+    expect(workflow).toContain(
+      'node "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/bin/clawdhub.js" package validate "$inspect_root" --out "$RUNNER_TEMP/plugin-inspector"',
+    );
+    expect(workflow).not.toContain(
+      'bun "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/src/cli.ts" package validate',
+    );
     expect(workflow).not.toContain('config_path = root / ".plugin-inspector.json"');
     expect(workflow).not.toContain("generated_config_path.write_text(str(config_path)");
     expect(workflow).not.toContain("cleanup_generated_inspector_config");

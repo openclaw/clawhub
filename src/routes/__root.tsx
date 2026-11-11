@@ -22,12 +22,12 @@ import {
   isBannedAccountAuthError,
   normalizeAuthErrorMessage,
 } from "../lib/authErrorMessage";
-import { getClawHubSiteUrl, SITE_DESCRIPTION, SITE_NAME } from "../lib/site";
+import { getClawHubSiteUrl, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE } from "../lib/site";
 import { getThemeModeFromCookieHeader, normalizeThemeMode } from "../lib/themeCookie";
 import designSystemCss from "../design-system.css?url";
 import appCss from "../styles.css?url";
 
-const OG_IMAGE_VERSION = "20260723-1";
+const OG_IMAGE_VERSION = "20261111-1";
 export const Route = createRootRoute({
   beforeLoad: ({ location }) => {
     if (location.pathname === BANNED_ACCOUNT_PATH) return;
@@ -44,6 +44,8 @@ export const Route = createRootRoute({
   head: () => {
     const siteName = SITE_NAME;
     const siteDescription = SITE_DESCRIPTION;
+    const socialTitle = SITE_TAGLINE;
+    const imageAlt = `${socialTitle}. ${siteDescription}`;
     const siteUrl = getClawHubSiteUrl();
     const ogImage = `${siteUrl}/og.png?v=${OG_IMAGE_VERSION}`;
 
@@ -73,7 +75,7 @@ export const Route = createRootRoute({
         },
         {
           property: "og:title",
-          content: siteName,
+          content: socialTitle,
         },
         {
           property: "og:description",
@@ -93,7 +95,7 @@ export const Route = createRootRoute({
         },
         {
           property: "og:image:alt",
-          content: `${siteName} — ${siteDescription}`,
+          content: imageAlt,
         },
         {
           name: "twitter:card",
@@ -101,7 +103,7 @@ export const Route = createRootRoute({
         },
         {
           name: "twitter:title",
-          content: siteName,
+          content: socialTitle,
         },
         {
           name: "twitter:description",
@@ -113,7 +115,7 @@ export const Route = createRootRoute({
         },
         {
           name: "twitter:image:alt",
-          content: `${siteName} — ${siteDescription}`,
+          content: imageAlt,
         },
       ],
       links: [

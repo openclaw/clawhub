@@ -36,8 +36,8 @@ export async function cmdUnstarSkill(
     if (!ok) return undefined;
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader(`Unstarring ${slug}`);
   return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(

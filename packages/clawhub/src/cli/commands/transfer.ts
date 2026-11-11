@@ -116,8 +116,8 @@ export async function cmdTransferRequest(
   );
   if (!confirmed) return undefined;
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader(`Requesting transfer of ${slug} to @${toHandle}`);
 
   return await withLoaderErrorHandling(spinner, async () => {
@@ -147,8 +147,8 @@ export async function cmdTransferRequest(
 }
 
 export async function cmdTransferList(opts: GlobalOpts, options: { outgoing?: boolean }) {
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader("Fetching transfers");
 
   return await withLoaderErrorHandling(spinner, async () => {
@@ -198,8 +198,8 @@ async function runTransferDecision(
   );
   if (!confirmed) return undefined;
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const spinner = createCrabLoader(`${spec.progress} transfer of ${slug}`);
 
   return await withLoaderErrorHandling(spinner, async () => {

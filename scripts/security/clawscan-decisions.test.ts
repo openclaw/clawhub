@@ -1,20 +1,46 @@
 /* @vitest-environment node */
+import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clawScanExposure } from "./clawscan-exposure";
-import { runClawScan, validateClawScanArtifactForClawHubProfile } from "./run-codex-scan-worker";
-import type { ClaimedJob } from "./run-codex-scan-worker";
+import { validateDecisionsRun } from "./clawscan-decisions";
+import * as dockerCleanup from "./clawscan-docker-cleanup";
+import { clawScanExposure, type ClawScanExposure } from "./clawscan-exposure";
+import {
+  processJob,
+  runClawScan,
+  validateClawScanArtifactForClawHubProfile,
+} from "./run-codex-scan-worker";
+import type { ClaimedJob, StoredLlmAnalysis } from "./run-codex-scan-worker";
 import { runNativeClawScan } from "./run-prepublication-worker";
 
-const runtimeFixture = vi.hoisted(() => ({ qualified: false, command: "" }));
+const runtimeFixture = vi.hoisted(() => ({
+  qualified: false,
+  templateQualified: false,
+  command: "",
+}));
+const TEMPLATE_TEST_IMAGE = "ghcr.io/openclaw/clawscan-runtime@sha256:" + "e".repeat(64);
+vi.mock("./clawscan-template-runtime", () => ({
+  resolveTemplateScanForTarget: async (kind: string, pkg: { family?: string }) =>
+    runtimeFixture.templateQualified &&
+    kind === "packageRelease" &&
+    (pkg?.family === "claw" || pkg?.family === "template")
+      ? {
+          command: runtimeFixture.command,
+          source: "f".repeat(40),
+          image: "ghcr.io/openclaw/clawscan-runtime@sha256:" + "e".repeat(64),
+        }
+      : undefined,
+}));
 vi.mock("./clawscan-plugin-runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./clawscan-plugin-runtime")>();
   return {
     ...actual,
     usesWholePluginScanForTarget: async (kind: string, pkg: { family?: string }) =>
-      runtimeFixture.qualified && kind === "packageRelease" && pkg.family !== "claw",
+      runtimeFixture.qualified &&
+      kind === "packageRelease" &&
+      (pkg?.family === "code-plugin" || pkg?.family === "bundle-plugin"),
     qualifiedPluginCommand: async () => runtimeFixture.command,
   };
 });
@@ -94,7 +120,9 @@ function fixture(verdict = "benign") {
 }
 const dirs: string[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   runtimeFixture.qualified = false;
+  runtimeFixture.templateQualified = false;
   runtimeFixture.command = "";
   vi.unstubAllEnvs();
   await Promise.all(dirs.splice(0).map((path) => rm(path, { recursive: true, force: true })));
@@ -104,16 +132,34 @@ async function runFixture(
   targetKind: ClaimedJob["job"]["targetKind"] = "packageRelease",
   qualified = false,
   rescan = false,
-  family: "code-plugin" | "claw" = "code-plugin",
+  family: "code-plugin" | "claw" | "template" = "code-plugin",
   requireDockerConnection = false,
   expectedPublisherTrust?: boolean | "absent",
+  options: {
+    templateQualified?: boolean;
+    layout?: "package";
+    exitCode?: number;
+    fullProcess?: boolean;
+  } = {},
 ) {
+  let exposure: ClawScanExposure | undefined;
   const workspace = await mkdtemp(join(tmpdir(), "decisions-consumer-"));
   dirs.push(workspace);
   await mkdir(join(workspace, "artifact"));
   await writeFile(join(workspace, "artifact", "openclaw.plugin.json"), '{"id":"fixture"}');
   await writeFile(join(workspace, "artifact", "SKILL.md"), "# Embedded skill at plugin root\n");
-  if (qualified) {
+  if (options.layout === "package") {
+    await mkdir(join(workspace, "artifact/package/nested"), { recursive: true });
+    await writeFile(
+      join(workspace, "artifact/package/package.json"),
+      JSON.stringify({
+        openclaw: { template: "nested/CLAW.md" },
+        dependencies: { "unfetched-fixture": "https://dependency.invalid/package.tgz" },
+      }),
+    );
+    await writeFile(join(workspace, "artifact/package/nested/CLAW.md"), "# Template\n");
+  }
+  if (qualified || options.templateQualified) {
     const bin = join(workspace, "bin");
     await mkdir(bin);
     const docker = join(bin, "docker");
@@ -132,6 +178,7 @@ async function runFixture(
   await writeFile(
     command,
     "#!/usr/bin/env node\n" +
+      'require("node:fs").writeFileSync("invocation.json",JSON.stringify(process.argv.slice(2)));\n' +
       (expectedPublisherTrust === undefined
         ? ""
         : 'const fs=require("node:fs");const i=process.argv.indexOf("--context");if(i<0)throw new Error("missing verified publisher context");const c=JSON.parse(fs.readFileSync(process.argv[i+1],"utf8"));require("node:assert/strict").deepEqual(c,{trustedOpenClawPlugin:EXPECTED});\n'.replace(
@@ -143,13 +190,74 @@ async function runFixture(
         : "") +
       'require("node:fs").writeFileSync(process.argv[process.argv.indexOf("--output")+1], ' +
       JSON.stringify(JSON.stringify(artifact)) +
-      ");\n",
+      ");\n" +
+      (options.exitCode ? "process.exit(" + options.exitCode + ");\n" : ""),
   );
   runtimeFixture.qualified = qualified;
+  runtimeFixture.templateQualified = options.templateQualified === true;
   runtimeFixture.command = command;
   await chmod(command, 0o755);
   vi.stubEnv("PREPUBLICATION_CLAWSCAN_COMMAND", command);
   vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND", command);
+  if (options.fullProcess) {
+    const files = {
+      "package.json": JSON.stringify({
+        openclaw: { template: "nested/CLAW.md" },
+        dependencies: { "unfetched-fixture": "https://dependency.invalid/package.tgz" },
+      }),
+      "nested/CLAW.md": "# Template with an external dependency\n",
+      "skills/embedded/SKILL.md": "# Bundled content must not start another scanner\n",
+    };
+    const actualFetch = globalThis.fetch;
+    const downloads: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = String(input);
+      downloads.push(url);
+      if (!url.startsWith("data:")) throw new Error("Unexpected dependency/audit fetch");
+      return actualFetch(input, init);
+    });
+    vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_ENABLED", "1");
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+    const result = await processJob(
+      client,
+      "fixture",
+      {
+        job: {
+          _id: "template-fixture",
+          targetKind,
+          source: "manual",
+          leaseToken: "fixture",
+          hasMaliciousSignal: false,
+        },
+        target: {
+          package: { family },
+          release: {
+            artifactKind: "legacy-zip",
+            pluginManifestSummary: { bundledSkills: [{ rootPath: "skills/embedded" }] },
+          },
+          files: Object.entries(files).map(([path, text]) => ({
+            path,
+            url: "data:text/plain," + encodeURIComponent(text),
+            size: Buffer.byteLength(text),
+            sha256: createHash("sha256").update(text).digest("hex"),
+          })),
+        },
+      },
+      undefined,
+    );
+    expect(result).toMatchObject({ completed: true, hardFailed: false });
+    expect(downloads).toHaveLength(3);
+    expect(client.action).toHaveBeenCalledTimes(1);
+    const payload = client.action.mock.calls[0][1] as {
+      llmAnalysis: StoredLlmAnalysis;
+      skillSpectorAnalysis?: unknown;
+      endorAnalysis?: unknown;
+    };
+    expect(payload.llmAnalysis.verdict).toBe("benign");
+    expect(payload.skillSpectorAnalysis).toBeUndefined();
+    expect(payload.endorAnalysis).toBeUndefined();
+    return { analysis: payload.llmAnalysis, check: { status: "process", summary: undefined } };
+  }
   if (rescan) {
     let invocation: string[] | undefined;
     const job: ClaimedJob = {
@@ -164,25 +272,37 @@ async function runFixture(
         trustedOpenClawPlugin:
           expectedPublisherTrust === "absent" ? undefined : expectedPublisherTrust,
         package: { family, name: "@openclaw/unverified-name" },
-        release: { artifactKind: "legacy-zip", endorAnalysis: { private: "must not pass" } },
+        release: {
+          artifactKind: options.layout === "package" ? "npm-pack" : "legacy-zip",
+          endorAnalysis: { private: "must not pass" },
+        },
       },
     };
     const mapped = await runClawScan(job, workspace, (diagnostic) => {
       if (diagnostic.args) invocation = diagnostic.args;
+      if (diagnostic.exposure) exposure = diagnostic.exposure;
     });
     expect(invocation).toContain(
       targetKind === "skillVersion"
         ? "./artifact/SKILL.md"
-        : family === "claw"
-          ? "./artifact"
+        : family === "claw" || family === "template"
+          ? options.layout === "package"
+            ? "./artifact/package"
+            : "./artifact"
           : "./artifact/openclaw.plugin.json",
     );
-    if (targetKind !== "skillVersion" && family !== "claw")
+    if (targetKind !== "skillVersion" && family !== "claw" && family !== "template")
       expect(invocation).toContain(QUALIFIED_PLUGIN_IMAGE);
     expect(invocation).not.toContain("--scanner-result");
+    if (options.templateQualified) {
+      expect(invocation).toContain("clawhub-template");
+      expect(invocation).toContain(TEMPLATE_TEST_IMAGE);
+      expect(invocation).not.toContain("--context");
+      expect(exposure).toEqual(templateExposure);
+    }
     return { analysis: mapped.llmAnalysis, check: { status: "rescan", summary: undefined } };
   }
-  return runNativeClawScan(
+  const result = await runNativeClawScan(
     {
       job: {
         _id: "fixture",
@@ -195,11 +315,29 @@ async function runFixture(
         trustedOpenClawPlugin:
           expectedPublisherTrust === "absent" ? undefined : expectedPublisherTrust,
         package: { family, name: "@openclaw/unverified-name" },
-        release: { artifactKind: "legacy-zip", endorAnalysis: { private: "must not pass" } },
+        release: {
+          artifactKind: options.layout === "package" ? "npm-pack" : "legacy-zip",
+          endorAnalysis: { private: "must not pass" },
+        },
       },
     },
     workspace,
+    (next) => {
+      exposure = next;
+    },
   );
+  if (options.templateQualified) {
+    const invocation: string[] = JSON.parse(
+      await readFile(join(workspace, "invocation.json"), "utf8"),
+    );
+    expect(invocation[0]).toBe(options.layout === "package" ? "./artifact/package" : "./artifact");
+    expect(invocation).toContain("clawhub-template");
+    expect(invocation).toContain(TEMPLATE_TEST_IMAGE);
+    expect(invocation).not.toContain("--scanner-result");
+    expect(invocation).not.toContain("--context");
+    if (result.analysis) expect(exposure).toEqual(templateExposure);
+  }
+  return result;
 }
 async function partialSkillFixture(verdict: string, exitCode: number) {
   const artifact = fixture(verdict) as Record<string, any>;
@@ -767,5 +905,248 @@ describe("Decisions publication consumer", () => {
     expect(clawScanExposure(artifact).eligibleScanAttempt).toBe(false);
     artifact.complete = false;
     expect(clawScanExposure(artifact).eligibleScanAttempt).toBe(false);
+  });
+});
+
+// Synthetic consumer receipts exercise trust boundaries; actual runtime
+// qualification is a separate native execution check, never a fixture claim.
+const templateExposure: ClawScanExposure = {
+  scanExecution: "started",
+  eligibleScanAttempt: true,
+  judgeInvocations: 1,
+  judgeOperationalFailures: 0,
+  recoveredReceiptRetries: 0,
+};
+function templateFixture(verdict = "benign") {
+  const artifact = fixture(verdict) as Record<string, any>;
+  artifact.profile = "clawhub-template";
+  artifact.target = { kind: "template" };
+  artifact.sandbox = { mode: "docker", image: TEMPLATE_TEST_IMAGE };
+  delete artifact.judge.result.decision;
+  delete artifact.judge.command;
+  artifact.judge.outputSchemaPath = "evidence-judge.schema.json";
+  artifact.judge.promptPath = "evidence-judge.md";
+  return artifact;
+}
+
+describe("Template-only native MCP consumer", () => {
+  it.each([
+    { label: "missing", target: undefined },
+    { label: "null", target: null },
+    { label: "missing kind", target: {} },
+    { label: "skill", target: { kind: "skill" } },
+    { label: "plugin", target: { kind: "plugin" } },
+    { label: "unknown", target: { kind: "unknown" } },
+    { label: "malformed kind", target: { kind: 42 } },
+    { label: "array", target: [{ kind: "template" }] },
+  ])("rejects $label native target in both Template APIs and workers", async ({ target }) => {
+    const artifact = templateFixture();
+    if (target === undefined) delete artifact.target;
+    else artifact.target = target;
+    expect(() => validateDecisionsRun(artifact, ["aig-mcp"], "clawhub-template")).toThrow(
+      "native target.kind=template",
+    );
+    expect(() =>
+      validateClawScanArtifactForClawHubProfile(artifact, ["aig-mcp"], "clawhub-template"),
+    ).toThrow("native target.kind=template");
+    for (const family of ["claw", "template"] as const) {
+      const options = { templateQualified: true };
+      const result = await runFixture(
+        artifact,
+        "packageRelease",
+        false,
+        false,
+        family,
+        false,
+        undefined,
+        options,
+      );
+      expect(result.check.status).toBe("failed");
+      expect(result.check.summary).toContain("native target.kind=template");
+      expect(result.analysis).toBeUndefined();
+      await expect(
+        runFixture(artifact, "packageRelease", false, true, family, false, undefined, options),
+      ).rejects.toThrow("native target.kind=template");
+    }
+    // The existing ordinary profile does not acquire a new target restriction.
+    artifact.profile = "clawhub";
+    expect(validateDecisionsRun(artifact, ["aig-mcp"]).verdict).toBe("benign");
+    expect(
+      validateClawScanArtifactForClawHubProfile(artifact, ["aig-mcp"]).llmAnalysis.verdict,
+    ).toBe("benign");
+  });
+
+  it("accepts the native Template target in both explicitly selected consumer APIs", () => {
+    const artifact = templateFixture();
+    expect(validateDecisionsRun(artifact, ["aig-mcp"], "clawhub-template").verdict).toBe("benign");
+    expect(
+      validateClawScanArtifactForClawHubProfile(artifact, ["aig-mcp"], "clawhub-template")
+        .llmAnalysis.verdict,
+    ).toBe("benign");
+  });
+
+  it("accounts for Template exposure only with the caller-owned expected profile", () => {
+    const artifact = templateFixture();
+    expect(clawScanExposure(artifact).eligibleScanAttempt).toBeNull();
+    expect(clawScanExposure(artifact, "clawhub-template")).toEqual(templateExposure);
+    artifact.profile = "clawhub";
+    expect(clawScanExposure(artifact, "clawhub-template").judgeInvocations).toBeNull();
+    expect(clawScanExposure(artifact)).toEqual(templateExposure);
+  });
+
+  it.each(["claw", "template"] as const)(
+    "does not fetch dependency audits or prepare companion scanners for %s rescans",
+    async (family) => {
+      await runFixture(templateFixture(), "packageRelease", false, true, family, false, undefined, {
+        templateQualified: true,
+        fullProcess: true,
+      });
+    },
+  );
+
+  it.each(["claw", "template"] as const)(
+    "selects %s only from a qualified backend claim in both workers",
+    async (family) => {
+      for (const rescan of [false, true]) {
+        for (const layout of [undefined, "package"] as const) {
+          const result = await runFixture(
+            templateFixture(),
+            "packageRelease",
+            false,
+            rescan,
+            family,
+            false,
+            undefined,
+            {
+              templateQualified: true,
+              layout,
+            },
+          );
+          expect(result.analysis?.verdict).toBe("benign");
+          if (!rescan) expect(result.check.status).toBe("clean");
+        }
+      }
+    },
+  );
+
+  it.each(["benign", "suspicious", "malicious"])(
+    "preserves %s rather than deriving a verdict from SARIF severity",
+    async (verdict) => {
+      const artifact = templateFixture(verdict);
+      artifact.scanners["aig-mcp"].raw.runs[0].results = [
+        {
+          ruleId: "fixture",
+          level: "error",
+          message: { text: "Controlled high-severity finding" },
+        },
+      ];
+      for (const rescan of [false, true]) {
+        const result = await runFixture(
+          artifact,
+          "packageRelease",
+          false,
+          rescan,
+          "template",
+          false,
+          undefined,
+          { templateQualified: true },
+        );
+        expect(result.analysis?.verdict).toBe(verdict);
+        if (!rescan)
+          expect(result.check.status).toBe(verdict === "malicious" ? "blocked" : "clean");
+      }
+    },
+  );
+
+  it("never accepts a returned Template profile as caller authority", async () => {
+    expect(() =>
+      validateClawScanArtifactForClawHubProfile(templateFixture(), ["aig-mcp"]),
+    ).toThrow();
+    for (const family of ["claw", "template"] as const) {
+      expect(
+        (await runFixture(templateFixture(), "packageRelease", false, false, family)).check.status,
+      ).toBe("failed");
+      await expect(
+        runFixture(templateFixture(), "packageRelease", false, true, family),
+      ).rejects.toThrow();
+    }
+  });
+
+  it.each([
+    "wrong profile",
+    "extra scanner",
+    "imported report",
+    "wrong driver",
+    "incomplete SARIF",
+    "multiple SARIF runs",
+    "failed scanner",
+    "failed judge",
+    "Decisions judge",
+    "wrong image",
+    "host artifact",
+  ])("rejects %s in both qualified Template consumers", async (scenario) => {
+    const artifact = templateFixture();
+    const scanner = artifact.scanners["aig-mcp"];
+    if (scenario === "wrong profile") artifact.profile = "clawhub";
+    if (scenario === "extra scanner") artifact.scanners.skillspector = scanner;
+    if (scenario === "imported report") scanner.command = ["scanner-result", "aig-mcp=report.json"];
+    if (scenario === "wrong driver") scanner.raw.runs[0].tool.driver.name = "aig-skill-scan";
+    if (scenario === "incomplete SARIF") scanner.raw.runs[0].properties.scanNote = "partial";
+    if (scenario === "multiple SARIF runs") scanner.raw.runs.push(scanner.raw.runs[0]);
+    if (scenario === "failed scanner") scanner.exitCode = 1;
+    if (scenario === "failed judge") artifact.judge.status = "failed";
+    if (scenario === "Decisions judge") artifact.judge = fixture().judge;
+    if (scenario === "wrong image") artifact.sandbox.image = QUALIFIED_PLUGIN_IMAGE;
+    if (scenario === "host artifact") artifact.sandbox.mode = "off";
+    const options = { templateQualified: true };
+    const result = await runFixture(
+      artifact,
+      "packageRelease",
+      false,
+      false,
+      "claw",
+      false,
+      undefined,
+      options,
+    );
+    expect(result.check.status).toBe("failed");
+    expect(result.analysis).toBeUndefined();
+    await expect(
+      runFixture(artifact, "packageRelease", false, true, "claw", false, undefined, options),
+    ).rejects.toThrow();
+  });
+
+  it("requires exactly AIG MCP in the trusted expected scanner set", () => {
+    for (const scanners of [
+      ["skillspector"],
+      ["aig-mcp", "clawscan-static"],
+      ["aig-mcp", "aig-mcp"],
+    ]) {
+      expect(() =>
+        validateClawScanArtifactForClawHubProfile(templateFixture(), scanners, "clawhub-template"),
+      ).toThrow();
+    }
+  });
+
+  it("retains fail-closed Docker cleanup on native process failure, not a malicious verdict", async () => {
+    const actual = dockerCleanup.withClawScanDockerCleanup;
+    vi.spyOn(dockerCleanup, "withClawScanDockerCleanup").mockImplementation((input) =>
+      actual({ ...input, cleanupTimeoutMs: 50, pollIntervalMs: 5 }),
+    );
+    const options = { templateQualified: true, exitCode: 1 };
+    for (const rescan of [false, true]) {
+      await expect(
+        runFixture(
+          templateFixture("malicious"),
+          "packageRelease",
+          false,
+          rescan,
+          "claw",
+          false,
+          undefined,
+          options,
+        ),
+      ).rejects.toBeInstanceOf(dockerCleanup.ClawScanContainerCleanupError);
+    }
   });
 });

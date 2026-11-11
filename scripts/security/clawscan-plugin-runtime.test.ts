@@ -10,8 +10,12 @@ import {
   QUALIFIED_PLUGIN_SOURCE,
   usesWholePluginScanForTarget,
 } from "./clawscan-plugin-runtime";
-import { verifyInstalledClawScanSource } from "./prepublicationScannerSource";
-vi.mock("./prepublicationScannerSource", () => ({
+import {
+  resolvePrepublicationScannerRuntime,
+  verifyInstalledClawScanSource,
+} from "./prepublicationScannerSource";
+vi.mock("./prepublicationScannerSource", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./prepublicationScannerSource")>()),
   verifyInstalledClawScanSource: vi.fn(async () => ({ command: "/qualified/clawscan" })),
 }));
 const dirs: string[] = [];
@@ -87,6 +91,27 @@ describe("qualified immutable plugin runtime policy", () => {
     expect(await qualifiedPluginCommand("PREPUBLICATION", env)).toBe("/qualified/clawscan");
     expect(env.PREPUBLICATION_CLAWSCAN_SANDBOX).toBe("off");
   });
+  it("reports the qualified host source before claiming either plugin or Template work", async () => {
+    const env = {
+      ...(await source(
+        "profiles:\n  clawhub:\n    scanners: [skillspector, aig]\n    pluginScanners: [aig-mcp]\n    judge:\n      evidenceOnly: true\n      command: codex exec --output-schema evidence-judge.schema.json\n",
+      )),
+      PREPUBLICATION_REPORT_SCANNER_SOURCE: "true",
+      PREPUBLICATION_CLAWSCAN_SANDBOX: "off",
+      PREPUBLICATION_CLAWSCAN_PLUGIN_SANDBOX: "docker",
+      CLAWSCAN_SOURCE: "f".repeat(40),
+    };
+    expect(await resolvePrepublicationScannerRuntime(env, "/must-not-read-a-second-pin")).toEqual({
+      source: QUALIFIED_PLUGIN_SOURCE,
+      command: "/qualified/clawscan",
+    });
+    expect(verifyInstalledClawScanSource).toHaveBeenCalledWith(
+      env,
+      QUALIFIED_PLUGIN_SOURCE,
+      undefined,
+      true,
+    );
+  });
   it.each(["off", "auto"])("rejects unqualified sandbox %s", async (sandbox) => {
     await expect(
       qualifiedPluginCommand("PREPUBLICATION", { PREPUBLICATION_CLAWSCAN_SANDBOX: sandbox }),
@@ -113,7 +138,7 @@ describe("qualified immutable plugin runtime policy", () => {
     expect((await readFile("scripts/security/clawscan-source-commit.txt", "utf8")).trim()).toBe(
       QUALIFIED_PLUGIN_SOURCE,
     );
-    expect(shell).toContain("qualified_source_tree=dae6e848e052bb95f60da4af98efbe579f64c0bc");
+    expect(shell).toContain("qualified_source_tree=92d8daba5c181560b4a73e71557b8d54e67e62b9");
     expect(shell).toContain("qualified_runtime_tree=ddfec1285eaf19beb3043e9e5ad043a0d274cb53");
   });
 });

@@ -74,7 +74,12 @@ const path = 'state.json';
 const state = JSON.parse(fs.readFileSync(path, 'utf8'));
 const args = process.argv.slice(2);
 fs.appendFileSync('docker.jsonl', JSON.stringify({args, env: process.env}) + '\n');
-const save = () => fs.writeFileSync(path, JSON.stringify(state));
+const save = () => {
+  // Readers may inspect state while a cleanup command is still writing.
+  const nextPath = path + '.' + process.pid + '.tmp';
+  fs.writeFileSync(nextPath, JSON.stringify(state));
+  fs.renameSync(nextPath, path);
+};
 const fail = message => {save(); console.error(message); process.exit(1);};
 const missing = id => fail('Error: No such object: ' + id);
 if (args[0] !== 'container') fail('unexpected Docker command');

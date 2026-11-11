@@ -2,6 +2,22 @@ import { parseArk, WellKnownConfigSchema } from "./schema/index.js";
 
 const DISCOVERY_TIMEOUT_MS = 15_000;
 
+// A well-known document can name any string. Accept http and https only,
+// including bracketed IPv6 hosts, and reject credentials in the URL.
+function acceptedDiscoveredBase(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (url.username || url.password) return null;
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  return trimmed;
+}
+
 // Mirrors the fetchWithTimeout pattern from ./http.js (not imported) so an
 // endpoint that accepts but never answers cannot hang discovery forever.
 // Returns both the response and the timeout handle so the caller can extend
@@ -57,11 +73,12 @@ export async function discoverRegistryFromSite(siteUrl: string, timeoutMs = DISC
     try {
       const raw = (await response.json()) as unknown;
       const parsed = parseArk(WellKnownConfigSchema, raw, "WellKnown config");
-      const apiBase = "apiBase" in parsed ? parsed.apiBase : parsed.registry;
+      const rawBase = "apiBase" in parsed ? parsed.apiBase : parsed.registry;
+      const apiBase = acceptedDiscoveredBase(rawBase);
       if (!apiBase) return null;
       return {
         apiBase,
-        authBase: parsed.authBase,
+        authBase: acceptedDiscoveredBase(parsed.authBase) ?? undefined,
         minCliVersion: parsed.minCliVersion,
       };
     } catch (error) {

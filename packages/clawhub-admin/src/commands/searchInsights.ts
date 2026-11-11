@@ -84,8 +84,8 @@ export async function cmdSearchInsights(
       fail("limit must be between 1 and 100");
     request.limit = Number(options.limit);
   }
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
   const path = "/api/v1/search-insights/reports";
   const read = (id: string) =>
     apiRequest(

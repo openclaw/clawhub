@@ -206,6 +206,21 @@ describe("HTTP route rate limit defaults", () => {
     );
   });
 
+  it("does not double-consume package reads across the lazy leaf boundary", async () => {
+    const route = http.lookup("/api/v1/packages/not%20a%20package", "GET");
+    if (!route) throw new Error("Expected package read route");
+    const [action] = route;
+    const { ctx, runMutation } = makeAllowedRateLimitCtx();
+    const response = await (action as unknown as WrappedHttpAction)._handler(
+      ctx,
+      new Request("https://example.com/api/v1/packages/not%20a%20package"),
+    );
+    expect(response.status).toBe(404);
+    // One admitted bucket operation plus its retention bookkeeping, not a
+    // second charge when the unchanged leaf handler calls applyRateLimit.
+    expect(runMutation).toHaveBeenCalledTimes(2);
+  });
+
   it("leaves API preflights unmetered", async () => {
     const route = http.lookup("/api/v1/skills", "OPTIONS");
     if (!route) throw new Error("Expected API preflight route");

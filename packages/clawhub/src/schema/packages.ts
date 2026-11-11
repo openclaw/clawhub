@@ -16,7 +16,7 @@ import {
   PluginManifestSummarySchema as RegistryPluginManifestSummarySchema,
 } from "./packageShared.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
-import { TemplateManifestSummarySchema } from "./templates.js";
+import { TemplateDependencyInventorySchema, TemplateManifestSummarySchema } from "./templates.js";
 
 export * from "./packageShared.js";
 export * from "./packageUploadLimits.js";
@@ -145,6 +145,7 @@ export const ApiV1PackageResponseSchema = type({
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
     templateManifestSummary: TemplateManifestSummarySchema.or("null").optional(),
+    templateInventory: TemplateDependencyInventorySchema.optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
     scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
@@ -174,6 +175,7 @@ export const ApiV1PackageVersionResponseSchema = type({
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
     templateManifestSummary: TemplateManifestSummarySchema.or("null").optional(),
+    templateInventory: TemplateDependencyInventorySchema.optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
     // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
