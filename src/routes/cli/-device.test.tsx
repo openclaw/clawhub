@@ -6,19 +6,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const approveMock = vi.fn();
 const denyMock = vi.fn();
 const useMutationMock = vi.fn();
-const { useSearchMock } = vi.hoisted(() => ({
-  useSearchMock: vi.fn(),
-}));
+const useQueryMock = vi.fn();
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (config: { component: unknown }) => ({
-    ...config,
-    useSearch: useSearchMock,
-  }),
+  createFileRoute: () => (config: { component: unknown }) => config,
 }));
 
 vi.mock("convex/react", () => ({
   useMutation: (...args: unknown[]) => useMutationMock(...args),
+  useQuery: (...args: unknown[]) => useQueryMock(...args),
 }));
 
 vi.mock("../../../convex/_generated/api", () => ({
@@ -26,6 +22,7 @@ vi.mock("../../../convex/_generated/api", () => ({
     cliDeviceAuth: {
       approve: "approve",
       deny: "deny",
+      describePending: "describePending",
     },
   },
 }));
@@ -78,38 +75,333 @@ vi.mock("../../components/ui/label", () => ({
 
 const { CliDeviceAuth } = await import("./device");
 
+const pendingDescription = {
+  state: "pending",
+  label: "ssh box",
+  createdAt: Date.parse("2026-11-10T15:00:00.000Z"),
+  expiresAt: Date.parse("2099-01-01T00:00:00.000Z"),
+  access: "full",
+};
+
+function typeCode(value = "ABCD-2345") {
+  fireEvent.change(screen.getByLabelText("Code"), { target: { value } });
+}
+
+function describeCodeAs(result: () => unknown) {
+  useQueryMock.mockImplementation((_query: unknown, args: unknown) => {
+    if (!args || args === "skip") return undefined;
+    return result();
+  });
+}
+
+// Messages wrap the command in <code>, so match on the paragraph's full text.
+function paragraph(text: string) {
+  return (_content: string, element: Element | null) =>
+    element?.tagName === "P" && element.textContent === text;
+}
+
+const EXPIRED_MESSAGE = "That code expired. Run clawhub login again and type the new code.";
+const USED_MESSAGE =
+  "That code was already used. If your terminal is not signed in, run clawhub login again and type the new code.";
+const MISSING_MESSAGE =
+  "That code is not waiting for approval. Check the code in your terminal and type it again. If it still does not match, run clawhub login for a new code.";
+
 describe("CliDeviceAuth", () => {
   beforeEach(() => {
     approveMock.mockReset();
     denyMock.mockReset();
     useMutationMock.mockReset();
-    useSearchMock.mockReturnValue({ user_code: "ABCD-2345" });
+    useQueryMock.mockReset();
+    useQueryMock.mockImplementation((_query: unknown, args: unknown) => {
+      if (!args || args === "skip") return undefined;
+      return pendingDescription;
+    });
+    window.history.replaceState(null, "", "/cli/device?user_code=ABCD-2345");
   });
 
-  it("prefills the code from user_code", () => {
-    useMutationMock.mockReturnValue(vi.fn());
-
-    render(<CliDeviceAuth />);
-
-    expect(screen.getByLabelText("Code")).toHaveProperty("value", "ABCD-2345");
-  });
-
-  it("prefills the code from a legacy device-shaped code param", () => {
-    useSearchMock.mockReturnValue({ code: "ABCD-2345" });
-    useMutationMock.mockReturnValue(vi.fn());
-
-    render(<CliDeviceAuth />);
-
-    expect(screen.getByLabelText("Code")).toHaveProperty("value", "ABCD-2345");
-  });
-
-  it("does not prefill an OAuth completion code from the legacy param", () => {
-    useSearchMock.mockReturnValue({ code: "long-random-oauth-completion-code-1234567890" });
+  it("leaves the code blank when the link already contains user_code", () => {
     useMutationMock.mockReturnValue(vi.fn());
 
     render(<CliDeviceAuth />);
 
     expect(screen.getByLabelText("Code")).toHaveProperty("value", "");
+    expect(screen.getByText(/code is not filled in for you/)).toBeTruthy();
+  });
+
+  it("leaves the code blank for a legacy device-shaped code param", () => {
+    window.history.replaceState(null, "", "/cli/device?code=ABCD-2345");
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+
+    expect(screen.getByLabelText("Code")).toHaveProperty("value", "");
+  });
+
+  it("does not approve a code that was only present on the link", () => {
+    useMutationMock.mockReturnValue(approveMock);
+
+    render(<CliDeviceAuth />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
+
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+
+  it("disables approval when the pending code reaches its expiry time", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:14:00.000Z"));
+      useQueryMock.mockImplementation((_query: unknown, args: unknown) => {
+        if (!args || args === "skip") return undefined;
+        return {
+          ...pendingDescription,
+          expiresAt: Date.parse("2026-11-10T15:15:00.000Z"),
+        };
+      });
+      useMutationMock.mockReturnValue(vi.fn());
+
+      render(<CliDeviceAuth />);
+      typeCode();
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", false);
+      expect(screen.getByText("Label: ssh box")).toBeTruthy();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
+      expect(screen.getByText(paragraph(EXPIRED_MESSAGE))).toBeTruthy();
+      expect(screen.queryByText("Label: ssh box")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("disables approval at expiry when the code is typed long after the page opened", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:00:00.000Z"));
+      describeCodeAs(() => ({
+        ...pendingDescription,
+        createdAt: Date.parse("2026-11-10T15:09:00.000Z"),
+        expiresAt: Date.parse("2026-11-10T15:24:00.000Z"),
+      }));
+      useMutationMock.mockReturnValue(vi.fn());
+
+      render(<CliDeviceAuth />);
+      // The page sits open for 23 minutes before the code is typed, one minute before expiry.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(23 * 60_000);
+      });
+      typeCode();
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
+      expect(screen.getByText(paragraph(EXPIRED_MESSAGE))).toBeTruthy();
+      expect(screen.queryByText("Label: ssh box")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("treats a still-pending code as expired when its expiry passed after the page opened", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:00:00.000Z"));
+      describeCodeAs(() => ({
+        ...pendingDescription,
+        expiresAt: Date.parse("2026-11-10T15:05:00.000Z"),
+      }));
+      useMutationMock.mockReturnValue(approveMock);
+
+      render(<CliDeviceAuth />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10 * 60_000);
+      });
+      typeCode();
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
+      expect(screen.getByText(paragraph(EXPIRED_MESSAGE))).toBeTruthy();
+      expect(screen.queryByText("Label: ssh box")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-checks the expiry when the tab becomes visible after its timer was suspended", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:14:00.000Z"));
+      describeCodeAs(() => ({
+        ...pendingDescription,
+        expiresAt: Date.parse("2026-11-10T15:15:00.000Z"),
+      }));
+      useMutationMock.mockReturnValue(vi.fn());
+
+      render(<CliDeviceAuth />);
+      typeCode();
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", false);
+
+      // A sleeping laptop or frozen tab moves the clock without running the timer.
+      vi.setSystemTime(new Date("2026-11-10T15:20:00.000Z"));
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
+      expect(screen.getByText(paragraph(EXPIRED_MESSAGE))).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-arms the expiry timer when a different pending code is described", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:00:00.000Z"));
+      const expiresAtByCode: Record<string, number> = {
+        "ABCD-2345": Date.parse("2026-11-10T15:10:00.000Z"),
+        "WXYZ-6789": Date.parse("2026-11-10T15:02:00.000Z"),
+      };
+      useQueryMock.mockImplementation((_query: unknown, args: unknown) => {
+        if (!args || args === "skip") return undefined;
+        const { userCode } = args as { userCode: string };
+        return { ...pendingDescription, label: userCode, expiresAt: expiresAtByCode[userCode] };
+      });
+      useMutationMock.mockReturnValue(vi.fn());
+
+      render(<CliDeviceAuth />);
+      typeCode("ABCD-2345");
+      typeCode("WXYZ-6789");
+      expect(vi.getTimerCount()).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2 * 60_000);
+      });
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+
+      // The first code is still inside its own window.
+      typeCode("ABCD-2345");
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", false);
+      expect(screen.getByText("Label: ABCD-2345")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits out an expiry beyond the setTimeout delay limit", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:00:00.000Z"));
+      const day = 24 * 60 * 60_000;
+      // 30 days is past the 2^31-1 ms (about 24.8 days) setTimeout limit.
+      const farExpiry = Date.parse("2026-11-10T15:00:00.000Z") + 30 * day;
+      describeCodeAs(() => ({ ...pendingDescription, expiresAt: farExpiry }));
+      useMutationMock.mockReturnValue(vi.fn());
+
+      render(<CliDeviceAuth />);
+      typeCode();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(25 * day);
+      });
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5 * day);
+      });
+      expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops the expiry timer when the page unmounts before expiry", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-10T15:14:00.000Z"));
+      describeCodeAs(() => ({
+        ...pendingDescription,
+        expiresAt: Date.parse("2026-11-10T15:15:00.000Z"),
+      }));
+      useMutationMock.mockReturnValue(vi.fn());
+
+      const view = render(<CliDeviceAuth />);
+      typeCode();
+      expect(vi.getTimerCount()).toBe(1);
+
+      view.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["expired", EXPIRED_MESSAGE],
+    ["used", USED_MESSAGE],
+    ["missing", MISSING_MESSAGE],
+  ])("tells the user how to recover from a %s code", (state, message) => {
+    describeCodeAs(() => ({ state }));
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+    typeCode();
+
+    expect(screen.getByText(paragraph(message))).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Authorize" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
+  });
+
+  it.each([
+    ["approve", "Authorize", "Authorized. You can return to your terminal."],
+    ["deny", "Deny", "Denied. You can close this page."],
+  ])(
+    "does not report the code as used after its own %s succeeds",
+    async (action, buttonName, successMessage) => {
+      // The decision moves the row out of pending, so the subscribed query then reports "used".
+      let decided = false;
+      const decide = vi.fn(async () => {
+        decided = true;
+      });
+      describeCodeAs(() => (decided ? { state: "used" } : pendingDescription));
+      useMutationMock.mockImplementation((mutation: string) =>
+        mutation === action ? decide : vi.fn(),
+      );
+
+      render(<CliDeviceAuth />);
+      typeCode();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: buttonName }));
+      });
+
+      expect(decide).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(successMessage)).toBeTruthy();
+      expect(screen.queryByText(/already used/)).toBeNull();
+      expect(screen.queryByText(/clawhub login/)).toBeNull();
+    },
+  );
+
+  it("shows the token label before authorization", () => {
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+    typeCode();
+
+    expect(screen.getByText("Label: ssh box")).toBeTruthy();
+    expect(screen.getByText("Started: 2026-11-10T15:00:00.000Z")).toBeTruthy();
+    expect(screen.getByText(/full API token/)).toBeTruthy();
   });
 
   it("allows only one device decision while the mutation is pending", async () => {
@@ -126,6 +418,7 @@ describe("CliDeviceAuth", () => {
     );
 
     render(<CliDeviceAuth />);
+    typeCode();
 
     const authorize = screen.getByRole("button", { name: "Authorize" });
     const deny = screen.getByRole("button", { name: "Deny" });
@@ -161,6 +454,7 @@ describe("CliDeviceAuth", () => {
     );
 
     render(<CliDeviceAuth />);
+    typeCode();
 
     fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
 

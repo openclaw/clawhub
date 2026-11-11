@@ -82,7 +82,9 @@ Stores your API token + cached registry URL.
 ### `login` / `auth login`
 
 - Default: prints a one-time code and verification URL. Open the printed URL
-  on this or another device, sign in with GitHub if needed, and select **Authorize**.
+  on this or another device, sign in with GitHub if needed, type the code from
+  the terminal, and select **Authorize**. The page does not fill the code in
+  from the link.
   The CLI polls for approval, verifies the API token via `whoami`, and saves it
   in your config. It does not open a browser or start a local callback server.
 - `--device`: explicitly selects the default device flow.
