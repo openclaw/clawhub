@@ -846,13 +846,22 @@ function getHeader(headers: HeaderSource, key: string): string | undefined {
   return typeof match?.[1] === "string" ? match[1].trim() : undefined;
 }
 
+function curlAuthorizationHeader(token: string | undefined): {
+  args: string[];
+  input?: string;
+} {
+  if (!token) return { args: [] };
+  if (/[\r\n]/.test(token)) throw new Error("Invalid API token");
+  return { args: ["-H", "@-"], input: `Authorization: Bearer ${token}\n` };
+}
+
 async function fetchJsonViaCurl(
   deps: Pick<HttpClientDeps, "spawnSyncImpl" | "now">,
   url: string,
   args: RequestArgs,
 ) {
-  const headers = ["-H", "Accept: application/json"];
-  if (args.token) headers.push("-H", `Authorization: Bearer ${args.token}`);
+  const authorization = curlAuthorizationHeader(args.token);
+  const headers = ["-H", "Accept: application/json", ...authorization.args];
   const curlArgs = [
     "--silent",
     "--show-error",
@@ -871,7 +880,10 @@ async function fetchJsonViaCurl(
     curlArgs.push("--data-binary", JSON.stringify(args.body ?? {}));
   }
 
-  const result = deps.spawnSyncImpl("curl", curlArgs, { encoding: "utf8" });
+  const result = deps.spawnSyncImpl("curl", curlArgs, {
+    encoding: "utf8",
+    input: authorization.input,
+  });
   if (result.status !== 0) {
     throw new Error(result.stderr || "curl failed");
   }
@@ -896,8 +908,8 @@ async function fetchJsonFormViaCurl(
   url: string,
   args: FormRequestArgs,
 ) {
-  const headers = ["-H", "Accept: application/json"];
-  if (args.token) headers.push("-H", `Authorization: Bearer ${args.token}`);
+  const authorization = curlAuthorizationHeader(args.token);
+  const headers = ["-H", "Accept: application/json", ...authorization.args];
 
   const tempDir = await deps.mkdtempImpl(join(deps.tmpdirPath, "clawhub-upload-"));
   try {
@@ -930,7 +942,10 @@ async function fetchJsonFormViaCurl(
       url,
     ];
 
-    const result = deps.spawnSyncImpl("curl", curlArgs, { encoding: "utf8" });
+    const result = deps.spawnSyncImpl("curl", curlArgs, {
+      encoding: "utf8",
+      input: authorization.input,
+    });
     if (result.status !== 0) {
       throw new Error(result.stderr || "curl failed");
     }
@@ -951,7 +966,7 @@ async function uploadBinaryViaCurl(
   >,
   args: BinaryUploadArgs,
 ) {
-  if (args.token && /[\r\n]/.test(args.token)) throw new Error("Invalid API token");
+  const authorization = curlAuthorizationHeader(args.token);
   const tempDir = await deps.mkdtempImpl(join(deps.tmpdirPath, "clawhub-upload-"));
   try {
     const filePath = join(tempDir, "upload.bin");
@@ -968,12 +983,11 @@ async function uploadBinaryViaCurl(
       "POST",
     ];
     if (args.contentType) curlArgs.push("-H", `Content-Type: ${args.contentType}`);
-    if (args.token) curlArgs.push("-H", "@-");
-    curlArgs.push("--data-binary", `@${filePath}`, args.url);
+    curlArgs.push(...authorization.args, "--data-binary", `@${filePath}`, args.url);
 
     const result = deps.spawnSyncImpl("curl", curlArgs, {
       encoding: "utf8",
-      input: args.token ? `Authorization: Bearer ${args.token}\n` : undefined,
+      input: authorization.input,
     });
     if (result.status !== 0) {
       throw new Error(result.stderr || "curl failed");
@@ -993,8 +1007,8 @@ async function fetchTextViaCurl(
   url: string,
   args: { token?: string },
 ) {
-  const headers = ["-H", "Accept: text/plain"];
-  if (args.token) headers.push("-H", `Authorization: Bearer ${args.token}`);
+  const authorization = curlAuthorizationHeader(args.token);
+  const headers = ["-H", "Accept: text/plain", ...authorization.args];
   const curlArgs = [
     "--silent",
     "--show-error",
@@ -1008,7 +1022,10 @@ async function fetchTextViaCurl(
     ...headers,
     url,
   ];
-  const result = deps.spawnSyncImpl("curl", curlArgs, { encoding: "utf8" });
+  const result = deps.spawnSyncImpl("curl", curlArgs, {
+    encoding: "utf8",
+    input: authorization.input,
+  });
   if (result.status !== 0) {
     throw new Error(result.stderr || "curl failed");
   }
@@ -1030,23 +1047,24 @@ async function fetchBinaryViaCurl(
   const tempDir = await deps.mkdtempImpl(join(deps.tmpdirPath, "clawhub-download-"));
   const filePath = join(tempDir, "payload.bin");
   try {
-    const headers: string[] = [];
-    if (token) headers.push("-H", `Authorization: Bearer ${token}`);
-
+    const authorization = curlAuthorizationHeader(token);
     const curlArgs = [
       "--silent",
       "--show-error",
       "--location",
       "--max-time",
       String(REQUEST_TIMEOUT_SECONDS),
-      ...headers,
+      ...authorization.args,
       "-o",
       filePath,
       "--write-out",
       CURL_WRITE_OUT_FORMAT,
       url,
     ];
-    const result = deps.spawnSyncImpl("curl", curlArgs, { encoding: "utf8" });
+    const result = deps.spawnSyncImpl("curl", curlArgs, {
+      encoding: "utf8",
+      input: authorization.input,
+    });
     if (result.status !== 0) {
       throw new Error(result.stderr || "curl failed");
     }

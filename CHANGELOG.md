@@ -12,6 +12,8 @@
 
 - Skills: recognize a single top-level `env` name as a required variable so installation guidance and scanner metadata retain the declared credential.
 
+- CLI: on Bun, send the API token to curl on stdin instead of the command line. JSON, form, text, download, and binary upload requests use the same header stdin path.
+
 - API: return one publish-token rejection when a package is missing, hidden, or the GitHub identity does not match, without naming the trusted repository. The body tells the caller to ask a package manager to check the trusted-publisher configuration and the workflow OIDC claims. A GitHub signing-key outage answers a retryable `503` instead of a rejection.
 
 - CI: right-size Skill Card workers and credential canaries to two-vCPU runners, retaining four-vCPU skill evaluations and existing resource checks.

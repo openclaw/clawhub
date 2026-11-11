@@ -121,7 +121,10 @@ describe("bun http client", () => {
     const [, getArgs] = spawnImpl.mock.calls[0] as [string, string[]];
     expect(getArgs).toContain("GET");
     expect(getArgs).toContain("https://registry.example/v1/ping");
-    expect(getArgs).toContain("Authorization: Bearer clh_token");
+    expect(getArgs).toContain("@-");
+    expect(getArgs.join(" ")).not.toContain("clh_token");
+    const getOptions = spawnImpl.mock.calls[0]?.[2] as { input?: string };
+    expect(getOptions.input).toBe("Authorization: Bearer clh_token\n");
 
     const [, postArgs] = spawnImpl.mock.calls[1] as [string, string[]];
     expect(postArgs).toContain("Content-Type: application/json");
@@ -277,9 +280,15 @@ describe("bun http client", () => {
     expect(spawnImpl).toHaveBeenCalledTimes(2);
     expect(mkdtempImpl).toHaveBeenCalledTimes(2);
     expect(rmImpl).toHaveBeenCalledTimes(2);
-    for (const [command, args] of spawnImpl.mock.calls as [string, string[]][]) {
+    for (const [command, args, options] of spawnImpl.mock.calls as [
+      string,
+      string[],
+      { input?: string },
+    ][]) {
       expect(command).toBe("curl");
-      expect(args).toContain("Authorization: Bearer clh_token");
+      expect(args).toContain("@-");
+      expect(args.join(" ")).not.toContain("clh_token");
+      expect(options.input).toBe("Authorization: Bearer clh_token\n");
       const url = new URL(args[args.length - 1]);
       expect(url.pathname).toBe("/custom/path/api/v1/download");
       expect(url.searchParams.get("slug")).toBe("demo+skill");
@@ -352,5 +361,44 @@ describe("bun http client", () => {
     expect(args).toContain("@-");
     expect(args.join(" ")).not.toContain("clh_secret");
     expect(options.input).toBe("Authorization: Bearer clh_secret\n");
+  });
+
+  it("keeps form and text bearer tokens out of curl arguments", async () => {
+    const { client, spawnImpl } = createBunClient({
+      spawnImpl: () => ({ status: 0, stdout: '{"ok":true}\n200', stderr: "" }),
+    });
+    const textClient = createBunClient({
+      spawnImpl: () => ({ status: 0, stdout: "hello\n200", stderr: "" }),
+    });
+
+    await client.apiRequestForm("https://registry.example", {
+      method: "POST",
+      path: "/upload",
+      form: new FormData(),
+      token: "clh_form",
+    });
+    await textClient.client.fetchText("https://registry.example", {
+      path: "/v1/readme",
+      token: "clh_text",
+    });
+
+    const formCall = spawnImpl.mock.calls[0] as [string, string[], { input?: string }];
+    expect(formCall[1].join(" ")).not.toContain("clh_form");
+    expect(formCall[2].input).toBe("Authorization: Bearer clh_form\n");
+    const textCall = textClient.spawnImpl.mock.calls[0] as [string, string[], { input?: string }];
+    expect(textCall[1].join(" ")).not.toContain("clh_text");
+    expect(textCall[2].input).toBe("Authorization: Bearer clh_text\n");
+  });
+
+  it("rejects a bearer token that contains a newline before starting curl", async () => {
+    const { client, spawnImpl } = createBunClient();
+    await expect(
+      client.apiRequest("https://registry.example", {
+        method: "GET",
+        path: "/v1/ping",
+        token: "clh_one\nX-Evil: 1",
+      }),
+    ).rejects.toThrow("Invalid API token");
+    expect(spawnImpl).not.toHaveBeenCalled();
   });
 });
