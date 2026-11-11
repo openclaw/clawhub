@@ -492,8 +492,14 @@ it.each([
 ])(
   "enforces the total preparation ceiling with $remainingMs ms left",
   async ({ remainingMs, error }) => {
+    // The first two roots run together. The budget clock below advances when
+    // the first root's report lands, so hold the second root until then:
+    // otherwise it can finish first and admit the third root on the old clock.
     const { run, workspace, handoff } = await fixture(
       `if [[ "$2" == *third ]]; then sleep 1; fi
+if [[ "$2" == *second ]]; then
+  while [[ ! -s skillspector-report-0.json ]]; do sleep 0.02; done
+fi
 ${writeReport(findings)}`,
       ["skills/first", "skills/second", "skills/third"],
     );
