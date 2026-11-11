@@ -42,6 +42,15 @@ export function CliDeviceAuth() {
   }, [now, pendingExpiresAt]);
   const expiredLocally = pendingExpiresAt !== null && pendingExpiresAt <= now;
   const canDecide = description?.state === "pending" && !expiredLocally && !isComplete;
+  // After this page approves or denies, the row leaves pending and the query reports "used".
+  // That is the decision just made here, not a problem with the code.
+  const codeProblem = isComplete
+    ? null
+    : description?.state === "expired" || expiredLocally
+      ? "expired"
+      : description?.state === "used" || description?.state === "missing"
+        ? description.state
+        : null;
 
   const submit = async () => {
     const trimmed = code.trim();
@@ -144,18 +153,18 @@ export function CliDeviceAuth() {
                     <p>This creates a full API token. It can publish and delete as you.</p>
                   </div>
                 ) : null}
-                {description?.state === "expired" || expiredLocally ? (
+                {codeProblem === "expired" ? (
                   <p className="text-sm text-[color:var(--ink-soft)]">
                     That code expired. Run <code>clawhub login</code> again and type the new code.
                   </p>
                 ) : null}
-                {description?.state === "used" ? (
+                {codeProblem === "used" ? (
                   <p className="text-sm text-[color:var(--ink-soft)]">
                     That code was already used. If your terminal is not signed in, run{" "}
                     <code>clawhub login</code> again and type the new code.
                   </p>
                 ) : null}
-                {description?.state === "missing" ? (
+                {codeProblem === "missing" ? (
                   <p className="text-sm text-[color:var(--ink-soft)]">
                     That code is not waiting for approval. Check the code in your terminal and type
                     it again. If it still does not match, run <code>clawhub login</code> for a new

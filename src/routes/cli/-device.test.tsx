@@ -195,6 +195,35 @@ describe("CliDeviceAuth", () => {
     expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
   });
 
+  it.each([
+    ["approve", "Authorize", "Authorized. You can return to your terminal."],
+    ["deny", "Deny", "Denied. You can close this page."],
+  ])(
+    "does not report the code as used after its own %s succeeds",
+    async (action, buttonName, successMessage) => {
+      // The decision moves the row out of pending, so the subscribed query then reports "used".
+      let decided = false;
+      const decide = vi.fn(async () => {
+        decided = true;
+      });
+      describeCodeAs(() => (decided ? { state: "used" } : pendingDescription));
+      useMutationMock.mockImplementation((mutation: string) =>
+        mutation === action ? decide : vi.fn(),
+      );
+
+      render(<CliDeviceAuth />);
+      typeCode();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: buttonName }));
+      });
+
+      expect(decide).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(successMessage)).toBeTruthy();
+      expect(screen.queryByText(/already used/)).toBeNull();
+      expect(screen.queryByText(/clawhub login/)).toBeNull();
+    },
+  );
+
   it("shows the token label before authorization", () => {
     useMutationMock.mockReturnValue(vi.fn());
 
