@@ -27,6 +27,16 @@ const CLAIM_STORAGE_URL_CONCURRENCY = 8;
 const MAX_CONSECUTIVE_SCANNER_FAILURES = 3;
 const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
 const FINALIZATION_CLAIM_LEASE_MS = 10 * 60 * 1000;
+// Oldest-first scan window for untargeted finalization retries. A persistent
+// head of older attempts that can never finalize (for example skill versions
+// held by moderation) occupies every slot in a short window, so newer attempts
+// are never reached and starve indefinitely. A wider bounded window keeps the
+// scan far below the transaction read budget while letting the tail be seen.
+// This raises the ceiling; it does not remove it. The durable fix is to back
+// off attempts whose finalization keeps failing, the way
+// backoffFailedPrePublicationHandoffInternal already protects retry selection.
+const READY_TO_FINALIZE_SCAN_LIMIT = 100;
+
 const MISSING_AIG_EVIDENCE_ERROR = "A.I.G evidence is required before a skill can be published.";
 const ACTIVE_CLAIM_OUTCOME = { outcome: "active_claim" as const };
 const PUBLISH_ATTEMPT_STATUSES = [
@@ -1143,7 +1153,7 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
           .query("publishAttempts")
           .withIndex("by_status_and_created", (q) => q.eq("status", "ready_to_finalize"))
           .order("asc")
-          .take(25);
+          .take(READY_TO_FINALIZE_SCAN_LIMIT);
 
     for (const attempt of candidates) {
       const recoveringFinalization = Boolean(args.attemptId) && attempt.status === "finalizing";
