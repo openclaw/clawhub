@@ -123,8 +123,10 @@ export function MarketplaceIcon({
     >
       {theme ? (
         <span className="marketplace-icon-theme" style={themeChipStyle(theme)}>
-          <i />
-          <i />
+          <span>
+            <i />
+            <i />
+          </span>
           <span>
             <i />
             <i />

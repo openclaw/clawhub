@@ -34,6 +34,10 @@ describe("MarketplaceIcon", () => {
     expect(container.querySelector("img")).toBeNull();
     const chip = container.querySelector<HTMLElement>(".marketplace-icon-theme");
     expect(chip?.style.getPropertyValue("--theme-chip-dark-accent")).toBe("#243e2c");
+    // Text lines on top, then separate accent and primary dots.
+    const [lines, dots] = Array.from(chip?.children ?? []);
+    expect(lines?.children).toHaveLength(2);
+    expect(dots?.children).toHaveLength(2);
   });
 
   describe("verified raster storage artwork", () => {

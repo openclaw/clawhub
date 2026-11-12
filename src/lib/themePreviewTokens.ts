@@ -43,7 +43,7 @@ export function themeBackgroundTokens(url: string | undefined, mode: "light" | "
 
 /**
  * Settings > Appearance chip colors for each shipped mode, as the Control UI draws them
- * (openclaw/openclaw#197388): bar = accent, dot = primary, lines = foreground.
+ * (openclaw/openclaw#197388): accent dot, primary dot, foreground lines.
  * CSS picks the mode that matches the site and falls back to the other one.
  */
 export function themeChipStyle(theme: ThemePreview): CSSProperties {

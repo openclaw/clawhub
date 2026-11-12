@@ -165,7 +165,8 @@ servers, or bundled skills. Every plugin whose release summary has themes shows 
 themed compact window on the detail page. A theme-only plugin with exactly one theme also replaces the catalog icon (and its
 publisher photo fallback) with the Settings > Appearance chip; packs with several themes
 keep the usual icon. The chip uses the Control UI's Settings colors
-(openclaw/openclaw#197388): background, accent bar, primary dot, foreground lines. Catalog cards never read release summaries,
+(openclaw/openclaw#197388): theme background with two foreground lines, then two separate
+dots in the bottom third, accent (left) and primary (right), with a faint foreground outline. Catalog cards never read release summaries,
 so that single theme is copied into the package's `latestVersionSummary.themePreview`.
 Declared theme `backgrounds` are hosted through the plugin icon path (content-addressed
 `skillPresentationAssets` store and `/api/v1/skill-icons/<sha256>`): 512 KiB cap like
