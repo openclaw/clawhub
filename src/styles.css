@@ -3843,33 +3843,39 @@ code {
   font-weight: 600;
 }
 
-/* Theme previews: a static mini Control UI. Palette tokens (--cu-*) arrive inline and
-   follow the Control UI's rules: neutral selected rows and user bubble, accent links,
-   primary buttons and send button. The card size scales the same layout down. */
+/* Theme previews: a static OpenClaw Control UI chat screen. Palette tokens (--cu-*)
+   arrive inline and follow the Control UI's rules: primary for new session, send and
+   primary actions, accent for links, neutral selected rows and user bubble. Sizes are
+   in em and the font scales with the frame width, so card and large keep the same
+   proportions as the real app (about 64em wide, 16:10). */
+.theme-window-frame {
+  container-type: inline-size;
+  min-width: 0;
+}
+
 .theme-window {
   --cu-selected: color-mix(in srgb, var(--cu-text) 8%, transparent);
+  --cu-hover: color-mix(in srgb, var(--cu-text) 5%, transparent);
+  --cu-chrome: color-mix(in srgb, var(--cu-bg) 96%, transparent);
 
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  aspect-ratio: 16 / 10;
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--cu-border);
-  border-radius: var(--oc-radius-surface);
+  border-radius: 0.9em;
   background: var(--cu-bg);
   color: var(--cu-text);
   font-family: var(--cu-font, var(--oc-font-body));
-  font-size: 14px;
+  font-size: calc(100cqi / 64);
   line-height: 1.45;
+  box-shadow: 0 1.5em 3em -1.5em rgb(0 0 0 / 35%);
 }
 
 .theme-window[data-mode="light"] {
   --cu-selected: color-mix(in srgb, var(--cu-text) 6%, transparent);
-}
-
-.theme-window-card {
-  border-radius: var(--oc-radius-control);
-  font-size: 7px;
+  --cu-hover: color-mix(in srgb, var(--cu-text) 4%, transparent);
 }
 
 .theme-window-backdrop {
@@ -3878,73 +3884,153 @@ code {
     var(--cu-bg);
 }
 
-.theme-window-bar {
-  display: flex;
-  gap: 0.45em;
-  padding: 0.75em 1em;
-  border-bottom: 1px solid var(--cu-border);
+.theme-window svg {
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  stroke-width: 1.8;
 }
 
-.theme-window-bar i {
-  width: 0.65em;
-  height: 0.65em;
+.theme-window-titlebar {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.2em;
+  height: 3em;
+  padding: 0 1em;
+  border-bottom: 1px solid var(--cu-border);
+  background: var(--cu-chrome);
+  color: var(--cu-muted);
+}
+
+.theme-window-lights {
+  display: flex;
+  gap: 0.5em;
+}
+
+/* stylelint-disable color-no-hex -- macOS window controls are fixed colors. */
+.theme-window-lights i {
+  width: 0.85em;
+  height: 0.85em;
   border-radius: var(--oc-radius-round);
-  background: color-mix(in srgb, var(--cu-text) 25%, transparent);
+  background: #ff5f57;
+}
+
+.theme-window-lights i:nth-child(2) {
+  background: #febc2e;
+}
+
+.theme-window-lights i:nth-child(3) {
+  background: #28c840;
+}
+/* stylelint-enable color-no-hex */
+
+.theme-window-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.9em;
+}
+
+.theme-window-crumbs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45em;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.theme-window-crumbs strong {
+  overflow: hidden;
+  color: var(--cu-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
 }
 
 .theme-window-body {
   display: grid;
   flex: 1;
-  grid-template-columns: 2.8em 10em minmax(0, 1fr);
-  min-height: 19em;
+  grid-template-columns: 3.8em 15em minmax(0, 1fr);
+  min-height: 0;
 }
 
 .theme-window-rail {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5em;
-  padding: 0.9em 0;
+  gap: 0.45em;
+  padding: 0.8em 0;
   border-right: 1px solid var(--cu-border);
+  background: var(--cu-chrome);
+  color: var(--cu-muted);
 }
 
-.theme-window-rail i {
+.theme-window-rail > span {
   display: grid;
   place-items: center;
-  width: 1.8em;
-  height: 1.8em;
-  border-radius: 0.45em;
+  width: 2.4em;
+  height: 2.4em;
+  border-radius: 0.6em;
 }
 
-.theme-window-rail i::after {
-  content: "";
-  width: 0.75em;
-  height: 0.75em;
-  border: 0.12em solid var(--cu-muted);
-  border-radius: 0.2em;
-}
-
-.theme-window-rail i[aria-current],
-.theme-window-sessions li[aria-current],
-.theme-window-user {
+.theme-window-rail > span[aria-current] {
   background: var(--cu-selected);
+  color: var(--cu-text);
 }
 
-.theme-window-rail i[aria-current]::after {
-  border-color: var(--cu-text);
+.theme-window-rail > .theme-window-new {
+  background: var(--cu-primary);
+  color: var(--cu-primary-foreground);
+}
+
+.theme-window-rail hr {
+  width: 1.6em;
+  margin: 0.2em 0;
+  border: 0;
+  border-top: 1px solid var(--cu-border);
+}
+
+.theme-window-rail-end {
+  margin-top: auto;
+}
+
+.theme-window-avatar {
+  display: grid;
+  place-items: center;
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: var(--oc-radius-round);
+  background: color-mix(in srgb, var(--cu-accent) 22%, var(--cu-card));
+  color: var(--cu-text);
+  font-size: 0.8em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.theme-window-rail > .theme-window-avatar {
+  width: 2.6em;
+  height: 2.6em;
+  border-radius: var(--oc-radius-round);
+}
+
+.theme-window-rail > .theme-window-me {
+  background: color-mix(in srgb, var(--cu-text) 14%, var(--cu-card));
 }
 
 .theme-window-sessions {
-  padding: 0.9em 0.6em;
+  min-width: 0;
+  padding: 0.9em 0.7em;
   border-right: 1px solid var(--cu-border);
-  font-size: 0.92em;
+  background: var(--cu-chrome);
 }
 
-.theme-window-sessions > span {
-  display: block;
-  padding: 0 0.5em 0.5em;
+.theme-window-sessions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.6em 0.7em;
   color: var(--cu-muted);
-  font-size: 0.85em;
+  font-size: 0.92em;
   font-weight: 600;
 }
 
@@ -3958,14 +4044,15 @@ code {
 
 .theme-window-sessions li {
   overflow: hidden;
-  padding: 0.35em 0.5em;
-  border-radius: 0.45em;
+  padding: 0.5em 0.6em;
+  border-radius: 0.55em;
   color: var(--cu-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .theme-window-sessions li[aria-current] {
+  background: var(--cu-selected);
   color: var(--cu-text);
   font-weight: 500;
 }
@@ -3973,31 +4060,67 @@ code {
 .theme-window-chat {
   display: flex;
   flex-direction: column;
-  gap: 1em;
   min-width: 0;
-  padding: 1em 1.1em;
+  padding: 1.6em 2.4em 1.2em;
+}
+
+.theme-window-thread {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 1.4em;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .theme-window-user {
   align-self: flex-end;
-  max-width: 85%;
+  max-width: 72%;
   margin: 0;
-  padding: 0.55em 0.85em;
-  border-radius: 1em;
+  padding: 0.7em 1em;
+  border-radius: 1.1em;
+  background: var(--cu-selected);
 }
 
 .theme-window-reply {
   display: grid;
-  justify-items: start;
-  gap: 0.55em;
+  gap: 0.6em;
 }
 
 .theme-window-reply p {
   margin: 0;
 }
 
-.theme-window-muted {
+.theme-window-author {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+}
+
+.theme-window-author strong {
+  font-weight: 600;
+}
+
+.theme-window-reply ul {
+  display: grid;
+  gap: 0.4em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.theme-window-reply li {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+}
+
+.theme-window-reply li svg {
   color: var(--cu-muted);
+}
+
+.theme-window-reply li svg.is-done {
+  color: var(--cu-accent);
 }
 
 .theme-window-link {
@@ -4006,54 +4129,62 @@ code {
   text-underline-offset: 0.15em;
 }
 
-.theme-window-reply code {
-  padding: 0.1em 0.35em;
-  border: 1px solid var(--cu-border);
-  border-radius: 0.35em;
-  background: var(--cu-card);
-  font-family: var(--cu-mono, var(--oc-font-mono));
-  font-size: 0.9em;
-}
-
-.theme-window-button {
-  padding: 0.4em 0.9em;
-  border-radius: 0.5em;
-  background: var(--cu-primary);
-  color: var(--cu-primary-foreground);
-  font-size: 0.92em;
-  font-weight: 600;
+.theme-window-actions {
+  display: flex;
+  gap: 0.9em;
+  color: var(--cu-muted);
 }
 
 .theme-window-composer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  gap: 0.9em;
   margin-top: auto;
-  padding: 0.45em 0.45em 0.45em 0.9em;
+  padding: 0.9em 0.9em 0.7em 1.1em;
   border: 1px solid var(--cu-border);
-  border-radius: 0.9em;
+  border-radius: 1.2em;
   background: var(--cu-card);
   color: var(--cu-muted);
 }
 
-.theme-window-composer svg {
-  box-sizing: content-box;
-  width: 1em;
-  height: 1em;
-  padding: 0.35em;
+.theme-window-composer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+}
+
+.theme-window-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.25em 0.6em;
+  border-radius: 0.6em;
+  background: var(--cu-hover);
+  font-size: 0.92em;
+  white-space: nowrap;
+}
+
+.theme-window-mic {
+  margin-left: auto;
+}
+
+.theme-window-send {
+  display: grid;
+  place-items: center;
+  width: 2.2em;
+  height: 2.2em;
   border-radius: var(--oc-radius-round);
   background: var(--cu-primary);
   color: var(--cu-primary-foreground);
 }
 
-@media (max-width: 560px) {
-  .theme-window-large .theme-window-body {
-    grid-template-columns: 2.8em minmax(0, 1fr);
-  }
+/* Cards keep the layout but drop the composer extras. */
+.theme-window-card .theme-window-chip,
+.theme-window-card .theme-window-mic {
+  display: none;
+}
 
-  .theme-window-large .theme-window-sessions {
-    display: none;
-  }
+.theme-window-card .theme-window-send {
+  margin-left: auto;
 }
 
 .plugin-theme-heading {
@@ -4106,6 +4237,10 @@ code {
 
 .theme-pack-card:hover .theme-window {
   border-color: color-mix(in srgb, var(--cu-text) 40%, var(--cu-border));
+}
+
+.theme-pack-card .theme-window {
+  box-shadow: none;
 }
 
 .theme-pack-card-meta {
