@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useEnvironment } from "../src/__tests__/helpers/skillsShEnvironment";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import frozenSnapshot from "./fixtures/skills-sh-500-2026-07-21.json";
@@ -55,27 +56,6 @@ type RunSummary = Pick<
     batchesProcessed: number;
   };
 };
-
-function useEnvironment(env: Record<string, string>) {
-  for (const name of [
-    "CLAWHUB_DEPLOYMENT_NAME",
-    "CLAWHUB_DISABLE_CRONS",
-    "CLAWHUB_ENV",
-    "CLAWHUB_PREVIEW",
-    "CLAWHUB_SKILLS_SH_ROLLOUT_MODE",
-    "CONVEX_CLOUD_URL",
-    "CONVEX_DEPLOYMENT",
-    "CONVEX_SITE_URL",
-    "DEV_AUTH_CONVEX_DEPLOYMENT",
-    "VERCEL_ENV",
-    "VERCEL_TARGET_ENV",
-    "VITE_CLAWHUB_DEPLOY_ENV",
-    "VITE_CONVEX_URL",
-  ]) {
-    vi.stubEnv(name, "");
-  }
-  for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
-}
 
 async function sha256Hex(value: string | Blob) {
   const bytes =
