@@ -3080,7 +3080,7 @@ code {
 }
 
 /* Keep the artwork inset on its own dark tile, even in muted catalog containers. */
-/* Settings > Appearance theme chip: two text lines, accent pill and secondary dot. */
+/* Settings > Appearance theme chip: two text lines, accent bar and primary dot. */
 .marketplace-icon-theme {
   --theme-chip-bg: var(--theme-chip-light-bg, var(--theme-chip-dark-bg));
   --theme-chip-accent: var(--theme-chip-light-accent, var(--theme-chip-dark-accent));

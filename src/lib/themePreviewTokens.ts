@@ -42,8 +42,8 @@ export function themeBackgroundTokens(url: string | undefined, mode: "light" | "
 }
 
 /**
- * Settings > Appearance chip colors for each shipped mode, summarizing the live preview:
- * pill = primary (buttons, send), dot = accent (active session), lines = foreground.
+ * Settings > Appearance chip colors for each shipped mode, as the Control UI draws them
+ * (openclaw/openclaw#197388): bar = accent, dot = primary, lines = foreground.
  * CSS picks the mode that matches the site and falls back to the other one.
  */
 export function themeChipStyle(theme: ThemePreview): CSSProperties {
@@ -52,8 +52,8 @@ export function themeChipStyle(theme: ThemePreview): CSSProperties {
     const palette = theme[mode];
     if (!palette) continue;
     style[`--theme-chip-${mode}-bg`] = palette.background;
-    style[`--theme-chip-${mode}-accent`] = palette.primary;
-    style[`--theme-chip-${mode}-accent-2`] = palette.accent;
+    style[`--theme-chip-${mode}-accent`] = palette.accent;
+    style[`--theme-chip-${mode}-accent-2`] = palette.primary;
     style[`--theme-chip-${mode}-ink`] = palette.foreground;
   }
   return style as CSSProperties;

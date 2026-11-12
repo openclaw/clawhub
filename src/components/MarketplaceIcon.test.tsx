@@ -33,7 +33,7 @@ describe("MarketplaceIcon", () => {
     );
     expect(container.querySelector("img")).toBeNull();
     const chip = container.querySelector<HTMLElement>(".marketplace-icon-theme");
-    expect(chip?.style.getPropertyValue("--theme-chip-dark-accent")).toBe("#e6c178");
+    expect(chip?.style.getPropertyValue("--theme-chip-dark-accent")).toBe("#243e2c");
   });
 
   describe("verified raster storage artwork", () => {
