@@ -580,6 +580,30 @@ export const ApiV1PackageReadinessResponseSchema = type({
 
 export type ApiV1PackageReadinessResponse = (typeof ApiV1PackageReadinessResponseSchema)[inferred];
 
+export const ApiV1PackageVersionPublicationResponseSchema = type({
+  name: "string",
+  version: "string",
+  state: '"published"|"absent"',
+})
+  .or({ name: "string", version: "string", state: '"pending"', stage: '"staging"' })
+  .or({
+    name: "string",
+    version: "string",
+    state: '"pending"',
+    stage: '"checks"|"finalization"',
+    attemptId: "string",
+  })
+  .or({
+    name: "string",
+    version: "string",
+    state: '"failed"',
+    "attemptId?": "string",
+    recoverable: "boolean",
+  })
+  .onUndeclaredKey("reject");
+export type ApiV1PackageVersionPublicationResponse =
+  (typeof ApiV1PackageVersionPublicationResponseSchema)[inferred];
+
 export const PackageTransferRequestSchema = type({
   toOwner: "string",
   reason: "string?",

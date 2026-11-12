@@ -57,6 +57,7 @@ const {
   cmdInspectPackage,
   cmdPackageModerationStatus,
   cmdPackageMigrationStatus,
+  cmdPackagePublication,
   cmdPackageReadiness,
   cmdPackPackage,
   cmdPublishPackage,
@@ -1207,6 +1208,182 @@ describe("package commands", () => {
       "@scope/demo@1.2.3 malicious quarantined [manual:quarantined, scan:malicious]",
     );
     expect(mockLog).toHaveBeenCalledWith("Next cursor: cursor-1");
+  });
+
+  it("prints exact package publication state", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      name: "@scope/demo",
+      version: "1.2.3",
+      state: "pending",
+      stage: "checks",
+      attemptId: "attempt-1",
+    });
+
+    await cmdPackagePublication(makeOpts(), "@scope/demo", { version: "1.2.3" });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/%40scope%2Fdemo/versions/1.2.3/publication",
+        token: undefined,
+      },
+      undefined,
+    );
+    expect(mockLog).toHaveBeenCalledWith("@scope/demo@1.2.3");
+    expect(mockLog).toHaveBeenCalledWith("Pending publication checks.");
+    expect(mockLog).toHaveBeenCalledWith(
+      "This version is not public yet. The upload is still recorded.",
+    );
+    expect(mockLog).toHaveBeenCalledWith("Attempt: attempt-1");
+    expect(mockLog.mock.calls.map((call) => String(call[0])).join("\n")).not.toMatch(
+      /scan|report|digest/i,
+    );
+  });
+
+  it("sends the saved token and prints publication json unchanged", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("publisher-token");
+    const body = {
+      name: "demo-plugin",
+      version: "0.1.3",
+      state: "failed" as const,
+      recoverable: true,
+      attemptId: "attempt-2",
+    };
+    httpMocks.apiRequest.mockResolvedValueOnce(body);
+
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "0.1.3", json: true });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/demo-plugin/versions/0.1.3/publication",
+        token: "publisher-token",
+      },
+      undefined,
+    );
+    expect(JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""))).toEqual(body);
+    expect(mockLog).not.toHaveBeenCalled();
+  });
+
+  it("prints absent and failed publication states", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      name: "demo-plugin",
+      version: "0.1.3",
+      state: "absent",
+    });
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "0.1.3" });
+    expect(mockLog).toHaveBeenCalledWith("Not accepted.");
+
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      name: "demo-plugin",
+      version: "0.1.3",
+      state: "failed",
+      recoverable: false,
+    });
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "0.1.3" });
+    expect(mockLog).toHaveBeenCalledWith("Publication failed.");
+    expect(mockLog).toHaveBeenCalledWith("This attempt cannot be recovered.");
+  });
+
+  it("requires an exact version for package publication", async () => {
+    await expect(cmdPackagePublication(makeOpts(), "demo-plugin", {})).rejects.toThrow(
+      "Pass --version",
+    );
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("reports a public version when an older registry returns the version document", async () => {
+    const versionDocument = {
+      package: { name: "demo-plugin", displayName: "Demo", family: "code-plugin" },
+      version: {
+        version: "1.2.3",
+        createdAt: 1,
+        changelog: "",
+        files: [],
+      },
+    };
+    httpMocks.apiRequest
+      .mockResolvedValueOnce(versionDocument)
+      .mockResolvedValueOnce(versionDocument);
+
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "1.2.3", json: true });
+
+    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/demo-plugin/versions/1.2.3",
+        token: undefined,
+      },
+      expect.anything(),
+    );
+    expect(JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""))).toEqual({
+      name: "demo-plugin",
+      version: "1.2.3",
+      state: "published",
+    });
+  });
+
+  it("probes the version endpoint after a legacy publication 404", async () => {
+    httpMocks.apiRequest.mockRejectedValueOnce(
+      Object.assign(new Error("Not found"), { status: 404 }),
+    );
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      package: { name: "demo-plugin", displayName: "Demo", family: "code-plugin" },
+      version: { version: "1.2.3", createdAt: 1, changelog: "", files: [] },
+    });
+
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "1.2.3" });
+
+    expect(mockLog).toHaveBeenCalledWith("Published.");
+    expect(mockLog).toHaveBeenCalledWith("This version is in the public version list.");
+  });
+
+  it("keeps a version-not-found error when the legacy probe also misses", async () => {
+    httpMocks.apiRequest.mockRejectedValueOnce(
+      Object.assign(new Error("Not found"), { status: 404 }),
+    );
+    httpMocks.apiRequest.mockRejectedValueOnce(
+      Object.assign(new Error("Version not found"), { status: 404 }),
+    );
+
+    await expect(
+      cmdPackagePublication(makeOpts(), "demo-plugin", { version: "9.9.9" }),
+    ).rejects.toThrow("Version not found");
+    expect(mockLog).not.toHaveBeenCalledWith("Published.");
+  });
+
+  it("rejects an unknown publication state without probing the version endpoint", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      name: "demo-plugin",
+      version: "1.2.3",
+      state: "quarantined",
+    });
+
+    await expect(
+      cmdPackagePublication(makeOpts(), "demo-plugin", { version: "1.2.3" }),
+    ).rejects.toThrow(/API response/);
+    expect(httpMocks.apiRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("names package recover without treating the current token as sufficient", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      name: "demo-plugin",
+      version: "0.1.3",
+      state: "failed",
+      recoverable: true,
+      attemptId: "attempt-2",
+    });
+
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "0.1.3" });
+
+    const text = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(text).toContain("An authorized publisher may be able to recover this attempt.");
+    expect(text).toContain('clawhub package recover attempt-2 --manual-override-reason "<reason>"');
+    expect(text).not.toMatch(/current publisher token/i);
   });
 
   it("prints package readiness checks", async () => {

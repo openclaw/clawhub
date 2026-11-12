@@ -34,6 +34,9 @@ import {
   ApiV1PackagePublishResponseSchema,
   type ApiV1PackagePublishResponse,
   ApiV1PackageReadinessResponseSchema,
+  ApiV1PackageVersionPublicationResponseSchema,
+  type ApiV1PackageVersionPublicationResponse,
+  parseArk,
   ApiV1PackageReportResponseSchema,
   ApiV1PackageResponseSchema,
   ApiV1PackageSearchResponseSchema,
@@ -1832,6 +1835,123 @@ export async function cmdPackageModerationStatus(
   }
   if (result.latestRelease.moderationReason) {
     console.log(`  note: ${result.latestRelease.moderationReason}`);
+  }
+}
+
+export async function cmdPackagePublication(
+  opts: GlobalOpts,
+  packageName: string,
+  options: { version?: string; json?: boolean } = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const version = options.version?.trim();
+  if (!version) {
+    fail(
+      "Pass --version. Publication state is for one exact version, not the public latest version.",
+    );
+  }
+  const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
+  const result = await loadPackagePublication(registry, trimmed, version, token);
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+
+  console.log(`${result.name}@${result.version}`);
+  printPackagePublication(result);
+}
+
+// A registry that predates this route answers 404, or returns the version
+// document with no `state`. Confirm that through the version endpoint.
+// A body that already has `state` is a publication response and stays strict.
+async function loadPackagePublication(
+  registry: string,
+  packageName: string,
+  version: string,
+  token: string | undefined,
+): Promise<ApiV1PackageVersionPublicationResponse> {
+  const path = `${ApiRoutes.packages}/${encodeURIComponent(packageName)}/versions/${encodeURIComponent(version)}/publication`;
+  let raw: unknown;
+  try {
+    raw = await apiRequest(registry, { method: "GET", path, token });
+  } catch (error) {
+    if (getHttpErrorStatus(error) !== 404) throw error;
+    return await publicationFromLegacyVersion(registry, packageName, version, token);
+  }
+  if (isLegacyVersionDocument(raw)) {
+    return await publicationFromLegacyVersion(registry, packageName, version, token);
+  }
+  return parseArk(ApiV1PackageVersionPublicationResponseSchema, raw, "API response");
+}
+
+function isLegacyVersionDocument(value: unknown) {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    !("state" in value) &&
+    ("version" in value || "package" in value),
+  );
+}
+
+async function publicationFromLegacyVersion(
+  registry: string,
+  packageName: string,
+  version: string,
+  token: string | undefined,
+): Promise<ApiV1PackageVersionPublicationResponse> {
+  const detail = await apiRequestPackageVersion(registry, packageName, version, token);
+  if (!detail.package || !detail.version) fail("Version not found");
+  return {
+    name: detail.package.name,
+    version: detail.version.version,
+    state: "published",
+  };
+}
+
+function printPackagePublication(result: ApiV1PackageVersionPublicationResponse) {
+  if (result.state === "published") {
+    console.log("Published.");
+    console.log("This version is in the public version list.");
+    return;
+  }
+  if (result.state === "absent") {
+    console.log("Not accepted.");
+    console.log(
+      "This version was not accepted. A pending release is also missing from the public version list, so check the exact version you submitted.",
+    );
+    return;
+  }
+  if (result.state === "pending") {
+    console.log(
+      result.stage === "checks"
+        ? "Pending publication checks."
+        : result.stage === "finalization"
+          ? "Pending final publication."
+          : "Pending publication.",
+    );
+    console.log("This version is not public yet. The upload is still recorded.");
+    if (result.stage !== "staging") {
+      console.log(`Attempt: ${result.attemptId}`);
+    }
+    return;
+  }
+  if (result.state !== "failed") return;
+  console.log("Publication failed.");
+  if (!result.recoverable) {
+    console.log("This attempt cannot be recovered.");
+  } else {
+    console.log("An authorized publisher may be able to recover this attempt.");
+    if (result.attemptId) {
+      console.log(
+        `clawhub package recover ${result.attemptId} --manual-override-reason "<reason>"`,
+      );
+    }
+  }
+  if (result.attemptId && !result.recoverable) {
+    console.log(`Attempt: ${result.attemptId}`);
   }
 }
 

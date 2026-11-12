@@ -19,6 +19,7 @@ import {
   cmdInspectPackage,
   cmdPackageModerationStatus,
   cmdPackageMigrationStatus,
+  cmdPackagePublication,
   cmdPackageReadiness,
   cmdPackPackage,
   cmdPublishPackage,
@@ -669,6 +670,16 @@ registerCommand(packageCmd, ["package", "moderation-status"])
     await cmdPackageModerationStatus(opts, name, options);
   });
 
+registerCommand(packageCmd, ["package", "publication"])
+  .description("Show whether an exact package version is published, pending, failed, or absent")
+  .argument("<name>", "Package name")
+  .requiredOption("--version <version>", "Exact package version")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackagePublication(opts, name, options);
+  });
+
 registerCommand(packageCmd, ["package", "readiness"])
   .description("Check package readiness for future OpenClaw consumption")
   .argument("<name>", "Package name")
@@ -966,6 +977,7 @@ applyCommandHelpGroups(packageCmd, {
   transfer: "Moderation:",
   report: "Moderation:",
   "moderation-status": "Moderation:",
+  publication: "Operations:",
   readiness: "Operations:",
   "migration-status": "Operations:",
 });
