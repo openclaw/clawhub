@@ -8,11 +8,13 @@ import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import { presentationTitle } from "../lib/presentationTitle";
+import { themeChipStyle, themeModeFor, useSiteThemeMode } from "../lib/themePreviewTokens";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { CatalogTopicList } from "./CatalogTopicList";
 import { InlineMarkdownSummary } from "./InlineMarkdownSummary";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
+import { ThemePreviewWindow } from "./ThemePreviewWindow";
 
 type PluginListItemProps = {
   item: PackageListItem;
@@ -52,6 +54,7 @@ export function PluginListItem({
   const primaryCategory = categories[0] ?? null;
   const pluginHref = href ?? buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
   const displayName = presentationTitle(item.displayName, item.name);
+  const siteMode = useSiteThemeMode();
   const recordSelection = () => {
     if (item.channel === "official" || item.channel === "community")
       emitAnalytics("select_content", {
@@ -60,6 +63,39 @@ export function PluginListItem({
         ui_location: "catalog",
       });
   };
+
+  // Theme-only packs read better as a grid of previews than as list rows.
+  if (item.themePreview && item.themeChips?.length) {
+    return (
+      <div className="theme-pack-card plugin-summary-item">
+        <Link
+          to={pluginHref}
+          onClick={recordSelection}
+          className="plugin-detail-link"
+          aria-label={`Theme pack: ${displayName}`}
+        />
+        <ThemePreviewWindow
+          theme={item.themePreview}
+          mode={themeModeFor(item.themePreview, siteMode)}
+          size="card"
+        />
+        <div className="theme-pack-card-meta">
+          <h3 title={displayName}>
+            {truncateText(displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </h3>
+          <span>{item.ownerHandle ? `by @${item.ownerHandle}` : "community"}</span>
+        </div>
+        <ul className="theme-pack-card-chips" aria-label="Themes in this pack">
+          {item.themeChips.map((chip) => (
+            <li key={chip.id} className="theme-chip" style={themeChipStyle(chip)} title={chip.name}>
+              <i />
+              <i />
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
 
   if (variant === "card") {
     return (
@@ -77,7 +113,6 @@ export function PluginListItem({
             imageUrl={item.icon}
             rasterAssetUrl={item.iconAssetUrl}
             publisherImageUrl={item.ownerImage}
-            theme={item.themePreview}
             categorySlug={primaryCategory?.slug}
             size="md"
           />
@@ -138,7 +173,6 @@ export function PluginListItem({
         imageUrl={item.icon}
         rasterAssetUrl={item.iconAssetUrl}
         publisherImageUrl={item.ownerImage}
-        theme={item.themePreview}
         categorySlug={primaryCategory?.slug}
       />
       <div className="skill-list-item-body">
@@ -166,5 +200,31 @@ export function PluginListItem({
         </span>
       </div>
     </div>
+  );
+}
+
+/**
+ * Plugin results for a list container: theme-only packs render as grid cards, and runs of
+ * them are grouped into one grid; every other plugin keeps its list row in place.
+ */
+export function PluginResultItems({ items }: { items: readonly PackageListItem[] }) {
+  const groups: PackageListItem[][] = [];
+  for (const item of items) {
+    const isPack = Boolean(item.themePreview && item.themeChips?.length);
+    const last = groups.at(-1);
+    const lastIsPack = Boolean(last?.[0]?.themePreview && last[0].themeChips?.length);
+    if (isPack && lastIsPack) last!.push(item);
+    else groups.push([item]);
+  }
+  return groups.map((group) =>
+    group[0]?.themePreview && group[0].themeChips?.length ? (
+      <div key={`themes-${group[0].name}`} className="theme-pack-grid">
+        {group.map((item) => (
+          <PluginListItem key={item.name} item={item} />
+        ))}
+      </div>
+    ) : (
+      <PluginListItem key={group[0]!.name} item={group[0]!} variant="list" />
+    ),
   );
 }

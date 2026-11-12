@@ -122,13 +122,26 @@ describe("extractThemePreviews", () => {
 describe("theme-only plugins", () => {
   const files = [themeFile({ name: "Artemis Canopy", description, dark: darkPalette })];
 
-  it("adds themes to the manifest summary and the package chip", () => {
+  it("adds themes to the manifest summary and the package card data", () => {
     const summary = derivePluginManifestSummary({ pluginManifest: manifest, files });
     expect(summary.themes?.[0]?.id).toBe("canopy-dark");
-    expect(packageThemePreviewFields(summary).themePreview?.name).toBe("Artemis Canopy");
+    const fields = packageThemePreviewFields(summary);
+    expect(fields.themePreview?.name).toBe("Artemis Canopy");
+    expect(fields.themeChips).toEqual([
+      {
+        id: "canopy-dark",
+        name: "Artemis Canopy",
+        dark: {
+          background: "#061009",
+          foreground: "#e1f1e5",
+          accent: "#243e2c",
+          primary: "#e6c178",
+        },
+      },
+    ]);
   });
 
-  it("keeps the usual icon for plugins that also ship capabilities", () => {
+  it("keeps the list row for plugins that also ship capabilities", () => {
     const summary = derivePluginManifestSummary({
       pluginManifest: { ...manifest, providers: ["acme"] },
       files,
@@ -137,7 +150,7 @@ describe("theme-only plugins", () => {
     expect(packageThemePreviewFields(summary)).toEqual({});
   });
 
-  it("keeps the usual icon for a plugin with tools and one theme", () => {
+  it("keeps the list row for a plugin with tools and one theme", () => {
     const summary = derivePluginManifestSummary({
       pluginManifest: { ...manifest, contracts: { tools: ["search"] } },
       files,
@@ -146,7 +159,7 @@ describe("theme-only plugins", () => {
     expect(packageThemePreviewFields(summary)).toEqual({});
   });
 
-  it("keeps the usual icon for theme packs with more than one theme", () => {
+  it("gives multi-theme packs the first theme's preview and one chip per theme", () => {
     const summary = derivePluginManifestSummary({
       pluginManifest: {
         themes: [
@@ -157,7 +170,9 @@ describe("theme-only plugins", () => {
       files: [...files, { ...files[0]!, path: "themes/copy.json" }],
     });
     expect(summary.themes).toHaveLength(2);
-    expect(packageThemePreviewFields(summary)).toEqual({});
+    const fields = packageThemePreviewFields(summary);
+    expect(fields.themePreview?.id).toBe("canopy-dark");
+    expect(fields.themeChips?.map((chip) => chip.id)).toEqual(["canopy-dark", "canopy-copy"]);
   });
 });
 

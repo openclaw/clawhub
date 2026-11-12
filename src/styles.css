@@ -3080,66 +3080,6 @@ code {
 }
 
 /* Keep the artwork inset on its own dark tile, even in muted catalog containers. */
-/* Theme chip: two foreground text lines on the theme background, then an accent dot
-   and a primary dot in the bottom third (openclaw#197388 order). */
-.marketplace-icon-theme {
-  --theme-chip-bg: var(--theme-chip-light-bg, var(--theme-chip-dark-bg));
-  --theme-chip-accent: var(--theme-chip-light-accent, var(--theme-chip-dark-accent));
-  --theme-chip-accent-2: var(--theme-chip-light-accent-2, var(--theme-chip-dark-accent-2));
-  --theme-chip-ink: var(--theme-chip-light-ink, var(--theme-chip-dark-ink));
-
-  display: grid;
-  grid-template-rows: 2fr 1fr;
-  width: 100%;
-  height: 100%;
-  padding: 18% 18% 12%;
-  background: var(--theme-chip-bg);
-}
-
-.marketplace-icon-theme > span {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.marketplace-icon-theme > span:last-child {
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
-}
-
-.marketplace-icon-theme > span:last-child i {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--oc-radius-full);
-  background: var(--theme-chip-accent);
-  /* Keeps low-contrast colors visible on the theme background. */
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-chip-ink) 25%, transparent);
-}
-
-.marketplace-icon-theme > span:last-child i + i {
-  background: var(--theme-chip-accent-2);
-}
-
-:root[data-theme-resolved="dark"] .marketplace-icon-theme {
-  --theme-chip-bg: var(--theme-chip-dark-bg, var(--theme-chip-light-bg));
-  --theme-chip-accent: var(--theme-chip-dark-accent, var(--theme-chip-light-accent));
-  --theme-chip-accent-2: var(--theme-chip-dark-accent-2, var(--theme-chip-light-accent-2));
-  --theme-chip-ink: var(--theme-chip-dark-ink, var(--theme-chip-light-ink));
-}
-
-.marketplace-icon-theme > span:first-child i {
-  width: 62%;
-  height: 3px;
-  border-radius: var(--oc-radius-full);
-  background: color-mix(in srgb, var(--theme-chip-ink) 45%, transparent);
-}
-
-.marketplace-icon-theme > span:first-child i + i {
-  width: 38%;
-  background: color-mix(in srgb, var(--theme-chip-ink) 22%, transparent);
-}
-
 .marketplace-icon-openclaw .marketplace-icon-image {
   box-sizing: border-box;
   padding: 10%;
@@ -3879,7 +3819,244 @@ code {
   min-width: 0;
 }
 
-.plugin-prompt-preview-heading {
+/* Two classes so the mobile one-column manifest-row rule can't stack the copy button. */
+.plugin-manifest-row.plugin-prompt-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.plugin-prompt-row p {
+  margin: 0;
+  color: var(--oc-text-primary);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.plugin-prompt-row .marketplace-icon {
+  display: inline-flex;
+  margin-right: var(--oc-space-2);
+  vertical-align: -0.3em;
+}
+
+/* The plugin name reads as a mention, like the Control UI's prompt rows. */
+.plugin-prompt-row strong {
+  color: var(--oc-accent-primary);
+  font-weight: 600;
+}
+
+/* Theme previews: a static mini Control UI. Palette tokens (--cu-*) arrive inline and
+   follow the Control UI's rules: neutral selected rows and user bubble, accent links,
+   primary buttons and send button. The card size scales the same layout down. */
+.theme-window {
+  --cu-selected: color-mix(in srgb, var(--cu-text) 8%, transparent);
+
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--cu-border);
+  border-radius: var(--oc-radius-surface);
+  background: var(--cu-bg);
+  color: var(--cu-text);
+  font-family: var(--cu-font, var(--oc-font-body));
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.theme-window[data-mode="light"] {
+  --cu-selected: color-mix(in srgb, var(--cu-text) 6%, transparent);
+}
+
+.theme-window-card {
+  border-radius: var(--oc-radius-control);
+  font-size: 7px;
+}
+
+.theme-window-backdrop {
+  background:
+    var(--cu-background-image) center / cover no-repeat,
+    var(--cu-bg);
+}
+
+.theme-window-bar {
+  display: flex;
+  gap: 0.45em;
+  padding: 0.75em 1em;
+  border-bottom: 1px solid var(--cu-border);
+}
+
+.theme-window-bar i {
+  width: 0.65em;
+  height: 0.65em;
+  border-radius: var(--oc-radius-round);
+  background: color-mix(in srgb, var(--cu-text) 25%, transparent);
+}
+
+.theme-window-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 2.8em 10em minmax(0, 1fr);
+  min-height: 19em;
+}
+
+.theme-window-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.9em 0;
+  border-right: 1px solid var(--cu-border);
+}
+
+.theme-window-rail i {
+  display: grid;
+  place-items: center;
+  width: 1.8em;
+  height: 1.8em;
+  border-radius: 0.45em;
+}
+
+.theme-window-rail i::after {
+  content: "";
+  width: 0.75em;
+  height: 0.75em;
+  border: 0.12em solid var(--cu-muted);
+  border-radius: 0.2em;
+}
+
+.theme-window-rail i[aria-current],
+.theme-window-sessions li[aria-current],
+.theme-window-user {
+  background: var(--cu-selected);
+}
+
+.theme-window-rail i[aria-current]::after {
+  border-color: var(--cu-text);
+}
+
+.theme-window-sessions {
+  padding: 0.9em 0.6em;
+  border-right: 1px solid var(--cu-border);
+  font-size: 0.92em;
+}
+
+.theme-window-sessions > span {
+  display: block;
+  padding: 0 0.5em 0.5em;
+  color: var(--cu-muted);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.theme-window-sessions ul {
+  display: grid;
+  gap: 0.15em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.theme-window-sessions li {
+  overflow: hidden;
+  padding: 0.35em 0.5em;
+  border-radius: 0.45em;
+  color: var(--cu-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-window-sessions li[aria-current] {
+  color: var(--cu-text);
+  font-weight: 500;
+}
+
+.theme-window-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+  min-width: 0;
+  padding: 1em 1.1em;
+}
+
+.theme-window-user {
+  align-self: flex-end;
+  max-width: 85%;
+  margin: 0;
+  padding: 0.55em 0.85em;
+  border-radius: 1em;
+}
+
+.theme-window-reply {
+  display: grid;
+  justify-items: start;
+  gap: 0.55em;
+}
+
+.theme-window-reply p {
+  margin: 0;
+}
+
+.theme-window-muted {
+  color: var(--cu-muted);
+}
+
+.theme-window-link {
+  color: var(--cu-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.theme-window-reply code {
+  padding: 0.1em 0.35em;
+  border: 1px solid var(--cu-border);
+  border-radius: 0.35em;
+  background: var(--cu-card);
+  font-family: var(--cu-mono, var(--oc-font-mono));
+  font-size: 0.9em;
+}
+
+.theme-window-button {
+  padding: 0.4em 0.9em;
+  border-radius: 0.5em;
+  background: var(--cu-primary);
+  color: var(--cu-primary-foreground);
+  font-size: 0.92em;
+  font-weight: 600;
+}
+
+.theme-window-composer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding: 0.45em 0.45em 0.45em 0.9em;
+  border: 1px solid var(--cu-border);
+  border-radius: 0.9em;
+  background: var(--cu-card);
+  color: var(--cu-muted);
+}
+
+.theme-window-composer svg {
+  box-sizing: content-box;
+  width: 1em;
+  height: 1em;
+  padding: 0.35em;
+  border-radius: var(--oc-radius-round);
+  background: var(--cu-primary);
+  color: var(--cu-primary-foreground);
+}
+
+@media (max-width: 560px) {
+  .theme-window-large .theme-window-body {
+    grid-template-columns: 2.8em minmax(0, 1fr);
+  }
+
+  .theme-window-large .theme-window-sessions {
+    display: none;
+  }
+}
+
+.plugin-theme-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3887,212 +4064,234 @@ code {
   margin-top: var(--oc-space-4);
 }
 
-/* Mobile detail panels stretch copy buttons; this one stays an icon. */
-.plugin-prompt-preview-heading .plugin-validation-toolbar-copy.skill-install-copy-button {
-  width: 2rem;
-}
-
-.plugin-prompt-preview {
-  display: grid;
-  gap: var(--oc-space-4);
-  margin: 0;
-  padding: 0 var(--oc-space-4) var(--oc-space-4);
-  border: 1px solid var(--oc-border-subtle);
-  border-radius: var(--oc-radius-surface);
-  background: var(--oc-bg-recessed);
-}
-
-.plugin-prompt-preview-bar {
+.plugin-theme-modes {
   display: flex;
-  gap: 6px;
-  margin: 0 calc(-1 * var(--oc-space-4));
-  padding: var(--oc-space-3) var(--oc-space-4);
-  border-bottom: 1px solid var(--oc-border-subtle);
-  background: var(--oc-bg-surface);
-}
-
-.plugin-prompt-preview-bar i {
-  width: 9px;
-  height: 9px;
-  border-radius: var(--oc-radius-round);
-  background: var(--oc-status-error-fg);
-}
-
-.plugin-prompt-preview-bar i:nth-child(2) {
-  background: var(--oc-status-warning-fg);
-}
-
-.plugin-prompt-preview-bar i:nth-child(3) {
-  background: var(--oc-status-success-fg);
-}
-
-.plugin-prompt-preview-message {
-  justify-self: end;
-  max-width: 85%;
-  margin: var(--oc-space-2) 0;
-  padding: var(--oc-space-3) var(--oc-space-4);
-  border-radius: var(--oc-radius-control);
-  background: var(--oc-surface-interactive);
-  color: var(--oc-text-primary);
-  overflow-wrap: anywhere;
-}
-
-.plugin-prompt-preview-composer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--oc-space-2) var(--oc-space-2) var(--oc-space-2) var(--oc-space-4);
-  border: 1px solid var(--oc-border-subtle);
-  border-radius: var(--oc-radius-control);
-  background: var(--oc-bg-surface);
-  color: var(--oc-text-muted);
-}
-
-.plugin-prompt-preview-composer svg {
-  box-sizing: content-box;
-  padding: 5px;
-  border-radius: var(--oc-radius-round);
-  background: var(--oc-text-primary);
-  color: var(--oc-bg-page);
-}
-
-.plugin-prompt-preview-choices {
-  display: flex;
-  flex-wrap: wrap;
   gap: var(--oc-space-2);
 }
 
-.plugin-prompt-preview-choices button {
+.plugin-theme-modes button {
   padding: var(--oc-space-1) var(--oc-space-3);
   border: 1px solid var(--oc-border-subtle);
   border-radius: var(--oc-radius-control);
   background: none;
   color: var(--oc-text-secondary);
   font-size: 0.84rem;
-  text-align: left;
   cursor: pointer;
 }
 
-.plugin-prompt-preview-choices button[aria-pressed="true"] {
+.plugin-theme-modes button[aria-pressed="true"] {
   border-color: var(--oc-text-muted);
   color: var(--oc-text-primary);
 }
 
-/* Theme previews: the palette arrives as inline --oc-* tokens on the window. */
-.plugin-prompt-preview-themed {
-  color: var(--oc-text-primary);
-  font-family: var(--oc-font-body);
+.plugin-theme-cards-title {
+  margin-top: var(--oc-space-2);
 }
 
-.plugin-prompt-preview-backdrop {
-  background:
-    var(--plugin-preview-background) center / cover no-repeat,
-    var(--oc-bg-recessed);
-}
-
-.plugin-prompt-preview-themed .plugin-prompt-preview-composer svg {
-  background: var(--oc-accent-primary);
-  color: var(--oc-text-on-accent);
-}
-
-.plugin-prompt-preview-body {
+/* Catalog grid for theme-only packs, in place of their list rows. */
+.theme-pack-grid {
   display: grid;
-  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
-  gap: var(--oc-space-4);
+  grid-template-columns: repeat(auto-fill, minmax(min(15.5rem, 100%), 1fr));
+  gap: var(--space-5) var(--space-4);
+  padding: var(--space-4) 0;
 }
 
-.plugin-prompt-preview-chat {
+.theme-pack-card {
+  position: relative;
   display: grid;
   align-content: start;
-  gap: var(--oc-space-4);
+  gap: var(--space-2);
   min-width: 0;
 }
 
-.plugin-prompt-preview-sessions {
-  display: grid;
-  align-content: start;
-  gap: var(--oc-space-1);
-  margin: 0;
-  padding: var(--oc-space-2) var(--oc-space-3) 0 0;
-  border-right: 1px solid var(--oc-border-subtle);
-  color: var(--oc-text-muted);
-  font-size: 0.84rem;
-  list-style: none;
+.theme-pack-card:hover .theme-window {
+  border-color: color-mix(in srgb, var(--cu-text) 40%, var(--cu-border));
 }
 
-.plugin-prompt-preview-sessions li {
+.theme-pack-card-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.theme-pack-card-meta h3 {
   overflow: hidden;
-  padding: var(--oc-space-1) var(--oc-space-2);
-  border-radius: var(--oc-radius-control);
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.plugin-prompt-preview-sessions li[aria-current] {
-  background: var(--oc-surface-accent-soft);
-  color: var(--oc-accent-secondary);
+.theme-pack-card-meta span {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
 }
 
-.plugin-prompt-preview-reply {
-  display: grid;
-  justify-items: start;
-  gap: var(--oc-space-2);
-  max-width: 90%;
-}
-
-.plugin-prompt-preview-reply p {
-  margin: 0;
-}
-
-.plugin-prompt-preview-muted {
-  color: var(--oc-text-muted);
-}
-
-.plugin-prompt-preview-link {
-  color: var(--oc-text-link);
-  text-decoration: underline;
-}
-
-.plugin-prompt-preview-reply code {
-  padding: var(--oc-space-2) var(--oc-space-3);
-  border: 1px solid var(--oc-border-subtle);
-  border-radius: var(--oc-radius-control);
-  background: var(--oc-bg-surface);
-  font-family: var(--oc-font-mono);
-  font-size: 0.8rem;
-  overflow-wrap: anywhere;
-}
-
-.plugin-prompt-preview-actions {
+.theme-pack-card-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--oc-space-2);
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.plugin-prompt-preview-actions span {
-  padding: var(--oc-space-1) var(--oc-space-3);
-  border: 1px solid var(--oc-border-subtle);
-  border-radius: var(--oc-radius-control);
-  background: var(--oc-surface-interactive);
-  color: var(--oc-text-secondary);
-  font-size: 0.84rem;
-  font-weight: 600;
+/* Theme colors per mode arrive inline; the site's mode (chips) or the preview's mode
+   (Settings cards) picks which set shows, falling back to the one the theme ships. */
+.theme-chip,
+.theme-settings-card-swatch[data-mode="light"] {
+  --theme-chip-bg: var(--theme-chip-light-bg, var(--theme-chip-dark-bg));
+  --theme-chip-ink: var(--theme-chip-light-ink, var(--theme-chip-dark-ink));
+  --theme-chip-accent: var(--theme-chip-light-accent, var(--theme-chip-dark-accent));
+  --theme-chip-primary: var(--theme-chip-light-primary, var(--theme-chip-dark-primary));
 }
 
-.plugin-prompt-preview-actions span:first-child {
-  border-color: var(--oc-accent-primary);
-  background: var(--oc-accent-primary);
-  color: var(--oc-text-on-accent);
+:root[data-theme-resolved="dark"] .theme-chip,
+.theme-settings-card-swatch[data-mode="dark"] {
+  --theme-chip-bg: var(--theme-chip-dark-bg, var(--theme-chip-light-bg));
+  --theme-chip-ink: var(--theme-chip-dark-ink, var(--theme-chip-light-ink));
+  --theme-chip-accent: var(--theme-chip-dark-accent, var(--theme-chip-light-accent));
+  --theme-chip-primary: var(--theme-chip-dark-primary, var(--theme-chip-light-primary));
 }
 
-@media (max-width: 560px) {
-  .plugin-prompt-preview-body {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.theme-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 24px;
+  height: 16px;
+  border-radius: 5px;
+  background: var(--theme-chip-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 14%, transparent);
+}
 
-  .plugin-prompt-preview-sessions {
-    display: none;
-  }
+.theme-chip i {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--oc-radius-full);
+  background: var(--theme-chip-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-chip-ink) 25%, transparent);
+}
+
+.theme-chip i + i {
+  background: var(--theme-chip-primary);
+}
+
+/* Control UI Settings > Appearance theme cards (ui/src/styles/config.css). */
+.theme-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(96px, 100%), 1fr));
+  gap: var(--space-4) var(--space-3);
+}
+
+.theme-settings-card {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--oc-radius-lg);
+  background: none;
+  color: var(--ink-soft);
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-settings-card-swatch {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  align-content: space-between;
+  justify-items: start;
+  gap: 4px;
+  height: 56px;
+  padding: 10px;
+  overflow: hidden;
+  border-radius: var(--oc-radius-lg);
+  background: var(--theme-chip-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 14%, transparent);
+  transition: box-shadow 0.15s ease;
+}
+
+.theme-settings-card:hover .theme-settings-card-swatch {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 40%, transparent);
+}
+
+.theme-settings-card.is-active .theme-settings-card-swatch {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--ink);
+}
+
+.theme-settings-card:focus-visible {
+  outline: none;
+}
+
+.theme-settings-card:focus-visible .theme-settings-card-swatch {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--accent);
+}
+
+.theme-settings-card-swatch > i {
+  width: 62%;
+  height: 3px;
+  border-radius: var(--oc-radius-full);
+  background: color-mix(in srgb, var(--theme-chip-ink) 45%, transparent);
+}
+
+.theme-settings-card-swatch > i + i {
+  width: 38%;
+  background: color-mix(in srgb, var(--theme-chip-ink) 22%, transparent);
+}
+
+.theme-settings-card-swatch > span {
+  display: inline-flex;
+  align-items: center;
+  align-self: end;
+  gap: 4px;
+}
+
+.theme-settings-card-swatch > span i {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--oc-radius-full);
+  background: var(--theme-chip-primary);
+}
+
+.theme-settings-card-swatch > span i:first-child {
+  width: 18px;
+  background: var(--theme-chip-accent);
+}
+
+.theme-settings-card-check {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  padding: 2.5px;
+  border-radius: var(--oc-radius-full);
+  background: var(--ink);
+  color: var(--surface);
+  stroke-width: 3px;
+}
+
+.theme-settings-card-label {
+  overflow: hidden;
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-settings-card.is-active .theme-settings-card-label {
+  color: var(--ink);
 }
 
 .plugin-detail-page .skill-hero-main-extra {

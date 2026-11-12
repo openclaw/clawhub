@@ -11,7 +11,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./officialPublishers";
 import { extractPackageDigestFields } from "./packageSearchDigest";
 import { isPackageBlockedFromPublic } from "./packageSecurity";
-import type { ThemePreview } from "./pluginThemes";
+import type { ThemeChip, ThemePreview } from "./pluginThemes";
 import { toPublicPublisher } from "./public";
 import { canAccessPublisherOwnerScope, getOwnerPublisher } from "./publishers";
 import { toPublicPackageFamily, type StoredPackageFamily } from "./templateStorage";
@@ -43,6 +43,7 @@ export type PublicPackageListItem = {
   summary: string | null;
   icon: string | null;
   themePreview?: ThemePreview;
+  themeChips?: ThemeChip[];
   ownerHandle: string | null;
   ownerImage: string | null;
   ownerOfficial: boolean;
@@ -208,8 +209,9 @@ async function resolvePackageListStats(ctx: DbReaderCtx, digest: PackageDigestLi
   const pkg = await ctx.db.get(digest.packageId);
   return {
     stats: pkg?.stats ?? digest.stats ?? defaultPackageStats(),
-    // The package row is already read for stats; it also carries the theme chip.
+    // The package row is already read for stats; it also carries the theme pack card data.
     themePreview: pkg?.latestVersionSummary?.themePreview,
+    themeChips: pkg?.latestVersionSummary?.themeChips,
   };
 }
 
@@ -244,7 +246,7 @@ export async function toPublicPackageListItem(
     officialPromise = isOfficialPublisher(ctx, publisher);
     if (publisher) cache?.officialPublishers.set(publisher._id, officialPromise);
   }
-  const [{ stats, themePreview }, ownerOfficial] = await Promise.all([
+  const [{ stats, themePreview, themeChips }, ownerOfficial] = await Promise.all([
     statsPromise,
     officialPromise,
   ]);
@@ -258,6 +260,7 @@ export async function toPublicPackageListItem(
     summary: digest.summary ?? null,
     icon: digest.icon ?? null,
     ...(themePreview ? { themePreview } : {}),
+    ...(themeChips ? { themeChips } : {}),
     ownerHandle: digest.ownerHandle || null,
     ownerImage: toPublicPublisher(publisher)?.image ?? null,
     ownerOfficial,
@@ -332,6 +335,9 @@ export async function toPublicPackageListItemFromPackage(
     icon: pkg.icon ?? null,
     ...(pkg.latestVersionSummary?.themePreview
       ? { themePreview: pkg.latestVersionSummary.themePreview }
+      : {}),
+    ...(pkg.latestVersionSummary?.themeChips
+      ? { themeChips: pkg.latestVersionSummary.themeChips }
       : {}),
     ownerHandle: owner?.handle ?? null,
     ownerImage: owner?.image ?? null,

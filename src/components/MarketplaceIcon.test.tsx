@@ -9,37 +9,6 @@ describe("MarketplaceIcon", () => {
   const openclawIcon =
     "/api/v1/skill-icons/79e24bf179e94e005912591a67ecdf30f04df50204ff5fa5fed06a8e8eb88532";
 
-  it("draws a theme-only plugin's theme chip instead of the publisher photo", () => {
-    const palette = {
-      background: "#061009",
-      foreground: "#e1f1e5",
-      card: "#0a1710",
-      primary: "#e6c178",
-      primaryForeground: "#171207",
-      secondary: "#16281d",
-      secondaryForeground: "#e6c178",
-      mutedForeground: "#afc9b8",
-      accent: "#243e2c",
-      accentForeground: "#f0d79d",
-      border: "#35523e",
-    };
-    const { container } = render(
-      <MarketplaceIcon
-        kind="plugin"
-        label="Artemis Canopy"
-        publisherImageUrl="https://example.com/avatar.png"
-        theme={{ id: "canopy-dark", name: "Artemis Canopy", dark: palette }}
-      />,
-    );
-    expect(container.querySelector("img")).toBeNull();
-    const chip = container.querySelector<HTMLElement>(".marketplace-icon-theme");
-    expect(chip?.style.getPropertyValue("--theme-chip-dark-accent")).toBe("#243e2c");
-    // Text lines on top, then separate accent and primary dots.
-    const [lines, dots] = Array.from(chip?.children ?? []);
-    expect(lines?.children).toHaveLength(2);
-    expect(dots?.children).toHaveLength(2);
-  });
-
   describe("verified raster storage artwork", () => {
     const storageUrl =
       "https://catalog.convex.cloud/api/storage/f92f78e3-1994-49e3-91ca-e49a896a4186";

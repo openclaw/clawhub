@@ -28,6 +28,17 @@ export type ThemePreviewPalette = Record<ThemePreviewColorKey, string> & {
   fontMono?: string;
 };
 type ThemeColorMode = "light" | "dark";
+type ThemeChipColors = Pick<
+  ThemePreviewPalette,
+  "background" | "foreground" | "accent" | "primary"
+>;
+/** Colors for one theme's small chip in a pack card. */
+export type ThemeChip = {
+  id: string;
+  name: string;
+  light?: ThemeChipColors;
+  dark?: ThemeChipColors;
+};
 export type ThemePreview = {
   id: string;
   name: string;
@@ -249,9 +260,10 @@ export function extractThemePreviews(
 }
 
 /**
- * Package-level copy for catalog cards, which never read release summaries. Only a plugin
- * that ships exactly one theme and nothing else gets the chip; every other plugin keeps
- * its usual icon fallback. The detail page previews themes for any plugin.
+ * Package-level copy for catalog cards, which never read release summaries. A plugin that
+ * ships only themes gets its first theme (palette and backgrounds) for the card preview and
+ * one small chip per theme; other plugins keep their list row. The detail page previews
+ * themes for any plugin.
  */
 export function packageThemePreviewFields(
   summary:
@@ -265,16 +277,29 @@ export function packageThemePreviewFields(
       }
     | null
     | undefined,
-): { themePreview?: ThemePreview } {
+): { themePreview?: ThemePreview; themeChips?: ThemeChip[] } {
   const hasCapabilities =
     Object.keys(summary?.contracts ?? {}).length > 0 ||
     Boolean(summary?.providers?.length) ||
     Boolean(summary?.channels?.length) ||
     Boolean(summary?.mcpServers?.length) ||
     Boolean(summary?.bundledSkills?.length);
-  const theme = summary?.themes?.length === 1 ? summary.themes[0] : undefined;
-  if (hasCapabilities || !theme) return {};
-  // The chip never shows background images, so cards don't carry them.
-  const { backgrounds: _backgrounds, ...themePreview } = theme;
-  return { themePreview };
+  const themes = summary?.themes;
+  if (hasCapabilities || !themes?.length) return {};
+  const chip = (palette: ThemePreviewPalette | undefined) =>
+    palette && {
+      background: palette.background,
+      foreground: palette.foreground,
+      accent: palette.accent,
+      primary: palette.primary,
+    };
+  return {
+    themePreview: themes[0],
+    themeChips: themes.map(({ id, name, light, dark }) => ({
+      id,
+      name,
+      ...(light ? { light: chip(light) } : {}),
+      ...(dark ? { dark: chip(dark) } : {}),
+    })),
+  };
 }

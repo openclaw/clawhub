@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   themeBackgroundTokens,
   themeChipStyle,
+  themeModeFor,
   themePaletteToPreviewTokens,
 } from "./themePreviewTokens";
 
@@ -20,21 +21,16 @@ const palette = {
 };
 
 describe("themePaletteToPreviewTokens", () => {
-  it("maps portable palette keys onto the Carapace tokens the preview reads", () => {
+  it("maps portable palette keys onto the Control UI tokens the preview reads", () => {
     expect(themePaletteToPreviewTokens(palette)).toEqual({
-      "--oc-bg-page": "#061009",
-      "--oc-bg-recessed": "#061009",
-      "--oc-bg-surface": "#0a1710",
-      "--oc-border-subtle": "#35523e",
-      "--oc-text-primary": "#e1f1e5",
-      "--oc-text-muted": "#afc9b8",
-      "--oc-surface-interactive": "#16281d",
-      "--oc-text-secondary": "#e6c178",
-      "--oc-accent-primary": "#e6c178",
-      "--oc-text-on-accent": "#171207",
-      "--oc-text-link": "#e6c178",
-      "--oc-surface-accent-soft": "#243e2c",
-      "--oc-accent-secondary": "#f0d79d",
+      "--cu-bg": "#061009",
+      "--cu-card": "#0a1710",
+      "--cu-text": "#e1f1e5",
+      "--cu-muted": "#afc9b8",
+      "--cu-border": "#35523e",
+      "--cu-accent": "#243e2c",
+      "--cu-primary": "#e6c178",
+      "--cu-primary-foreground": "#171207",
     });
   });
 
@@ -45,22 +41,26 @@ describe("themePaletteToPreviewTokens", () => {
         fontSans: '"JetBrains Mono", monospace',
         fontMono: "ui-monospace",
       }),
-    ).toMatchObject({
-      "--oc-font-body": '"JetBrains Mono", monospace',
-      "--oc-font-mono": "ui-monospace",
-    });
+    ).toMatchObject({ "--cu-font": '"JetBrains Mono", monospace', "--cu-mono": "ui-monospace" });
   });
 });
 
 describe("themeChipStyle", () => {
-  it("uses the Control UI chip colors, only for the modes a theme ships", () => {
-    // Bar = accent, dot = primary, lines = foreground (openclaw/openclaw#197388).
-    expect(themeChipStyle({ id: "canopy-dark", name: "Artemis Canopy", dark: palette })).toEqual({
+  it("sets background, ink, accent and primary only for the modes a theme ships", () => {
+    expect(themeChipStyle({ dark: palette })).toEqual({
       "--theme-chip-dark-bg": "#061009",
-      "--theme-chip-dark-accent": "#243e2c",
-      "--theme-chip-dark-accent-2": "#e6c178",
       "--theme-chip-dark-ink": "#e1f1e5",
+      "--theme-chip-dark-accent": "#243e2c",
+      "--theme-chip-dark-primary": "#e6c178",
     });
+  });
+});
+
+describe("themeModeFor", () => {
+  it("prefers the requested mode and falls back to the one a theme ships", () => {
+    expect(themeModeFor({ light: palette, dark: palette }, "dark")).toBe("dark");
+    expect(themeModeFor({ dark: palette }, "light")).toBe("dark");
+    expect(themeModeFor({ light: palette }, "dark")).toBe("light");
   });
 });
 
@@ -68,7 +68,7 @@ describe("themeBackgroundTokens", () => {
   const url = `/api/v1/skill-icons/${"a".repeat(64)}`;
   it("layers a background-colored scrim over hosted images only", () => {
     expect(themeBackgroundTokens(url, "dark")).toEqual({
-      "--plugin-preview-background": `linear-gradient(color-mix(in srgb, var(--oc-bg-page) 84%, transparent), color-mix(in srgb, var(--oc-bg-page) 84%, transparent)), url("${url}")`,
+      "--cu-background-image": `linear-gradient(color-mix(in srgb, var(--cu-bg) 84%, transparent), color-mix(in srgb, var(--cu-bg) 84%, transparent)), url("${url}")`,
     });
     expect(themeBackgroundTokens("https://evil.example/x.png", "dark")).toBeUndefined();
     expect(themeBackgroundTokens(`${url}") , url("x`, "light")).toBeUndefined();

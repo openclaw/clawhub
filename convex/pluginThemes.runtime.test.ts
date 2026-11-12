@@ -243,11 +243,20 @@ describe("existing-data compatibility for theme previews", () => {
     expect(after["canopy-theme"]?.latestVersionSummary).toEqual({
       ...before["canopy-theme"]?.latestVersionSummary,
       themePreview: expect.objectContaining({ id: "canopy-dark", name: "Artemis Canopy" }),
+      themeChips: [expect.objectContaining({ id: "canopy-dark" })],
     });
     const upgraded = await catalogItems(t);
     expect(upgraded.list["canopy-theme"].themePreview.dark.primary).toBe("#e6c178");
-    // Cards only need the chip colors, never the background images.
-    expect(upgraded.list["canopy-theme"].themePreview).not.toHaveProperty("backgrounds");
+    // The pack card previews the first theme with its background and lists one chip per theme.
+    expect(upgraded.list["canopy-theme"].themePreview.backgrounds).toEqual({
+      dark: `/api/v1/skill-icons/${backgroundSha}`,
+    });
+    expect(upgraded.list["canopy-theme"].themeChips).toEqual([
+      expect.objectContaining({
+        id: "canopy-dark",
+        dark: expect.objectContaining({ primary: "#e6c178" }),
+      }),
+    ]);
     expect(upgraded.list["ordinary-plugin"]).toEqual(catalog.list["ordinary-plugin"]);
 
     // Re-running is a no-op.

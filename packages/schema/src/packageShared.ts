@@ -51,6 +51,20 @@ export const ThemePreviewSchema = type({
   backgrounds: type({ light: "string?", dark: "string?" }).optional(),
 });
 
+const ThemeChipColorsSchema = type({
+  background: "string",
+  foreground: "string",
+  accent: "string",
+  primary: "string",
+});
+
+export const ThemeChipSchema = type({
+  id: "string",
+  name: "string",
+  light: ThemeChipColorsSchema.optional(),
+  dark: ThemeChipColorsSchema.optional(),
+});
+
 export const PluginManifestSummarySchema = type({
   schemaVersion: "number",
   contracts: type({ "[string]": "string[]" }).optional(),

@@ -1,30 +1,28 @@
-import type { CSSProperties } from "react";
+import { type CSSProperties, useSyncExternalStore } from "react";
 import type { ThemePreview, ThemePreviewPalette } from "../../convex/lib/pluginThemes";
 import { isHostedSkillPresentationIconPath } from "../../convex/lib/skillPresentation";
+import { isDarkThemeResolved, onThemeChange } from "./theme";
+
+type ThemeMode = "light" | "dark";
 
 /**
- * Maps a portable OpenClaw theme palette onto the Carapace tokens the compact
- * OpenClaw preview reads. Applied inline, so it only restyles that preview.
+ * Maps a portable OpenClaw palette onto the Control UI tokens the theme preview reads,
+ * following ui/src/app/theme-palette.ts normalizeThemePalette (--bg = background,
+ * --text = foreground, --muted = muted-foreground, --accent, --primary, ...). Applied
+ * inline, so it only restyles that preview.
  */
 export function themePaletteToPreviewTokens(palette: ThemePreviewPalette): CSSProperties {
   return {
-    "--oc-bg-page": palette.background,
-    "--oc-bg-recessed": palette.background,
-    "--oc-bg-surface": palette.card,
-    "--oc-border-subtle": palette.border,
-    "--oc-text-primary": palette.foreground,
-    "--oc-text-muted": palette.mutedForeground,
-    "--oc-surface-interactive": palette.secondary,
-    "--oc-text-secondary": palette.secondaryForeground,
-    "--oc-accent-primary": palette.primary,
-    "--oc-text-on-accent": palette.primaryForeground,
-    // Carapace derives links from the root accent, so the scoped value is set directly.
-    "--oc-text-link": palette.primary,
-    "--oc-surface-accent-soft": palette.accent,
-    // Text on accent surfaces (the active session row), paired like the portable palette.
-    "--oc-accent-secondary": palette.accentForeground,
-    ...(palette.fontSans ? { "--oc-font-body": palette.fontSans } : {}),
-    ...(palette.fontMono ? { "--oc-font-mono": palette.fontMono } : {}),
+    "--cu-bg": palette.background,
+    "--cu-card": palette.card,
+    "--cu-text": palette.foreground,
+    "--cu-muted": palette.mutedForeground,
+    "--cu-border": palette.border,
+    "--cu-accent": palette.accent,
+    "--cu-primary": palette.primary,
+    "--cu-primary-foreground": palette.primaryForeground,
+    ...(palette.fontSans ? { "--cu-font": palette.fontSans } : {}),
+    ...(palette.fontMono ? { "--cu-mono": palette.fontMono } : {}),
   } as CSSProperties;
 }
 
@@ -33,28 +31,44 @@ export function themePaletteToPreviewTokens(palette: ThemePreviewPalette): CSSPr
  * default visibility: about 16% image in dark mode and 10% in light mode, so text stays
  * on a near-solid surface. Only hosted ClawHub image paths are used.
  */
-export function themeBackgroundTokens(url: string | undefined, mode: "light" | "dark") {
+export function themeBackgroundTokens(url: string | undefined, mode: ThemeMode) {
   if (!isHostedSkillPresentationIconPath(url)) return undefined;
-  const scrim = `color-mix(in srgb, var(--oc-bg-page) ${mode === "light" ? 90 : 84}%, transparent)`;
+  const scrim = `color-mix(in srgb, var(--cu-bg) ${mode === "light" ? 90 : 84}%, transparent)`;
   return {
-    "--plugin-preview-background": `linear-gradient(${scrim}, ${scrim}), url("${url}")`,
+    "--cu-background-image": `linear-gradient(${scrim}, ${scrim}), url("${url}")`,
   } as CSSProperties;
 }
 
+type ChipColors = Pick<ThemePreviewPalette, "background" | "foreground" | "accent" | "primary">;
+
 /**
- * Settings > Appearance chip colors for each shipped mode, as the Control UI draws them
- * (openclaw/openclaw#197388): accent dot, primary dot, foreground lines.
- * CSS picks the mode that matches the site and falls back to the other one.
+ * Chip colors for each shipped mode, as the Control UI Settings cards use them
+ * (openclaw/openclaw#197388): background, foreground ink, accent, primary. CSS picks the
+ * mode that matches the site and falls back to the other one.
  */
-export function themeChipStyle(theme: ThemePreview): CSSProperties {
+export function themeChipStyle(theme: { light?: ChipColors; dark?: ChipColors }): CSSProperties {
   const style: Record<string, string> = {};
   for (const mode of ["light", "dark"] as const) {
-    const palette = theme[mode];
-    if (!palette) continue;
-    style[`--theme-chip-${mode}-bg`] = palette.background;
-    style[`--theme-chip-${mode}-accent`] = palette.accent;
-    style[`--theme-chip-${mode}-accent-2`] = palette.primary;
-    style[`--theme-chip-${mode}-ink`] = palette.foreground;
+    const colors = theme[mode];
+    if (!colors) continue;
+    style[`--theme-chip-${mode}-bg`] = colors.background;
+    style[`--theme-chip-${mode}-ink`] = colors.foreground;
+    style[`--theme-chip-${mode}-accent`] = colors.accent;
+    style[`--theme-chip-${mode}-primary`] = colors.primary;
   }
   return style as CSSProperties;
+}
+
+/** The mode to show for a theme: the preferred one when it ships, else the one it has. */
+export function themeModeFor(theme: Pick<ThemePreview, "light" | "dark">, preferred: ThemeMode) {
+  return theme[preferred] ? preferred : theme.light ? "light" : "dark";
+}
+
+/** ClawHub's resolved light/dark mode; SSR renders light and hydrates to the real mode. */
+export function useSiteThemeMode(): ThemeMode {
+  return useSyncExternalStore(
+    onThemeChange,
+    () => (isDarkThemeResolved() ? "dark" : "light"),
+    () => "light",
+  );
 }

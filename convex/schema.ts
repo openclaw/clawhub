@@ -666,6 +666,20 @@ const themePreviewValidator = v.object({
   ),
 });
 
+const themeChipColorsValidator = v.object({
+  background: v.string(),
+  foreground: v.string(),
+  accent: v.string(),
+  primary: v.string(),
+});
+
+const themeChipValidator = v.object({
+  id: v.string(),
+  name: v.string(),
+  light: v.optional(themeChipColorsValidator),
+  dark: v.optional(themeChipColorsValidator),
+});
+
 export const pluginManifestSummaryValidator = v.object({
   schemaVersion: v.literal(1),
   contracts: v.optional(v.record(v.string(), v.array(v.string()))),
@@ -1649,8 +1663,9 @@ const packages = defineTable({
       createdAt: v.number(),
       changelog: v.string(),
       icon: v.optional(v.string()),
-      // First theme of a theme-only latest release; the catalog draws it instead of a photo.
+      // Theme-only latest release: first theme for the card preview, one chip per theme.
       themePreview: v.optional(themePreviewValidator),
+      themeChips: v.optional(v.array(themeChipValidator)),
       compatibility: packageCompatibilityValidator,
       verification: packageVerificationValidator,
       artifact: packageArtifactSummaryValidator,

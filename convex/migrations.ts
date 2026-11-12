@@ -1303,7 +1303,11 @@ export const applyPluginManifestSummaryBackfillPatch = internalMutation({
     // Catalog cards read the theme chip from the package's latest-version summary.
     const pkg = await ctx.db.get(release.packageId);
     if (pkg?.latestReleaseId === release._id && pkg.latestVersionSummary) {
-      const { themePreview: _previous, ...latestVersionSummary } = pkg.latestVersionSummary;
+      const {
+        themePreview: _previous,
+        themeChips: _previousChips,
+        ...latestVersionSummary
+      } = pkg.latestVersionSummary;
       await ctx.db.patch(pkg._id, {
         latestVersionSummary: {
           ...latestVersionSummary,

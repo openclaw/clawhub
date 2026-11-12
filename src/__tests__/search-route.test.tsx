@@ -34,6 +34,8 @@ vi.mock("../lib/useUnifiedSearch", () => ({
 
 vi.mock("../components/PluginListItem", () => ({
   PluginListItem: ({ item }: { item: { name: string } }) => <div>{item.name}</div>,
+  PluginResultItems: ({ items }: { items: Array<{ name: string }> }) =>
+    items.map((item) => <div key={item.name}>{item.name}</div>),
 }));
 
 vi.mock("../components/PublisherListItem", () => ({

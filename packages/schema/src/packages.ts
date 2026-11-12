@@ -16,6 +16,7 @@ import {
   PackageVerificationScopeSchema,
   PackageVerificationTierSchema,
   PluginManifestSummarySchema,
+  ThemeChipSchema,
   ThemePreviewSchema,
 } from "./packageShared.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
@@ -146,6 +147,7 @@ const PackageListItemFields = {
   summary: "string|null?",
   icon: "string|null?",
   themePreview: ThemePreviewSchema.optional(),
+  themeChips: ThemeChipSchema.array().optional(),
   ownerHandle: "string|null?",
   ownerImage: "string|null?",
   ownerOfficial: "boolean?",

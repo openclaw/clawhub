@@ -9,6 +9,7 @@ import { useMutation, useQueries, useQuery, type RequestForQueries } from "conve
 import {
   AlertTriangle,
   Braces,
+  Check,
   ChevronRight,
   Download,
   FileArchive,
@@ -35,7 +36,6 @@ import {
 } from "../../../convex/lib/pluginApiRetirements";
 import type { ThemePreview } from "../../../convex/lib/pluginThemes";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
-import { CompactOpenClawPreview } from "../../components/CompactOpenClawPreview";
 import {
   DetailHero,
   DETAIL_HERO_TOPIC_LIMIT,
@@ -51,6 +51,7 @@ import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
+import { MarketplaceIcon } from "../../components/MarketplaceIcon";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
@@ -59,6 +60,7 @@ import { SidebarMetadata } from "../../components/SidebarMetadata";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { formatOpenClawPrompt } from "../../components/skillDetailUtils";
 import { InstallCommandCard } from "../../components/SkillInstallSurface";
+import { ThemePreviewWindow } from "../../components/ThemePreviewWindow";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -105,6 +107,7 @@ import {
 import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
 import { presentationTitle } from "../../lib/presentationTitle";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
+import { themeChipStyle, themeModeFor, useSiteThemeMode } from "../../lib/themePreviewTokens";
 import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 import { useDeferredPackageActivityTrend } from "../../lib/useDeferredActivityTrend";
@@ -576,75 +579,62 @@ function formatCompatibilityLabel(key: string): string {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase());
 }
 
-// A compact OpenClaw chat window, modeled on Carapace's compact application preview.
-// It shows only the author's prompt; ClawHub never invents a reply.
-function PluginRecommendedPrompts({ prompts }: { prompts: readonly string[] }) {
-  const [selected, setSelected] = useState(0);
-  const prompt = prompts[selected] ?? prompts[0];
+// Mirrors the Control UI's recommended-prompt rows: the plugin's mark and name, then the
+// prompt. ClawHub can't start a chat, so each row copies its prompt instead.
+function PluginRecommendedPrompts({
+  prompts,
+  name,
+  icon,
+}: {
+  prompts: readonly string[];
+  name: string;
+  icon: ReactNode;
+}) {
   return (
-    <section className="plugin-manifest-section" aria-labelledby="plugin-prompts-title">
-      <div className="plugin-prompt-preview-heading">
-        <h3 id="plugin-prompts-title">Try asking OpenClaw</h3>
-        <InstallCopyButton
-          text={prompt}
-          ariaLabel="Copy prompt"
-          tooltip="Copy prompt"
-          className="plugin-validation-toolbar-copy"
-          showLabel={false}
-          variant="ghost"
-          size="icon-sm"
-        />
-      </div>
-      <CompactOpenClawPreview messages={[{ role: "user", content: prompt }]} />
-      {prompts.length > 1 ? (
-        <div className="plugin-prompt-preview-choices" role="group" aria-label="Example prompts">
-          {prompts.map((choice, index) => (
-            <button
-              key={choice}
-              type="button"
-              aria-pressed={index === selected}
-              onClick={() => setSelected(index)}
-            >
-              {choice}
-            </button>
-          ))}
+    <section className="plugin-manifest-list" aria-label="Example prompts">
+      {prompts.map((prompt) => (
+        <div key={prompt} className="plugin-manifest-row plugin-prompt-row">
+          <p>
+            {icon}
+            <strong>{name}</strong> {prompt}
+          </p>
+          <InstallCopyButton
+            text={prompt}
+            ariaLabel={`Copy prompt: ${prompt}`}
+            tooltip="Copy prompt"
+            className="plugin-validation-toolbar-copy"
+            showLabel={false}
+            variant="ghost"
+            size="icon-sm"
+          />
         </div>
-      ) : null}
+      ))}
     </section>
   );
 }
 
-// Static sample content that exercises the palette; this is a theme demo, not a real reply.
-function PluginThemePreview({
-  themes,
-  installCommand,
-}: {
-  themes: ThemePreview[];
-  installCommand: string;
-}) {
+// The theme section mirrors the Control UI: a live mini preview, then the pack's themes as
+// Settings > Appearance cards. Clicking a card switches the preview.
+function PluginThemePreview({ themes }: { themes: ThemePreview[] }) {
+  const siteMode = useSiteThemeMode();
   const [selected, setSelected] = useState(0);
+  const [chosenMode, setChosenMode] = useState<"light" | "dark" | null>(null);
   const theme = themes[selected] ?? themes[0];
-  const modes = (["light", "dark"] as const).filter((mode) => theme?.[mode]);
-  const [mode, setMode] = useState<"light" | "dark">(modes[0] ?? "light");
-  useEffect(() => {
-    // Start in the site's resolved mode when the theme ships it; SSR cannot know it.
-    const siteMode = document.documentElement.dataset.themeResolved;
-    if ((siteMode === "light" || siteMode === "dark") && themes[0]?.[siteMode]) setMode(siteMode);
-  }, [themes]);
-  const palette = theme?.[mode] ?? (modes[0] ? theme?.[modes[0]] : undefined);
-  if (!theme || !palette) return null;
+  if (!theme) return null;
+  const modes = (["light", "dark"] as const).filter((mode) => theme[mode]);
+  const mode = themeModeFor(theme, chosenMode ?? siteMode);
   return (
     <section className="plugin-manifest-section" aria-labelledby="plugin-theme-preview-title">
-      <div className="plugin-prompt-preview-heading">
+      <div className="plugin-theme-heading">
         <h3 id="plugin-theme-preview-title">Theme preview</h3>
         {modes.length > 1 ? (
-          <div className="plugin-prompt-preview-choices" role="group" aria-label="Color mode">
+          <div className="plugin-theme-modes" role="group" aria-label="Color mode">
             {modes.map((choice) => (
               <button
                 key={choice}
                 type="button"
                 aria-pressed={choice === mode}
-                onClick={() => setMode(choice)}
+                onClick={() => setChosenMode(choice)}
               >
                 {choice === "light" ? "Light" : "Dark"}
               </button>
@@ -654,50 +644,35 @@ function PluginThemePreview({
           <Badge variant="compact">{modes[0] === "dark" ? "Dark" : "Light"} only</Badge>
         )}
       </div>
-      <CompactOpenClawPreview
-        palette={palette}
-        background={theme.backgrounds?.[mode] ? { url: theme.backgrounds[mode], mode } : undefined}
-        sessions={[theme.name, "Release notes", "Inbox triage"]}
-        messages={[
-          { role: "user", content: "Show me what this theme looks like." },
-          {
-            role: "assistant",
-            content: (
-              <>
-                <p>
-                  This is <strong>{theme.name}</strong> in {mode} mode.
-                </p>
-                <p className="plugin-prompt-preview-muted">
-                  Secondary text is muted, and{" "}
-                  <span className="plugin-prompt-preview-link">links</span> use the primary color.
-                </p>
-                <code>{installCommand}</code>
-                <span className="plugin-prompt-preview-actions" aria-hidden="true">
-                  <span>Primary</span>
-                  <span>Secondary</span>
-                </span>
-              </>
-            ),
-          },
-        ]}
-      />
-      {themes.length > 1 ? (
-        <div className="plugin-prompt-preview-choices" role="group" aria-label="Themes">
-          {themes.map((choice, index) => (
-            <button
-              key={choice.id}
-              type="button"
-              aria-pressed={index === selected}
-              onClick={() => {
-                setSelected(index);
-                if (!choice[mode]) setMode(choice.light ? "light" : "dark");
-              }}
+      <ThemePreviewWindow theme={theme} mode={mode} />
+      <h3 className="plugin-theme-cards-title">Themes in this pack</h3>
+      <div className="theme-settings-grid" role="group" aria-label="Themes in this pack">
+        {themes.map((choice, index) => (
+          <button
+            key={choice.id}
+            type="button"
+            className={"theme-settings-card" + (index === selected ? " is-active" : "")}
+            aria-pressed={index === selected}
+            onClick={() => setSelected(index)}
+          >
+            <span
+              className="theme-settings-card-swatch"
+              data-mode={themeModeFor(choice, mode)}
+              style={themeChipStyle(choice)}
+              aria-hidden="true"
             >
-              {choice.name}
-            </button>
-          ))}
-        </div>
-      ) : null}
+              <i />
+              <i />
+              <span>
+                <i />
+                <i />
+              </span>
+              {index === selected ? <Check className="theme-settings-card-check" /> : null}
+            </span>
+            <span className="theme-settings-card-label">{choice.name}</span>
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
@@ -1951,11 +1926,22 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   }
                 />
                 {pluginManifestSummary?.recommendedPrompts?.length ? (
-                  <PluginRecommendedPrompts prompts={pluginManifestSummary.recommendedPrompts} />
+                  <PluginRecommendedPrompts
+                    prompts={pluginManifestSummary.recommendedPrompts}
+                    name={presentationTitle(pkg.displayName, pkg.name)}
+                    icon={
+                      <MarketplaceIcon
+                        kind="plugin"
+                        label={presentationTitle(pkg.displayName, pkg.name)}
+                        imageUrl={pkg.icon}
+                        publisherImageUrl={owner?.image}
+                        categorySlug={headerCategories[0]?.slug}
+                        size="xs"
+                      />
+                    }
+                  />
                 ) : null}
-                {themePreviews ? (
-                  <PluginThemePreview themes={themePreviews} installCommand={installCommand} />
-                ) : null}
+                {themePreviews ? <PluginThemePreview themes={themePreviews} /> : null}
               </div>
               <PluginDetailTabs
                 activeTab={activeTab}
