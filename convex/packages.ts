@@ -113,7 +113,7 @@ import {
   getPackageByNormalizedName,
 } from "./lib/packageCatalogRead";
 import { verifyPublishFileStorageMetadata } from "./lib/packageFileVerification";
-import { resolvePackageIcon } from "./lib/packageIcons";
+import { resolvePackageIcon, withThemeBackgrounds } from "./lib/packageIcons";
 import {
   packageInspectorIssueInputValidator,
   type PackageInspectorFinding,
@@ -200,6 +200,11 @@ import {
   isExplicitPluginScanSource,
   isSingleScanPlugin,
 } from "./lib/pluginScanRouting";
+import {
+  declaredThemeSourcePaths,
+  MAX_THEME_SOURCE_BYTES,
+  packageThemePreviewFields,
+} from "./lib/pluginThemes";
 import { toPublicPublisher } from "./lib/public";
 import { assertOperationalPackageRetryFinalization } from "./lib/publishAttemptOperationalRecovery";
 import {
@@ -5813,6 +5818,7 @@ function packageLatestSummaryFromRelease(release: Doc<"packageReleases"> | null)
         createdAt: release.createdAt,
         changelog: release.changelog,
         icon: release.icon,
+        ...packageThemePreviewFields(release.pluginManifestSummary),
         compatibility: release.compatibility,
         verification: release.verification,
         artifact: packageArtifactSummary(release),
@@ -5921,6 +5927,7 @@ async function restorePackageDoc(
           createdAt: nextLatest.createdAt,
           changelog: nextLatest.changelog,
           icon: nextLatest.icon,
+          ...packageThemePreviewFields(nextLatest.pluginManifestSummary),
           compatibility: nextLatest.compatibility,
           verification: nextLatest.verification,
           artifact: packageArtifactSummary(nextLatest),
@@ -8210,7 +8217,9 @@ function normalizeStoredPluginCategoryOverride(categories: readonly string[] | u
 async function withSkillMarkdownTextsForManifestSummary(
   ctx: Pick<ActionCtx, "storage">,
   files: ReturnType<typeof normalizePublishFiles>,
+  pluginManifest: unknown,
 ) {
+  const themeSources = new Set(declaredThemeSourcePaths(pluginManifest));
   const summaryFiles: Array<
     (typeof files)[number] & {
       text?: string;
@@ -8218,7 +8227,11 @@ async function withSkillMarkdownTextsForManifestSummary(
   > = [];
   for (const file of files) {
     const lower = file.path.toLowerCase();
-    if (lower === "skill.md" || lower.endsWith("/skill.md")) {
+    if (
+      lower === "skill.md" ||
+      lower.endsWith("/skill.md") ||
+      (themeSources.has(file.path) && file.size <= MAX_THEME_SOURCE_BYTES)
+    ) {
       summaryFiles.push({
         ...file,
         text: await readStorageText(ctx, file.storageId),
@@ -8708,19 +8721,30 @@ async function publishPackageImpl(
     files,
     ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
   });
-  const pluginManifestSummary =
+  const derivedManifestSummary =
     family === "claw"
       ? undefined
-      : {
-          ...derivePluginManifestSummary({
-            pluginManifest: pluginManifest ?? bundleManifest ?? {},
-            ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
-            compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
-            ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
-            files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
-          }),
-          ...(icon ? { icon } : {}),
-        };
+      : derivePluginManifestSummary({
+          pluginManifest: pluginManifest ?? bundleManifest ?? {},
+          ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
+          compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
+          ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
+          files: await withSkillMarkdownTextsForManifestSummary(
+            ctx,
+            files,
+            pluginManifest ?? bundleManifest,
+          ),
+        });
+  const themes = await withThemeBackgrounds(ctx, {
+    pluginManifest: pluginManifest ?? bundleManifest,
+    files,
+    themes: derivedManifestSummary?.themes,
+  });
+  const pluginManifestSummary = derivedManifestSummary && {
+    ...derivedManifestSummary,
+    ...(themes ? { themes } : {}),
+    ...(icon ? { icon } : {}),
+  };
 
   const packageInsertArgs = {
     actorUserId,
@@ -11868,6 +11892,7 @@ export const insertReleaseInternal = internalMutation({
             createdAt: now,
             changelog: args.changelog,
             icon: args.icon,
+            ...packageThemePreviewFields(args.pluginManifestSummary),
             compatibility: args.compatibility,
             verification: releaseVerification,
             artifact: packageArtifactSummary(args),

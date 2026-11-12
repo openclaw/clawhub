@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Plus, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
-import { PluginListItem } from "../components/PluginListItem";
+import { PluginListItem, PluginResultItems } from "../components/PluginListItem";
 import { PublisherListItem } from "../components/PublisherListItem";
 import { BrowseResultsSkeleton } from "../components/skeletons/BrowseResultsSkeleton";
 import { SkillListItem } from "../components/SkillListItem";
@@ -330,9 +330,7 @@ function UnifiedSearchPage() {
             <div className="search-results-sections">
               {pluginResults.length > 0 ? (
                 <SearchResultSection title="Plugins">
-                  {pluginResults.map((item) => (
-                    <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
-                  ))}
+                  <PluginResultItems items={pluginResults.map((item) => item.plugin)} />
                 </SearchResultSection>
               ) : null}
               {skillResults.length > 0 ? (
@@ -350,6 +348,12 @@ function UnifiedSearchPage() {
             </div>
           ) : activeType === "creators" ? (
             <CreatorResultsList results={creatorResults} />
+          ) : activeType === "plugins" ? (
+            <div className="results-list">
+              <PluginResultItems
+                items={results.flatMap((item) => (item.type === "plugin" ? [item.plugin] : []))}
+              />
+            </div>
           ) : (
             <div className="results-list">
               {results.map((item) =>

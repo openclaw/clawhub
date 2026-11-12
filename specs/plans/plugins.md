@@ -145,6 +145,44 @@ invalid list is dropped whole and never blocks publication. OpenClaw's Gateway
 already reads this summary field for catalog plugins, so keep it the only copy.
 Existing releases gain prompts through the plugin manifest summary backfill.
 
+### Theme previews
+
+Publication reads each `themes[].source` JSON file declared in `openclaw.plugin.json`
+and stores a compact preview in `pluginManifestSummary.themes`: id, name, and per
+shipped mode only the palette keys ClawHub's chip and compact preview read (plus
+`font-sans`/`font-mono` when declared), stored in camelCase because Convex object
+validators reject hyphenated field names. The modes are the palettes present. Validation
+mirrors OpenClaw's portable theme rules (`convex/lib/pluginThemes.ts`): safe local id
+and `.json` source path, matching name and description, complete light and/or dark
+palettes with safe color and font values. It does not re-check OpenClaw's branding
+fields (mascot, brand icon, critters, hats, artwork), which the preview never reads, so a
+theme OpenClaw rejects for those can still be previewed here. Invalid themes are dropped
+one by one and never block publication. Values reach the page only as inline `--cu-*` and `--theme-chip-*` custom
+properties on the preview, so they must stay limited to those validated colors and fonts.
+
+A plugin is theme-only when it has themes and no contracts, providers, channels, MCP
+servers, or bundled skills. Every plugin whose release summary has themes shows the theme
+section on its detail page: a mini Control UI preview (ThemePreviewWindow) with a
+Light/Dark switch, then the pack's themes as Control UI Settings > Appearance cards
+(background, two foreground lines, accent pill, primary dot; openclaw/openclaw#197388).
+The preview follows the Control UI color rules: neutral selected rows and user bubble,
+accent links, primary buttons and send button, theme fonts, and the mode's background.
+Theme-only packs render as grid cards in plugin search and browse instead of list rows:
+the first theme's preview, the pack name and publisher, and one small chip per theme
+(background, accent dot, primary dot). Catalog cards never read release summaries, so
+the package's `latestVersionSummary` carries `themePreview` (the first theme, with
+backgrounds) and `themeChips` (per theme and mode: background, foreground, accent,
+primary). The plugin's list icon is unchanged.
+Declared theme `backgrounds` are hosted through the plugin icon path (content-addressed
+`skillPresentationAssets` store and `/api/v1/skill-icons/<sha256>`): 512 KiB cap like
+OpenClaw, sha256 match, PNG/JPEG/WebP structure from the extension, and a raster decode
+(at most 2048×2048 px). Only the hosted URL per mode is stored on the theme. An invalid
+image is dropped on its own; the theme stays (OpenClaw drops the whole theme instead).
+All new fields are optional, so rows written before this
+change stay valid. The plugin manifest summary backfill reads theme
+files like `SKILL.md` and refreshes both copies for existing releases. There is no
+Themes category, table, or endpoint.
+
 ### ClawHub today
 
 ClawHub is currently a text-bundle registry for skills.

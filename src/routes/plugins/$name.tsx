@@ -9,6 +9,7 @@ import { useMutation, useQueries, useQuery, type RequestForQueries } from "conve
 import {
   AlertTriangle,
   Braces,
+  Check,
   ChevronRight,
   Download,
   FileArchive,
@@ -33,6 +34,7 @@ import {
   pluginApiRetirement,
   type PluginApiRetirement,
 } from "../../../convex/lib/pluginApiRetirements";
+import type { ThemePreview } from "../../../convex/lib/pluginThemes";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
 import {
   DetailHero,
@@ -58,6 +60,7 @@ import { SidebarMetadata } from "../../components/SidebarMetadata";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { formatOpenClawPrompt } from "../../components/skillDetailUtils";
 import { InstallCommandCard } from "../../components/SkillInstallSurface";
+import { ThemePreviewWindow } from "../../components/ThemePreviewWindow";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -104,6 +107,7 @@ import {
 import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
 import { presentationTitle } from "../../lib/presentationTitle";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
+import { themeChipStyle, themeModeFor, useSiteThemeMode } from "../../lib/themePreviewTokens";
 import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 import { useDeferredPackageActivityTrend } from "../../lib/useDeferredActivityTrend";
@@ -605,6 +609,70 @@ function PluginRecommendedPrompts({
           />
         </div>
       ))}
+    </section>
+  );
+}
+
+// The theme section mirrors the Control UI: a live mini preview, then the pack's themes as
+// Settings > Appearance cards. Clicking a card switches the preview.
+function PluginThemePreview({ themes }: { themes: ThemePreview[] }) {
+  const siteMode = useSiteThemeMode();
+  const [selected, setSelected] = useState(0);
+  const [chosenMode, setChosenMode] = useState<"light" | "dark" | null>(null);
+  const theme = themes[selected] ?? themes[0];
+  if (!theme) return null;
+  const modes = (["light", "dark"] as const).filter((mode) => theme[mode]);
+  const mode = themeModeFor(theme, chosenMode ?? siteMode);
+  return (
+    <section className="plugin-manifest-section" aria-labelledby="plugin-theme-preview-title">
+      <div className="plugin-theme-heading">
+        <h3 id="plugin-theme-preview-title">Theme preview</h3>
+        {modes.length > 1 ? (
+          <div className="plugin-theme-modes" role="group" aria-label="Color mode">
+            {modes.map((choice) => (
+              <button
+                key={choice}
+                type="button"
+                aria-pressed={choice === mode}
+                onClick={() => setChosenMode(choice)}
+              >
+                {choice === "light" ? "Light" : "Dark"}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <Badge variant="compact">{modes[0] === "dark" ? "Dark" : "Light"} only</Badge>
+        )}
+      </div>
+      <ThemePreviewWindow theme={theme} mode={mode} />
+      <h3 className="plugin-theme-cards-title">Themes in this pack</h3>
+      <div className="theme-settings-grid" role="group" aria-label="Themes in this pack">
+        {themes.map((choice, index) => (
+          <button
+            key={choice.id}
+            type="button"
+            className={"theme-settings-card" + (index === selected ? " is-active" : "")}
+            aria-pressed={index === selected}
+            onClick={() => setSelected(index)}
+          >
+            <span
+              className="theme-settings-card-swatch"
+              data-mode={themeModeFor(choice, mode)}
+              style={themeChipStyle(choice)}
+              aria-hidden="true"
+            >
+              <i />
+              <i />
+              <span>
+                <i />
+                <i />
+              </span>
+              {index === selected ? <Check className="theme-settings-card-check" /> : null}
+            </span>
+            <span className="theme-settings-card-label">{choice.name}</span>
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
@@ -1254,6 +1322,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
+  const themePreviews = pluginManifestSummary?.themes?.length ? pluginManifestSummary.themes : null;
   const verification = latestRelease?.verification ?? pkg.verification;
   const readmeAssetBaseUrl = buildReadmeAssetBaseUrl(
     verification?.sourceRepo,
@@ -1872,6 +1941,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     }
                   />
                 ) : null}
+                {themePreviews ? <PluginThemePreview themes={themePreviews} /> : null}
               </div>
               <PluginDetailTabs
                 activeTab={activeTab}

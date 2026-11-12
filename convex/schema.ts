@@ -638,6 +638,48 @@ const packageCompatibilityValidator = v.optional(
   }),
 );
 
+// Portable OpenClaw palette subset read by ClawHub's theme chip and preview, in camelCase
+// (muted-foreground -> mutedForeground). See convex/lib/pluginThemes.ts.
+const themePreviewPaletteValidator = v.object({
+  background: v.string(),
+  foreground: v.string(),
+  card: v.string(),
+  primary: v.string(),
+  primaryForeground: v.string(),
+  secondary: v.string(),
+  secondaryForeground: v.string(),
+  mutedForeground: v.string(),
+  accent: v.string(),
+  accentForeground: v.string(),
+  border: v.string(),
+  fontSans: v.optional(v.string()),
+  fontMono: v.optional(v.string()),
+});
+
+const themePreviewValidator = v.object({
+  id: v.string(),
+  name: v.string(),
+  light: v.optional(themePreviewPaletteValidator),
+  dark: v.optional(themePreviewPaletteValidator),
+  backgrounds: v.optional(
+    v.object({ light: v.optional(v.string()), dark: v.optional(v.string()) }),
+  ),
+});
+
+const themeChipColorsValidator = v.object({
+  background: v.string(),
+  foreground: v.string(),
+  accent: v.string(),
+  primary: v.string(),
+});
+
+const themeChipValidator = v.object({
+  id: v.string(),
+  name: v.string(),
+  light: v.optional(themeChipColorsValidator),
+  dark: v.optional(themeChipColorsValidator),
+});
+
 export const pluginManifestSummaryValidator = v.object({
   schemaVersion: v.literal(1),
   contracts: v.optional(v.record(v.string(), v.array(v.string()))),
@@ -646,6 +688,7 @@ export const pluginManifestSummaryValidator = v.object({
   categories: v.optional(v.array(v.string())),
   icon: v.optional(v.string()),
   recommendedPrompts: v.optional(v.array(v.string())),
+  themes: v.optional(v.array(themePreviewValidator)),
   compatibility: v.optional(
     v.object({
       pluginApiRange: v.optional(v.string()),
@@ -1620,6 +1663,9 @@ const packages = defineTable({
       createdAt: v.number(),
       changelog: v.string(),
       icon: v.optional(v.string()),
+      // Theme-only latest release: first theme for the card preview, one chip per theme.
+      themePreview: v.optional(themePreviewValidator),
+      themeChips: v.optional(v.array(themeChipValidator)),
       compatibility: packageCompatibilityValidator,
       verification: packageVerificationValidator,
       artifact: packageArtifactSummaryValidator,
