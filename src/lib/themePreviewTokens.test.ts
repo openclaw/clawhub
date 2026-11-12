@@ -49,12 +49,13 @@ describe("themePaletteToPreviewTokens", () => {
 });
 
 describe("themeChipStyle", () => {
-  it("sets chip colors only for the modes a theme ships", () => {
+  it("summarizes the preview's colors, only for the modes a theme ships", () => {
+    // Pill = primary (buttons), dot = accent (active session), lines = foreground.
     expect(themeChipStyle({ id: "canopy-dark", name: "Artemis Canopy", dark: palette })).toEqual({
       "--theme-chip-dark-bg": "#061009",
-      "--theme-chip-dark-accent": "#243e2c",
-      "--theme-chip-dark-accent-2": "#e6c178",
-      "--theme-chip-dark-ink": "#fff",
+      "--theme-chip-dark-accent": "#e6c178",
+      "--theme-chip-dark-accent-2": "#243e2c",
+      "--theme-chip-dark-ink": "#e1f1e5",
     });
   });
 });

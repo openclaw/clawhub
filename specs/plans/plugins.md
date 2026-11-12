@@ -159,11 +159,13 @@ never block publication. Values reach the page only as inline `--oc-*` custom
 properties on the preview, so they must stay limited to those validated colors and fonts.
 
 A plugin is theme-only when it has themes and no contracts, providers, channels, MCP
-servers, or bundled skills. Only those plugins replace the catalog icon (and its
-publisher photo fallback) with the Settings > Appearance chip, and show the themed
-compact window on the detail page. Catalog cards never read release summaries, so the
-first theme of a theme-only latest release is copied into the package's
-`latestVersionSummary.themePreview`. The plugin manifest summary backfill reads theme
+servers, or bundled skills. Those plugins show the themed compact window on the detail
+page. A theme-only plugin with exactly one theme also replaces the catalog icon (and its
+publisher photo fallback) with the Settings > Appearance chip; packs with several themes
+keep the usual icon. The chip summarizes the preview: background, primary pill (buttons),
+accent dot (active session), foreground lines. Catalog cards never read release summaries,
+so that single theme is copied into the package's `latestVersionSummary.themePreview`.
+All new fields are optional, so rows written before this change stay valid. The plugin manifest summary backfill reads theme
 files like `SKILL.md` and refreshes both copies for existing releases. There is no
 Themes category, table, or endpoint.
 

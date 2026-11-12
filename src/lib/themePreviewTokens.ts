@@ -28,8 +28,9 @@ export function themePaletteToPreviewTokens(palette: ThemePreviewPalette): CSSPr
 }
 
 /**
- * Settings > Appearance chip colors for each shipped mode. CSS picks the mode that
- * matches the site and falls back to the other one.
+ * Settings > Appearance chip colors for each shipped mode, summarizing the live preview:
+ * pill = primary (buttons, send), dot = accent (active session), lines = foreground.
+ * CSS picks the mode that matches the site and falls back to the other one.
  */
 export function themeChipStyle(theme: ThemePreview): CSSProperties {
   const style: Record<string, string> = {};
@@ -37,9 +38,9 @@ export function themeChipStyle(theme: ThemePreview): CSSProperties {
     const palette = theme[mode];
     if (!palette) continue;
     style[`--theme-chip-${mode}-bg`] = palette.background;
-    style[`--theme-chip-${mode}-accent`] = palette.accent;
-    style[`--theme-chip-${mode}-accent-2`] = palette.primary;
-    style[`--theme-chip-${mode}-ink`] = mode === "light" ? "#000" : "#fff";
+    style[`--theme-chip-${mode}-accent`] = palette.primary;
+    style[`--theme-chip-${mode}-accent-2`] = palette.accent;
+    style[`--theme-chip-${mode}-ink`] = palette.foreground;
   }
   return style as CSSProperties;
 }

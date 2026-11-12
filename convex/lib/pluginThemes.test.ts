@@ -138,4 +138,18 @@ describe("theme-only plugins", () => {
     expect(getThemeOnlyPreviews(summary)).toBeUndefined();
     expect(packageThemePreviewFields(summary)).toEqual({});
   });
+
+  it("keeps the usual icon for theme packs with more than one theme", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        themes: [
+          ...manifest.themes,
+          { ...manifest.themes[0], id: "canopy-copy", source: "themes/copy.json" },
+        ],
+      },
+      files: [...files, { ...files[0]!, path: "themes/copy.json" }],
+    });
+    expect(getThemeOnlyPreviews(summary)).toHaveLength(2);
+    expect(packageThemePreviewFields(summary)).toEqual({});
+  });
 });

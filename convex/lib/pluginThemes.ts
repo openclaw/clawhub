@@ -253,10 +253,13 @@ export function getThemeOnlyPreviews(
   return hasCapabilities ? undefined : summary.themes;
 }
 
-/** Package-level copy for catalog cards, which never read release summaries. */
+/**
+ * Package-level copy for catalog cards, which never read release summaries. Only a
+ * single-theme pack gets the chip; multi-theme packs keep the usual icon fallback.
+ */
 export function packageThemePreviewFields(summary: Parameters<typeof getThemeOnlyPreviews>[0]): {
   themePreview?: ThemePreview;
 } {
-  const themePreview = getThemeOnlyPreviews(summary)?.[0];
-  return themePreview ? { themePreview } : {};
+  const themes = getThemeOnlyPreviews(summary);
+  return themes?.length === 1 ? { themePreview: themes[0] } : {};
 }
