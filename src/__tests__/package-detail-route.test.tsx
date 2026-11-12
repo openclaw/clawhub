@@ -638,7 +638,7 @@ describe("plugin detail route", () => {
     expect(container.querySelector(".skill-hero-title-row .marketplace-icon")).toBeNull();
   });
 
-  it("previews recommended prompts in a compact chat window", async () => {
+  it("lists recommended prompts as copyable rows like the Control UI", async () => {
     loaderDataMock = {
       ...loaderDataMock,
       version: {
@@ -669,18 +669,15 @@ describe("plugin detail route", () => {
 
     render(<PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />);
 
-    const preview = screen.getByRole("figure", { name: "OpenClaw chat preview" });
-    expect(preview.textContent).toContain(
-      "List what's assigned to me and update me on their status.",
+    const prompts = screen.getByRole("region", { name: "Example prompts" });
+    expect(prompts.textContent).toContain(
+      "Demo Plugin List what's assigned to me and update me on their status.",
     );
-    expect(screen.getByRole("button", { name: "Copy prompt" })).toBeTruthy();
-
-    const next = screen.getByRole("button", { name: "Summarize my open pull requests." });
-    expect(next.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(next);
-    expect(next.getAttribute("aria-pressed")).toBe("true");
-    expect(preview.textContent).toContain("Summarize my open pull requests.");
-    expect(preview.textContent).not.toContain("List what's assigned to me");
+    expect(prompts.textContent).toContain("Demo Plugin Summarize my open pull requests.");
+    expect(
+      screen.getByRole("button", { name: "Copy prompt: Summarize my open pull requests." }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("figure", { name: "OpenClaw chat preview" })).toBeNull();
   });
 
   it("omits the prompt section when a plugin has no recommended prompts", async () => {
@@ -688,7 +685,7 @@ describe("plugin detail route", () => {
 
     render(<PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />);
 
-    expect(screen.queryByRole("region", { name: "Try asking OpenClaw" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Example prompts" })).toBeNull();
   });
 
   it("loads and appends the next active release page", async () => {

@@ -8,7 +8,6 @@ import {
 import { useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import {
   AlertTriangle,
-  ArrowUp,
   Braces,
   ChevronRight,
   Download,
@@ -50,6 +49,7 @@ import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
+import { MarketplaceIcon } from "../../components/MarketplaceIcon";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
@@ -575,51 +575,36 @@ function formatCompatibilityLabel(key: string): string {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase());
 }
 
-// A compact OpenClaw chat window, modeled on Carapace's compact application preview.
-// It shows only the author's prompt; ClawHub never invents a reply.
-function PluginRecommendedPrompts({ prompts }: { prompts: readonly string[] }) {
-  const [selected, setSelected] = useState(0);
-  const prompt = prompts[selected] ?? prompts[0];
+// Mirrors the Control UI's recommended-prompt rows: the plugin's mark and name, then the
+// prompt. ClawHub can't start a chat, so each row copies its prompt instead.
+function PluginRecommendedPrompts({
+  prompts,
+  name,
+  icon,
+}: {
+  prompts: readonly string[];
+  name: string;
+  icon: ReactNode;
+}) {
   return (
-    <section className="plugin-manifest-section" aria-labelledby="plugin-prompts-title">
-      <div className="plugin-prompt-preview-heading">
-        <h3 id="plugin-prompts-title">Try asking OpenClaw</h3>
-        <InstallCopyButton
-          text={prompt}
-          ariaLabel="Copy prompt"
-          tooltip="Copy prompt"
-          className="plugin-validation-toolbar-copy"
-          showLabel={false}
-          variant="ghost"
-          size="icon-sm"
-        />
-      </div>
-      <figure className="plugin-prompt-preview" aria-label="OpenClaw chat preview">
-        <div className="plugin-prompt-preview-bar" aria-hidden="true">
-          <i />
-          <i />
-          <i />
+    <section className="plugin-manifest-list" aria-label="Example prompts">
+      {prompts.map((prompt) => (
+        <div key={prompt} className="plugin-manifest-row plugin-prompt-row">
+          <p>
+            {icon}
+            <strong>{name}</strong> {prompt}
+          </p>
+          <InstallCopyButton
+            text={prompt}
+            ariaLabel={`Copy prompt: ${prompt}`}
+            tooltip="Copy prompt"
+            className="plugin-validation-toolbar-copy"
+            showLabel={false}
+            variant="ghost"
+            size="icon-sm"
+          />
         </div>
-        <p className="plugin-prompt-preview-message">{prompt}</p>
-        <div className="plugin-prompt-preview-composer" aria-hidden="true">
-          <span>Message OpenClaw</span>
-          <ArrowUp size={14} />
-        </div>
-      </figure>
-      {prompts.length > 1 ? (
-        <div className="plugin-prompt-preview-choices" role="group" aria-label="Example prompts">
-          {prompts.map((choice, index) => (
-            <button
-              key={choice}
-              type="button"
-              aria-pressed={index === selected}
-              onClick={() => setSelected(index)}
-            >
-              {choice}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      ))}
     </section>
   );
 }
@@ -1872,7 +1857,20 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   }
                 />
                 {pluginManifestSummary?.recommendedPrompts?.length ? (
-                  <PluginRecommendedPrompts prompts={pluginManifestSummary.recommendedPrompts} />
+                  <PluginRecommendedPrompts
+                    prompts={pluginManifestSummary.recommendedPrompts}
+                    name={presentationTitle(pkg.displayName, pkg.name)}
+                    icon={
+                      <MarketplaceIcon
+                        kind="plugin"
+                        label={presentationTitle(pkg.displayName, pkg.name)}
+                        imageUrl={pkg.icon}
+                        publisherImageUrl={owner?.image}
+                        categorySlug={headerCategories[0]?.slug}
+                        size="xs"
+                      />
+                    }
+                  />
                 ) : null}
               </div>
               <PluginDetailTabs

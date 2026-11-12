@@ -3819,103 +3819,28 @@ code {
   min-width: 0;
 }
 
-.plugin-prompt-preview-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--oc-space-3);
-  margin-top: var(--oc-space-4);
+/* Two classes so the mobile one-column manifest-row rule can't stack the copy button. */
+.plugin-manifest-row.plugin-prompt-row {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
-/* Mobile detail panels stretch copy buttons; this one stays an icon. */
-.plugin-prompt-preview-heading .plugin-validation-toolbar-copy.skill-install-copy-button {
-  width: 2rem;
-}
-
-.plugin-prompt-preview {
-  display: grid;
-  gap: var(--oc-space-4);
+.plugin-prompt-row p {
   margin: 0;
-  padding: 0 var(--oc-space-4) var(--oc-space-4);
-  border: 1px solid var(--oc-border-subtle);
-  border-radius: var(--oc-radius-surface);
-  background: var(--oc-bg-recessed);
-}
-
-.plugin-prompt-preview-bar {
-  display: flex;
-  gap: 6px;
-  margin: 0 calc(-1 * var(--oc-space-4));
-  padding: var(--oc-space-3) var(--oc-space-4);
-  border-bottom: 1px solid var(--oc-border-subtle);
-  background: var(--oc-bg-surface);
-}
-
-.plugin-prompt-preview-bar i {
-  width: 9px;
-  height: 9px;
-  border-radius: var(--oc-radius-round);
-  background: var(--oc-status-error-fg);
-}
-
-.plugin-prompt-preview-bar i:nth-child(2) {
-  background: var(--oc-status-warning-fg);
-}
-
-.plugin-prompt-preview-bar i:nth-child(3) {
-  background: var(--oc-status-success-fg);
-}
-
-.plugin-prompt-preview-message {
-  justify-self: end;
-  max-width: 85%;
-  margin: var(--oc-space-2) 0;
-  padding: var(--oc-space-3) var(--oc-space-4);
-  border-radius: var(--oc-radius-control);
-  background: var(--oc-surface-interactive);
   color: var(--oc-text-primary);
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
-.plugin-prompt-preview-composer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--oc-space-2) var(--oc-space-2) var(--oc-space-2) var(--oc-space-4);
-  border: 1px solid var(--oc-border-subtle);
-  border-radius: var(--oc-radius-control);
-  background: var(--oc-bg-surface);
-  color: var(--oc-text-muted);
+.plugin-prompt-row .marketplace-icon {
+  display: inline-flex;
+  margin-right: var(--oc-space-2);
+  vertical-align: -0.3em;
 }
 
-.plugin-prompt-preview-composer svg {
-  box-sizing: content-box;
-  padding: 5px;
-  border-radius: var(--oc-radius-round);
-  background: var(--oc-text-primary);
-  color: var(--oc-bg-page);
-}
-
-.plugin-prompt-preview-choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--oc-space-2);
-}
-
-.plugin-prompt-preview-choices button {
-  padding: var(--oc-space-1) var(--oc-space-3);
-  border: 1px solid var(--oc-border-subtle);
-  border-radius: var(--oc-radius-control);
-  background: none;
-  color: var(--oc-text-secondary);
-  font-size: 0.84rem;
-  text-align: left;
-  cursor: pointer;
-}
-
-.plugin-prompt-preview-choices button[aria-pressed="true"] {
-  border-color: var(--oc-text-muted);
-  color: var(--oc-text-primary);
+/* The plugin name reads as a mention, like the Control UI's prompt rows. */
+.plugin-prompt-row strong {
+  color: var(--oc-accent-primary);
+  font-weight: 600;
 }
 
 .plugin-detail-page .skill-hero-main-extra {
