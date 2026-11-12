@@ -1349,6 +1349,11 @@ export async function processPrePublicationBatch(
             attemptId: attempt.attemptId,
             event: "prepublication_attempt_unhandled_failure",
             kind: attempt.kind,
+            // The cause was previously dropped, so a stalled attempt left no
+            // recoverable evidence: CI showed this line only and the attempt
+            // silently stayed claimable. Reuse the redacted backend diagnostic
+            // so the class and Convex request id survive without raw text.
+            ...backendFailureDiagnostic(error),
           },
           "pre-publication attempt failed unexpectedly; continuing batch",
         );
