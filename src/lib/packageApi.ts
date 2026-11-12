@@ -55,7 +55,7 @@ export type PackageVersionDetail = {
   package: {
     name: string;
     displayName: string;
-    family: "skill" | "code-plugin" | "bundle-plugin";
+    family: "skill" | "code-plugin" | "bundle-plugin" | "template";
   } | null;
   version: {
     endorAnalysis?: PackageEndorAnalysis | null;

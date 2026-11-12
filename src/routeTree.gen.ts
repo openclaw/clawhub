@@ -56,6 +56,7 @@ import { Route as OwnerSlugSecurityScannerRouteImport } from './routes/$owner/$s
 import { Route as OwnerPluginsSlugSecurityAuditRouteImport } from './routes/$owner/plugins/$slug/security-audit'
 import { Route as OwnerSkillsSlugSecurityAuditRouteImport } from './routes/$owner/skills/$slug/security-audit'
 import { Route as OwnerSkillsSlugSettingsRouteImport } from './routes/$owner/skills/$slug/settings'
+import { Route as OwnerTemplatesSlugSecurityAuditRouteImport } from './routes/$owner/templates/$slug_/security-audit'
 import { Route as PluginsNameSecurityScannerRouteImport } from './routes/plugins/$name/security/$scanner'
 import { Route as PluginsScopeNameSecurityAuditRouteImport } from './routes/plugins/$scope/$name/security-audit'
 import { Route as SkillsShOwnerRepoSlugRouteImport } from './routes/skills-sh/$owner/$repo/$slug'
@@ -303,6 +304,12 @@ const OwnerSkillsSlugSettingsRoute = OwnerSkillsSlugSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => OwnerSkillsSlugRoute,
 } as any)
+const OwnerTemplatesSlugSecurityAuditRoute =
+  OwnerTemplatesSlugSecurityAuditRouteImport.update({
+    id: '/$owner/templates/$slug_/security-audit',
+    path: '/$owner/templates/$slug/security-audit',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const PluginsNameSecurityScannerRoute =
   PluginsNameSecurityScannerRouteImport.update({
     id: '/security/$scanner',
@@ -393,6 +400,7 @@ export interface FileRoutesByFullPath {
   '/$owner/plugins/$slug/security-audit': typeof OwnerPluginsSlugSecurityAuditRoute
   '/$owner/skills/$slug/security-audit': typeof OwnerSkillsSlugSecurityAuditRoute
   '/$owner/skills/$slug/settings': typeof OwnerSkillsSlugSettingsRoute
+  '/$owner/templates/$slug/security-audit': typeof OwnerTemplatesSlugSecurityAuditRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
   '/skills-sh/$owner/$repo/$slug': typeof SkillsShOwnerRepoSlugRoute
@@ -449,6 +457,7 @@ export interface FileRoutesByTo {
   '/$owner/plugins/$slug/security-audit': typeof OwnerPluginsSlugSecurityAuditRoute
   '/$owner/skills/$slug/security-audit': typeof OwnerSkillsSlugSecurityAuditRoute
   '/$owner/skills/$slug/settings': typeof OwnerSkillsSlugSettingsRoute
+  '/$owner/templates/$slug/security-audit': typeof OwnerTemplatesSlugSecurityAuditRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
   '/skills-sh/$owner/$repo/$slug': typeof SkillsShOwnerRepoSlugRoute
@@ -506,6 +515,7 @@ export interface FileRoutesById {
   '/$owner/plugins/$slug/security-audit': typeof OwnerPluginsSlugSecurityAuditRoute
   '/$owner/skills/$slug/security-audit': typeof OwnerSkillsSlugSecurityAuditRoute
   '/$owner/skills/$slug/settings': typeof OwnerSkillsSlugSettingsRoute
+  '/$owner/templates/$slug_/security-audit': typeof OwnerTemplatesSlugSecurityAuditRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
   '/skills-sh/$owner/$repo/$slug': typeof SkillsShOwnerRepoSlugRoute
@@ -564,6 +574,7 @@ export interface FileRouteTypes {
     | '/$owner/plugins/$slug/security-audit'
     | '/$owner/skills/$slug/security-audit'
     | '/$owner/skills/$slug/settings'
+    | '/$owner/templates/$slug/security-audit'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
     | '/skills-sh/$owner/$repo/$slug'
@@ -620,6 +631,7 @@ export interface FileRouteTypes {
     | '/$owner/plugins/$slug/security-audit'
     | '/$owner/skills/$slug/security-audit'
     | '/$owner/skills/$slug/settings'
+    | '/$owner/templates/$slug/security-audit'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
     | '/skills-sh/$owner/$repo/$slug'
@@ -676,6 +688,7 @@ export interface FileRouteTypes {
     | '/$owner/plugins/$slug/security-audit'
     | '/$owner/skills/$slug/security-audit'
     | '/$owner/skills/$slug/settings'
+    | '/$owner/templates/$slug_/security-audit'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
     | '/skills-sh/$owner/$repo/$slug'
@@ -726,6 +739,7 @@ export interface RootRouteChildren {
   OwnerTemplatesSlugRoute: typeof OwnerTemplatesSlugRoute
   PackagesScopeNameRoute: typeof PackagesScopeNameRoute
   PluginsScopeNameRoute: typeof PluginsScopeNameRouteWithChildren
+  OwnerTemplatesSlugSecurityAuditRoute: typeof OwnerTemplatesSlugSecurityAuditRoute
   SkillsShOwnerRepoSlugRoute: typeof SkillsShOwnerRepoSlugRoute
 }
 
@@ -1060,6 +1074,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerSkillsSlugSettingsRouteImport
       parentRoute: typeof OwnerSkillsSlugRoute
     }
+    '/$owner/templates/$slug_/security-audit': {
+      id: '/$owner/templates/$slug_/security-audit'
+      path: '/$owner/templates/$slug/security-audit'
+      fullPath: '/$owner/templates/$slug/security-audit'
+      preLoaderRoute: typeof OwnerTemplatesSlugSecurityAuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/plugins/$name/security/$scanner': {
       id: '/plugins/$name/security/$scanner'
       path: '/security/$scanner'
@@ -1228,6 +1249,7 @@ const rootRouteChildren: RootRouteChildren = {
   OwnerTemplatesSlugRoute: OwnerTemplatesSlugRoute,
   PackagesScopeNameRoute: PackagesScopeNameRoute,
   PluginsScopeNameRoute: PluginsScopeNameRouteWithChildren,
+  OwnerTemplatesSlugSecurityAuditRoute: OwnerTemplatesSlugSecurityAuditRoute,
   SkillsShOwnerRepoSlugRoute: SkillsShOwnerRepoSlugRoute,
 }
 export const routeTree = rootRouteImport

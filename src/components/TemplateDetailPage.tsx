@@ -12,10 +12,9 @@ import {
   type PackageDetailResponse,
 } from "../lib/packageApi";
 import { parseTemplateDocument } from "../lib/templateDetail";
-import { isTemplateReadyToAdd } from "../lib/templateRoutes";
-import { auditVerdictMeterLevel, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
+import { buildTemplateSecurityAuditHref, isTemplateReadyToAdd } from "../lib/templateRoutes";
+import { DetailSecuritySummary, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { MarkdownPreview } from "./MarkdownPreview";
-import { aggregateAuditVerdict } from "./securityAuditModel";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { formatOpenClawPrompt } from "./skillDetailUtils";
 import { InstallCommandCard } from "./SkillInstallSurface";
@@ -70,17 +69,6 @@ export function TemplateDetailPage({
       : getPackageDownloadPath(pkg.name, pkg.latestVersion)
     : null;
   const installCommand = "openclaw templates add " + pkg.name;
-  // Package scanStatus still gates installation; an audit verdict needs release evidence.
-  const auditVerdict = llmAnalysis ? aggregateAuditVerdict({ llmAnalysis }) : "unavailable";
-  const securityLabel =
-    (
-      { benign: "Clean", clean: "Clean", review: "Review", malicious: "Malicious" } as Record<
-        string,
-        string
-      >
-    )[auditVerdict] ?? "Unavailable";
-  const auditDescription =
-    llmAnalysis?.summary || "No completed security audit is available for this release.";
 
   return (
     <main className="template-detail-page">
@@ -217,41 +205,22 @@ export function TemplateDetailPage({
               density="compact"
               blocks={[
                 {
-                  key: "provenance",
-                  label: "Declared contents",
-                  value: (
-                    <span>
-                      Template {pkg.latestVersion ? "v" + pkg.latestVersion : "release unavailable"}
-                      {pkg.artifact?.sha256 ? (
-                        <>
-                          <br />
-                          <code title={pkg.artifact.sha256}>
-                            SHA-256 {pkg.artifact.sha256.slice(0, 12)}…
-                          </code>
-                        </>
-                      ) : null}
-                    </span>
-                  ),
-                },
-                {
                   key: "security",
                   label: <DetailSecuritySummaryLabel />,
                   value: (
-                    <div data-audit-verdict={auditVerdict} title={auditDescription}>
-                      <div className="template-detail-security-value">
-                        <span>{securityLabel}</span>
-                        <div
-                          className="security-audit-meter"
-                          data-level={auditVerdictMeterLevel(auditVerdict)}
-                          aria-hidden="true"
-                        >
-                          <span />
-                          <span />
-                          <span />
-                        </div>
-                      </div>
-                      <span className="sr-only">{auditDescription}</span>
-                    </div>
+                    <DetailSecuritySummary
+                      auditHref={buildTemplateSecurityAuditHref(
+                        pkg.name,
+                        detail.owner?.handle ?? fallbackOwner,
+                        pkg.latestVersion,
+                      )!}
+                      llmAnalysis={llmAnalysis}
+                      githubScanStatus="Unavailable"
+                      description={
+                        llmAnalysis?.summary ||
+                        "No completed security audit is available for this release."
+                      }
+                    />
                   ),
                 },
                 {

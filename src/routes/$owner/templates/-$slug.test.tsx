@@ -371,11 +371,11 @@ describe("Template detail composition and interactions", () => {
   });
 
   it.each([
-    ["benign", "Clean", "3"],
+    ["benign", "Pass", "3"],
     ["suspicious", "Review", "2"],
     ["malicious", "Malicious", "1"],
-    ["pending", "Unavailable", "0"],
-    ["error", "Unavailable", "0"],
+    ["pending", "Pending", "0"],
+    ["error", "Error", "0"],
   ])(
     "uses actual release evidence for %s instead of the package's clean flag",
     (verdict, label, level) => {
@@ -401,6 +401,11 @@ describe("Template detail composition and interactions", () => {
     expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.getByText("Nov 5, 2026")).toBeTruthy();
     expect(screen.getByText("v0.1.0")).toBeTruthy();
+    expect(screen.queryByText("Declared contents")).toBeNull();
+    expect(screen.queryByText(/SHA-256/)).toBeNull();
+    expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
+      "/maker/templates/release-brief/security-audit?version=0.1.0",
+    );
   });
 
   it("renders actual pinned package dependencies and automation configuration", () => {
@@ -558,11 +563,11 @@ describe("Template detail composition and interactions", () => {
   });
 
   it.each([
-    ["pending", "pending", "Unavailable", "0"],
-    ["not-run", "pending", "Unavailable", "0"],
+    ["pending", "pending", "Pending", "0"],
+    ["not-run", "pending", "Pending", "0"],
     ["suspicious", "suspicious", "Review", "2"],
     ["malicious", "malicious", "Malicious", "1"],
-    [undefined, "pending", "Unavailable", "0"],
+    [undefined, "pending", "Pending", "0"],
   ] as const)(
     "keeps %s security in the sidebar and gates copy without inline subtext",
     (status, auditStatus, label, level) => {
@@ -577,7 +582,11 @@ describe("Template detail composition and interactions", () => {
       expect(within(metadata).getByText("Security audit")).toBeTruthy();
       expect(within(metadata).getByText(label)).toBeTruthy();
       expect(within(metadata).getByText(summary)).toBeTruthy();
-      expect(metadata.querySelector("[data-audit-verdict]")?.getAttribute("title")).toBe(summary);
+      const link = within(metadata).getByRole("link", { name: "View Security Audit" });
+      expect(link.getAttribute("title")).toBe(summary);
+      expect(document.getElementById(link.getAttribute("aria-describedby")!)?.textContent).toBe(
+        summary,
+      );
       expect(metadata.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe(
         level,
       );
