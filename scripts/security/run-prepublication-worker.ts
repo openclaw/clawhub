@@ -1486,6 +1486,20 @@ async function main() {
     },
     "pre-publication worker summary",
   );
+
+  // Claiming work and completing none is a stall, not success. The run still
+  // exits zero so a known-held backlog cannot wedge the schedule red, but the
+  // error level gives alerting a signal instead of a green job hiding it.
+  if (totalClaimed > 0 && totalCompleted === 0) {
+    logger.error(
+      {
+        event: "prepublication_worker_stalled",
+        totalClaimed,
+        totalCompleted,
+      },
+      "pre-publication worker claimed attempts but completed none",
+    );
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
