@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makePublicSkillsShDigest } from "../../src/__tests__/helpers/skillsShDigest";
 
 vi.mock("../lib/httpRateLimit", () => ({
   applyRateLimit: vi.fn(async () => ({ ok: true, headers: {} })),
@@ -1369,7 +1370,7 @@ describe("skills.sh public HTTP API", () => {
   });
 
   it("serves stored mirror detail from an activated row", async () => {
-    const digest = makePublicMirrorDigest();
+    const digest = makePublicSkillsShDigest();
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(digest)
@@ -1393,7 +1394,7 @@ describe("skills.sh public HTTP API", () => {
   it("serves the exact unscanned GitHub install descriptor", async () => {
     const runQuery = vi
       .fn()
-      .mockResolvedValueOnce(makePublicMirrorDigest())
+      .mockResolvedValueOnce(makePublicSkillsShDigest())
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ skillsSh: { publicCatalogEnabled: true } });
     const response = await skillsShCatalogPublicV1Handler(
@@ -1450,7 +1451,7 @@ describe("skills.sh public HTTP API", () => {
   it("returns 404 for an eligible row while the atomic public gate is off", async () => {
     const runQuery = vi
       .fn()
-      .mockResolvedValueOnce(makePublicMirrorDigest())
+      .mockResolvedValueOnce(makePublicSkillsShDigest())
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ skillsSh: { publicCatalogEnabled: false } });
     const response = await skillsShCatalogPublicV1Handler(
@@ -1463,30 +1464,3 @@ describe("skills.sh public HTTP API", () => {
     expect(response.status).toBe(404);
   });
 });
-
-function makePublicMirrorDigest() {
-  return {
-    externalId: "patrick-erichsen/skills/html",
-    sourceType: "github" as const,
-    owner: "patrick-erichsen",
-    repo: "skills",
-    slug: "html",
-    displayName: "HTML Artifact Chooser",
-    sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
-    githubPath: "skills/html",
-    githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
-    sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
-    upstreamInstalls: 100,
-    upstreamScanners: {
-      genAgentTrustHub: { status: "unavailable" },
-      socket: { status: "pass" },
-      snyk: { status: "warning" },
-    },
-    sourceFreshnessStatus: "observed-only" as const,
-    detailStatus: "available" as const,
-    active: true,
-    publicVisible: true,
-    installable: true,
-    lastObservedAt: 123,
-  };
-}
