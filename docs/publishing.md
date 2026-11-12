@@ -204,10 +204,12 @@ your release still publishes.
 
 OpenClaw theme plugins list their themes in `openclaw.plugin.json` as
 `themes: [{ id, name, description, source }]`, where `source` is a theme JSON file
-in the package with a full `light` and/or `dark` palette. If a plugin ships only
-themes, ClawHub previews them in an OpenClaw window on the plugin page, with a
-Light/Dark switch for the modes each theme ships. A plugin with a single theme also
-gets that theme's color chip as its catalog icon. Themes OpenClaw would reject are not previewed; your release still publishes.
+in the package with a full `light` and/or `dark` palette. ClawHub previews them in an
+OpenClaw window on the plugin page, with a Light/Dark switch for the modes each theme
+ships. A plugin that ships only one theme also gets that theme's color chip as its
+catalog icon. The preview checks each theme's structure, palettes, fonts, name and
+description, but not OpenClaw's branding fields (mascot, critters, artwork), so a theme
+OpenClaw rejects for those can still appear here. Invalid themes never block a release.
 
 ### Plugin Icons
 

@@ -229,8 +229,12 @@ export function extractThemePreviews(
   return previews.length ? previews : undefined;
 }
 
-/** Themes of a plugin that ships nothing but themes; other plugins keep their usual icon. */
-export function getThemeOnlyPreviews(
+/**
+ * Package-level copy for catalog cards, which never read release summaries. Only a plugin
+ * that ships exactly one theme and nothing else gets the chip; every other plugin keeps
+ * its usual icon fallback. The detail page previews themes for any plugin.
+ */
+export function packageThemePreviewFields(
   summary:
     | {
         themes?: ThemePreview[];
@@ -242,24 +246,13 @@ export function getThemeOnlyPreviews(
       }
     | null
     | undefined,
-) {
-  if (!summary?.themes?.length) return undefined;
+): { themePreview?: ThemePreview } {
   const hasCapabilities =
-    Object.keys(summary.contracts ?? {}).length > 0 ||
-    Boolean(summary.providers?.length) ||
-    Boolean(summary.channels?.length) ||
-    Boolean(summary.mcpServers?.length) ||
-    Boolean(summary.bundledSkills?.length);
-  return hasCapabilities ? undefined : summary.themes;
-}
-
-/**
- * Package-level copy for catalog cards, which never read release summaries. Only a
- * single-theme pack gets the chip; multi-theme packs keep the usual icon fallback.
- */
-export function packageThemePreviewFields(summary: Parameters<typeof getThemeOnlyPreviews>[0]): {
-  themePreview?: ThemePreview;
-} {
-  const themes = getThemeOnlyPreviews(summary);
-  return themes?.length === 1 ? { themePreview: themes[0] } : {};
+    Object.keys(summary?.contracts ?? {}).length > 0 ||
+    Boolean(summary?.providers?.length) ||
+    Boolean(summary?.channels?.length) ||
+    Boolean(summary?.mcpServers?.length) ||
+    Boolean(summary?.bundledSkills?.length);
+  const themes = summary?.themes;
+  return !hasCapabilities && themes?.length === 1 ? { themePreview: themes[0] } : {};
 }

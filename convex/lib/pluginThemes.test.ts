@@ -3,7 +3,6 @@ import { derivePluginManifestSummary } from "./packageRegistry";
 import {
   declaredThemeSourcePaths,
   extractThemePreviews,
-  getThemeOnlyPreviews,
   packageThemePreviewFields,
 } from "./pluginThemes";
 
@@ -125,7 +124,6 @@ describe("theme-only plugins", () => {
   it("adds themes to the manifest summary and the package chip", () => {
     const summary = derivePluginManifestSummary({ pluginManifest: manifest, files });
     expect(summary.themes?.[0]?.id).toBe("canopy-dark");
-    expect(getThemeOnlyPreviews(summary)).toHaveLength(1);
     expect(packageThemePreviewFields(summary).themePreview?.name).toBe("Artemis Canopy");
   });
 
@@ -135,7 +133,15 @@ describe("theme-only plugins", () => {
       files,
     });
     expect(summary.themes).toHaveLength(1);
-    expect(getThemeOnlyPreviews(summary)).toBeUndefined();
+    expect(packageThemePreviewFields(summary)).toEqual({});
+  });
+
+  it("keeps the usual icon for a plugin with tools and one theme", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: { ...manifest, contracts: { tools: ["search"] } },
+      files,
+    });
+    expect(summary.themes).toHaveLength(1);
     expect(packageThemePreviewFields(summary)).toEqual({});
   });
 
@@ -149,7 +155,7 @@ describe("theme-only plugins", () => {
       },
       files: [...files, { ...files[0]!, path: "themes/copy.json" }],
     });
-    expect(getThemeOnlyPreviews(summary)).toHaveLength(2);
+    expect(summary.themes).toHaveLength(2);
     expect(packageThemePreviewFields(summary)).toEqual({});
   });
 });

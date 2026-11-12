@@ -33,7 +33,7 @@ import {
   pluginApiRetirement,
   type PluginApiRetirement,
 } from "../../../convex/lib/pluginApiRetirements";
-import { getThemeOnlyPreviews, type ThemePreview } from "../../../convex/lib/pluginThemes";
+import type { ThemePreview } from "../../../convex/lib/pluginThemes";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
 import { CompactOpenClawPreview } from "../../components/CompactOpenClawPreview";
 import {
@@ -1346,7 +1346,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
-  const themePreviews = getThemeOnlyPreviews(pluginManifestSummary);
+  const themePreviews = pluginManifestSummary?.themes?.length ? pluginManifestSummary.themes : null;
   const verification = latestRelease?.verification ?? pkg.verification;
   const readmeAssetBaseUrl = buildReadmeAssetBaseUrl(
     verification?.sourceRepo,
@@ -1949,10 +1949,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     isPlugin ? "Copy plugin install command" : "Copy skill install command"
                   }
                 />
+                {pluginManifestSummary?.recommendedPrompts?.length ? (
+                  <PluginRecommendedPrompts prompts={pluginManifestSummary.recommendedPrompts} />
+                ) : null}
                 {themePreviews ? (
                   <PluginThemePreview themes={themePreviews} installCommand={installCommand} />
-                ) : pluginManifestSummary?.recommendedPrompts?.length ? (
-                  <PluginRecommendedPrompts prompts={pluginManifestSummary.recommendedPrompts} />
                 ) : null}
               </div>
               <PluginDetailTabs

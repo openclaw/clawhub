@@ -739,6 +739,52 @@ describe("plugin detail route", () => {
     expect(screen.getByText("Dark only")).toBeTruthy();
   });
 
+  it("previews themes for a plugin that also ships tools, alongside its prompts", async () => {
+    const palette = {
+      background: "#061009",
+      foreground: "#e1f1e5",
+      card: "#0a1710",
+      primary: "#e6c178",
+      primaryForeground: "#171207",
+      secondary: "#16281d",
+      secondaryForeground: "#e6c178",
+      mutedForeground: "#afc9b8",
+      accent: "#243e2c",
+      accentForeground: "#f0d79d",
+      border: "#35523e",
+    };
+    loaderDataMock = {
+      ...loaderDataMock,
+      version: {
+        package: { name: "demo-plugin", displayName: "Demo Plugin", family: "code-plugin" },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Adds a theme",
+          files: [],
+          pluginManifestSummary: {
+            schemaVersion: 1,
+            contracts: { tools: ["search"] },
+            recommendedPrompts: ["Search my notes."],
+            themes: [{ id: "canopy", name: "Canopy", dark: palette }],
+            configFields: [],
+            mcpServers: [],
+            bundledSkills: [],
+          },
+        },
+      },
+    };
+    const { PluginDetailPage } = await import("../routes/plugins/$name");
+
+    render(<PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />);
+
+    const previews = screen.getAllByRole("figure", { name: "OpenClaw chat preview" });
+    expect(previews).toHaveLength(2);
+    expect(previews[0]?.textContent).toContain("Search my notes.");
+    expect(previews[1]?.style.getPropertyValue("--oc-bg-page")).toBe("#061009");
+    expect(screen.getByText("Dark only")).toBeTruthy();
+  });
+
   it("omits the prompt section when a plugin has no recommended prompts", async () => {
     const { PluginDetailPage } = await import("../routes/plugins/$name");
 

@@ -154,13 +154,15 @@ shipped mode only the palette keys ClawHub's chip and compact preview read (plus
 validators reject hyphenated field names. The modes are the palettes present. Validation
 mirrors OpenClaw's portable theme rules (`convex/lib/pluginThemes.ts`): safe local id
 and `.json` source path, matching name and description, complete light and/or dark
-palettes with safe color and font values. Invalid themes are dropped one by one and
-never block publication. Values reach the page only as inline `--oc-*` custom
+palettes with safe color and font values. It does not re-check OpenClaw's branding
+fields (mascot, brand icon, critters, hats, artwork), which the preview never reads, so a
+theme OpenClaw rejects for those can still be previewed here. Invalid themes are dropped
+one by one and never block publication. Values reach the page only as inline `--oc-*` custom
 properties on the preview, so they must stay limited to those validated colors and fonts.
 
 A plugin is theme-only when it has themes and no contracts, providers, channels, MCP
-servers, or bundled skills. Those plugins show the themed compact window on the detail
-page. A theme-only plugin with exactly one theme also replaces the catalog icon (and its
+servers, or bundled skills. Every plugin whose release summary has themes shows the
+themed compact window on the detail page. A theme-only plugin with exactly one theme also replaces the catalog icon (and its
 publisher photo fallback) with the Settings > Appearance chip; packs with several themes
 keep the usual icon. The chip summarizes the preview: background, primary pill (buttons),
 accent dot (active session), foreground lines. Catalog cards never read release summaries,
