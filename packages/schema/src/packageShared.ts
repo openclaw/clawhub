@@ -48,6 +48,7 @@ export const ThemePreviewSchema = type({
   name: "string",
   light: ThemePreviewPaletteSchema.optional(),
   dark: ThemePreviewPaletteSchema.optional(),
+  backgrounds: type({ light: "string?", dark: "string?" }).optional(),
 });
 
 export const PluginManifestSummarySchema = type({

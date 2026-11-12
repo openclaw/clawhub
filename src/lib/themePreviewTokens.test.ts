@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { themeChipStyle, themePaletteToPreviewTokens } from "./themePreviewTokens";
+import {
+  themeBackgroundTokens,
+  themeChipStyle,
+  themePaletteToPreviewTokens,
+} from "./themePreviewTokens";
 
 const palette = {
   background: "#061009",
@@ -57,5 +61,16 @@ describe("themeChipStyle", () => {
       "--theme-chip-dark-accent-2": "#243e2c",
       "--theme-chip-dark-ink": "#e1f1e5",
     });
+  });
+});
+
+describe("themeBackgroundTokens", () => {
+  const url = `/api/v1/skill-icons/${"a".repeat(64)}`;
+  it("layers a background-colored scrim over hosted images only", () => {
+    expect(themeBackgroundTokens(url, "dark")).toEqual({
+      "--plugin-preview-background": `linear-gradient(color-mix(in srgb, var(--oc-bg-page) 84%, transparent), color-mix(in srgb, var(--oc-bg-page) 84%, transparent)), url("${url}")`,
+    });
+    expect(themeBackgroundTokens("https://evil.example/x.png", "dark")).toBeUndefined();
+    expect(themeBackgroundTokens(`${url}") , url("x`, "light")).toBeUndefined();
   });
 });

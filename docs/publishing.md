@@ -207,7 +207,9 @@ OpenClaw theme plugins list their themes in `openclaw.plugin.json` as
 in the package with a full `light` and/or `dark` palette. ClawHub previews them in an
 OpenClaw window on the plugin page, with a Light/Dark switch for the modes each theme
 ships. A plugin that ships only one theme also gets that theme's color chip as its
-catalog icon. The preview checks each theme's structure, palettes, fonts, name and
+catalog icon. Theme `backgrounds` (`{ "light": "<path>", "dark": "<path>" }`, PNG, JPEG
+or WebP up to 512 KiB) appear dimmed behind the preview in that mode; an invalid image
+is skipped without affecting the theme. The preview checks each theme's structure, palettes, fonts, name and
 description, but not OpenClaw's branding fields (mascot, critters, artwork), so a theme
 OpenClaw rejects for those can still appear here. Invalid themes never block a release.
 

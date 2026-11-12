@@ -11,6 +11,7 @@ import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { syncPackageSearchDigestForPackageId } from "./functions";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
+import { withThemeBackgrounds } from "./lib/packageIcons";
 import { derivePluginManifestSummary, normalizePackageName } from "./lib/packageRegistry";
 import {
   declaredThemeSourcePaths,
@@ -1333,7 +1334,7 @@ function createPluginManifestSummaryBackfillProgress(): Omit<
 }
 
 async function processPluginManifestSummaryBackfillCandidates(
-  ctx: Pick<ActionCtx, "runMutation" | "storage">,
+  ctx: Pick<ActionCtx, "runAction" | "runMutation" | "runQuery" | "storage">,
   candidates: LatestPluginManifestSummaryCandidate[],
   dryRun: boolean,
   progress: ReturnType<typeof createPluginManifestSummaryBackfillProgress>,
@@ -1362,15 +1363,23 @@ async function processPluginManifestSummaryBackfillCandidates(
       progress.skippedSkillMarkdownReadErrorReleases += 1;
       continue;
     }
+    const derived = derivePluginManifestSummary({
+      pluginManifest,
+      ...(isJsonRecord(candidate.release.normalizedBundleManifest)
+        ? { skillManifest: candidate.release.normalizedBundleManifest }
+        : {}),
+      compatibility: candidate.release.compatibility,
+      files: filesResult.files,
+    });
+    // Dry runs validate background images but store nothing.
+    const themes = await withThemeBackgrounds(ctx, {
+      pluginManifest,
+      files: candidate.release.files,
+      themes: derived.themes,
+      dryRun,
+    });
     const summary = retainPluginSummaryPresentation(
-      derivePluginManifestSummary({
-        pluginManifest,
-        ...(isJsonRecord(candidate.release.normalizedBundleManifest)
-          ? { skillManifest: candidate.release.normalizedBundleManifest }
-          : {}),
-        compatibility: candidate.release.compatibility,
-        files: filesResult.files,
-      }),
+      { ...derived, ...(themes ? { themes } : {}) },
       candidate.release.pluginManifestSummary,
     );
     if (hasSamePluginManifestSummary(candidate.release, summary)) {
@@ -1404,7 +1413,7 @@ async function processPluginManifestSummaryBackfillCandidates(
 }
 
 async function backfillLatestPluginManifestSummariesForFamily(
-  ctx: Pick<ActionCtx, "runMutation" | "runQuery" | "storage">,
+  ctx: Pick<ActionCtx, "runAction" | "runMutation" | "runQuery" | "storage">,
   family: PluginPackageFamily,
   dryRun: boolean,
   maxPackages: number,

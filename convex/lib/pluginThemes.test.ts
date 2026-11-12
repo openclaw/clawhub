@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { derivePluginManifestSummary } from "./packageRegistry";
 import {
+  declaredThemeBackgrounds,
   declaredThemeSourcePaths,
   extractThemePreviews,
   packageThemePreviewFields,
@@ -157,5 +158,24 @@ describe("theme-only plugins", () => {
     });
     expect(summary.themes).toHaveLength(2);
     expect(packageThemePreviewFields(summary)).toEqual({});
+  });
+});
+
+describe("declaredThemeBackgrounds", () => {
+  it("uses OpenClaw's background path rules", () => {
+    expect(
+      declaredThemeBackgrounds({
+        themes: [
+          {
+            id: "a",
+            backgrounds: { light: "./assets/a.png", dark: "assets/a.JPEG", sepia: "x.png" },
+          },
+          { id: "b", backgrounds: { light: "../outside.webp", dark: "assets/b.svg" } },
+        ],
+      }),
+    ).toEqual([
+      { id: "a", mode: "light", path: "assets/a.png" },
+      { id: "a", mode: "dark", path: "assets/a.JPEG" },
+    ]);
   });
 });

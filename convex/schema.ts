@@ -661,6 +661,9 @@ const themePreviewValidator = v.object({
   name: v.string(),
   light: v.optional(themePreviewPaletteValidator),
   dark: v.optional(themePreviewPaletteValidator),
+  backgrounds: v.optional(
+    v.object({ light: v.optional(v.string()), dark: v.optional(v.string()) }),
+  ),
 });
 
 export const pluginManifestSummaryValidator = v.object({

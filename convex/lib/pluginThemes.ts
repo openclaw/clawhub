@@ -27,11 +27,14 @@ export type ThemePreviewPalette = Record<ThemePreviewColorKey, string> & {
   fontSans?: string;
   fontMono?: string;
 };
+type ThemeColorMode = "light" | "dark";
 export type ThemePreview = {
   id: string;
   name: string;
   light?: ThemePreviewPalette;
   dark?: ThemePreviewPalette;
+  /** Hosted /api/v1/skill-icons/<sha256> URL of each mode's canvas image. */
+  backgrounds?: Partial<Record<ThemeColorMode, string>>;
 };
 
 const THEME_COLOR_KEYS = [
@@ -68,6 +71,8 @@ const MAX_PLUGIN_THEMES = 32;
 export const MAX_THEME_SOURCE_BYTES = 16_384;
 const THEME_LOCAL_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const THEME_SOURCE_PATTERN = /^(?:[a-z0-9_-][a-z0-9._-]*\/)*[a-z0-9_-][a-z0-9._-]*\.json$/i;
+const THEME_BACKGROUND_PATTERN =
+  /^(?:[a-z0-9_-][a-z0-9._-]*\/)*[a-z0-9_-][a-z0-9._-]*\.(?:png|jpe?g|webp)$/i;
 
 const NUMBER = "[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:e[+-]?\\d+)?";
 const COMPONENT = `${NUMBER}%?`;
@@ -187,6 +192,20 @@ export function declaredThemeSourcePaths(manifest: unknown): string[] {
   });
 }
 
+/** Background images declared per theme and mode, using OpenClaw's path rules. */
+export function declaredThemeBackgrounds(manifest: unknown) {
+  return declaredThemes(manifest).flatMap((entry) => {
+    const backgrounds = isRecord(entry) ? entry.backgrounds : undefined;
+    if (!isRecord(entry) || typeof entry.id !== "string" || !isRecord(backgrounds)) return [];
+    const id = entry.id;
+    return (["light", "dark"] as const).flatMap((mode) => {
+      const source = backgrounds[mode];
+      const path = typeof source === "string" ? source.replace(/^\.\//, "") : "";
+      return THEME_BACKGROUND_PATTERN.test(path) ? [{ id, mode, path }] : [];
+    });
+  });
+}
+
 function readThemePreview(entry: unknown, files: ThemeSourceFile[]): ThemePreview | undefined {
   const path = themeSourcePath(entry);
   if (!path || !isRecord(entry)) return undefined;
@@ -253,6 +272,9 @@ export function packageThemePreviewFields(
     Boolean(summary?.channels?.length) ||
     Boolean(summary?.mcpServers?.length) ||
     Boolean(summary?.bundledSkills?.length);
-  const themes = summary?.themes;
-  return !hasCapabilities && themes?.length === 1 ? { themePreview: themes[0] } : {};
+  const theme = summary?.themes?.length === 1 ? summary.themes[0] : undefined;
+  if (hasCapabilities || !theme) return {};
+  // The chip never shows background images, so cards don't carry them.
+  const { backgrounds: _backgrounds, ...themePreview } = theme;
+  return { themePreview };
 }

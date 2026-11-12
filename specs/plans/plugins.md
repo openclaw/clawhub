@@ -167,7 +167,13 @@ publisher photo fallback) with the Settings > Appearance chip; packs with severa
 keep the usual icon. The chip summarizes the preview: background, primary pill (buttons),
 accent dot (active session), foreground lines. Catalog cards never read release summaries,
 so that single theme is copied into the package's `latestVersionSummary.themePreview`.
-All new fields are optional, so rows written before this change stay valid. The plugin manifest summary backfill reads theme
+Declared theme `backgrounds` are hosted through the plugin icon path (content-addressed
+`skillPresentationAssets` store and `/api/v1/skill-icons/<sha256>`): 512 KiB cap like
+OpenClaw, sha256 match, PNG/JPEG/WebP structure from the extension, and a raster decode
+(at most 2048×2048 px). Only the hosted URL per mode is stored on the theme. An invalid
+image is dropped on its own; the theme stays (OpenClaw drops the whole theme instead).
+The chip copy omits backgrounds. All new fields are optional, so rows written before this
+change stay valid. The plugin manifest summary backfill reads theme
 files like `SKILL.md` and refreshes both copies for existing releases. There is no
 Themes category, table, or endpoint.
 

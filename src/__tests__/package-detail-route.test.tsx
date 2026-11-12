@@ -714,6 +714,7 @@ describe("plugin detail route", () => {
                 name: "Canopy",
                 light: { ...palette, background: "#ffffff" },
                 dark: palette,
+                backgrounds: { dark: `/api/v1/skill-icons/${"d".repeat(64)}` },
               },
               { id: "night", name: "Night", dark: palette },
             ],
@@ -730,9 +731,14 @@ describe("plugin detail route", () => {
 
     const preview = screen.getByRole("figure", { name: "OpenClaw chat preview" });
     expect(preview.style.getPropertyValue("--oc-bg-page")).toBe("#ffffff");
+    expect(preview.style.getPropertyValue("--plugin-preview-background")).toBe("");
     expect(preview.textContent).toContain("Canopy");
     fireEvent.click(screen.getByRole("button", { name: "Dark" }));
     expect(preview.style.getPropertyValue("--oc-bg-page")).toBe("#061009");
+    // The dark-mode image appears only in dark mode.
+    expect(preview.style.getPropertyValue("--plugin-preview-background")).toContain(
+      `url("/api/v1/skill-icons/${"d".repeat(64)}")`,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Night" }));
     expect(screen.queryByRole("button", { name: "Light" })).toBeNull();

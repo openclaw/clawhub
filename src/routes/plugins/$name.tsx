@@ -656,6 +656,7 @@ function PluginThemePreview({
       </div>
       <CompactOpenClawPreview
         palette={palette}
+        background={theme.backgrounds?.[mode] ? { url: theme.backgrounds[mode], mode } : undefined}
         sessions={[theme.name, "Release notes", "Inbox triage"]}
         messages={[
           { role: "user", content: "Show me what this theme looks like." },

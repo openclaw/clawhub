@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { ThemePreview, ThemePreviewPalette } from "../../convex/lib/pluginThemes";
+import { isHostedSkillPresentationIconPath } from "../../convex/lib/skillPresentation";
 
 /**
  * Maps a portable OpenClaw theme palette onto the Carapace tokens the compact
@@ -24,6 +25,19 @@ export function themePaletteToPreviewTokens(palette: ThemePreviewPalette): CSSPr
     "--oc-accent-secondary": palette.accentForeground,
     ...(palette.fontSans ? { "--oc-font-body": palette.fontSans } : {}),
     ...(palette.fontMono ? { "--oc-font-mono": palette.fontMono } : {}),
+  } as CSSProperties;
+}
+
+/**
+ * The theme's canvas image under a scrim of its own background, like the Control UI at
+ * default visibility: about 16% image in dark mode and 10% in light mode, so text stays
+ * on a near-solid surface. Only hosted ClawHub image paths are used.
+ */
+export function themeBackgroundTokens(url: string | undefined, mode: "light" | "dark") {
+  if (!isHostedSkillPresentationIconPath(url)) return undefined;
+  const scrim = `color-mix(in srgb, var(--oc-bg-page) ${mode === "light" ? 90 : 84}%, transparent)`;
+  return {
+    "--plugin-preview-background": `linear-gradient(${scrim}, ${scrim}), url("${url}")`,
   } as CSSProperties;
 }
 

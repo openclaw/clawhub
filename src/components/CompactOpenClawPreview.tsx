@@ -1,7 +1,7 @@
 import { ArrowUp } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ThemePreviewPalette } from "../../convex/lib/pluginThemes";
-import { themePaletteToPreviewTokens } from "../lib/themePreviewTokens";
+import { themeBackgroundTokens, themePaletteToPreviewTokens } from "../lib/themePreviewTokens";
 
 type CompactOpenClawPreviewProps = {
   messages: ReadonlyArray<{ role: "user" | "assistant"; content: ReactNode }>;
@@ -9,6 +9,8 @@ type CompactOpenClawPreviewProps = {
   sessions?: readonly string[];
   /** Restyles only this window with a portable OpenClaw theme palette. */
   palette?: ThemePreviewPalette;
+  /** Hosted theme canvas image for the palette's mode, shown behind the content. */
+  background?: { url: string; mode: "light" | "dark" };
 };
 
 /** A compact OpenClaw chat window: window bar, messages and composer, in Carapace tokens. */
@@ -16,7 +18,9 @@ export function CompactOpenClawPreview({
   messages,
   sessions,
   palette,
+  background,
 }: CompactOpenClawPreviewProps) {
+  const backdrop = background && themeBackgroundTokens(background.url, background.mode);
   const chat = (
     <>
       {messages.map((message, index) =>
@@ -38,9 +42,11 @@ export function CompactOpenClawPreview({
   );
   return (
     <figure
-      className={`plugin-prompt-preview${palette ? " plugin-prompt-preview-themed" : ""}`}
+      className={`plugin-prompt-preview${palette ? " plugin-prompt-preview-themed" : ""}${
+        backdrop ? " plugin-prompt-preview-backdrop" : ""
+      }`}
       aria-label="OpenClaw chat preview"
-      style={palette ? themePaletteToPreviewTokens(palette) : undefined}
+      style={palette ? { ...themePaletteToPreviewTokens(palette), ...backdrop } : undefined}
     >
       <div className="plugin-prompt-preview-bar" aria-hidden="true">
         <i />

@@ -113,7 +113,7 @@ import {
   getPackageByNormalizedName,
 } from "./lib/packageCatalogRead";
 import { verifyPublishFileStorageMetadata } from "./lib/packageFileVerification";
-import { resolvePackageIcon } from "./lib/packageIcons";
+import { resolvePackageIcon, withThemeBackgrounds } from "./lib/packageIcons";
 import {
   packageInspectorIssueInputValidator,
   type PackageInspectorFinding,
@@ -8721,23 +8721,30 @@ async function publishPackageImpl(
     files,
     ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
   });
-  const pluginManifestSummary =
+  const derivedManifestSummary =
     family === "claw"
       ? undefined
-      : {
-          ...derivePluginManifestSummary({
-            pluginManifest: pluginManifest ?? bundleManifest ?? {},
-            ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
-            compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
-            ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
-            files: await withSkillMarkdownTextsForManifestSummary(
-              ctx,
-              files,
-              pluginManifest ?? bundleManifest,
-            ),
-          }),
-          ...(icon ? { icon } : {}),
-        };
+      : derivePluginManifestSummary({
+          pluginManifest: pluginManifest ?? bundleManifest ?? {},
+          ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
+          compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
+          ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
+          files: await withSkillMarkdownTextsForManifestSummary(
+            ctx,
+            files,
+            pluginManifest ?? bundleManifest,
+          ),
+        });
+  const themes = await withThemeBackgrounds(ctx, {
+    pluginManifest: pluginManifest ?? bundleManifest,
+    files,
+    themes: derivedManifestSummary?.themes,
+  });
+  const pluginManifestSummary = derivedManifestSummary && {
+    ...derivedManifestSummary,
+    ...(themes ? { themes } : {}),
+    ...(icon ? { icon } : {}),
+  };
 
   const packageInsertArgs = {
     actorUserId,

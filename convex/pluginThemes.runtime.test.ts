@@ -9,10 +9,19 @@ vi.mock("./lib/verifiedClientIp", () => ({
 }));
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { sha256Hex } from "./lib/clawpack";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+const backgroundPng = new Uint8Array(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64",
+  ),
+);
+const backgroundSha = await sha256Hex(backgroundPng);
+const notImage = new TextEncoder().encode("not an image");
 const description = "Carbon-black panels and sage-green signals.";
 const darkTheme = JSON.stringify({
   name: "Artemis Canopy",
@@ -110,6 +119,8 @@ async function mainShapeFixture() {
       });
     };
     const storageId = await ctx.storage.store(new Blob([darkTheme]));
+    const backgroundId = await ctx.storage.store(new Blob([backgroundPng]));
+    const notImageId = await ctx.storage.store(new Blob([notImage]));
     await insert("ordinary-plugin", { id: "ordinary-plugin" }, []);
     await insert(
       "canopy-theme",
@@ -121,6 +132,8 @@ async function mainShapeFixture() {
             name: "Artemis Canopy",
             description,
             source: "themes/canopy-dark.json",
+            // Valid dark image, and a light "image" that isn't one: only the latter drops.
+            backgrounds: { dark: "assets/dark.png", light: "assets/light.webp" },
           },
         ],
       },
@@ -130,6 +143,18 @@ async function mainShapeFixture() {
           size: darkTheme.length,
           sha256: "d".repeat(64),
           storageId,
+        },
+        {
+          path: "assets/dark.png",
+          size: backgroundPng.byteLength,
+          sha256: backgroundSha,
+          storageId: backgroundId,
+        },
+        {
+          path: "assets/light.webp",
+          size: notImage.byteLength,
+          sha256: await sha256Hex(notImage),
+          storageId: notImageId,
         },
       ],
     );
@@ -192,6 +217,9 @@ describe("existing-data compatibility for theme previews", () => {
       patchedReleases: 0,
     });
     expect(await snapshot(t)).toEqual(before);
+    expect(await t.run(async (ctx) => ctx.db.query("skillPresentationAssets").collect())).toEqual(
+      [],
+    );
 
     const apply = { ...args, dryRun: false, confirm: "backfill-plugin-manifest-summaries" };
     expect(
@@ -201,14 +229,25 @@ describe("existing-data compatibility for theme previews", () => {
     expect(after["ordinary-plugin"]).toEqual(before["ordinary-plugin"]);
     expect(after["canopy-theme"]?.pluginManifestSummary).toEqual({
       ...mainShapeSummary,
-      themes: [expect.objectContaining({ id: "canopy-dark", dark: expect.any(Object) })],
+      themes: [
+        expect.objectContaining({
+          id: "canopy-dark",
+          dark: expect.any(Object),
+          backgrounds: { dark: `/api/v1/skill-icons/${backgroundSha}` },
+        }),
+      ],
     });
+    const image = await t.fetch(`/api/v1/skill-icons/${backgroundSha}`);
+    expect(image.status).toBe(200);
+    expect(image.headers.get("content-type")).toBe("image/png");
     expect(after["canopy-theme"]?.latestVersionSummary).toEqual({
       ...before["canopy-theme"]?.latestVersionSummary,
       themePreview: expect.objectContaining({ id: "canopy-dark", name: "Artemis Canopy" }),
     });
     const upgraded = await catalogItems(t);
     expect(upgraded.list["canopy-theme"].themePreview.dark.primary).toBe("#e6c178");
+    // Cards only need the chip colors, never the background images.
+    expect(upgraded.list["canopy-theme"].themePreview).not.toHaveProperty("backgrounds");
     expect(upgraded.list["ordinary-plugin"]).toEqual(catalog.list["ordinary-plugin"]);
 
     // Re-running is a no-op.

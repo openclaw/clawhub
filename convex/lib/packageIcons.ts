@@ -6,6 +6,7 @@ import {
   storeSkillPresentationAsset,
 } from "../skillPresentationAssets";
 import { sha256Hex } from "./clawpack";
+import { declaredThemeBackgrounds, type ThemePreview } from "./pluginThemes";
 import {
   buildSkillPresentationIconPath,
   MAX_SKILL_PRESENTATION_ICON_BYTES,
@@ -98,4 +99,53 @@ async function fetchBundledIcon(url: string): Promise<Uint8Array | undefined> {
     offset += chunk.byteLength;
   }
   return bytes;
+}
+
+type ReleaseImageFile = { path: string; size: number; sha256: string; storageId: string };
+
+/**
+ * Hosts each declared theme background through the same content-addressed store and
+ * /api/v1/skill-icons route as plugin icons. OpenClaw accepts PNG, JPEG or WebP up to
+ * 512 KiB; an unreadable or invalid image is dropped on its own and never drops the theme
+ * or blocks publication.
+ */
+export async function withThemeBackgrounds(
+  ctx: IconContext,
+  args: {
+    pluginManifest: unknown;
+    files: ReleaseImageFile[];
+    themes: ThemePreview[] | undefined;
+    dryRun?: boolean;
+  },
+): Promise<ThemePreview[] | undefined> {
+  if (!args.themes?.length) return args.themes;
+  const declared = declaredThemeBackgrounds(args.pluginManifest);
+  const themes: ThemePreview[] = [];
+  for (const theme of args.themes) {
+    const backgrounds: ThemePreview["backgrounds"] = {};
+    for (const { mode, path } of declared.filter((entry) => entry.id === theme.id)) {
+      const file = args.files.find((candidate) => candidate.path === path);
+      const url = file
+        ? await hostThemeBackground(ctx, file, args.dryRun).catch(() => undefined)
+        : undefined;
+      if (url) backgrounds[mode] = url;
+    }
+    themes.push(Object.keys(backgrounds).length ? { ...theme, backgrounds } : theme);
+  }
+  return themes;
+}
+
+async function hostThemeBackground(ctx: IconContext, file: ReleaseImageFile, dryRun?: boolean) {
+  if (file.size > MAX_SKILL_PRESENTATION_ICON_BYTES) return undefined;
+  const blob = await ctx.storage.get(file.storageId as Id<"_storage">);
+  if (!blob || blob.size > MAX_SKILL_PRESENTATION_ICON_BYTES) return undefined;
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const sha256 = await sha256Hex(bytes);
+  if (sha256 !== file.sha256.toLowerCase()) return undefined;
+  // Checks the 512 KiB cap and the PNG/JPEG/WebP structure named by the extension.
+  const { contentType } = validateSkillPresentationIcon({ path: file.path, bytes });
+  if (contentType === "image/svg+xml") return undefined;
+  if (!(await isDecodableSkillPresentationRaster(ctx, { bytes, contentType }))) return undefined;
+  if (dryRun) return buildSkillPresentationIconPath(sha256);
+  return storeSkillPresentationAsset(ctx, { bytes, sha256, contentType });
 }

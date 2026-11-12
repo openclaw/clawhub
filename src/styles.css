@@ -3979,6 +3979,12 @@ code {
   font-family: var(--oc-font-body);
 }
 
+.plugin-prompt-preview-backdrop {
+  background:
+    var(--plugin-preview-background) center / cover no-repeat,
+    var(--oc-bg-recessed);
+}
+
 .plugin-prompt-preview-themed .plugin-prompt-preview-composer svg {
   background: var(--oc-accent-primary);
   color: var(--oc-text-on-accent);
