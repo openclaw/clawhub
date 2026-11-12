@@ -157,23 +157,28 @@ and `.json` source path, matching name and description, complete light and/or da
 palettes with safe color and font values. It does not re-check OpenClaw's branding
 fields (mascot, brand icon, critters, hats, artwork), which the preview never reads, so a
 theme OpenClaw rejects for those can still be previewed here. Invalid themes are dropped
-one by one and never block publication. Values reach the page only as inline `--oc-*` custom
+one by one and never block publication. Values reach the page only as inline `--cu-*` and `--theme-chip-*` custom
 properties on the preview, so they must stay limited to those validated colors and fonts.
 
 A plugin is theme-only when it has themes and no contracts, providers, channels, MCP
-servers, or bundled skills. Every plugin whose release summary has themes shows the
-themed compact window on the detail page. A theme-only plugin with exactly one theme also replaces the catalog icon (and its
-publisher photo fallback) with the Settings > Appearance chip; packs with several themes
-keep the usual icon. The chip uses the Control UI's Settings colors
-(openclaw/openclaw#197388): theme background with two foreground lines, then two separate
-dots in the bottom third, accent (left) and primary (right), with a faint foreground outline. Catalog cards never read release summaries,
-so that single theme is copied into the package's `latestVersionSummary.themePreview`.
+servers, or bundled skills. Every plugin whose release summary has themes shows the theme
+section on its detail page: a mini Control UI preview (ThemePreviewWindow) with a
+Light/Dark switch, then the pack's themes as Control UI Settings > Appearance cards
+(background, two foreground lines, accent pill, primary dot; openclaw/openclaw#197388).
+The preview follows the Control UI color rules: neutral selected rows and user bubble,
+accent links, primary buttons and send button, theme fonts, and the mode's background.
+Theme-only packs render as grid cards in plugin search and browse instead of list rows:
+the first theme's preview, the pack name and publisher, and one small chip per theme
+(background, accent dot, primary dot). Catalog cards never read release summaries, so
+the package's `latestVersionSummary` carries `themePreview` (the first theme, with
+backgrounds) and `themeChips` (per theme and mode: background, foreground, accent,
+primary). The plugin's list icon is unchanged.
 Declared theme `backgrounds` are hosted through the plugin icon path (content-addressed
 `skillPresentationAssets` store and `/api/v1/skill-icons/<sha256>`): 512 KiB cap like
 OpenClaw, sha256 match, PNG/JPEG/WebP structure from the extension, and a raster decode
 (at most 2048×2048 px). Only the hosted URL per mode is stored on the theme. An invalid
 image is dropped on its own; the theme stays (OpenClaw drops the whole theme instead).
-The chip copy omits backgrounds. All new fields are optional, so rows written before this
+All new fields are optional, so rows written before this
 change stay valid. The plugin manifest summary backfill reads theme
 files like `SKILL.md` and refreshes both copies for existing releases. There is no
 Themes category, table, or endpoint.
