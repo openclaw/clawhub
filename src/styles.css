@@ -3063,10 +3063,6 @@ code {
   align-items: center;
 }
 
-.skill-stats-dot {
-  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
-}
-
 .skill-stats-triplet {
   gap: 6px;
 }
@@ -4354,17 +4350,6 @@ code {
 
 /* ── End Plugin Detail ── */
 
-.skill-owner-tools {
-  display: grid;
-  gap: 14px;
-}
-
-.skill-owner-tools-grid {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
-}
-
 .skill-admin-panel {
   display: grid;
   width: 100%;
@@ -4460,10 +4445,6 @@ code {
 }
 
 @media (max-width: 820px) {
-  .skill-owner-tools-grid {
-    grid-template-columns: 1fr;
-  }
-
   .skill-admin-panel {
     max-width: none;
   }
@@ -5097,40 +5078,11 @@ code {
   color: color-mix(in srgb, var(--ink) 72%, var(--ink-soft));
 }
 
-.skill-management-toolbar-action-subtle {
-  color: color-mix(in srgb, var(--ink-soft) 64%, var(--bg));
-}
-
 .skill-title-badges {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   align-self: center;
-}
-
-.skill-category-chip {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  min-height: 28px;
-  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
-  border-radius: var(--r-pill);
-  padding: 4px 10px;
-  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
-  color: var(--ink-soft);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0;
-  text-decoration: none;
-  text-transform: uppercase;
-}
-
-.skill-category-chip:hover {
-  border-color: color-mix(in srgb, var(--ink-soft) 36%, var(--line));
-  color: var(--ink);
-  text-decoration: none;
 }
 
 .skill-hero-taxonomy-row {
@@ -5287,10 +5239,6 @@ code {
     flex: 0 0 auto;
     background: color-mix(in srgb, var(--ink-soft) 28%, transparent);
   }
-}
-
-.skill-settings-link {
-  align-self: center;
 }
 
 .skill-hero-note {
@@ -7157,45 +7105,6 @@ a.skills-sh-security-audit-row:focus-visible {
   }
 }
 
-.skill-version-pill {
-  display: grid;
-  gap: 4px;
-  padding: 10px 14px;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  background: var(--surface-muted);
-  text-align: right;
-  min-width: 0;
-}
-
-.skill-version-label {
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-
-.skill-tag-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  min-width: 0;
-}
-
-.skill-tag-history {
-  display: grid;
-  gap: 8px;
-}
-
-.skill-tag-history-label {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-soft);
-}
-
 .skill-panel {
   display: grid;
   gap: 10px;
@@ -7203,11 +7112,6 @@ a.skills-sh-security-audit-row:focus-visible {
   border-radius: 16px;
   border: 1px solid var(--line);
   background: var(--surface-muted);
-}
-
-.skill-panel-body {
-  display: grid;
-  gap: 8px;
 }
 
 .related-skills-section {
@@ -13090,11 +12994,6 @@ a.agentic-risk-finding-title:focus-visible {
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.skill-list-item-category-icon {
-  flex: 0 0 auto;
-  color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
 }
 
 .skill-list-item-meta {
