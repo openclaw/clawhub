@@ -19,8 +19,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Offline metadata replaces all ASCII controls and DEL, collapses whitespace,
   trims, and applies its own length limit. Offline Markdown preserves bundle
   whitespace and applies its existing nullable-input and truncation rules.
-- Keep export authentication, storage access, file exclusions, and byte budgets
-  at their existing caller boundaries.
+- `convex/lib/securityDatasetContent.ts` owns shared storage-backed content reads,
+  file exclusions, and per-file/per-artifact byte budgets. Callers retain export
+  authentication, row validation, response-wide budgets, pagination, and transport.
 
 ## Anonymous API ingress
 
