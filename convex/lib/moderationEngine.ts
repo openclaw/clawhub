@@ -1,3 +1,4 @@
+import { getSecuritySeverityRank } from "clawhub-schema/securityAudit";
 import type { Id } from "../_generated/dataModel";
 import {
   legacyFlagsFromVerdict,
@@ -41,32 +42,15 @@ export type ModerationSnapshot = {
   legacyFlags?: string[];
 };
 
-function normalizedSeverityRank(severity: string | undefined) {
-  switch (severity?.trim().toLowerCase()) {
-    case "critical":
-      return 5;
-    case "high":
-      return 4;
-    case "medium":
-      return 3;
-    case "low":
-      return 2;
-    case "info":
-      return 1;
-    default:
-      return 0;
-  }
-}
-
 function highestLlmConcernSeverityRank(analysis: LlmAnalysis | undefined) {
   let rank = 0;
   for (const finding of analysis?.agenticRiskFindings ?? []) {
     if (finding.status !== "concern") continue;
-    rank = Math.max(rank, normalizedSeverityRank(finding.severity));
+    rank = Math.max(rank, getSecuritySeverityRank(finding.severity));
   }
   for (const bucket of Object.values(analysis?.riskSummary ?? {})) {
     if (bucket?.status !== "concern") continue;
-    rank = Math.max(rank, normalizedSeverityRank(bucket.highestSeverity));
+    rank = Math.max(rank, getSecuritySeverityRank(bucket.highestSeverity));
   }
   return rank;
 }
@@ -80,7 +64,7 @@ function addLlmStatusReason(reasonCodes: string[], status?: string, analysis?: L
   if (normalized !== "suspicious") return;
 
   const concernRank = highestLlmConcernSeverityRank(analysis);
-  if (concernRank >= normalizedSeverityRank("high")) {
+  if (concernRank >= getSecuritySeverityRank("high")) {
     reasonCodes.push("suspicious.llm_suspicious");
   } else {
     reasonCodes.push(REASON_CODES.LLM_REVIEW);

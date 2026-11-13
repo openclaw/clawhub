@@ -40,7 +40,7 @@ type AuditLlmAnalysis = {
   agenticRiskFindings?: AuditRiskFinding[];
 };
 
-function severityRank(severity?: string) {
+export function getSecuritySeverityRank(severity?: string) {
   switch (severity?.trim().toLowerCase()) {
     case "critical":
       return 5;
@@ -72,7 +72,7 @@ export function isVisibleAgenticRiskFinding(finding: AuditRiskFinding) {
 function highestVisibleFindingSeverityRank(analysis?: AuditLlmAnalysis | null) {
   let highest = 0;
   for (const finding of (analysis?.agenticRiskFindings ?? []).filter(isVisibleAgenticRiskFinding)) {
-    highest = Math.max(highest, severityRank(finding.severity));
+    highest = Math.max(highest, getSecuritySeverityRank(finding.severity));
   }
   return highest;
 }
@@ -84,7 +84,10 @@ export function getClawScanDisplayStatus(analysis?: AuditLlmAnalysis | null) {
   if (status === "suspicious") {
     return "review";
   }
-  if ((status === "clean" || status === "benign") && highestSeverity >= severityRank("medium")) {
+  if (
+    (status === "clean" || status === "benign") &&
+    highestSeverity >= getSecuritySeverityRank("medium")
+  ) {
     return "review";
   }
   return status;
