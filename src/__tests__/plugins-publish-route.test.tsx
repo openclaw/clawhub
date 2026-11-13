@@ -1333,30 +1333,11 @@ describe("plugins publish route", () => {
   it("warns when README references relative image paths but no source repo/commit is set", async () => {
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
-        "package.json",
-        {
-          type: "application/json",
-        },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      { name: "demo-plugin", version: "1.0.0" },
+      "demo-plugin",
+      '# Demo Plugin\n\n![diagram](./images/foo.png)\n\n<img src="./images/bar.png" alt="x"/>',
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(
-        ['# Demo Plugin\n\n![diagram](./images/foo.png)\n\n<img src="./images/bar.png" alt="x"/>'],
-        "README.md",
-        { type: "text/markdown" },
-      ),
-      "demo-plugin/README.md",
-    );
-
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(screen.getByText(/2 package-relative image paths/i)).toBeTruthy();
@@ -1369,32 +1350,11 @@ describe("plugins publish route", () => {
   it("warns when README picture source srcset references relative image paths", async () => {
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
-        "package.json",
-        {
-          type: "application/json",
-        },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      { name: "demo-plugin", version: "1.0.0" },
+      "demo-plugin",
+      '# Demo Plugin\n\n<picture><source media="(prefers-color-scheme: dark)" srcset="./images/dark.png 1x, ./images/dark@2x.png 2x"><img src="https://example.com/fallback.png" alt="x"></picture>',
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(
-        [
-          '# Demo Plugin\n\n<picture><source media="(prefers-color-scheme: dark)" srcset="./images/dark.png 1x, ./images/dark@2x.png 2x"><img src="https://example.com/fallback.png" alt="x"></picture>',
-        ],
-        "README.md",
-        { type: "text/markdown" },
-      ),
-      "demo-plugin/README.md",
-    );
-
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(screen.getByText(/2 package-relative image paths/i)).toBeTruthy();
@@ -1406,28 +1366,11 @@ describe("plugins publish route", () => {
   it("swaps the missing-source warning for a Package-path reminder once Source repo and a valid 40-hex Source commit are filled", async () => {
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
-        "package.json",
-        {
-          type: "application/json",
-        },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      { name: "demo-plugin", version: "1.0.0" },
+      "demo-plugin",
+      "# Demo\n\n![diagram](./images/foo.png)\n",
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(["# Demo\n\n![diagram](./images/foo.png)\n"], "README.md", {
-        type: "text/markdown",
-      }),
-      "demo-plugin/README.md",
-    );
-
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(screen.getByText(/a package-relative image path/i)).toBeTruthy();
@@ -1468,28 +1411,11 @@ describe("plugins publish route", () => {
     // detail page 404'd. The form must now hold the renderer's validation line.
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
-        "package.json",
-        {
-          type: "application/json",
-        },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      { name: "demo-plugin", version: "1.0.0" },
+      "demo-plugin",
+      "# Demo\n\n![diagram](./images/foo.png)\n",
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(["# Demo\n\n![diagram](./images/foo.png)\n"], "README.md", {
-        type: "text/markdown",
-      }),
-      "demo-plugin/README.md",
-    );
-
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(screen.getByText(/Without Source repo \+ Commit SHA/i)).toBeTruthy();
@@ -1519,28 +1445,11 @@ describe("plugins publish route", () => {
   it("keeps the missing-source warning when Package path cannot be resolved safely", async () => {
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
-        "package.json",
-        {
-          type: "application/json",
-        },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      { name: "demo-plugin", version: "1.0.0" },
+      "demo-plugin",
+      "# Demo\n\n![diagram](./images/foo.png)\n",
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(["# Demo\n\n![diagram](./images/foo.png)\n"], "README.md", {
-        type: "text/markdown",
-      }),
-      "demo-plugin/README.md",
-    );
-
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(screen.getByText(/Without Source repo \+ Commit SHA/i)).toBeTruthy();
@@ -1566,28 +1475,11 @@ describe("plugins publish route", () => {
   it("stops nudging about Package path once source is filled and the README has no relative images", async () => {
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
-        "package.json",
-        {
-          type: "application/json",
-        },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      { name: "demo-plugin", version: "1.0.0" },
+      "demo-plugin",
+      "# Demo\n\n![ok](https://example.com/foo.png)\n",
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(["# Demo\n\n![ok](https://example.com/foo.png)\n"], "README.md", {
-        type: "text/markdown",
-      }),
-      "demo-plugin/README.md",
-    );
-
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
@@ -1606,28 +1498,11 @@ describe("plugins publish route", () => {
   it("keeps warning about root-absolute README image paths even when Source repo and Source commit are filled", async () => {
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
-        "package.json",
-        {
-          type: "application/json",
-        },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      { name: "demo-plugin", version: "1.0.0" },
+      "demo-plugin",
+      "# Demo\n\n![logo](/static/logo.png)\n",
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(["# Demo\n\n![logo](/static/logo.png)\n"], "README.md", {
-        type: "text/markdown",
-      }),
-      "demo-plugin/README.md",
-    );
-
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(screen.getByText(/a root-absolute image path/i)).toBeTruthy();
@@ -1649,28 +1524,11 @@ describe("plugins publish route", () => {
   it("does not warn when README only uses absolute image URLs", async () => {
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
-        "package.json",
-        {
-          type: "application/json",
-        },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      { name: "demo-plugin", version: "1.0.0" },
+      "demo-plugin",
+      "# Demo\n\n![ok](https://example.com/foo.png)\n",
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(["# Demo\n\n![ok](https://example.com/foo.png)\n"], "README.md", {
-        type: "text/markdown",
-      }),
-      "demo-plugin/README.md",
-    );
-
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
@@ -1681,28 +1539,11 @@ describe("plugins publish route", () => {
   it("clears the README relative-asset warning when the user clears the selected package", async () => {
     renderPublishRoute();
 
-    const packageJson = withRelativePath(
-      new File(
-        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
-        "package.json",
-        {
-          type: "application/json",
-        },
-      ),
-      "demo-plugin/package.json",
+    uploadCodePluginPackage(
+      { name: "demo-plugin", version: "1.0.0" },
+      "demo-plugin",
+      "# Demo\n\n![diagram](./images/foo.png)\n",
     );
-    const manifest = withRelativePath(
-      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo-plugin/openclaw.plugin.json",
-    );
-    const readme = withRelativePath(
-      new File(["# Demo\n\n![diagram](./images/foo.png)\n"], "README.md", {
-        type: "text/markdown",
-      }),
-      "demo-plugin/README.md",
-    );
-
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
     await waitFor(() => {
       expect(screen.getByText(/a package-relative image path/i)).toBeTruthy();
