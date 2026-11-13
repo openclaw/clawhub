@@ -70,6 +70,20 @@ const { __handlers } = await import("./httpApiV1");
 
 type ActionCtx = import("./_generated/server").ActionCtx;
 
+function makeSkillArtifactFixture(tags: Record<string, string> = {}) {
+  return {
+    _id: "skills:1",
+    slug: "demo",
+    displayName: "Demo",
+    summary: "s",
+    tags,
+    stats: {},
+    createdAt: 1,
+    updatedAt: 2,
+    latestVersionId: "skillVersions:1",
+  };
+}
+
 function makeSkillScanQuery<TSkill, TVersion>(
   selectedSkill: TSkill,
   selectedVersion0: TVersion,
@@ -6768,17 +6782,7 @@ describe("httpApiV1 handlers", () => {
       ],
       softDeletedAt: undefined,
     };
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture();
     const selectedVersion0 = internalVersion;
     const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6852,17 +6856,7 @@ describe("httpApiV1 handlers", () => {
       ],
       softDeletedAt: undefined,
     };
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture();
     const selectedVersion0 = internalVersion;
     const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const storage = {
@@ -6939,17 +6933,7 @@ describe("httpApiV1 handlers", () => {
       ],
       softDeletedAt: undefined,
     };
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture();
     const selectedVersion0 = internalVersion;
     const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const response = await __handlers.skillsGetRouterV1Handler(
@@ -7029,15 +7013,7 @@ describe("httpApiV1 handlers", () => {
 
   it("blocks raw file reads for malware-blocked skills", async () => {
     const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
+      ...makeSkillArtifactFixture(),
       moderationVerdict: "malicious",
       moderationFlags: ["blocked.malware"],
     };
@@ -7083,17 +7059,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("does not serve raw files from another skill's tagged version", async () => {
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: { old: "skillVersions:other" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture({ old: "skillVersions:other" });
     const selectedVersion0 = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -7142,17 +7108,7 @@ describe("httpApiV1 handlers", () => {
 
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { latest: "skillVersions:1" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: makeSkillArtifactFixture({ latest: "skillVersions:1" }),
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
           moderationInfo: null,
@@ -7193,17 +7149,7 @@ describe("httpApiV1 handlers", () => {
       softDeletedAt: undefined,
     };
     const generatedBundleFingerprint = await buildBundleFingerprint(internalVersion.files);
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: { stable: "skillVersions:1" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture({ stable: "skillVersions:1" });
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
@@ -7246,15 +7192,7 @@ describe("httpApiV1 handlers", () => {
 
   it("blocks Skill Card reads for malware-blocked skills", async () => {
     const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
+      ...makeSkillArtifactFixture(),
       moderationVerdict: "malicious",
       moderationFlags: ["blocked.malware"],
     };
@@ -7300,17 +7238,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("does not serve Skill Cards from another skill's tagged version", async () => {
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: { old: "skillVersions:other" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture({ old: "skillVersions:other" });
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "not_found" };
@@ -7349,17 +7277,7 @@ describe("httpApiV1 handlers", () => {
 
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: makeSkillArtifactFixture(),
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
           moderationInfo: null,
@@ -7382,17 +7300,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("does not verify another skill's tagged version", async () => {
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: { old: "skillVersions:other" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture({ old: "skillVersions:other" });
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "not_found" };
@@ -7429,17 +7337,7 @@ describe("httpApiV1 handlers", () => {
       files: [{ path: "SKILL.md", size: 5, storageId: "storage:1", sha256: "abcd" }],
       softDeletedAt: undefined,
     };
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture();
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
@@ -7481,17 +7379,7 @@ describe("httpApiV1 handlers", () => {
       ],
       softDeletedAt: undefined,
     };
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture();
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
@@ -8091,17 +7979,7 @@ describe("httpApiV1 handlers", () => {
 
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { latest: "skillVersions:1" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: makeSkillArtifactFixture({ latest: "skillVersions:1" }),
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: { _id: "users:1", handle: "acme", displayName: "Acme" },
           moderationInfo: null,
@@ -8214,17 +8092,7 @@ describe("httpApiV1 handlers", () => {
       softDeletedAt: undefined,
     };
     const generatedBundleFingerprint = await buildBundleFingerprint(internalVersion.files);
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: { stable: "skillVersions:1" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture({ stable: "skillVersions:1" });
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
@@ -8345,17 +8213,7 @@ describe("httpApiV1 handlers", () => {
       },
       softDeletedAt: undefined,
     };
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture();
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
@@ -8426,15 +8284,7 @@ describe("httpApiV1 handlers", () => {
     };
     const generatedBundleFingerprint = await buildBundleFingerprint(internalVersion.files);
     const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
+      ...makeSkillArtifactFixture(),
       moderationVerdict: "malicious",
       moderationFlags: ["blocked.malware"],
     };
@@ -8512,17 +8362,7 @@ describe("httpApiV1 handlers", () => {
       softDeletedAt: undefined,
     };
     const generatedBundleFingerprint = await buildBundleFingerprint(internalVersion.files);
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture();
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
@@ -8591,17 +8431,7 @@ describe("httpApiV1 handlers", () => {
       },
       softDeletedAt: undefined,
     };
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture();
     const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
@@ -8636,17 +8466,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns 410 for soft-deleted Skill Card versions", async () => {
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture();
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "deleted" };
@@ -8704,17 +8524,7 @@ describe("httpApiV1 handlers", () => {
       ],
       softDeletedAt: undefined,
     };
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
-      tags: {},
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-      latestVersionId: "skillVersions:1",
-    };
+    const selectedSkill = makeSkillArtifactFixture();
     const selectedVersion0 = internalVersion;
     const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
