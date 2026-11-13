@@ -8,34 +8,34 @@ import {
   releaseActiveReservedSlugsForPublisher,
 } from "./reservedSlugs";
 
+function mockReservationQuery<T>(getRows: () => T[]) {
+  return vi.fn((table: string) => {
+    if (table !== "reservedSlugs") throw new Error(`unexpected table ${table}`);
+    return {
+      withIndex: (name: string) => {
+        if (name !== "by_slug_active_deletedAt") {
+          throw new Error(`unexpected index ${name}`);
+        }
+        return { order: () => ({ take: async () => getRows() }) };
+      },
+    };
+  });
+}
+
 describe("reservedSlugs", () => {
   it("throws a user-facing error when slug is actively reserved by another user", async () => {
     const now = Date.now();
     const db = {
-      query: vi.fn((table: string) => {
-        if (table !== "reservedSlugs") throw new Error(`unexpected table ${table}`);
-        return {
-          withIndex: (name: string) => {
-            if (name !== "by_slug_active_deletedAt") {
-              throw new Error(`unexpected index ${name}`);
-            }
-            return {
-              order: () => ({
-                take: async () => [
-                  {
-                    _id: "reservedSlugs:1",
-                    slug: "taken-skill",
-                    originalOwnerUserId: "users:owner",
-                    deletedAt: now - 1000,
-                    expiresAt: now + 60_000,
-                    releasedAt: undefined,
-                  },
-                ],
-              }),
-            };
-          },
-        };
-      }),
+      query: mockReservationQuery(() => [
+        {
+          _id: "reservedSlugs:1",
+          slug: "taken-skill",
+          originalOwnerUserId: "users:owner",
+          deletedAt: now - 1000,
+          expiresAt: now + 60_000,
+          releasedAt: undefined,
+        },
+      ]),
       patch: vi.fn(async () => {}),
     };
 
@@ -56,31 +56,17 @@ describe("reservedSlugs", () => {
   it("does not block another publisher namespace for the same slug", async () => {
     const now = Date.now();
     const db = {
-      query: vi.fn((table: string) => {
-        if (table !== "reservedSlugs") throw new Error(`unexpected table ${table}`);
-        return {
-          withIndex: (name: string) => {
-            if (name !== "by_slug_active_deletedAt") {
-              throw new Error(`unexpected index ${name}`);
-            }
-            return {
-              order: () => ({
-                take: async () => [
-                  {
-                    _id: "reservedSlugs:1",
-                    slug: "taken-skill",
-                    originalOwnerUserId: "users:owner",
-                    originalOwnerPublisherId: "publishers:owner",
-                    deletedAt: now - 1000,
-                    expiresAt: now + 60_000,
-                    releasedAt: undefined,
-                  },
-                ],
-              }),
-            };
-          },
-        };
-      }),
+      query: mockReservationQuery(() => [
+        {
+          _id: "reservedSlugs:1",
+          slug: "taken-skill",
+          originalOwnerUserId: "users:owner",
+          originalOwnerPublisherId: "publishers:owner",
+          deletedAt: now - 1000,
+          expiresAt: now + 60_000,
+          releasedAt: undefined,
+        },
+      ]),
       patch: vi.fn(async () => {}),
     };
 
@@ -103,31 +89,17 @@ describe("reservedSlugs", () => {
     const now = Date.now();
     const patch = vi.fn(async () => {});
     const db = {
-      query: vi.fn((table: string) => {
-        if (table !== "reservedSlugs") throw new Error(`unexpected table ${table}`);
-        return {
-          withIndex: (name: string) => {
-            if (name !== "by_slug_active_deletedAt") {
-              throw new Error(`unexpected index ${name}`);
-            }
-            return {
-              order: () => ({
-                take: async () => [
-                  {
-                    _id: "reservedSlugs:1",
-                    slug: "taken-skill",
-                    originalOwnerUserId: "users:previous-admin",
-                    originalOwnerPublisherId: "publishers:owner",
-                    deletedAt: now - 1000,
-                    expiresAt: now + 60_000,
-                    releasedAt: undefined,
-                  },
-                ],
-              }),
-            };
-          },
-        };
-      }),
+      query: mockReservationQuery(() => [
+        {
+          _id: "reservedSlugs:1",
+          slug: "taken-skill",
+          originalOwnerUserId: "users:previous-admin",
+          originalOwnerPublisherId: "publishers:owner",
+          deletedAt: now - 1000,
+          expiresAt: now + 60_000,
+          releasedAt: undefined,
+        },
+      ]),
       patch,
     };
 
@@ -150,40 +122,26 @@ describe("reservedSlugs", () => {
     const now = Date.now();
     const patch = vi.fn(async () => {});
     const db = {
-      query: vi.fn((table: string) => {
-        if (table !== "reservedSlugs") throw new Error(`unexpected table ${table}`);
-        return {
-          withIndex: (name: string) => {
-            if (name !== "by_slug_active_deletedAt") {
-              throw new Error(`unexpected index ${name}`);
-            }
-            return {
-              order: () => ({
-                take: async () => [
-                  {
-                    _id: "reservedSlugs:owner",
-                    slug: "taken-skill",
-                    originalOwnerUserId: "users:owner",
-                    originalOwnerPublisherId: "publishers:owner",
-                    deletedAt: now - 1000,
-                    expiresAt: now + 60_000,
-                    releasedAt: undefined,
-                  },
-                  {
-                    _id: "reservedSlugs:other",
-                    slug: "taken-skill",
-                    originalOwnerUserId: "users:other",
-                    originalOwnerPublisherId: "publishers:other",
-                    deletedAt: now - 1000,
-                    expiresAt: now + 60_000,
-                    releasedAt: undefined,
-                  },
-                ],
-              }),
-            };
-          },
-        };
-      }),
+      query: mockReservationQuery(() => [
+        {
+          _id: "reservedSlugs:owner",
+          slug: "taken-skill",
+          originalOwnerUserId: "users:owner",
+          originalOwnerPublisherId: "publishers:owner",
+          deletedAt: now - 1000,
+          expiresAt: now + 60_000,
+          releasedAt: undefined,
+        },
+        {
+          _id: "reservedSlugs:other",
+          slug: "taken-skill",
+          originalOwnerUserId: "users:other",
+          originalOwnerPublisherId: "publishers:other",
+          deletedAt: now - 1000,
+          expiresAt: now + 60_000,
+          releasedAt: undefined,
+        },
+      ]),
       patch,
     };
 
