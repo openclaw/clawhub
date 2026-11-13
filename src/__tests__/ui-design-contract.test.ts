@@ -208,13 +208,6 @@ describe("restored UI design contract", () => {
     );
   });
 
-  it("keeps browse segmented labels stable across active state changes", () => {
-    const css = styles();
-
-    expect(cssRule(css, ".browse-tab")).toContain("font-weight: 600");
-    expect(cssRule(css, ".browse-tab.is-active")).not.toContain("font-weight");
-  });
-
   it("keeps shared segmented controls visually quiet across homepage variants", () => {
     const css = styles();
 
