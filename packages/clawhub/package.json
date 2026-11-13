@@ -1,6 +1,6 @@
 {
   "name": "clawhub",
-  "version": "0.25.1",
+  "version": "0.26.0",
   "description": "ClawHub CLI \\u2014 install, update, search, and publish skills plus OpenClaw packages.",
   "homepage": "https://clawhub.ai",
   "bugs": {
