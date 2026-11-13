@@ -558,7 +558,17 @@ export function githubBackedSkillModeration(
   };
 }
 
-function latestVersionSummary(version: string | undefined, now: number) {
+export function getGitHubSyncErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+  }
+  return String(error);
+}
+
+export function latestVersionSummary(version: string | undefined, now: number) {
   if (!version) return undefined;
   return {
     version,
