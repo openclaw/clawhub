@@ -12839,21 +12839,66 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledTimes(1);
   });
 
-  it("plugins list downloads sort forwards to both plugin families and merges by downloads", async () => {
-    const codePlugin = makeCatalogItem("code-low-download", {
+  it.each([
+    {
+      title: "plugins list downloads sort forwards to both plugin families and merges by downloads",
+      codeName: "code-low-download",
+      codeStats: { downloads: 1, installs: 50, stars: 0, versions: 1 },
+      bundleName: "bundle-downloaded",
+      bundleStats: { downloads: 100, installs: 5, stars: 0, versions: 1 },
+      query: "?limit=2&sort=downloads",
+      sort: "downloads",
+      scoresPending: false,
+      expectedNames: ["bundle-downloaded", "code-low-download"],
+    },
+    {
+      title: "plugins list recommended sort uses weighted scores across plugin families",
+      codeName: "code-starred",
+      codeStats: { downloads: 10, installs: 20, stars: 5, versions: 1 },
+      bundleName: "bundle-downloaded",
+      bundleStats: { downloads: 1_000, installs: 0, stars: 1, versions: 1 },
+      query: "?limit=2&sort=recommended",
+      sort: "recommended",
+      scoresPending: false,
+      expectedNames: ["bundle-downloaded", "code-starred"],
+    },
+    {
+      title: "plugins list recommended sort lets strong downloads beat smaller installs",
+      codeName: "code-downloaded",
+      codeStats: { downloads: 43_080, installs: 2, stars: 0, versions: 1 },
+      bundleName: "bundle-installed",
+      bundleStats: { downloads: 393, installs: 74, stars: 0, versions: 1 },
+      query: "?limit=2&sort=recommended",
+      sort: "recommended",
+      scoresPending: false,
+      expectedNames: ["code-downloaded", "bundle-installed"],
+    },
+    {
+      title: "plugins list falls back to downloads sort while recommendation scores backfill",
+      codeName: "code-older-high-score",
+      codeStats: { downloads: 50_000, installs: 500, stars: 10, versions: 1 },
+      bundleName: "bundle-newer-low-score",
+      bundleStats: { downloads: 1, installs: 0, stars: 0, versions: 1 },
+      query: "?limit=2&sort=recommended",
+      sort: "downloads",
+      scoresPending: true,
+      expectedNames: ["code-older-high-score", "bundle-newer-low-score"],
+    },
+  ])("$title", async (fixture) => {
+    const codePlugin = makeCatalogItem(fixture.codeName, {
       family: "code-plugin",
       updatedAt: 100,
-      stats: { downloads: 1, installs: 50, stars: 0, versions: 1 },
+      stats: fixture.codeStats,
     });
-    const bundlePlugin = makeCatalogItem("bundle-downloaded", {
+    const bundlePlugin = makeCatalogItem(fixture.bundleName, {
       family: "bundle-plugin",
       updatedAt: 200,
-      stats: { downloads: 100, installs: 5, stars: 0, versions: 1 },
+      stats: fixture.bundleStats,
     });
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (Object.keys(args).length === 0) return 2;
-      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
-      expect(args).toEqual(expect.objectContaining({ sort: "downloads" }));
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return fixture.scoresPending;
+      expect(args).toEqual(expect.objectContaining({ sort: fixture.sort }));
       if (args.family === "code-plugin") {
         return { page: [codePlugin], isDone: true, continueCursor: "" };
       }
@@ -12866,15 +12911,12 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.listPluginsV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins?limit=2&sort=downloads"),
+      new Request(`https://example.com/api/v1/plugins${fixture.query}`),
     );
 
     expect(response.status).toBe(200);
     const json = await response.json();
-    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
-      "bundle-downloaded",
-      "code-low-download",
-    ]);
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual(fixture.expectedNames);
   });
 
   it("official plugins legacy install sort forwards the filter and maps to downloads", async () => {
@@ -13077,120 +13119,6 @@ describe("httpApiV1 handlers", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).not.toContain("s-maxage");
-  });
-
-  it("plugins list recommended sort uses weighted scores across plugin families", async () => {
-    const codePlugin = makeCatalogItem("code-starred", {
-      family: "code-plugin",
-      updatedAt: 100,
-      stats: { downloads: 10, installs: 20, stars: 5, versions: 1 },
-    });
-    const bundlePlugin = makeCatalogItem("bundle-downloaded", {
-      family: "bundle-plugin",
-      updatedAt: 200,
-      stats: { downloads: 1_000, installs: 0, stars: 1, versions: 1 },
-    });
-    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if (Object.keys(args).length === 0) return 2;
-      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
-      expect(args).toEqual(expect.objectContaining({ sort: "recommended" }));
-      if (args.family === "code-plugin") {
-        return { page: [codePlugin], isDone: true, continueCursor: "" };
-      }
-      if (args.family === "bundle-plugin") {
-        return { page: [bundlePlugin], isDone: true, continueCursor: "" };
-      }
-      throw new Error(`unexpected family ${String(args.family)}`);
-    });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
-
-    const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins?limit=2&sort=recommended"),
-    );
-
-    expect(response.status).toBe(200);
-    const json = await response.json();
-    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
-      "bundle-downloaded",
-      "code-starred",
-    ]);
-  });
-
-  it("plugins list recommended sort lets strong downloads beat smaller installs", async () => {
-    const codePlugin = makeCatalogItem("code-downloaded", {
-      family: "code-plugin",
-      updatedAt: 100,
-      stats: { downloads: 43_080, installs: 2, stars: 0, versions: 1 },
-    });
-    const bundlePlugin = makeCatalogItem("bundle-installed", {
-      family: "bundle-plugin",
-      updatedAt: 200,
-      stats: { downloads: 393, installs: 74, stars: 0, versions: 1 },
-    });
-    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if (Object.keys(args).length === 0) return 2;
-      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
-      expect(args).toEqual(expect.objectContaining({ sort: "recommended" }));
-      if (args.family === "code-plugin") {
-        return { page: [codePlugin], isDone: true, continueCursor: "" };
-      }
-      if (args.family === "bundle-plugin") {
-        return { page: [bundlePlugin], isDone: true, continueCursor: "" };
-      }
-      throw new Error(`unexpected family ${String(args.family)}`);
-    });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
-
-    const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins?limit=2&sort=recommended"),
-    );
-
-    expect(response.status).toBe(200);
-    const json = await response.json();
-    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
-      "code-downloaded",
-      "bundle-installed",
-    ]);
-  });
-
-  it("plugins list falls back to downloads sort while recommendation scores backfill", async () => {
-    const codePlugin = makeCatalogItem("code-older-high-score", {
-      family: "code-plugin",
-      updatedAt: 100,
-      stats: { downloads: 50_000, installs: 500, stars: 10, versions: 1 },
-    });
-    const bundlePlugin = makeCatalogItem("bundle-newer-low-score", {
-      family: "bundle-plugin",
-      updatedAt: 200,
-      stats: { downloads: 1, installs: 0, stars: 0, versions: 1 },
-    });
-    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if (Object.keys(args).length === 0) return 2;
-      if (hasPluginRecommendedScoreReadinessArgs(args)) return true;
-      expect(args).toEqual(expect.objectContaining({ sort: "downloads" }));
-      if (args.family === "code-plugin") {
-        return { page: [codePlugin], isDone: true, continueCursor: "" };
-      }
-      if (args.family === "bundle-plugin") {
-        return { page: [bundlePlugin], isDone: true, continueCursor: "" };
-      }
-      throw new Error(`unexpected family ${String(args.family)}`);
-    });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
-
-    const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins?limit=2&sort=recommended"),
-    );
-
-    expect(response.status).toBe(200);
-    const json = await response.json();
-    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
-      "code-older-high-score",
-      "bundle-newer-low-score",
-    ]);
   });
 
   it("plugins list maps legacy installs fallback sort from recommended pagination cursors", async () => {
