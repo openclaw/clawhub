@@ -1567,7 +1567,32 @@ process.exit(1);
     }
   });
 
-  it("fails closed when a completed skill scan omits a required scanner", async () => {
+  it.each([
+    {
+      name: "fails closed when a completed skill scan omits a required scanner",
+      artifact: () =>
+        `{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}`,
+      summary: "ClawScan scanner did not complete: skillspector=missing",
+    },
+    {
+      name: "preserves a redacted scanner error when a required scanner fails",
+      artifact: () =>
+        `{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"failed","error":"provider rejected request with api_key=secret-value"},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed"}}`,
+      summary:
+        "ClawScan scanner did not complete: aig=failed (provider rejected request with api_key=[redacted-secret])",
+    },
+    {
+      name: "fails closed when completed A.I.G output has no SARIF run",
+      artifact: () => JSON.stringify(legacyArtifact({ version: "2.1.0", runs: [] })),
+      summary: "A.I.G SARIF output did not contain a run.",
+    },
+    {
+      name: "preserves the redacted ClawScan judge failure reason",
+      artifact: () =>
+        `{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed","error":"Codex request was rate limited.","result":null}}`,
+      summary: "ClawScan judge status was failed: Codex request was rate limited.",
+    },
+  ])("$name", async (fixture) => {
     const workspace = await tempDir();
     await mkdir(join(workspace, "artifact"), { recursive: true });
     await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
@@ -1585,7 +1610,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+${fixture.artifact()}
 JSON
 `,
     );
@@ -1612,170 +1637,7 @@ JSON
       ).resolves.toEqual({
         check: {
           status: "failed",
-          summary: "ClawScan scanner did not complete: skillspector=missing",
-        },
-      });
-    } finally {
-      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
-    }
-  });
-
-  it("preserves a redacted scanner error when a required scanner fails", async () => {
-    const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"), { recursive: true });
-    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    await writeFile(
-      fakeClawScan,
-      `#!/usr/bin/env bash
-set -euo pipefail
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "--output" ]; then
-    output="$2"
-    break
-  fi
-  shift
-done
-cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"failed","error":"provider rejected request with api_key=secret-value"},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed"}}
-JSON
-`,
-    );
-    await chmod(fakeClawScan, 0o755);
-    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
-
-    try {
-      await expect(
-        runNativeClawScan(
-          {
-            job: {
-              _id: String(attempt.attemptId),
-              attempts: 1,
-              hasMaliciousSignal: false,
-              leaseToken: attempt.claimId,
-              source: "pre-publication",
-              targetKind: "skillVersion",
-            },
-            target: {},
-          },
-          workspace,
-        ),
-      ).resolves.toEqual({
-        check: {
-          status: "failed",
-          summary:
-            "ClawScan scanner did not complete: aig=failed (provider rejected request with api_key=[redacted-secret])",
-        },
-      });
-    } finally {
-      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
-    }
-  });
-
-  it("fails closed when completed A.I.G output has no SARIF run", async () => {
-    const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"), { recursive: true });
-    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    await writeFile(
-      fakeClawScan,
-      `#!/usr/bin/env bash
-set -euo pipefail
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "--output" ]; then
-    output="$2"
-    break
-  fi
-  shift
-done
-cat > "$output" <<'JSON'
-${JSON.stringify(legacyArtifact({ version: "2.1.0", runs: [] }))}
-JSON
-`,
-    );
-    await chmod(fakeClawScan, 0o755);
-    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
-
-    try {
-      await expect(
-        runNativeClawScan(
-          {
-            job: {
-              _id: String(attempt.attemptId),
-              attempts: 1,
-              hasMaliciousSignal: false,
-              leaseToken: attempt.claimId,
-              source: "pre-publication",
-              targetKind: "skillVersion",
-            },
-            target: {},
-          },
-          workspace,
-        ),
-      ).resolves.toEqual({
-        check: {
-          status: "failed",
-          summary: "A.I.G SARIF output did not contain a run.",
-        },
-      });
-    } finally {
-      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
-    }
-  });
-
-  it("preserves the redacted ClawScan judge failure reason", async () => {
-    const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"), { recursive: true });
-    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    await writeFile(
-      fakeClawScan,
-      `#!/usr/bin/env bash
-set -euo pipefail
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "--output" ]; then
-    output="$2"
-    break
-  fi
-  shift
-done
-cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed","error":"Codex request was rate limited.","result":null}}
-JSON
-`,
-    );
-    await chmod(fakeClawScan, 0o755);
-    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
-
-    try {
-      await expect(
-        runNativeClawScan(
-          {
-            job: {
-              _id: String(attempt.attemptId),
-              attempts: 1,
-              hasMaliciousSignal: false,
-              leaseToken: attempt.claimId,
-              source: "pre-publication",
-              targetKind: "skillVersion",
-            },
-            target: {},
-          },
-          workspace,
-        ),
-      ).resolves.toEqual({
-        check: {
-          status: "failed",
-          summary: "ClawScan judge status was failed: Codex request was rate limited.",
+          summary: fixture.summary,
         },
       });
     } finally {
