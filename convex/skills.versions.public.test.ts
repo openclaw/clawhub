@@ -149,9 +149,29 @@ function publicVersionFixtureDoc(id: string, version: unknown = null) {
   return version;
 }
 
+function makeIndexedSkillVersionQuery<T>(filters: Map<string, unknown>, result: () => T) {
+  const indexNames: string[] = [];
+  const withIndex = vi.fn(
+    (
+      index: string,
+      buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+    ) => {
+      indexNames.push(index);
+      const query = {
+        eq(field: string, value: unknown) {
+          filters.set(field, value);
+          return query;
+        },
+      };
+      buildQuery?.(query);
+      return { order: vi.fn(result) };
+    },
+  );
+  return { withIndex, indexNames };
+}
+
 function makePaginatedSkillVersionQuery(versions: Array<Record<string, unknown>>) {
   const filters = new Map<string, unknown>();
-  const indexNames: string[] = [];
   const paginate = vi.fn(
     async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
       const start = cursor ? Number(cursor) : 0;
@@ -167,22 +187,7 @@ function makePaginatedSkillVersionQuery(versions: Array<Record<string, unknown>>
       };
     },
   );
-  const withIndex = vi.fn(
-    (
-      index: string,
-      buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-    ) => {
-      indexNames.push(index);
-      const query = {
-        eq(field: string, value: unknown) {
-          filters.set(field, value);
-          return query;
-        },
-      };
-      buildQuery?.(query);
-      return { order: vi.fn(() => ({ paginate })) };
-    },
-  );
+  const { withIndex, indexNames } = makeIndexedSkillVersionQuery(filters, () => ({ paginate }));
   return { withIndex, paginate, filters, indexNames };
 }
 
@@ -491,32 +496,17 @@ describe("public skill version queries", () => {
         version: "2.0.0",
         softDeletedAt: 123,
       };
-      const indexNames: string[] = [];
       const filters = new Map<string, unknown>();
       const take = vi.fn(async (limit: number) => [deletedVersion, version].slice(0, limit));
       vi.mocked(getAuthUserId).mockResolvedValue("users:staff" as never);
+      const { withIndex, indexNames } = makeIndexedSkillVersionQuery(filters, () => ({ take }));
       const ctx = {
         db: {
           get: vi.fn(async (id: string) => (id === "users:staff" ? { _id: id, role } : null)),
           query: vi.fn((table: string) => {
             if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
             return {
-              withIndex: vi.fn(
-                (
-                  index: string,
-                  buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-                ) => {
-                  indexNames.push(index);
-                  const query = {
-                    eq(field: string, value: unknown) {
-                      filters.set(field, value);
-                      return query;
-                    },
-                  };
-                  buildQuery?.(query);
-                  return { order: vi.fn(() => ({ take })) };
-                },
-              ),
+              withIndex,
             };
           }),
         },
@@ -543,10 +533,10 @@ describe("public skill version queries", () => {
       version: "2.0.0",
       publicationStatus: "pending",
     };
-    const indexNames: string[] = [];
     const filters = new Map<string, unknown>();
     const take = vi.fn(async (limit: number) => [pendingVersion, version].slice(0, limit));
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const { withIndex, indexNames } = makeIndexedSkillVersionQuery(filters, () => ({ take }));
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -563,22 +553,7 @@ describe("public skill version queries", () => {
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
           return {
-            withIndex: vi.fn(
-              (
-                index: string,
-                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-              ) => {
-                indexNames.push(index);
-                const query = {
-                  eq(field: string, value: unknown) {
-                    filters.set(field, value);
-                    return query;
-                  },
-                };
-                buildQuery?.(query);
-                return { order: vi.fn(() => ({ take })) };
-              },
-            ),
+            withIndex,
           };
         }),
       },
@@ -608,7 +583,6 @@ describe("public skill version queries", () => {
       ownerDeletedAt: 123,
       ownerDeletedBy: "users:owner",
     };
-    const indexNames: string[] = [];
     const filters = new Map<string, unknown>();
     const paginate = vi.fn().mockResolvedValue({
       page: [withdrawnVersion],
@@ -616,6 +590,7 @@ describe("public skill version queries", () => {
       continueCursor: "",
     });
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const { withIndex, indexNames } = makeIndexedSkillVersionQuery(filters, () => ({ paginate }));
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -634,22 +609,7 @@ describe("public skill version queries", () => {
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
           return {
-            withIndex: vi.fn(
-              (
-                index: string,
-                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-              ) => {
-                indexNames.push(index);
-                const query = {
-                  eq(field: string, value: unknown) {
-                    filters.set(field, value);
-                    return query;
-                  },
-                };
-                buildQuery?.(query);
-                return { order: vi.fn(() => ({ paginate })) };
-              },
-            ),
+            withIndex,
           };
         }),
       },
@@ -725,7 +685,6 @@ describe("public skill version queries", () => {
       version: "2.0.0",
       softDeletedAt: 123,
     };
-    const indexNames: string[] = [];
     const filters = new Map<string, unknown>();
     const paginate = vi.fn(async ({ numItems }: { numItems: number }) => ({
       page: [deletedVersion, version]
@@ -738,28 +697,14 @@ describe("public skill version queries", () => {
       isDone: false,
       continueCursor: "next-active-page",
     }));
+    const { withIndex, indexNames } = makeIndexedSkillVersionQuery(filters, () => ({ paginate }));
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => publicVersionFixtureDoc(id)),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
           return {
-            withIndex: vi.fn(
-              (
-                index: string,
-                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-              ) => {
-                indexNames.push(index);
-                const query = {
-                  eq(field: string, value: unknown) {
-                    filters.set(field, value);
-                    return query;
-                  },
-                };
-                buildQuery?.(query);
-                return { order: vi.fn(() => ({ paginate })) };
-              },
-            ),
+            withIndex,
           };
         }),
       },
