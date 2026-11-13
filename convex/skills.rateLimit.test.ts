@@ -224,12 +224,6 @@ function createNewPublishQuery() {
         },
       };
     }
-    const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
-    if (emptyAliasesQuery) return emptyAliasesQuery;
-    const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
-    if (emptyReservationsQuery) return emptyReservationsQuery;
-    const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
-    if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
     const emptyPublishersQuery = buildEmptyPublishersQuery(table);
     if (emptyPublishersQuery) return emptyPublishersQuery;
     const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
@@ -366,10 +360,6 @@ describe("skills anti-spam guards", () => {
             },
           };
         }
-        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
-        if (emptyAliasesQuery) return emptyAliasesQuery;
-        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
-        if (emptyReservationsQuery) return emptyReservationsQuery;
         const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
         if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
         const emptyVersionsQuery = buildEmptySkillVersionsQuery(table);
@@ -1023,12 +1013,6 @@ describe("skills anti-spam guards", () => {
             }),
           };
         }
-        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
-        if (emptyAliasesQuery) return emptyAliasesQuery;
-        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
-        if (emptyReservationsQuery) return emptyReservationsQuery;
-        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
-        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
         const emptyPublishersQuery = buildEmptyPublishersQuery(table);
         if (emptyPublishersQuery) return emptyPublishersQuery;
         const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
@@ -1269,10 +1253,6 @@ describe("skills anti-spam guards", () => {
             },
           };
         }
-        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
-        if (emptyAliasesQuery) return emptyAliasesQuery;
-        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
-        if (emptyReservationsQuery) return emptyReservationsQuery;
         const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
         if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
         const emptyVersionsQuery = buildEmptySkillVersionsQuery(table);
@@ -1281,10 +1261,6 @@ describe("skills anti-spam guards", () => {
         if (emptyBadgesQuery) return emptyBadgesQuery;
         const emptyEmbeddingsQuery = buildEmptySkillEmbeddingsQuery(table);
         if (emptyEmbeddingsQuery) return emptyEmbeddingsQuery;
-        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
-        if (emptyPublishersQuery) return emptyPublishersQuery;
-        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
-        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
         throw new Error(`unexpected table `);
       }),
       patch,
@@ -1488,8 +1464,6 @@ describe("skills anti-spam guards", () => {
             },
           };
         }
-        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
-        if (emptyAliasesQuery) return emptyAliasesQuery;
         const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
         if (emptyReservationsQuery) return emptyReservationsQuery;
         const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
