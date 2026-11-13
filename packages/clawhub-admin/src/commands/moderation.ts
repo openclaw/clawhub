@@ -1,11 +1,11 @@
 import { isCancel, select } from "@clack/prompts";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
+import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
   createCrabLoader,
   fail,
-  formatError,
   isInteractive,
   promptConfirm,
 } from "../../../clawhub/src/cli/ui.js";
@@ -57,7 +57,7 @@ export async function cmdRevokeSkillVersion(
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Revoking ${slug}@${version}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -80,10 +80,7 @@ export async function cmdRevokeSkillVersion(
     );
     if (options.json) process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
     return parsed;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdBanUser(
@@ -109,7 +106,7 @@ export async function cmdBanUser(
   }
 
   const spinner = createCrabLoader(`Banning ${resolved.label}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -129,10 +126,7 @@ export async function cmdBanUser(
     }
     spinner.succeed(`OK. Banned ${resolved.label} (${formatDeletedSkills(parsed.deletedSkills)})`);
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdUnbanUser(
@@ -158,7 +152,7 @@ export async function cmdUnbanUser(
   }
 
   const spinner = createCrabLoader(`Unbanning ${resolved.label}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -180,10 +174,7 @@ export async function cmdUnbanUser(
       `OK. Unbanned ${resolved.label} (${formatRestoredSkills(parsed.restoredSkills)})`,
     );
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdLiftModerationHold(
@@ -219,7 +210,7 @@ export async function cmdLiftModerationHold(
   const spinner = options.json
     ? null
     : createCrabLoader(`Lifting moderation hold for ${resolved.label}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -244,10 +235,7 @@ export async function cmdLiftModerationHold(
     );
     if (options.json) process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
     return parsed;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdSetRole(
@@ -271,7 +259,7 @@ export async function cmdSetRole(
   }
 
   const spinner = createCrabLoader(`Setting role for ${resolved.label}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -287,10 +275,7 @@ export async function cmdSetRole(
     const parsed = parseArk(ApiV1SetRoleResponseSchema, result, "Set role response");
     spinner.succeed(`OK. ${resolved.label} is now ${parsed.role}`);
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdRecoverPersonalPublisher(
@@ -342,7 +327,7 @@ export async function cmdRecoverPersonalPublisher(
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning" : "Applying"} publisher recovery for @${handle}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -382,10 +367,7 @@ export async function cmdRecoverPersonalPublisher(
       if (dryRun) console.log("Re-run with --apply --verified --yes to write this recovery.");
     }
     return parsed;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdRescanSkill(
@@ -408,7 +390,7 @@ export async function cmdRescanSkill(
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Queueing ClawScan rescan for ${slug}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -434,10 +416,7 @@ export async function cmdRescanSkill(
       process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
     }
     return parsed;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdRescanAllPackages(
@@ -700,7 +679,7 @@ export async function cmdReclassifyBan(
     : createCrabLoader(
         `${dryRun ? "Planning" : "Applying"} ban reclassification for ${resolved.label}`,
       );
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -725,10 +704,7 @@ export async function cmdReclassifyBan(
       console.log("Re-run with --apply --yes to write this change.");
     }
     return parsed;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function normalizeHandle(value: string) {

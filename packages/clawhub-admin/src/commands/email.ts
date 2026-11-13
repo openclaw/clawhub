@@ -1,8 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
+import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
-import { createCrabLoader, fail, formatError } from "../../../clawhub/src/cli/ui.js";
+import { createCrabLoader, fail } from "../../../clawhub/src/cli/ui.js";
 import { apiRequest } from "../../../clawhub/src/http.js";
 import { ApiRoutes, ApiV1StaffEmailSendResponseSchema } from "../../../clawhub/src/schema/index.js";
 
@@ -165,7 +166,7 @@ export async function cmdSendStaffEmail(opts: GlobalOpts, options: StaffEmailSen
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader("Sending staff email");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -195,8 +196,5 @@ export async function cmdSendStaffEmail(opts: GlobalOpts, options: StaffEmailSen
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     }
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
