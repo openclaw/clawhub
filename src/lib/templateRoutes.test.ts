@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTemplateDetailHref,
+  buildTemplateInstallRef,
   buildTemplateSecurityAuditHref,
   isTemplateReadyToAdd,
   packageNameFromPublisherTemplateRoute,
@@ -14,6 +15,11 @@ describe("Template detail routes", () => {
     expect(buildTemplateDetailHref("release-brief", "maker")).toBe(
       "/maker/templates/release-brief",
     );
+  });
+
+  it("builds a publisher-qualified install reference from scoped and unscoped package names", () => {
+    expect(buildTemplateInstallRef("@maker/release-brief", "maker")).toBe("@maker/release-brief");
+    expect(buildTemplateInstallRef("release-brief", "@Maker")).toBe("@maker/release-brief");
   });
 
   it("builds canonical scoped/unscoped audit links and safely encodes exact versions", () => {

@@ -279,9 +279,11 @@ function renderTemplate(
     version?: string | null;
     llmAnalysis?: LlmAnalysis | null;
     manifestSummary?: NonNullable<PackageDetailResponse["package"]>["templateManifestSummary"];
+    name?: string;
   } = {},
 ) {
   const detail = packageDetail();
+  if (options.name) detail.package!.name = options.name;
   detail.package!.scanStatus = "status" in options ? options.status : "clean";
   detail.package!.updatedAt = Date.UTC(2026, 10, 5);
   if ("version" in options) detail.package!.latestVersion = options.version;
@@ -561,6 +563,18 @@ describe("Template detail composition and interactions", () => {
     expect(document.activeElement).toBe(workspace);
     fireEvent.keyDown(workspace, { key: "Home" });
     expect(document.activeElement).toBe(claw);
+  });
+
+  it("prefixes an unscoped package with its publisher, like a skill install", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    renderTemplate({ name: "release-brief" });
+    fireEvent.click(screen.getByRole("button", { name: "Copy template install command" }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("openclaw templates add @maker/release-brief"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
+    expect(screen.getByText("Install the @maker/release-brief template from ClawHub")).toBeTruthy();
   });
 
   it("copies the real package install command and reports success", async () => {
