@@ -70,6 +70,17 @@ const { __handlers } = await import("./httpApiV1");
 
 type ActionCtx = import("./_generated/server").ActionCtx;
 
+function mockExportApiTokenUser() {
+  vi.mocked(requireApiTokenUser).mockResolvedValue({
+    userId: "users:actor",
+    user: { _id: "users:actor", role: "user" },
+  } as never);
+  vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+    userId: "users:actor",
+    user: { _id: "users:actor", role: "user" },
+  } as never);
+}
+
 function makeSkillArtifactFixture(tags: Record<string, string> = {}) {
   return {
     _id: "skills:1",
@@ -787,14 +798,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skills export allows authenticated non-admin users at the key rate limit", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
@@ -828,14 +832,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skills export defaults to the proven 250 item page limit", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("startDate" in args) return { page: [], nextCursor: null, hasMore: false };
@@ -855,14 +852,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skills export rejects pages above 250 items", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runQuery = vi.fn();
     const response = await __handlers.exportSkillsV1Handler(
@@ -922,14 +912,7 @@ describe("httpApiV1 handlers", () => {
     const secret = "s".repeat(48);
     vi.stubEnv("CLAWHUB_ENV", "staging");
     vi.stubEnv("CLAWHUB_STAGING_EDGE_SECRET", secret);
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
     const verifyArchiveRequester = vi.fn(async () => undefined);
     const runQuery = vi.fn();
     const ctx = makeCtx({ runQuery });
@@ -958,14 +941,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skills export preserves pagination headers for empty filtered pages", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("startDate" in args) return { page: [], nextCursor: "next-page", hasMore: true };
@@ -985,14 +961,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skills export namespaces files by publisher and slug", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
@@ -1088,14 +1057,7 @@ describe("httpApiV1 handlers", () => {
 
   it("skills export hands Nitro a signed storage manifest without loading Blob bodies", async () => {
     vi.stubEnv("CLAWHUB_PREVIEW", "1");
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         expect(args.selections).toEqual([
@@ -1212,14 +1174,7 @@ describe("httpApiV1 handlers", () => {
 
   it("skills export reports archive paths that exceed the signed byte budget", async () => {
     vi.stubEnv("CLAWHUB_PREVIEW", "1");
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
     const longUnicodePath = `${"界".repeat(490)}.md`;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
@@ -1308,14 +1263,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skills export includes GitHub-backed skills as public GitHub handoff descriptors", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
     const commit = "2".repeat(40);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -1442,14 +1390,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skills export skips stale latest versions before reading blobs", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
@@ -1525,14 +1466,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skills export skips duplicate legacy file paths without failing the page", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
         expect(args.selections).toEqual([
@@ -1605,14 +1539,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skills export logs build failures without authorization token material", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -1720,14 +1647,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins export defaults to both plugin families with the proven 250 item page limit", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("startDate" in args) return { page: [], nextCursor: null, hasMore: false };
@@ -1752,14 +1672,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins export accepts a single plugin family filter", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("startDate" in args) return { page: [], nextCursor: null, hasMore: false };
@@ -1799,14 +1712,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins export namespaces latest release files by family and package name", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
@@ -1921,14 +1827,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins export skips duplicate legacy release paths and preserves the first file", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
@@ -2020,14 +1919,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins export skips releases blocked from normal downloads", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
@@ -2102,14 +1994,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins export metadata does not collide with plugin files", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockExportApiTokenUser();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
