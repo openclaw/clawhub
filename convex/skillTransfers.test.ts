@@ -1,25 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { acceptTransferInternal, requestTransferInternal } from "./skillTransfers";
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const requestTransferInternalHandler = getTestHandler<{
+  actorUserId: string;
+  skillId: string;
+  toUserHandle: string;
+  message?: string;
+}>(requestTransferInternal);
 
-const requestTransferInternalHandler = (
-  requestTransferInternal as unknown as WrappedHandler<{
-    actorUserId: string;
-    skillId: string;
-    toUserHandle: string;
-    message?: string;
-  }>
-)._handler;
-
-const acceptTransferInternalHandler = (
-  acceptTransferInternal as unknown as WrappedHandler<{
-    actorUserId: string;
-    transferId: string;
-  }>
-)._handler;
+const acceptTransferInternalHandler = getTestHandler<{
+  actorUserId: string;
+  transferId: string;
+}>(acceptTransferInternal);
 
 describe("skillTransfers", () => {
   it("requestTransferInternal expires stale pending transfer before creating new request", async () => {

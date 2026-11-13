@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   consumePackagePublishUploadTicketInternal,
   createPackagePublishUploadForTokenInternal,
@@ -12,18 +13,13 @@ type ConsumeArgs = {
   auth: { kind: "user"; userId: string } | { kind: "github-actions"; publishTokenId: string };
 };
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<void>;
-};
-
-const consumeHandler = (
-  consumePackagePublishUploadTicketInternal as unknown as WrappedHandler<ConsumeArgs>
-)._handler;
-const createForTokenHandler = (
-  createPackagePublishUploadForTokenInternal as unknown as WrappedHandler<{
+const consumeHandler = getTestHandler<ConsumeArgs, void>(consumePackagePublishUploadTicketInternal);
+const createForTokenHandler = getTestHandler<
+  {
     publishTokenId: string;
-  }>
-)._handler;
+  },
+  void
+>(createPackagePublishUploadForTokenInternal);
 
 function makeCtx(
   document: Record<string, unknown> | null | ((id: string) => Record<string, unknown> | null),

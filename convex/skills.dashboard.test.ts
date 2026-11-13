@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -8,30 +9,22 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 import { list, listDashboardPaginated } from "./skills";
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const handler = (
-  listDashboardPaginated as unknown as WrappedHandler<
-    {
-      ownerUserId?: string;
-      ownerPublisherId?: string;
-      paginationOpts: { cursor: string | null; numItems: number };
-    },
-    { page: Array<{ slug: string }>; isDone: boolean; continueCursor: string }
-  >
-)._handler;
-const listHandler = (
-  list as unknown as WrappedHandler<
-    {
-      ownerUserId?: string;
-      ownerPublisherId?: string;
-      limit?: number;
-    },
-    Array<{ slug: string }>
-  >
-)._handler;
+const handler = getTestHandler<
+  {
+    ownerUserId?: string;
+    ownerPublisherId?: string;
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  { page: Array<{ slug: string }>; isDone: boolean; continueCursor: string }
+>(listDashboardPaginated);
+const listHandler = getTestHandler<
+  {
+    ownerUserId?: string;
+    ownerPublisherId?: string;
+    limit?: number;
+  },
+  Array<{ slug: string }>
+>(list);
 
 function makeSkill(slug: string, overrides: Record<string, unknown> = {}) {
   return {

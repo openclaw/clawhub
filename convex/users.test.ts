@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -37,34 +38,22 @@ const {
   upsertDevPersonaInternal,
 } = await import("./users");
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const meHandler = (me as unknown as WrappedHandler<Record<string, never>, unknown>)._handler;
-const getByHandleHandler = (getByHandle as unknown as WrappedHandler<{ handle: string }, unknown>)
-  ._handler;
-const getHoverStatsHandler = (
-  getHoverStats as unknown as WrappedHandler<{ userId: string }, unknown>
-)._handler;
-const updateProfileHandler = (
-  updateProfile as unknown as WrappedHandler<{ displayName: string; bio?: string }, void>
-)._handler;
-const deleteAccountHandler = (
-  deleteAccount as unknown as WrappedHandler<Record<string, never>, void>
-)._handler;
-const purgeSelfDeletedAccountRecoveryBatchInternalHandler = (
-  purgeSelfDeletedAccountRecoveryBatchInternal as unknown as WrappedHandler<
-    { cursor?: string; limit?: number; dryRun?: boolean; mode?: "deactivated" | "legacyDeleted" },
-    unknown
-  >
-)._handler;
-const upsertDevPersonaInternalHandler = (
-  upsertDevPersonaInternal as unknown as WrappedHandler<
-    { persona: "owner" | "user" | "admin" | "officialOrgMember" | "abusePublisher" },
-    unknown
-  >
-)._handler;
+const meHandler = getTestHandler<Record<string, never>>(me);
+const getByHandleHandler = getTestHandler<{ handle: string }>(getByHandle);
+const getHoverStatsHandler = getTestHandler<{ userId: string }>(getHoverStats);
+const updateProfileHandler = getTestHandler<{ displayName: string; bio?: string }, void>(
+  updateProfile,
+);
+const deleteAccountHandler = getTestHandler<Record<string, never>, void>(deleteAccount);
+const purgeSelfDeletedAccountRecoveryBatchInternalHandler = getTestHandler<{
+  cursor?: string;
+  limit?: number;
+  dryRun?: boolean;
+  mode?: "deactivated" | "legacyDeleted";
+}>(purgeSelfDeletedAccountRecoveryBatchInternal);
+const upsertDevPersonaInternalHandler = getTestHandler<{
+  persona: "owner" | "user" | "admin" | "officialOrgMember" | "abusePublisher";
+}>(upsertDevPersonaInternal);
 function makeCtx() {
   const patch = vi.fn();
   const publisherRows = new Map<string, Record<string, unknown>>();
@@ -666,12 +655,9 @@ describe("users.getBanAppealContextByGitHubProviderAccountIdInternal", () => {
       ],
     });
 
-    const handler = (
-      getBanAppealContextByGitHubProviderAccountIdInternal as unknown as WrappedHandler<
-        { providerAccountId: string },
-        unknown
-      >
-    )._handler;
+    const handler = getTestHandler<{ providerAccountId: string }>(
+      getBanAppealContextByGitHubProviderAccountIdInternal,
+    );
 
     const result = (await handler(ctx, { providerAccountId: "123456" })) as Record<string, unknown>;
 

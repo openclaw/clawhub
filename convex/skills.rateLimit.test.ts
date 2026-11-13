@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -15,24 +16,17 @@ import {
   updateVersionLlmAnalysisInternal,
 } from "./skills";
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
-};
-
-const insertVersionHandler = (insertVersion as unknown as WrappedHandler<Record<string, unknown>>)
-  ._handler;
-const updateVersionLlmAnalysisHandler = (
-  updateVersionLlmAnalysisInternal as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const escalateSkillByIdHandler = (
-  escalateSkillByIdInternal as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const backfillLatestSkillModerationHandler = (
-  backfillLatestSkillModerationInternal as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const clearOwnerSuspiciousFlagsHandler = (
-  clearOwnerSuspiciousFlagsInternal as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
+const insertVersionHandler = getTestHandler<Record<string, unknown>>(insertVersion);
+const updateVersionLlmAnalysisHandler = getTestHandler<Record<string, unknown>>(
+  updateVersionLlmAnalysisInternal,
+);
+const escalateSkillByIdHandler = getTestHandler<Record<string, unknown>>(escalateSkillByIdInternal);
+const backfillLatestSkillModerationHandler = getTestHandler<Record<string, unknown>>(
+  backfillLatestSkillModerationInternal,
+);
+const clearOwnerSuspiciousFlagsHandler = getTestHandler<Record<string, unknown>>(
+  clearOwnerSuspiciousFlagsInternal,
+);
 
 function buildGlobalStatsQuery(table: string) {
   if (table !== "globalStats") return null;

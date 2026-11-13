@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -8,23 +9,15 @@ vi.mock("@convex-dev/auth/server", () => ({
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { setOwnedSkillSoftDeleted, setSkillSoftDeletedInternal } from "./skills";
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
-};
-
-const setSkillSoftDeletedInternalHandler = (
-  setSkillSoftDeletedInternal as unknown as WrappedHandler<{
-    userId: string;
-    slug: string;
-    deleted: boolean;
-    reason?: string;
-  }>
-)._handler;
-const setOwnedSkillSoftDeletedHandler = (
-  setOwnedSkillSoftDeleted as unknown as WrappedHandler<{
-    skillId: string;
-  }>
-)._handler;
+const setSkillSoftDeletedInternalHandler = getTestHandler<{
+  userId: string;
+  slug: string;
+  deleted: boolean;
+  reason?: string;
+}>(setSkillSoftDeletedInternal);
+const setOwnedSkillSoftDeletedHandler = getTestHandler<{
+  skillId: string;
+}>(setOwnedSkillSoftDeleted);
 
 afterEach(() => {
   vi.restoreAllMocks();

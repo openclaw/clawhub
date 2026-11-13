@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("convex-helpers/server/pagination", async () => {
   const actual = await vi.importActual<typeof import("convex-helpers/server/pagination")>(
@@ -14,45 +15,37 @@ vi.mock("convex-helpers/server/pagination", async () => {
 
 const { listPackageCatalogPage, searchPackageCatalogPublic } = await import("./skills");
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const listPackageCatalogPageHandler = getTestHandler<
+  {
+    channel?: "official" | "community" | "private";
+    isOfficial?: boolean;
+    topic?: string;
+    sort?: "updated" | "downloads" | "installs" | "recommended";
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  {
+    page: Array<{
+      name: string;
+      family: "skill";
+      channel: "official" | "community";
+      isOfficial: boolean;
+      stats: { downloads: number };
+    }>;
+    isDone: boolean;
+    continueCursor: string;
+  }
+>(listPackageCatalogPage);
 
-const listPackageCatalogPageHandler = (
-  listPackageCatalogPage as unknown as WrappedHandler<
-    {
-      channel?: "official" | "community" | "private";
-      isOfficial?: boolean;
-      topic?: string;
-      sort?: "updated" | "downloads" | "installs" | "recommended";
-      paginationOpts: { cursor: string | null; numItems: number };
-    },
-    {
-      page: Array<{
-        name: string;
-        family: "skill";
-        channel: "official" | "community";
-        isOfficial: boolean;
-        stats: { downloads: number };
-      }>;
-      isDone: boolean;
-      continueCursor: string;
-    }
-  >
-)._handler;
-
-const searchPackageCatalogPublicHandler = (
-  searchPackageCatalogPublic as unknown as WrappedHandler<
-    {
-      query: string;
-      limit?: number;
-      channel?: "official" | "community" | "private";
-      isOfficial?: boolean;
-      topic?: string;
-    },
-    Array<{ score: number; package: { name: string; family: "skill"; isOfficial: boolean } }>
-  >
-)._handler;
+const searchPackageCatalogPublicHandler = getTestHandler<
+  {
+    query: string;
+    limit?: number;
+    channel?: "official" | "community" | "private";
+    isOfficial?: boolean;
+    topic?: string;
+  },
+  Array<{ score: number; package: { name: string; family: "skill"; isOfficial: boolean } }>
+>(searchPackageCatalogPublic);
 
 function makeDigest(
   slug: string,

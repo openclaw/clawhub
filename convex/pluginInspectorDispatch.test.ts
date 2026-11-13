@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("./lib/githubAuth", () => ({
   createGitHubAppInstallationToken: vi.fn(),
@@ -11,19 +12,13 @@ const { isPluginInspectorReleaseScanDispatchEnabled } =
   await import("./lib/pluginInspectorReleaseScan");
 const { getPluginInspectorReleaseScanTargetInternal } = await import("./packages");
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const dispatchHandler = (
-  dispatchPluginInspectorReleaseScanInternal as unknown as WrappedHandler<
-    { releaseId: string; retryCount: number },
-    { dispatched: boolean; reason?: string }
-  >
-)._handler;
-const targetHandler = (
-  getPluginInspectorReleaseScanTargetInternal as unknown as WrappedHandler<{ releaseId: string }>
-)._handler;
+const dispatchHandler = getTestHandler<
+  { releaseId: string; retryCount: number },
+  { dispatched: boolean; reason?: string }
+>(dispatchPluginInspectorReleaseScanInternal);
+const targetHandler = getTestHandler<{ releaseId: string }>(
+  getPluginInspectorReleaseScanTargetInternal,
+);
 
 function enableDispatch() {
   vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "1");

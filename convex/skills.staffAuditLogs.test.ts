@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("./lib/access", async () => {
   const actual = await vi.importActual<typeof import("./lib/access")>("./lib/access");
@@ -20,16 +21,10 @@ const { requireUser } = await import("./lib/access");
 const { getSkillBadgeMap } = await import("./lib/badges");
 const { getBySlugForStaff } = await import("./skills");
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const getBySlugForStaffHandler = (
-  getBySlugForStaff as unknown as WrappedHandler<{
-    slug: string;
-    auditLogLimit?: number;
-  }>
-)._handler;
+const getBySlugForStaffHandler = getTestHandler<{
+  slug: string;
+  auditLogLimit?: number;
+}>(getBySlugForStaff);
 
 function makeCtx() {
   const skill = {

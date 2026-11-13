@@ -1,18 +1,13 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { listTopByCategory, rankTopCatalogTopics } from "./catalogTopics";
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const listTopByCategoryHandler = (
-  listTopByCategory as unknown as WrappedHandler<
-    { kind: "skill" | "plugin"; category: string },
-    string[]
-  >
-)._handler;
+const listTopByCategoryHandler = getTestHandler<
+  { kind: "skill" | "plugin"; category: string },
+  string[]
+>(listTopByCategory);
 
 function makeQueryCtx(rowsByTable: Record<string, Array<Record<string, unknown>>>) {
   const indexNames: string[] = [];

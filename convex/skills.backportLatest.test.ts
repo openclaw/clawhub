@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -7,12 +8,7 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 import { insertVersion } from "./skills";
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
-};
-
-const insertVersionHandler = (insertVersion as unknown as WrappedHandler<Record<string, unknown>>)
-  ._handler;
+const insertVersionHandler = getTestHandler<Record<string, unknown>>(insertVersion);
 
 const OWNER_USER_ID = "users:owner";
 const OWNER_PUBLISHER_ID = "publishers:owner";

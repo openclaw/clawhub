@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -12,13 +13,9 @@ const packagesModule = (await import("./packages")) as unknown as Record<string,
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 
 type DeletionHelper<TArgs> = (ctx: unknown, actor: unknown, args: TArgs) => Promise<unknown>;
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const deleteOwnedReleaseHandler = (
-  packagesModule.deleteOwnedRelease as WrappedHandler<{ name: string; version: string }>
-)._handler;
+const deleteOwnedReleaseHandler = getTestHandler<{ name: string; version: string }>(
+  packagesModule.deleteOwnedRelease,
+);
 const deleteOwnedSkillVersionForUser = skillsModule.deleteOwnedSkillVersionForUser as (
   ctx: unknown,
   args: { actorUserId: string; slug: string; version: string },

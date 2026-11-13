@@ -1,5 +1,6 @@
 import { parsePromotionsFeed, PROMOTIONS_FEED_ID } from "clawhub-schema";
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -8,12 +9,7 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 const { publishInternal } = await import("./promotionsFeed");
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const publishHandler = (publishInternal as unknown as WrappedHandler<Record<string, never>>)
-  ._handler;
+const publishHandler = getTestHandler<Record<string, never>>(publishInternal);
 
 const basePromotion = {
   title: "Free Example models",
