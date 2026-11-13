@@ -55,6 +55,11 @@ function useDeadlinePassed(deadline: number | null) {
 
 export function CliDeviceAuth() {
   const [code, setCode] = useState("");
+  const [lockedDecision, setLockedDecision] = useState<{
+    code: string;
+    label: string;
+    createdAt: number;
+  } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<"approve" | "deny" | null>(null);
   const [isComplete, setIsComplete] = useState(false);
@@ -82,13 +87,22 @@ export function CliDeviceAuth() {
 
   const submit = async () => {
     const trimmed = code.trim();
-    if (description?.state !== "pending" || description.expiresAt <= Date.now()) return;
+    if (!description || description.state !== "pending" || description.expiresAt <= Date.now()) {
+      return;
+    }
     if (!trimmed) {
       setStatus("Enter the code shown in your terminal.");
       return;
     }
-    if (actionInFlight.current || isComplete) return;
+    if (actionInFlight.current || isComplete || lockedDecision) {
+      return;
+    }
     actionInFlight.current = true;
+    setLockedDecision({
+      code: trimmed,
+      label: description.label,
+      createdAt: description.createdAt,
+    });
     setPendingAction("approve");
     setStatus("Authorizing...");
     try {
@@ -96,6 +110,7 @@ export function CliDeviceAuth() {
       setIsComplete(true);
       setStatus("Authorized. You can return to your terminal.");
     } catch (error) {
+      setLockedDecision(null);
       setStatus(getUserFacingConvexError(error, "Authorization failed."));
     } finally {
       actionInFlight.current = false;
@@ -105,9 +120,23 @@ export function CliDeviceAuth() {
 
   const cancel = async () => {
     const trimmed = code.trim();
-    if (description?.state !== "pending" || description.expiresAt <= Date.now() || !trimmed) return;
-    if (actionInFlight.current || isComplete) return;
+    if (
+      !description ||
+      description.state !== "pending" ||
+      description.expiresAt <= Date.now() ||
+      !trimmed
+    ) {
+      return;
+    }
+    if (actionInFlight.current || isComplete || lockedDecision) {
+      return;
+    }
     actionInFlight.current = true;
+    setLockedDecision({
+      code: trimmed,
+      label: description.label,
+      createdAt: description.createdAt,
+    });
     setPendingAction("deny");
     setStatus("Denying...");
     try {
@@ -115,12 +144,19 @@ export function CliDeviceAuth() {
       setIsComplete(true);
       setStatus("Denied. You can close this page.");
     } catch (error) {
+      setLockedDecision(null);
       setStatus(getUserFacingConvexError(error, "Deny failed."));
     } finally {
       actionInFlight.current = false;
       setPendingAction(null);
     }
   };
+
+  const shownDecision = lockedDecision
+    ? lockedDecision
+    : description?.state === "pending" && !expiredLocally
+      ? { label: description.label, createdAt: description.createdAt }
+      : null;
 
   if (isLoading) {
     return <AuthFlowSkeleton title="CLI device login" />;
@@ -147,8 +183,12 @@ export function CliDeviceAuth() {
                   <Label htmlFor="device-code">Code</Label>
                   <Input
                     id="device-code"
-                    value={code}
-                    onChange={(event) => setCode(event.currentTarget.value)}
+                    value={lockedDecision?.code ?? code}
+                    onChange={(event) => {
+                      if (lockedDecision) return;
+                      setCode(event.currentTarget.value);
+                    }}
+                    disabled={lockedDecision !== null}
                     autoComplete="one-time-code"
                     className="font-mono uppercase"
                   />
@@ -174,10 +214,10 @@ export function CliDeviceAuth() {
                   Type the code from your terminal. A link does not approve this login, and the code
                   is not filled in for you.
                 </p>
-                {description?.state === "pending" && !expiredLocally ? (
+                {shownDecision ? (
                   <div className="space-y-1 text-sm">
-                    <p>Label: {description.label}</p>
-                    <p>Started: {new Date(description.createdAt).toISOString()}</p>
+                    <p>Label: {shownDecision.label}</p>
+                    <p>Started: {new Date(shownDecision.createdAt).toISOString()}</p>
                     <p>This creates a full API token. It can publish and delete as you.</p>
                   </div>
                 ) : null}

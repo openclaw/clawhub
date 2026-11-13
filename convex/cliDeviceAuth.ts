@@ -166,6 +166,11 @@ export const deny = mutation({
     const row =
       pickLatestRow(rows, now, "pending") ?? pickLatestRow(rows, now) ?? pickLatestRow(rows);
     if (!row) throw new ConvexError("Device code not found");
+    // expireStaleRows already marked a past-due pending row expired. Returning
+    // success would tell the page the user denied a login the server rejected.
+    if (row.expiresAt <= now || row.status === "expired") {
+      throw new ConvexError("Device code expired");
+    }
     if (row.status === "approved") throw new ConvexError("Device code already authorized");
     if (row.status === "pending") {
       await ctx.db.patch(row._id, { status: "denied", deniedAt: now });

@@ -6,6 +6,8 @@
 
 - Publishing: run reusable package-publish plugin validation with Node.js 24. The CLI refuses `package validate` under Bun, so the workflow builds the pinned CLI and runs `node packages/clawhub/bin/clawdhub.js package validate`.
 
+- CLI login: denying an expired device code is rejected, the same way approval is. After Authorize or Deny starts, the code field stays on that code and keeps its label. A rejected attempt unlocks the field.
+
 - CLI login: the device page no longer fills the approval code from the link. Type the code from the terminal. The page shows the token label and that approval creates a full API token. A scope other than `read write` is rejected. Authorize and Deny turn off when the code's expiry time passes, including when the page was already open before the code was typed, and the pending query does not read the clock. Expired, used, and mistyped codes say how to continue, and a finished approval no longer shows the code as already used.
 
 - CI: verify and cache a pinned Convex backend through the release-asset API before local-auth browser tests, with bounded download retries.
