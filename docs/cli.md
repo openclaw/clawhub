@@ -672,6 +672,26 @@ Example:
 clawhub package moderation-status @openclaw/example-plugin
 ```
 
+### `package audit <name>`
+
+- Prints the stored security findings for one exact package version.
+- Calls `GET /api/v1/packages/{name}/versions/{version}`.
+- `--version` is required. The public latest version is a different question.
+- Prints A.I.G, SkillSpector, and the LLM judge when those reports are stored.
+  Each finding shows its rule or issue id, severity, file location, and message.
+  Source snippets and file digests are not printed.
+- A scanner that was not stored is printed as `not stored`. That is not a clean
+  scan. This command does not change publication or download checks.
+- Flags:
+  - `--version <version>`: exact version.
+  - `--json`: a closed report. It is not the raw version document.
+
+Example:
+
+```bash
+clawhub package audit @openclaw/example-plugin --version 1.2.3
+```
+
 ### `package publication <name>`
 
 - Shows the publication state of one exact package version.

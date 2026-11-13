@@ -55,6 +55,7 @@ const {
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
+  cmdPackageAudit,
   cmdPackageModerationStatus,
   cmdPackageMigrationStatus,
   cmdPackagePublication,
@@ -1295,6 +1296,116 @@ describe("package commands", () => {
     await expect(cmdPackagePublication(makeOpts(), "demo-plugin", {})).rejects.toThrow(
       "Pass --version",
     );
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("prints stored audit findings for one exact version and omits source snippets", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      package: { name: "demo-plugin", displayName: "Demo", family: "template" },
+      version: {
+        version: "1.2.3",
+        createdAt: 1,
+        changelog: "",
+        files: [{ path: "CLAW.md", size: 10, sha256: "abc123digest" }],
+        aigAnalysis: {
+          status: "suspicious",
+          issueCount: 2,
+          checkedAt: 1,
+          findings: [
+            {
+              ruleId: "exec-call",
+              level: "high",
+              message: "Calls exec.",
+              file: "plugins/player/index.js",
+              startLine: 10,
+            },
+          ],
+        },
+        skillSpectorAnalysis: {
+          status: "suspicious",
+          issueCount: 1,
+          checkedAt: 1,
+          issues: [
+            {
+              issueId: "SS-1",
+              severity: "medium",
+              explanation: "Reads a path.",
+              file: "skills/library/SKILL.md",
+              startLine: 4,
+              codeSnippet: "SECRET_SNIPPET_DO_NOT_PRINT",
+            },
+          ],
+        },
+        llmAnalysis: null,
+      },
+    });
+
+    await cmdPackageAudit(makeOpts(), "demo-plugin", { version: "1.2.3" });
+
+    const text = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(text).toContain("demo-plugin@1.2.3");
+    expect(text).toContain("A missing report is not a clean scan.");
+    expect(text).toContain("high exec-call plugins/player/index.js:10");
+    expect(text).toContain("medium SS-1 skills/library/SKILL.md:4");
+    expect(text).toContain("LLM judge");
+    expect(text).toContain("not stored");
+    expect(text).not.toContain("SECRET_SNIPPET_DO_NOT_PRINT");
+    expect(text).not.toContain("abc123digest");
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/demo-plugin/versions/1.2.3",
+        token: undefined,
+      },
+      expect.anything(),
+    );
+  });
+
+  it("prints a closed audit JSON document", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      package: { name: "demo-plugin", displayName: "Demo", family: "code-plugin" },
+      version: {
+        version: "1.2.3",
+        createdAt: 1,
+        changelog: "notes",
+        files: [],
+        sha256hash: "deadbeef",
+        aigAnalysis: null,
+        skillSpectorAnalysis: null,
+        llmAnalysis: {
+          status: "completed",
+          verdict: "benign",
+          summary: "No concern.",
+          checkedAt: 1,
+        },
+      },
+    });
+
+    await cmdPackageAudit(makeOpts(), "demo-plugin", { version: "1.2.3", json: true });
+
+    const body = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+    expect(body).toEqual({
+      name: "demo-plugin",
+      version: "1.2.3",
+      family: "code-plugin",
+      reports: [
+        { scanner: "aig", stored: false },
+        { scanner: "skillspector", stored: false },
+        {
+          scanner: "llm",
+          stored: true,
+          status: "completed",
+          verdict: "benign",
+          summary: "No concern.",
+        },
+      ],
+    });
+    expect(mockLog).not.toHaveBeenCalled();
+  });
+
+  it("requires an exact version for package audit", async () => {
+    await expect(cmdPackageAudit(makeOpts(), "demo-plugin", {})).rejects.toThrow(/Pass --version/);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 

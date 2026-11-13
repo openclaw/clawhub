@@ -1838,6 +1838,198 @@ export async function cmdPackageModerationStatus(
   }
 }
 
+type PackageAuditFinding = {
+  id: string;
+  severity: string;
+  message: string;
+  file?: string;
+  startLine?: number;
+};
+
+type PackageAuditScannerReport = {
+  scanner: "aig" | "skillspector" | "llm";
+  stored: boolean;
+  status?: string;
+  issueCount?: number;
+  shownCount?: number;
+  summary?: string;
+  verdict?: string;
+  findings?: PackageAuditFinding[];
+};
+
+type PackageAuditReport = {
+  name: string;
+  version: string;
+  family: string;
+  reports: PackageAuditScannerReport[];
+};
+
+export async function cmdPackageAudit(
+  opts: GlobalOpts,
+  packageName: string,
+  options: { version?: string; json?: boolean } = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const version = options.version?.trim();
+  if (!version) {
+    fail(
+      "Pass --version. Audit findings are for one exact version, not the public latest version.",
+    );
+  }
+  const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
+  const detail = await apiRequestPackageVersion(registry, trimmed, version, token);
+  if (!detail.package || !detail.version) fail("Version not found");
+  const report = buildPackageAuditReport(detail.package, detail.version);
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    return;
+  }
+  printPackageAudit(report);
+}
+
+function buildPackageAuditReport(
+  pkg: { name: string; family: string },
+  version: {
+    version: string;
+    aigAnalysis?: {
+      status: string;
+      issueCount: number;
+      summary?: string;
+      findings: Array<{
+        ruleId: string;
+        level: string;
+        message: string;
+        title?: string;
+        file?: string;
+        startLine?: number;
+      }>;
+    } | null;
+    skillSpectorAnalysis?: {
+      status: string;
+      issueCount: number;
+      summary?: string;
+      issues: Array<{
+        issueId: string;
+        severity: string;
+        explanation: string;
+        file?: string;
+        startLine?: number;
+        codeSnippet?: string;
+      }>;
+    } | null;
+    llmAnalysis?: {
+      status: string;
+      verdict?: string;
+      summary?: string;
+    } | null;
+  },
+): PackageAuditReport {
+  return {
+    name: pkg.name,
+    version: version.version,
+    family: pkg.family,
+    reports: [
+      aigAuditReport(version.aigAnalysis),
+      skillSpectorAuditReport(version.skillSpectorAnalysis),
+      llmAuditReport(version.llmAnalysis),
+    ],
+  };
+}
+
+function aigAuditReport(
+  analysis: Parameters<typeof buildPackageAuditReport>[1]["aigAnalysis"],
+): PackageAuditScannerReport {
+  if (!analysis) return { scanner: "aig", stored: false };
+  return {
+    scanner: "aig",
+    stored: true,
+    status: analysis.status,
+    issueCount: analysis.issueCount,
+    shownCount: analysis.findings.length,
+    ...(analysis.summary ? { summary: analysis.summary } : {}),
+    findings: analysis.findings.map((finding) => ({
+      id: finding.ruleId,
+      severity: finding.level,
+      message: finding.title?.trim() || finding.message,
+      ...(finding.file ? { file: finding.file } : {}),
+      ...(finding.startLine ? { startLine: finding.startLine } : {}),
+    })),
+  };
+}
+
+function skillSpectorAuditReport(
+  analysis: Parameters<typeof buildPackageAuditReport>[1]["skillSpectorAnalysis"],
+): PackageAuditScannerReport {
+  if (!analysis) return { scanner: "skillspector", stored: false };
+  return {
+    scanner: "skillspector",
+    stored: true,
+    status: analysis.status,
+    issueCount: analysis.issueCount,
+    shownCount: analysis.issues.length,
+    ...(analysis.summary ? { summary: analysis.summary } : {}),
+    findings: analysis.issues.map((issue) => ({
+      id: issue.issueId,
+      severity: issue.severity,
+      message: issue.explanation,
+      ...(issue.file ? { file: issue.file } : {}),
+      ...(issue.startLine ? { startLine: issue.startLine } : {}),
+    })),
+  };
+}
+
+function llmAuditReport(
+  analysis: Parameters<typeof buildPackageAuditReport>[1]["llmAnalysis"],
+): PackageAuditScannerReport {
+  if (!analysis) return { scanner: "llm", stored: false };
+  return {
+    scanner: "llm",
+    stored: true,
+    status: analysis.status,
+    ...(analysis.verdict ? { verdict: analysis.verdict } : {}),
+    ...(analysis.summary ? { summary: analysis.summary } : {}),
+  };
+}
+
+function printPackageAudit(report: PackageAuditReport) {
+  console.log(`${report.name}@${report.version}`);
+  console.log(`Family: ${report.family}`);
+  console.log(
+    "Stored scanner reports for this exact version. A missing report is not a clean scan.",
+  );
+  for (const scannerReport of report.reports) {
+    console.log(scannerLabel(scannerReport.scanner));
+    if (!scannerReport.stored) {
+      console.log("  not stored");
+      continue;
+    }
+    console.log(`  status: ${scannerReport.status}`);
+    if (scannerReport.verdict) console.log(`  verdict: ${scannerReport.verdict}`);
+    if (scannerReport.summary) console.log(`  summary: ${scannerReport.summary}`);
+    if (scannerReport.issueCount !== undefined && scannerReport.shownCount !== undefined) {
+      console.log(
+        scannerReport.shownCount === scannerReport.issueCount
+          ? `  findings: ${scannerReport.issueCount}`
+          : `  findings: ${scannerReport.shownCount} of ${scannerReport.issueCount}`,
+      );
+    }
+    for (const finding of scannerReport.findings ?? []) {
+      const location = finding.file
+        ? ` ${finding.file}${finding.startLine ? `:${finding.startLine}` : ""}`
+        : "";
+      console.log(`  ${finding.severity} ${finding.id}${location}`);
+      console.log(`    ${finding.message}`);
+    }
+  }
+}
+
+function scannerLabel(scanner: PackageAuditScannerReport["scanner"]) {
+  if (scanner === "aig") return "A.I.G";
+  if (scanner === "skillspector") return "SkillSpector";
+  return "LLM judge";
+}
+
 export async function cmdPackagePublication(
   opts: GlobalOpts,
   packageName: string,
