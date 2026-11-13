@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import type { EndorAnalysis } from "./lib/endorAnalysis";
 import {
   appendGitHubSkillScanRequestFilesInternal,
@@ -43,168 +44,134 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const claimCodexScanJobsHandler = getTestHandler<
+  { token: string; workerId: string; limit?: number },
+  Array<unknown>
+>(claimCodexScanJobs);
 
-const claimCodexScanJobsHandler = (
-  claimCodexScanJobs as unknown as WrappedHandler<
-    { token: string; workerId: string; limit?: number },
-    Array<unknown>
-  >
-)._handler;
-
-const claimCodexScanJobLeasesHandler = (
-  claimCodexScanJobLeases as unknown as WrappedHandler<
-    {
-      token: string;
-      workerId: string;
-      lane?: "priority" | "shared" | "catalog";
-      limit?: number;
-      leaseMs?: number;
-      targetedJobIds?: string[];
-      assignedJobIds?: string[];
-    },
-    Array<ScanJob & { leaseToken: string; workerId: string }>
-  >
-)._handler;
-
-const hydrateCodexScanJobHandler = (
-  hydrateCodexScanJob as unknown as WrappedHandler<{
+const claimCodexScanJobLeasesHandler = getTestHandler<
+  {
     token: string;
     workerId: string;
-    jobId: string;
-    leaseToken: string;
-  }>
-)._handler;
+    lane?: "priority" | "shared" | "catalog";
+    limit?: number;
+    leaseMs?: number;
+    targetedJobIds?: string[];
+    assignedJobIds?: string[];
+  },
+  Array<ScanJob & { leaseToken: string; workerId: string }>
+>(claimCodexScanJobLeases);
 
-const claimQueuedJobsInternalHandler = (
-  claimQueuedJobsInternal as unknown as WrappedHandler<
-    {
-      workerId: string;
-      lane?: "priority" | "shared" | "catalog";
-      limit: number;
-      leaseMs?: number;
-      targetedJobIds?: string[];
-      assignedJobIds?: string[];
-    },
-    Array<ScanJob & { leaseToken: string; workerId: string }>
-  >
-)._handler;
+const hydrateCodexScanJobHandler = getTestHandler<{
+  token: string;
+  workerId: string;
+  jobId: string;
+  leaseToken: string;
+}>(hydrateCodexScanJob);
 
-const requeueExpiredCodexScanJobsInternalHandler = (
-  requeueExpiredCodexScanJobsInternal as unknown as WrappedHandler<
-    { limit?: number },
-    { requeued: number }
-  >
-)._handler;
+const claimQueuedJobsInternalHandler = getTestHandler<
+  {
+    workerId: string;
+    lane?: "priority" | "shared" | "catalog";
+    limit: number;
+    leaseMs?: number;
+    targetedJobIds?: string[];
+    assignedJobIds?: string[];
+  },
+  Array<ScanJob & { leaseToken: string; workerId: string }>
+>(claimQueuedJobsInternal);
 
-const requeueFailedSecurityScanJobsInternalHandler = (
-  requeueFailedSecurityScanJobsInternal as unknown as WrappedHandler<
-    { failedAfter: number; failedBefore: number; dryRun: boolean; limit?: number; cursor?: string },
-    {
-      dryRun: boolean;
-      matched: number;
-      requeued: number;
-      hasMore: boolean;
-      nextCursor: string | null;
-      bySource: Record<string, number>;
-      byTargetKind: Record<string, number>;
-      sampleJobIds: string[];
-    }
-  >
-)._handler;
+const requeueExpiredCodexScanJobsInternalHandler = getTestHandler<
+  { limit?: number },
+  { requeued: number }
+>(requeueExpiredCodexScanJobsInternal);
 
-const requeueJobLeaseInternalHandler = (
-  requeueJobLeaseInternal as unknown as WrappedHandler<
-    { jobId: string; leaseToken: string; workerId: string },
-    { ok: true; nextRunAt: number }
-  >
-)._handler;
+const requeueFailedSecurityScanJobsInternalHandler = getTestHandler<
+  { failedAfter: number; failedBefore: number; dryRun: boolean; limit?: number; cursor?: string },
+  {
+    dryRun: boolean;
+    matched: number;
+    requeued: number;
+    hasMore: boolean;
+    nextCursor: string | null;
+    bySource: Record<string, number>;
+    byTargetKind: Record<string, number>;
+    sampleJobIds: string[];
+  }
+>(requeueFailedSecurityScanJobsInternal);
 
-const requeueCodexScanJobLeaseHandler = (
-  requeueCodexScanJobLease as unknown as WrappedHandler<
-    { token: string; jobId: string; leaseToken: string; workerId: string },
-    { ok: true; nextRunAt: number }
-  >
-)._handler;
+const requeueJobLeaseInternalHandler = getTestHandler<
+  { jobId: string; leaseToken: string; workerId: string },
+  { ok: true; nextRunAt: number }
+>(requeueJobLeaseInternal);
 
-const failCodexScanJobHandler = (
-  failCodexScanJob as unknown as WrappedHandler<
-    { token: string; jobId: string; leaseToken: string; error: string },
-    { ok: true; retry: boolean }
-  >
-)._handler;
+const requeueCodexScanJobLeaseHandler = getTestHandler<
+  { token: string; jobId: string; leaseToken: string; workerId: string },
+  { ok: true; nextRunAt: number }
+>(requeueCodexScanJobLease);
 
-const failJobInternalHandler = (
-  failJobInternal as unknown as WrappedHandler<
-    { jobId: string; leaseToken: string; error: string },
-    { ok: true; retry: boolean }
-  >
-)._handler;
+const failCodexScanJobHandler = getTestHandler<
+  { token: string; jobId: string; leaseToken: string; error: string },
+  { ok: true; retry: boolean }
+>(failCodexScanJob);
 
-const getCodexScanQueueHealthInternalHandler = (
-  getCodexScanQueueHealthInternal as unknown as WrappedHandler<
-    Record<string, never>,
-    {
-      snapshotAt: number;
-      queueDepth: number;
-      queueDepthIsEstimate: boolean;
-      readyQueueDepth: number;
-      readyQueueDepthIsEstimate: boolean;
-      oldestReadyJobAgeSeconds: number;
-      oldestReadyJobNextRunAt: number | null;
-    }
-  >
-)._handler;
+const failJobInternalHandler = getTestHandler<
+  { jobId: string; leaseToken: string; error: string },
+  { ok: true; retry: boolean }
+>(failJobInternal);
 
-const getCodexScanQueueHealthHandler = (
-  getCodexScanQueueHealth as unknown as WrappedHandler<
-    { token: string },
-    {
-      snapshotAt: number;
-      queueDepth: number;
-      queueDepthIsEstimate: boolean;
-      readyQueueDepth: number;
-      readyQueueDepthIsEstimate: boolean;
-      oldestReadyJobAgeSeconds: number;
-      oldestReadyJobNextRunAt: number | null;
-    }
-  >
-)._handler;
+const getCodexScanQueueHealthInternalHandler = getTestHandler<
+  Record<string, never>,
+  {
+    snapshotAt: number;
+    queueDepth: number;
+    queueDepthIsEstimate: boolean;
+    readyQueueDepth: number;
+    readyQueueDepthIsEstimate: boolean;
+    oldestReadyJobAgeSeconds: number;
+    oldestReadyJobNextRunAt: number | null;
+  }
+>(getCodexScanQueueHealthInternal);
 
-const logCodexScanQueueHealthInternalHandler = (
-  logCodexScanQueueHealthInternal as unknown as WrappedHandler<
-    Record<string, never>,
-    {
-      snapshotAt: number;
-      queueDepth: number;
-      queueDepthIsEstimate: boolean;
-      readyQueueDepth: number;
-      readyQueueDepthIsEstimate: boolean;
-      oldestReadyJobAgeSeconds: number;
-      oldestReadyJobNextRunAt: number | null;
-    }
-  >
-)._handler;
+const getCodexScanQueueHealthHandler = getTestHandler<
+  { token: string },
+  {
+    snapshotAt: number;
+    queueDepth: number;
+    queueDepthIsEstimate: boolean;
+    readyQueueDepth: number;
+    readyQueueDepthIsEstimate: boolean;
+    oldestReadyJobAgeSeconds: number;
+    oldestReadyJobNextRunAt: number | null;
+  }
+>(getCodexScanQueueHealth);
 
-const recordSkillScanRequestFailedInternalHandler = (
-  recordSkillScanRequestFailedInternal as unknown as WrappedHandler<
-    { scanId: string; error: string; llmAnalysis?: { status: string; checkedAt: number } },
-    { ok: true }
-  >
-)._handler;
+const logCodexScanQueueHealthInternalHandler = getTestHandler<
+  Record<string, never>,
+  {
+    snapshotAt: number;
+    queueDepth: number;
+    queueDepthIsEstimate: boolean;
+    readyQueueDepth: number;
+    readyQueueDepthIsEstimate: boolean;
+    oldestReadyJobAgeSeconds: number;
+    oldestReadyJobNextRunAt: number | null;
+  }
+>(logCodexScanQueueHealthInternal);
 
-const recordGitHubSkillScanResultInternalHandler = (
-  recordGitHubSkillScanResultInternal as unknown as WrappedHandler<
-    {
-      githubSkillScanId: string;
-      scanStatus: "clean" | "suspicious" | "malicious" | "pending" | "failed";
-      error?: string;
-    },
-    { ok: true; skipped?: string }
-  >
-)._handler;
+const recordSkillScanRequestFailedInternalHandler = getTestHandler<
+  { scanId: string; error: string; llmAnalysis?: { status: string; checkedAt: number } },
+  { ok: true }
+>(recordSkillScanRequestFailedInternal);
+
+const recordGitHubSkillScanResultInternalHandler = getTestHandler<
+  {
+    githubSkillScanId: string;
+    scanStatus: "clean" | "suspicious" | "malicious" | "pending" | "failed";
+    error?: string;
+  },
+  { ok: true; skipped?: string }
+>(recordGitHubSkillScanResultInternal);
 
 function fakeLeakyWorkerError() {
   return (
@@ -285,47 +252,45 @@ function makeFailurePersistenceCtx(docs: Record<string, Record<string, unknown>>
   };
 }
 
-const completeCodexScanJobHandler = (
-  completeCodexScanJob as unknown as WrappedHandler<
-    {
-      token: string;
-      jobId: string;
-      leaseToken: string;
-      llmAnalysis: {
-        status: string;
-        verdict?: string;
-        checkedAt: number;
-      };
-      aigAnalysis?: {
-        status: string;
-        issueCount: number;
-        findings: Array<{
-          ruleId: string;
-          level: string;
-          message: string;
-        }>;
-        scannerVersion?: string;
-        checkedAt: number;
-      };
-      skillSpectorAnalysis?: {
-        status: string;
-        issueCount: number;
-        issues: Array<{
-          issueId: string;
-          severity: string;
-          explanation: string;
-          finding?: string;
-          codeSnippet?: string;
-        }>;
-        checkedAt: number;
-      };
-      endorAnalysis?: EndorAnalysis;
-      scannerReportsStorageId?: string;
-      runId?: string;
-    },
-    { ok: true }
-  >
-)._handler;
+const completeCodexScanJobHandler = getTestHandler<
+  {
+    token: string;
+    jobId: string;
+    leaseToken: string;
+    llmAnalysis: {
+      status: string;
+      verdict?: string;
+      checkedAt: number;
+    };
+    aigAnalysis?: {
+      status: string;
+      issueCount: number;
+      findings: Array<{
+        ruleId: string;
+        level: string;
+        message: string;
+      }>;
+      scannerVersion?: string;
+      checkedAt: number;
+    };
+    skillSpectorAnalysis?: {
+      status: string;
+      issueCount: number;
+      issues: Array<{
+        issueId: string;
+        severity: string;
+        explanation: string;
+        finding?: string;
+        codeSnippet?: string;
+      }>;
+      checkedAt: number;
+    };
+    endorAnalysis?: EndorAnalysis;
+    scannerReportsStorageId?: string;
+    runId?: string;
+  },
+  { ok: true }
+>(completeCodexScanJob);
 
 const cleanAigAnalysis = {
   status: "clean",
@@ -335,40 +300,32 @@ const cleanAigAnalysis = {
   checkedAt: 123,
 };
 
-const prepareGitHubSkillScanRequestInternalHandler = (
-  prepareGitHubSkillScanRequestInternal as unknown as WrappedHandler<
-    {
-      skillId: string;
-      contentHash: string;
-      commit: string;
-      force?: boolean;
-      parsed: { frontmatter: Record<string, unknown> };
-    },
-    { ok: true; prepared?: true; scanId?: string; requestId?: string }
-  >
-)._handler;
+const prepareGitHubSkillScanRequestInternalHandler = getTestHandler<
+  {
+    skillId: string;
+    contentHash: string;
+    commit: string;
+    force?: boolean;
+    parsed: { frontmatter: Record<string, unknown> };
+  },
+  { ok: true; prepared?: true; scanId?: string; requestId?: string }
+>(prepareGitHubSkillScanRequestInternal);
 
-const appendGitHubSkillScanRequestFilesInternalHandler = (
-  appendGitHubSkillScanRequestFilesInternal as unknown as WrappedHandler<
-    {
-      requestId: string;
-      chunkIndex: number;
-      files: Array<{ path: string; size: number; storageId: string; sha256: string }>;
-    },
-    { ok: true; appended: true }
-  >
-)._handler;
+const appendGitHubSkillScanRequestFilesInternalHandler = getTestHandler<
+  {
+    requestId: string;
+    chunkIndex: number;
+    files: Array<{ path: string; size: number; storageId: string; sha256: string }>;
+  },
+  { ok: true; appended: true }
+>(appendGitHubSkillScanRequestFilesInternal);
 
-const finalizeGitHubSkillScanRequestInternalHandler = (
-  finalizeGitHubSkillScanRequestInternal as unknown as WrappedHandler<
-    { requestId: string; force?: boolean },
-    { ok: true; queued?: true; scanId?: string; requestId?: string; jobId?: string }
-  >
-)._handler;
+const finalizeGitHubSkillScanRequestInternalHandler = getTestHandler<
+  { requestId: string; force?: boolean },
+  { ok: true; queued?: true; scanId?: string; requestId?: string; jobId?: string }
+>(finalizeGitHubSkillScanRequestInternal);
 
-const getJobTargetInternalHandler = (
-  getJobTargetInternal as unknown as WrappedHandler<{ jobId: string }>
-)._handler;
+const getJobTargetInternalHandler = getTestHandler<{ jobId: string }>(getJobTargetInternal);
 
 type ScanJob = {
   _id: string;
@@ -391,174 +348,148 @@ type ScanJob = {
   updatedAt: number;
 };
 
-const clearQueuedBackfillJobsForLocalDevHandler = (
-  clearQueuedBackfillJobsForLocalDev as unknown as WrappedHandler<
-    { dryRun?: boolean; limit?: number },
-    { dryRun: boolean; matched: number; deleted: number; sampleDeletedJobIds: string[] }
-  >
-)._handler;
-const pruneExpiredSkillScanRequestsInternalHandler = (
-  pruneExpiredSkillScanRequestsInternal as unknown as WrappedHandler<
-    { batchSize?: number },
-    {
-      ok: true;
-      deletedRequests: number;
-      deferredRequests: number;
-      deletedJobs: number;
-      deletedFiles: number;
-      done: boolean;
-    }
-  >
-)._handler;
+const clearQueuedBackfillJobsForLocalDevHandler = getTestHandler<
+  { dryRun?: boolean; limit?: number },
+  { dryRun: boolean; matched: number; deleted: number; sampleDeletedJobIds: string[] }
+>(clearQueuedBackfillJobsForLocalDev);
+const pruneExpiredSkillScanRequestsInternalHandler = getTestHandler<
+  { batchSize?: number },
+  {
+    ok: true;
+    deletedRequests: number;
+    deferredRequests: number;
+    deletedJobs: number;
+    deletedFiles: number;
+    done: boolean;
+  }
+>(pruneExpiredSkillScanRequestsInternal);
 
-const requestSkillRescanHandler = (
-  requestSkillRescan as unknown as WrappedHandler<
-    { skillId: string; version?: string },
-    { jobId?: string; scheduled?: boolean; alreadyQueued: boolean }
-  >
-)._handler;
+const requestSkillRescanHandler = getTestHandler<
+  { skillId: string; version?: string },
+  { jobId?: string; scheduled?: boolean; alreadyQueued: boolean }
+>(requestSkillRescan);
 
-const requestPackageRescanHandler = (
-  requestPackageRescan as unknown as WrappedHandler<
-    { packageId: string; version?: string },
-    { jobId: string; alreadyQueued: boolean; packageReleaseId: string }
-  >
-)._handler;
+const requestPackageRescanHandler = getTestHandler<
+  { packageId: string; version?: string },
+  { jobId: string; alreadyQueued: boolean; packageReleaseId: string }
+>(requestPackageRescan);
 
-const requestSkillRescanForUserInternalHandler = (
-  requestSkillRescanForUserInternal as unknown as WrappedHandler<
-    { actorUserId: string; slug: string; ownerHandle?: string; version?: string },
-    { jobId?: string; scheduled?: boolean; alreadyQueued: boolean; skillVersionId?: string }
-  >
-)._handler;
+const requestSkillRescanForUserInternalHandler = getTestHandler<
+  { actorUserId: string; slug: string; ownerHandle?: string; version?: string },
+  { jobId?: string; scheduled?: boolean; alreadyQueued: boolean; skillVersionId?: string }
+>(requestSkillRescanForUserInternal);
 
-const requestPackageRescanForUserInternalHandler = (
-  requestPackageRescanForUserInternal as unknown as WrappedHandler<
-    { actorUserId: string; name: string; version?: string },
-    { jobId: string; alreadyQueued: boolean; packageReleaseId: string }
-  >
-)._handler;
+const requestPackageRescanForUserInternalHandler = getTestHandler<
+  { actorUserId: string; name: string; version?: string },
+  { jobId: string; alreadyQueued: boolean; packageReleaseId: string }
+>(requestPackageRescanForUserInternal);
 
-const enqueueSkillVersionScanInternalHandler = (
-  enqueueSkillVersionScanInternal as unknown as WrappedHandler<
-    {
-      versionId: string;
-      source: "publish" | "backfill" | "bulk-rescan" | "manual";
-      priority?: number;
-      preserveActiveJob?: boolean;
-      preserveExistingJob?: boolean;
-    },
-    { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
-  >
-)._handler;
+const enqueueSkillVersionScanInternalHandler = getTestHandler<
+  {
+    versionId: string;
+    source: "publish" | "backfill" | "bulk-rescan" | "manual";
+    priority?: number;
+    preserveActiveJob?: boolean;
+    preserveExistingJob?: boolean;
+  },
+  { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
+>(enqueueSkillVersionScanInternal);
 
-const enqueuePackageReleaseScanInternalHandler = (
-  enqueuePackageReleaseScanInternal as unknown as WrappedHandler<
-    {
-      releaseId: string;
-      source: "publish" | "backfill" | "bulk-rescan" | "manual";
-      priority?: number;
-    },
-    { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
-  >
-)._handler;
+const enqueuePackageReleaseScanInternalHandler = getTestHandler<
+  {
+    releaseId: string;
+    source: "publish" | "backfill" | "bulk-rescan" | "manual";
+    priority?: number;
+  },
+  { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
+>(enqueuePackageReleaseScanInternal);
 
-const enqueueBulkSkillRescanBatchForAdminInternalHandler = (
-  enqueueBulkSkillRescanBatchForAdminInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      mode?: "all-active-latest";
-      cursor?: string | null;
-      batchSize?: number;
-      dryRun?: boolean;
-    },
-    {
-      ok: true;
-      queued: number;
-      alreadyQueued: number;
-      skipped: number;
-      jobIds: string[];
-      nextCursor: string | null;
-      done: boolean;
-      sampleSlugs: string[];
-    }
-  >
-)._handler;
+const enqueueBulkSkillRescanBatchForAdminInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    mode?: "all-active-latest";
+    cursor?: string | null;
+    batchSize?: number;
+    dryRun?: boolean;
+  },
+  {
+    ok: true;
+    queued: number;
+    alreadyQueued: number;
+    skipped: number;
+    jobIds: string[];
+    nextCursor: string | null;
+    done: boolean;
+    sampleSlugs: string[];
+  }
+>(enqueueBulkSkillRescanBatchForAdminInternal);
 
-const getBulkSkillRescanBatchStatusForAdminInternalHandler = (
-  getBulkSkillRescanBatchStatusForAdminInternal as unknown as WrappedHandler<
-    { actorUserId: string; jobIds: string[] },
-    {
-      ok: true;
-      total: number;
-      queued: number;
+const getBulkSkillRescanBatchStatusForAdminInternalHandler = getTestHandler<
+  { actorUserId: string; jobIds: string[] },
+  {
+    ok: true;
+    total: number;
+    queued: number;
+    running: number;
+    succeeded: number;
+    failed: number;
+    missing: number;
+    terminal: number;
+    done: boolean;
+    failedJobIds: string[];
+  }
+>(getBulkSkillRescanBatchStatusForAdminInternal);
+
+const getSkillScanRequestForUserInternalHandler = getTestHandler<
+  { actorUserId: string; scanId: string },
+  {
+    ok: true;
+    scanId: string;
+    jobId?: string;
+    status: string;
+    queue: {
+      queuedAhead: number;
+      queuedAheadIsEstimate?: boolean;
+      position: number | null;
       running: number;
-      succeeded: number;
-      failed: number;
-      missing: number;
-      terminal: number;
-      done: boolean;
-      failedJobIds: string[];
-    }
-  >
-)._handler;
+      runningIsEstimate?: boolean;
+      note: string;
+    };
+  }
+>(getSkillScanRequestForUserInternal);
 
-const getSkillScanRequestForUserInternalHandler = (
-  getSkillScanRequestForUserInternal as unknown as WrappedHandler<
-    { actorUserId: string; scanId: string },
-    {
-      ok: true;
-      scanId: string;
-      jobId?: string;
-      status: string;
-      queue: {
-        queuedAhead: number;
-        queuedAheadIsEstimate?: boolean;
-        position: number | null;
-        running: number;
-        runningIsEstimate?: boolean;
-        note: string;
-      };
-    }
-  >
-)._handler;
+const createPublishedSkillScanRequestInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    slug: string;
+    ownerHandle?: string;
+    version?: string;
+    update?: boolean;
+  },
+  { ok: true; scanId: string; status: string; sourceKind: string }
+>(createPublishedSkillScanRequestInternal);
 
-const createPublishedSkillScanRequestInternalHandler = (
-  createPublishedSkillScanRequestInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      slug: string;
-      ownerHandle?: string;
-      version?: string;
-      update?: boolean;
-    },
-    { ok: true; scanId: string; status: string; sourceKind: string }
-  >
-)._handler;
-
-const getStoredScanReportForUserInternalHandler = (
-  getStoredScanReportForUserInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      kind: "skill" | "plugin";
-      name: string;
-      ownerHandle?: string;
-      version: string;
-    },
-    {
-      ok: true;
-      status: string;
-      artifact: Record<string, unknown>;
-      report: {
-        clawscan: Record<string, unknown> | null;
-        endor: Record<string, unknown> | null;
-        skillspector: Record<string, unknown> | null;
-        staticAnalysis: Record<string, unknown> | null;
-        virustotal: Record<string, unknown> | null;
-      };
-    }
-  >
-)._handler;
+const getStoredScanReportForUserInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    kind: "skill" | "plugin";
+    name: string;
+    ownerHandle?: string;
+    version: string;
+  },
+  {
+    ok: true;
+    status: string;
+    artifact: Record<string, unknown>;
+    report: {
+      clawscan: Record<string, unknown> | null;
+      endor: Record<string, unknown> | null;
+      skillspector: Record<string, unknown> | null;
+      staticAnalysis: Record<string, unknown> | null;
+      virustotal: Record<string, unknown> | null;
+    };
+  }
+>(getStoredScanReportForUserInternal);
 
 const claimedJob = {
   _id: "securityScanJobs:1",
