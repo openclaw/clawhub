@@ -6377,31 +6377,40 @@ export const applyPublisherDeletionToOwnedPackagesBatchInternal = internalMutati
   },
 });
 
+async function requirePackageManagementByName(
+  ctx: MutationCtx,
+  args: { userId: Id<"users">; name: string },
+) {
+  const user = await ctx.db.get(args.userId);
+  if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
+
+  const normalizedName = normalizePackageName(args.name);
+  if (!normalizedName) throw new Error("Package name required");
+
+  const pkg = await getPackageByNormalizedName(ctx, normalizedName);
+  if (!pkg) throw new Error("Package not found");
+
+  if (user.role === "moderator" || user.role === "admin") {
+    // Moderators can manage packages outside their own publisher memberships.
+  } else {
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId: pkg.ownerUserId,
+      ownerPublisherId: pkg.ownerPublisherId,
+      allowedPublisherRoles: ["admin"],
+    });
+  }
+
+  return { user, pkg };
+}
+
 export const softDeletePackageInternal = internalMutation({
   args: {
     userId: v.id("users"),
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
-
-    const normalizedName = normalizePackageName(args.name);
-    if (!normalizedName) throw new Error("Package name required");
-
-    const pkg = await getPackageByNormalizedName(ctx, normalizedName);
-    if (!pkg) throw new Error("Package not found");
-
-    if (user.role === "moderator" || user.role === "admin") {
-      // Moderators can manage packages outside their own publisher memberships.
-    } else {
-      await assertCanManageOwnedResource(ctx, {
-        actor: user,
-        ownerUserId: pkg.ownerUserId,
-        ownerPublisherId: pkg.ownerPublisherId,
-        allowedPublisherRoles: ["admin"],
-      });
-    }
+    const { user, pkg } = await requirePackageManagementByName(ctx, args);
 
     return await softDeletePackageDoc(ctx, pkg, {
       actorUserId: user._id,
@@ -6417,25 +6426,7 @@ export const restorePackageInternal = internalMutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
-
-    const normalizedName = normalizePackageName(args.name);
-    if (!normalizedName) throw new Error("Package name required");
-
-    const pkg = await getPackageByNormalizedName(ctx, normalizedName);
-    if (!pkg) throw new Error("Package not found");
-
-    if (user.role === "moderator" || user.role === "admin") {
-      // Moderators can manage packages outside their own publisher memberships.
-    } else {
-      await assertCanManageOwnedResource(ctx, {
-        actor: user,
-        ownerUserId: pkg.ownerUserId,
-        ownerPublisherId: pkg.ownerPublisherId,
-        allowedPublisherRoles: ["admin"],
-      });
-    }
+    const { user, pkg } = await requirePackageManagementByName(ctx, args);
 
     return await restorePackageDoc(ctx, pkg, {
       actorUserId: user._id,
