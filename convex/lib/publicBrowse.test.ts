@@ -9,6 +9,10 @@ import {
   resolvePublicBrowseVersionForSkill,
   shouldExcludeSkillFromPublicBrowse,
 } from "./publicBrowse";
+import {
+  getPublicSkillFileAccessBlock,
+  getSkillFileModerationInfoFromSkill,
+} from "./skillFileAccess";
 
 const emptyStats = {
   versions: 1,
@@ -66,24 +70,27 @@ describe("publicBrowse", () => {
     ).toBe(false);
   });
 
-  it("treats active pending.scan skills as pending public review", () => {
-    expect(
-      isSkillPendingPublicReview({
-        moderationStatus: "active",
-        moderationReason: "pending.scan",
-        moderationFlags: undefined,
-      }),
-    ).toBe(true);
-  });
+  it.each([
+    "pending.scan",
+    "pending.scan.stale",
+    "scanner.vt.pending",
+    "scanner.llm.pending",
+    "  PENDING.SCAN  ",
+    "\tSCANNER.VT.PENDING\n",
+  ])("keeps %s pending in browse and file-access policy", (moderationReason) => {
+    const skill = {
+      moderationStatus: "active" as const,
+      moderationReason,
+      moderationFlags: undefined,
+    };
+    expect(isSkillPendingPublicReview(skill)).toBe(true);
 
-  it("keeps legacy retired-VirusTotal pending reasons pending until the moderation backfill", () => {
-    expect(
-      isSkillPendingPublicReview({
-        moderationStatus: "active",
-        moderationReason: "scanner.vt.pending",
-        moderationFlags: undefined,
-      }),
-    ).toBe(true);
+    const moderationInfo = getSkillFileModerationInfoFromSkill({
+      ...skill,
+      moderationStatus: "hidden",
+    });
+    expect(moderationInfo.isPendingScan).toBe(true);
+    expect(getPublicSkillFileAccessBlock(moderationInfo)?.status).toBe(423);
   });
 
   it("excludes first-publish pending review skills from public browse", () => {
