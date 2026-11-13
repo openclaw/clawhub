@@ -525,6 +525,39 @@ const resolvePublishTargetForUserInternalHandler = (
   >
 )._handler;
 
+function captureIndexFields(buildQuery: (q: unknown) => unknown) {
+  const fields: Record<string, unknown> = {};
+  const q = {
+    eq: (field: string, value: unknown) => {
+      fields[field] = value;
+      return q;
+    },
+  };
+  buildQuery(q);
+  return fields;
+}
+
+function captureIndexRange(buildQuery: (q: unknown) => unknown) {
+  const fields: Record<string, unknown> = {};
+  const range: Record<string, unknown> = {};
+  const q = {
+    eq: (field: string, value: unknown) => {
+      fields[field] = value;
+      return q;
+    },
+    gte: (field: string, value: unknown) => {
+      range.gte = { field, value };
+      return q;
+    },
+    lt: (field: string, value: unknown) => {
+      range.lt = { field, value };
+      return q;
+    },
+  };
+  buildQuery(q);
+  return { fields, range };
+}
+
 function indexedRows(rows: unknown[]) {
   const paginate = vi.fn(
     async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
@@ -628,14 +661,7 @@ function makePublicPublisherVisibilityCtx(options?: {
   ];
   const query = vi.fn((table: string) => ({
     withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-      const fields: Record<string, unknown> = {};
-      const q = {
-        eq: (field: string, value: unknown) => {
-          fields[field] = value;
-          return q;
-        },
-      };
-      buildQuery(q);
+      const fields = captureIndexFields(buildQuery);
 
       if (table === "publishers" && indexName === "by_handle") {
         return {
@@ -1701,14 +1727,7 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
@@ -1785,14 +1804,7 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
@@ -1884,14 +1896,7 @@ describe("publishers membership controls", () => {
         get: vi.fn(async () => null),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
@@ -1986,23 +1991,7 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const range: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-              gte: (field: string, value: unknown) => {
-                range.gte = { field, value };
-                return q;
-              },
-              lt: (field: string, value: unknown) => {
-                range.lt = { field, value };
-                return q;
-              },
-            };
-            buildQuery(q);
+            const { fields, range } = captureIndexRange(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
@@ -2120,23 +2109,7 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const range: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-              gte: (field: string, value: unknown) => {
-                range.gte = { field, value };
-                return q;
-              },
-              lt: (field: string, value: unknown) => {
-                range.lt = { field, value };
-                return q;
-              },
-            };
-            buildQuery(q);
+            const { fields, range } = captureIndexRange(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return {
                 unique: vi.fn(async () =>
@@ -2239,23 +2212,7 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const range: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-              gte: (field: string, value: unknown) => {
-                range.gte = { field, value };
-                return q;
-              },
-              lt: (field: string, value: unknown) => {
-                range.lt = { field, value };
-                return q;
-              },
-            };
-            buildQuery(q);
+            const { fields, range } = captureIndexRange(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return {
                 unique: vi.fn(async () =>
@@ -2374,14 +2331,7 @@ describe("publishers membership controls", () => {
         get,
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
@@ -2687,14 +2637,7 @@ describe("publishers membership controls", () => {
         get: vi.fn(),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
@@ -2806,14 +2749,7 @@ describe("publishers membership controls", () => {
         get: vi.fn(async () => null),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
@@ -2894,14 +2830,7 @@ describe("publishers membership controls", () => {
         get,
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
@@ -3119,23 +3048,7 @@ describe("publishers membership controls", () => {
         get,
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const range: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-              gte: (field: string, value: unknown) => {
-                range.gte = { field, value };
-                return q;
-              },
-              lt: (field: string, value: unknown) => {
-                range.lt = { field, value };
-                return q;
-              },
-            };
-            buildQuery(q);
+            const { fields } = captureIndexRange(buildQuery);
             if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({
@@ -3230,14 +3143,7 @@ describe("publishers membership controls", () => {
         get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return {
                 unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
@@ -3429,14 +3335,7 @@ describe("publishers membership controls", () => {
           queriedTables.push(table);
           return {
             withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-              const fields: Record<string, unknown> = {};
-              const q = {
-                eq: (field: string, value: unknown) => {
-                  fields[field] = value;
-                  return q;
-                },
-              };
-              buildQuery(q);
+              const fields = captureIndexFields(buildQuery);
               if (table === "publishers" && indexName === "by_handle") {
                 return { unique: vi.fn(async () => publisher) };
               }
@@ -3662,14 +3561,7 @@ describe("publishers membership controls", () => {
       db: {
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return {
                 unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
@@ -3789,14 +3681,7 @@ describe("publishers membership controls", () => {
         get: vi.fn(async (id: string) => publishersById.get(id) ?? usersById.get(id) ?? null),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return {
                 unique: vi.fn(async () =>
@@ -3879,14 +3764,7 @@ describe("publishers membership controls", () => {
         get: vi.fn(async (id: string) => usersById.get(id) ?? null),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return {
                 unique: vi.fn(async () =>
@@ -3968,14 +3846,7 @@ describe("publishers membership controls", () => {
         get: vi.fn(async (id: string) => (id === "publishers:nvidia" ? publisher : null)),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return {
                 unique: vi.fn(async () => (fields.handle === "nvidia" ? publisher : null)),
@@ -4025,14 +3896,7 @@ describe("publishers membership controls", () => {
         get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return {
                 unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
@@ -4250,14 +4114,7 @@ describe("publishers membership controls", () => {
         get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return {
                 unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
@@ -4381,14 +4238,7 @@ describe("publishers membership controls", () => {
         get: vi.fn(async (id: string) => (id === "publishers:nvidia" ? publisher : null)),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return {
                 unique: vi.fn(async () => (fields.handle === "nvidia" ? publisher : null)),
@@ -4455,14 +4305,7 @@ describe("publishers membership controls", () => {
         get: vi.fn(async (id: string) => (id === "publishers:nvidia" ? publisher : null)),
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
-            const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
-            buildQuery(q);
+            const fields = captureIndexFields(buildQuery);
             if (table === "publishers" && indexName === "by_handle") {
               return {
                 unique: vi.fn(async () => (fields.handle === "nvidia" ? publisher : null)),
