@@ -48,8 +48,15 @@ export function templateWorkspaceContents(manifest: TemplateManifest): TemplateW
       return name ? [{ name, path }] : [];
     });
   const every = manifest.agent.heartbeat?.every;
+  const skillFiles = collect(WORKSPACE_SKILL_FILE);
+  const skillDirs = skillFiles.map((entry) => entry.path.slice(0, -"SKILL.md".length));
   return {
-    skills: collect(WORKSPACE_SKILL_FILE),
+    // OpenClaw stops descending once a directory holds SKILL.md, so a SKILL.md below an
+    // identified skill is one of its support files rather than another skill.
+    skills: skillFiles.filter(
+      (entry, index) =>
+        !skillDirs.some((dir, other) => other !== index && entry.path.startsWith(dir)),
+    ),
     plugins: collect(WORKSPACE_PLUGIN_MANIFEST),
     heartbeat: destinations.includes(WORKSPACE_HEARTBEAT_FILE)
       ? { path: WORKSPACE_HEARTBEAT_FILE, ...(every ? { every } : {}) }

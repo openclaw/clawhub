@@ -460,6 +460,11 @@ describe("Template detail composition and interactions", () => {
                 path: "skills/food-diary/SKILL.md",
               },
               { source: "workspace/review.md", path: ".agents/skills/team/review/SKILL.md" },
+              // OpenClaw does not descend below an identified skill directory.
+              {
+                source: "workspace/skills/food-diary/examples/demo/SKILL.md",
+                path: "skills/food-diary/examples/demo/SKILL.md",
+              },
               {
                 source: "workspace/alerts.json",
                 path: ".openclaw/extensions/alerts/openclaw.plugin.json",
