@@ -97,17 +97,9 @@ export async function cmdBanUser(
 
   const reason = options.reason?.trim() || undefined;
 
-  const registry = await getRegistry(opts, { cache: true });
-  const token = await requireAuthToken(registry);
-  const allowPrompt = isInteractive() && inputAllowed !== false;
-  const resolved = await resolveUserIdentifier(
-    registry,
-    token,
-    raw,
-    { id: options.id, fuzzy: options.fuzzy },
-    allowPrompt,
-  );
-  if (!resolved) return undefined;
+  const userContext = await resolveUserContext(opts, raw, options, inputAllowed);
+  if (!userContext) return undefined;
+  const { registry, token, allowPrompt, resolved } = userContext;
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(
@@ -154,17 +146,9 @@ export async function cmdUnbanUser(
 
   const reason = options.reason?.trim() || undefined;
 
-  const registry = await getRegistry(opts, { cache: true });
-  const token = await requireAuthToken(registry);
-  const allowPrompt = isInteractive() && inputAllowed !== false;
-  const resolved = await resolveUserIdentifier(
-    registry,
-    token,
-    raw,
-    { id: options.id, fuzzy: options.fuzzy },
-    allowPrompt,
-  );
-  if (!resolved) return undefined;
+  const userContext = await resolveUserContext(opts, raw, options, inputAllowed);
+  if (!userContext) return undefined;
+  const { registry, token, allowPrompt, resolved } = userContext;
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(
@@ -221,17 +205,9 @@ export async function cmdLiftModerationHold(
   if (!reason) fail("--reason required");
   if (reason.length > 500) fail("--reason must be 500 characters or fewer");
 
-  const registry = await getRegistry(opts, { cache: true });
-  const token = await requireAuthToken(registry);
-  const allowPrompt = isInteractive() && inputAllowed !== false;
-  const resolved = await resolveUserIdentifier(
-    registry,
-    token,
-    raw,
-    { id: options.id, fuzzy: options.fuzzy },
-    allowPrompt,
-  );
-  if (!resolved) return undefined;
+  const userContext = await resolveUserContext(opts, raw, options, inputAllowed);
+  if (!userContext) return undefined;
+  const { registry, token, allowPrompt, resolved } = userContext;
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(
@@ -285,17 +261,9 @@ export async function cmdSetRole(
   if (!raw) fail("Handle or user id required");
   const role = normalizeRole(roleArg);
 
-  const registry = await getRegistry(opts, { cache: true });
-  const token = await requireAuthToken(registry);
-  const allowPrompt = isInteractive() && inputAllowed !== false;
-  const resolved = await resolveUserIdentifier(
-    registry,
-    token,
-    raw,
-    { id: options.id, fuzzy: options.fuzzy },
-    allowPrompt,
-  );
-  if (!resolved) return undefined;
+  const userContext = await resolveUserContext(opts, raw, options, inputAllowed);
+  if (!userContext) return undefined;
+  const { registry, token, allowPrompt, resolved } = userContext;
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(`Set role for ${resolved.label} to ${role}? (admin only)`);
@@ -715,17 +683,9 @@ export async function cmdReclassifyBan(
   if (reason.length > 500) fail("Reason too long (max 500 chars)");
 
   const dryRun = options.apply !== true;
-  const registry = await getRegistry(opts, { cache: true });
-  const token = await requireAuthToken(registry);
-  const allowPrompt = isInteractive() && inputAllowed !== false;
-  const resolved = await resolveUserIdentifier(
-    registry,
-    token,
-    raw,
-    { id: options.id, fuzzy: options.fuzzy },
-    allowPrompt,
-  );
-  if (!resolved) return undefined;
+  const userContext = await resolveUserContext(opts, raw, options, inputAllowed);
+  if (!userContext) return undefined;
+  const { registry, token, allowPrompt, resolved } = userContext;
 
   if (!dryRun && !options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
@@ -810,6 +770,26 @@ type UserSearchItem = {
   name?: string | null;
   role?: "admin" | "moderator" | "user" | null;
 };
+
+async function resolveUserContext(
+  opts: GlobalOpts,
+  raw: string,
+  options: { id?: boolean; fuzzy?: boolean },
+  inputAllowed: boolean,
+) {
+  const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
+  const allowPrompt = isInteractive() && inputAllowed !== false;
+  const resolved = await resolveUserIdentifier(
+    registry,
+    token,
+    raw,
+    { id: options.id, fuzzy: options.fuzzy },
+    allowPrompt,
+  );
+  if (!resolved) return null;
+  return { registry, token, allowPrompt, resolved };
+}
 
 async function resolveUserIdentifier(
   registry: string,
