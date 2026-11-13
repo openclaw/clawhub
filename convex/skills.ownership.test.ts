@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -19,69 +20,47 @@ import {
   transferSkillOwnerForUserInternal,
 } from "./skills";
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const getSkillBySlugInternalHandler = (
-  getSkillBySlugInternal as unknown as WrappedHandler<{ slug: string }>
-)._handler;
-const getBySlugHandler = (
-  getBySlug as unknown as WrappedHandler<{ slug: string; ownerHandle?: string }>
-)._handler;
-const getSkillForPublishPreflightInternalHandler = (
-  getSkillForPublishPreflightInternal as unknown as WrappedHandler<{
-    userId: string;
-    slug: string;
-    ownerPublisherId?: string;
-    sourceOwnerPublisherId?: string;
-    migrateOwner?: boolean;
-  }>
-)._handler;
-const resolveVersionByHashHandler = (
-  resolveVersionByHash as unknown as WrappedHandler<{
-    slug: string;
-    hash: string;
-    ownerHandle?: string;
-  }>
-)._handler;
-const mergeOwnedSkillIntoCanonicalInternalHandler = (
-  mergeOwnedSkillIntoCanonicalInternal as unknown as WrappedHandler<{
-    actorUserId: string;
-    sourceSlug: string;
-    targetSlug: string;
-    sourceOwnerHandle?: string;
-    targetOwnerHandle?: string;
-  }>
-)._handler;
-const renameOwnedSkillInternalHandler = (
-  renameOwnedSkillInternal as unknown as WrappedHandler<{
-    actorUserId: string;
-    slug: string;
-    newSlug: string;
-  }>
-)._handler;
-const transferSkillOwnerForUserInternalHandler = (
-  transferSkillOwnerForUserInternal as unknown as WrappedHandler<{
-    actorUserId: string;
-    slug: string;
-    toOwner: string;
-    reason?: string;
-  }>
-)._handler;
-const changeOwnerHandler = (
-  changeOwner as unknown as WrappedHandler<{
-    skillId: string;
-    ownerUserId: string;
-  }>
-)._handler;
-const setDuplicateHandler = (
-  setDuplicate as unknown as WrappedHandler<{
-    skillId: string;
-    canonicalSlug?: string;
-    canonicalSkillId?: string;
-  }>
-)._handler;
+const getSkillBySlugInternalHandler = getTestHandler<{ slug: string }>(getSkillBySlugInternal);
+const getBySlugHandler = getTestHandler<{ slug: string; ownerHandle?: string }>(getBySlug);
+const getSkillForPublishPreflightInternalHandler = getTestHandler<{
+  userId: string;
+  slug: string;
+  ownerPublisherId?: string;
+  sourceOwnerPublisherId?: string;
+  migrateOwner?: boolean;
+}>(getSkillForPublishPreflightInternal);
+const resolveVersionByHashHandler = getTestHandler<{
+  slug: string;
+  hash: string;
+  ownerHandle?: string;
+}>(resolveVersionByHash);
+const mergeOwnedSkillIntoCanonicalInternalHandler = getTestHandler<{
+  actorUserId: string;
+  sourceSlug: string;
+  targetSlug: string;
+  sourceOwnerHandle?: string;
+  targetOwnerHandle?: string;
+}>(mergeOwnedSkillIntoCanonicalInternal);
+const renameOwnedSkillInternalHandler = getTestHandler<{
+  actorUserId: string;
+  slug: string;
+  newSlug: string;
+}>(renameOwnedSkillInternal);
+const transferSkillOwnerForUserInternalHandler = getTestHandler<{
+  actorUserId: string;
+  slug: string;
+  toOwner: string;
+  reason?: string;
+}>(transferSkillOwnerForUserInternal);
+const changeOwnerHandler = getTestHandler<{
+  skillId: string;
+  ownerUserId: string;
+}>(changeOwner);
+const setDuplicateHandler = getTestHandler<{
+  skillId: string;
+  canonicalSlug?: string;
+  canonicalSkillId?: string;
+}>(setDuplicate);
 
 afterEach(() => {
   vi.mocked(getAuthUserId).mockReset();

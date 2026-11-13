@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   beginSecurityScanDispatchInternal,
   dispatchSecurityScanWorkflow,
@@ -7,34 +8,24 @@ import {
   requestSecurityScanDispatchInternal,
 } from "./securityScanDispatch";
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const requestSecurityScanDispatchInternalHandler = getTestHandler<
+  Record<string, never>,
+  { scheduled: boolean; scheduledAt?: number }
+>(requestSecurityScanDispatchInternal);
 
-const requestSecurityScanDispatchInternalHandler = (
-  requestSecurityScanDispatchInternal as unknown as WrappedHandler<
-    Record<string, never>,
-    { scheduled: boolean; scheduledAt?: number }
-  >
-)._handler;
+const beginSecurityScanDispatchInternalHandler = getTestHandler<
+  { scheduleToken: string },
+  { shouldDispatch: boolean; leaseToken?: string }
+>(beginSecurityScanDispatchInternal);
 
-const beginSecurityScanDispatchInternalHandler = (
-  beginSecurityScanDispatchInternal as unknown as WrappedHandler<
-    { scheduleToken: string },
-    { shouldDispatch: boolean; leaseToken?: string }
-  >
-)._handler;
-
-const finishSecurityScanDispatchInternalHandler = (
-  finishSecurityScanDispatchInternal as unknown as WrappedHandler<
-    {
-      leaseToken: string;
-      outcome: "succeeded" | "failed" | "unknown";
-      error?: string;
-    },
-    { ok: boolean; stale?: boolean }
-  >
-)._handler;
+const finishSecurityScanDispatchInternalHandler = getTestHandler<
+  {
+    leaseToken: string;
+    outcome: "succeeded" | "failed" | "unknown";
+    error?: string;
+  },
+  { ok: boolean; stale?: boolean }
+>(finishSecurityScanDispatchInternal);
 
 function makeDispatchQuery<TJob, TState>(getJob: () => TJob, getState: () => TState) {
   return vi.fn((table: string) => {

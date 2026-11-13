@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 const retentionRefs = vi.hoisted(() => ({
   pruneExpiredAuthSessionsInternal: Symbol("pruneExpiredAuthSessionsInternal"),
@@ -21,34 +22,22 @@ const {
   pruneExpiredSkillPublishUploadsInternal,
 } = await import("./retention");
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const pruneSessionsHandler = (
-  pruneExpiredAuthSessionsInternal as unknown as WrappedHandler<
-    { batchSize?: number },
-    { deletedSessions: number; deletedRefreshTokens: number; hasMore: boolean }
-  >
-)._handler;
-const pruneTokensHandler = (
-  pruneExpiredAuthRefreshTokensInternal as unknown as WrappedHandler<
-    { batchSize?: number },
-    { deleted: number; hasMore: boolean }
-  >
-)._handler;
-const prunePublisherInvitesHandler = (
-  pruneExpiredPublisherInvitesInternal as unknown as WrappedHandler<
-    { batchSize?: number },
-    { deleted: number; hasMore: boolean }
-  >
-)._handler;
-const pruneSkillUploadsHandler = (
-  pruneExpiredSkillPublishUploadsInternal as unknown as WrappedHandler<
-    { batchSize?: number },
-    { deletedTickets: number; deletedStorage: number; hasMore: boolean }
-  >
-)._handler;
+const pruneSessionsHandler = getTestHandler<
+  { batchSize?: number },
+  { deletedSessions: number; deletedRefreshTokens: number; hasMore: boolean }
+>(pruneExpiredAuthSessionsInternal);
+const pruneTokensHandler = getTestHandler<
+  { batchSize?: number },
+  { deleted: number; hasMore: boolean }
+>(pruneExpiredAuthRefreshTokensInternal);
+const prunePublisherInvitesHandler = getTestHandler<
+  { batchSize?: number },
+  { deleted: number; hasMore: boolean }
+>(pruneExpiredPublisherInvitesInternal);
+const pruneSkillUploadsHandler = getTestHandler<
+  { batchSize?: number },
+  { deletedTickets: number; deletedStorage: number; hasMore: boolean }
+>(pruneExpiredSkillPublishUploadsInternal);
 
 function makeDb(base: { query: ReturnType<typeof vi.fn>; delete: ReturnType<typeof vi.fn> }) {
   return {

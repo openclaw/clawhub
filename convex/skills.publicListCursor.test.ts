@@ -1,6 +1,6 @@
-/* @vitest-environment node */
-
 import { beforeEach, describe, expect, it, vi } from "vitest";
+/* @vitest-environment node */
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -25,10 +25,6 @@ const {
   listPublicTrendingPage,
   listRelatedByCategory,
 } = await import("./skills");
-
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
 
 type PublicListArgs = {
   cursor?: string;
@@ -68,30 +64,22 @@ type PublicApiListResult = {
 };
 
 const getPageMock = pagination.getPage as unknown as ReturnType<typeof vi.fn>;
-const listPublicPageV4Handler = (
-  listPublicPageV4 as unknown as WrappedHandler<PublicListArgs, PublicListResult>
-)._handler;
-const listPublicApiPageV1Handler = (
-  listPublicApiPageV1 as unknown as WrappedHandler<PublicListArgs, PublicApiListResult>
-)._handler;
-const listRelatedByCategoryHandler = (
-  listRelatedByCategory as unknown as WrappedHandler<
-    { skillId: string; categorySlug?: string; keywords: string[]; limit?: number },
-    { items: Array<{ skill: { slug: string }; ownerHandle: string | null }> }
-  >
-)._handler;
-const listPublicTrendingPageHandler = (
-  listPublicTrendingPage as unknown as WrappedHandler<
-    { limit?: number; nonSuspiciousOnly?: boolean },
-    PublicApiListResult
-  >
-)._handler;
-const listAuditPageHandler = (
-  listAuditPage as unknown as WrappedHandler<
-    { paginationOpts: { cursor: string | null; numItems: number } },
-    PublicListResult
-  >
-)._handler;
+const listPublicPageV4Handler = getTestHandler<PublicListArgs, PublicListResult>(listPublicPageV4);
+const listPublicApiPageV1Handler = getTestHandler<PublicListArgs, PublicApiListResult>(
+  listPublicApiPageV1,
+);
+const listRelatedByCategoryHandler = getTestHandler<
+  { skillId: string; categorySlug?: string; keywords: string[]; limit?: number },
+  { items: Array<{ skill: { slug: string }; ownerHandle: string | null }> }
+>(listRelatedByCategory);
+const listPublicTrendingPageHandler = getTestHandler<
+  { limit?: number; nonSuspiciousOnly?: boolean },
+  PublicApiListResult
+>(listPublicTrendingPage);
+const listAuditPageHandler = getTestHandler<
+  { paginationOpts: { cursor: string | null; numItems: number } },
+  PublicListResult
+>(listAuditPage);
 
 function makeSearchDigest(overrides: Record<string, unknown> = {}) {
   return {
