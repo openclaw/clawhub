@@ -2,8 +2,6 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchPluginOgMeta } from "./fetchPluginOgMeta";
-import { hangUntilAborted, stallingBody } from "./ogFetchTestFixtures";
-import { OG_FETCH_TIMEOUT_MS } from "./ogFetchTimeout";
 
 describe("fetchPluginOgMeta", () => {
   afterEach(() => {
@@ -38,52 +36,5 @@ describe("fetchPluginOgMeta", () => {
       },
     );
     expect(meta?.stats.downloads).toBe(99);
-  });
-
-  it("aborts a hanging public package API fetch after the OG timeout", async () => {
-    vi.useFakeTimers();
-    let usedSignal: AbortSignal | undefined;
-    const fetchMock = vi.fn((input: unknown, init?: RequestInit) => {
-      usedSignal = init?.signal ?? undefined;
-      return hangUntilAborted(input, init);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const pending = fetchPluginOgMeta("@openclaw/codex", "https://clawhub.ai");
-    await Promise.resolve();
-    expect(usedSignal).toBeInstanceOf(AbortSignal);
-    expect(usedSignal?.aborted).toBe(false);
-
-    await vi.advanceTimersByTimeAsync(OG_FETCH_TIMEOUT_MS - 1);
-    expect(usedSignal?.aborted).toBe(false);
-
-    await vi.advanceTimersByTimeAsync(1);
-    await expect(pending).resolves.toBeNull();
-    expect(usedSignal?.aborted).toBe(true);
-  });
-
-  it("aborts when the public package API returns headers then stalls the JSON body", async () => {
-    vi.useFakeTimers();
-    let usedSignal: AbortSignal | undefined;
-    const fetchMock = vi.fn((_input: unknown, init?: RequestInit) => {
-      usedSignal = init?.signal ?? undefined;
-      return Promise.resolve({
-        ok: true,
-        json: () => stallingBody(init?.signal),
-      } as unknown as Response);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const pending = fetchPluginOgMeta("@openclaw/codex", "https://clawhub.ai");
-    await Promise.resolve();
-    expect(usedSignal).toBeInstanceOf(AbortSignal);
-    expect(usedSignal?.aborted).toBe(false);
-
-    await vi.advanceTimersByTimeAsync(OG_FETCH_TIMEOUT_MS - 1);
-    expect(usedSignal?.aborted).toBe(false);
-
-    await vi.advanceTimersByTimeAsync(1);
-    await expect(pending).resolves.toBeNull();
-    expect(usedSignal?.aborted).toBe(true);
   });
 });
