@@ -624,14 +624,19 @@ export async function fetchPackageVersions(
 export async function fetchPackageVersion(
   name: string,
   version: string,
+  options?: { throwOnError?: boolean },
 ): Promise<PackageVersionDetail | null> {
   try {
     const url = await packageApiUrl(
       `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`,
     );
     return await fetchJson<PackageVersionDetail>(url);
-  } catch {
-    // Return null on API error to prevent SSR crashes
+  } catch (error) {
+    // Exact-release audit pages distinguish a missing release from a retryable
+    // registry failure. Keep other callers' existing best-effort SSR behavior.
+    if (options?.throwOnError && !(error instanceof PackageApiError && error.status === 404)) {
+      throw error;
+    }
     return null;
   }
 }

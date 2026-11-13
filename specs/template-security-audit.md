@@ -206,7 +206,11 @@ with the displayed release pinned in the optional version query. Detail and audi
 share scoped-first/unscoped-owner-matched lookup, reject other families/owners,
 and never substitute a different release for an exact-version read. Anonymous
 reads need no manage context. Missing packages/releases, no published release,
-rate limiting and registry errors remain distinct. The audit route opts out of parent nesting so it neither renders nor loads the
+rate limiting and registry errors remain distinct. Exact-release reads opt into
+error propagation in the shared package API helper: only a genuine HTTP 404 is
+missing; HTTP 429 retains rate-limit metadata, and server/network/parse failures
+reach the existing retry UI. Legacy best-effort callers keep their null fallback.
+The audit route opts out of parent nesting so it neither renders nor loads the
 latest detail view during historical navigation, reload or deep links.
 
 The sidebar no longer repeats the Declared contents metadata block. Current

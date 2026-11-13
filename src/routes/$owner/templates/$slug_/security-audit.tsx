@@ -33,7 +33,7 @@ export async function loadTemplateSecurityAudit(
     const name = detail.package!.name;
     const selectedVersion = version ?? detail.package!.latestVersion;
     if (!selectedVersion) return { detail, release: null, rateLimited: false };
-    const result = await fetchPackageVersion(name, selectedVersion);
+    const result = await fetchPackageVersion(name, selectedVersion, { throwOnError: true });
     // An exact-version read must never silently substitute another artifact or family.
     if (
       !result?.version ||

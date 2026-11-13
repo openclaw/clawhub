@@ -34,7 +34,9 @@ describe("Template audit identity and boundaries", () => {
       "1.0.0",
     );
     expect(data.release?.version).toBe("1.0.0");
-    expect(mocks.fetchPackageVersion).toHaveBeenCalledWith("@maker/music-manager", "1.0.0");
+    expect(mocks.fetchPackageVersion).toHaveBeenCalledWith("@maker/music-manager", "1.0.0", {
+      throwOnError: true,
+    });
   });
   it("uses the same unscoped ownership lookup as Template detail", async () => {
     mocks.fetchPackageDetail
@@ -44,7 +46,9 @@ describe("Template audit identity and boundaries", () => {
       { owner: "ameliomansour", slug: "openclaw-music-manager" },
       "1.0.0",
     );
-    expect(mocks.fetchPackageVersion).toHaveBeenCalledWith("openclaw-music-manager", "1.0.0");
+    expect(mocks.fetchPackageVersion).toHaveBeenCalledWith("openclaw-music-manager", "1.0.0", {
+      throwOnError: true,
+    });
   });
   it.each([
     detail("@maker/music-manager", "other"),
