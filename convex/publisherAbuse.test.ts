@@ -363,6 +363,25 @@ function makeEnabledAutoBanQuery(nomination: unknown) {
   });
 }
 
+function makeCollectingRunGetter(
+  modelConfig: Partial<typeof TEST_MODEL_CONFIG> = TEST_MODEL_CONFIG,
+  trigger?: "manual" | "cron",
+) {
+  return vi.fn(async () => ({
+    _id: "publisherAbuseScoreRuns:run",
+    modelVersion: modelConfig.modelVersion,
+    modelConfig,
+    ...(trigger ? { trigger } : {}),
+    status: "running",
+    phase: "collecting",
+    collectCursor: undefined,
+    scannedPublishers: 0,
+    scoredPublishers: 0,
+    sumLogPressure: 0,
+    sumSquaredLogPressure: 0,
+  }));
+}
+
 function makeFinalizingRunGetter() {
   return vi.fn(async () => ({
     _id: "publisherAbuseScoreRuns:run",
@@ -4628,18 +4647,7 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(),
         insert,
         patch,
         query: vi.fn((table: string) => {
@@ -4713,18 +4721,7 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: legacyModelConfig.modelVersion,
-          modelConfig: legacyModelConfig,
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(legacyModelConfig),
         insert,
         patch,
         query: vi.fn((table: string) => {
@@ -5108,18 +5105,7 @@ describe("publisher abuse dry-run persistence", () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: storedModelConfig.modelVersion,
-          modelConfig: storedModelConfig,
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(storedModelConfig),
         insert,
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
@@ -5176,18 +5162,7 @@ describe("publisher abuse dry-run persistence", () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(),
         insert,
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
@@ -5239,19 +5214,7 @@ describe("publisher abuse dry-run persistence", () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          trigger: "manual",
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(TEST_MODEL_CONFIG, "manual"),
         insert,
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
@@ -5308,19 +5271,7 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          trigger: "manual",
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(TEST_MODEL_CONFIG, "manual"),
         insert,
         patch,
         query: vi.fn((table: string) => {
@@ -5401,19 +5352,7 @@ describe("publisher abuse dry-run persistence", () => {
     ]);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          trigger: "manual",
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(TEST_MODEL_CONFIG, "manual"),
         insert,
         patch,
         query: vi.fn((table: string) => {
@@ -5487,19 +5426,7 @@ describe("publisher abuse dry-run persistence", () => {
     ]);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          trigger: "cron",
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(TEST_MODEL_CONFIG, "cron"),
         insert,
         patch,
         query: vi.fn((table: string) => {
@@ -5581,19 +5508,7 @@ describe("publisher abuse dry-run persistence", () => {
     ]);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          trigger: "cron",
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(TEST_MODEL_CONFIG, "cron"),
         insert,
         patch,
         query: vi.fn((table: string) => {
@@ -5671,19 +5586,7 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          trigger: "cron",
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(TEST_MODEL_CONFIG, "cron"),
         insert,
         patch,
         query: vi.fn((table: string) => {
@@ -5730,19 +5633,7 @@ describe("publisher abuse dry-run persistence", () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          trigger: "cron",
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(TEST_MODEL_CONFIG, "cron"),
         insert,
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
@@ -5791,19 +5682,7 @@ describe("publisher abuse dry-run persistence", () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          trigger: "manual",
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(TEST_MODEL_CONFIG, "manual"),
         insert,
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
@@ -5854,18 +5733,7 @@ describe("publisher abuse dry-run persistence", () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(),
         insert,
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
@@ -5945,18 +5813,7 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          modelVersion: TEST_MODEL_CONFIG.modelVersion,
-          modelConfig: TEST_MODEL_CONFIG,
-          status: "running",
-          phase: "collecting",
-          collectCursor: undefined,
-          scannedPublishers: 0,
-          scoredPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: makeCollectingRunGetter(),
         insert,
         patch,
         query: vi.fn((table: string) => {
