@@ -9,7 +9,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { MouseEventHandler, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import {
   analyticsExternalLinkParameters,
   captureAnalyticsOperation,
@@ -20,10 +20,10 @@ import { copyText } from "./InstallCopyButton";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dialog";
+import { usePublishDialog } from "./usePublishDialog";
 
 export const OPENCLAW_SKILLS_DISCORD_URL =
   "https://discord.com/channels/1456350064065904867/1456891440897724637";
-type CopyState = "idle" | "copied" | "failed";
 
 type SkillPublishSuccessDialogProps = {
   isOpen: boolean;
@@ -73,12 +73,19 @@ export function SkillPublishSuccessDialog({
   categoryLabel,
   onDismiss,
 }: SkillPublishSuccessDialogProps) {
-  const [copyState, setCopyState] = useState<CopyState>("idle");
-  const [dismissed, setDismissed] = useState(false);
-  const hasDismissedRef = useRef(false);
-  const hasViewedRef = useRef(false);
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
   const skillUrl = useMemo(() => buildAbsoluteSkillUrl(skillPath), [skillPath]);
+  const {
+    copyState,
+    dismissed,
+    dismiss,
+    copyLink: copySkillLink,
+  } = usePublishDialog({
+    isOpen,
+    popupId: "skill_published",
+    linkUrl: skillUrl,
+    onDismiss,
+  });
   const compactSkillUrl = useMemo(() => skillUrl.replace(/^https?:\/\//, ""), [skillUrl]);
   const xShareUrl = useMemo(() => buildXShareUrl(displayName, skillUrl), [displayName, skillUrl]);
   const discordShareText = useMemo(
@@ -88,52 +95,6 @@ export function SkillPublishSuccessDialog({
   const publisherDisplayName = publisher?.displayName?.trim() || null;
   const publisherHandle = publisher?.handle?.trim() || null;
   const publisherLabel = publisherDisplayName || (publisherHandle ? `@${publisherHandle}` : null);
-
-  useEffect(() => {
-    if (isOpen) {
-      if (!hasViewedRef.current)
-        emitAnalytics("popup_view", { popup_id: "skill_published", ui_location: "publish" });
-      hasViewedRef.current = true;
-      setCopyState("idle");
-      setDismissed(false);
-      hasDismissedRef.current = false;
-    }
-  }, [isOpen]);
-
-  function dismiss(method: "button" | "escape" | "outside" | "programmatic" = "button") {
-    if (hasDismissedRef.current) return;
-    hasDismissedRef.current = true;
-    hasViewedRef.current = false;
-    emitAnalytics("popup_dismiss", {
-      popup_id: "skill_published",
-      ui_location: "publish",
-      dismiss_method: method,
-    });
-    setDismissed(true);
-    onDismiss();
-  }
-
-  async function copySkillLink() {
-    const operation = captureAnalyticsOperation();
-    try {
-      const didCopy = await copyText(skillUrl);
-      operation?.emit("copy_action", {
-        content_type: "navigation",
-        action_result: didCopy ? "success" : "error",
-        ui_location: "publish",
-        method: "link",
-      });
-      setCopyState(didCopy ? "copied" : "failed");
-    } catch {
-      operation?.emit("copy_action", {
-        content_type: "navigation",
-        action_result: "error",
-        ui_location: "publish",
-        method: "link",
-      });
-      setCopyState("failed");
-    }
-  }
 
   return (
     <Dialog

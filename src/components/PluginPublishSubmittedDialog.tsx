@@ -1,13 +1,10 @@
 import { ArrowRight, Check, Code2, Copy, FileText, Package, Wrench } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { captureAnalyticsOperation, emitAnalytics } from "../lib/analyticsEvents";
+import { useMemo, useRef } from "react";
 import { getPublicClawHubSiteUrl } from "../lib/site";
-import { copyText } from "./InstallCopyButton";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dialog";
-
-type CopyState = "idle" | "copied" | "failed";
+import { usePublishDialog } from "./usePublishDialog";
 
 export type SubmittedPlugin = {
   name: string;
@@ -34,12 +31,19 @@ export function PluginPublishSubmittedDialog({
   onDismiss,
 }: PluginPublishSubmittedDialogProps) {
   const { name: pluginName, path: pluginPath, publisher } = plugin;
-  const [copyState, setCopyState] = useState<CopyState>("idle");
-  const [dismissed, setDismissed] = useState(false);
-  const hasDismissedRef = useRef(false);
-  const hasViewedRef = useRef(false);
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
   const pluginUrl = useMemo(() => buildAbsolutePluginUrl(pluginPath), [pluginPath]);
+  const {
+    copyState,
+    dismissed,
+    dismiss,
+    copyLink: copyPluginLink,
+  } = usePublishDialog({
+    isOpen,
+    popupId: "plugin_submitted",
+    linkUrl: pluginUrl,
+    onDismiss,
+  });
   const compactPluginUrl = useMemo(() => pluginUrl.replace(/^https?:\/\//, ""), [pluginUrl]);
   const publisherDisplayName = publisher?.displayName?.trim() || null;
   const publisherHandle = publisher?.handle?.trim() || null;
@@ -53,52 +57,6 @@ export function PluginPublishSubmittedDialog({
   const copyButtonText =
     copyState === "copied" ? "Copied" : copyState === "failed" ? "Copy failed" : "Copy link";
   const CopyButtonIcon = copyState === "copied" ? Check : Copy;
-
-  useEffect(() => {
-    if (isOpen) {
-      if (!hasViewedRef.current)
-        emitAnalytics("popup_view", { popup_id: "plugin_submitted", ui_location: "publish" });
-      hasViewedRef.current = true;
-      setCopyState("idle");
-      setDismissed(false);
-      hasDismissedRef.current = false;
-    }
-  }, [isOpen]);
-
-  function dismiss(method: "button" | "escape" | "outside" | "programmatic" = "button") {
-    if (hasDismissedRef.current) return;
-    hasDismissedRef.current = true;
-    hasViewedRef.current = false;
-    emitAnalytics("popup_dismiss", {
-      popup_id: "plugin_submitted",
-      ui_location: "publish",
-      dismiss_method: method,
-    });
-    setDismissed(true);
-    onDismiss();
-  }
-
-  async function copyPluginLink() {
-    const operation = captureAnalyticsOperation();
-    try {
-      const didCopy = await copyText(pluginUrl);
-      operation?.emit("copy_action", {
-        content_type: "navigation",
-        action_result: didCopy ? "success" : "error",
-        ui_location: "publish",
-        method: "link",
-      });
-      setCopyState(didCopy ? "copied" : "failed");
-    } catch {
-      operation?.emit("copy_action", {
-        content_type: "navigation",
-        action_result: "error",
-        ui_location: "publish",
-        method: "link",
-      });
-      setCopyState("failed");
-    }
-  }
 
   return (
     <Dialog
