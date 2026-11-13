@@ -363,6 +363,18 @@ function makeEnabledAutoBanQuery(nomination: unknown) {
   });
 }
 
+function makeCompletePageQuery<T>(getPage: () => T[]) {
+  return {
+    withIndex: () => ({
+      paginate: async () => ({
+        page: getPage(),
+        isDone: true,
+        continueCursor: "",
+      }),
+    }),
+  };
+}
+
 function makeCollectingRunGetter(
   modelConfig: Partial<typeof TEST_MODEL_CONFIG> = TEST_MODEL_CONFIG,
   trigger?: "manual" | "cron",
@@ -4652,37 +4664,21 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:gora050",
-                      handle: "gora050",
-                      linkedUserId: "users:gora050",
-                      publishedSkills: 1200,
-                      publishedPackages: 0,
-                      totalInstalls: 8,
-                      totalStars: 0,
-                      totalDownloads: 120,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:gora050",
+                handle: "gora050",
+                linkedUserId: "users:gora050",
+                publishedSkills: 1200,
+                publishedPackages: 0,
+                totalInstalls: 8,
+                totalStars: 0,
+                totalDownloads: 120,
+              },
+            ]);
           }
           if (table === "packages") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => []);
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -4726,37 +4722,21 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:legacy-config",
-                      handle: "legacy-config",
-                      linkedUserId: "users:legacy-config",
-                      publishedSkills: 250,
-                      publishedPackages: 0,
-                      totalInstalls: 25,
-                      totalStars: 1,
-                      totalDownloads: 10_000,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:legacy-config",
+                handle: "legacy-config",
+                linkedUserId: "users:legacy-config",
+                publishedSkills: 250,
+                publishedPackages: 0,
+                totalInstalls: 25,
+                totalStars: 1,
+                totalDownloads: 10_000,
+              },
+            ]);
           }
           if (table === "packages") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => []);
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -4947,21 +4927,13 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    officialOrgPublisher,
-                    staffPublisher,
-                    communityOrgPublisher,
-                    largeCommunityOrgPublisher,
-                    tooManyManagerOrgPublisher,
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              officialOrgPublisher,
+              staffPublisher,
+              communityOrgPublisher,
+              largeCommunityOrgPublisher,
+              tooManyManagerOrgPublisher,
+            ]);
           }
           if (table === "officialPublishers") {
             return {
@@ -5110,37 +5082,21 @@ describe("publisher abuse dry-run persistence", () => {
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:mid-volume",
-                      handle: "mid-volume",
-                      linkedUserId: "users:mid-volume",
-                      publishedSkills: 120,
-                      publishedPackages: 0,
-                      totalInstalls: 12,
-                      totalStars: 1,
-                      totalDownloads: 120,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:mid-volume",
+                handle: "mid-volume",
+                linkedUserId: "users:mid-volume",
+                publishedSkills: 120,
+                publishedPackages: 0,
+                totalInstalls: 12,
+                totalStars: 1,
+                totalDownloads: 120,
+              },
+            ]);
           }
           if (table === "packages") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => []);
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -5167,28 +5123,20 @@ describe("publisher abuse dry-run persistence", () => {
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:mixed",
-                      handle: "mixed",
-                      linkedUserId: "users:mixed",
-                      publishedSkills: 40,
-                      totalInstalls: 10_000,
-                      totalStars: 500,
-                      totalDownloads: 500_000,
-                      skillTotalInstalls: 24,
-                      skillTotalStars: 3,
-                      skillTotalDownloads: 240,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:mixed",
+                handle: "mixed",
+                linkedUserId: "users:mixed",
+                publishedSkills: 40,
+                totalInstalls: 10_000,
+                totalStars: 500,
+                totalDownloads: 500_000,
+                skillTotalInstalls: 24,
+                skillTotalStars: 3,
+                skillTotalDownloads: 240,
+              },
+            ]);
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -5219,26 +5167,18 @@ describe("publisher abuse dry-run persistence", () => {
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:not-backfilled",
-                      handle: "not-backfilled",
-                      linkedUserId: "users:not-backfilled",
-                      publishedSkills: 40,
-                      publishedPackages: 2,
-                      totalInstalls: 10_000,
-                      totalStars: 500,
-                      totalDownloads: 500_000,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:not-backfilled",
+                handle: "not-backfilled",
+                linkedUserId: "users:not-backfilled",
+                publishedSkills: 40,
+                publishedPackages: 2,
+                totalInstalls: 10_000,
+                totalStars: 500,
+                totalDownloads: 500_000,
+              },
+            ]);
           }
           if (table === "skills") {
             return makeActiveSkillEngagementQuery("publishers:not-backfilled");
@@ -5276,26 +5216,18 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:too-many-active-skills",
-                      handle: "too-many-active-skills",
-                      linkedUserId: "users:too-many-active-skills",
-                      publishedSkills: 1_200,
-                      publishedPackages: 2,
-                      totalInstalls: 10_000,
-                      totalStars: 500,
-                      totalDownloads: 500_000,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:too-many-active-skills",
+                handle: "too-many-active-skills",
+                linkedUserId: "users:too-many-active-skills",
+                publishedSkills: 1_200,
+                publishedPackages: 2,
+                totalInstalls: 10_000,
+                totalStars: 500,
+                totalDownloads: 500_000,
+              },
+            ]);
           }
           if (table === "skills") {
             return {
@@ -5357,24 +5289,18 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: Array.from({ length: fallbackPublisherCount }, (_, index) => ({
-                    _id: `publishers:fallback-${index}`,
-                    handle: `fallback-${index}`,
-                    linkedUserId: `users:fallback-${index}`,
-                    publishedSkills: 10,
-                    publishedPackages: 1,
-                    totalInstalls: 100,
-                    totalStars: 10,
-                    totalDownloads: 1_000,
-                  })),
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() =>
+              Array.from({ length: fallbackPublisherCount }, (_, index) => ({
+                _id: `publishers:fallback-${index}`,
+                handle: `fallback-${index}`,
+                linkedUserId: `users:fallback-${index}`,
+                publishedSkills: 10,
+                publishedPackages: 1,
+                totalInstalls: 100,
+                totalStars: 10,
+                totalDownloads: 1_000,
+              })),
+            );
           }
           if (table === "skills") {
             return {
@@ -5431,26 +5357,18 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:mixed-cron",
-                      handle: "mixed-cron",
-                      linkedUserId: "users:mixed-cron",
-                      publishedSkills: 40,
-                      publishedPackages: 2,
-                      totalInstalls: 10_000,
-                      totalStars: 500,
-                      totalDownloads: 500_000,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:mixed-cron",
+                handle: "mixed-cron",
+                linkedUserId: "users:mixed-cron",
+                publishedSkills: 40,
+                publishedPackages: 2,
+                totalInstalls: 10_000,
+                totalStars: 500,
+                totalDownloads: 500_000,
+              },
+            ]);
           }
           if (table === "skills") {
             return {
@@ -5513,36 +5431,28 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    ...Array.from({ length: zeroSkillPublishers }, (_, index) => ({
-                      _id: `publishers:plugin-only-${index}`,
-                      handle: `plugin-only-${index}`,
-                      linkedUserId: `users:plugin-only-${index}`,
-                      publishedSkills: 0,
-                      publishedPackages: 1,
-                      totalInstalls: 100,
-                      totalStars: 10,
-                      totalDownloads: 1_000,
-                    })),
-                    {
-                      _id: "publishers:mixed-needs-fallback",
-                      handle: "mixed-needs-fallback",
-                      linkedUserId: "users:mixed-needs-fallback",
-                      publishedSkills: 8,
-                      publishedPackages: 1,
-                      totalInstalls: 1_000,
-                      totalStars: 100,
-                      totalDownloads: 10_000,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              ...Array.from({ length: zeroSkillPublishers }, (_, index) => ({
+                _id: `publishers:plugin-only-${index}`,
+                handle: `plugin-only-${index}`,
+                linkedUserId: `users:plugin-only-${index}`,
+                publishedSkills: 0,
+                publishedPackages: 1,
+                totalInstalls: 100,
+                totalStars: 10,
+                totalDownloads: 1_000,
+              })),
+              {
+                _id: "publishers:mixed-needs-fallback",
+                handle: "mixed-needs-fallback",
+                linkedUserId: "users:mixed-needs-fallback",
+                publishedSkills: 8,
+                publishedPackages: 1,
+                totalInstalls: 1_000,
+                totalStars: 100,
+                totalDownloads: 10_000,
+              },
+            ]);
           }
           if (table === "skills") {
             return {
@@ -5591,25 +5501,17 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:legacy-base",
-                      handle: "legacy-base",
-                      linkedUserId: "users:legacy-base",
-                      publishedPackages: 0,
-                      totalInstalls: 100,
-                      totalStars: 10,
-                      totalDownloads: 1_000,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:legacy-base",
+                handle: "legacy-base",
+                linkedUserId: "users:legacy-base",
+                publishedPackages: 0,
+                totalInstalls: 100,
+                totalStars: 10,
+                totalDownloads: 1_000,
+              },
+            ]);
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -5638,23 +5540,15 @@ describe("publisher abuse dry-run persistence", () => {
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:missing-engagement",
-                      handle: "missing-engagement",
-                      linkedUserId: "users:missing-engagement",
-                      publishedSkills: 40,
-                      publishedPackages: 0,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:missing-engagement",
+                handle: "missing-engagement",
+                linkedUserId: "users:missing-engagement",
+                publishedSkills: 40,
+                publishedPackages: 0,
+              },
+            ]);
           }
           if (table === "skills") {
             return makeActiveSkillEngagementQuery("publishers:missing-engagement");
@@ -5687,25 +5581,17 @@ describe("publisher abuse dry-run persistence", () => {
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:package-count-missing",
-                      handle: "package-count-missing",
-                      linkedUserId: "users:package-count-missing",
-                      publishedSkills: 40,
-                      totalInstalls: 10_000,
-                      totalStars: 500,
-                      totalDownloads: 500_000,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:package-count-missing",
+                handle: "package-count-missing",
+                linkedUserId: "users:package-count-missing",
+                publishedSkills: 40,
+                totalInstalls: 10_000,
+                totalStars: 500,
+                totalDownloads: 500_000,
+              },
+            ]);
           }
           if (table === "skills") {
             return makeActiveSkillEngagementQuery("publishers:package-count-missing");
@@ -5738,25 +5624,17 @@ describe("publisher abuse dry-run persistence", () => {
         patch: vi.fn(async () => null),
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:legacy-stats",
-                      handle: "legacy-stats",
-                      linkedUserId: "users:legacy-stats",
-                      publishedPackages: 0,
-                      totalInstalls: 999,
-                      totalStars: 99,
-                      totalDownloads: 9999,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:legacy-stats",
+                handle: "legacy-stats",
+                linkedUserId: "users:legacy-stats",
+                publishedPackages: 0,
+                totalInstalls: 999,
+                totalStars: 99,
+                totalDownloads: 9999,
+              },
+            ]);
           }
           if (table === "skills") {
             return {
@@ -5818,47 +5696,31 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publishers") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [
-                    {
-                      _id: "publishers:empty",
-                      handle: "empty",
-                      linkedUserId: "users:empty",
-                      publishedSkills: 0,
-                      publishedPackages: 0,
-                      totalInstalls: 0,
-                      totalStars: 0,
-                      totalDownloads: 0,
-                    },
-                    {
-                      _id: "publishers:active",
-                      handle: "active",
-                      linkedUserId: "users:active",
-                      publishedSkills: 1,
-                      publishedPackages: 0,
-                      totalInstalls: 0,
-                      totalStars: 0,
-                      totalDownloads: 0,
-                    },
-                  ],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => [
+              {
+                _id: "publishers:empty",
+                handle: "empty",
+                linkedUserId: "users:empty",
+                publishedSkills: 0,
+                publishedPackages: 0,
+                totalInstalls: 0,
+                totalStars: 0,
+                totalDownloads: 0,
+              },
+              {
+                _id: "publishers:active",
+                handle: "active",
+                linkedUserId: "users:active",
+                publishedSkills: 1,
+                publishedPackages: 0,
+                totalInstalls: 0,
+                totalStars: 0,
+                totalDownloads: 0,
+              },
+            ]);
           }
           if (table === "packages") {
-            return {
-              withIndex: () => ({
-                paginate: async () => ({
-                  page: [],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              }),
-            };
+            return makeCompletePageQuery(() => []);
           }
           throw new Error(`unexpected table ${table}`);
         }),
