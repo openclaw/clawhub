@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
+import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import { createCrabLoader, fail, formatError } from "../../../clawhub/src/cli/ui.js";
@@ -102,7 +103,7 @@ export async function cmdCreatePromotion(
   const token = await requireAuthToken(registry);
 
   const spinner = options.json ? null : createCrabLoader("Creating promotion");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       { method: "POST", path: ApiRoutes.promotions, token, body },
@@ -113,10 +114,7 @@ export async function cmdCreatePromotion(
     );
     if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdUpdatePromotion(
@@ -131,7 +129,7 @@ export async function cmdUpdatePromotion(
   const token = await requireAuthToken(registry);
 
   const spinner = options.json ? null : createCrabLoader(`Updating promotion ${slug}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       { method: "POST", path: `${ApiRoutes.promotions}/${slug}/update`, token, body },
@@ -140,10 +138,7 @@ export async function cmdUpdatePromotion(
     spinner?.succeed(`Updated promotion "${result.slug}" (status: ${result.status})`);
     if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdSetPromotionStatus(
@@ -161,7 +156,7 @@ export async function cmdSetPromotionStatus(
   const token = await requireAuthToken(registry);
 
   const spinner = options.json ? null : createCrabLoader(`Setting ${slug} to ${status}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       { method: "POST", path: `${ApiRoutes.promotions}/${slug}/status`, token, body: { status } },
@@ -170,8 +165,5 @@ export async function cmdSetPromotionStatus(
     spinner?.succeed(`Promotion "${result.slug}" is now ${result.status}`);
     if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }

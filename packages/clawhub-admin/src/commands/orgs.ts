@@ -1,12 +1,12 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
+import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
   createCrabLoader,
   fail,
-  formatError,
   isInteractive,
   promptConfirm,
 } from "../../../clawhub/src/cli/ui.js";
@@ -136,7 +136,7 @@ export async function cmdCreateOrg(opts: GlobalOpts, handle: string, options: Or
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Creating @${orgHandle}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -163,10 +163,7 @@ export async function cmdCreateOrg(opts: GlobalOpts, handle: string, options: Or
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     }
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdRemoveOrgMember(
@@ -183,7 +180,7 @@ export async function cmdRemoveOrgMember(
   const spinner = options.json
     ? null
     : createCrabLoader(`Removing @${normalizedMemberHandle} from @${orgHandle}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -207,10 +204,7 @@ export async function cmdRemoveOrgMember(
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     }
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdUpdateOrgProfile(
@@ -249,7 +243,7 @@ export async function cmdUpdateOrgProfile(
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Updating @${orgHandle} profile`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequestForm(
       registry,
       {
@@ -264,10 +258,7 @@ export async function cmdUpdateOrgProfile(
     spinner?.succeed(`Updated @${result.handle} profile`);
     if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdDeleteOrg(
@@ -285,7 +276,7 @@ export async function cmdDeleteOrg(
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning delete for" : "Deleting"} @${orgHandle}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -311,10 +302,7 @@ export async function cmdDeleteOrg(
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     }
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdReclaimDeletedOrgHandle(
@@ -334,7 +322,7 @@ export async function cmdReclaimDeletedOrgHandle(
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning reclaim for" : "Reclaiming"} @${orgHandle}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -361,17 +349,14 @@ export async function cmdReclaimDeletedOrgHandle(
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     }
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdListOfficialOrgs(opts: GlobalOpts, options: OrgOfficialListOptions = {}) {
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader("Listing official publishers");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -402,10 +387,7 @@ export async function cmdListOfficialOrgs(opts: GlobalOpts, options: OrgOfficial
       console.log([handle, displayName].filter(Boolean).join("  ") + reason);
     }
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdAddOfficialOrg(
@@ -452,7 +434,7 @@ async function updateOfficialOrg(
           ? `Marking @${orgHandle} official`
           : `Removing @${orgHandle} from official publishers`,
       );
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -477,10 +459,7 @@ async function updateOfficialOrg(
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     }
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdRepairScopedPackages(
@@ -501,7 +480,7 @@ export async function cmdRepairScopedPackages(
     ? null
     : createCrabLoader(`${dryRun ? "Planning" : "Applying"} scoped package repairs`);
 
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     if (dryRun) {
       for (const row of selectedRows) {
         items.push({
@@ -591,10 +570,7 @@ export async function cmdRepairScopedPackages(
     );
     if (options.json) process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
     return summary;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function summarizeScopedPackageRepairs(
