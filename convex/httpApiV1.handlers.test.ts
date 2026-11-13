@@ -126,6 +126,49 @@ function makeSkillExportSelection(
   };
 }
 
+function makePluginExportItem<
+  T extends { name: string; displayName: string; family: "code-plugin" | "bundle-plugin" },
+>(id: string, item: T) {
+  return {
+    packageId: `packages:${id}`,
+    latestReleaseId: `packageReleases:${id}`,
+    latestVersion: "1.0.0",
+    createdAt: 1,
+    updatedAt: 2,
+    stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+    ownerUserId: "users:alice",
+    ownerHandle: "alice",
+    ownerDisplayName: "Alice",
+    ...item,
+  };
+}
+
+function makePluginExportFile(id: string, path: string, size = 2) {
+  return {
+    storageId: `storage:${id}`,
+    path,
+    size,
+    sha256: `sha-${id}`,
+    contentType: "application/json",
+  };
+}
+
+function makePluginExportRelease<
+  T extends {
+    changelog: string;
+    files: Array<ReturnType<typeof makePluginExportFile>>;
+    artifactKind: "npm-pack" | "legacy-zip";
+  },
+>(id: string, release: T) {
+  return {
+    packageId: `packages:${id}`,
+    version: "1.0.0",
+    createdAt: 2,
+    softDeletedAt: undefined,
+    ...release,
+  };
+}
+
 function makeSkillArtifactFixture(tags: Record<string, string> = {}) {
   return {
     _id: "skills:1",
@@ -1615,34 +1658,22 @@ describe("httpApiV1 handlers", () => {
       if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
-            {
-              packageId: "packages:code",
+            makePluginExportItem("code", {
               name: "@scope/demo-plugin",
               displayName: "Demo Plugin",
               family: "code-plugin",
-              latestReleaseId: "packageReleases:code",
-              latestVersion: "1.0.0",
-              createdAt: 1,
-              updatedAt: 2,
               stats: { downloads: 1, installs: 0, stars: 0, versions: 1 },
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
-              ownerDisplayName: "Alice",
-            },
-            {
-              packageId: "packages:bundle",
+            }),
+            makePluginExportItem("bundle", {
               name: "demo-bundle",
               displayName: "Demo Bundle",
               family: "bundle-plugin",
-              latestReleaseId: "packageReleases:bundle",
               latestVersion: "2.0.0",
-              createdAt: 1,
               updatedAt: 3,
-              stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
               ownerUserId: "users:bob",
               ownerHandle: "bob",
               ownerDisplayName: "Bob",
-            },
+            }),
           ],
           nextCursor: null,
           hasMore: false,
@@ -1656,40 +1687,18 @@ describe("httpApiV1 handlers", () => {
           ],
         });
         return [
-          {
-            packageId: "packages:code",
-            version: "1.0.0",
+          makePluginExportRelease("code", {
             changelog: "Initial code plugin",
-            createdAt: 2,
-            files: [
-              {
-                storageId: "storage:package-json",
-                path: "package.json",
-                size: 2,
-                sha256: "sha-package-json",
-                contentType: "application/json",
-              },
-            ],
+            files: [makePluginExportFile("package-json", "package.json")],
             artifactKind: "npm-pack",
-            softDeletedAt: undefined,
-          },
-          {
-            packageId: "packages:bundle",
+          }),
+          makePluginExportRelease("bundle", {
             version: "2.0.0",
             changelog: "Initial bundle plugin",
             createdAt: 3,
-            files: [
-              {
-                storageId: "storage:bundle",
-                path: "openclaw.bundle.json",
-                size: 2,
-                sha256: "sha-bundle",
-                contentType: "application/json",
-              },
-            ],
+            files: [makePluginExportFile("bundle", "openclaw.bundle.json")],
             artifactKind: "legacy-zip",
-            softDeletedAt: undefined,
-          },
+          }),
         ];
       }
       return null;
@@ -1730,20 +1739,11 @@ describe("httpApiV1 handlers", () => {
       if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
-            {
-              packageId: "packages:bundle",
+            makePluginExportItem("bundle", {
               name: "demo-bundle",
               displayName: "Demo Bundle",
               family: "bundle-plugin",
-              latestReleaseId: "packageReleases:bundle",
-              latestVersion: "1.0.0",
-              createdAt: 1,
-              updatedAt: 2,
-              stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
-              ownerDisplayName: "Alice",
-            },
+            }),
           ],
           nextCursor: null,
           hasMore: false,
@@ -1754,30 +1754,14 @@ describe("httpApiV1 handlers", () => {
           selections: [{ packageId: "packages:bundle", releaseId: "packageReleases:bundle" }],
         });
         return [
-          {
-            packageId: "packages:bundle",
-            version: "1.0.0",
+          makePluginExportRelease("bundle", {
             changelog: "Legacy bundle",
-            createdAt: 2,
             files: [
-              {
-                storageId: "storage:first",
-                path: "plugins/humanizer/_skillhub_meta.json",
-                size: 13,
-                sha256: "sha-first",
-                contentType: "application/json",
-              },
-              {
-                storageId: "storage:second",
-                path: "plugins/humanizer/_skillhub_meta.json",
-                size: 14,
-                sha256: "sha-second",
-                contentType: "application/json",
-              },
+              makePluginExportFile("first", "plugins/humanizer/_skillhub_meta.json", 13),
+              makePluginExportFile("second", "plugins/humanizer/_skillhub_meta.json", 14),
             ],
             artifactKind: "legacy-zip",
-            softDeletedAt: undefined,
-          },
+          }),
         ];
       }
       return null;
@@ -1822,20 +1806,11 @@ describe("httpApiV1 handlers", () => {
       if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
-            {
-              packageId: "packages:blocked",
+            makePluginExportItem("blocked", {
               name: "blocked-plugin",
               displayName: "Blocked Plugin",
               family: "code-plugin",
-              latestReleaseId: "packageReleases:blocked",
-              latestVersion: "1.0.0",
-              createdAt: 1,
-              updatedAt: 2,
-              stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
-              ownerDisplayName: "Alice",
-            },
+            }),
           ],
           nextCursor: null,
           hasMore: false,
@@ -1846,20 +1821,9 @@ describe("httpApiV1 handlers", () => {
           selections: [{ packageId: "packages:blocked", releaseId: "packageReleases:blocked" }],
         });
         return [
-          {
-            packageId: "packages:blocked",
-            version: "1.0.0",
+          makePluginExportRelease("blocked", {
             changelog: "Blocked",
-            createdAt: 2,
-            files: [
-              {
-                storageId: "storage:blocked",
-                path: "package.json",
-                size: 2,
-                sha256: "sha-blocked",
-                contentType: "application/json",
-              },
-            ],
+            files: [makePluginExportFile("blocked", "package.json")],
             manualModeration: {
               state: "quarantined",
               reason: "malware",
@@ -1867,8 +1831,7 @@ describe("httpApiV1 handlers", () => {
               updatedAt: 2,
             },
             artifactKind: "npm-pack",
-            softDeletedAt: undefined,
-          },
+          }),
         ];
       }
       return null;
@@ -1897,20 +1860,11 @@ describe("httpApiV1 handlers", () => {
       if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
-            {
-              packageId: "packages:collision",
+            makePluginExportItem("collision", {
               name: "collision-plugin",
               displayName: "Collision Plugin",
               family: "code-plugin",
-              latestReleaseId: "packageReleases:collision",
-              latestVersion: "1.0.0",
-              createdAt: 1,
-              updatedAt: 2,
-              stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
-              ownerDisplayName: "Alice",
-            },
+            }),
           ],
           nextCursor: null,
           hasMore: false,
@@ -1921,23 +1875,11 @@ describe("httpApiV1 handlers", () => {
           selections: [{ packageId: "packages:collision", releaseId: "packageReleases:collision" }],
         });
         return [
-          {
-            packageId: "packages:collision",
-            version: "1.0.0",
+          makePluginExportRelease("collision", {
             changelog: "Collision",
-            createdAt: 2,
-            files: [
-              {
-                storageId: "storage:plugin-meta-file",
-                path: "_export_plugin_meta.json",
-                size: 2,
-                sha256: "sha-plugin-meta-file",
-                contentType: "application/json",
-              },
-            ],
+            files: [makePluginExportFile("plugin-meta-file", "_export_plugin_meta.json")],
             artifactKind: "npm-pack",
-            softDeletedAt: undefined,
-          },
+          }),
         ];
       }
       return null;
