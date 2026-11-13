@@ -70,11 +70,15 @@ const { __handlers } = await import("./httpApiV1");
 
 type ActionCtx = import("./_generated/server").ActionCtx;
 
-function mockExportApiTokenUser() {
+function mockApiTokenUser(userId: string, role: "user" | "moderator" | "admin") {
   vi.mocked(requireApiTokenUser).mockResolvedValue({
-    userId: "users:actor",
-    user: { _id: "users:actor", role: "user" },
+    userId,
+    user: { _id: userId, role },
   } as never);
+}
+
+function mockExportApiTokenUser() {
+  mockApiTokenUser("users:actor", "user");
   vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
     userId: "users:actor",
     user: { _id: "users:actor", role: "user" },
@@ -652,10 +656,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("rejects local scan upload submissions with scan-download guidance", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:owner",
-      user: { _id: "users:owner", role: "user" },
-    } as never);
+    mockApiTokenUser("users:owner", "user");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
@@ -673,10 +674,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("forwards the owner namespace when submitting a published skill scan", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:owner",
-      user: { _id: "users:owner", role: "user" },
-    } as never);
+    mockApiTokenUser("users:owner", "user");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       expect(args).toMatchObject({
@@ -712,10 +710,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("downloads stored scan reports for submitted skill versions", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:owner",
-      user: { _id: "users:owner", role: "user" },
-    } as never);
+    mockApiTokenUser("users:owner", "user");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       expect(args).toMatchObject({
@@ -768,10 +763,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("includes the bounded Endor summary in stored plugin report downloads", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:owner",
-      user: { _id: "users:owner", role: "user" },
-    } as never);
+    mockApiTokenUser("users:owner", "user");
     const endor = {
       status: "completed",
       checkedAt: 2,
@@ -825,10 +817,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("forwards the owner namespace when downloading a stored skill report", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:owner",
-      user: { _id: "users:owner", role: "user" },
-    } as never);
+    mockApiTokenUser("users:owner", "user");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       expect(args).toMatchObject({
@@ -975,10 +964,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skills export does not expose storage manifests to direct clients", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockApiTokenUser("users:actor", "user");
     const runQuery = vi.fn();
 
     const response = await __handlers.exportSkillsV1Handler(
@@ -1633,10 +1619,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins export rejects non-plugin family filters", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockApiTokenUser("users:actor", "user");
 
     const runQuery = vi.fn();
     const response = await __handlers.exportPluginsV1Handler(
@@ -1914,10 +1897,7 @@ describe("httpApiV1 handlers", () => {
       if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
       return okRate();
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockApiTokenUser("users:actor", "user");
 
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runQuery, runAction, runMutation }),
@@ -1939,10 +1919,7 @@ describe("httpApiV1 handlers", () => {
       if ("handle" in args) return { _id: "users:target" };
       return null;
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
 
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runQuery, runAction: vi.fn(), runMutation }),
@@ -1989,10 +1966,7 @@ describe("httpApiV1 handlers", () => {
         confirmationToken: "reclaim-deleted-org:tencent",
       };
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
 
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
@@ -2026,10 +2000,7 @@ describe("httpApiV1 handlers", () => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error('Confirmation token must be "reclaim-deleted-org:tencent"');
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
 
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
@@ -2057,10 +2028,7 @@ describe("httpApiV1 handlers", () => {
       if (isRateLimitArgs(args)) return okRate();
       return okRate();
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:actor", "moderator");
 
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
@@ -2078,10 +2046,7 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn();
     const runAction = vi.fn();
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockApiTokenUser("users:actor", "user");
 
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runQuery, runAction, runMutation }),
@@ -2110,10 +2075,7 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
 
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runQuery, runAction: vi.fn(), runMutation }),
@@ -2162,10 +2124,7 @@ describe("httpApiV1 handlers", () => {
         trusted: true,
       };
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
 
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
@@ -2202,10 +2161,7 @@ describe("httpApiV1 handlers", () => {
         },
       };
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
 
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
@@ -2246,10 +2202,7 @@ describe("httpApiV1 handlers", () => {
     });
     const store = vi.fn(async () => "storage:heygen-logo");
     const remove = vi.fn(async () => {});
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const form = new FormData();
     form.set(
       "payload",
@@ -2304,10 +2257,7 @@ describe("httpApiV1 handlers", () => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:member",
-      user: { _id: "users:member", role: "user" },
-    } as never);
+    mockApiTokenUser("users:member", "user");
     const form = new FormData();
     form.set(
       "payload",
@@ -2367,10 +2317,7 @@ describe("httpApiV1 handlers", () => {
         reason: "Verified account continuity for issue #2555",
       };
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
 
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
@@ -2411,10 +2358,7 @@ describe("httpApiV1 handlers", () => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error("unexpected mutation");
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
 
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
@@ -2438,10 +2382,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("users/publisher-official lists official publishers for admin", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -2486,10 +2427,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("users/publisher-official adds official publishers for admin", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -2524,10 +2462,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("users/publisher-official removes official publishers for admin", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -2572,10 +2507,7 @@ describe("httpApiV1 handlers", () => {
         trusted: false,
       };
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:vincent",
-      user: { _id: "users:vincent", role: "user" },
-    } as never);
+    mockApiTokenUser("users:vincent", "user");
 
     const response = await __handlers.createPublisherV1Handler(
       makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
@@ -2608,10 +2540,7 @@ describe("httpApiV1 handlers", () => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error('Publisher "@opik" already exists');
     });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:vincent",
-      user: { _id: "users:vincent", role: "user" },
-    } as never);
+    mockApiTokenUser("users:vincent", "user");
 
     const response = await __handlers.createPublisherV1Handler(
       makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
@@ -4963,10 +4892,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skill reports lists moderator intake", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -5016,10 +4942,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skill report posts user reports", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:reporter",
-      user: { _id: "users:reporter", role: "user" },
-    } as never);
+    mockApiTokenUser("users:reporter", "user");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -5059,10 +4982,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skill report forwards owner query for ambiguous slugs", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:reporter",
-      user: { _id: "users:reporter", role: "user" },
-    } as never);
+    mockApiTokenUser("users:reporter", "user");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -5100,10 +5020,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skill report triage posts moderator decisions", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -5140,10 +5057,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skill version moderation posts exact-version revocations", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -5190,10 +5104,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("rejects unsupported skill version moderation states", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
@@ -5213,10 +5124,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skill appeal posts owner appeal requests", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:owner",
-      user: { _id: "users:owner", role: "user" },
-    } as never);
+    mockApiTokenUser("users:owner", "user");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -5256,10 +5164,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skill appeals lists moderator intake", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -5309,10 +5214,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skill appeal resolve posts moderator decisions", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -9734,10 +9636,7 @@ describe("httpApiV1 handlers", () => {
 
   it("skill hard-delete dry-runs through the admin-only API", async () => {
     const generated_token_reference = "hard-delete-skill:@openclaw/demo:skills:1";
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -9786,10 +9685,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skill hard-delete forbids non-admin API tokens", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error("should not hard-delete");
@@ -9813,10 +9709,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns a paginated plugin validation report to moderators", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const page = {
       items: [
         {
@@ -9871,10 +9764,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("forbids ordinary users from reading the plugin validation report", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:viewer",
-      user: { _id: "users:viewer", role: "user" },
-    } as never);
+    mockApiTokenUser("users:viewer", "user");
     const runQuery = vi.fn();
 
     const response = await __handlers.packagesGetRouterV1Handler(
@@ -9890,10 +9780,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package hard-delete dry-runs through the admin-only API", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const token = "hard-delete-package:@hxy91819/openclaw-tencent-provider:packages:1";
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
@@ -9943,10 +9830,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package hard-delete forbids non-admin API tokens", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error("should not hard-delete");
@@ -9965,10 +9849,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skill rescan enqueues owner-authorized ClawScan jobs", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -10011,10 +9892,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("sets featured status for an owner-qualified skill through the moderator mutation", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -10050,10 +9928,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("maps forbidden featured-skill mutations to a 403 response", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:user",
-      user: { _id: "users:user", role: "user" },
-    } as never);
+    mockApiTokenUser("users:user", "user");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error("Forbidden");
@@ -10073,10 +9948,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("skill rescan rejects malformed JSON", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error("should not enqueue");
@@ -10097,10 +9969,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("bulk skill rescan batch requires admin role", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error("should not enqueue");
@@ -10121,10 +9990,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("bulk skill rescan batch enqueues via admin API", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -10171,10 +10037,7 @@ describe("httpApiV1 handlers", () => {
   it.each(["canonical", "legacy"])(
     "forwards recovery identity and exact baselines through %s batch submit",
     async (route) => {
-      vi.mocked(requireApiTokenUser).mockResolvedValue({
-        userId: "users:admin",
-        user: { _id: "users:admin", role: "admin" },
-      } as never);
+      mockApiTokenUser("users:admin", "admin");
       const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
         isRateLimitArgs(args) ? okRate() : { ok: true },
       );
@@ -10234,10 +10097,7 @@ describe("httpApiV1 handlers", () => {
   );
 
   it("bulk skill rescan status aggregates via admin API", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -10281,10 +10141,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("bulk package rescan batch requires admin role", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error("should not enqueue");
@@ -10305,10 +10162,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("bulk package rescan batch enqueues via admin API", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -10353,10 +10207,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("bulk package rescan status aggregates via admin API", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -10445,10 +10296,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("sets featured status for a plugin through the moderator mutation", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -10482,10 +10330,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("maps forbidden featured-plugin mutations to a 403 response", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:user",
-      user: { _id: "users:user", role: "user" },
-    } as never);
+    mockApiTokenUser("users:user", "user");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       throw new Error("Forbidden");
@@ -11147,10 +10992,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("lift moderation hold requires admin", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockApiTokenUser("users:actor", "user");
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runMutation }),
@@ -11164,10 +11006,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("lift moderation hold forwards actor, target, and reason", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:actor", "admin");
     const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockResolvedValueOnce({
       ok: true,
       alreadyCleared: false,
@@ -11202,10 +11041,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("reclassify ban requires admin", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
+    mockApiTokenUser("users:actor", "user");
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.usersPostRouterV1Handler(
       makeCtx({ runMutation }),
@@ -11219,10 +11055,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("reclassify ban forwards admin payload", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockResolvedValueOnce({
       ok: true,
       dryRun: false,
@@ -11257,10 +11090,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("reclassify ban resolves banned users by handle", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runQuery = vi.fn().mockResolvedValue({ _id: "users:target", deletedAt: 123 });
     const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockResolvedValueOnce({
       ok: true,
@@ -11300,10 +11130,7 @@ describe("httpApiV1 handlers", () => {
     vi.stubEnv("RESEND_API_KEY", "resend_test");
     vi.stubEnv("CLAWHUB_NOREPLY_FROM", "ClawHub <noreply@notifications.openclaw.ai>");
     vi.stubEnv("NOREPLY_EMAIL_FROM", "Legacy <legacy@example.com>");
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runQuery = vi.fn().mockResolvedValueOnce({
       _id: "users:recipient",
       handle: "demo",
@@ -11350,10 +11177,7 @@ describe("httpApiV1 handlers", () => {
     vi.stubEnv("RESEND_API_KEY", "resend_test");
     vi.stubEnv("CLAWHUB_NOREPLY_FROM", "");
     vi.stubEnv("NOREPLY_EMAIL_FROM", "Legacy <legacy@example.com>");
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runQuery = vi.fn().mockResolvedValueOnce({
       _id: "users:recipient",
       handle: "demo",
@@ -15415,10 +15239,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package release moderation posts state changes", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -15461,10 +15282,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package moderation queue lists releases for moderators", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -15525,10 +15343,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package report posts authenticated reports", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:reporter",
-      user: { _id: "users:reporter", role: "user" },
-    } as never);
+    mockApiTokenUser("users:reporter", "user");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -15567,10 +15382,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package reports lists moderator report intake", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -15618,10 +15430,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package migrations lists official migration rows", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -15672,10 +15481,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package migrations upserts official migration rows", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
+    mockApiTokenUser("users:admin", "admin");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -15736,10 +15542,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package report triage posts moderator decisions", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -15772,10 +15575,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package moderation status returns owner diagnostics", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:owner",
-      user: { _id: "users:owner", role: "user" },
-    } as never);
+    mockApiTokenUser("users:owner", "user");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -15827,10 +15627,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package appeal posts owner appeal requests", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:owner",
-      user: { _id: "users:owner", role: "user" },
-    } as never);
+    mockApiTokenUser("users:owner", "user");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -15867,10 +15664,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package appeals lists moderator appeal intake", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
@@ -15918,10 +15712,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package appeal resolve posts moderator decisions", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
+    mockApiTokenUser("users:moderator", "moderator");
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
