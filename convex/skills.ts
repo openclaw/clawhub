@@ -10551,6 +10551,41 @@ function asSkillPendingPublishArgs(value: unknown): SkillPendingPublishArgs {
   return value as SkillPendingPublishArgs;
 }
 
+function buildInitialSkillModeration(
+  user: Pick<Doc<"users">, "requiresModerationAt" | "requiresModerationReason">,
+  qualityAssessment: StoredQualityAssessment | undefined,
+  now: number,
+) {
+  const isQualityQuarantine = qualityAssessment?.decision === "quarantine";
+  const isPublisherUnderModeration = Boolean(user.requiresModerationAt);
+  return {
+    status:
+      isQualityQuarantine || isPublisherUnderModeration ? ("hidden" as const) : ("active" as const),
+    reason: isQualityQuarantine
+      ? "quality.low"
+      : isPublisherUnderModeration
+        ? USER_MODERATION_REASON
+        : "pending.scan",
+    notes: isQualityQuarantine
+      ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
+      : isPublisherUnderModeration
+        ? (user.requiresModerationReason ??
+          "Publisher is currently under manual moderation review.")
+        : undefined,
+    quality: qualityAssessment
+      ? {
+          score: qualityAssessment.score,
+          decision: qualityAssessment.decision,
+          trustTier: qualityAssessment.trustTier,
+          similarRecentCount: qualityAssessment.similarRecentCount,
+          reason: qualityAssessment.reason,
+          signals: qualityAssessment.signals,
+          evaluatedAt: now,
+        }
+      : undefined,
+  };
+}
+
 export const insertVersion = internalMutation({
   args: {
     userId: v.id("users"),
@@ -10938,37 +10973,8 @@ export const insertVersion = internalMutation({
       skill = { ...skill, ownerPublisherId, lastReviewedAt: now, updatedAt: now };
     }
 
-    const qualityAssessment = args.qualityAssessment;
-    const isQualityQuarantine = qualityAssessment?.decision === "quarantine";
-
     const initialScannerSnapshot = buildModerationSnapshot({});
-    const isPublisherUnderModeration = Boolean(user.requiresModerationAt);
-    const initialModerationStatus =
-      isQualityQuarantine || isPublisherUnderModeration ? "hidden" : "active";
-
-    const moderationReason = isQualityQuarantine
-      ? "quality.low"
-      : isPublisherUnderModeration
-        ? USER_MODERATION_REASON
-        : "pending.scan";
-    const moderationNotes = isQualityQuarantine
-      ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
-      : isPublisherUnderModeration
-        ? (user.requiresModerationReason ??
-          "Publisher is currently under manual moderation review.")
-        : undefined;
-
-    const qualityRecord = qualityAssessment
-      ? {
-          score: qualityAssessment.score,
-          decision: qualityAssessment.decision,
-          trustTier: qualityAssessment.trustTier,
-          similarRecentCount: qualityAssessment.similarRecentCount,
-          reason: qualityAssessment.reason,
-          signals: qualityAssessment.signals,
-          evaluatedAt: now,
-        }
-      : undefined;
+    const initialModeration = buildInitialSkillModeration(user, args.qualityAssessment, now);
 
     if (!skill) {
       // Anti-squatting: enforce reserved slug cooldown.
@@ -11058,11 +11064,11 @@ export const insertVersion = internalMutation({
           official: undefined,
           deprecated: undefined,
         },
-        moderationStatus: isPendingPublication ? "hidden" : initialModerationStatus,
-        moderationReason: isPendingPublication ? "pending.publication" : moderationReason,
+        moderationStatus: isPendingPublication ? "hidden" : initialModeration.status,
+        moderationReason: isPendingPublication ? "pending.publication" : initialModeration.reason,
         moderationNotes: isPendingPublication
           ? "Pre-publication security checks are pending."
-          : moderationNotes,
+          : initialModeration.notes,
         moderationVerdict: initialScannerSnapshot.verdict,
         moderationReasonCodes: initialScannerSnapshot.reasonCodes.length
           ? initialScannerSnapshot.reasonCodes
@@ -11074,11 +11080,11 @@ export const insertVersion = internalMutation({
         moderationEngineVersion: initialScannerSnapshot.engineVersion,
         moderationEvaluatedAt: initialScannerSnapshot.evaluatedAt,
         moderationSourceVersionId: undefined,
-        quality: qualityRecord,
+        quality: initialModeration.quality,
         moderationFlags: newSkillFlags.length ? newSkillFlags : undefined,
         isSuspicious: computeIsSuspicious({
           moderationFlags: newSkillFlags.length ? newSkillFlags : undefined,
-          moderationReason: moderationReason,
+          moderationReason: initialModeration.reason,
         }),
         reportCount: 0,
         lastReportedAt: undefined,
@@ -11203,7 +11209,7 @@ export const insertVersion = internalMutation({
       new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
     );
     const scannerModerationPatch =
-      args.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
+      args.llmAnalysis && initialModeration.status === "active"
         ? buildScannerModerationPatchFromVersion({
             owner: null,
             version: {
@@ -11251,9 +11257,9 @@ export const insertVersion = internalMutation({
         : {}),
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
-      moderationStatus: initialModerationStatus,
-      moderationReason,
-      moderationNotes,
+      moderationStatus: initialModeration.status,
+      moderationReason: initialModeration.reason,
+      moderationNotes: initialModeration.notes,
       moderationVerdict: moderationSnapshot.verdict,
       moderationReasonCodes: moderationSnapshot.reasonCodes.length
         ? moderationSnapshot.reasonCodes
@@ -11265,11 +11271,11 @@ export const insertVersion = internalMutation({
       moderationEngineVersion: moderationSnapshot.engineVersion,
       moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
       moderationSourceVersionId: versionId,
-      quality: qualityRecord ?? skill.quality,
+      quality: initialModeration.quality ?? skill.quality,
       moderationFlags: nextFlags.length ? nextFlags : undefined,
       isSuspicious: computeIsSuspicious({
         moderationFlags: nextFlags.length ? nextFlags : undefined,
-        moderationReason: moderationReason,
+        moderationReason: initialModeration.reason,
       }),
       unpublishedSlugReservedUntil: undefined,
       unpublishedSlugReleasedAt: undefined,
@@ -11458,33 +11464,7 @@ export const publishPendingVersionInternal = internalMutation({
       skill.summary;
     const nextSummary = isNewLatest ? derivedSummary : skill.summary;
     const nextDisplayName = isNewLatest ? publishArgs.displayName : skill.displayName;
-    const qualityAssessment = publishArgs.qualityAssessment;
-    const isQualityQuarantine = qualityAssessment?.decision === "quarantine";
-    const isPublisherUnderModeration = Boolean(user.requiresModerationAt);
-    const initialModerationStatus =
-      isQualityQuarantine || isPublisherUnderModeration ? "hidden" : "active";
-    const moderationReason = isQualityQuarantine
-      ? "quality.low"
-      : isPublisherUnderModeration
-        ? USER_MODERATION_REASON
-        : "pending.scan";
-    const moderationNotes = isQualityQuarantine
-      ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
-      : isPublisherUnderModeration
-        ? (user.requiresModerationReason ??
-          "Publisher is currently under manual moderation review.")
-        : undefined;
-    const qualityRecord = qualityAssessment
-      ? {
-          score: qualityAssessment.score,
-          decision: qualityAssessment.decision,
-          trustTier: qualityAssessment.trustTier,
-          similarRecentCount: qualityAssessment.similarRecentCount,
-          reason: qualityAssessment.reason,
-          signals: qualityAssessment.signals,
-          evaluatedAt: now,
-        }
-      : undefined;
+    const initialModeration = buildInitialSkillModeration(user, publishArgs.qualityAssessment, now);
 
     const derivedFlags = deriveModerationFlags({
       skill: {
@@ -11504,7 +11484,7 @@ export const publishPendingVersionInternal = internalMutation({
       llmAnalysis: publishArgs.llmAnalysis ?? version.llmAnalysis,
     };
     const scannerModerationPatch =
-      versionForModeration.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
+      versionForModeration.llmAnalysis && initialModeration.status === "active"
         ? buildScannerModerationPatchFromVersion({
             owner: null,
             version: versionForModeration,
@@ -11557,9 +11537,9 @@ export const publishPendingVersionInternal = internalMutation({
       ? {
           ...basePatch,
           softDeletedAt: undefined,
-          moderationStatus: initialModerationStatus,
-          moderationReason,
-          moderationNotes,
+          moderationStatus: initialModeration.status,
+          moderationReason: initialModeration.reason,
+          moderationNotes: initialModeration.notes,
           moderationVerdict: moderationSnapshot.verdict,
           moderationReasonCodes: moderationSnapshot.reasonCodes.length
             ? moderationSnapshot.reasonCodes
@@ -11571,11 +11551,11 @@ export const publishPendingVersionInternal = internalMutation({
           moderationEngineVersion: moderationSnapshot.engineVersion,
           moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
           moderationSourceVersionId: version._id,
-          quality: qualityRecord ?? skill.quality,
+          quality: initialModeration.quality ?? skill.quality,
           moderationFlags: nextFlags.length ? nextFlags : undefined,
           isSuspicious: computeIsSuspicious({
             moderationFlags: nextFlags.length ? nextFlags : undefined,
-            moderationReason,
+            moderationReason: initialModeration.reason,
           }),
           unpublishedSlugReservedUntil: undefined,
           unpublishedSlugReleasedAt: undefined,
