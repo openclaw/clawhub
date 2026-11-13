@@ -1,44 +1,34 @@
-/* @vitest-environment node */
-
 import { describe, expect, it, vi } from "vitest";
+/* @vitest-environment node */
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   consumeHttpRateLimitKeyInternal,
   pruneHttpRateLimitKeysInternal,
   touchHttpRateLimitKeyInternal,
 } from "./rateLimits";
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const touchHttpKeyHandler = (
-  touchHttpRateLimitKeyInternal as unknown as WrappedHandler<
-    { name: string; key: string; shard?: number; now?: number; ttlMs?: number },
-    { action: "inserted" | "retained" | "updated"; expiresAt: number; shard: number }
-  >
-)._handler;
-const consumeHttpKeyHandler = (
-  consumeHttpRateLimitKeyInternal as unknown as WrappedHandler<
-    {
-      name: string;
-      key: string;
-      config: {
-        kind: "fixed window";
-        rate: number;
-        period: number;
-        start?: number;
-        shards?: number;
-      };
-    },
-    { ok: true; retryAfter?: number } | { ok: false; retryAfter: number }
-  >
-)._handler;
-const pruneHttpKeyHandler = (
-  pruneHttpRateLimitKeysInternal as unknown as WrappedHandler<
-    { batchSize?: number },
-    { deleted: number; hasMore: boolean }
-  >
-)._handler;
+const touchHttpKeyHandler = getTestHandler<
+  { name: string; key: string; shard?: number; now?: number; ttlMs?: number },
+  { action: "inserted" | "retained" | "updated"; expiresAt: number; shard: number }
+>(touchHttpRateLimitKeyInternal);
+const consumeHttpKeyHandler = getTestHandler<
+  {
+    name: string;
+    key: string;
+    config: {
+      kind: "fixed window";
+      rate: number;
+      period: number;
+      start?: number;
+      shards?: number;
+    };
+  },
+  { ok: true; retryAfter?: number } | { ok: false; retryAfter: number }
+>(consumeHttpRateLimitKeyInternal);
+const pruneHttpKeyHandler = getTestHandler<
+  { batchSize?: number },
+  { deleted: number; hasMore: boolean }
+>(pruneHttpRateLimitKeysInternal);
 
 function makeDb(overrides: { query: ReturnType<typeof vi.fn>; delete: ReturnType<typeof vi.fn> }) {
   return {

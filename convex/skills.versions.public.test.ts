@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -25,61 +26,41 @@ const {
   listWithLatest,
 } = await import("./skills");
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const getBySlugHandler = getTestHandler<{
+  slug: string;
+}>(getBySlug);
 
-const getBySlugHandler = (
-  getBySlug as unknown as WrappedHandler<{
-    slug: string;
-  }>
-)._handler;
+const getVersionByIdHandler = getTestHandler<{
+  versionId: string;
+}>(getVersionById);
 
-const getVersionByIdHandler = (
-  getVersionById as unknown as WrappedHandler<{
-    versionId: string;
-  }>
-)._handler;
+const getVersionBySkillAndVersionHandler = getTestHandler<{
+  skillId: string;
+  version: string;
+}>(getVersionBySkillAndVersion);
 
-const getVersionBySkillAndVersionHandler = (
-  getVersionBySkillAndVersion as unknown as WrappedHandler<{
-    skillId: string;
-    version: string;
-  }>
-)._handler;
+const listVersionsHandler = getTestHandler<{
+  skillId: string;
+  limit?: number;
+}>(listVersions);
 
-const listVersionsHandler = (
-  listVersions as unknown as WrappedHandler<{
-    skillId: string;
-    limit?: number;
-  }>
-)._handler;
+const listVersionsPageHandler = getTestHandler<{
+  skillId: string;
+  cursor?: string;
+  limit?: number;
+}>(listVersionsPage);
 
-const listVersionsPageHandler = (
-  listVersionsPage as unknown as WrappedHandler<{
-    skillId: string;
-    cursor?: string;
-    limit?: number;
-  }>
-)._handler;
+const listWithdrawnVersionsForManagerHandler = getTestHandler<{
+  skillId: string;
+  paginationOpts: { cursor: string | null; numItems: number };
+}>(listWithdrawnVersionsForManager);
 
-const listWithdrawnVersionsForManagerHandler = (
-  listWithdrawnVersionsForManager as unknown as WrappedHandler<{
-    skillId: string;
-    paginationOpts: { cursor: string | null; numItems: number };
-  }>
-)._handler;
-
-const listWithLatestHandler = (
-  listWithLatest as unknown as WrappedHandler<{
-    limit?: number;
-  }>
-)._handler;
-const listHighlightedPublicHandler = (
-  listHighlightedPublic as unknown as WrappedHandler<{
-    limit?: number;
-  }>
-)._handler;
+const listWithLatestHandler = getTestHandler<{
+  limit?: number;
+}>(listWithLatest);
+const listHighlightedPublicHandler = getTestHandler<{
+  limit?: number;
+}>(listHighlightedPublic);
 
 function makeVersion() {
   return {

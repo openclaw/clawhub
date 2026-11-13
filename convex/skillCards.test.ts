@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { hashSkillFiles } from "./lib/skills";
 import {
   abandonClaimsInternal,
@@ -12,76 +13,58 @@ import {
 
 afterEach(() => vi.unstubAllEnvs());
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const prepareHandler = getTestHandler<{
+  jobId: string;
+  leaseToken: string;
+  generationHash?: string;
+}>(prepareJobTargetInternal);
 
-const prepareHandler = (
-  prepareJobTargetInternal as unknown as WrappedHandler<{
+const enqueueHandler = getTestHandler<
+  { versionId: string; source: "scan"; priority?: number; requireMissingCard?: boolean },
+  { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
+>(enqueueForVersionInternal);
+
+const abandonHandler = getTestHandler<
+  { jobs: Array<{ jobId: string; leaseToken: string }>; error: string },
+  { released: number }
+>(abandonClaimsInternal);
+
+const attachHandler = getTestHandler<
+  {
     jobId: string;
     leaseToken: string;
-    generationHash?: string;
-  }>
-)._handler;
+    cardFile: {
+      path: string;
+      size: number;
+      storageId: string;
+      sha256: string;
+      contentType?: string;
+    };
+    runId?: string;
+  },
+  { ok: true; bundleFingerprint: string }
+>(attachCardAndSucceedJobInternal);
 
-const enqueueHandler = (
-  enqueueForVersionInternal as unknown as WrappedHandler<
-    { versionId: string; source: "scan"; priority?: number; requireMissingCard?: boolean },
-    { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
-  >
-)._handler;
+const completeHandler = getTestHandler<
+  {
+    token: string;
+    jobId: string;
+    leaseToken: string;
+    markdown: string;
+    runId?: string;
+  },
+  { ok: true }
+>(completeSkillCardJob);
 
-const abandonHandler = (
-  abandonClaimsInternal as unknown as WrappedHandler<
-    { jobs: Array<{ jobId: string; leaseToken: string }>; error: string },
-    { released: number }
-  >
-)._handler;
+const failHandler = getTestHandler<
+  { jobId: string; leaseToken: string; error: string },
+  { ok: true; retry: boolean }
+>(failJobInternal);
 
-const attachHandler = (
-  attachCardAndSucceedJobInternal as unknown as WrappedHandler<
-    {
-      jobId: string;
-      leaseToken: string;
-      cardFile: {
-        path: string;
-        size: number;
-        storageId: string;
-        sha256: string;
-        contentType?: string;
-      };
-      runId?: string;
-    },
-    { ok: true; bundleFingerprint: string }
-  >
-)._handler;
-
-const completeHandler = (
-  completeSkillCardJob as unknown as WrappedHandler<
-    {
-      token: string;
-      jobId: string;
-      leaseToken: string;
-      markdown: string;
-      runId?: string;
-    },
-    { ok: true }
-  >
-)._handler;
-
-const failHandler = (
-  failJobInternal as unknown as WrappedHandler<
-    { jobId: string; leaseToken: string; error: string },
-    { ok: true; retry: boolean }
-  >
-)._handler;
-
-const claimHandler = (
-  claimSkillCardJobs as unknown as WrappedHandler<
-    { token: string; workerId: string; limit?: number; leaseMs?: number },
-    Array<{ target: { evidence: Record<string, unknown> } }>
-  >
-)._handler;
+const claimHandler = getTestHandler<
+  { token: string; workerId: string; limit?: number; leaseMs?: number },
+  Array<{ target: { evidence: Record<string, unknown> } }>
+>(claimSkillCardJobs);
 
 function makeSettledVersion(overrides: Record<string, unknown> = {}) {
   return {

@@ -1,6 +1,6 @@
-/* @vitest-environment node */
-
 import { afterEach, describe, expect, it, vi } from "vitest";
+/* @vitest-environment node */
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { ACTIVITY_TREND_DAYS, getActivityTrendRange } from "./lib/downloadTrend";
 import {
   computeRecommendationScore,
@@ -21,59 +21,47 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const recordDownloadHandler = getTestHandler<{ packageId: string }, void>(
+  recordPackageDownloadInternal,
+);
 
-const recordDownloadHandler = (
-  recordPackageDownloadInternal as unknown as WrappedHandler<{ packageId: string }, void>
-)._handler;
+const recordInstallHandler = getTestHandler<
+  {
+    packageId: string;
+    identityKind?: "user" | "ip";
+    identityHash?: string;
+    dayStart?: number;
+    occurredAt?: number;
+  },
+  void
+>(recordPackageInstallInternal);
 
-const recordInstallHandler = (
-  recordPackageInstallInternal as unknown as WrappedHandler<
-    {
-      packageId: string;
-      identityKind?: "user" | "ip";
-      identityHash?: string;
-      dayStart?: number;
-      occurredAt?: number;
-    },
-    void
-  >
-)._handler;
+const processStatsHandler = getTestHandler<
+  { batchSize?: number },
+  { processed: number; packagesUpdated: number }
+>(processPackageStatEventsInternal);
 
-const processStatsHandler = (
-  processPackageStatEventsInternal as unknown as WrappedHandler<
-    { batchSize?: number },
-    { processed: number; packagesUpdated: number }
-  >
-)._handler;
+const pruneProcessedPackageStatEventBatchHandler = getTestHandler<
+  {
+    cutoffProcessedAt: number;
+    dryRun: boolean;
+    batchSize?: number;
+    confirmationToken?: string;
+  },
+  { matched: number; deleted: number; hasMore: boolean }
+>(pruneProcessedPackageStatEventBatchInternal);
 
-const pruneProcessedPackageStatEventBatchHandler = (
-  pruneProcessedPackageStatEventBatchInternal as unknown as WrappedHandler<
-    {
-      cutoffProcessedAt: number;
-      dryRun: boolean;
-      batchSize?: number;
-      confirmationToken?: string;
-    },
-    { matched: number; deleted: number; hasMore: boolean }
-  >
-)._handler;
-
-const getActivityTrendHandler = (
-  getActivityTrendForName as unknown as WrappedHandler<
-    { name: string; endDay: number },
-    {
-      downloads: {
-        range: "daily";
-        days: number;
-        total: number;
-        points: Array<{ day: number; value: number }>;
-      };
-    } | null
-  >
-)._handler;
+const getActivityTrendHandler = getTestHandler<
+  { name: string; endDay: number },
+  {
+    downloads: {
+      range: "daily";
+      days: number;
+      total: number;
+      points: Array<{ day: number; value: number }>;
+    };
+  } | null
+>(getActivityTrendForName);
 
 function makeActivityTrendContext<TPackageIndex, TDailyIndex>(
   packageWithIndex: TPackageIndex,
