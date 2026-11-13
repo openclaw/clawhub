@@ -855,6 +855,21 @@ function curlAuthorizationHeader(token: string | undefined): {
   return { args: ["-H", "@-"], input: `Authorization: Bearer ${token}\n` };
 }
 
+function runCurl(
+  deps: Pick<HttpClientDeps, "spawnSyncImpl">,
+  curlArgs: string[],
+  input: string | undefined,
+) {
+  const result = deps.spawnSyncImpl("curl", curlArgs, {
+    encoding: "utf8",
+    input,
+  });
+  if (result.status !== 0) {
+    throw new Error(result.stderr || "curl failed");
+  }
+  return parseCurlBodyAndMeta(result.stdout ?? "");
+}
+
 async function fetchJsonViaCurl(
   deps: Pick<HttpClientDeps, "spawnSyncImpl" | "now">,
   url: string,
@@ -880,14 +895,7 @@ async function fetchJsonViaCurl(
     curlArgs.push("--data-binary", JSON.stringify(args.body ?? {}));
   }
 
-  const result = deps.spawnSyncImpl("curl", curlArgs, {
-    encoding: "utf8",
-    input: authorization.input,
-  });
-  if (result.status !== 0) {
-    throw new Error(result.stderr || "curl failed");
-  }
-  const { body, status, headers: responseHeaders } = parseCurlBodyAndMeta(result.stdout ?? "");
+  const { body, status, headers: responseHeaders } = runCurl(deps, curlArgs, authorization.input);
   if ((status < 200 || status >= 300) && !isAcceptedStatus(status, args.acceptedStatuses)) {
     throwHttpStatusError(status, body, responseHeaders, deps.now);
   }
@@ -942,14 +950,7 @@ async function fetchJsonFormViaCurl(
       url,
     ];
 
-    const result = deps.spawnSyncImpl("curl", curlArgs, {
-      encoding: "utf8",
-      input: authorization.input,
-    });
-    if (result.status !== 0) {
-      throw new Error(result.stderr || "curl failed");
-    }
-    const { body, status, headers: responseHeaders } = parseCurlBodyAndMeta(result.stdout ?? "");
+    const { body, status, headers: responseHeaders } = runCurl(deps, curlArgs, authorization.input);
     if (status < 200 || status >= 300) {
       throwHttpStatusError(status, body, responseHeaders, deps.now);
     }
@@ -985,14 +986,7 @@ async function uploadBinaryViaCurl(
     if (args.contentType) curlArgs.push("-H", `Content-Type: ${args.contentType}`);
     curlArgs.push(...authorization.args, "--data-binary", `@${filePath}`, args.url);
 
-    const result = deps.spawnSyncImpl("curl", curlArgs, {
-      encoding: "utf8",
-      input: authorization.input,
-    });
-    if (result.status !== 0) {
-      throw new Error(result.stderr || "curl failed");
-    }
-    const { body, status, headers: responseHeaders } = parseCurlBodyAndMeta(result.stdout ?? "");
+    const { body, status, headers: responseHeaders } = runCurl(deps, curlArgs, authorization.input);
     if (status < 200 || status >= 300) {
       throwHttpStatusError(status, body, responseHeaders, deps.now);
     }
@@ -1022,14 +1016,7 @@ async function fetchTextViaCurl(
     ...headers,
     url,
   ];
-  const result = deps.spawnSyncImpl("curl", curlArgs, {
-    encoding: "utf8",
-    input: authorization.input,
-  });
-  if (result.status !== 0) {
-    throw new Error(result.stderr || "curl failed");
-  }
-  const { body, status, headers: responseHeaders } = parseCurlBodyAndMeta(result.stdout ?? "");
+  const { body, status, headers: responseHeaders } = runCurl(deps, curlArgs, authorization.input);
   if (status < 200 || status >= 300) {
     throwHttpStatusError(status, body, responseHeaders, deps.now);
   }
@@ -1061,14 +1048,7 @@ async function fetchBinaryViaCurl(
       CURL_WRITE_OUT_FORMAT,
       url,
     ];
-    const result = deps.spawnSyncImpl("curl", curlArgs, {
-      encoding: "utf8",
-      input: authorization.input,
-    });
-    if (result.status !== 0) {
-      throw new Error(result.stderr || "curl failed");
-    }
-    const { status, headers: responseHeaders } = parseCurlBodyAndMeta(result.stdout ?? "");
+    const { status, headers: responseHeaders } = runCurl(deps, curlArgs, authorization.input);
     if (status < 200 || status >= 300) {
       const body = await readFileSafe(deps.readFileImpl, filePath);
       throwHttpStatusError(
