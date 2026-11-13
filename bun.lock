@@ -108,7 +108,7 @@
     },
     "packages/clawhub": {
       "name": "clawhub",
-      "version": "0.25.1",
+      "version": "0.26.0",
       "bin": {
         "clawdhub": "bin/clawdhub.js",
         "clawhub": "bin/clawdhub.js",
