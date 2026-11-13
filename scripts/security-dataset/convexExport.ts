@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { strFromU8, unzipSync } from "fflate";
+import { normalizeBundlePathForComparison } from "../../convex/lib/bundlePaths";
 import type {
   ArtifactExportInput,
   DatasetLabel,
@@ -336,16 +337,6 @@ function isExcludedSkillBundlePath(path: string) {
 function isPrimarySkillReadmePath(path: string) {
   const normalized = normalizeBundlePathForComparison(path);
   return normalized === "skill.md" || normalized === "skills.md";
-}
-
-function normalizeBundlePathForComparison(path: string) {
-  return path
-    .trim()
-    .replace(/^\/+/, "")
-    .split("/")
-    .filter((segment) => segment && segment !== ".")
-    .join("/")
-    .toLowerCase();
 }
 
 function vtAnalysisFromExport(value: unknown): VtAnalysisInput | null {
