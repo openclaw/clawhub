@@ -764,6 +764,44 @@ function makePublisherAbuseAutobanSettingQuery(setting: unknown) {
   };
 }
 
+function makeActiveSkillEngagementQuery(publisherId: string) {
+  return {
+    withIndex: vi.fn((indexName: string) => {
+      expect(indexName).toBe("by_owner_publisher_active_updated");
+      return {
+        take: vi.fn(async (numItems: number) => {
+          expect(numItems).toBe(501);
+          return [
+            {
+              _id: "skills:one",
+              ownerPublisherId: publisherId,
+              softDeletedAt: undefined,
+              statsInstallsAllTime: 7,
+              statsStars: 1,
+              statsDownloads: 70,
+              stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
+            },
+            {
+              _id: "skills:two",
+              ownerPublisherId: publisherId,
+              softDeletedAt: undefined,
+              statsInstallsAllTime: 11,
+              statsStars: 2,
+              statsDownloads: 110,
+              stats: {
+                downloads: 110,
+                stars: 2,
+                installsCurrent: 1,
+                installsAllTime: 11,
+              },
+            },
+          ];
+        }),
+      };
+    }),
+  };
+}
+
 describe("publisher abuse dry-run persistence", () => {
   it("keeps read-only dashboard entrypoints empty for non-staff while guarding writes", async () => {
     const user = { _id: "users:viewer", role: "user" };
@@ -5301,41 +5339,7 @@ describe("publisher abuse dry-run persistence", () => {
             };
           }
           if (table === "skills") {
-            return {
-              withIndex: vi.fn((indexName: string) => {
-                expect(indexName).toBe("by_owner_publisher_active_updated");
-                return {
-                  take: vi.fn(async (numItems: number) => {
-                    expect(numItems).toBe(501);
-                    return [
-                      {
-                        _id: "skills:one",
-                        ownerPublisherId: "publishers:not-backfilled",
-                        softDeletedAt: undefined,
-                        statsInstallsAllTime: 7,
-                        statsStars: 1,
-                        statsDownloads: 70,
-                        stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
-                      },
-                      {
-                        _id: "skills:two",
-                        ownerPublisherId: "publishers:not-backfilled",
-                        softDeletedAt: undefined,
-                        statsInstallsAllTime: 11,
-                        statsStars: 2,
-                        statsDownloads: 110,
-                        stats: {
-                          downloads: 110,
-                          stars: 2,
-                          installsCurrent: 1,
-                          installsAllTime: 11,
-                        },
-                      },
-                    ];
-                  }),
-                };
-              }),
-            };
+            return makeActiveSkillEngagementQuery("publishers:not-backfilled");
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -5823,41 +5827,7 @@ describe("publisher abuse dry-run persistence", () => {
             };
           }
           if (table === "skills") {
-            return {
-              withIndex: vi.fn((indexName: string) => {
-                expect(indexName).toBe("by_owner_publisher_active_updated");
-                return {
-                  take: vi.fn(async (numItems: number) => {
-                    expect(numItems).toBe(501);
-                    return [
-                      {
-                        _id: "skills:one",
-                        ownerPublisherId: "publishers:missing-engagement",
-                        softDeletedAt: undefined,
-                        statsInstallsAllTime: 7,
-                        statsStars: 1,
-                        statsDownloads: 70,
-                        stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
-                      },
-                      {
-                        _id: "skills:two",
-                        ownerPublisherId: "publishers:missing-engagement",
-                        softDeletedAt: undefined,
-                        statsInstallsAllTime: 11,
-                        statsStars: 2,
-                        statsDownloads: 110,
-                        stats: {
-                          downloads: 110,
-                          stars: 2,
-                          installsCurrent: 1,
-                          installsAllTime: 11,
-                        },
-                      },
-                    ];
-                  }),
-                };
-              }),
-            };
+            return makeActiveSkillEngagementQuery("publishers:missing-engagement");
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -5920,41 +5890,7 @@ describe("publisher abuse dry-run persistence", () => {
             };
           }
           if (table === "skills") {
-            return {
-              withIndex: vi.fn((indexName: string) => {
-                expect(indexName).toBe("by_owner_publisher_active_updated");
-                return {
-                  take: vi.fn(async (numItems: number) => {
-                    expect(numItems).toBe(501);
-                    return [
-                      {
-                        _id: "skills:one",
-                        ownerPublisherId: "publishers:package-count-missing",
-                        softDeletedAt: undefined,
-                        statsInstallsAllTime: 7,
-                        statsStars: 1,
-                        statsDownloads: 70,
-                        stats: { downloads: 70, stars: 1, installsCurrent: 1, installsAllTime: 7 },
-                      },
-                      {
-                        _id: "skills:two",
-                        ownerPublisherId: "publishers:package-count-missing",
-                        softDeletedAt: undefined,
-                        statsInstallsAllTime: 11,
-                        statsStars: 2,
-                        statsDownloads: 110,
-                        stats: {
-                          downloads: 110,
-                          stars: 2,
-                          installsCurrent: 1,
-                          installsAllTime: 11,
-                        },
-                      },
-                    ];
-                  }),
-                };
-              }),
-            };
+            return makeActiveSkillEngagementQuery("publishers:package-count-missing");
           }
           throw new Error(`unexpected table ${table}`);
         }),
