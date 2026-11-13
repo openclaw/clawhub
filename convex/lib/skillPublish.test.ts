@@ -502,15 +502,7 @@ describe("skillPublish", () => {
         displayName,
         version: "1.0.0",
         changelog: "Initial release",
-        files: [
-          {
-            path: "SKILL.md",
-            size: skillMarkdown.length,
-            storageId: "_storage:skill" as never,
-            sha256: "a".repeat(64),
-            contentType: "text/markdown",
-          },
-        ],
+        files: [file("_storage:skill", "SKILL.md", skillMarkdown.length, "text/markdown")],
       },
       {
         bypassGitHubAccountAge: true,
@@ -577,20 +569,14 @@ description: Automation workflow for recurring reports.
         version: "1.0.0",
         changelog: "Initial release",
         files: [
-          {
-            path: "SKILL.md",
-            size: 90,
-            storageId: "_storage:skill" as never,
-            sha256: "a".repeat(64),
-            contentType: "text/markdown",
-          },
-          {
-            path: "metadata.openclaw.json",
-            size: 70,
-            storageId: "_storage:metadata" as never,
-            sha256: "b".repeat(64),
-            contentType: "application/json",
-          },
+          file("_storage:skill", "SKILL.md", 90, "text/markdown"),
+          file(
+            "_storage:metadata",
+            "metadata.openclaw.json",
+            70,
+            "application/json",
+            "b".repeat(64),
+          ),
         ],
       },
       {
@@ -666,15 +652,7 @@ description: Org helper.
         displayName: "Org Helper",
         version: "1.0.0",
         changelog: "Initial release",
-        files: [
-          {
-            path: "SKILL.md",
-            size: 70,
-            storageId: "_storage:skill" as never,
-            sha256: "a".repeat(64),
-            contentType: "text/markdown",
-          },
-        ],
+        files: [file("_storage:skill", "SKILL.md", 70, "text/markdown")],
       },
       {
         bypassGitHubAccountAge: true,
@@ -758,15 +736,7 @@ description: Research helper for literature reviews.
         displayName: "Research Helper",
         version: "1.0.0",
         ...publishInput,
-        files: [
-          {
-            path: "SKILL.md",
-            size: 90,
-            storageId: "_storage:skill" as never,
-            sha256: "a".repeat(64),
-            contentType: "text/markdown",
-          },
-        ],
+        files: [file("_storage:skill", "SKILL.md", 90, "text/markdown")],
       },
       {
         bypassGitHubAccountAge: true,
@@ -836,15 +806,7 @@ description: Security scanner smoke fixture.
         displayName: "Security Scanner Smoke",
         version: "1.0.0",
         changelog: "Initial release",
-        files: [
-          {
-            path: "SKILL.md",
-            size: 90,
-            storageId: "_storage:skill" as never,
-            sha256: "a".repeat(64),
-            contentType: "text/markdown",
-          },
-        ],
+        files: [file("_storage:skill", "SKILL.md", 90, "text/markdown")],
       },
       {
         bypassGitHubAccountAge: true,
@@ -944,15 +906,7 @@ description: Security scanner smoke fixture.
           displayName: "Security Scanner Smoke",
           version: "1.0.0",
           changelog: "Initial release",
-          files: [
-            {
-              path: "SKILL.md",
-              size: 90,
-              storageId: "_storage:skill" as never,
-              sha256: "a".repeat(64),
-              contentType: "text/markdown",
-            },
-          ],
+          files: [file("_storage:skill", "SKILL.md", 90, "text/markdown")],
         },
         {
           bypassGitHubAccountAge: true,
@@ -1005,15 +959,7 @@ description: Security scanner smoke fixture.
           displayName: "Security Scanner Smoke",
           version: "1.0.0",
           changelog: "Duplicate release",
-          files: [
-            {
-              path: "SKILL.md",
-              size: 90,
-              storageId: "_storage:skill" as never,
-              sha256: "a".repeat(64),
-              contentType: "text/markdown",
-            },
-          ],
+          files: [file("_storage:skill", "SKILL.md", 90, "text/markdown")],
         },
         {
           bypassGitHubAccountAge: true,
@@ -1052,15 +998,7 @@ description: Security scanner smoke fixture.
           displayName: "Security Scanner Smoke",
           version: "1.0.0",
           changelog: "Duplicate release",
-          files: [
-            {
-              path: "SKILL.md",
-              size: 90,
-              storageId: "_storage:skill" as never,
-              sha256: "a".repeat(64),
-              contentType: "text/markdown",
-            },
-          ],
+          files: [file("_storage:skill", "SKILL.md", 90, "text/markdown")],
         },
         {
           bypassGitHubAccountAge: true,
@@ -1396,13 +1334,7 @@ description: Security scanner smoke fixture.
     };
 
     const files = await __test.derivePublishFilesFromStorage({ storage } as never, [
-      {
-        path: "SKILL.md",
-        size: 1,
-        storageId: "_storage:skill" as never,
-        sha256: "caller-supplied",
-        contentType: "text/plain",
-      },
+      file("_storage:skill", "SKILL.md", 1, "text/plain", "caller-supplied"),
     ]);
 
     expect(files).toEqual([
@@ -1436,27 +1368,15 @@ description: Security scanner smoke fixture.
     };
 
     const files = await __test.derivePublishFilesFromStorage({ storage } as never, [
-      {
-        path: "SKILL.md",
-        size: 1,
-        storageId: "_storage:skill" as never,
-        sha256: "caller-supplied",
-        contentType: "text/markdown",
-      },
-      {
-        path: "main.tf",
-        size: 1,
-        storageId: "_storage:tf" as never,
-        sha256: "caller-supplied",
-        contentType: "application/octet-stream",
-      },
-      {
-        path: "assets/payload.bin",
-        size: 1,
-        storageId: "_storage:binary" as never,
-        sha256: "caller-supplied",
-        contentType: "application/octet-stream",
-      },
+      file("_storage:skill", "SKILL.md", 1, "text/markdown", "caller-supplied"),
+      file("_storage:tf", "main.tf", 1, "application/octet-stream", "caller-supplied"),
+      file(
+        "_storage:binary",
+        "assets/payload.bin",
+        1,
+        "application/octet-stream",
+        "caller-supplied",
+      ),
     ]);
 
     expect(files).toEqual([
@@ -1481,13 +1401,7 @@ description: Security scanner smoke fixture.
 
     await expect(
       __test.derivePublishFilesFromStorage({ storage } as never, [
-        {
-          path: "SKILL.md",
-          size: 1,
-          storageId: "_storage:skill" as never,
-          sha256: "caller-supplied",
-          contentType: "text/plain",
-        },
+        file("_storage:skill", "SKILL.md", 1, "text/plain", "caller-supplied"),
       ]),
     ).rejects.toThrow(/exceeds 10MB limit/i);
   });
@@ -1512,20 +1426,8 @@ description: Security scanner smoke fixture.
             version: "1.0.0",
             changelog: "Initial release",
             files: [
-              {
-                path: "SKILL.md",
-                size: 6,
-                storageId: "_storage:skill" as never,
-                sha256: "a".repeat(64),
-                contentType: "text/markdown",
-              },
-              {
-                path,
-                size: 11,
-                storageId: "_storage:card" as never,
-                sha256: "b".repeat(64),
-                contentType: "text/markdown",
-              },
+              file("_storage:skill", "SKILL.md", 6, "text/markdown"),
+              file("_storage:card", path, 11, "text/markdown", "b".repeat(64)),
             ],
           },
           {
@@ -1623,12 +1525,18 @@ function routeQueries(routes: Record<string, unknown>) {
   );
 }
 
-function file(storageId: string, path: string, size: number, contentType: string) {
+function file(
+  storageId: string,
+  path: string,
+  size: number,
+  contentType: string,
+  sha256 = "a".repeat(64),
+) {
   return {
     path,
     size,
     storageId: storageId as never,
-    sha256: "a".repeat(64),
+    sha256,
     contentType,
   };
 }
