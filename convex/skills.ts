@@ -10329,65 +10329,50 @@ export const setDuplicate = mutation({
   },
 });
 
+async function setAdminSkillBadge(
+  ctx: MutationCtx,
+  skillId: Id<"skills">,
+  kind: "official" | "deprecated",
+  enabled: boolean,
+) {
+  const { user } = await requireUser(ctx);
+  assertAdmin(user);
+  const skill = await ctx.db.get(skillId);
+  if (!skill) throw new Error("Skill not found");
+
+  const now = Date.now();
+  if (enabled) {
+    await upsertSkillBadge(ctx, skill._id, kind, user._id, now);
+  } else {
+    await removeSkillBadge(ctx, skill._id, kind);
+  }
+
+  await ctx.db.patch(skill._id, {
+    lastReviewedAt: now,
+    updatedAt: now,
+  });
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: user._id,
+    action: `badge.${kind}.${enabled ? "set" : "unset"}`,
+    targetType: "skill",
+    targetId: skill._id,
+    metadata: { [kind]: enabled },
+    createdAt: now,
+  });
+}
+
 export const setOfficialBadge = mutation({
   args: { skillId: v.id("skills"), official: v.boolean() },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    assertAdmin(user);
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill) throw new Error("Skill not found");
-
-    const now = Date.now();
-    if (args.official) {
-      await upsertSkillBadge(ctx, skill._id, "official", user._id, now);
-    } else {
-      await removeSkillBadge(ctx, skill._id, "official");
-    }
-
-    await ctx.db.patch(skill._id, {
-      lastReviewedAt: now,
-      updatedAt: now,
-    });
-
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: args.official ? "badge.official.set" : "badge.official.unset",
-      targetType: "skill",
-      targetId: skill._id,
-      metadata: { official: args.official },
-      createdAt: now,
-    });
+    await setAdminSkillBadge(ctx, args.skillId, "official", args.official);
   },
 });
 
 export const setDeprecatedBadge = mutation({
   args: { skillId: v.id("skills"), deprecated: v.boolean() },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    assertAdmin(user);
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill) throw new Error("Skill not found");
-
-    const now = Date.now();
-    if (args.deprecated) {
-      await upsertSkillBadge(ctx, skill._id, "deprecated", user._id, now);
-    } else {
-      await removeSkillBadge(ctx, skill._id, "deprecated");
-    }
-
-    await ctx.db.patch(skill._id, {
-      lastReviewedAt: now,
-      updatedAt: now,
-    });
-
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: args.deprecated ? "badge.deprecated.set" : "badge.deprecated.unset",
-      targetType: "skill",
-      targetId: skill._id,
-      metadata: { deprecated: args.deprecated },
-      createdAt: now,
-    });
+    await setAdminSkillBadge(ctx, args.skillId, "deprecated", args.deprecated);
   },
 });
 
