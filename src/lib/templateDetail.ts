@@ -20,6 +20,43 @@ export function parseTemplateDocument(contents: string | null): {
   }
 }
 
+export type TemplateWorkspaceEntry = { name: string; path: string };
+export type TemplateWorkspaceContents = {
+  skills: TemplateWorkspaceEntry[];
+  plugins: TemplateWorkspaceEntry[];
+  heartbeat: { path: string; every?: string } | null;
+};
+
+// OpenClaw's native workspace discovery locations, relative to the agent workspace.
+const WORKSPACE_SKILL_FILE = /^(?:\.agents\/)?skills\/(?:[^/]+\/)*([^/]+)\/SKILL\.md$/;
+const WORKSPACE_PLUGIN_MANIFEST = /^\.openclaw\/extensions\/([^/]+)\/openclaw\.plugin\.json$/;
+const WORKSPACE_HEARTBEAT_FILE = "HEARTBEAT.md";
+
+/**
+ * Workspace files can land where OpenClaw natively discovers skills, plugins and heartbeat
+ * work. They are not declared dependencies, so this projection is display-only: it never
+ * feeds the dependency inventory, summary counts or validation.
+ */
+export function templateWorkspaceContents(manifest: TemplateManifest): TemplateWorkspaceContents {
+  const destinations = [
+    ...Object.keys(manifest.workspace?.bootstrapFiles ?? {}),
+    ...(manifest.workspace?.files ?? []).map((file) => file.path.replaceAll("\\", "/")),
+  ];
+  const collect = (pattern: RegExp) =>
+    destinations.flatMap((path): TemplateWorkspaceEntry[] => {
+      const name = pattern.exec(path)?.[1];
+      return name ? [{ name, path }] : [];
+    });
+  const every = manifest.agent.heartbeat?.every;
+  return {
+    skills: collect(WORKSPACE_SKILL_FILE),
+    plugins: collect(WORKSPACE_PLUGIN_MANIFEST),
+    heartbeat: destinations.includes(WORKSPACE_HEARTBEAT_FILE)
+      ? { path: WORKSPACE_HEARTBEAT_FILE, ...(every ? { every } : {}) }
+      : null,
+  };
+}
+
 /** The package entry point can live below the package root. */
 export function getTemplateManifestPath(packageJson: string | null): string {
   try {

@@ -226,6 +226,11 @@ the agent identity and declared resource counts. `templateInventory` identifies
 each dependency as ClawHub (`ref`, exact `version`) or bundled (`path`, optional
 metadata-derived `name`). The website shows bundled paths without inventing
 registry versions. The full manifest and dependency bytes remain in the artifact.
+The Template page also lists `workspace` files that land where OpenClaw
+discovers them natively: `skills/**/SKILL.md` and `.agents/skills/**/SKILL.md`
+under Skills, `.openclaw/extensions/<id>/openclaw.plugin.json` under Plugins, and
+`HEARTBEAT.md` under Automations. These entries are labeled as workspace files
+and are not part of `templateInventory` or the summary counts.
 Projected bundled display names use the same 128-character bound as agent names.
 The complete normalized dependency inventory is limited to 256 KiB for release
 storage; this does not change the full native identity retained in the artifact.
