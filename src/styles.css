@@ -3710,28 +3710,11 @@ code {
   min-width: 0;
 }
 
-.detail-main,
-.detail-sidebar {
+.detail-main {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-.detail-sidebar {
-  align-self: start;
-}
-
-@media (min-width: 1080px) {
-  .detail-layout:has(.detail-sidebar) {
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
-    align-items: start;
-  }
-
-  .detail-sidebar {
-    position: sticky;
-    top: 96px;
-  }
 }
 
 /* ── Plugin Detail Page ── */
@@ -9760,24 +9743,6 @@ a.skills-sh-security-audit-row:focus-visible {
   line-height: 1;
 }
 
-.file-row-button {
-  width: 100%;
-  border: 1px solid var(--line);
-  background: var(--surface-muted);
-  text-align: left;
-  cursor: pointer;
-}
-
-.file-row-button:focus-visible {
-  outline: 3px solid rgba(255, 255, 255, 0.25);
-  outline-offset: 2px;
-}
-
-.file-row-button.is-active {
-  border-color: var(--ink);
-  box-shadow: 0 8px 18px rgba(29, 26, 23, 0.12);
-}
-
 .file-viewer {
   border-radius: 16px;
   border: 1px solid var(--line);
@@ -10035,53 +10000,6 @@ a.skills-sh-security-audit-row:focus-visible {
   white-space: nowrap;
 }
 
-.version-scroll {
-  max-height: 320px;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.file-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  max-width: 100%;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--surface-muted);
-}
-
-.file-row-path {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  overflow: hidden;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-}
-
-.file-path-dir {
-  color: var(--ink-soft);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-path-name {
-  color: var(--ink);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.file-path {
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  color: var(--ink);
-  word-break: break-all;
-}
-
 .file-meta {
   flex-shrink: 0;
   font-size: 0.8rem;
@@ -10089,65 +10007,9 @@ a.skills-sh-security-audit-row:focus-visible {
   white-space: nowrap;
 }
 
-.sidebar-card {
-  gap: 20px;
-}
-
 .sidebar-section {
   display: grid;
   gap: 12px;
-}
-
-.sidebar-stack {
-  display: grid;
-  gap: 8px;
-}
-
-.sidebar-divider {
-  height: 1px;
-  background: var(--line);
-  opacity: 0.6;
-}
-
-.sidebar-scroll {
-  max-height: 260px;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.sidebar-form {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.version-list {
-  display: grid;
-  gap: 14px;
-}
-
-.version-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  padding: 6px 0;
-}
-
-.version-info {
-  display: grid;
-  gap: 6px;
-  color: var(--ink-soft);
-  font-size: 0.9rem;
-}
-
-.version-actions {
-  display: grid;
-  align-items: center;
-}
-
-.version-zip {
-  justify-self: end;
 }
 
 .skill-versions-panel {
