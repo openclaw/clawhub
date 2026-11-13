@@ -31,6 +31,21 @@ const useAuthStatusMock = vi.fn();
 const useSearchMock = vi.fn();
 let useActionCallCount = 0;
 
+function fillValidPublishFields() {
+  fireEvent.change(screen.getByPlaceholderText("skill-name"), {
+    target: { value: "cool-skill" },
+  });
+  fireEvent.change(screen.getByPlaceholderText("My skill"), {
+    target: { value: "Cool Skill" },
+  });
+  fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
+    target: { value: "1.2.3" },
+  });
+  fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
+    target: { value: "latest" },
+  });
+}
+
 function selectCategory(name: string) {
   const trigger = screen.getByRole("button", { name: "Categories" });
   if (trigger.getAttribute("aria-expanded") !== "true") {
@@ -436,18 +451,7 @@ describe("Upload route", () => {
   it("enables publish when fields and files are valid", async () => {
     generateUploadUrl.mockResolvedValue("https://upload.local");
     render(<Upload />);
-    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
-      target: { value: "cool-skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("My skill"), {
-      target: { value: "Cool Skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
-      target: { value: "1.2.3" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
-      target: { value: "latest" },
-    });
+    fillValidPublishFields();
     const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     const input = screen.getByTestId("upload-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [file] } });
@@ -465,18 +469,7 @@ describe("Upload route", () => {
 
   it("extracts zip uploads and unwraps top-level folders", async () => {
     render(<Upload />);
-    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
-      target: { value: "cool-skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("My skill"), {
-      target: { value: "Cool Skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
-      target: { value: "1.2.3" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
-      target: { value: "latest" },
-    });
+    fillValidPublishFields();
 
     const zip = zipSync({
       "hetzner-cloud-skill/SKILL.md": new Uint8Array(strToU8("hello")),
@@ -553,18 +546,7 @@ describe("Upload route", () => {
     generateUploadUrl.mockResolvedValue("https://upload.local");
     publishVersion.mockResolvedValue({ status: "pending" });
     render(<Upload />);
-    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
-      target: { value: "cool-skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("My skill"), {
-      target: { value: "Cool Skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
-      target: { value: "1.2.3" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
-      target: { value: "latest" },
-    });
+    fillValidPublishFields();
 
     const skill = new File(["# Terraform skill\n"], "SKILL.md", { type: "text/markdown" });
     const terraform = new File(['resource "null_resource" "demo" {}\n'], "main.tf", { type: "" });
@@ -618,18 +600,7 @@ describe("Upload route", () => {
 
   it("shows a validation error when a skill file exceeds 10MB", async () => {
     render(<Upload />);
-    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
-      target: { value: "cool-skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("My skill"), {
-      target: { value: "Cool Skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
-      target: { value: "1.2.3" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
-      target: { value: "latest" },
-    });
+    fillValidPublishFields();
 
     const skill = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     const huge = new File(["x"], "notes.md", { type: "text/markdown" });
@@ -651,18 +622,7 @@ describe("Upload route", () => {
 
   it("shows an informational note when local metadata files are ignored", async () => {
     render(<Upload />);
-    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
-      target: { value: "cool-skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("My skill"), {
-      target: { value: "Cool Skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
-      target: { value: "1.2.3" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
-      target: { value: "latest" },
-    });
+    fillValidPublishFields();
 
     const skill = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     const junk = new File(["junk"], ".DS_Store", { type: "application/octet-stream" });
@@ -708,18 +668,7 @@ describe("Upload route", () => {
     publishVersion.mockRejectedValueOnce(new Error("Changelog is required"));
     generateUploadUrl.mockResolvedValue("https://upload.local");
     render(<Upload />);
-    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
-      target: { value: "cool-skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("My skill"), {
-      target: { value: "Cool Skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
-      target: { value: "1.2.3" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
-      target: { value: "latest" },
-    });
+    fillValidPublishFields();
     const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     const input = screen.getByTestId("upload-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [file] } });
