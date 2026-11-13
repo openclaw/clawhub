@@ -12,7 +12,7 @@ import {
   type SkillCategorySlug,
 } from "clawhub-schema";
 import { getPage, type IndexKey, paginator } from "convex-helpers/server/pagination";
-import { paginationOptsValidator } from "convex/server";
+import { paginationOptsValidator, type PaginationResult } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
@@ -5779,15 +5779,24 @@ async function toPublicSkillCatalogItem(
   };
 }
 
-async function listSkillPackageCatalogTopicPage(
+async function collectSkillPackageCatalogPage<TRow>(
   ctx: QueryCtx,
   args: {
     channel?: "official" | "community" | "private";
     isOfficial?: boolean;
     highlightedOnly?: boolean;
-    topic: string;
+    topic?: string;
     sort?: "updated" | "downloads" | "recommended" | "installs";
     paginationOpts: { cursor: string | null; numItems: number };
+  },
+  source: {
+    loadPage: (
+      paginationOpts: { cursor: string | null; numItems: number },
+      sort: typeof args.sort,
+    ) => Promise<PaginationResult<TRow>>;
+    loadDigest: (
+      row: TRow,
+    ) => Doc<"skillSearchDigest"> | null | Promise<Doc<"skillSearchDigest"> | null>;
   },
 ) {
   const targetCount = args.paginationOpts.numItems;
@@ -5819,26 +5828,14 @@ async function listSkillPackageCatalogTopicPage(
     if (effectivePageSize <= 0) break;
     remainingScanBudget -= effectivePageSize;
     const pageCursor = cursor;
-    const indexName =
-      catalogSort === "downloads"
-        ? "by_active_topic_downloads"
-        : catalogSort === "installs"
-          ? "by_active_topic_installs"
-          : catalogSort === "recommended"
-            ? "by_active_topic_recommended_score"
-            : "by_active_topic_updated";
-    const page = await paginator(ctx.db, schema)
-      .query("skillTopicSearchDigest")
-      .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined).eq("topic", args.topic))
-      .order("desc")
-      .paginate({ cursor: pageCursor, numItems: effectivePageSize });
+    const page = await source.loadPage(
+      { cursor: pageCursor, numItems: effectivePageSize },
+      catalogSort,
+    );
 
     for (let index = offset; index < page.page.length; index += 1) {
-      const topicDigest = page.page[index];
-      const digest = await ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_skill", (q) => q.eq("skillId", topicDigest.skillId))
-        .unique();
+      // Resolve lazily so filling a result page does not read the remaining topic rows.
+      const digest = await source.loadDigest(page.page[index]);
       if (!digest || !skillCatalogMatchesFilters(digest, args)) continue;
       const item = await toPublicSkillCatalogItem(ctx, digest);
       if (!item) continue;
@@ -6042,104 +6039,51 @@ export const listPackageCatalogPage = query({
       };
     }
     if (topic) {
-      return await listSkillPackageCatalogTopicPage(ctx, {
-        ...args,
-        topic,
-      });
-    }
-    const targetCount = args.paginationOpts.numItems;
-    const collected: PublicSkillCatalogItem[] = [];
-    const decodedCursor = decodeSkillCatalogCursor(args.paginationOpts.cursor);
-    let cursor = decodedCursor.cursor;
-    let offset = decodedCursor.offset;
-    let pageSize = decodedCursor.pageSize;
-    let done = decodedCursor.done;
-    let loops = 0;
-    let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
-    const recommendedFallback = decodedCursor.recommendedFallback;
-    const catalogSort = recommendedFallback ?? args.sort;
-
-    while (
-      (offset > 0 || !done) &&
-      collected.length < targetCount &&
-      loops < MAX_SKILL_CATALOG_SCAN_PAGES &&
-      remainingScanBudget > 0
-    ) {
-      loops += 1;
-      const effectivePageSize = Math.min(
-        remainingScanBudget,
-        250,
-        offset > 0 && pageSize
-          ? Math.max(pageSize, offset + 1)
-          : Math.max(targetCount * 3, targetCount),
+      return await collectSkillPackageCatalogPage(
+        ctx,
+        { ...args, topic },
+        {
+          loadPage: async (paginationOpts, catalogSort) => {
+            const indexName =
+              catalogSort === "downloads"
+                ? "by_active_topic_downloads"
+                : catalogSort === "installs"
+                  ? "by_active_topic_installs"
+                  : catalogSort === "recommended"
+                    ? "by_active_topic_recommended_score"
+                    : "by_active_topic_updated";
+            return await paginator(ctx.db, schema)
+              .query("skillTopicSearchDigest")
+              .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined).eq("topic", topic))
+              .order("desc")
+              .paginate(paginationOpts);
+          },
+          loadDigest: (topicDigest) =>
+            ctx.db
+              .query("skillSearchDigest")
+              .withIndex("by_skill", (q) => q.eq("skillId", topicDigest.skillId))
+              .unique(),
+        },
       );
-      if (effectivePageSize <= 0) break;
-      remainingScanBudget -= effectivePageSize;
-      const pageCursor = cursor;
-      const indexName =
-        catalogSort === "downloads"
-          ? "by_active_stats_downloads"
-          : catalogSort === "installs"
-            ? "by_active_stats_installs_all_time"
-            : catalogSort === "recommended"
-              ? "by_active_recommended_score"
-              : "by_active_updated";
-      const page = await paginator(ctx.db, schema)
-        .query("skillSearchDigest")
-        .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined))
-        .order("desc")
-        .paginate({ cursor: pageCursor, numItems: effectivePageSize });
-
-      for (let index = offset; index < page.page.length; index += 1) {
-        const digest = page.page[index];
-        if (!skillCatalogMatchesFilters(digest, args)) continue;
-        const item = await toPublicSkillCatalogItem(ctx, digest);
-        if (!item) continue;
-        collected.push(item);
-        if (collected.length >= targetCount) {
-          const nextOffset = index + 1;
-          if (nextOffset < page.page.length) {
-            cursor = pageCursor;
-            offset = nextOffset;
-            pageSize = effectivePageSize;
-            done = page.isDone;
-          } else {
-            cursor = page.continueCursor;
-            offset = 0;
-            pageSize = effectivePageSize;
-            done = page.isDone;
-          }
-          return {
-            page: collected,
-            isDone: done && offset === 0,
-            continueCursor: encodeSkillCatalogCursor({
-              cursor,
-              offset,
-              pageSize,
-              done,
-              recommendedFallback,
-            }),
-          };
-        }
-      }
-
-      done = page.isDone;
-      cursor = page.continueCursor;
-      offset = 0;
-      pageSize = effectivePageSize;
     }
-
-    return {
-      page: collected,
-      isDone: done,
-      continueCursor: encodeSkillCatalogCursor({
-        cursor,
-        offset,
-        pageSize,
-        done,
-        recommendedFallback,
-      }),
-    };
+    return await collectSkillPackageCatalogPage(ctx, args, {
+      loadPage: async (paginationOpts, catalogSort) => {
+        const indexName =
+          catalogSort === "downloads"
+            ? "by_active_stats_downloads"
+            : catalogSort === "installs"
+              ? "by_active_stats_installs_all_time"
+              : catalogSort === "recommended"
+                ? "by_active_recommended_score"
+                : "by_active_updated";
+        return await paginator(ctx.db, schema)
+          .query("skillSearchDigest")
+          .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined))
+          .order("desc")
+          .paginate(paginationOpts);
+      },
+      loadDigest: (digest) => digest,
+    });
   },
 });
 
