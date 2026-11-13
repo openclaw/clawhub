@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -20,12 +21,7 @@ type ListResult = {
   nextCursor: string | null;
 };
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const listPublicPageHandler = (listPublicPage as unknown as WrappedHandler<ListArgs, ListResult>)
-  ._handler;
+const listPublicPageHandler = getTestHandler<ListArgs, ListResult>(listPublicPage);
 
 describe("skills.listPublicPage (deprecated stub)", () => {
   it("returns empty results with no DB reads", async () => {

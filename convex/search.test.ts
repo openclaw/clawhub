@@ -2,6 +2,7 @@
 
 import { getFunctionName } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { tokenize } from "./lib/searchText";
 import {
   __test,
@@ -36,25 +37,27 @@ vi.mock("./lib/badges", () => ({
   isSkillOfficial: (skill: { badges?: Record<string, unknown> }) => Boolean(skill.badges?.official),
 }));
 
-type WrappedHandler<Result = { skill: { slug: string; _id: string } }> = {
-  _handler: (ctx: unknown, args: unknown) => Promise<Array<Result>>;
-};
-
-const searchSkillsHandler = (
-  searchNativeSkills as unknown as WrappedHandler<{
+const searchSkillsHandler = getTestHandler<
+  unknown,
+  Array<{
     skill: { slug: string; _id: string };
     score: number;
     semanticScore: number;
   }>
-)._handler;
+>(searchNativeSkills);
 const canonicalSearchSkillsHandler = (
   canonicalSearchSkills as unknown as {
     _handler: (ctx: unknown, args: unknown) => Promise<Array<Record<string, unknown>>>;
   }
 )._handler;
-const lexicalFallbackSkillsHandler = (lexicalFallbackSkills as unknown as WrappedHandler)._handler;
-const directPrefixSkillMatchesHandler = (directPrefixSkillMatches as unknown as WrappedHandler)
-  ._handler;
+const lexicalFallbackSkillsHandler = getTestHandler<
+  unknown,
+  Array<{ skill: { slug: string; _id: string } }>
+>(lexicalFallbackSkills);
+const directPrefixSkillMatchesHandler = getTestHandler<
+  unknown,
+  Array<{ skill: { slug: string; _id: string } }>
+>(directPrefixSkillMatches);
 const getExactSkillSlugMatchHandler = (
   getExactSkillSlugMatch as unknown as {
     _handler: (

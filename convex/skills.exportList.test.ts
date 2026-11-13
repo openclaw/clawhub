@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -20,10 +21,6 @@ vi.mock("convex-helpers/server/pagination", async () => {
 const pagination = await import("convex-helpers/server/pagination");
 const { listByDateRange } = await import("./skills");
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
 type ExportListResult = {
   page: Array<{ slug: string }>;
   hasMore: boolean;
@@ -31,12 +28,10 @@ type ExportListResult = {
 };
 
 const getPageMock = pagination.getPage as unknown as ReturnType<typeof vi.fn>;
-const listByDateRangeHandler = (
-  listByDateRange as unknown as WrappedHandler<
-    { startDate: number; endDate: number; cursor?: string; numItems?: number },
-    ExportListResult
-  >
-)._handler;
+const listByDateRangeHandler = getTestHandler<
+  { startDate: number; endDate: number; cursor?: string; numItems?: number },
+  ExportListResult
+>(listByDateRange);
 
 beforeEach(() => {
   getPageMock.mockReset();

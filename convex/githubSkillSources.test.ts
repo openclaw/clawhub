@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("./lib/access", () => ({
@@ -34,27 +35,19 @@ afterEach(() => {
 });
 
 type Row = Record<string, unknown> & { _id: string };
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const listForManageableOfficialPublishersHandler = getTestHandler<
+  Record<string, never>,
+  Array<{
+    _id: string;
+    repo: string;
+    ownerPublisher: { handle: string } | null;
+  }>
+>(listForManageableOfficialPublishers);
 
-const listForManageableOfficialPublishersHandler = (
-  listForManageableOfficialPublishers as unknown as WrappedHandler<
-    Record<string, never>,
-    Array<{
-      _id: string;
-      repo: string;
-      ownerPublisher: { handle: string } | null;
-    }>
-  >
-)._handler;
-
-const getSkillsShAliasTargetHandler = (
-  getSkillsShAliasTargetInternal as unknown as WrappedHandler<
-    { repo: string; path: string },
-    { canonicalRef: string; canonicalRoute: string } | null
-  >
-)._handler;
+const getSkillsShAliasTargetHandler = getTestHandler<
+  { repo: string; path: string },
+  { canonicalRef: string; canonicalRoute: string } | null
+>(getSkillsShAliasTargetInternal);
 
 function matches(doc: Row, constraints: Record<string, unknown>) {
   return Object.entries(constraints).every(([key, value]) => doc[key] === value);

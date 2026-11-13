@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import type { Id } from "./_generated/dataModel";
 import {
@@ -16,37 +17,28 @@ import {
   seedSkillMutation,
 } from "./devSeed";
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
-};
-
-const seedSkillMutationHandler = (
-  seedSkillMutation as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const seedFeaturedPluginPackagesHandler = (
-  seedFeaturedPluginPackagesMutation as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const seedCatalogPresentationFixturesHandler = (
-  seedCatalogPresentationFixtures as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const seedCanonicalSearchFixtureHandler = (
-  seedCanonicalSearchFixture as unknown as WrappedHandler<Record<string, never>>
-)._handler;
-const seedGitHubBackedSkillSourceHandler = (
-  seedGitHubBackedSkillSourceMutation as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const seedLocalFixturesHandler = (
-  seedLocalFixtures as unknown as WrappedHandler<{ reset?: boolean }>
-)._handler;
-const seedPublicCorpusBatchActionHandler = (
-  seedPublicCorpusBatch as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const seedPublicCorpusBatchHandler = (
-  seedPublicCorpusBatchMutation as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const backfillExistingPublicCorpusBatchRowsHandler = (
-  backfillExistingPublicCorpusBatchRows as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
+const seedSkillMutationHandler = getTestHandler<Record<string, unknown>>(seedSkillMutation);
+const seedFeaturedPluginPackagesHandler = getTestHandler<Record<string, unknown>>(
+  seedFeaturedPluginPackagesMutation,
+);
+const seedCatalogPresentationFixturesHandler = getTestHandler<Record<string, unknown>>(
+  seedCatalogPresentationFixtures,
+);
+const seedCanonicalSearchFixtureHandler = getTestHandler<Record<string, never>>(
+  seedCanonicalSearchFixture,
+);
+const seedGitHubBackedSkillSourceHandler = getTestHandler<Record<string, unknown>>(
+  seedGitHubBackedSkillSourceMutation,
+);
+const seedLocalFixturesHandler = getTestHandler<{ reset?: boolean }>(seedLocalFixtures);
+const seedPublicCorpusBatchActionHandler =
+  getTestHandler<Record<string, unknown>>(seedPublicCorpusBatch);
+const seedPublicCorpusBatchHandler = getTestHandler<Record<string, unknown>>(
+  seedPublicCorpusBatchMutation,
+);
+const backfillExistingPublicCorpusBatchRowsHandler = getTestHandler<Record<string, unknown>>(
+  backfillExistingPublicCorpusBatchRows,
+);
 
 function matches(doc: Record<string, unknown>, constraints: Record<string, unknown>) {
   return Object.entries(constraints).every(([key, value]) => doc[key] === value);

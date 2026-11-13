@@ -1,14 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { validateRasterInternal } from "./skillPresentationImageNode";
 
-type WrappedHandler = {
-  _handler: (
-    ctx: unknown,
-    args: { bytes: ArrayBuffer; contentType: "image/png" },
-  ) => Promise<boolean>;
-};
-
-const validateRaster = (validateRasterInternal as unknown as WrappedHandler)._handler;
+const validateRaster = getTestHandler<{ bytes: ArrayBuffer; contentType: "image/png" }, boolean>(
+  validateRasterInternal,
+);
 const png = Uint8Array.from(
   Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

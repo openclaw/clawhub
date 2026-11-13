@@ -1,15 +1,12 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { list } from "./skills";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
   authTables: {},
 }));
-
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
 
 function makeSkill(overrides: Record<string, unknown> = {}) {
   return {
@@ -51,12 +48,10 @@ function makeSkill(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const listHandler = (
-  list as unknown as WrappedHandler<
-    { ownerPublisherId?: string; ownerUserId?: string; limit?: number },
-    Array<{ slug: string; stats: { downloads: number; stars: number } }>
-  >
-)._handler;
+const listHandler = getTestHandler<
+  { ownerPublisherId?: string; ownerUserId?: string; limit?: number },
+  Array<{ slug: string; stats: { downloads: number; stars: number } }>
+>(list);
 
 describe("skills.list", () => {
   it("includes legacy personal skills when listing a personal publisher", async () => {

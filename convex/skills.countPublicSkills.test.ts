@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -7,13 +8,7 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 import { countPublicSkills } from "./skills";
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const countPublicSkillsHandler = (
-  countPublicSkills as unknown as WrappedHandler<Record<string, never>, number>
-)._handler;
+const countPublicSkillsHandler = getTestHandler<Record<string, never>, number>(countPublicSkills);
 
 describe("skills.countPublicSkills", () => {
   it("returns the deduplicated native plus public skills.sh catalog count", async () => {

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { formatReservedSlugCooldownMessage } from "./lib/reservedSlugs";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -8,10 +9,6 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { checkSlugAvailability } from "./skills";
-
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
-};
 
 type SkillDoc = {
   _id: string;
@@ -44,9 +41,9 @@ type AliasDoc = {
   ownerPublisherId?: string;
 };
 
-const checkSlugAvailabilityHandler = (
-  checkSlugAvailability as unknown as WrappedHandler<{ slug: string; ownerHandle: string }>
-)._handler;
+const checkSlugAvailabilityHandler = getTestHandler<{ slug: string; ownerHandle: string }>(
+  checkSlugAvailability,
+);
 
 function createCtx(options: {
   skill: SkillDoc | null;

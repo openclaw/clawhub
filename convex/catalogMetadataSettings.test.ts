@@ -2,6 +2,7 @@
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 const { upsertPackageSearchDigestMock, upsertSkillSearchDigestMock } = vi.hoisted(() => ({
   upsertPackageSearchDigestMock: vi.fn(),
@@ -29,24 +30,22 @@ vi.mock("./lib/skillSearchDigest", async () => {
 const { setPackageCatalogMetadata } = await import("./packages");
 const { setCatalogMetadata } = await import("./skills");
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<void>;
-};
-
-const setPackageCatalogMetadataHandler = (
-  setPackageCatalogMetadata as unknown as WrappedHandler<{
+const setPackageCatalogMetadataHandler = getTestHandler<
+  {
     packageId: string;
     categories?: string[];
     topics: string[];
-  }>
-)._handler;
-const setSkillCatalogMetadataHandler = (
-  setCatalogMetadata as unknown as WrappedHandler<{
+  },
+  void
+>(setPackageCatalogMetadata);
+const setSkillCatalogMetadataHandler = getTestHandler<
+  {
     skillId: string;
     categories?: string[];
     topics: string[];
-  }>
-)._handler;
+  },
+  void
+>(setCatalogMetadata);
 
 const user = {
   _id: "users:owner",
