@@ -1377,13 +1377,6 @@ code {
   }
 }
 
-.security-scanner-layout {
-  display: grid;
-  width: 100%;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-  gap: var(--space-5);
-}
-
 .security-scan-hero {
   display: grid;
   gap: 30px;
@@ -1668,14 +1661,6 @@ code {
   line-height: 1.45;
 }
 
-.security-audit-scanner-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  gap: 10px 12px;
-}
-
 .security-report-panel-body-findings {
   padding-top: 12px;
 }
@@ -1726,32 +1711,6 @@ code {
   .security-report-sidebar .sidebar-metadata-grid .sidebar-metadata-row + .sidebar-metadata-row {
     padding-left: 0;
   }
-}
-
-.security-audit-empty-detail {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.92rem;
-  line-height: 1.55;
-}
-
-.security-audit-external-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: fit-content;
-  margin-top: 18px;
-  color: var(--ink);
-  font-size: 0.88rem;
-  font-weight: 720;
-  text-decoration: none;
-}
-
-.security-audit-external-link:hover,
-.security-audit-external-link:focus-visible {
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .endor-audit-header {
@@ -2029,10 +1988,6 @@ code {
 }
 
 @media (max-width: 760px) {
-  .security-audit-scanner-header {
-    align-items: center;
-  }
-
   .security-report-sidebar {
     padding: 22px 0;
   }
@@ -9876,10 +9831,6 @@ a.skills-sh-security-audit-row:focus-visible {
     padding: 30px 18px 62px;
   }
 
-  .security-scanner-layout {
-    grid-template-columns: 1fr;
-  }
-
   .security-report-layout {
     grid-template-columns: 1fr;
   }
@@ -12455,14 +12406,6 @@ a.skills-sh-security-audit-row:focus-visible {
 }
 
 /* Shared scan status badges */
-.scan-result-status {
-  padding: 2px 10px;
-  border-radius: var(--r-pill);
-  font-size: 0.78rem;
-  font-weight: 600;
-  text-transform: capitalize;
-}
-
 .scan-status-clean {
   background: var(--oc-status-success-bg);
   color: var(--oc-status-success-fg);
@@ -12473,8 +12416,7 @@ a.skills-sh-security-audit-row:focus-visible {
   color: var(--oc-status-error-fg);
 }
 
-.scan-status-warn,
-.scan-status-suspicious {
+.scan-status-warn {
   background: var(--status-warning-bg);
   color: var(--status-warning-fg);
 }
@@ -12526,21 +12468,6 @@ a.agentic-risk-finding-title:focus-visible {
   padding: 0.25rem 0.55rem;
   font-size: 0.78rem;
   line-height: 1.2;
-}
-
-.agentic-risk-evidence-snippet {
-  margin: 0;
-  max-width: 100%;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  border-radius: 8px;
-  background: var(--surface);
-  padding: 8px 10px 8px 0;
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  line-height: 1.45;
-  color: var(--ink);
 }
 
 /* Pending Review Banner */
@@ -19066,11 +18993,6 @@ a.home-v2-byos-import:focus-visible svg:last-child {
 .auth-btn,
 [class*="sign-in"] {
   border-radius: var(--r-btn) !important;
-}
-
-/* Scan result badges — keep slightly rounded */
-.scan-result-status {
-  border-radius: var(--oc-radius-control) !important;
 }
 
 /* Bundle includes badges */
