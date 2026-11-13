@@ -2978,12 +2978,6 @@ code {
   gap: 6px;
 }
 
-.tag-compact {
-  padding: 4px 10px;
-  font-size: var(--fs-xs);
-  border-radius: var(--r-sm);
-}
-
 .skill-card-title {
   font-family: var(--font-display);
   font-size: var(--fs-md);
@@ -3477,32 +3471,6 @@ code {
   word-break: break-word;
   tab-size: 2;
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink) 8%, transparent);
-}
-
-/* @deprecated — use <Badge> from components/ui/badge.tsx */
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--line);
-  background: var(--surface-muted);
-  color: var(--ink-soft);
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  font-family: var(--font-body);
-  transition: all 0.15s ease;
-}
-
-.tag:hover {
-  border-color: var(--border-ui-hover);
-  color: var(--ink);
-}
-
-[data-theme-resolved="light"] .tag {
-  background: var(--surface);
-  color: var(--ink-soft);
 }
 
 .skill-actions {
@@ -6014,11 +5982,6 @@ code {
   min-width: 0;
 }
 
-.tag-accent {
-  background: rgba(255, 255, 255, 0.16);
-  color: var(--accent-deep);
-}
-
 .skill-hero-top {
   display: grid;
   gap: 16px;
@@ -7903,36 +7866,6 @@ a.skills-sh-security-audit-row:focus-visible {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--ink-soft);
-}
-
-.tag-meta {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: inherit;
-  opacity: 0.7;
-}
-
-.tag-delete {
-  all: unset;
-  cursor: pointer;
-  font-size: 0.85rem;
-  line-height: 1;
-  opacity: 0.5;
-  padding: 0 2px;
-  margin-left: -2px;
-  border-radius: 3px;
-  transition: opacity 0.15s;
-}
-
-.tag-delete:hover {
-  opacity: 1;
-}
-
-.tag-form {
-  display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr) auto;
-  gap: 10px;
-  align-items: center;
 }
 
 .skill-panel {
@@ -10960,11 +10893,6 @@ a.skills-sh-security-audit-row:focus-visible {
     padding: 14px;
   }
 
-  .tag-form {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-  }
-
   .diff-layout {
     grid-template-columns: 1fr;
   }
@@ -13764,13 +13692,6 @@ a.agentic-risk-finding-title:focus-visible {
   border-color: color-mix(in srgb, var(--oc-status-warning-fg) 40%, var(--oc-border-subtle));
 }
 
-/* Pending tag for dashboard */
-.tag-pending {
-  background: var(--status-pending-bg);
-  color: var(--status-pending-fg);
-  gap: 4px;
-}
-
 @media (max-width: 480px) {
   .hero {
     padding: 44px 14px 36px;
@@ -14165,12 +14086,6 @@ a.agentic-risk-finding-title:focus-visible {
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.skill-list-item .tag {
-  font-size: var(--fs-xs);
-  padding: 2px 8px;
-  border-radius: var(--r-sm);
 }
 
 .skill-list-item-summary {
