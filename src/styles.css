@@ -17320,36 +17320,10 @@ a.search-empty-action {
    All classes prefixed home-v2- to avoid collisions with existing styles.
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* --- Variables (home v2 shell: main + proof + FAQ + footer share tokens) --- */
+/* --- Theme-specific application icons --- */
 .app-shell:has(.home-v2-main) {
-  --hv2-bg: #060608;
-  --hv2-surface: rgba(255, 255, 255, 0.02);
-  --hv2-surface-hover: rgba(255, 255, 255, 0.045);
-  --hv2-border: rgba(255, 255, 255, 0.07);
-  --hv2-border-hover: rgba(255, 255, 255, 0.14);
-  --hv2-border-strong: rgba(255, 255, 255, 0.1);
-  --hv2-text: #eaeaea;
-  --hv2-text-secondary: #b2b2b8;
-  --hv2-text-tertiary: #82828a;
-  --hv2-accent: #d4453a;
-  --hv2-accent-fill: rgba(212, 69, 58, 0.1);
-  --hv2-accent-fill-hover: rgba(212, 69, 58, 0.16);
-  --hv2-accent-glow: rgba(212, 69, 58, 0.06);
-  --hv2-accent-border: rgba(212, 69, 58, 0.3);
-  --hv2-accent-border-hover: rgba(212, 69, 58, 0.5);
-  --hv2-green: #3dab5e;
-  --hv2-green-fill: rgba(61, 171, 94, 0.08);
-  --hv2-green-border: rgba(61, 171, 94, 0.25);
-  --hv2-green-border-hover: rgba(61, 171, 94, 0.4);
-  --hv2-green-fill-hover: rgba(61, 171, 94, 0.14);
   --home-v2-apps-icon-color: #fff;
   --home-v2-apps-icon-image-filter: brightness(0) invert(1);
-  --hv2-radius-sm: 8px;
-  --hv2-radius-md: 12px;
-  --hv2-radius-lg: 16px;
-  --hv2-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --hv2-duration-fast: 160ms;
-  --hv2-duration-ui: 180ms;
 }
 
 [data-theme-resolved="light"] .app-shell:has(.home-v2-main) {
@@ -19104,21 +19078,7 @@ a.search-empty-action {
 }
 
 /* Home hero decor bleeds up behind the floating calm header */
-.app-shell:has(.home-v2-main) main.home-v2-main {
-  margin-top: -64px;
-  /* Last section is the full-bleed CLI band; let it meet the footer flush. */
-  padding-bottom: 0;
-}
-
-.app-shell:has(.home-v2-main) .home-v2-hero {
-  padding-top: calc(64px + 64px);
-}
-
 .app-shell:has(.home-v2-main) .home-v2-hero-bg {
-  top: -112px;
-  bottom: -120px;
-  left: 50%;
-  width: 100vw;
   margin-left: -50vw;
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 72%, transparent 100%);
   mask-image: linear-gradient(to bottom, #000 0%, #000 72%, transparent 100%);
@@ -21598,6 +21558,7 @@ a[class*="rounded-full"] {
 
 .app-shell:has(.home-v2-main) main.home-v2-main {
   margin-top: -64px;
+  /* Last section is the full-bleed CLI band; let it meet the footer flush. */
   padding-bottom: 0;
 }
 
