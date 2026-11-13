@@ -28,3 +28,14 @@ export function isTemplateReadyToAdd(
 ) {
   return status === "clean";
 }
+
+export function buildTemplateSecurityAuditHref(
+  name: string,
+  ownerHandle?: string | null,
+  version?: string | null,
+) {
+  const detail = buildTemplateDetailHref(name, ownerHandle);
+  if (!detail) return null;
+  const search = version ? "?" + new URLSearchParams({ version }) : "";
+  return detail + "/security-audit" + search;
+}

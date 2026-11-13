@@ -198,3 +198,40 @@ Record the workflow URL, run SHA and receipt with the exact-SHA Deploy Test resu
 Do not describe this mechanical proof as full-registry finalization or broad
 scanner accuracy. Unit tests use explicitly synthetic responses and are not the
 live qualification run. Production rollout remains a separate authorized action.
+
+## Public audit UI identity
+
+Template details link to the canonical publisher Template security-audit subpage,
+with the displayed release pinned in the optional version query. Detail and audit
+share scoped-first/unscoped-owner-matched lookup, reject other families/owners,
+and never substitute a different release for an exact-version read. Anonymous
+reads need no manage context. Missing packages/releases, no published release,
+rate limiting and registry errors remain distinct. Exact-release reads opt into
+error propagation in the shared package API helper: only a genuine HTTP 404 is
+missing; HTTP 429 retains rate-limit metadata, and server/network/parse failures
+reach the existing retry UI. Legacy best-effort callers keep their null fallback.
+The audit route opts out of parent nesting so it neither renders nor loads the
+latest detail view during historical navigation, reload or deep links.
+
+The sidebar no longer repeats the Declared contents metadata block. Current
+version, install readiness, manifest warnings and provenance-aware inventory
+remain intact; artifact identity belongs on the audit detail.
+
+Reuse the shared audit summary/page/findings. Only show stored Template scanner
+reports, never a synthetic absent SkillSpector card or skill-only T01–T09 clean
+checklist. Current Template scans use native AIG MCP plus an evidence-only judge;
+legacy stored AIG/SkillSpector reports remain visible as recorded. The public
+projection currently records scanner version but not driver/profile identity:
+do not infer MCP from the Template family or version number. Show that limitation
+rather than relabel historical evidence. Preserve raw rule IDs (including dynamic
+and supplemental IDs), severity, location/range, message, remediation and stored
+scanner provenance separately from the final judge verdict. Missing, pending or
+failed evidence is not a clean scan. This read-only route grants no new rescan or
+export permission.
+
+Local browser evidence can use the guarded internal
+`devTemplateAuditFixtures:seed` action. It creates an unscoped Music Manager
+fixture under ameliomansour with a clean latest release and a historical release
+with MCP/supplemental findings. Both scanner reports and judge verdicts are
+explicitly simulated; the fixture is not live scanner-quality evidence. The
+fixture refuses non-local dev-auth contexts and is not part of ordinary seeding.

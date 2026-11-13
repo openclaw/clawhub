@@ -1,4 +1,5 @@
 import { Info } from "lucide-react";
+import { useId } from "react";
 import { aggregateAuditVerdict, SECURITY_AUDIT_SUBTEXT } from "./securityAuditModel";
 import { getScanStatusInfo, type LlmAnalysis } from "./SkillSecurityScanResults";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -7,6 +8,7 @@ type DetailSecuritySummaryProps = {
   auditHref: string;
   llmAnalysis?: LlmAnalysis | null;
   githubScanStatus?: string | null;
+  description?: string;
 };
 
 export function auditVerdictMeterLevel(status: string) {
@@ -30,14 +32,22 @@ export function DetailSecuritySummary({
   auditHref,
   llmAnalysis,
   githubScanStatus,
+  description,
 }: DetailSecuritySummaryProps) {
+  const descriptionId = useId();
   const auditVerdict = llmAnalysis
     ? aggregateAuditVerdict({ llmAnalysis })
     : (githubScanStatus ?? "pending");
   const auditVerdictInfo = getScanStatusInfo(auditVerdict);
   const meterLevel = auditVerdictMeterLevel(auditVerdict);
   return (
-    <a href={auditHref} className="security-audit-sidebar-value" aria-label="View Security Audit">
+    <a
+      href={auditHref}
+      className="security-audit-sidebar-value"
+      aria-label="View Security Audit"
+      aria-describedby={description ? descriptionId : undefined}
+      title={description}
+    >
       <div className="security-audit-sidebar-value-row">
         <span className="security-audit-sidebar-verdict" data-status={auditVerdict}>
           {auditVerdictInfo.label}
@@ -48,6 +58,11 @@ export function DetailSecuritySummary({
           <span />
         </div>
       </div>
+      {description ? (
+        <span id={descriptionId} className="sr-only">
+          {description}
+        </span>
+      ) : null}
     </a>
   );
 }

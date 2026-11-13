@@ -252,18 +252,6 @@
   overflow-wrap: anywhere;
 }
 
-.template-detail-security-value {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px;
-  align-items: center;
-  line-height: 19.2px;
-}
-
-.template-detail-security-value .security-audit-meter {
-  margin-right: 10px;
-}
-
 .template-detail-content-message {
   margin: 0;
   color: var(--ink-soft);

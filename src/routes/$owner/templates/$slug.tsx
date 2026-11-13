@@ -2,7 +2,6 @@ import { createFileRoute, notFound, redirect, useRouter } from "@tanstack/react-
 import { Container } from "../../../components/layout/Container";
 import { TemplateDetailPage } from "../../../components/TemplateDetailPage";
 import {
-  fetchPackageDetail,
   fetchPackageFile,
   fetchPackageVersion,
   type PackageVersionDetail,
@@ -10,9 +9,9 @@ import {
 } from "../../../lib/packageApi";
 import { getClawHubSiteUrl } from "../../../lib/site";
 import { getTemplateManifestPath } from "../../../lib/templateDetail";
+import { loadTemplatePackage } from "../../../lib/templatePackage";
 import {
   buildTemplateDetailHref,
-  normalizePublisherHandle,
   packageNameFromPublisherTemplateRoute,
 } from "../../../lib/templateRoutes";
 
@@ -32,22 +31,7 @@ export async function loadPublisherTemplate(params: {
   owner: string;
   slug: string;
 }): Promise<TemplateDetailData> {
-  const requestedName = packageNameFromParams(params);
-  const requestedOwner = normalizePublisherHandle(params.owner);
-  let detail = await fetchPackageDetail(requestedName);
-  if (!detail.package) {
-    const unscoped = await fetchPackageDetail(params.slug);
-    if (unscoped.package && normalizePublisherHandle(unscoped.owner?.handle) === requestedOwner) {
-      detail = unscoped;
-    }
-  }
-  if (
-    !detail.package ||
-    detail.package.family !== "template" ||
-    normalizePublisherHandle(detail.owner?.handle) !== requestedOwner
-  ) {
-    throw notFound();
-  }
+  const detail = await loadTemplatePackage(params);
   let contents: string | null = null;
   let llmAnalysis: TemplateDetailData["llmAnalysis"] = null;
   if (detail.package.latestVersion) {
