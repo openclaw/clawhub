@@ -27,16 +27,6 @@ const CLAIM_STORAGE_URL_CONCURRENCY = 8;
 const MAX_CONSECUTIVE_SCANNER_FAILURES = 3;
 const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
 const FINALIZATION_CLAIM_LEASE_MS = 10 * 60 * 1000;
-// Oldest-first scan window for untargeted finalization retries. A persistent
-// head of older attempts that can never finalize (for example skill versions
-// held by moderation) occupies every slot in a short window, so newer attempts
-// are never reached and starve indefinitely. A wider bounded window keeps the
-// scan far below the transaction read budget while letting the tail be seen.
-// This raises the ceiling; it does not remove it. The durable fix is to back
-// off attempts whose finalization keeps failing, the way
-// backoffFailedPrePublicationHandoffInternal already protects retry selection.
-const READY_TO_FINALIZE_SCAN_LIMIT = 100;
-
 const MISSING_AIG_EVIDENCE_ERROR = "A.I.G evidence is required before a skill can be published.";
 const ACTIVE_CLAIM_OUTCOME = { outcome: "active_claim" as const };
 const PUBLISH_ATTEMPT_STATUSES = [
@@ -234,6 +224,34 @@ async function terminalizeUnavailableStagedTarget(
   if (!error) return false;
   await ctx.db.patch(attempt._id, failedPublishAttemptPatch(attempt.status, error, now));
   return true;
+}
+
+// Moderation can block promotion of a target whose checks already passed. These
+// are the same hold conditions publication enforces, mirrored here so discovery
+// can skip a blocked attempt instead of selecting it. A hold is not terminal: it
+// can be lifted, so the attempt must keep its ready_to_finalize status.
+async function stagedTargetPromotionHeld(
+  ctx: Pick<MutationCtx, "db">,
+  attempt: Doc<"publishAttempts">,
+) {
+  if (attempt.kind === "skill" && attempt.skillId) {
+    const skill = await ctx.db.get(attempt.skillId);
+    if (!skill) return false;
+    return Boolean(
+      skill.softDeletedAt ||
+        skill.moderationStatus === "removed" ||
+        (skill.moderationStatus === "hidden" && skill.moderationReason !== "pending.publication"),
+    );
+  }
+  if (attempt.kind === "package" && attempt.packageReleaseId) {
+    const release = await ctx.db.get(attempt.packageReleaseId);
+    if (!release) return false;
+    return (
+      release.manualModeration?.state === "quarantined" ||
+      release.manualModeration?.state === "revoked"
+    );
+  }
+  return false;
 }
 
 export const createSkillPublishAttemptInternal = internalMutation({
@@ -1153,7 +1171,7 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
           .query("publishAttempts")
           .withIndex("by_status_and_created", (q) => q.eq("status", "ready_to_finalize"))
           .order("asc")
-          .take(READY_TO_FINALIZE_SCAN_LIMIT);
+          .take(25);
 
     for (const attempt of candidates) {
       const recoveringFinalization = Boolean(args.attemptId) && attempt.status === "finalizing";
@@ -1187,6 +1205,15 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
         if ((attempt.finalizationClaimExpiresAt ?? 0) > now) return ACTIVE_CLAIM_OUTCOME;
         await bindExpiredFinalizationRecovery(ctx, attempt);
       } else if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) continue;
+
+      // Untargeted discovery must not keep reselecting a target moderation
+      // blocks. Finalization throws for it, the retryable release clears both
+      // reservations by contract so the attempt is instantly claimable again,
+      // and oldest-first selection then returns that same attempt forever while
+      // every newer attempt starves. Skipping it here leaves retry timing for
+      // genuine transient failures untouched. Explicit targeted recovery still
+      // selects the attempt so an operator can act once a hold is lifted.
+      if (!args.attemptId && (await stagedTargetPromotionHeld(ctx, attempt))) continue;
 
       await ctx.db.patch(attempt._id, {
         status: "ready_to_finalize",
