@@ -3125,111 +3125,50 @@ describe("publisher abuse dry-run persistence", () => {
     });
   });
 
-  it("does not ban warned candidates after the deadline until a newer score confirms", async () => {
-    const nomination = {
-      ...makeNomination({
-        _id: "publisherAbuseReviewNominations:candidate",
-        ownerKey: "publisher:publishers:candidate",
-        ownerPublisherId: "publishers:candidate",
-        ownerUserId: "users:candidate",
-        latestScoreId: "publisherAbuseScores:warned",
-        handleSnapshot: "candidate",
-        label: "potential_ban_candidate",
-        status: "pending",
-        lastScoredAt: 1,
-        updatedAt: 1,
-      }),
-      warningSentAt: 1,
+  it.each([
+    {
+      name: "does not ban warned candidates after the deadline until a newer score confirms",
+      scoreId: "publisherAbuseScores:warned",
+      scoredAt: 1,
       warningExpiresAt: 2,
       warningScoreId: "publisherAbuseScores:warned",
       warningRunId: "publisherAbuseScoreRuns:latest",
-    };
-    const score = {
-      ...makeScore({
-        _id: "publisherAbuseScores:warned",
-        ownerKey: "publisher:publishers:candidate",
-        ownerPublisherId: "publishers:candidate",
-      }),
-      ownerUserId: "users:candidate",
-      createdAt: 1,
-    };
-    const publisher = {
-      _id: "publishers:candidate",
-      kind: "user",
-      handle: "candidate",
-      linkedUserId: "users:candidate",
-    };
-    const runMutation = vi.fn();
-    const scheduler = { runAfter: vi.fn(async () => null) };
-    const patch = vi.fn();
-    const insert = vi.fn();
-    const ctx = {
-      scheduler,
-      runMutation,
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === score._id) return score;
-          if (id === "publisherAbuseScoreRuns:latest") return makeCompletedPressureScoreRun();
-          if (id === publisher._id) return publisher;
-          if (id === "users:candidate") {
-            return {
-              _id: "users:candidate",
-              handle: "candidate",
-              email: "candidate@example.test",
-              role: "user",
-            };
-          }
-          return null;
-        }),
-        patch,
-        insert,
-        query: makeEnabledAutoBanQuery(nomination),
-      },
-    };
-
-    await expect(autoBanPublisherAbuseCandidatesPageHandler(ctx, {})).resolves.toEqual({
-      ok: true,
-      processed: 1,
-      warned: 0,
-      banned: 0,
-      alreadyBanned: 0,
-      skipped: 0,
-      isDone: true,
-    });
-
-    expect(scheduler.runAfter).not.toHaveBeenCalled();
-    expect(runMutation).not.toHaveBeenCalled();
-    expect(patch).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
-  });
-
-  it("does not ban when the newer score was created before the warning deadline", async () => {
+    },
+    {
+      name: "does not ban when the newer score was created before the warning deadline",
+      scoreId: "publisherAbuseScores:new",
+      scoredAt: 2,
+      warningExpiresAt: 3,
+      warningScoreId: "publisherAbuseScores:old",
+      warningRunId: "publisherAbuseScoreRuns:old",
+    },
+  ])("$name", async (fixture) => {
     const nomination = {
       ...makeNomination({
         _id: "publisherAbuseReviewNominations:candidate",
         ownerKey: "publisher:publishers:candidate",
         ownerPublisherId: "publishers:candidate",
         ownerUserId: "users:candidate",
-        latestScoreId: "publisherAbuseScores:new",
+        latestScoreId: fixture.scoreId,
         handleSnapshot: "candidate",
         label: "potential_ban_candidate",
         status: "pending",
-        lastScoredAt: 2,
-        updatedAt: 2,
+        lastScoredAt: fixture.scoredAt,
+        updatedAt: fixture.scoredAt,
       }),
       warningSentAt: 1,
-      warningExpiresAt: 3,
-      warningScoreId: "publisherAbuseScores:old",
-      warningRunId: "publisherAbuseScoreRuns:old",
+      warningExpiresAt: fixture.warningExpiresAt,
+      warningScoreId: fixture.warningScoreId,
+      warningRunId: fixture.warningRunId,
     };
     const score = {
       ...makeScore({
-        _id: "publisherAbuseScores:new",
+        _id: fixture.scoreId,
         ownerKey: "publisher:publishers:candidate",
         ownerPublisherId: "publishers:candidate",
       }),
       ownerUserId: "users:candidate",
-      createdAt: 2,
+      createdAt: fixture.scoredAt,
     };
     const publisher = {
       _id: "publishers:candidate",
