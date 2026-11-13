@@ -103,6 +103,27 @@ describe("publisher-qualified Template references", () => {
     expect((await t.fetch("/api/v1/packages/@maker/missing")).status).toBe(404);
   });
 
+  it("ignores a deleted scoped package when resolving a publisher reference", async () => {
+    const { t, owner, insertPackage } = await fixture();
+    await insertPackage({ name: "@maker/solo-brief", family: "claw", ...owner });
+    await t.run(async (ctx) => {
+      const deleted = await ctx.db
+        .query("packages")
+        .withIndex("by_name", (q) => q.eq("normalizedName", "@maker/solo-brief"))
+        .unique();
+      await ctx.db.patch(deleted!._id, { softDeletedAt: 2 });
+    });
+
+    const response = await t.fetch("/api/v1/packages/@maker/solo-brief");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      package: { name: "solo-brief", family: "template", latestVersion: "1.0.0" },
+      owner: { handle: "maker" },
+    });
+    expect((await t.fetch("/api/v1/packages/@reader/solo-brief")).status).toBe(404);
+    expect((await t.fetch("/api/v1/packages/@maker/solo-brief/versions/1.0.0")).status).toBe(200);
+  });
+
   it("prefers the exact scoped package name", async () => {
     const { t, owner, insertPackage } = await fixture();
     await insertPackage({ name: "@maker/solo-brief", family: "claw", ...owner });
