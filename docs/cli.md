@@ -679,7 +679,10 @@ clawhub package moderation-status @openclaw/example-plugin
 - `--version` is required. The public latest version is a different question.
 - Prints A.I.G, SkillSpector, and the LLM judge when those reports are stored.
   Each finding shows its rule or issue id, severity, file location, and message.
-  Source snippets and file digests are not printed.
+  An A.I.G title stays next to the message, with the stored description and
+  remediation. The LLM report includes the stored findings text, guidance,
+  dimension details, and concern explanations. Source snippets and file
+  digests are not printed.
 - A scanner that was not stored is printed as `not stored`. That is not a clean
   scan. This command does not change publication or download checks.
 - Flags:

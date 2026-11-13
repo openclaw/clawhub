@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- CLI: add `clawhub package audit <name> --version <version>`. It prints the stored A.I.G, SkillSpector, and LLM findings for that exact version. A missing report is not a clean scan. It does not change publication or download checks.
+- CLI: add `clawhub package audit <name> --version <version>`. It prints the stored A.I.G, SkillSpector, and LLM findings for that exact version, including an A.I.G message that also has a title and the stored LLM explanation. A missing report is not a clean scan. Source snippets are not printed. It does not change publication or download checks.
 
 ## 0.26.0 - 2026-11-12
 

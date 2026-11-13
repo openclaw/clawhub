@@ -1842,6 +1842,9 @@ type PackageAuditFinding = {
   id: string;
   severity: string;
   message: string;
+  title?: string;
+  description?: string;
+  remediation?: string;
   file?: string;
   startLine?: number;
 };
@@ -1854,6 +1857,7 @@ type PackageAuditScannerReport = {
   shownCount?: number;
   summary?: string;
   verdict?: string;
+  guidance?: string;
   findings?: PackageAuditFinding[];
 };
 
@@ -1901,6 +1905,8 @@ function buildPackageAuditReport(
         level: string;
         message: string;
         title?: string;
+        description?: string;
+        remediation?: string;
         file?: string;
         startLine?: number;
       }>;
@@ -1922,6 +1928,15 @@ function buildPackageAuditReport(
       status: string;
       verdict?: string;
       summary?: string;
+      guidance?: string;
+      findings?: string;
+      dimensions?: Array<{
+        name: string;
+        label: string;
+        rating: string;
+        detail: string;
+      }>;
+      agenticRiskFindings?: unknown[];
     } | null;
   },
 ): PackageAuditReport {
@@ -1948,13 +1963,21 @@ function aigAuditReport(
     issueCount: analysis.issueCount,
     shownCount: analysis.findings.length,
     ...(analysis.summary ? { summary: analysis.summary } : {}),
-    findings: analysis.findings.map((finding) => ({
-      id: finding.ruleId,
-      severity: finding.level,
-      message: finding.title?.trim() || finding.message,
-      ...(finding.file ? { file: finding.file } : {}),
-      ...(finding.startLine ? { startLine: finding.startLine } : {}),
-    })),
+    findings: analysis.findings.map((finding) => {
+      const title = presentText(finding.title);
+      const description = presentText(finding.description);
+      const remediation = presentText(finding.remediation);
+      return {
+        id: finding.ruleId,
+        severity: finding.level,
+        ...(title ? { title } : {}),
+        message: finding.message,
+        ...(description ? { description } : {}),
+        ...(remediation ? { remediation } : {}),
+        ...(finding.file ? { file: finding.file } : {}),
+        ...(finding.startLine ? { startLine: finding.startLine } : {}),
+      };
+    }),
   };
 }
 
@@ -1983,13 +2006,81 @@ function llmAuditReport(
   analysis: Parameters<typeof buildPackageAuditReport>[1]["llmAnalysis"],
 ): PackageAuditScannerReport {
   if (!analysis) return { scanner: "llm", stored: false };
+  const findings = llmFindingLines(analysis);
+  const guidance = presentText(analysis.guidance);
+  const summary = presentText(analysis.summary);
   return {
     scanner: "llm",
     stored: true,
     status: analysis.status,
     ...(analysis.verdict ? { verdict: analysis.verdict } : {}),
-    ...(analysis.summary ? { summary: analysis.summary } : {}),
+    ...(summary ? { summary } : {}),
+    ...(guidance ? { guidance } : {}),
+    ...(findings.length > 0 ? { findings } : {}),
   };
+}
+
+function llmFindingLines(
+  analysis: NonNullable<Parameters<typeof buildPackageAuditReport>[1]["llmAnalysis"]>,
+) {
+  const findings: PackageAuditFinding[] = [];
+  const explanation = presentText(analysis.findings);
+  if (explanation) {
+    findings.push({ id: "findings", severity: "report", message: explanation });
+  }
+  for (const dimension of analysis.dimensions ?? []) {
+    const detail = presentText(dimension.detail);
+    if (!detail) continue;
+    const label = presentText(dimension.label);
+    findings.push({
+      id: dimension.name,
+      severity: dimension.rating,
+      ...(label ? { title: label } : {}),
+      message: detail,
+    });
+  }
+  for (const concern of analysis.agenticRiskFindings ?? []) {
+    const line = llmConcernLine(concern);
+    if (line) findings.push(line);
+  }
+  return findings;
+}
+
+function llmConcernLine(concern: unknown): PackageAuditFinding | undefined {
+  if (!concern || typeof concern !== "object") return undefined;
+  const record = concern as Record<string, unknown>;
+  const evidence =
+    record.evidence && typeof record.evidence === "object"
+      ? (record.evidence as Record<string, unknown>)
+      : undefined;
+  const category = presentText(stringField(record, "categoryId"));
+  const title = presentText(stringField(record, "categoryLabel"));
+  const severity = presentText(stringField(record, "severity")) ?? "report";
+  const impact = presentText(stringField(record, "userImpact"));
+  const explanation = evidence ? presentText(stringField(evidence, "explanation")) : undefined;
+  const recommendation = presentText(stringField(record, "recommendation"));
+  const file = evidence ? presentText(stringField(evidence, "path")) : undefined;
+  const message = impact ?? explanation ?? recommendation;
+  if (!message) return undefined;
+  return {
+    id: category ?? title ?? "concern",
+    severity,
+    ...(title ? { title } : {}),
+    message,
+    ...(explanation && explanation !== message ? { description: explanation } : {}),
+    ...(recommendation ? { remediation: recommendation } : {}),
+    ...(file ? { file } : {}),
+  };
+}
+
+function stringField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function presentText(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function printPackageAudit(report: PackageAuditReport) {
@@ -2007,6 +2098,7 @@ function printPackageAudit(report: PackageAuditReport) {
     console.log(`  status: ${scannerReport.status}`);
     if (scannerReport.verdict) console.log(`  verdict: ${scannerReport.verdict}`);
     if (scannerReport.summary) console.log(`  summary: ${scannerReport.summary}`);
+    if (scannerReport.guidance) console.log(`  guidance: ${scannerReport.guidance}`);
     if (scannerReport.issueCount !== undefined && scannerReport.shownCount !== undefined) {
       console.log(
         scannerReport.shownCount === scannerReport.issueCount
@@ -2019,7 +2111,10 @@ function printPackageAudit(report: PackageAuditReport) {
         ? ` ${finding.file}${finding.startLine ? `:${finding.startLine}` : ""}`
         : "";
       console.log(`  ${finding.severity} ${finding.id}${location}`);
+      if (finding.title) console.log(`    title: ${finding.title}`);
       console.log(`    ${finding.message}`);
+      if (finding.description) console.log(`    description: ${finding.description}`);
+      if (finding.remediation) console.log(`    remediation: ${finding.remediation}`);
     }
   }
 }

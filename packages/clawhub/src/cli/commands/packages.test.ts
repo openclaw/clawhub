@@ -1404,6 +1404,134 @@ describe("package commands", () => {
     expect(mockLog).not.toHaveBeenCalled();
   });
 
+  it("keeps stored explanations and omits LLM evidence snippets", async () => {
+    const detail = {
+      package: { name: "demo-plugin", displayName: "Demo", family: "template" },
+      version: {
+        version: "1.2.3",
+        createdAt: 1,
+        changelog: "",
+        files: [],
+        aigAnalysis: {
+          status: "suspicious",
+          issueCount: 1,
+          checkedAt: 1,
+          findings: [
+            {
+              ruleId: "session-exfil",
+              level: "high",
+              title: "Session data exfiltration",
+              message: "Sends the session to another host.",
+              description: "The player posts session data after startup.",
+              remediation: "Remove the upload.",
+              file: "plugins/player/index.js",
+              startLine: 10,
+            },
+          ],
+        },
+        skillSpectorAnalysis: null,
+        llmAnalysis: {
+          status: "completed",
+          verdict: "suspicious",
+          findings: "Stored judge explanation.",
+          guidance: "Do not install this version.",
+          dimensions: [
+            {
+              name: "data",
+              label: "Data handling",
+              rating: "concern",
+              detail: "Session data leaves the host.",
+            },
+          ],
+          agenticRiskFindings: [
+            {
+              categoryId: "exfil",
+              categoryLabel: "Exfiltration",
+              severity: "high",
+              userImpact: "A player can send the session away.",
+              recommendation: "Delete the player upload.",
+              evidence: {
+                path: "plugins/player/index.js",
+                snippet: "SECRET_LLM_SNIPPET",
+                explanation: "The upload includes the session.",
+              },
+            },
+          ],
+          checkedAt: 1,
+        },
+      },
+    };
+    httpMocks.apiRequest.mockResolvedValueOnce(detail).mockResolvedValueOnce(detail);
+
+    await cmdPackageAudit(makeOpts(), "demo-plugin", { version: "1.2.3" });
+    const text = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(text).toContain("title: Session data exfiltration");
+    expect(text).toContain("Sends the session to another host.");
+    expect(text).toContain("description: The player posts session data after startup.");
+    expect(text).toContain("guidance: Do not install this version.");
+    expect(text).toContain("Stored judge explanation.");
+    expect(text).toContain("The upload includes the session.");
+    expect(text).not.toContain("SECRET_LLM_SNIPPET");
+    mockLog.mockClear();
+
+    await cmdPackageAudit(makeOpts(), "demo-plugin", { version: "1.2.3", json: true });
+
+    const raw = String(mockWrite.mock.calls[0]?.[0] ?? "");
+    expect(raw).not.toContain("SECRET_LLM_SNIPPET");
+    expect(JSON.parse(raw)).toEqual({
+      name: "demo-plugin",
+      version: "1.2.3",
+      family: "template",
+      reports: [
+        {
+          scanner: "aig",
+          stored: true,
+          status: "suspicious",
+          issueCount: 1,
+          shownCount: 1,
+          findings: [
+            {
+              id: "session-exfil",
+              severity: "high",
+              title: "Session data exfiltration",
+              message: "Sends the session to another host.",
+              description: "The player posts session data after startup.",
+              remediation: "Remove the upload.",
+              file: "plugins/player/index.js",
+              startLine: 10,
+            },
+          ],
+        },
+        { scanner: "skillspector", stored: false },
+        {
+          scanner: "llm",
+          stored: true,
+          status: "completed",
+          verdict: "suspicious",
+          guidance: "Do not install this version.",
+          findings: [
+            { id: "findings", severity: "report", message: "Stored judge explanation." },
+            {
+              id: "data",
+              severity: "concern",
+              title: "Data handling",
+              message: "Session data leaves the host.",
+            },
+            {
+              id: "exfil",
+              severity: "high",
+              title: "Exfiltration",
+              message: "A player can send the session away.",
+              description: "The upload includes the session.",
+              remediation: "Delete the player upload.",
+              file: "plugins/player/index.js",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it("requires an exact version for package audit", async () => {
     await expect(cmdPackageAudit(makeOpts(), "demo-plugin", {})).rejects.toThrow(/Pass --version/);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
