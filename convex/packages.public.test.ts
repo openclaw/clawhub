@@ -3879,58 +3879,26 @@ describe("packages public queries", () => {
     expect((result.page[0] as { stats?: unknown }).stats).toEqual(currentStats);
   });
 
-  it("uses a family-scoped downloads index for download-sorted family pages", async () => {
-    const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
-      packagePages: [
-        {
-          page: [
-            makePackageDoc({
-              _id: "packages:code-plugin-a",
-              name: "code-plugin-a",
-              normalizedName: "code-plugin-a",
-              displayName: "Code Plugin A",
-              family: "code-plugin",
-              stats: { downloads: 200, installs: 0, stars: 0, versions: 1 },
-            }),
-            makePackageDoc({
-              _id: "packages:code-plugin-b",
-              name: "code-plugin-b",
-              normalizedName: "code-plugin-b",
-              displayName: "Code Plugin B",
-              family: "code-plugin",
-              stats: { downloads: 100, installs: 0, stars: 0, versions: 1 },
-            }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        },
-      ],
-    });
-
-    const result = await listPublicPageHandler(ctx, {
-      family: "code-plugin",
+  it.each([
+    {
+      name: "uses a family-scoped downloads index for download-sorted family pages",
       sort: "downloads",
-      paginationOpts: { cursor: null, numItems: 1 },
-    });
-
-    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-a"]);
-    expect(result.isDone).toBe(false);
-    expect(result.continueCursor.startsWith("pkgpage:")).toBe(true);
-    expect(indexNames).toEqual(["by_active_family_downloads"]);
-    expect(indexFilters).toEqual([
-      {
-        indexName: "by_active_family_downloads",
-        filters: [
-          { field: "softDeletedAt", value: undefined },
-          { field: "family", value: "code-plugin" },
-        ],
-      },
-    ]);
-    expect(paginate).toHaveBeenCalledTimes(1);
-    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
-  });
-
-  it("uses a family-scoped installs index for install-sorted family pages", async () => {
+      indexName: "by_active_family_downloads",
+      stats: [
+        { downloads: 200, installs: 0, stars: 0, versions: 1 },
+        { downloads: 100, installs: 0, stars: 0, versions: 1 },
+      ],
+    },
+    {
+      name: "uses a family-scoped installs index for install-sorted family pages",
+      sort: "installs",
+      indexName: "by_active_family_installs",
+      stats: [
+        { downloads: 100, installs: 200, stars: 0, versions: 1 },
+        { downloads: 500, installs: 100, stars: 0, versions: 1 },
+      ],
+    },
+  ] as const)("$name", async ({ sort, indexName, stats }) => {
     const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
       packagePages: [
         {
@@ -3941,7 +3909,7 @@ describe("packages public queries", () => {
               normalizedName: "code-plugin-a",
               displayName: "Code Plugin A",
               family: "code-plugin",
-              stats: { downloads: 100, installs: 200, stars: 0, versions: 1 },
+              stats: stats[0],
             }),
             makePackageDoc({
               _id: "packages:code-plugin-b",
@@ -3949,7 +3917,7 @@ describe("packages public queries", () => {
               normalizedName: "code-plugin-b",
               displayName: "Code Plugin B",
               family: "code-plugin",
-              stats: { downloads: 500, installs: 100, stars: 0, versions: 1 },
+              stats: stats[1],
             }),
           ],
           isDone: true,
@@ -3960,17 +3928,17 @@ describe("packages public queries", () => {
 
     const result = await listPublicPageHandler(ctx, {
       family: "code-plugin",
-      sort: "installs",
+      sort,
       paginationOpts: { cursor: null, numItems: 1 },
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-a"]);
     expect(result.isDone).toBe(false);
     expect(result.continueCursor.startsWith("pkgpage:")).toBe(true);
-    expect(indexNames).toEqual(["by_active_family_installs"]);
+    expect(indexNames).toEqual([indexName]);
     expect(indexFilters).toEqual([
       {
-        indexName: "by_active_family_installs",
+        indexName,
         filters: [
           { field: "softDeletedAt", value: undefined },
           { field: "family", value: "code-plugin" },
@@ -3981,7 +3949,20 @@ describe("packages public queries", () => {
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
   });
 
-  it("uses a family-and-official installs index for official plugin pages", async () => {
+  it.each([
+    {
+      name: "uses a family-and-official installs index for official plugin pages",
+      sort: "installs",
+      indexName: "by_active_family_official_installs",
+      stats: { downloads: 100, installs: 200, stars: 0, versions: 1 },
+    },
+    {
+      name: "uses a family-and-official downloads index for official plugin pages",
+      sort: "downloads",
+      indexName: "by_active_family_official_downloads",
+      stats: { downloads: 200, installs: 100, stars: 0, versions: 1 },
+    },
+  ] as const)("$name", async ({ sort, indexName, stats }) => {
     const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
       packagePages: [
         {
@@ -3994,7 +3975,7 @@ describe("packages public queries", () => {
               family: "code-plugin",
               isOfficial: true,
               channel: "official",
-              stats: { downloads: 100, installs: 200, stars: 0, versions: 1 },
+              stats,
             }),
           ],
           isDone: true,
@@ -4006,16 +3987,16 @@ describe("packages public queries", () => {
     const result = await listPageForViewerInternalHandler(ctx, {
       family: "code-plugin",
       isOfficial: true,
-      sort: "installs",
+      sort,
       paginationOpts: { cursor: null, numItems: 24 },
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["official-code-plugin"]);
     expect(result.isDone).toBe(true);
-    expect(indexNames).toEqual(["by_active_family_official_installs"]);
+    expect(indexNames).toEqual([indexName]);
     expect(indexFilters).toEqual([
       {
-        indexName: "by_active_family_official_installs",
+        indexName,
         filters: [
           { field: "softDeletedAt", value: undefined },
           { field: "family", value: "code-plugin" },
@@ -4132,52 +4113,6 @@ describe("packages public queries", () => {
     expect(second.page.map((entry) => entry.name)).toEqual(["clean-3"]);
     expect(second.isDone).toBe(true);
     expect(paginate).toHaveBeenCalledTimes(2);
-  });
-
-  it("uses a family-and-official downloads index for official plugin pages", async () => {
-    const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
-      packagePages: [
-        {
-          page: [
-            makePackageDoc({
-              _id: "packages:official-code-plugin",
-              name: "official-code-plugin",
-              normalizedName: "official-code-plugin",
-              displayName: "Official Code Plugin",
-              family: "code-plugin",
-              isOfficial: true,
-              channel: "official",
-              stats: { downloads: 200, installs: 100, stars: 0, versions: 1 },
-            }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        },
-      ],
-    });
-
-    const result = await listPageForViewerInternalHandler(ctx, {
-      family: "code-plugin",
-      isOfficial: true,
-      sort: "downloads",
-      paginationOpts: { cursor: null, numItems: 24 },
-    });
-
-    expect(result.page.map((entry) => entry.name)).toEqual(["official-code-plugin"]);
-    expect(result.isDone).toBe(true);
-    expect(indexNames).toEqual(["by_active_family_official_downloads"]);
-    expect(indexFilters).toEqual([
-      {
-        indexName: "by_active_family_official_downloads",
-        filters: [
-          { field: "softDeletedAt", value: undefined },
-          { field: "family", value: "code-plugin" },
-          { field: "isOfficial", value: true },
-        ],
-      },
-    ]);
-    expect(paginate).toHaveBeenCalledTimes(1);
-    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 120 });
   });
 
   it("keeps new official downloads cursors on the family-and-official index", async () => {
