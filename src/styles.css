@@ -815,27 +815,6 @@ code {
   font-size: var(--fs-sm);
 }
 
-.navbar-search-home {
-  justify-content: space-between;
-  cursor: pointer;
-  color: var(--ink-soft);
-  font: inherit;
-}
-
-.navbar-search-home-copy {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  color: inherit;
-}
-
-.navbar-search-home-kbd {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: inherit;
-  opacity: 0.8;
-}
-
 .navbar-search-mobile-trigger {
   display: none;
   align-items: center;
@@ -896,44 +875,6 @@ code {
 
 .navbar-search-mobile-clear:hover {
   color: color-mix(in srgb, var(--ink) 88%, var(--ink-soft));
-}
-
-.navbar-tabs {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  border-top: 1px solid var(--line);
-  padding: 6px 0;
-}
-
-.navbar-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.navbar-top-links {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.navbar-tabs-primary,
-.navbar-tabs-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.navbar-tabs-secondary {
-  margin-left: 8px;
-  padding-left: 12px;
-  border-left: 1px solid var(--line);
 }
 
 .brand {
@@ -9946,21 +9887,6 @@ a.skills-sh-security-audit-row:focus-visible {
     display: none;
   }
 
-  .navbar-top-links {
-    display: none;
-  }
-
-  .navbar-tabs {
-    display: none;
-  }
-
-  .navbar-tabs-primary,
-  .navbar-tabs-secondary {
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-  }
-
   .nav-mobile {
     display: inline-flex;
     flex: 0 0 auto;
@@ -15746,10 +15672,6 @@ a.search-empty-action {
     display: none;
   }
 
-  .navbar-top-links {
-    gap: 0;
-  }
-
   .github-sign-in-button,
   .auth-loading-placeholder {
     width: 92px !important;
@@ -17315,22 +17237,6 @@ a.search-empty-action {
   }
 }
 
-.souls-coming-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 20px;
-}
-
-.souls-coming-page {
-  display: grid;
-  gap: 24px;
-}
-
-.souls-coming-hero {
-  display: grid;
-  gap: 20px;
-}
-
 @media (max-width: 860px) {
   .publisher-profile-stat + .publisher-profile-stat {
     padding-left: 0;
@@ -17366,10 +17272,6 @@ a.search-empty-action {
     justify-self: start;
     margin-top: 2px;
     flex-wrap: wrap;
-  }
-
-  .souls-coming-grid {
-    grid-template-columns: 1fr;
   }
 }
 
