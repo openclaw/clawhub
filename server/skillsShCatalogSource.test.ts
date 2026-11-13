@@ -36,6 +36,42 @@ const proofMetadataRow = {
   url: "https://www.skills.sh/owner/repo/skill",
 };
 
+function larkDocCatalogPage() {
+  return {
+    data: [
+      {
+        id: "larksuite/cli/lark-doc",
+        installUrl: null,
+        installs: 383_123,
+        name: "lark-doc",
+        slug: "lark-doc",
+        source: "larksuite/cli",
+        sourceType: "well-known",
+        url: "https://www.skills.sh/larksuite/cli/lark-doc",
+      },
+    ],
+    pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+  };
+}
+
+function findSkillsCatalogPage() {
+  return {
+    data: [
+      {
+        id: "vercel-labs/skills/find-skills",
+        installUrl: "https://github.com/vercel-labs/skills",
+        installs: 42,
+        name: "Find Skills",
+        slug: "find-skills",
+        source: "vercel-labs/skills",
+        sourceType: "github",
+        url: "https://skills.sh/vercel-labs/skills/find-skills",
+      },
+    ],
+    pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+  };
+}
+
 function proofMetadataFetch(metadataResponse: () => Response) {
   return vi.fn(async (input: string | URL | Request) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -1958,23 +1994,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(findSkillsCatalogPage()));
       }
       if (url.includes("/api/v1/skills/audit/")) {
         return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
@@ -2036,23 +2056,7 @@ describe("skills.sh Vercel source boundary", () => {
       const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
         const url = String(urlInput);
         if (url.includes("?page=0&per_page=500")) {
-          return new Response(
-            JSON.stringify({
-              data: [
-                {
-                  id: "larksuite/cli/lark-doc",
-                  installUrl: null,
-                  installs: 383_123,
-                  name: "lark-doc",
-                  slug: "lark-doc",
-                  source: "larksuite/cli",
-                  sourceType: "well-known",
-                  url: "https://www.skills.sh/larksuite/cli/lark-doc",
-                },
-              ],
-              pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-            }),
-          );
+          return new Response(JSON.stringify(larkDocCatalogPage()));
         }
         if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
           identityPageAttempts += 1;
@@ -2118,23 +2122,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(larkDocCatalogPage()));
       }
       if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
         identityPageAttempts += 1;
@@ -2395,23 +2383,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(larkDocCatalogPage()));
       }
       if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
         return new Response(
@@ -2459,23 +2431,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(larkDocCatalogPage()));
       }
       if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
         identityPageAttempts += 1;
@@ -2546,23 +2502,7 @@ describe("skills.sh Vercel source boundary", () => {
       const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
         const url = String(urlInput);
         if (url.includes("?page=0&per_page=500")) {
-          return new Response(
-            JSON.stringify({
-              data: [
-                {
-                  id: "larksuite/cli/lark-doc",
-                  installUrl: null,
-                  installs: 383_123,
-                  name: "lark-doc",
-                  slug: "lark-doc",
-                  source: "larksuite/cli",
-                  sourceType: "well-known",
-                  url: "https://www.skills.sh/larksuite/cli/lark-doc",
-                },
-              ],
-              pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-            }),
-          );
+          return new Response(JSON.stringify(larkDocCatalogPage()));
         }
         if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
           identityPageAttempts += 1;
@@ -2600,23 +2540,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(larkDocCatalogPage()));
       }
       if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
         return new Response(
@@ -2774,23 +2698,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(findSkillsCatalogPage()));
       }
       if (url.includes("/api/v1/skills/audit/")) {
         return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
@@ -2824,23 +2732,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(findSkillsCatalogPage()));
       }
       if (url.includes("/api/v1/skills/audit/")) {
         auditAttempts += 1;
@@ -2891,23 +2783,7 @@ describe("skills.sh Vercel source boundary", () => {
       requestTimes.push(Date.now());
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(findSkillsCatalogPage()));
       }
       if (url.includes("/api/v1/skills/audit/")) {
         return new Response(JSON.stringify({ audits: [] }));
