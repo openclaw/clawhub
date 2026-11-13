@@ -5,6 +5,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
 import { failedSdkUsageReport, type SdkUsageReport } from "./lib/packageSdkUsageContract";
 import schema from "./schema";
 
@@ -34,6 +35,27 @@ function inventory(entries = [entry()]): SdkUsageReport {
     entries,
     unknowns: [],
     coverage: { filesDiscovered: 1, filesAnalyzed: 1, filesExcluded: 0 },
+  };
+}
+
+function searchDigestFixture(
+  packageId: Id<"packages">,
+  ownerUserId: Id<"users">,
+): Omit<Doc<"packageSearchDigest">, "_id" | "_creationTime"> {
+  return {
+    packageId,
+    name: "sdk-plugin",
+    normalizedName: "sdk-plugin",
+    displayName: "SDK plugin",
+    ownerUserId,
+    family: "code-plugin",
+    channel: "community",
+    isOfficial: false,
+    latestVersion: "1.0.0",
+    scanStatus: "clean",
+    stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+    createdAt: 1,
+    updatedAt: 1,
   };
 }
 
@@ -454,21 +476,7 @@ describe("public SDK usage from serialized Inspector reports", () => {
   it("keeps stored findings in the validation report after the same tuple crashes", async () => {
     const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
     await t.run(async (ctx) => {
-      await ctx.db.insert("packageSearchDigest", {
-        packageId,
-        name: "sdk-plugin",
-        normalizedName: "sdk-plugin",
-        displayName: "SDK plugin",
-        ownerUserId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        latestVersion: "1.0.0",
-        scanStatus: "clean",
-        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
-      });
+      await ctx.db.insert("packageSearchDigest", searchDigestFixture(packageId, ownerUserId));
     });
     const finding = {
       code: "missing-api",
@@ -529,21 +537,7 @@ describe("public SDK usage from serialized Inspector reports", () => {
   it("retains actual legacy findings without inventing a success marker after a crash", async () => {
     const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
     await t.run(async (ctx) => {
-      await ctx.db.insert("packageSearchDigest", {
-        packageId,
-        name: "sdk-plugin",
-        normalizedName: "sdk-plugin",
-        displayName: "SDK plugin",
-        ownerUserId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        latestVersion: "1.0.0",
-        scanStatus: "clean",
-        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
-      });
+      await ctx.db.insert("packageSearchDigest", searchDigestFixture(packageId, ownerUserId));
       await ctx.db.insert("packageInspectorScanStates", {
         packageId,
         releaseId,
@@ -602,21 +596,7 @@ describe("public SDK usage from serialized Inspector reports", () => {
   it("keeps newer actual legacy findings ahead of an older ambiguous failed tuple", async () => {
     const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
     await t.run(async (ctx) => {
-      await ctx.db.insert("packageSearchDigest", {
-        packageId,
-        name: "sdk-plugin",
-        normalizedName: "sdk-plugin",
-        displayName: "SDK plugin",
-        ownerUserId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        latestVersion: "1.0.0",
-        scanStatus: "clean",
-        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
-      });
+      await ctx.db.insert("packageSearchDigest", searchDigestFixture(packageId, ownerUserId));
       await ctx.db.insert("packageInspectorScanStates", {
         packageId,
         releaseId,
@@ -681,21 +661,7 @@ describe("public SDK usage from serialized Inspector reports", () => {
   it("keeps a legacy findings row behind more than twenty-five newer crashes", async () => {
     const { t, packageId, releaseId, ownerUserId } = await fixture();
     await t.run(async (ctx) => {
-      await ctx.db.insert("packageSearchDigest", {
-        packageId,
-        name: "sdk-plugin",
-        normalizedName: "sdk-plugin",
-        displayName: "SDK plugin",
-        ownerUserId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        latestVersion: "1.0.0",
-        scanStatus: "clean",
-        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
-      });
+      await ctx.db.insert("packageSearchDigest", searchDigestFixture(packageId, ownerUserId));
       await ctx.db.insert("packageInspectorScanStates", {
         packageId,
         releaseId,
@@ -799,21 +765,7 @@ describe("public SDK usage from serialized Inspector reports", () => {
     async (outcome) => {
       const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
       await t.run(async (ctx) => {
-        await ctx.db.insert("packageSearchDigest", {
-          packageId,
-          name: "sdk-plugin",
-          normalizedName: "sdk-plugin",
-          displayName: "SDK plugin",
-          ownerUserId,
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          latestVersion: "1.0.0",
-          scanStatus: "clean",
-          stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-          createdAt: 1,
-          updatedAt: 1,
-        });
+        await ctx.db.insert("packageSearchDigest", searchDigestFixture(packageId, ownerUserId));
         await ctx.db.insert("packageInspectorScanStates", {
           packageId,
           releaseId,
@@ -881,21 +833,7 @@ describe("public SDK usage from serialized Inspector reports", () => {
   it("preserves publish provenance and older nightly findings when a nightly retry crashes", async () => {
     const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
     await t.run(async (ctx) => {
-      await ctx.db.insert("packageSearchDigest", {
-        packageId,
-        name: "sdk-plugin",
-        normalizedName: "sdk-plugin",
-        displayName: "SDK plugin",
-        ownerUserId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        latestVersion: "1.0.0",
-        scanStatus: "clean",
-        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
-      });
+      await ctx.db.insert("packageSearchDigest", searchDigestFixture(packageId, ownerUserId));
       await ctx.db.insert("packageInspectorScanStates", {
         packageId,
         releaseId,
@@ -951,21 +889,7 @@ describe("public SDK usage from serialized Inspector reports", () => {
   it("never upgrades an ambiguous legacy attempt to clean and retries it until verified success", async () => {
     const { t, packageId, releaseId, ownerUserId, ingest } = await fixture();
     await t.run(async (ctx) => {
-      await ctx.db.insert("packageSearchDigest", {
-        packageId,
-        name: "sdk-plugin",
-        normalizedName: "sdk-plugin",
-        displayName: "SDK plugin",
-        ownerUserId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        latestVersion: "1.0.0",
-        scanStatus: "clean",
-        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
-      });
+      await ctx.db.insert("packageSearchDigest", searchDigestFixture(packageId, ownerUserId));
       await ctx.db.insert("packageInspectorScanStates", {
         packageId,
         releaseId,
