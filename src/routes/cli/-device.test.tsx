@@ -438,6 +438,8 @@ describe("CliDeviceAuth", () => {
     });
 
     expect(await screen.findByText("Device code expired")).toBeTruthy();
+    expect(screen.getByText(paragraph(EXPIRED_MESSAGE))).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
     const input = screen.getByLabelText("Code");
     expect(input).toHaveProperty("disabled", false);
     fireEvent.change(input, { target: { value: "ZZZZ-9999" } });

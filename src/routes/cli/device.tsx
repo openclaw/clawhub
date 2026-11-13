@@ -60,6 +60,7 @@ export function CliDeviceAuth() {
     label: string;
     createdAt: number;
   } | null>(null);
+  const [serverExpired, setServerExpired] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<"approve" | "deny" | null>(null);
   const [isComplete, setIsComplete] = useState(false);
@@ -74,12 +75,15 @@ export function CliDeviceAuth() {
   const expiredLocally = useDeadlinePassed(
     description?.state === "pending" ? description.expiresAt : null,
   );
-  const canDecide = description?.state === "pending" && !expiredLocally && !isComplete;
+  // A slow browser clock still shows the code as pending. The server rejection is
+  // the expiry signal, and the same recovery line has to appear.
+  const expiredForPage = expiredLocally || serverExpired;
+  const canDecide = description?.state === "pending" && !expiredForPage && !isComplete;
   // After this page approves or denies, the row leaves pending and the query reports "used".
   // That is the decision just made here, not a problem with the code.
   const codeProblem = isComplete
     ? null
-    : description?.state === "expired" || expiredLocally
+    : description?.state === "expired" || expiredForPage
       ? "expired"
       : description?.state === "used" || description?.state === "missing"
         ? description.state
@@ -111,7 +115,11 @@ export function CliDeviceAuth() {
       setStatus("Authorized. You can return to your terminal.");
     } catch (error) {
       setLockedDecision(null);
-      setStatus(getUserFacingConvexError(error, "Authorization failed."));
+      const message = getUserFacingConvexError(error, "Authorization failed.");
+      if (message.includes("Device code expired")) {
+        setServerExpired(true);
+      }
+      setStatus(message);
     } finally {
       actionInFlight.current = false;
       setPendingAction(null);
@@ -145,7 +153,11 @@ export function CliDeviceAuth() {
       setStatus("Denied. You can close this page.");
     } catch (error) {
       setLockedDecision(null);
-      setStatus(getUserFacingConvexError(error, "Deny failed."));
+      const message = getUserFacingConvexError(error, "Deny failed.");
+      if (message.includes("Device code expired")) {
+        setServerExpired(true);
+      }
+      setStatus(message);
     } finally {
       actionInFlight.current = false;
       setPendingAction(null);
@@ -186,6 +198,7 @@ export function CliDeviceAuth() {
                     value={lockedDecision?.code ?? code}
                     onChange={(event) => {
                       if (lockedDecision) return;
+                      setServerExpired(false);
                       setCode(event.currentTarget.value);
                     }}
                     disabled={lockedDecision !== null}
