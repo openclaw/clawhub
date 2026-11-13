@@ -585,38 +585,6 @@ code {
   padding: 0 var(--space-5);
 }
 
-.site-footer-divider {
-  height: 1px;
-  background: var(--line);
-  margin: var(--space-5) 0;
-}
-
-.site-footer-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  flex-wrap: wrap;
-}
-
-.site-footer-copy {
-  font-size: var(--fs-sm);
-  color: var(--ink-soft);
-  text-align: center;
-  flex: 1;
-}
-
-.site-footer-copy a {
-  color: var(--accent);
-  text-decoration: none;
-  font-weight: 500;
-  transition: opacity 0.15s ease;
-}
-
-.site-footer-copy a:hover {
-  opacity: 0.8;
-}
-
 .section-cta {
   display: flex;
   justify-content: flex-end;
@@ -15970,29 +15938,6 @@ a.search-empty-action {
 
 .footer-col-links a:hover {
   color: var(--ink);
-}
-
-.footer-bottom {
-  border-top: 1px solid var(--line);
-  padding: var(--space-2) 0;
-  text-align: center;
-  font-size: var(--fs-sm);
-  letter-spacing: 0.015em;
-  color: var(--ink-soft);
-}
-
-.footer-bottom a {
-  color: var(--ink-soft);
-  text-decoration: none;
-  border-bottom: 1px solid color-mix(in srgb, var(--ink-soft) 30%, transparent);
-  transition:
-    color 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.footer-bottom a:hover {
-  color: inherit;
-  border-color: currentColor;
 }
 
 @media (max-width: 760px) {
