@@ -133,6 +133,31 @@ function makeDb() {
   };
 }
 
+function makeLegacySlugQuery(skills: Doc<"skills">[], aliases: Doc<"skillSlugAliases">[] = []) {
+  return (table: "skills" | "skillSlugAliases") => ({
+    withIndex: (
+      indexName: string,
+      build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+    ) => {
+      const constraints: Record<string, string> = {};
+      const q = {
+        eq: (field: string, value: string) => {
+          constraints[field] = value;
+          return q;
+        },
+      };
+      build?.(q);
+      if (table === "skills" && indexName === "by_slug") {
+        return { take: async () => skills.filter((skill) => skill.slug === constraints.slug) };
+      }
+      if (table === "skillSlugAliases" && indexName === "by_slug") {
+        return { take: async () => aliases.filter((alias) => alias.slug === constraints.slug) };
+      }
+      throw new Error(`unexpected query ${table}.${indexName}`);
+    },
+  });
+}
+
 describe("skill slug owner fallbacks", () => {
   it("filters legacy owner slug matches without requiring global uniqueness", async () => {
     const result = await getSkillBySlugForPublisher(
@@ -259,32 +284,7 @@ describe("skill slug owner fallbacks", () => {
             if (id === aliasTarget._id) return aliasTarget;
             return publishers.find((publisher) => publisher._id === id) ?? null;
           },
-          query: (table: "skills" | "skillSlugAliases") => ({
-            withIndex: (
-              indexName: string,
-              build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-            ) => {
-              const constraints: Record<string, string> = {};
-              const q = {
-                eq: (field: string, value: string) => {
-                  constraints[field] = value;
-                  return q;
-                },
-              };
-              build?.(q);
-              if (table === "skills" && indexName === "by_slug") {
-                return {
-                  take: async () => (directSkill.slug === constraints.slug ? [directSkill] : []),
-                };
-              }
-              if (table === "skillSlugAliases" && indexName === "by_slug") {
-                return {
-                  take: async () => (alias.slug === constraints.slug ? [alias] : []),
-                };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          }),
+          query: makeLegacySlugQuery([directSkill], [alias]),
         },
       } as never,
       "shared",
@@ -325,31 +325,7 @@ describe("skill slug owner fallbacks", () => {
       {
         db: {
           get: async () => null,
-          query: (table: "skills" | "skillSlugAliases") => ({
-            withIndex: (
-              indexName: string,
-              build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-            ) => {
-              const constraints: Record<string, string> = {};
-              const q = {
-                eq: (field: string, value: string) => {
-                  constraints[field] = value;
-                  return q;
-                },
-              };
-              build?.(q);
-              if (table === "skills" && indexName === "by_slug") {
-                return {
-                  take: async () =>
-                    publicSkill.slug === constraints.slug ? [publicSkill, hiddenSkill] : [],
-                };
-              }
-              if (table === "skillSlugAliases" && indexName === "by_slug") {
-                return { take: async () => [] };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          }),
+          query: makeLegacySlugQuery([publicSkill, hiddenSkill]),
         },
       } as never,
       "shared",
@@ -394,33 +370,7 @@ describe("skill slug owner fallbacks", () => {
             }
             return null;
           },
-          query: (table: "skills" | "skillSlugAliases") => ({
-            withIndex: (
-              indexName: string,
-              build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-            ) => {
-              const constraints: Record<string, string> = {};
-              const q = {
-                eq: (field: string, value: string) => {
-                  constraints[field] = value;
-                  return q;
-                },
-              };
-              build?.(q);
-              if (table === "skills" && indexName === "by_slug") {
-                return {
-                  take: async () =>
-                    publicSkill.slug === constraints.slug
-                      ? [publicSkill, hiddenDuplicateSkill]
-                      : [],
-                };
-              }
-              if (table === "skillSlugAliases" && indexName === "by_slug") {
-                return { take: async () => [] };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          }),
+          query: makeLegacySlugQuery([publicSkill, hiddenDuplicateSkill]),
         },
       } as never,
       "shared",
@@ -461,31 +411,7 @@ describe("skill slug owner fallbacks", () => {
       {
         db: {
           get: async (id: string) => publishers.find((publisher) => publisher._id === id) ?? null,
-          query: (table: "skills" | "skillSlugAliases") => ({
-            withIndex: (
-              indexName: string,
-              build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-            ) => {
-              const constraints: Record<string, string> = {};
-              const q = {
-                eq: (field: string, value: string) => {
-                  constraints[field] = value;
-                  return q;
-                },
-              };
-              build?.(q);
-              if (table === "skills" && indexName === "by_slug") {
-                return {
-                  take: async () =>
-                    openclawSkill.slug === constraints.slug ? [openclawSkill, aliceSkill] : [],
-                };
-              }
-              if (table === "skillSlugAliases" && indexName === "by_slug") {
-                return { take: async () => [] };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          }),
+          query: makeLegacySlugQuery([openclawSkill, aliceSkill]),
         },
       } as never,
       "shared",
@@ -549,33 +475,7 @@ describe("skill slug owner fallbacks", () => {
             if (id === aliasTarget._id) return aliasTarget;
             return publishers.find((publisher) => publisher._id === id) ?? null;
           },
-          query: (table: "skills" | "skillSlugAliases") => ({
-            withIndex: (
-              indexName: string,
-              build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-            ) => {
-              const constraints: Record<string, string> = {};
-              const q = {
-                eq: (field: string, value: string) => {
-                  constraints[field] = value;
-                  return q;
-                },
-              };
-              build?.(q);
-              if (table === "skills" && indexName === "by_slug") {
-                return {
-                  take: async () =>
-                    publicSkill.slug === constraints.slug ? [publicSkill, hiddenSkill] : [],
-                };
-              }
-              if (table === "skillSlugAliases" && indexName === "by_slug") {
-                return {
-                  take: async () => (alias.slug === constraints.slug ? [alias] : []),
-                };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          }),
+          query: makeLegacySlugQuery([publicSkill, hiddenSkill], [alias]),
         },
       } as never,
       "shared",
@@ -616,33 +516,7 @@ describe("skill slug owner fallbacks", () => {
       {
         db: {
           get: async () => null,
-          query: (table: "skills" | "skillSlugAliases") => ({
-            withIndex: (
-              indexName: string,
-              build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-            ) => {
-              const constraints: Record<string, string> = {};
-              const q = {
-                eq: (field: string, value: string) => {
-                  constraints[field] = value;
-                  return q;
-                },
-              };
-              build?.(q);
-              if (table === "skills" && indexName === "by_slug") {
-                return {
-                  take: async () =>
-                    hiddenAliceSkill.slug === constraints.slug
-                      ? [hiddenAliceSkill, removedBobSkill]
-                      : [],
-                };
-              }
-              if (table === "skillSlugAliases" && indexName === "by_slug") {
-                return { take: async () => [] };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          }),
+          query: makeLegacySlugQuery([hiddenAliceSkill, removedBobSkill]),
         },
       } as never,
       "shared",
