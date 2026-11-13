@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { loadSmokeSkillFixture } from "../scripts/lib/smokeSkillFixture";
 import { stubExternalMediaInVitePreview } from "./helpers/externalMedia";
@@ -37,12 +39,45 @@ function seedApiUrl(path: string) {
 async function getSeedFixture(request: APIRequestContext, path: string) {
   let lastResponse: Awaited<ReturnType<APIRequestContext["get"]>> | null = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    lastResponse = await request.get(seedApiUrl(path));
+    lastResponse = await request.get(seedApiUrl(path), { maxRetries: 2 });
     if (lastResponse.ok() || lastResponse.status() === 409) return lastResponse;
     await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
   }
   return lastResponse!;
 }
+
+test("seed fixtures retry connection resets within a bounded budget", async ({ request }) => {
+  let attempts = 0;
+  const server = createServer((incoming, response) => {
+    attempts += 1;
+    if (incoming.url === "/reset" || attempts <= 2) {
+      incoming.socket.destroy();
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: true }));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Missing fixture server port");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const response = await getSeedFixture(request, `${baseUrl}/recover`);
+    expect(response.status()).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(attempts).toBe(3);
+
+    attempts = 0;
+    await expect(getSeedFixture(request, `${baseUrl}/reset`)).rejects.toThrow("ECONNRESET");
+    expect(attempts).toBe(3);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
 
 async function expectHomeHeroBackgroundCentered(page: Page) {
   const metrics = await page.locator(".home-v2-hero-bg").evaluate((element) => {
