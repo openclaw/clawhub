@@ -525,6 +525,30 @@ const resolvePublishTargetForUserInternalHandler = (
   >
 )._handler;
 
+function buildPublisherMemberQuery<T extends Record<string, unknown>>(
+  publisherMembers: T[],
+  builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+) {
+  let publisherId = "";
+  let userId = "";
+  const q = {
+    eq: (field: string, value: string) => {
+      if (field === "publisherId") publisherId = value;
+      if (field === "userId") userId = value;
+      return q;
+    },
+  };
+  builder?.(q);
+  return {
+    unique: vi.fn(
+      async () =>
+        publisherMembers.find(
+          (member) => member.publisherId === publisherId && member.userId === userId,
+        ) ?? null,
+    ),
+  };
+}
+
 function captureIndexFields(buildQuery: (q: unknown) => unknown) {
   const fields: Record<string, unknown> = {};
   const q = {
@@ -5075,25 +5099,7 @@ describe("publishers membership controls", () => {
                   if (indexName !== "by_publisher_user") {
                     throw new Error(`unexpected index ${indexName}`);
                   }
-                  let publisherId = "";
-                  let userId = "";
-                  const q = {
-                    eq: (field: string, value: string) => {
-                      if (field === "publisherId") publisherId = value;
-                      if (field === "userId") userId = value;
-                      return q;
-                    },
-                  };
-                  builder?.(q);
-                  return {
-                    unique: vi.fn(
-                      async () =>
-                        publisherMembers.find(
-                          (member) =>
-                            member.publisherId === publisherId && member.userId === userId,
-                        ) ?? null,
-                    ),
-                  };
+                  return buildPublisherMemberQuery(publisherMembers, builder);
                 },
               ),
             };
@@ -6323,25 +6329,7 @@ describe("publishers membership controls", () => {
                   if (indexName !== "by_publisher_user") {
                     throw new Error(`unexpected index ${indexName}`);
                   }
-                  let publisherId = "";
-                  let userId = "";
-                  const q = {
-                    eq: (field: string, value: string) => {
-                      if (field === "publisherId") publisherId = value;
-                      if (field === "userId") userId = value;
-                      return q;
-                    },
-                  };
-                  builder?.(q);
-                  return {
-                    unique: vi.fn(
-                      async () =>
-                        publisherMembers.find(
-                          (member) =>
-                            member.publisherId === publisherId && member.userId === userId,
-                        ) ?? null,
-                    ),
-                  };
+                  return buildPublisherMemberQuery(publisherMembers, builder);
                 },
               ),
             };
@@ -9269,24 +9257,7 @@ describe("legacy publisher migration", () => {
               _indexName: string,
               builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
             ) => {
-              let publisherId = "";
-              let userId = "";
-              const q = {
-                eq: (field: string, value: string) => {
-                  if (field === "publisherId") publisherId = value;
-                  if (field === "userId") userId = value;
-                  return q;
-                },
-              };
-              builder?.(q);
-              return {
-                unique: vi.fn(
-                  async () =>
-                    publisherMembers.find(
-                      (member) => member.publisherId === publisherId && member.userId === userId,
-                    ) ?? null,
-                ),
-              };
+              return buildPublisherMemberQuery(publisherMembers, builder);
             },
           ),
         };
@@ -9861,24 +9832,7 @@ describe("legacy publisher migration", () => {
               _indexName: string,
               builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
             ) => {
-              let publisherId = "";
-              let userId = "";
-              const q = {
-                eq: (field: string, value: string) => {
-                  if (field === "publisherId") publisherId = value;
-                  if (field === "userId") userId = value;
-                  return q;
-                },
-              };
-              builder?.(q);
-              return {
-                unique: vi.fn(
-                  async () =>
-                    publisherMembers.find(
-                      (member) => member.publisherId === publisherId && member.userId === userId,
-                    ) ?? null,
-                ),
-              };
+              return buildPublisherMemberQuery(publisherMembers, builder);
             },
           ),
         };
