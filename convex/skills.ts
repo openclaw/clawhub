@@ -4581,6 +4581,80 @@ function decodePublicApiPrefixCursor(cursor: string | undefined, prefix: string)
   }
 }
 
+async function resolvePublicSkillListQuery(
+  ctx: Pick<QueryCtx, "db">,
+  {
+    cursor,
+    requestedSort,
+    nonSuspiciousOnly,
+    eqPrefix,
+  }: {
+    cursor?: string;
+    requestedSort: PublicListSort;
+    nonSuspiciousOnly: boolean;
+    eqPrefix: IndexKey;
+  },
+) {
+  const recommendedIndexName = nonSuspiciousOnly
+    ? NONSUSPICIOUS_SORT_INDEXES.recommended
+    : SORT_INDEXES.recommended;
+  const recommendedRankIndexName = getRecommendedRankIndexName(nonSuspiciousOnly);
+  const updatedIndexName = nonSuspiciousOnly
+    ? NONSUSPICIOUS_SORT_INDEXES.updated
+    : SORT_INDEXES.updated;
+  const recommendedCursor = getPublicListCursorKey({
+    cursor,
+    sort: "recommended",
+    nonSuspiciousOnly,
+    indexName: recommendedIndexName,
+    eqPrefix,
+    allowLegacyArray: false,
+  });
+  const recommendedRankCursor = getRecommendedRankCursorKey({
+    cursor,
+    nonSuspiciousOnly,
+    eqPrefix,
+  });
+  const updatedCursor = getPublicListCursorKey({
+    cursor,
+    sort: "updated",
+    nonSuspiciousOnly,
+    indexName: updatedIndexName,
+    eqPrefix,
+  });
+  const recommendedAnyCursor = recommendedCursor ?? recommendedRankCursor ?? updatedCursor;
+  const hasMissingRecommendedScore =
+    requestedSort === "recommended"
+      ? await hasMissingRecommendedScores(ctx, nonSuspiciousOnly, recommendedAnyCursor)
+      : false;
+  const recommendedResolution =
+    requestedSort === "recommended"
+      ? resolveRecommendedPublicListQuery({
+          scoreIndexName: recommendedIndexName,
+          rankIndexName: recommendedRankIndexName,
+          updatedIndexName,
+          scoreCursor: recommendedCursor,
+          rankCursor: recommendedRankCursor,
+          updatedCursor,
+          hasMissingScores: hasMissingRecommendedScore,
+        })
+      : null;
+  const sort = recommendedResolution?.sort ?? requestedSort;
+  const indexName =
+    recommendedResolution?.indexName ??
+    (nonSuspiciousOnly ? NONSUSPICIOUS_SORT_INDEXES[sort] : SORT_INDEXES[sort]);
+  const decodedCursor =
+    recommendedResolution?.decodedCursor ??
+    getPublicListCursorKey({
+      cursor,
+      sort,
+      nonSuspiciousOnly,
+      indexName,
+      eqPrefix,
+    });
+  return { sort, indexName, decodedCursor };
+}
+
 function getPublicListCursorKey({
   cursor,
   sort,
@@ -4709,33 +4783,6 @@ export const listPublicPageV4 = query({
     const dir = resolvePublicListDir(requestedSort, args.dir);
     const numItems = clampInt(args.numItems ?? 25, 1, MAX_PUBLIC_LIST_LIMIT);
     const eqPrefix: IndexKey = args.nonSuspiciousOnly ? [undefined, false] : [undefined];
-    const recommendedIndexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES.recommended
-      : SORT_INDEXES.recommended;
-    const recommendedRankIndexName = getRecommendedRankIndexName(args.nonSuspiciousOnly ?? false);
-    const updatedIndexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES.updated
-      : SORT_INDEXES.updated;
-    const recommendedCursor = getPublicListCursorKey({
-      cursor: publicListCursor,
-      sort: "recommended",
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName: recommendedIndexName,
-      eqPrefix,
-      allowLegacyArray: false,
-    });
-    const recommendedRankCursor = getRecommendedRankCursorKey({
-      cursor: publicListCursor,
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      eqPrefix,
-    });
-    const updatedCursor = getPublicListCursorKey({
-      cursor: publicListCursor,
-      sort: "updated",
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName: updatedIndexName,
-      eqPrefix,
-    });
 
     // Highlighted skills use a completely different path: query skillBadges
     // by kind to find highlighted skill IDs, then look up their digests.
@@ -4801,40 +4848,12 @@ export const listPublicPageV4 = query({
       });
     }
 
-    const recommendedAnyCursor = recommendedCursor ?? recommendedRankCursor ?? updatedCursor;
-    const hasMissingRecommendedScore =
-      requestedSort === "recommended"
-        ? await hasMissingRecommendedScores(
-            ctx,
-            args.nonSuspiciousOnly ?? false,
-            recommendedAnyCursor,
-          )
-        : false;
-    const recommendedResolution =
-      requestedSort === "recommended"
-        ? resolveRecommendedPublicListQuery({
-            scoreIndexName: recommendedIndexName,
-            rankIndexName: recommendedRankIndexName,
-            updatedIndexName,
-            scoreCursor: recommendedCursor,
-            rankCursor: recommendedRankCursor,
-            updatedCursor,
-            hasMissingScores: hasMissingRecommendedScore,
-          })
-        : null;
-    const sort = recommendedResolution?.sort ?? requestedSort;
-    const indexName =
-      recommendedResolution?.indexName ??
-      (args.nonSuspiciousOnly ? NONSUSPICIOUS_SORT_INDEXES[sort] : SORT_INDEXES[sort]);
-    const decodedCursor =
-      recommendedResolution?.decodedCursor ??
-      getPublicListCursorKey({
-        cursor: publicListCursor,
-        sort,
-        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-        indexName,
-        eqPrefix,
-      });
+    const { sort, indexName, decodedCursor } = await resolvePublicSkillListQuery(ctx, {
+      cursor: publicListCursor,
+      requestedSort,
+      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+      eqPrefix,
+    });
     const isFirstPage = !decodedCursor;
     const startIndexKey: IndexKey = decodedCursor ?? eqPrefix;
 
@@ -5534,67 +5553,12 @@ export const listPublicApiPageV1 = query({
           : null;
       return { items, nextCursor };
     }
-    const recommendedIndexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES.recommended
-      : SORT_INDEXES.recommended;
-    const recommendedRankIndexName = getRecommendedRankIndexName(args.nonSuspiciousOnly ?? false);
-    const updatedIndexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES.updated
-      : SORT_INDEXES.updated;
-    const recommendedCursor = getPublicListCursorKey({
+    const { indexName, decodedCursor } = await resolvePublicSkillListQuery(ctx, {
       cursor: args.cursor,
-      sort: "recommended",
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName: recommendedIndexName,
-      eqPrefix,
-      allowLegacyArray: false,
-    });
-    const recommendedRankCursor = getRecommendedRankCursorKey({
-      cursor: args.cursor,
+      requestedSort,
       nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
       eqPrefix,
     });
-    const updatedCursor = getPublicListCursorKey({
-      cursor: args.cursor,
-      sort: "updated",
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName: updatedIndexName,
-      eqPrefix,
-    });
-    const recommendedAnyCursor = recommendedCursor ?? recommendedRankCursor ?? updatedCursor;
-    const hasMissingRecommendedScore =
-      requestedSort === "recommended"
-        ? await hasMissingRecommendedScores(
-            ctx,
-            args.nonSuspiciousOnly ?? false,
-            recommendedAnyCursor,
-          )
-        : false;
-    const recommendedResolution =
-      requestedSort === "recommended"
-        ? resolveRecommendedPublicListQuery({
-            scoreIndexName: recommendedIndexName,
-            rankIndexName: recommendedRankIndexName,
-            updatedIndexName,
-            scoreCursor: recommendedCursor,
-            rankCursor: recommendedRankCursor,
-            updatedCursor,
-            hasMissingScores: hasMissingRecommendedScore,
-          })
-        : null;
-    const sort = recommendedResolution?.sort ?? requestedSort;
-    const indexName =
-      recommendedResolution?.indexName ??
-      (args.nonSuspiciousOnly ? NONSUSPICIOUS_SORT_INDEXES[sort] : SORT_INDEXES[sort]);
-    const decodedCursor =
-      recommendedResolution?.decodedCursor ??
-      getPublicListCursorKey({
-        cursor: args.cursor,
-        sort,
-        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-        indexName,
-        eqPrefix,
-      });
     const isFirstPage = !decodedCursor;
     const result = await getPage(ctx, {
       table: "skillSearchDigest",
