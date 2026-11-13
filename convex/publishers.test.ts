@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   assertCanManageOwnedResource,
   ensurePersonalPublisherForUser,
@@ -50,480 +51,418 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const addMemberHandler = getTestHandler<{
+  publisherId: string;
+  userHandle: string;
+  role: "owner" | "admin" | "publisher";
+}>(addMember);
 
-const addMemberHandler = (
-  addMember as unknown as WrappedHandler<{
+const createMemberInviteHandler = getTestHandler<
+  {
     publisherId: string;
     userHandle: string;
     role: "owner" | "admin" | "publisher";
-  }>
-)._handler;
+  },
+  { ok: true; inviteId: string }
+>(createMemberInvite);
 
-const createMemberInviteHandler = (
-  createMemberInvite as unknown as WrappedHandler<
-    {
-      publisherId: string;
-      userHandle: string;
-      role: "owner" | "admin" | "publisher";
-    },
-    { ok: true; inviteId: string }
-  >
-)._handler;
+const revokeMemberInviteHandler = getTestHandler<{ inviteId: string }, { ok: true }>(
+  revokeMemberInvite,
+);
 
-const revokeMemberInviteHandler = (
-  revokeMemberInvite as unknown as WrappedHandler<{ inviteId: string }, { ok: true }>
-)._handler;
+const declineMemberInviteHandler = getTestHandler<{ inviteId: string }, { ok: true }>(
+  declineMemberInvite,
+);
 
-const declineMemberInviteHandler = (
-  declineMemberInvite as unknown as WrappedHandler<{ inviteId: string }, { ok: true }>
-)._handler;
+const acceptMemberInviteHandler = getTestHandler<{ inviteId: string }, { ok: true }>(
+  acceptMemberInvite,
+);
 
-const acceptMemberInviteHandler = (
-  acceptMemberInvite as unknown as WrappedHandler<{ inviteId: string }, { ok: true }>
-)._handler;
+const listInvitesForPublisherHandler = getTestHandler<
+  { publisherId: string },
+  Array<{ _id: string; targetHandle: string }>
+>(listInvitesForPublisher);
 
-const listInvitesForPublisherHandler = (
-  listInvitesForPublisher as unknown as WrappedHandler<
-    { publisherId: string },
-    Array<{ _id: string; targetHandle: string }>
-  >
-)._handler;
+const listMyInvitesHandler = getTestHandler<Record<string, never>, Array<{ _id: string }>>(
+  listMyInvites,
+);
 
-const listMyInvitesHandler = (
-  listMyInvites as unknown as WrappedHandler<Record<string, never>, Array<{ _id: string }>>
-)._handler;
+const removeMemberHandler = getTestHandler<{ publisherId: string; userId: string }>(removeMember);
 
-const removeMemberHandler = (
-  removeMember as unknown as WrappedHandler<{ publisherId: string; userId: string }>
-)._handler;
-
-const migrateLegacyPublisherHandleToOrgInternalHandler = (
-  migrateLegacyPublisherHandleToOrgInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      handle: string;
-      fallbackUserHandle?: string;
-      displayName?: string;
-    },
-    {
-      ok: true;
-      handle: string;
-      orgPublisherId: string;
-      legacyUserId: string;
-      fallbackUserHandle: string;
-      personalPublisherId: string | null;
-      convertedExistingPublisher: boolean;
-      packagesMigrated: number;
-    }
-  >
-)._handler;
-
-const ensureOrgPublisherHandleInternalHandler = (
-  ensureOrgPublisherHandleInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      handle: string;
-      displayName?: string;
-      memberHandle?: string;
-      memberRole?: "owner" | "admin" | "publisher";
-    },
-    {
-      ok: true;
-      publisherId: string;
-      handle: string;
-      created: boolean;
-      member?: { userId: string; handle: string; role: "owner" | "admin" | "publisher" };
-    }
-  >
-)._handler;
-
-const updateOrgPublisherProfileInternalHandler = (
-  updateOrgPublisherProfileInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      handle: string;
-      bio?: string;
-      imageStorageId?: string;
-      reason: string;
-    },
-    {
-      ok: true;
-      publisherId: string;
-      handle: string;
-      bio: string | null;
-      image: string | null;
-      bioUpdated: boolean;
-      logoUpdated: boolean;
-    }
-  >
-)._handler;
-
-const removeOrgPublisherMemberInternalHandler = (
-  removeOrgPublisherMemberInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      handle: string;
-      memberHandle: string;
-    },
-    {
-      ok: true;
-      publisherId: string;
-      handle: string;
-      removed: boolean;
-      member: { userId: string; handle: string; role: "owner" | "admin" | "publisher" };
-    }
-  >
-)._handler;
-
-const addOfficialPublisherInternalHandler = (
-  addOfficialPublisherInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      handle: string;
-      reason: string;
-    },
-    {
-      ok: true;
-      added: boolean;
-      publisherId: string;
-      handle: string;
-      officialPublisherId: string;
-    }
-  >
-)._handler;
-
-const recoverPersonalPublisherInternalHandler = (
-  recoverPersonalPublisherInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      publisherHandle: string;
-      previousGitHubProviderAccountId: string;
-      nextGitHubProviderAccountId: string;
-      nextUserHandle?: string;
-      retiredUserHandle?: string;
-      reason: string;
-      confirmIdentityVerified: boolean;
-      dryRun?: boolean;
-    },
-    {
-      ok: true;
-      dryRun: boolean;
-      recovered: boolean;
-      publisherId: string;
-      handle: string;
-      previousUser: { userId: string; handle: string | null; nextHandle: string | null };
-      nextUser: { userId: string; handle: string | null; nextHandle: string };
-      retiredPersonalPublisher: {
-        publisherId: string;
-        handle: string;
-        skills: number;
-        packages: number;
-        githubSources: number;
-      } | null;
-      resourceOwnerMigration: {
-        limitPerTable: number;
-        skills: number;
-        skillSlugAliases: number;
-        packages: number;
-        packageInspectorWarnings: number;
-        githubSourcesChecked: number;
-        handleReservations: number;
-      };
-    }
-  >
-)._handler;
-
-const listMineHandler = (
-  listMine as unknown as WrappedHandler<{ includePublishedItems?: boolean }, Array<unknown>>
-)._handler;
-
-const getDeletionInventoryHandler = (
-  getDeletionInventory as unknown as WrappedHandler<
-    { publisherId?: string },
-    Array<{
-      handle: string;
-      publishedItems: Array<{ displayName: string }>;
-    }>
-  >
-)._handler;
-
-const getMyProfileHandleHandler = (
-  getMyProfileHandle as unknown as WrappedHandler<Record<string, never>, string | null>
-)._handler;
-
-const listPublicHandler = (
-  listPublic as unknown as WrappedHandler<
-    { limit?: number; kind?: "user" | "org" },
-    {
-      items: Array<{
-        handle: string;
-        kind: "user" | "org";
-        stats: { downloads: number; installs: number };
-        publishedItems?: Array<{ displayName: string }>;
-      }>;
-      total: number;
-      counts: { all: number; individuals: number; organizations: number };
-      limit: number;
-    }
-  >
-)._handler;
-
-const listPublicPageHandler = (
-  listPublicPage as unknown as WrappedHandler<
-    {
-      kind?: "user" | "org";
-      official?: boolean;
-      query?: string;
-      paginationOpts: { cursor: string | null; numItems: number };
-    },
-    {
-      page: Array<{
-        handle: string;
-        displayName?: string;
-        kind: "user" | "org";
-        official?: boolean;
-        stats: { downloads: number; installs: number };
-        publishedItems: Array<{ displayName: string; installs: number; downloads: number }>;
-      }>;
-      counts: { all: number; individuals: number; organizations: number };
-      globalCounts: { all: number; individuals: number; organizations: number };
-      continueCursor: string;
-      isDone: boolean;
-    }
-  >
-)._handler;
-
-const listPublishedPageHandler = (
-  listPublishedPage as unknown as WrappedHandler<
-    {
-      handle: string;
-      kind?: "skill" | "plugin";
-      sort?: "installs" | "recent" | "downloads";
-      paginationOpts: { cursor: string | null; numItems: number };
-    },
-    {
-      page: Array<{
-        displayName: string;
-        href: string;
-        kind: "skill" | "plugin";
-        downloads: number;
-      }>;
-      continueCursor: string;
-      isDone: boolean;
-    }
-  >
-)._handler;
-
-const listStarredPageHandler = (
-  listStarredPage as unknown as WrappedHandler<
-    {
-      handle: string;
-      paginationOpts: { cursor: string | null; numItems: number };
-    },
-    {
-      page: Array<{ displayName: string; href: string }>;
-      continueCursor: string;
-      isDone: boolean;
-    }
-  >
-)._handler;
-
-const listMembersHandler = (
-  listMembers as unknown as WrappedHandler<
-    { publisherHandle: string },
-    {
-      publisher: unknown;
-      members: Array<unknown>;
-    } | null
-  >
-)._handler;
-
-const getProfileByHandleHandler = (
-  getProfileByHandle as unknown as WrappedHandler<{ handle: string }>
-)._handler;
-
-const getHomePublisherSummariesHandler = (
-  getHomePublisherSummaries as unknown as WrappedHandler<{ handles: string[] }>
-)._handler;
-
-const getHomeOfficialCreatorSummariesHandler = (
-  getHomeOfficialCreatorSummaries as unknown as WrappedHandler<{ limit?: number }>
-)._handler;
-
-const getHomeOfficialCreatorSummariesPageInternalHandler = (
-  getHomeOfficialCreatorSummariesPageInternal as unknown as WrappedHandler<{
-    cursor: string | null;
-  }>
-)._handler;
-
-const getOgMetaByHandleHandler = (
-  getOgMetaByHandle as unknown as WrappedHandler<
-    { handle: string },
-    {
-      displayName?: string | null;
-      affiliations?: Array<{
-        publisher?: {
-          handle?: string | null;
-          displayName?: string | null;
-          image?: string | null;
-        } | null;
-        role?: string;
-      }>;
-      stats: { downloads: number; installs: number; stars: number };
-    } | null
-  >
-)._handler;
-
-const getPublishedDisplayManifestHandler = (
-  getPublishedDisplayManifest as unknown as WrappedHandler<
-    {
-      handle: string;
-      kind?: "skill" | "plugin";
-      sort?: "installs" | "recent" | "downloads";
-    },
-    {
-      mode: "grouped";
-      sourceRepos: string[];
-      sections: Array<{
-        title: string;
-        sourceRepo: string | null;
-        items: Array<{ displayName: string }>;
-      }>;
-    } | null
-  >
-)._handler;
-
-const updateProfileHandler = (
-  updateProfile as unknown as WrappedHandler<{
-    publisherId: string;
-    displayName: string;
-    bio?: string;
-    image?: string;
-    imageStorageId?: string;
-    imageUploadTicket?: string;
-    githubOrgId?: string | null;
-  }>
-)._handler;
-
-const createImageUploadHandler = (
-  createImageUpload as unknown as WrappedHandler<{ publisherId: string }>
-)._handler;
-
-const setTrustedPublisherInternalHandler = (
-  setTrustedPublisherInternal as unknown as WrappedHandler<{
+const migrateLegacyPublisherHandleToOrgInternalHandler = getTestHandler<
+  {
     actorUserId: string;
+    handle: string;
+    fallbackUserHandle?: string;
+    displayName?: string;
+  },
+  {
+    ok: true;
+    handle: string;
+    orgPublisherId: string;
+    legacyUserId: string;
+    fallbackUserHandle: string;
+    personalPublisherId: string | null;
+    convertedExistingPublisher: boolean;
+    packagesMigrated: number;
+  }
+>(migrateLegacyPublisherHandleToOrgInternal);
+
+const ensureOrgPublisherHandleInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    handle: string;
+    displayName?: string;
+    memberHandle?: string;
+    memberRole?: "owner" | "admin" | "publisher";
+  },
+  {
+    ok: true;
     publisherId: string;
-    trustedPublisher: boolean;
-  }>
-)._handler;
+    handle: string;
+    created: boolean;
+    member?: { userId: string; handle: string; role: "owner" | "admin" | "publisher" };
+  }
+>(ensureOrgPublisherHandleInternal);
 
-const createOrgPublisherForUserInternalHandler = (
-  createOrgPublisherForUserInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      handle: string;
-      displayName?: string;
-    },
-    {
-      ok: true;
+const updateOrgPublisherProfileInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    handle: string;
+    bio?: string;
+    imageStorageId?: string;
+    reason: string;
+  },
+  {
+    ok: true;
+    publisherId: string;
+    handle: string;
+    bio: string | null;
+    image: string | null;
+    bioUpdated: boolean;
+    logoUpdated: boolean;
+  }
+>(updateOrgPublisherProfileInternal);
+
+const removeOrgPublisherMemberInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    handle: string;
+    memberHandle: string;
+  },
+  {
+    ok: true;
+    publisherId: string;
+    handle: string;
+    removed: boolean;
+    member: { userId: string; handle: string; role: "owner" | "admin" | "publisher" };
+  }
+>(removeOrgPublisherMemberInternal);
+
+const addOfficialPublisherInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    handle: string;
+    reason: string;
+  },
+  {
+    ok: true;
+    added: boolean;
+    publisherId: string;
+    handle: string;
+    officialPublisherId: string;
+  }
+>(addOfficialPublisherInternal);
+
+const recoverPersonalPublisherInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    publisherHandle: string;
+    previousGitHubProviderAccountId: string;
+    nextGitHubProviderAccountId: string;
+    nextUserHandle?: string;
+    retiredUserHandle?: string;
+    reason: string;
+    confirmIdentityVerified: boolean;
+    dryRun?: boolean;
+  },
+  {
+    ok: true;
+    dryRun: boolean;
+    recovered: boolean;
+    publisherId: string;
+    handle: string;
+    previousUser: { userId: string; handle: string | null; nextHandle: string | null };
+    nextUser: { userId: string; handle: string | null; nextHandle: string };
+    retiredPersonalPublisher: {
       publisherId: string;
       handle: string;
-      created: true;
-      trusted: false;
-    }
-  >
-)._handler;
-
-const createOrgHandler = (
-  createOrg as unknown as WrappedHandler<
-    {
-      handle: string;
-      displayName: string;
-      bio?: string;
-    },
-    {
-      publisher: { handle: string; bio?: string };
-      role: "owner";
-    }
-  >
-)._handler;
-
-const deleteOrgHandler = (
-  deleteOrg as unknown as WrappedHandler<
-    {
-      publisherId: string;
-    },
-    {
-      ok: true;
-      publisherId: string;
-      handle: string;
-      hiddenSkills: number;
-      deletedPackages: number;
-      revokedPackageTokens: number;
-      scheduled: boolean;
-    }
-  >
-)._handler;
-
-const deleteSoleOwnerOrgsForAccountDeletionInternalHandler = (
-  deleteSoleOwnerOrgsForAccountDeletionInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      deletedAt: number;
-    },
-    {
-      ok: true;
-      deletedOrgs: number;
-      hiddenSkills: number;
-      deletedPackages: number;
-    }
-  >
-)._handler;
-
-const reclaimDeletedOrgHandleInternalHandler = (
-  reclaimDeletedOrgHandleInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      handle: string;
-      reason: string;
-      dryRun?: boolean;
-      confirmationToken?: string;
-    },
-    {
-      ok: true;
-      publisherId: string;
-      handle: string;
-      dryRun: boolean;
-      hardDeleted: boolean;
-      activeSkills: number;
-      activePackages: number;
-      memberCount: number;
+      skills: number;
+      packages: number;
       githubSources: number;
-      githubSourceContents: number;
-      officialPublisher: boolean;
-      confirmationToken: string;
-    }
-  >
-)._handler;
+    } | null;
+    resourceOwnerMigration: {
+      limitPerTable: number;
+      skills: number;
+      skillSlugAliases: number;
+      packages: number;
+      packageInspectorWarnings: number;
+      githubSourcesChecked: number;
+      handleReservations: number;
+    };
+  }
+>(recoverPersonalPublisherInternal);
 
-const resolvePublishTargetForUserInternalHandler = (
-  resolvePublishTargetForUserInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      ownerHandle?: string;
-      minimumRole?: "owner" | "admin" | "publisher";
-    },
-    {
-      publisherId: string;
+const listMineHandler = getTestHandler<{ includePublishedItems?: boolean }, Array<unknown>>(
+  listMine,
+);
+
+const getDeletionInventoryHandler = getTestHandler<
+  { publisherId?: string },
+  Array<{
+    handle: string;
+    publishedItems: Array<{ displayName: string }>;
+  }>
+>(getDeletionInventory);
+
+const getMyProfileHandleHandler = getTestHandler<Record<string, never>, string | null>(
+  getMyProfileHandle,
+);
+
+const listPublicHandler = getTestHandler<
+  { limit?: number; kind?: "user" | "org" },
+  {
+    items: Array<{
       handle: string;
       kind: "user" | "org";
-      linkedUserId?: string;
-    } | null
-  >
-)._handler;
+      stats: { downloads: number; installs: number };
+      publishedItems?: Array<{ displayName: string }>;
+    }>;
+    total: number;
+    counts: { all: number; individuals: number; organizations: number };
+    limit: number;
+  }
+>(listPublic);
+
+const listPublicPageHandler = getTestHandler<
+  {
+    kind?: "user" | "org";
+    official?: boolean;
+    query?: string;
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  {
+    page: Array<{
+      handle: string;
+      displayName?: string;
+      kind: "user" | "org";
+      official?: boolean;
+      stats: { downloads: number; installs: number };
+      publishedItems: Array<{ displayName: string; installs: number; downloads: number }>;
+    }>;
+    counts: { all: number; individuals: number; organizations: number };
+    globalCounts: { all: number; individuals: number; organizations: number };
+    continueCursor: string;
+    isDone: boolean;
+  }
+>(listPublicPage);
+
+const listPublishedPageHandler = getTestHandler<
+  {
+    handle: string;
+    kind?: "skill" | "plugin";
+    sort?: "installs" | "recent" | "downloads";
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  {
+    page: Array<{
+      displayName: string;
+      href: string;
+      kind: "skill" | "plugin";
+      downloads: number;
+    }>;
+    continueCursor: string;
+    isDone: boolean;
+  }
+>(listPublishedPage);
+
+const listStarredPageHandler = getTestHandler<
+  {
+    handle: string;
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  {
+    page: Array<{ displayName: string; href: string }>;
+    continueCursor: string;
+    isDone: boolean;
+  }
+>(listStarredPage);
+
+const listMembersHandler = getTestHandler<
+  { publisherHandle: string },
+  {
+    publisher: unknown;
+    members: Array<unknown>;
+  } | null
+>(listMembers);
+
+const getProfileByHandleHandler = getTestHandler<{ handle: string }>(getProfileByHandle);
+
+const getHomePublisherSummariesHandler = getTestHandler<{ handles: string[] }>(
+  getHomePublisherSummaries,
+);
+
+const getHomeOfficialCreatorSummariesHandler = getTestHandler<{ limit?: number }>(
+  getHomeOfficialCreatorSummaries,
+);
+
+const getHomeOfficialCreatorSummariesPageInternalHandler = getTestHandler<{
+  cursor: string | null;
+}>(getHomeOfficialCreatorSummariesPageInternal);
+
+const getOgMetaByHandleHandler = getTestHandler<
+  { handle: string },
+  {
+    displayName?: string | null;
+    affiliations?: Array<{
+      publisher?: {
+        handle?: string | null;
+        displayName?: string | null;
+        image?: string | null;
+      } | null;
+      role?: string;
+    }>;
+    stats: { downloads: number; installs: number; stars: number };
+  } | null
+>(getOgMetaByHandle);
+
+const getPublishedDisplayManifestHandler = getTestHandler<
+  {
+    handle: string;
+    kind?: "skill" | "plugin";
+    sort?: "installs" | "recent" | "downloads";
+  },
+  {
+    mode: "grouped";
+    sourceRepos: string[];
+    sections: Array<{
+      title: string;
+      sourceRepo: string | null;
+      items: Array<{ displayName: string }>;
+    }>;
+  } | null
+>(getPublishedDisplayManifest);
+
+const updateProfileHandler = getTestHandler<{
+  publisherId: string;
+  displayName: string;
+  bio?: string;
+  image?: string;
+  imageStorageId?: string;
+  imageUploadTicket?: string;
+  githubOrgId?: string | null;
+}>(updateProfile);
+
+const createImageUploadHandler = getTestHandler<{ publisherId: string }>(createImageUpload);
+
+const setTrustedPublisherInternalHandler = getTestHandler<{
+  actorUserId: string;
+  publisherId: string;
+  trustedPublisher: boolean;
+}>(setTrustedPublisherInternal);
+
+const createOrgPublisherForUserInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    handle: string;
+    displayName?: string;
+  },
+  {
+    ok: true;
+    publisherId: string;
+    handle: string;
+    created: true;
+    trusted: false;
+  }
+>(createOrgPublisherForUserInternal);
+
+const createOrgHandler = getTestHandler<
+  {
+    handle: string;
+    displayName: string;
+    bio?: string;
+  },
+  {
+    publisher: { handle: string; bio?: string };
+    role: "owner";
+  }
+>(createOrg);
+
+const deleteOrgHandler = getTestHandler<
+  {
+    publisherId: string;
+  },
+  {
+    ok: true;
+    publisherId: string;
+    handle: string;
+    hiddenSkills: number;
+    deletedPackages: number;
+    revokedPackageTokens: number;
+    scheduled: boolean;
+  }
+>(deleteOrg);
+
+const deleteSoleOwnerOrgsForAccountDeletionInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    deletedAt: number;
+  },
+  {
+    ok: true;
+    deletedOrgs: number;
+    hiddenSkills: number;
+    deletedPackages: number;
+  }
+>(deleteSoleOwnerOrgsForAccountDeletionInternal);
+
+const reclaimDeletedOrgHandleInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    handle: string;
+    reason: string;
+    dryRun?: boolean;
+    confirmationToken?: string;
+  },
+  {
+    ok: true;
+    publisherId: string;
+    handle: string;
+    dryRun: boolean;
+    hardDeleted: boolean;
+    activeSkills: number;
+    activePackages: number;
+    memberCount: number;
+    githubSources: number;
+    githubSourceContents: number;
+    officialPublisher: boolean;
+    confirmationToken: string;
+  }
+>(reclaimDeletedOrgHandleInternal);
+
+const resolvePublishTargetForUserInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    ownerHandle?: string;
+    minimumRole?: "owner" | "admin" | "publisher";
+  },
+  {
+    publisherId: string;
+    handle: string;
+    kind: "user" | "org";
+    linkedUserId?: string;
+  } | null
+>(resolvePublishTargetForUserInternal);
 
 function buildPublisherMemberQuery<T extends Record<string, unknown>>(
   publisherMembers: T[],

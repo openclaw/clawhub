@@ -4,6 +4,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { type FunctionReference, getFunctionName } from "convex/server";
 import { convexToJson, jsonToConvex, type Value } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { sha256Hex } from "./lib/clawpack";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
@@ -90,418 +91,341 @@ vi.mock("./lib/openClawPublishAuthorization", () => ({
   verifyOpenClawPublishAuthorization: vi.fn(),
 }));
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
 type TestPackageInspectorAuthorRemediation = {
   summary: string;
   docsUrl?: string;
 };
 
-const getByNameHandler = (
-  getByName as unknown as WrappedHandler<
-    { name: string },
-    {
-      package: { name: string; latestVersion: string | null };
-      latestRelease: { version: string } | null;
-    } | null
-  >
-)._handler;
-const listHandler = (
-  list as unknown as WrappedHandler<
-    {
-      ownerUserId?: string;
-      ownerPublisherId?: string;
-      limit?: number;
-    },
-    Array<{
-      name: string;
-      pendingReview?: boolean;
-      scanStatus?: string;
-      latestRelease: {} | null;
-    }>
-  >
-)._handler;
-const applyPublisherDeletionToOwnedPackagesBatchInternalHandler = (
-  applyPublisherDeletionToOwnedPackagesBatchInternal as unknown as WrappedHandler<
-    {
-      ownerPublisherId: string;
-      actorUserId: string;
-      deletedAt: number;
-      cursor?: string;
-    },
-    {
-      deletedCount: number;
-      revokedTokenCount: number;
-      scheduled: boolean;
-      stale?: true;
-    }
-  >
-)._handler;
-const getVersionByNameHandler = (
-  getVersionByName as unknown as WrappedHandler<
-    { name: string; version: string },
-    { package: { name: string; scanStatus?: string }; version: { version: string } } | null
-  >
-)._handler;
-const getVersionByNameForViewerInternalHandler = (
-  getVersionByNameForViewerInternal as unknown as WrappedHandler<
-    { name: string; version: string; viewerUserId?: string },
-    { package: { name: string }; version: { version: string; clawpackStorageId?: string } } | null
-  >
-)._handler;
-const getPublicReleaseSelectionsInternalHandler = (
-  getPublicReleaseSelectionsInternal as unknown as WrappedHandler<
-    { selections: Array<{ packageId: string; releaseId: string }> },
-    Array<Record<string, unknown> | null>
-  >
-)._handler;
-const getVersionSecurityByNameForViewerInternalHandler = (
-  getVersionSecurityByNameForViewerInternal as unknown as WrappedHandler<
-    { name: string; version: string; viewerUserId?: string },
-    { package: { name: string }; version: { version: string } } | null
-  >
-)._handler;
-const listPublicPageHandler = (
-  listPublicPage as unknown as WrappedHandler<
-    {
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
-      channel?: "official" | "community" | "private";
-      isOfficial?: boolean;
-      executesCode?: boolean;
-      capabilityTag?: string;
-      category?: string;
-      topic?: string;
-      officialFirst?: boolean;
-      highlightedOnly?: boolean;
-      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
-      sort?: "updated" | "downloads" | "recommended" | "installs";
-      paginationOpts: { cursor: string | null; numItems: number };
-    },
-    {
-      page: Array<{ name: string; featuredAt?: number }>;
-      isDone: boolean;
-      continueCursor: string;
-    }
-  >
-)._handler;
-const listPublicNewPluginsPageHandler = (
-  listPublicNewPluginsPage as unknown as WrappedHandler<
-    {
-      category?: string;
-      createdAfter: number;
-      paginationOpts: { cursor: string | null; numItems: number };
-    },
-    {
-      page: Array<{ name: string; createdAt: number }>;
-      isDone: boolean;
-      continueCursor: string;
-    }
-  >
-)._handler;
-const listPageForViewerInternalHandler = (
-  listPageForViewerInternal as unknown as WrappedHandler<
-    {
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
-      families?: Array<"skill" | "code-plugin" | "bundle-plugin">;
-      channel?: "official" | "community" | "private";
-      isOfficial?: boolean;
-      executesCode?: boolean;
-      capabilityTag?: string;
-      category?: string;
-      topic?: string;
-      officialFirst?: boolean;
-      highlightedOnly?: boolean;
-      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
-      sort?: "updated" | "downloads" | "recommended" | "installs";
-      viewerUserId?: string;
-      paginationOpts: { cursor: string | null; numItems: number };
-    },
-    {
-      page: Array<{ name: string; featuredAt?: number }>;
-      isDone: boolean;
-      continueCursor: string;
-    }
-  >
-)._handler;
-const listPluginExportPageInternalHandler = (
-  listPluginExportPageInternal as unknown as WrappedHandler<
-    {
-      startDate: number;
-      endDate: number;
-      cursor?: string;
-      numItems?: number;
-      family?: "code-plugin" | "bundle-plugin";
-    },
-    {
-      page: Array<{ name: string; family: "code-plugin" | "bundle-plugin" }>;
-      nextCursor: string | null;
-      hasMore: boolean;
-    }
-  >
-)._handler;
-const listPluginValidationReportPageInternalHandler = (
-  listPluginValidationReportPageInternal as unknown as WrappedHandler<
-    { cursor?: string; numItems?: number },
-    {
-      items: Array<{
-        package: { id: string; name: string; displayName: string };
-        scan: { status: string; scannedAt: number | null };
-        findings: Array<{ severity: string; code: string; message: string }>;
-      }>;
-      nextCursor: string | null;
-      done: boolean;
-    }
-  >
-)._handler;
-const listVersionsHandler = (
-  listVersions as unknown as WrappedHandler<
-    {
-      name: string;
-      paginationOpts: { cursor: string | null; numItems: number };
-    },
-    {
-      page: Array<{ version: string }>;
-      isDone: boolean;
-      continueCursor: string;
-    }
-  >
-)._handler;
-const listVersionsForViewerInternalHandler = (
-  listVersionsForViewerInternal as unknown as WrappedHandler<
-    {
-      name: string;
-      viewerUserId?: string;
-      paginationOpts: { cursor: string | null; numItems: number };
-    },
-    {
-      page: Array<{ version: string; clawpackStorageId?: string }>;
-      isDone: boolean;
-      continueCursor: string;
-    }
-  >
-)._handler;
-const listVersionsForManagerHandler = (
-  listVersionsForManager as unknown as WrappedHandler<
-    {
-      name: string;
-      paginationOpts: { cursor: string | null; numItems: number };
-    },
-    {
-      page: Array<{ version: string; softDeletedAt?: number; ownerDeletedAt?: number }>;
-      isDone: boolean;
-      continueCursor: string;
-    }
-  >
-)._handler;
-const rawInsertReleaseInternalHandler = (
-  insertReleaseInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      ownerUserId: string;
-      ownerPublisherId?: string;
-      publishActor?:
-        | { kind: "user"; userId: string }
-        | {
-            kind: "github-actions";
-            repository: string;
-            workflow: string;
-            runId: string;
-            runAttempt: string;
-            sha: string;
-          };
-      name: string;
-      displayName: string;
-      family: "skill" | "code-plugin" | "bundle-plugin" | "template" | "claw";
-      version: string;
-      publicationStatus?: "pending" | "published";
-      changelog: string;
-      icon?: string;
-      tags: string[];
-      summary: string;
-      categories?: string[];
-      topics?: string[];
-      files: Array<{
-        path: string;
-        size: number;
-        storageId: string;
-        sha256: string;
-        contentType?: string;
-      }>;
-      integritySha256: string;
-      sha256hash?: string;
-      sourceRepo?: string;
-      runtimeId?: string;
-      channel?: "official" | "community" | "private";
-      compatibility?: unknown;
-      capabilities?: unknown;
-      verification?: unknown;
-      staticScan?: unknown;
-      llmAnalysis?: unknown;
-      artifactKind?: "legacy-zip" | "npm-pack";
-      clawpackStorageId?: string;
-      clawpackSha256?: string;
-      clawpackSize?: number;
-      clawpackFormat?: "tgz";
-      npmIntegrity?: string;
-      npmShasum?: string;
-      npmTarballName?: string;
-      npmUnpackedSize?: number;
-      npmFileCount?: number;
-      allowExistingRelease?: boolean;
-      extractedPackageJson?: unknown;
-      extractedPluginManifest?: unknown;
-      normalizedBundleManifest?: unknown;
-      trustedPublishTokenId?: string;
-      trustedPublishInventoryDigest?: string;
-      source?: unknown;
-    },
-    unknown
-  >
-)._handler;
+const getByNameHandler = getTestHandler<
+  { name: string },
+  {
+    package: { name: string; latestVersion: string | null };
+    latestRelease: { version: string } | null;
+  } | null
+>(getByName);
+const listHandler = getTestHandler<
+  {
+    ownerUserId?: string;
+    ownerPublisherId?: string;
+    limit?: number;
+  },
+  Array<{
+    name: string;
+    pendingReview?: boolean;
+    scanStatus?: string;
+    latestRelease: {} | null;
+  }>
+>(list);
+const applyPublisherDeletionToOwnedPackagesBatchInternalHandler = getTestHandler<
+  {
+    ownerPublisherId: string;
+    actorUserId: string;
+    deletedAt: number;
+    cursor?: string;
+  },
+  {
+    deletedCount: number;
+    revokedTokenCount: number;
+    scheduled: boolean;
+    stale?: true;
+  }
+>(applyPublisherDeletionToOwnedPackagesBatchInternal);
+const getVersionByNameHandler = getTestHandler<
+  { name: string; version: string },
+  { package: { name: string; scanStatus?: string }; version: { version: string } } | null
+>(getVersionByName);
+const getVersionByNameForViewerInternalHandler = getTestHandler<
+  { name: string; version: string; viewerUserId?: string },
+  { package: { name: string }; version: { version: string; clawpackStorageId?: string } } | null
+>(getVersionByNameForViewerInternal);
+const getPublicReleaseSelectionsInternalHandler = getTestHandler<
+  { selections: Array<{ packageId: string; releaseId: string }> },
+  Array<Record<string, unknown> | null>
+>(getPublicReleaseSelectionsInternal);
+const getVersionSecurityByNameForViewerInternalHandler = getTestHandler<
+  { name: string; version: string; viewerUserId?: string },
+  { package: { name: string }; version: { version: string } } | null
+>(getVersionSecurityByNameForViewerInternal);
+const listPublicPageHandler = getTestHandler<
+  {
+    family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
+    channel?: "official" | "community" | "private";
+    isOfficial?: boolean;
+    executesCode?: boolean;
+    capabilityTag?: string;
+    category?: string;
+    topic?: string;
+    officialFirst?: boolean;
+    highlightedOnly?: boolean;
+    excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
+    sort?: "updated" | "downloads" | "recommended" | "installs";
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  {
+    page: Array<{ name: string; featuredAt?: number }>;
+    isDone: boolean;
+    continueCursor: string;
+  }
+>(listPublicPage);
+const listPublicNewPluginsPageHandler = getTestHandler<
+  {
+    category?: string;
+    createdAfter: number;
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  {
+    page: Array<{ name: string; createdAt: number }>;
+    isDone: boolean;
+    continueCursor: string;
+  }
+>(listPublicNewPluginsPage);
+const listPageForViewerInternalHandler = getTestHandler<
+  {
+    family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
+    families?: Array<"skill" | "code-plugin" | "bundle-plugin">;
+    channel?: "official" | "community" | "private";
+    isOfficial?: boolean;
+    executesCode?: boolean;
+    capabilityTag?: string;
+    category?: string;
+    topic?: string;
+    officialFirst?: boolean;
+    highlightedOnly?: boolean;
+    excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
+    sort?: "updated" | "downloads" | "recommended" | "installs";
+    viewerUserId?: string;
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  {
+    page: Array<{ name: string; featuredAt?: number }>;
+    isDone: boolean;
+    continueCursor: string;
+  }
+>(listPageForViewerInternal);
+const listPluginExportPageInternalHandler = getTestHandler<
+  {
+    startDate: number;
+    endDate: number;
+    cursor?: string;
+    numItems?: number;
+    family?: "code-plugin" | "bundle-plugin";
+  },
+  {
+    page: Array<{ name: string; family: "code-plugin" | "bundle-plugin" }>;
+    nextCursor: string | null;
+    hasMore: boolean;
+  }
+>(listPluginExportPageInternal);
+const listPluginValidationReportPageInternalHandler = getTestHandler<
+  { cursor?: string; numItems?: number },
+  {
+    items: Array<{
+      package: { id: string; name: string; displayName: string };
+      scan: { status: string; scannedAt: number | null };
+      findings: Array<{ severity: string; code: string; message: string }>;
+    }>;
+    nextCursor: string | null;
+    done: boolean;
+  }
+>(listPluginValidationReportPageInternal);
+const listVersionsHandler = getTestHandler<
+  {
+    name: string;
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  {
+    page: Array<{ version: string }>;
+    isDone: boolean;
+    continueCursor: string;
+  }
+>(listVersions);
+const listVersionsForViewerInternalHandler = getTestHandler<
+  {
+    name: string;
+    viewerUserId?: string;
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  {
+    page: Array<{ version: string; clawpackStorageId?: string }>;
+    isDone: boolean;
+    continueCursor: string;
+  }
+>(listVersionsForViewerInternal);
+const listVersionsForManagerHandler = getTestHandler<
+  {
+    name: string;
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  {
+    page: Array<{ version: string; softDeletedAt?: number; ownerDeletedAt?: number }>;
+    isDone: boolean;
+    continueCursor: string;
+  }
+>(listVersionsForManager);
+const rawInsertReleaseInternalHandler = getTestHandler<{
+  actorUserId: string;
+  ownerUserId: string;
+  ownerPublisherId?: string;
+  publishActor?:
+    | { kind: "user"; userId: string }
+    | {
+        kind: "github-actions";
+        repository: string;
+        workflow: string;
+        runId: string;
+        runAttempt: string;
+        sha: string;
+      };
+  name: string;
+  displayName: string;
+  family: "skill" | "code-plugin" | "bundle-plugin" | "template" | "claw";
+  version: string;
+  publicationStatus?: "pending" | "published";
+  changelog: string;
+  icon?: string;
+  tags: string[];
+  summary: string;
+  categories?: string[];
+  topics?: string[];
+  files: Array<{
+    path: string;
+    size: number;
+    storageId: string;
+    sha256: string;
+    contentType?: string;
+  }>;
+  integritySha256: string;
+  sha256hash?: string;
+  sourceRepo?: string;
+  runtimeId?: string;
+  channel?: "official" | "community" | "private";
+  compatibility?: unknown;
+  capabilities?: unknown;
+  verification?: unknown;
+  staticScan?: unknown;
+  llmAnalysis?: unknown;
+  artifactKind?: "legacy-zip" | "npm-pack";
+  clawpackStorageId?: string;
+  clawpackSha256?: string;
+  clawpackSize?: number;
+  clawpackFormat?: "tgz";
+  npmIntegrity?: string;
+  npmShasum?: string;
+  npmTarballName?: string;
+  npmUnpackedSize?: number;
+  npmFileCount?: number;
+  allowExistingRelease?: boolean;
+  extractedPackageJson?: unknown;
+  extractedPluginManifest?: unknown;
+  normalizedBundleManifest?: unknown;
+  trustedPublishTokenId?: string;
+  trustedPublishInventoryDigest?: string;
+  source?: unknown;
+}>(insertReleaseInternal);
 const insertReleaseInternalHandler = (
   ctx: unknown,
   args: Parameters<typeof rawInsertReleaseInternalHandler>[1],
 ) => rawInsertReleaseInternalHandler(ctx, storedFixture(args));
-const findPackagePublishResultInternalHandler = (
-  findPackagePublishResultInternal as unknown as WrappedHandler<
-    {
-      name: string;
-      version: string;
-      integritySha256: string;
-      clawpackSha256?: string;
-      ownerUserId: string;
-      ownerPublisherId?: string;
-    },
-    { ok: true; packageId: string; releaseId: string } | null
-  >
-)._handler;
-const publishPendingReleaseInternalHandler = (
-  publishPendingReleaseInternal as unknown as WrappedHandler<
-    {
-      releaseId: string;
-      trustedPublishTokenId?: string;
-      trustedPublishInventoryDigest?: string;
-      trustedPublishAuthorizationVersion?: 2;
-    },
-    unknown
-  >
-)._handler;
-const cleanupReassignedPackageReleaseTagsInternalHandler = (
-  cleanupReassignedPackageReleaseTagsInternal as unknown as WrappedHandler<
-    {
-      packageId: string;
-      assignments: Array<{ releaseId: string; tags: string[] }>;
-      offset?: number;
-    },
-    unknown
-  >
-)._handler;
-const finalizePackagePublishAttemptInternalHandler = (
-  finalizePackagePublishAttemptInternal as unknown as WrappedHandler<
-    {
-      attemptId: string;
-    },
-    unknown
-  >
-)._handler;
-const reservePackageNameInternalHandler = (
-  reservePackageNameInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      ownerUserId: string;
-      ownerPublisherId?: string;
-      name: string;
-      displayName?: string;
-      summary?: string;
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
-      reason?: string;
-    },
-    { ok: true; action: string; packageId: string; name: string }
-  >
-)._handler;
-const searchPublicHandler = (
-  searchPublic as unknown as WrappedHandler<
-    {
-      query: string;
-      limit?: number;
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
-      channel?: "official" | "community" | "private";
-      isOfficial?: boolean;
-      executesCode?: boolean;
-      capabilityTag?: string;
-      category?: string;
-      topic?: string;
-      highlightedOnly?: boolean;
-      createdAfter?: number;
-      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
-    },
-    Array<{ package: { name: string } }>
-  >
-)._handler;
-const searchForViewerInternalHandler = (
-  searchForViewerInternal as unknown as WrappedHandler<
-    {
-      query: string;
-      limit?: number;
-      family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
-      channel?: "official" | "community" | "private";
-      isOfficial?: boolean;
-      executesCode?: boolean;
-      capabilityTag?: string;
-      category?: string;
-      topic?: string;
-      createdAfter?: number;
-      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
-      viewerUserId?: string;
-    },
-    Array<{ package: { name: string } }>
-  >
-)._handler;
-const publishPackageForUserInternalHandler = (
-  publishPackageForUserInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      payload: unknown;
-      requestStorageIds?: string[];
-    },
-    unknown
-  >
-)._handler;
-const publishReleaseHandler = (
-  publishRelease as unknown as WrappedHandler<{ payload: unknown }, unknown>
-)._handler;
-const publishPackageForTrustedPublisherInternalHandler = (
-  publishPackageForTrustedPublisherInternal as unknown as WrappedHandler<
-    {
-      publishTokenId: string;
-      payload: unknown;
-      requestStorageIds?: string[];
-    },
-    unknown
-  >
-)._handler;
-const generateChangelogPreviewHandler = (
-  generateChangelogPreview as unknown as WrappedHandler<
-    {
-      name: string;
-      family: "code-plugin" | "bundle-plugin";
-      version: string;
-      readmeText: string;
-      filePaths?: string[];
-    },
-    { changelog: string }
-  >
-)._handler;
-const assertCanGenerateChangelogPreviewInternalHandler = (
-  assertCanGenerateChangelogPreviewInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      name: string;
-    },
-    { ok: true }
-  >
-)._handler;
+const findPackagePublishResultInternalHandler = getTestHandler<
+  {
+    name: string;
+    version: string;
+    integritySha256: string;
+    clawpackSha256?: string;
+    ownerUserId: string;
+    ownerPublisherId?: string;
+  },
+  { ok: true; packageId: string; releaseId: string } | null
+>(findPackagePublishResultInternal);
+const publishPendingReleaseInternalHandler = getTestHandler<{
+  releaseId: string;
+  trustedPublishTokenId?: string;
+  trustedPublishInventoryDigest?: string;
+  trustedPublishAuthorizationVersion?: 2;
+}>(publishPendingReleaseInternal);
+const cleanupReassignedPackageReleaseTagsInternalHandler = getTestHandler<{
+  packageId: string;
+  assignments: Array<{ releaseId: string; tags: string[] }>;
+  offset?: number;
+}>(cleanupReassignedPackageReleaseTagsInternal);
+const finalizePackagePublishAttemptInternalHandler = getTestHandler<{
+  attemptId: string;
+}>(finalizePackagePublishAttemptInternal);
+const reservePackageNameInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    ownerUserId: string;
+    ownerPublisherId?: string;
+    name: string;
+    displayName?: string;
+    summary?: string;
+    family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
+    reason?: string;
+  },
+  { ok: true; action: string; packageId: string; name: string }
+>(reservePackageNameInternal);
+const searchPublicHandler = getTestHandler<
+  {
+    query: string;
+    limit?: number;
+    family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
+    channel?: "official" | "community" | "private";
+    isOfficial?: boolean;
+    executesCode?: boolean;
+    capabilityTag?: string;
+    category?: string;
+    topic?: string;
+    highlightedOnly?: boolean;
+    createdAfter?: number;
+    excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
+  },
+  Array<{ package: { name: string } }>
+>(searchPublic);
+const searchForViewerInternalHandler = getTestHandler<
+  {
+    query: string;
+    limit?: number;
+    family?: "skill" | "code-plugin" | "bundle-plugin" | "template";
+    channel?: "official" | "community" | "private";
+    isOfficial?: boolean;
+    executesCode?: boolean;
+    capabilityTag?: string;
+    category?: string;
+    topic?: string;
+    createdAfter?: number;
+    excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
+    viewerUserId?: string;
+  },
+  Array<{ package: { name: string } }>
+>(searchForViewerInternal);
+const publishPackageForUserInternalHandler = getTestHandler<{
+  actorUserId: string;
+  payload: unknown;
+  requestStorageIds?: string[];
+}>(publishPackageForUserInternal);
+const publishReleaseHandler = getTestHandler<{ payload: unknown }>(publishRelease);
+const publishPackageForTrustedPublisherInternalHandler = getTestHandler<{
+  publishTokenId: string;
+  payload: unknown;
+  requestStorageIds?: string[];
+}>(publishPackageForTrustedPublisherInternal);
+const generateChangelogPreviewHandler = getTestHandler<
+  {
+    name: string;
+    family: "code-plugin" | "bundle-plugin";
+    version: string;
+    readmeText: string;
+    filePaths?: string[];
+  },
+  { changelog: string }
+>(generateChangelogPreview);
+const assertCanGenerateChangelogPreviewInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    name: string;
+  },
+  { ok: true }
+>(assertCanGenerateChangelogPreviewInternal);
 
 const packageManifestFile = {
   path: ".claude-plugin/plugin.json",
@@ -608,567 +532,492 @@ function makeEmptyPackageInspectorWarningsQuery() {
   };
 }
 
-const reportPackageForUserInternalHandler = (
-  reportPackageForUserInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      name: string;
-      version?: string;
-      reason: string;
-    },
-    {
-      ok: true;
-      reported: boolean;
-      alreadyReported: boolean;
-      packageId: string;
-      releaseId: string | null;
-      reportCount: number;
-    }
-  >
-)._handler;
-const listPackageReportsInternalHandler = (
-  listPackageReportsInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      cursor?: string | null;
-      limit?: number;
-      status?: "open" | "confirmed" | "dismissed" | "all";
-    },
-    {
-      items: Array<{ reportId: string; name: string; status: string; reason?: string | null }>;
-      nextCursor: string | null;
-      done: boolean;
-    }
-  >
-)._handler;
-const triagePackageReportForUserInternalHandler = (
-  triagePackageReportForUserInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      reportId: string;
-      status: "open" | "confirmed" | "dismissed";
-      note?: string;
-      finalAction?: "none" | "quarantine" | "revoke";
-    },
-    {
-      ok: true;
-      reportId: string;
-      packageId: string;
-      status: string;
-      reportCount: number;
-      actionTaken?: string;
-    }
-  >
-)._handler;
-const getPackageModerationStatusForUserInternalHandler = (
-  getPackageModerationStatusForUserInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      name: string;
-    },
-    {
-      package: { name: string; reportCount: number };
-      latestRelease: { version: string; scanStatus: string; blockedFromDownload: boolean } | null;
-    }
-  >
-)._handler;
-const getManageContextHandler = (
-  getManageContext as unknown as WrappedHandler<
-    { name: string; candidateNames?: string[] },
-    {
-      package: { _id: string; name: string; displayName: string };
-      latestRelease: { _id: string; version: string };
-    } | null
-  >
-)._handler;
-const canDeleteVersionsHandler = (
-  canDeleteVersions as unknown as WrappedHandler<
-    { name: string; candidateNames?: string[] },
-    boolean
-  >
-)._handler;
-const listPackageInspectorWarningsForManagerHandler = (
-  listPackageInspectorWarningsForManager as unknown as WrappedHandler<
-    { name: string; limit?: number },
-    Array<{
-      packageName: string;
-      version: string;
+const reportPackageForUserInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    name: string;
+    version?: string;
+    reason: string;
+  },
+  {
+    ok: true;
+    reported: boolean;
+    alreadyReported: boolean;
+    packageId: string;
+    releaseId: string | null;
+    reportCount: number;
+  }
+>(reportPackageForUserInternal);
+const listPackageReportsInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    cursor?: string | null;
+    limit?: number;
+    status?: "open" | "confirmed" | "dismissed" | "all";
+  },
+  {
+    items: Array<{ reportId: string; name: string; status: string; reason?: string | null }>;
+    nextCursor: string | null;
+    done: boolean;
+  }
+>(listPackageReportsInternal);
+const triagePackageReportForUserInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    reportId: string;
+    status: "open" | "confirmed" | "dismissed";
+    note?: string;
+    finalAction?: "none" | "quarantine" | "revoke";
+  },
+  {
+    ok: true;
+    reportId: string;
+    packageId: string;
+    status: string;
+    reportCount: number;
+    actionTaken?: string;
+  }
+>(triagePackageReportForUserInternal);
+const getPackageModerationStatusForUserInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    name: string;
+  },
+  {
+    package: { name: string; reportCount: number };
+    latestRelease: { version: string; scanStatus: string; blockedFromDownload: boolean } | null;
+  }
+>(getPackageModerationStatusForUserInternal);
+const getManageContextHandler = getTestHandler<
+  { name: string; candidateNames?: string[] },
+  {
+    package: { _id: string; name: string; displayName: string };
+    latestRelease: { _id: string; version: string };
+  } | null
+>(getManageContext);
+const canDeleteVersionsHandler = getTestHandler<
+  { name: string; candidateNames?: string[] },
+  boolean
+>(canDeleteVersions);
+const listPackageInspectorWarningsForManagerHandler = getTestHandler<
+  { name: string; limit?: number },
+  Array<{
+    packageName: string;
+    version: string;
+    code: string;
+    issueClass?: string;
+    message: string;
+  }>
+>(listPackageInspectorWarningsForManager);
+const listPackageInspectorFindingsPublicHandler = getTestHandler<
+  { name: string; limit?: number },
+  Array<{
+    packageName: string;
+    version: string;
+    findingKind: "warning" | "error";
+    code: string;
+    issueClass?: string;
+    message: string;
+    inspectorVersion?: string;
+    targetOpenClawVersion?: string;
+    scanSource?: "publish" | "nightly";
+  }>
+>(listPackageInspectorFindingsPublic);
+const getPackageInspectorValidationSummaryPublicHandler = getTestHandler<
+  { name: string },
+  {
+    findingCount: number;
+    errorCount: number;
+    warningCount: number;
+    incompatibleAfterOpenClawVersion: string | null;
+  }
+>(getPackageInspectorValidationSummaryPublic);
+const insertPackageInspectorWarningsInternalHandler = getTestHandler<
+  {
+    packageId: string;
+    releaseId: string;
+    ownerUserId: string;
+    ownerPublisherId?: string;
+    packageName: string;
+    version: string;
+    scanSource?: "publish" | "nightly";
+    inspectorVersion?: string;
+    targetOpenClawVersion?: string;
+    notifyOwners?: boolean;
+    findings?: Array<{
+      id?: string;
       code: string;
-      issueClass?: string;
       message: string;
-    }>
-  >
-)._handler;
-const listPackageInspectorFindingsPublicHandler = (
-  listPackageInspectorFindingsPublic as unknown as WrappedHandler<
-    { name: string; limit?: number },
-    Array<{
-      packageName: string;
-      version: string;
-      findingKind: "warning" | "error";
+      level?: string;
+      issueClass?: string;
+      evidence?: string[];
+      fixture?: string;
+      authorRemediation?: TestPackageInspectorAuthorRemediation;
+    }>;
+    warnings?: Array<{
+      id?: string;
       code: string;
+      message: string;
       issueClass?: string;
+      evidence?: string[];
+      fixture?: string;
+      authorRemediation?: TestPackageInspectorAuthorRemediation;
+    }>;
+  },
+  { ok: true; inserted: number; shouldEmailOwner: boolean }
+>(insertPackageInspectorWarningsInternal);
+const ingestPackageInspectorScanResultsInternalHandler = getTestHandler<
+  {
+    packageId: string;
+    releaseId: string;
+    inspectorVersion?: string;
+    targetOpenClawVersion?: string;
+    notifyOwners?: boolean;
+    findings: Array<{
+      id?: string;
+      code: string;
       message: string;
-      inspectorVersion?: string;
-      targetOpenClawVersion?: string;
-      scanSource?: "publish" | "nightly";
-    }>
-  >
-)._handler;
-const getPackageInspectorValidationSummaryPublicHandler = (
-  getPackageInspectorValidationSummaryPublic as unknown as WrappedHandler<
-    { name: string },
-    {
-      findingCount: number;
-      errorCount: number;
-      warningCount: number;
-      incompatibleAfterOpenClawVersion: string | null;
-    }
-  >
-)._handler;
-const insertPackageInspectorWarningsInternalHandler = (
-  insertPackageInspectorWarningsInternal as unknown as WrappedHandler<
-    {
+      level?: string;
+      authorRemediation?: TestPackageInspectorAuthorRemediation;
+    }>;
+  },
+  { ok: true; inserted: number; shouldEmailOwner: boolean }
+>(ingestPackageInspectorScanResultsInternal);
+const claimPackageInspectorScanBatchInternalHandler = getTestHandler<
+  {
+    batchSize?: number;
+    leaseMs?: number;
+    cursor?: string | null;
+    runId?: string;
+    inspectorVersion?: string;
+    targetOpenClawVersion?: string;
+    notifyOwners?: boolean;
+  },
+  {
+    ok: true;
+    leased: boolean;
+    nextCursor: string | null;
+    items: Array<{
+      packageId: string;
+      releaseId: string;
+      packageName: string;
+      version: string;
+      artifactKind: "legacy-zip" | "npm-pack";
+    }>;
+  }
+>(claimPackageInspectorScanBatchInternal);
+const acknowledgePackageInspectorScanBatchInternalHandler = getTestHandler<
+  {
+    runId: string;
+    cursor: string | null;
+    leaseMs?: number;
+  },
+  { ok: true; cursor: string | null; completed: boolean }
+>(acknowledgePackageInspectorScanBatchInternal);
+const previewPackageInspectorScanBatchInternalHandler = getTestHandler<
+  {
+    batchSize?: number;
+    cursor?: string | null;
+    inspectorVersion?: string;
+    targetOpenClawVersion?: string;
+    notifyOwners?: boolean;
+  },
+  {
+    ok: true;
+    leased: false;
+    nextCursor: string | null;
+    skippedUnchanged: number;
+    items: Array<{
       packageId: string;
       releaseId: string;
       ownerUserId: string;
       ownerPublisherId?: string;
       packageName: string;
       version: string;
-      scanSource?: "publish" | "nightly";
-      inspectorVersion?: string;
-      targetOpenClawVersion?: string;
-      notifyOwners?: boolean;
-      findings?: Array<{
-        id?: string;
-        code: string;
-        message: string;
-        level?: string;
-        issueClass?: string;
-        evidence?: string[];
-        fixture?: string;
-        authorRemediation?: TestPackageInspectorAuthorRemediation;
-      }>;
-      warnings?: Array<{
-        id?: string;
-        code: string;
-        message: string;
-        issueClass?: string;
-        evidence?: string[];
-        fixture?: string;
-        authorRemediation?: TestPackageInspectorAuthorRemediation;
-      }>;
-    },
-    { ok: true; inserted: number; shouldEmailOwner: boolean }
-  >
-)._handler;
-const ingestPackageInspectorScanResultsInternalHandler = (
-  ingestPackageInspectorScanResultsInternal as unknown as WrappedHandler<
-    {
+      artifactKind: "legacy-zip" | "npm-pack";
+    }>;
+  }
+>(previewPackageInspectorScanBatchInternal);
+const getPackageInspectorEmailContextInternalHandler = getTestHandler<
+  {
+    packageId: string;
+    releaseId: string;
+    inspectorVersion?: string;
+    targetOpenClawVersion?: string;
+  },
+  {
+    packageName: string;
+    version: string;
+    findings: Array<{
+      code: string;
+      authorRemediation?: TestPackageInspectorAuthorRemediation;
+    }>;
+  } | null
+>(getPackageInspectorEmailContextInternal);
+const markPackageInspectorFindingsEmailedInternalHandler = getTestHandler<
+  {
+    packageId: string;
+    releaseId: string;
+    ownerUserId: string;
+    ownerPublisherId?: string;
+    packageName: string;
+    version: string;
+    findingCount: number;
+    email: string;
+    inspectorVersion?: string;
+    targetOpenClawVersion?: string;
+  },
+  { ok: true; created: boolean }
+>(markPackageInspectorFindingsEmailedInternal);
+const submitPackageAppealForUserInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    name: string;
+    version: string;
+    message: string;
+  },
+  {
+    ok: true;
+    submitted: boolean;
+    alreadyOpen: boolean;
+    appealId: string;
+    packageId: string;
+    releaseId: string;
+    status: string;
+  }
+>(submitPackageAppealForUserInternal);
+const listPackageAppealsInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    cursor?: string | null;
+    limit?: number;
+    status?: "open" | "accepted" | "rejected" | "all";
+  },
+  {
+    items: Array<{ appealId: string; name: string; status: string; message: string }>;
+    nextCursor: string | null;
+    done: boolean;
+  }
+>(listPackageAppealsInternal);
+const resolvePackageAppealForUserInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    appealId: string;
+    status: "open" | "accepted" | "rejected";
+    note?: string;
+    finalAction?: "none" | "approve";
+  },
+  {
+    ok: true;
+    appealId: string;
+    packageId: string;
+    releaseId: string;
+    status: string;
+    actionTaken?: string;
+  }
+>(resolvePackageAppealForUserInternal);
+const getPackageReleaseScanBackfillBatchInternalHandler = getTestHandler<
+  {
+    cursor?: number;
+    batchSize?: number;
+    prioritizeRecent?: boolean;
+  },
+  {
+    releases: Array<{
+      releaseId: string;
+      packageId: string;
+    }>;
+    nextCursor: number;
+    done: boolean;
+  }
+>(getPackageReleaseScanBackfillBatchInternal);
+const backfillLatestPackageScanStatusInternalHandler = getTestHandler<
+  {
+    cursor?: string | null;
+    batchSize?: number;
+  },
+  {
+    patched: number;
+    isDone: boolean;
+    scanned: number;
+  }
+>(backfillLatestPackageScanStatusInternal);
+const backfillPackageReleaseScansInternalHandler = getTestHandler<
+  {
+    cursor?: number;
+    batchSize?: number;
+    scheduled?: number;
+  },
+  { scheduled: number; nextCursor: number; done: boolean }
+>(backfillPackageReleaseScansInternal);
+const normalizeOfficialPublisherPackagesInternalHandler = getTestHandler<
+  {
+    family?: "code-plugin" | "bundle-plugin";
+    cursor?: string | null;
+    batchSize?: number;
+    dryRun?: boolean;
+  },
+  {
+    family: "code-plugin" | "bundle-plugin";
+    cursor: string;
+    isDone: boolean;
+    scanned: number;
+    matched: number;
+    patched: number;
+    skippedPrivate: number;
+    dryRun: boolean;
+  }
+>(normalizeOfficialPublisherPackagesInternal);
+const listOfficialPluginMigrationsInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    cursor?: string | null;
+    limit?: number;
+    phase?: "planned" | "blocked" | "ready-for-openclaw" | "all";
+  },
+  {
+    items: Array<{ bundledPluginId: string; packageName: string; phase: string }>;
+    nextCursor: string | null;
+    done: boolean;
+  }
+>(listOfficialPluginMigrationsInternal);
+const upsertOfficialPluginMigrationForUserInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    bundledPluginId: string;
+    packageName: string;
+    owner?: string;
+    sourceRepo?: string;
+    sourcePath?: string;
+    sourceCommit?: string;
+    phase?: "planned" | "blocked" | "ready-for-openclaw";
+    blockers?: string[];
+    hostTargetsComplete?: boolean;
+    scanClean?: boolean;
+    moderationApproved?: boolean;
+    runtimeBundlesReady?: boolean;
+    notes?: string;
+  },
+  {
+    ok: true;
+    migration: { bundledPluginId: string; packageName: string; phase: string };
+  }
+>(upsertOfficialPluginMigrationForUserInternal);
+const listPackageModerationQueueInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    cursor?: string | null;
+    limit?: number;
+    status?: "open" | "blocked" | "manual" | "all";
+  },
+  {
+    items: Array<{
       packageId: string;
       releaseId: string;
-      inspectorVersion?: string;
-      targetOpenClawVersion?: string;
-      notifyOwners?: boolean;
-      findings: Array<{
-        id?: string;
-        code: string;
-        message: string;
-        level?: string;
-        authorRemediation?: TestPackageInspectorAuthorRemediation;
-      }>;
-    },
-    { ok: true; inserted: number; shouldEmailOwner: boolean }
-  >
-)._handler;
-const claimPackageInspectorScanBatchInternalHandler = (
-  claimPackageInspectorScanBatchInternal as unknown as WrappedHandler<
-    {
-      batchSize?: number;
-      leaseMs?: number;
-      cursor?: string | null;
-      runId?: string;
-      inspectorVersion?: string;
-      targetOpenClawVersion?: string;
-      notifyOwners?: boolean;
-    },
-    {
-      ok: true;
-      leased: boolean;
-      nextCursor: string | null;
-      items: Array<{
-        packageId: string;
-        releaseId: string;
-        packageName: string;
-        version: string;
-        artifactKind: "legacy-zip" | "npm-pack";
-      }>;
-    }
-  >
-)._handler;
-const acknowledgePackageInspectorScanBatchInternalHandler = (
-  acknowledgePackageInspectorScanBatchInternal as unknown as WrappedHandler<
-    {
-      runId: string;
-      cursor: string | null;
-      leaseMs?: number;
-    },
-    { ok: true; cursor: string | null; completed: boolean }
-  >
-)._handler;
-const previewPackageInspectorScanBatchInternalHandler = (
-  previewPackageInspectorScanBatchInternal as unknown as WrappedHandler<
-    {
-      batchSize?: number;
-      cursor?: string | null;
-      inspectorVersion?: string;
-      targetOpenClawVersion?: string;
-      notifyOwners?: boolean;
-    },
-    {
-      ok: true;
-      leased: false;
-      nextCursor: string | null;
-      skippedUnchanged: number;
-      items: Array<{
-        packageId: string;
-        releaseId: string;
-        ownerUserId: string;
-        ownerPublisherId?: string;
-        packageName: string;
-        version: string;
-        artifactKind: "legacy-zip" | "npm-pack";
-      }>;
-    }
-  >
-)._handler;
-const getPackageInspectorEmailContextInternalHandler = (
-  getPackageInspectorEmailContextInternal as unknown as WrappedHandler<
-    {
-      packageId: string;
-      releaseId: string;
-      inspectorVersion?: string;
-      targetOpenClawVersion?: string;
-    },
-    {
-      packageName: string;
-      version: string;
-      findings: Array<{
-        code: string;
-        authorRemediation?: TestPackageInspectorAuthorRemediation;
-      }>;
-    } | null
-  >
-)._handler;
-const markPackageInspectorFindingsEmailedInternalHandler = (
-  markPackageInspectorFindingsEmailedInternal as unknown as WrappedHandler<
-    {
-      packageId: string;
-      releaseId: string;
-      ownerUserId: string;
-      ownerPublisherId?: string;
-      packageName: string;
-      version: string;
-      findingCount: number;
-      email: string;
-      inspectorVersion?: string;
-      targetOpenClawVersion?: string;
-    },
-    { ok: true; created: boolean }
-  >
-)._handler;
-const submitPackageAppealForUserInternalHandler = (
-  submitPackageAppealForUserInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
       name: string;
       version: string;
-      message: string;
-    },
-    {
-      ok: true;
-      submitted: boolean;
-      alreadyOpen: boolean;
-      appealId: string;
-      packageId: string;
-      releaseId: string;
-      status: string;
-    }
-  >
-)._handler;
-const listPackageAppealsInternalHandler = (
-  listPackageAppealsInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      cursor?: string | null;
-      limit?: number;
-      status?: "open" | "accepted" | "rejected" | "all";
-    },
-    {
-      items: Array<{ appealId: string; name: string; status: string; message: string }>;
-      nextCursor: string | null;
-      done: boolean;
-    }
-  >
-)._handler;
-const resolvePackageAppealForUserInternalHandler = (
-  resolvePackageAppealForUserInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      appealId: string;
-      status: "open" | "accepted" | "rejected";
-      note?: string;
-      finalAction?: "none" | "approve";
-    },
-    {
-      ok: true;
-      appealId: string;
-      packageId: string;
-      releaseId: string;
-      status: string;
-      actionTaken?: string;
-    }
-  >
-)._handler;
-const getPackageReleaseScanBackfillBatchInternalHandler = (
-  getPackageReleaseScanBackfillBatchInternal as unknown as WrappedHandler<
-    {
-      cursor?: number;
-      batchSize?: number;
-      prioritizeRecent?: boolean;
-    },
-    {
-      releases: Array<{
-        releaseId: string;
-        packageId: string;
-      }>;
-      nextCursor: number;
-      done: boolean;
-    }
-  >
-)._handler;
-const backfillLatestPackageScanStatusInternalHandler = (
-  backfillLatestPackageScanStatusInternal as unknown as WrappedHandler<
-    {
-      cursor?: string | null;
-      batchSize?: number;
-    },
-    {
-      patched: number;
-      isDone: boolean;
-      scanned: number;
-    }
-  >
-)._handler;
-const backfillPackageReleaseScansInternalHandler = (
-  backfillPackageReleaseScansInternal as unknown as WrappedHandler<
-    {
-      cursor?: number;
-      batchSize?: number;
-      scheduled?: number;
-    },
-    { scheduled: number; nextCursor: number; done: boolean }
-  >
-)._handler;
-const normalizeOfficialPublisherPackagesInternalHandler = (
-  normalizeOfficialPublisherPackagesInternal as unknown as WrappedHandler<
-    {
-      family?: "code-plugin" | "bundle-plugin";
-      cursor?: string | null;
-      batchSize?: number;
-      dryRun?: boolean;
-    },
-    {
-      family: "code-plugin" | "bundle-plugin";
-      cursor: string;
-      isDone: boolean;
-      scanned: number;
-      matched: number;
-      patched: number;
-      skippedPrivate: number;
-      dryRun: boolean;
-    }
-  >
-)._handler;
-const listOfficialPluginMigrationsInternalHandler = (
-  listOfficialPluginMigrationsInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      cursor?: string | null;
-      limit?: number;
-      phase?: "planned" | "blocked" | "ready-for-openclaw" | "all";
-    },
-    {
-      items: Array<{ bundledPluginId: string; packageName: string; phase: string }>;
-      nextCursor: string | null;
-      done: boolean;
-    }
-  >
-)._handler;
-const upsertOfficialPluginMigrationForUserInternalHandler = (
-  upsertOfficialPluginMigrationForUserInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      bundledPluginId: string;
-      packageName: string;
-      owner?: string;
-      sourceRepo?: string;
-      sourcePath?: string;
-      sourceCommit?: string;
-      phase?: "planned" | "blocked" | "ready-for-openclaw";
-      blockers?: string[];
-      hostTargetsComplete?: boolean;
-      scanClean?: boolean;
-      moderationApproved?: boolean;
-      runtimeBundlesReady?: boolean;
-      notes?: string;
-    },
-    {
-      ok: true;
-      migration: { bundledPluginId: string; packageName: string; phase: string };
-    }
-  >
-)._handler;
-const listPackageModerationQueueInternalHandler = (
-  listPackageModerationQueueInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      cursor?: string | null;
-      limit?: number;
-      status?: "open" | "blocked" | "manual" | "all";
-    },
-    {
-      items: Array<{
-        packageId: string;
-        releaseId: string;
-        name: string;
-        version: string;
-        scanStatus: string;
-        moderationState?: string | null;
-        reasons: string[];
-      }>;
-      nextCursor: string | null;
-      done: boolean;
-    }
-  >
-)._handler;
-const updateReleaseLlmAnalysisInternalHandler = (
-  updateReleaseLlmAnalysisInternal as unknown as WrappedHandler<
-    {
-      releaseId: string;
-      llmAnalysis: {
-        status: string;
-        verdict?: string;
-        confidence?: string;
-        summary?: string;
-        guidance?: string;
-        findings?: string;
-        checkedAt: number;
-      };
-    },
-    unknown
-  >
-)._handler;
-const softDeletePackageInternalHandler = (
-  softDeletePackageInternal as unknown as WrappedHandler<
-    { userId: string; name: string },
-    {
-      ok: true;
-      packageId: string;
-      releaseCount: number;
-      alreadyDeleted: boolean;
-    }
-  >
-)._handler;
-const applyBanToOwnedPackagesBatchInternalHandler = (
-  applyBanToOwnedPackagesBatchInternal as unknown as WrappedHandler<
-    {
-      ownerUserId: string;
-      bannedAt: number;
-      deletedBy: string;
-      deletedByRole: "admin" | "moderator" | "user";
-      cursor?: string;
-      scope?: "ownerUserId" | "personalPublisher";
-    },
-    { deletedCount: number; revokedTokenCount: number; scheduled: boolean }
-  >
-)._handler;
-const revokePackagePublishTokensForPackageBatchInternalHandler = (
-  revokePackagePublishTokensForPackageBatchInternal as unknown as WrappedHandler<
-    { packageId: string; revokedAt: number },
-    { ok: true; revokedCount: number; scheduled: boolean }
-  >
-)._handler;
-const restoreOwnedPackagesForUnbanBatchInternalHandler = (
-  restoreOwnedPackagesForUnbanBatchInternal as unknown as WrappedHandler<
-    {
-      actorUserId?: string;
-      ownerUserId: string;
-      bannedAt: number;
-      cursor?: string;
-      scope?: "ownerUserId" | "personalPublisher";
-    },
-    { restoredCount: number; scheduled: boolean; stale?: true }
-  >
-)._handler;
-const applyAccountDeletionToOwnedPackagesBatchInternalHandler = (
-  applyAccountDeletionToOwnedPackagesBatchInternal as unknown as WrappedHandler<
-    {
-      ownerUserId: string;
-      deletedAt: number;
-      cursor?: string;
-      scope?: "ownerUserId" | "personalPublisher";
-    },
-    { deletedCount: number; revokedTokenCount: number; scheduled: boolean }
-  >
-)._handler;
-const restorePackageInternalHandler = (
-  restorePackageInternal as unknown as WrappedHandler<
-    { userId: string; name: string },
-    {
-      ok: true;
-      packageId: string;
-      releaseCount: number;
-      alreadyRestored: boolean;
-    }
-  >
-)._handler;
-const transferPackageOwnerInternalHandler = (
-  transferPackageOwnerInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      name: string;
-      ownerUserId: string;
-      ownerPublisherId?: string;
-      channel?: "official" | "community" | "private";
-      reason?: string;
-    },
-    { ok: true; packageId: string; ownerPublisherId?: string; channel: string }
-  >
-)._handler;
-const transferPackageOwnerForUserInternalHandler = (
-  transferPackageOwnerForUserInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      name: string;
-      toOwner: string;
-      reason?: string;
-    },
-    { ok: true; packageId: string; ownerPublisherId?: string; channel: string }
-  >
-)._handler;
-const repairPackageIdentityInternalHandler = (
-  repairPackageIdentityInternal as unknown as WrappedHandler<
-    {
-      actorUserId: string;
-      name: string;
-      nextName?: string;
-      nextRuntimeId?: string;
-      reason: string;
-    },
-    { ok: true; packageId: string; name: string; runtimeId?: string }
-  >
-)._handler;
+      scanStatus: string;
+      moderationState?: string | null;
+      reasons: string[];
+    }>;
+    nextCursor: string | null;
+    done: boolean;
+  }
+>(listPackageModerationQueueInternal);
+const updateReleaseLlmAnalysisInternalHandler = getTestHandler<{
+  releaseId: string;
+  llmAnalysis: {
+    status: string;
+    verdict?: string;
+    confidence?: string;
+    summary?: string;
+    guidance?: string;
+    findings?: string;
+    checkedAt: number;
+  };
+}>(updateReleaseLlmAnalysisInternal);
+const softDeletePackageInternalHandler = getTestHandler<
+  { userId: string; name: string },
+  {
+    ok: true;
+    packageId: string;
+    releaseCount: number;
+    alreadyDeleted: boolean;
+  }
+>(softDeletePackageInternal);
+const applyBanToOwnedPackagesBatchInternalHandler = getTestHandler<
+  {
+    ownerUserId: string;
+    bannedAt: number;
+    deletedBy: string;
+    deletedByRole: "admin" | "moderator" | "user";
+    cursor?: string;
+    scope?: "ownerUserId" | "personalPublisher";
+  },
+  { deletedCount: number; revokedTokenCount: number; scheduled: boolean }
+>(applyBanToOwnedPackagesBatchInternal);
+const revokePackagePublishTokensForPackageBatchInternalHandler = getTestHandler<
+  { packageId: string; revokedAt: number },
+  { ok: true; revokedCount: number; scheduled: boolean }
+>(revokePackagePublishTokensForPackageBatchInternal);
+const restoreOwnedPackagesForUnbanBatchInternalHandler = getTestHandler<
+  {
+    actorUserId?: string;
+    ownerUserId: string;
+    bannedAt: number;
+    cursor?: string;
+    scope?: "ownerUserId" | "personalPublisher";
+  },
+  { restoredCount: number; scheduled: boolean; stale?: true }
+>(restoreOwnedPackagesForUnbanBatchInternal);
+const applyAccountDeletionToOwnedPackagesBatchInternalHandler = getTestHandler<
+  {
+    ownerUserId: string;
+    deletedAt: number;
+    cursor?: string;
+    scope?: "ownerUserId" | "personalPublisher";
+  },
+  { deletedCount: number; revokedTokenCount: number; scheduled: boolean }
+>(applyAccountDeletionToOwnedPackagesBatchInternal);
+const restorePackageInternalHandler = getTestHandler<
+  { userId: string; name: string },
+  {
+    ok: true;
+    packageId: string;
+    releaseCount: number;
+    alreadyRestored: boolean;
+  }
+>(restorePackageInternal);
+const transferPackageOwnerInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    name: string;
+    ownerUserId: string;
+    ownerPublisherId?: string;
+    channel?: "official" | "community" | "private";
+    reason?: string;
+  },
+  { ok: true; packageId: string; ownerPublisherId?: string; channel: string }
+>(transferPackageOwnerInternal);
+const transferPackageOwnerForUserInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    name: string;
+    toOwner: string;
+    reason?: string;
+  },
+  { ok: true; packageId: string; ownerPublisherId?: string; channel: string }
+>(transferPackageOwnerForUserInternal);
+const repairPackageIdentityInternalHandler = getTestHandler<
+  {
+    actorUserId: string;
+    name: string;
+    nextName?: string;
+    nextRuntimeId?: string;
+    reason: string;
+  },
+  { ok: true; packageId: string; name: string; runtimeId?: string }
+>(repairPackageIdentityInternal);
 
 beforeEach(() => {
   vi.mocked(verifyOpenClawPublishAuthorization).mockReset();
@@ -14035,12 +13884,10 @@ describe("packages public queries", () => {
             },
           ) => "preview:same-release",
         );
-        const previewHandler = (
-          previewPluginCategoryRefresh as unknown as WrappedHandler<
-            { runId: string },
-            { previewed: number; failed: number }
-          >
-        )._handler;
+        const previewHandler = getTestHandler<
+          { runId: string },
+          { previewed: number; failed: number }
+        >(previewPluginCategoryRefresh);
         const result = await previewHandler(
           {
             storage: ctx.storage,
