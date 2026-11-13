@@ -158,23 +158,27 @@ async function writeDeclaredDistEntry(folder: string) {
   await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 }
 
+async function writeCodePluginMetadata(
+  folder: string,
+  packageFields: Record<string, unknown>,
+  manifest: Record<string, unknown>,
+) {
+  await writeFile(join(folder, "package.json"), makeCodePluginPackageJson(packageFields), "utf8");
+  await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify(manifest), "utf8");
+}
+
 async function createCodePluginFixture(workdir: string, folderName: string, packageName: string) {
   const folder = join(workdir, folderName);
   await mkdir(join(folder, "dist"), { recursive: true });
-  await writeFile(
-    join(folder, "package.json"),
-    makeCodePluginPackageJson({
+  await writeCodePluginMetadata(
+    folder,
+    {
       name: packageName,
       displayName: "Wait Test Plugin",
       version: "1.0.0",
       files: ["dist", "openclaw.plugin.json"],
-    }),
-    "utf8",
-  );
-  await writeFile(
-    join(folder, "openclaw.plugin.json"),
-    JSON.stringify({ id: `${folderName}.plugin` }),
-    "utf8",
+    },
+    { id: `${folderName}.plugin` },
   );
   await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
   return folder;
@@ -1651,20 +1655,15 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "pending-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/pending-plugin",
           displayName: "Pending Plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "pending.plugin" }),
-        "utf8",
+        },
+        { id: "pending.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -1696,20 +1695,15 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "json-pending-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/json-pending-plugin",
           displayName: "JSON Pending Plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "json.pending.plugin" }),
-        "utf8",
+        },
+        { id: "json.pending.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2178,20 +2172,15 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "unknown-status-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/unknown-status-plugin",
           displayName: "Unknown Status Plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "unknown.status.plugin" }),
-        "utf8",
+        },
+        { id: "unknown.status.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -2219,19 +2208,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "clear-topics-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/clear-topics-plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "clear.topics.plugin" }),
-        "utf8",
+        },
+        { id: "clear.topics.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -2290,19 +2274,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "clawhub-github-publish-clh4hR");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json", "README.md"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(
         join(folder, "README.md"),
@@ -2332,20 +2311,15 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Package Display Name",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin", name: "Manifest Display Name" }),
-        "utf8",
+        },
+        { id: "demo.plugin", name: "Manifest Display Name" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2370,19 +2344,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "language-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/language-plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json", "README.md"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "language.plugin" }),
-        "utf8",
+        },
+        { id: "language.plugin" },
       );
       await writeFile(join(folder, "README.md"), "# C#\n\nDetails.\n", "utf8");
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
@@ -2409,20 +2378,15 @@ describe("package commands", () => {
     const previousCwd = process.cwd();
     try {
       await mkdir(join(pluginRoot, "dist"), { recursive: true });
-      await writeFile(
-        join(pluginRoot, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        pluginRoot,
+        {
           name: "@scope/cwd-plugin",
           displayName: "Cwd Plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(pluginRoot, "openclaw.plugin.json"),
-        JSON.stringify({ id: "cwd.plugin", configSchema: { type: "object" } }),
-        "utf8",
+        },
+        { id: "cwd.plugin", configSchema: { type: "object" } },
       );
       await writeFile(join(pluginRoot, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2674,20 +2638,15 @@ describe("package commands", () => {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(workdir, "packs"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
           description: "Demo plugin",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2715,19 +2674,14 @@ describe("package commands", () => {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(workdir, "packs"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2763,19 +2717,14 @@ describe("package commands", () => {
       const folder = join(workdir, "a & b");
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(workdir, "packs"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2828,19 +2777,14 @@ describe("package commands", () => {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(workdir, "packs"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
       return { cliCwd, workdir };
@@ -3001,19 +2945,14 @@ describe("package commands", () => {
       const folder = join(workdir, "demo-heavy-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(workdir, "packs"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-heavy-plugin",
           displayName: "Demo Heavy Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.heavy.plugin" }),
-        "utf8",
+        },
+        { id: "demo.heavy.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
       await writeFile(join(folder, "dist", "model.bin"), randomBytes(24 * 1024 * 1024));
@@ -3037,20 +2976,15 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-heavy-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-heavy-plugin",
           displayName: "Demo Heavy Plugin",
           version: "1.0.0",
           repository: "https://github.com/openclaw/demo-heavy-plugin.git",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.heavy.plugin" }),
-        "utf8",
+        },
+        { id: "demo.heavy.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
       await writeFile(join(folder, "dist", "model.bin"), randomBytes(24 * 1024 * 1024));
@@ -3380,19 +3314,14 @@ describe("package commands", () => {
 
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await mkdir(join(folder, "dist"), { recursive: true });
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
@@ -3516,19 +3445,14 @@ describe("package commands", () => {
 
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeDeclaredDistEntry(folder);
 
@@ -3578,19 +3502,14 @@ describe("package commands", () => {
 
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeDeclaredDistEntry(folder);
 
@@ -3633,19 +3552,14 @@ describe("package commands", () => {
 
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeDeclaredDistEntry(folder);
 
@@ -3688,19 +3602,14 @@ describe("package commands", () => {
 
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeDeclaredDistEntry(folder);
 
@@ -3799,19 +3708,14 @@ describe("package commands", () => {
         const folder = join(workdir, "demo-plugin");
         await mkdir(join(folder, "dist"), { recursive: true });
         await mkdir(join(folder, "skills", "demo"), { recursive: true });
-        await writeFile(
-          join(folder, "package.json"),
-          makeCodePluginPackageJson({
+        await writeCodePluginMetadata(
+          folder,
+          {
             name: "demo-plugin",
             displayName: "Demo Plugin",
             version: "1.0.0",
-          }),
-          "utf8",
-        );
-        await writeFile(
-          join(folder, "openclaw.plugin.json"),
-          JSON.stringify({ id: "demo.plugin" }),
-          "utf8",
+          },
+          { id: "demo.plugin" },
         );
         for (const host of ["codex", "claude", "cursor"]) {
           await mkdir(join(folder, `.${host}-plugin`));
@@ -3871,15 +3775,10 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+      await writeCodePluginMetadata(
+        folder,
+        { name: "demo-plugin", version: "1.0.0" },
+        { id: "demo.plugin" },
       );
 
       await expect(cmdPublishPackage(makeOpts(workdir), "demo-plugin", {})).rejects.toThrow(
@@ -4191,19 +4090,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "broken-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "broken-plugin",
           displayName: "Broken Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "broken.plugin" }),
-        "utf8",
+        },
+        { id: "broken.plugin" },
       );
       await writeDeclaredDistEntry(folder);
 
@@ -4334,19 +4228,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -4398,19 +4287,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeDeclaredDistEntry(folder);
 
@@ -4469,19 +4353,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "packages", "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin", configSchema: { type: "object" } }),
-        "utf8",
+        },
+        { id: "demo.plugin", configSchema: { type: "object" } },
       );
       await writeDeclaredDistEntry(folder);
 
@@ -4622,19 +4501,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -4677,19 +4551,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
 
       runGit(folder, ["init", "-b", "main"]);
