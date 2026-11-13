@@ -2191,7 +2191,7 @@ async function fetchHighlightedPackagePage(
 
 // Templates share the skill reference grammar: `@publisher/slug` also names a
 // Template stored under the unscoped `slug` and owned by that publisher. An
-// exact package name always wins, and plugins keep exact-name reads.
+// live exact package name always wins, and plugins keep exact-name reads.
 async function getTemplateByPublisherRef(ctx: DbReaderCtx, normalizedName: string) {
   const ref = /^@([^/]+)\/([^/]+)$/.exec(normalizedName);
   if (!ref) return null;
@@ -2210,9 +2210,11 @@ async function getReadablePackageByName(
   viewerUserId?: Id<"users">,
 ) {
   const normalizedName = normalizePackageName(name);
+  const exact = await getPackageByNormalizedName(ctx, normalizedName);
   const pkg =
-    (await getPackageByNormalizedName(ctx, normalizedName)) ??
-    (await getTemplateByPublisherRef(ctx, normalizedName));
+    exact && exact.softDeletedAt === undefined
+      ? exact
+      : await getTemplateByPublisherRef(ctx, normalizedName);
   if (!pkg || pkg.softDeletedAt !== undefined) return null;
   if (pkg.channel === "private" || isPackageBlockedFromPublic(pkg.scanStatus)) {
     const canAccessOwner = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
