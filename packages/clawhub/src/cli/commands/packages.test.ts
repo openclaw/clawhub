@@ -3487,16 +3487,39 @@ describe("package commands", () => {
     }
   });
 
-  it("falls back to a normal auth token when trusted minting is unavailable", async () => {
+  it.each([
+    {
+      failure: "trusted minting is unavailable",
+      oidcFailure: false,
+      mintError: Object.assign(new Error("Trusted publisher config is not set"), { status: 403 }),
+    },
+    {
+      failure: "trusted minting returns a 400",
+      oidcFailure: false,
+      mintError: Object.assign(new Error("Trusted publishing requires workflow_dispatch"), {
+        status: 400,
+      }),
+    },
+    {
+      failure: "requesting the GitHub OIDC token fails",
+      oidcFailure: true,
+      mintError: undefined,
+    },
+  ])("falls back to a normal auth token when $failure", async ({ oidcFailure, mintError }) => {
     const workdir = await makeTmpWorkdir();
     try {
       process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.actions.githubusercontent.com/oidc";
       process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "gh-request-token";
       const fetchMock = vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ value: "github-oidc-jwt" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
+        oidcFailure
+          ? new Response("oidc unavailable", {
+              status: 500,
+              statusText: "Internal Server Error",
+            })
+          : new Response(JSON.stringify({ value: "github-oidc-jwt" }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
       );
       vi.stubGlobal("fetch", fetchMock);
 
@@ -3514,106 +3537,9 @@ describe("package commands", () => {
       await writeDeclaredDistEntry(folder);
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
-      httpMocks.apiRequest.mockRejectedValueOnce(
-        Object.assign(new Error("Trusted publisher config is not set"), { status: 403 }),
-      );
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        packageId: "pkg_1",
-        releaseId: "rel_1",
-      });
-
-      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
-        sourceRepo: "openclaw/demo-plugin",
-        sourceCommit: "abc123",
-      });
-
-      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as
-        | { token?: string }
-        | undefined;
-      expect(publishArgs?.token).toBe("fallback-token");
-    } finally {
-      await rm(workdir, { recursive: true, force: true });
-    }
-  });
-
-  it("falls back to a normal auth token when trusted minting returns a 400", async () => {
-    const workdir = await makeTmpWorkdir();
-    try {
-      process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.actions.githubusercontent.com/oidc";
-      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "gh-request-token";
-      const fetchMock = vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ value: "github-oidc-jwt" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      );
-      vi.stubGlobal("fetch", fetchMock);
-
-      const folder = join(workdir, "demo-plugin");
-      await mkdir(folder, { recursive: true });
-      await writeCodePluginMetadata(
-        folder,
-        {
-          name: "@scope/demo-plugin",
-          displayName: "Demo Plugin",
-          version: "1.0.0",
-        },
-        { id: "demo.plugin" },
-      );
-      await writeDeclaredDistEntry(folder);
-
-      authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
-      httpMocks.apiRequest.mockRejectedValueOnce(
-        Object.assign(new Error("Trusted publishing requires workflow_dispatch"), { status: 400 }),
-      );
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        packageId: "pkg_1",
-        releaseId: "rel_1",
-      });
-
-      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
-        sourceRepo: "openclaw/demo-plugin",
-        sourceCommit: "abc123",
-      });
-
-      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as
-        | { token?: string }
-        | undefined;
-      expect(publishArgs?.token).toBe("fallback-token");
-    } finally {
-      await rm(workdir, { recursive: true, force: true });
-    }
-  });
-
-  it("falls back to a normal auth token when requesting the GitHub OIDC token fails", async () => {
-    const workdir = await makeTmpWorkdir();
-    try {
-      process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.actions.githubusercontent.com/oidc";
-      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "gh-request-token";
-      const fetchMock = vi.fn().mockResolvedValue(
-        new Response("oidc unavailable", {
-          status: 500,
-          statusText: "Internal Server Error",
-        }),
-      );
-      vi.stubGlobal("fetch", fetchMock);
-
-      const folder = join(workdir, "demo-plugin");
-      await mkdir(folder, { recursive: true });
-      await writeCodePluginMetadata(
-        folder,
-        {
-          name: "@scope/demo-plugin",
-          displayName: "Demo Plugin",
-          version: "1.0.0",
-        },
-        { id: "demo.plugin" },
-      );
-      await writeDeclaredDistEntry(folder);
-
-      authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
+      if (mintError) {
+        httpMocks.apiRequest.mockRejectedValueOnce(mintError);
+      }
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         packageId: "pkg_1",
