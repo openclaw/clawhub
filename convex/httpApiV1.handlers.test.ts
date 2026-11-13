@@ -81,6 +81,51 @@ function mockExportApiTokenUser() {
   } as never);
 }
 
+type SkillExportFixture = {
+  skillId: string;
+  slug: string;
+  displayName: string;
+  latestVersionId?: string;
+  installKind?: "github";
+  createdAt: number;
+  updatedAt: number;
+  stats: Record<string, number>;
+  ownerUserId: string;
+  ownerHandle: string;
+  ownerDisplayName?: string;
+};
+
+function makeSkillExportItem(id: string, overrides: Partial<SkillExportFixture> = {}) {
+  return {
+    skillId: `skills:${id}`,
+    slug: "demo",
+    displayName: "Demo",
+    latestVersionId: `skillVersions:${id}`,
+    createdAt: 1,
+    updatedAt: 2,
+    stats: {},
+    ownerUserId: "users:alice",
+    ownerHandle: "alice",
+    ...overrides,
+  };
+}
+
+function makeSkillExportSelection(
+  id: string,
+  files: Array<{ storageId: string; path: string; size?: number; sha256?: string }>,
+) {
+  return {
+    status: "available",
+    skill: { _id: `skills:${id}`, latestVersionId: `skillVersions:${id}`, tags: {} },
+    version: {
+      _id: `skillVersions:${id}`,
+      skillId: `skills:${id}`,
+      version: "1.0.0",
+      files,
+    },
+  };
+}
+
 function makeSkillArtifactFixture(tags: Record<string, string> = {}) {
   return {
     _id: "skills:1",
@@ -970,56 +1015,25 @@ describe("httpApiV1 handlers", () => {
           { skillId: "skills:bob", versionId: "skillVersions:bob" },
         ]);
         return [
-          {
-            status: "available",
-            skill: { _id: "skills:alice", latestVersionId: "skillVersions:alice", tags: {} },
-            version: {
-              _id: "skillVersions:alice",
-              skillId: "skills:alice",
-              version: "1.0.0",
-              files: [{ storageId: "storage:alice", path: "SKILL.md" }],
-            },
-          },
-          {
-            status: "available",
-            skill: { _id: "skills:bob", latestVersionId: "skillVersions:bob", tags: {} },
-            version: {
-              _id: "skillVersions:bob",
-              skillId: "skills:bob",
-              version: "1.0.0",
-              files: [{ storageId: "storage:bob", path: "SKILL.md" }],
-            },
-          },
+          makeSkillExportSelection("alice", [{ storageId: "storage:alice", path: "SKILL.md" }]),
+          makeSkillExportSelection("bob", [{ storageId: "storage:bob", path: "SKILL.md" }]),
         ];
       }
 
       if ("startDate" in args) {
         return {
           page: [
-            {
-              skillId: "skills:alice",
-              slug: "demo",
+            makeSkillExportItem("alice", {
               displayName: "Alice Demo",
-              latestVersionId: "skillVersions:alice",
-              createdAt: 1,
-              updatedAt: 2,
-              stats: {},
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
               ownerDisplayName: "Alice",
-            },
-            {
-              skillId: "skills:bob",
-              slug: "demo",
+            }),
+            makeSkillExportItem("bob", {
               displayName: "Bob Demo",
-              latestVersionId: "skillVersions:bob",
-              createdAt: 1,
               updatedAt: 3,
-              stats: {},
               ownerUserId: "users:bob",
               ownerHandle: "bob",
               ownerDisplayName: "Bob",
-            },
+            }),
           ],
           nextCursor: null,
           hasMore: false,
@@ -1064,41 +1078,24 @@ describe("httpApiV1 handlers", () => {
           { skillId: "skills:demo", versionId: "skillVersions:demo" },
         ]);
         return [
-          {
-            status: "available",
-            skill: { _id: "skills:demo", latestVersionId: "skillVersions:demo", tags: {} },
-            version: {
-              _id: "skillVersions:demo",
-              skillId: "skills:demo",
-              version: "1.0.0",
-              files: [
-                {
-                  storageId: "storage:demo",
-                  path: "SKILL.md",
-                  size: 64 * 1024 * 1024,
-                  sha256: "a".repeat(64),
-                },
-              ],
+          makeSkillExportSelection("demo", [
+            {
+              storageId: "storage:demo",
+              path: "SKILL.md",
+              size: 64 * 1024 * 1024,
+              sha256: "a".repeat(64),
             },
-          },
+          ]),
         ];
       }
 
       if ("startDate" in args) {
         return {
           page: [
-            {
-              skillId: "skills:demo",
-              slug: "demo",
-              displayName: "Demo",
-              latestVersionId: "skillVersions:demo",
-              createdAt: 1,
-              updatedAt: 2,
+            makeSkillExportItem("demo", {
               stats: { downloads: 4 },
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
               ownerDisplayName: "Alice",
-            },
+            }),
           ],
           nextCursor: "next-page",
           hasMore: true,
@@ -1182,41 +1179,20 @@ describe("httpApiV1 handlers", () => {
           { skillId: "skills:demo", versionId: "skillVersions:demo" },
         ]);
         return [
-          {
-            status: "available",
-            skill: { _id: "skills:demo", latestVersionId: "skillVersions:demo", tags: {} },
-            version: {
-              _id: "skillVersions:demo",
-              skillId: "skills:demo",
-              version: "1.0.0",
-              files: [
-                {
-                  storageId: "storage:demo",
-                  path: longUnicodePath,
-                  size: 1,
-                  sha256: "a".repeat(64),
-                },
-              ],
+          makeSkillExportSelection("demo", [
+            {
+              storageId: "storage:demo",
+              path: longUnicodePath,
+              size: 1,
+              sha256: "a".repeat(64),
             },
-          },
+          ]),
         ];
       }
 
       if ("startDate" in args) {
         return {
-          page: [
-            {
-              skillId: "skills:demo",
-              slug: "demo",
-              displayName: "Demo",
-              latestVersionId: "skillVersions:demo",
-              createdAt: 1,
-              updatedAt: 2,
-              stats: {},
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
-            },
-          ],
+          page: [makeSkillExportItem("demo")],
           nextCursor: null,
           hasMore: false,
         };
@@ -1272,36 +1248,20 @@ describe("httpApiV1 handlers", () => {
           { skillId: "skills:hosted", versionId: "skillVersions:hosted" },
         ]);
         return [
-          {
-            status: "available",
-            skill: { _id: "skills:hosted", latestVersionId: "skillVersions:hosted", tags: {} },
-            version: {
-              _id: "skillVersions:hosted",
-              skillId: "skills:hosted",
-              version: "1.0.0",
-              files: [{ storageId: "storage:hosted", path: "SKILL.md" }],
-            },
-          },
+          makeSkillExportSelection("hosted", [{ storageId: "storage:hosted", path: "SKILL.md" }]),
         ];
       }
 
       if ("startDate" in args) {
         return {
           page: [
-            {
-              skillId: "skills:hosted",
+            makeSkillExportItem("hosted", {
               slug: "hosted-demo",
               displayName: "Hosted Demo",
-              latestVersionId: "skillVersions:hosted",
-              createdAt: 1,
-              updatedAt: 2,
               stats: { downloads: 4 },
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
               ownerDisplayName: "Alice",
-            },
-            {
-              skillId: "skills:github",
+            }),
+            makeSkillExportItem("github", {
               slug: "aiq-deploy",
               displayName: "AIQ Deploy",
               installKind: "github",
@@ -1312,7 +1272,7 @@ describe("httpApiV1 handlers", () => {
               ownerUserId: "users:nvidia",
               ownerHandle: "nvidia",
               ownerDisplayName: "NVIDIA",
-            },
+            }),
           ],
           nextCursor: null,
           hasMore: false,
@@ -1404,30 +1364,18 @@ describe("httpApiV1 handlers", () => {
       if ("startDate" in args) {
         return {
           page: [
-            {
-              skillId: "skills:demo",
-              slug: "demo",
-              displayName: "Demo",
+            makeSkillExportItem("demo", {
               latestVersionId: "skillVersions:other",
-              createdAt: 1,
-              updatedAt: 2,
-              stats: {},
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
               ownerDisplayName: "Alice",
-            },
-            {
-              skillId: "skills:deleted",
+            }),
+            makeSkillExportItem("deleted", {
               slug: "deleted",
               displayName: "Deleted",
-              latestVersionId: "skillVersions:deleted",
-              createdAt: 1,
               updatedAt: 3,
-              stats: {},
               ownerUserId: "users:bob",
               ownerHandle: "bob",
               ownerDisplayName: "Bob",
-            },
+            }),
           ],
           nextCursor: null,
           hasMore: false,
@@ -1473,37 +1421,19 @@ describe("httpApiV1 handlers", () => {
           { skillId: "skills:demo", versionId: "skillVersions:demo" },
         ]);
         return [
-          {
-            status: "available",
-            skill: { _id: "skills:demo", latestVersionId: "skillVersions:demo", tags: {} },
-            version: {
-              _id: "skillVersions:demo",
-              skillId: "skills:demo",
-              version: "1.0.0",
-              files: [
-                { storageId: "storage:one", path: "skills/humanizer/_skillhub_meta.json" },
-                { storageId: "storage:two", path: "skills/humanizer/_skillhub_meta.json" },
-              ],
-            },
-          },
+          makeSkillExportSelection("demo", [
+            { storageId: "storage:one", path: "skills/humanizer/_skillhub_meta.json" },
+            { storageId: "storage:two", path: "skills/humanizer/_skillhub_meta.json" },
+          ]),
         ];
       }
 
       if ("startDate" in args) {
         return {
           page: [
-            {
-              skillId: "skills:demo",
-              slug: "demo",
-              displayName: "Demo",
-              latestVersionId: "skillVersions:demo",
-              createdAt: 1,
-              updatedAt: 2,
-              stats: {},
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
+            makeSkillExportItem("demo", {
               ownerDisplayName: "Alice",
-            },
+            }),
           ],
           nextCursor: null,
           hasMore: false,
@@ -1549,56 +1479,23 @@ describe("httpApiV1 handlers", () => {
           { skillId: "skills:second", versionId: "skillVersions:second" },
         ]);
         return [
-          {
-            status: "available",
-            skill: { _id: "skills:first", latestVersionId: "skillVersions:first", tags: {} },
-            version: {
-              _id: "skillVersions:first",
-              skillId: "skills:first",
-              version: "1.0.0",
-              files: [{ storageId: "storage:first", path: "SKILL.md" }],
-            },
-          },
-          {
-            status: "available",
-            skill: { _id: "skills:second", latestVersionId: "skillVersions:second", tags: {} },
-            version: {
-              _id: "skillVersions:second",
-              skillId: "skills:second",
-              version: "1.0.0",
-              files: [{ storageId: "storage:second", path: "SKILL.md" }],
-            },
-          },
+          makeSkillExportSelection("first", [{ storageId: "storage:first", path: "SKILL.md" }]),
+          makeSkillExportSelection("second", [{ storageId: "storage:second", path: "SKILL.md" }]),
         ];
       }
 
       if ("startDate" in args) {
         return {
           page: [
-            {
-              skillId: "skills:first",
-              slug: "demo",
+            makeSkillExportItem("first", {
               displayName: "First Demo",
-              latestVersionId: "skillVersions:first",
-              createdAt: 1,
-              updatedAt: 2,
-              stats: {},
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
               ownerDisplayName: "Alice",
-            },
-            {
-              skillId: "skills:second",
-              slug: "demo",
+            }),
+            makeSkillExportItem("second", {
               displayName: "Second Demo",
-              latestVersionId: "skillVersions:second",
-              createdAt: 1,
               updatedAt: 3,
-              stats: {},
-              ownerUserId: "users:alice",
-              ownerHandle: "alice",
               ownerDisplayName: "Alice",
-            },
+            }),
           ],
           nextCursor: null,
           hasMore: false,
