@@ -825,53 +825,18 @@ describe("skills.sh permanent Test mirror route", () => {
     expect(fetchBatchMock).not.toHaveBeenCalled();
   });
 
-  it("releases the lease when the ordered leaderboard page changed", async () => {
-    readBodyMock.mockResolvedValue({
-      operation: "step",
-      runId: "skillsShMirrorRuns:test",
-      page: 3,
-      offset: 50,
-    });
-    fetchBatchMock.mockResolvedValue({
-      page: 3,
-      offset: 50,
-      pageLength: 500,
-      sourceTotal: 9_571,
+  it.each([
+    {
+      name: "releases the lease when the ordered leaderboard page changed",
       hasMore: true,
-      sourceRequests: 5,
-      sourceBytes: 5_000,
       sourcePageIdentityHash: "changed-page-3",
-      rows: [{ externalId: "vercel-labs/skills/find-skills" }],
-    });
-    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body));
-      if (body.operation === "mirror-batch-claim") {
-        return new Response(
-          JSON.stringify({
-            ...body,
-            snapshotId: "skills-sh:proof:snapshot",
-            sourcePageSize: 500,
-            sourceTotal: 9_573,
-            sourcePage: capturedSourcePage(),
-          }),
-        );
-      }
-      expect(body.operation).toBe("mirror-batch-release");
-      return new Response(JSON.stringify({ released: true }));
-    });
-    vi.stubGlobal("fetch", convexFetch);
-
-    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
-    const response = (await handler({} as never)) as Response;
-
-    expect(response.status).toBe(502);
-    expect(await response.json()).toMatchObject({
-      message: expect.stringContaining("ordered leaderboard page changed"),
-    });
-    expect(convexFetch).toHaveBeenCalledTimes(2);
-  });
-
-  it("releases the lease when the measured leaderboard pagination state changed", async () => {
+    },
+    {
+      name: "releases the lease when the measured leaderboard pagination state changed",
+      hasMore: false,
+      sourcePageIdentityHash: "page-3",
+    },
+  ])("$name", async (fixture) => {
     readBodyMock.mockResolvedValue({
       operation: "step",
       runId: "skillsShMirrorRuns:test",
@@ -883,10 +848,10 @@ describe("skills.sh permanent Test mirror route", () => {
       offset: 50,
       pageLength: 500,
       sourceTotal: 9_571,
-      hasMore: false,
+      hasMore: fixture.hasMore,
       sourceRequests: 5,
       sourceBytes: 5_000,
-      sourcePageIdentityHash: "page-3",
+      sourcePageIdentityHash: fixture.sourcePageIdentityHash,
       rows: [{ externalId: "vercel-labs/skills/find-skills" }],
     });
     const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
