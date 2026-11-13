@@ -32,6 +32,16 @@ validation output, bounded summary counts, release detail APIs and website lists
 Template version and artifact SHA-256 remain on the existing release envelope;
 declared dependencies do not imply installed or connected state.
 
+The Template detail page additionally projects `workspace` destinations that
+OpenClaw loads natively into the matching tab: `skills/**/SKILL.md` and
+`.agents/skills/**/SKILL.md` as skills, `.openclaw/extensions/<id>/openclaw.plugin.json`
+as plugins, and `HEARTBEAT.md` as heartbeat work that Add converts into interval
+automations. This projection is display-only and derived in the browser from the
+pinned `CLAW.md`: it names entries from their destination path, labels them as
+workspace files, and never changes the stored inventory, summary counts or
+validation. Other workspace files, including guides that merely describe
+optional automations, stay only under Workspace files.
+
 Retired `packages`, `profiles`, `extensions`, `cronJobs`, `profiles/` files and
 `metadata.openclaw.config` fail with migration guidance. There is no profile
 compatibility mode or grandfathered publication exception. Existing archives and

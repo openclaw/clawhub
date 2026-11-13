@@ -413,12 +413,12 @@ describe("Template detail composition and interactions", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
     expect(screen.getByText("@maker/release-search")).toBeTruthy();
     expect(screen.getByText("Version 1.2.3 · ClawHub")).toBeTruthy();
-    expect(screen.getByText("1 declared skill")).toBeTruthy();
+    expect(screen.getByText("1 included skill")).toBeTruthy();
     expect(screen.queryByText("@maker/release-alerts")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     expect(screen.getByText("@maker/release-alerts")).toBeTruthy();
     expect(screen.getByText("Version 2.0.0 · ClawHub")).toBeTruthy();
-    expect(screen.getByText("1 declared plugin")).toBeTruthy();
+    expect(screen.getByText("1 included plugin")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Automations" }));
     expect(screen.getByText("Weekday release brief")).toBeTruthy();
     expect(screen.getByText("0 9 * * 1-5")).toBeTruthy();
@@ -443,6 +443,104 @@ describe("Template detail composition and interactions", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     expect(screen.getAllByText("plugins/alerts")).toHaveLength(2);
     expect(screen.queryByText(/ClawHub/)).toBeNull();
+  });
+
+  it("lists skills, plugins and heartbeat work delivered as workspace files in their tabs", () => {
+    renderTemplate({
+      contents:
+        "---\n" +
+        JSON.stringify({
+          ...manifest,
+          agent: { ...manifest.agent, heartbeat: { every: "1h" } },
+          workspace: {
+            bootstrapFiles: { "HEARTBEAT.md": { source: "workspace/HEARTBEAT.md" } },
+            files: [
+              {
+                source: "workspace/skills/food-diary/SKILL.md",
+                path: "skills/food-diary/SKILL.md",
+              },
+              { source: "workspace/review.md", path: ".agents/skills/team/review/SKILL.md" },
+              // OpenClaw does not descend below an identified skill directory.
+              {
+                source: "workspace/skills/food-diary/examples/demo/SKILL.md",
+                path: "skills/food-diary/examples/demo/SKILL.md",
+              },
+              {
+                source: "workspace/alerts.json",
+                path: ".openclaw/extensions/alerts/openclaw.plugin.json",
+              },
+              // Guides and lookalike paths are ordinary files, not installed capabilities.
+              { source: "workspace/reference/automations.md", path: "reference/automations.md" },
+              { source: "workspace/reference/SKILL.md", path: "reference/skills/notes/SKILL.md" },
+              { source: "workspace/skills/README.md", path: "skills/README.md" },
+            ],
+          },
+        }) +
+        "\n---\n# Release instructions",
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+    const skills = within(screen.getByRole("list", { name: "Included skills" }));
+    expect(screen.getByText("3 included skills")).toBeTruthy();
+    expect(skills.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "@maker/release-searchVersion 1.2.3 · ClawHub",
+      "food-diaryWorkspace file · skills/food-diary/SKILL.md",
+      "reviewWorkspace file · .agents/skills/team/review/SKILL.md",
+    ]);
+    fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
+    expect(screen.getByText("2 included plugins")).toBeTruthy();
+    expect(
+      within(screen.getByRole("list", { name: "Included plugins" }))
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "@maker/release-alertsVersion 2.0.0 · ClawHub",
+      "alertsWorkspace file · .openclaw/extensions/alerts/openclaw.plugin.json",
+    ]);
+    fireEvent.click(screen.getByRole("tab", { name: "Automations" }));
+    const automations = within(screen.getByRole("list", { name: "Included automations" }));
+    const jobs = automations.getAllByRole("listitem");
+    expect(jobs).toHaveLength(2);
+    expect(jobs[0].textContent).toContain("Weekday release brief");
+    expect(jobs[1].textContent).toBe(
+      "Heartbeat checklistWorkspace file · HEARTBEAT.md · Every 1h" +
+        "OpenClaw converts this checklist into interval automations when the Template is added.",
+    );
+  });
+
+  it("shows workspace-file skills for a Template without declared dependencies", () => {
+    const detail = packageDetail();
+    detail.package!.templateInventory = [];
+    render(
+      <TemplateDetailPage
+        detail={detail}
+        contents={
+          "---\n" +
+          JSON.stringify({
+            schemaVersion: 1,
+            agent: { id: "myfitnessclaw" },
+            workspace: {
+              files: [
+                {
+                  source: "workspace/skills/food-diary/SKILL.md",
+                  path: "skills/food-diary/SKILL.md",
+                },
+                { source: "workspace/reference/automations.md", path: "reference/automations.md" },
+              ],
+            },
+          }) +
+          "\n---\n# MyFitnessClaw"
+        }
+        fallbackOwner="maker"
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+    expect(screen.getByText("1 included skill")).toBeTruthy();
+    expect(screen.getByText("food-diary")).toBeTruthy();
+    expect(screen.queryByText("No skills are included in this Template.")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
+    expect(screen.getByText("No plugins are included in this Template.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Automations" }));
+    expect(screen.getByText("No automations are included in this Template.")).toBeTruthy();
   });
 
   it("supports roving focus, wrapping arrow keys, Home and End with linked panels", () => {
