@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { npmPackFixture } from "../packages/clawhub/test/npmPack";
 import { parseArk } from "../packages/schema/src/ark";
 import { ApiV1SkillListResponseSchema } from "../packages/schema/src/schemas";
+import { isRateLimitArgs, okRate } from "../src/__tests__/helpers/rateLimit";
 import { makePublicSkillsShDigest } from "../src/__tests__/helpers/skillsShDigest";
 import { prepareClawPackInternal } from "./packageClawpackNode";
 
@@ -260,21 +261,6 @@ function makePackageDownloadQuery({
   });
 }
 
-function isRateLimitArgs(args: unknown): args is RateLimitArgs {
-  if (!args || typeof args !== "object") return false;
-  const value = args as Record<string, unknown>;
-  const config = value.config as Record<string, unknown> | undefined;
-  return (
-    typeof value.name === "string" &&
-    (!("key" in value) || typeof value.key === "string") &&
-    !!config &&
-    typeof config === "object" &&
-    (config.kind === "fixed window" || config.kind === "token bucket") &&
-    typeof config.rate === "number" &&
-    typeof config.period === "number"
-  );
-}
-
 function isRateLimitMetadataArgs(args: unknown) {
   if (!args || typeof args !== "object") return false;
   const value = args as Record<string, unknown>;
@@ -446,10 +432,6 @@ function makeCtx(partial: Record<string, unknown>) {
 
   return { ...partial, runQuery, runMutation } as unknown as ActionCtx;
 }
-
-const okRate = (): RateLimitReturns => ({
-  ok: true,
-});
 
 const blockedRate = (): RateLimitReturns => ({
   ok: false,

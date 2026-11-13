@@ -1,7 +1,7 @@
-import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { unzipSync } from "fflate";
 import { exportJWK, exportPKCS8, generateKeyPair } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { isRateLimitArgs, okRate } from "../src/__tests__/helpers/rateLimit";
 
 // Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
 vi.mock("./lib/verifiedClientIp", () => ({
@@ -40,25 +40,6 @@ function availableDownloadSelection(
     version,
   };
 }
-
-function isRateLimitArgs(args: unknown): args is RateLimitArgs {
-  if (!args || typeof args !== "object") return false;
-  const value = args as Record<string, unknown>;
-  const config = value.config as Record<string, unknown> | undefined;
-  return (
-    typeof value.name === "string" &&
-    (!("key" in value) || typeof value.key === "string") &&
-    !!config &&
-    typeof config === "object" &&
-    (config.kind === "fixed window" || config.kind === "token bucket") &&
-    typeof config.rate === "number" &&
-    typeof config.period === "number"
-  );
-}
-
-const okRate = (): RateLimitReturns => ({
-  ok: true,
-});
 
 function stubZipResponse() {
   class MockResponse {
