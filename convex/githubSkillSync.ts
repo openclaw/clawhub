@@ -16,6 +16,8 @@ import {
 } from "./lib/githubImport";
 import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
 import {
+  getGitHubSyncErrorMessage as getErrorMessage,
+  latestVersionSummary as latestGitHubVersionSummary,
   normalizeRepoPath,
   buildGitHubSkillSourceSnapshot,
   buildGitHubSkillSyncPlan,
@@ -1817,16 +1819,6 @@ function githubSkillSyncConflictIssue(
   };
 }
 
-function latestGitHubVersionSummary(version: string | undefined, now: number) {
-  if (!version) return undefined;
-  return {
-    version,
-    createdAt: now,
-    changelog: "Synced from GitHub source.",
-    changelogSource: "auto" as const,
-  };
-}
-
 async function findGitHubSkillRevivalCandidate(
   ctx: MutationCtx,
   args: {
@@ -3364,16 +3356,6 @@ async function resolveOwnerUserIdForPublisher(ctx: QueryCtx, publisherId: Id<"pu
     members[0];
   if (!owner) throw new ConvexError("GitHub source owner publisher has no usable owner user");
   return owner.userId;
-}
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string") return message;
-  }
-  return String(error);
 }
 
 function normalizeRepo(value: string) {
