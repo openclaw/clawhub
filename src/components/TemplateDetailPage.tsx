@@ -17,7 +17,11 @@ import {
   type TemplateWorkspaceContents,
   type TemplateWorkspaceEntry,
 } from "../lib/templateDetail";
-import { buildTemplateSecurityAuditHref, isTemplateReadyToAdd } from "../lib/templateRoutes";
+import {
+  buildTemplateInstallRef,
+  buildTemplateSecurityAuditHref,
+  isTemplateReadyToAdd,
+} from "../lib/templateRoutes";
 import { DetailSecuritySummary, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SidebarMetadata } from "./SidebarMetadata";
@@ -77,7 +81,7 @@ export function TemplateDetailPage({
       ? getPackageArtifactDownloadPath(pkg.name, pkg.latestVersion)
       : getPackageDownloadPath(pkg.name, pkg.latestVersion)
     : null;
-  const installCommand = "openclaw templates add " + pkg.name;
+  const installRef = buildTemplateInstallRef(pkg.name, detail.owner?.handle ?? fallbackOwner);
 
   return (
     <main className="template-detail-page">
@@ -106,8 +110,8 @@ export function TemplateDetailPage({
           <div className="template-detail-main">
             <section className="template-detail-install" aria-label="Install Template">
               <InstallCommandCard
-                cliCommand={installCommand}
-                prompt={formatOpenClawPrompt(pkg.name, "template")}
+                cliCommand={"openclaw templates add " + installRef}
+                prompt={formatOpenClawPrompt(installRef, "template")}
                 cliCopyAriaLabel="Copy template install command"
                 copyEnabled={ready}
               />

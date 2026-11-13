@@ -15,6 +15,17 @@ OpenClaw owns local inspection, new-agent planning, consent, and addition.
 Template publication and exact-name reads are available by default. Hosting a Template
 does not enable local preview or installation in OpenClaw.
 
+Add a published Template by its publisher-qualified reference, the same form
+skills use:
+
+```bash
+openclaw templates add @publisher/slug
+```
+
+The reference is the package name when that name is already scoped. A Template
+stored under an unscoped name, such as `release-brief` published by `maker`, is
+also read as `@maker/release-brief`; responses keep the stored package name.
+
 Package lists and search include eligible community and official Templates, subject
 to the existing publication, visibility, scanning, moderation, and access rules.
 A scoped package's current publisher must remain active and match its scope;

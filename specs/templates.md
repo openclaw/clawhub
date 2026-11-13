@@ -102,6 +102,13 @@ unchanged, and catalog metadata becomes visible only after publication.
   local Labs visibility, inspection, consent, and new-agent addition.
 - Template publication still requires validation, moderation, ownership, and
   scanner checks.
+- The install reference for a Template is `@publisher/slug`, matching skills.
+  Templates published from OpenClaw's creator flow are stored under an unscoped
+  slug, so package reads resolve `@publisher/slug` to the unscoped Template
+  owned by that publisher when no exact scoped package exists. The exact name
+  always wins, the owner is the current active publisher, and the rule applies
+  only to Templates. Responses keep the stored package name because OpenClaw
+  verifies the archive's `package.json` name against it.
 - Detail pages present release security-audit status and details in the Security
   audit sidebar, not repeated as inline subtext beneath the install command. This is
   presentational only: CLI and prompt copy remain unavailable unless the package
