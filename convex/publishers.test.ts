@@ -5131,6 +5131,25 @@ describe("publishers membership controls", () => {
     expect(ctx.db.patch).not.toHaveBeenCalled();
   });
 
+  const publisherInviteDefaults = {
+    publisherId: "publishers:org",
+    inviterUserId: "users:owner",
+    targetHandle: "target",
+    targetUserId: "users:target",
+    role: "publisher",
+    status: "pending",
+    createdAt: 9_000,
+    updatedAt: 9_000,
+    expiresAt: 20_000,
+  };
+
+  function makePublisherInvite(
+    _id: string,
+    overrides: Partial<typeof publisherInviteDefaults> = {},
+  ) {
+    return { _id, ...publisherInviteDefaults, ...overrides };
+  }
+
   function makeInviteCtx(options?: {
     authUserId?: string;
     actorRole?: "owner" | "admin" | "publisher";
@@ -5532,20 +5551,7 @@ describe("publishers membership controls", () => {
   it("rejects duplicate active member invitations", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx } = makeInviteCtx({
-      invites: [
-        {
-          _id: "publisherInvites:existing",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
-      ],
+      invites: [makePublisherInvite("publisherInvites:existing")],
     });
     try {
       await expect(
@@ -5563,30 +5569,12 @@ describe("publishers membership controls", () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert } = makeInviteCtx({
       invites: [
-        {
-          _id: "publisherInvites:expired",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
+        makePublisherInvite("publisherInvites:expired", {
           createdAt: 1_000,
           updatedAt: 1_000,
           expiresAt: 9_000,
-        },
-        {
-          _id: "publisherInvites:active",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
+        makePublisherInvite("publisherInvites:active"),
       ],
     });
     try {
@@ -5607,18 +5595,11 @@ describe("publishers membership controls", () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert } = makeInviteCtx({
       invites: [
-        {
-          _id: "publisherInvites:expired",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
+        makePublisherInvite("publisherInvites:expired", {
           createdAt: 1_000,
           updatedAt: 1_000,
           expiresAt: 9_000,
-        },
+        }),
       ],
     });
     try {
@@ -5647,18 +5628,9 @@ describe("publishers membership controls", () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert } = makeInviteCtx({
       invites: [
-        {
-          _id: "publisherInvites:active",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
+        makePublisherInvite("publisherInvites:active", {
           targetHandle: "target-personal",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -5679,18 +5651,9 @@ describe("publishers membership controls", () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert } = makeInviteCtx({
       invites: [
-        {
-          _id: "publisherInvites:old-target",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
+        makePublisherInvite("publisherInvites:old-target", {
           targetUserId: "users:stranger",
-          role: "publisher",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -5720,18 +5683,9 @@ describe("publishers membership controls", () => {
     const { ctx, insert, patch } = makeInviteCtx({
       authUserId: "users:target",
       invites: [
-        {
-          _id: "publisherInvites:accepted",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:accepted", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -5769,18 +5723,12 @@ describe("publishers membership controls", () => {
     const { ctx, insert, patch } = makeInviteCtx({
       authUserId: "users:target",
       invites: [
-        {
-          _id: "publisherInvites:expired",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:expired", {
           role: "admin",
-          status: "pending",
           createdAt: 1_000,
           updatedAt: 1_000,
           expiresAt: 9_000,
-        },
+        }),
       ],
     });
     try {
@@ -5806,18 +5754,9 @@ describe("publishers membership controls", () => {
       authUserId: "users:target",
       targetIsMember: true,
       invites: [
-        {
-          _id: "publisherInvites:accepted",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:accepted", {
           role: "owner",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -5854,18 +5793,9 @@ describe("publishers membership controls", () => {
     const { ctx, insert, patch } = makeInviteCtx({
       authUserId: "users:stranger",
       invites: [
-        {
-          _id: "publisherInvites:target",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:target", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
 
@@ -5887,18 +5817,9 @@ describe("publishers membership controls", () => {
       authUserId: "users:stranger",
       strangerHandle: "target",
       invites: [
-        {
-          _id: "publisherInvites:target",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:target", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
 
@@ -5920,18 +5841,11 @@ describe("publishers membership controls", () => {
       authUserId: "users:stranger",
       strangerHandle: "target",
       invites: [
-        {
-          _id: "publisherInvites:bound-to-original",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:bound-to-original", {
           role: "admin",
-          status: "pending",
           createdAt: 8_000,
           updatedAt: 8_000,
-          expiresAt: 20_000,
-        },
+        }),
         {
           _id: "publisherInvites:handle-only",
           publisherId: "publishers:org",
@@ -5960,18 +5874,9 @@ describe("publishers membership controls", () => {
     const { ctx, patch, insert } = makeInviteCtx({
       authUserId: "users:target",
       invites: [
-        {
-          _id: "publisherInvites:target",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:target", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -6004,18 +5909,9 @@ describe("publishers membership controls", () => {
     const { ctx, patch, insert } = makeInviteCtx({
       authUserId: "users:stranger",
       invites: [
-        {
-          _id: "publisherInvites:target",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:target", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
 
@@ -6034,20 +5930,7 @@ describe("publishers membership controls", () => {
   it("lets org managers revoke pending member invitations", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, patch, insert } = makeInviteCtx({
-      invites: [
-        {
-          _id: "publisherInvites:pending",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
-      ],
+      invites: [makePublisherInvite("publisherInvites:pending")],
     });
     try {
       await expect(
@@ -6075,18 +5958,9 @@ describe("publishers membership controls", () => {
     const { ctx, patch } = makeInviteCtx({
       actorRole: "admin",
       invites: [
-        {
-          _id: "publisherInvites:pending",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:pending", {
           role: "owner",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -6104,42 +5978,17 @@ describe("publishers membership controls", () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx } = makeInviteCtx({
       invites: [
-        {
-          _id: "publisherInvites:active",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:active", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
-        {
-          _id: "publisherInvites:expired",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
+        }),
+        makePublisherInvite("publisherInvites:expired", {
           createdAt: 1_000,
           updatedAt: 1_000,
           expiresAt: 9_000,
-        },
-        {
-          _id: "publisherInvites:revoked",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
+        }),
+        makePublisherInvite("publisherInvites:revoked", {
           status: "revoked",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
