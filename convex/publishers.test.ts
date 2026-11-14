@@ -813,6 +813,37 @@ function makeResolvePublishTargetCtx(options: {
   };
 }
 
+function makeOrgPublisherIdentity(handle: string, displayName: string) {
+  return {
+    _id: `publishers:${handle}`,
+    _creationTime: 1,
+    kind: "org",
+    handle,
+    displayName,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function makeUserPublisherIdentity(
+  handle: string,
+  displayName: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    _id: `publishers:${handle}`,
+    _creationTime: 1,
+    kind: "user",
+    handle,
+    displayName,
+    linkedUserId: `users:${handle}`,
+    trustedPublisher: false,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
 function makePersonalPublisher(handle: string, overrides: Record<string, unknown> = {}) {
   return {
     _id: `publishers:${handle}`,
@@ -1647,15 +1678,7 @@ describe("publishers membership controls", () => {
         createdAt: 1,
         updatedAt: 1,
       },
-      {
-        _id: "publishers:openclaw",
-        _creationTime: 1,
-        kind: "org",
-        handle: "openclaw",
-        displayName: "OpenClaw",
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      makeOrgPublisherIdentity("openclaw", "OpenClaw"),
     ];
     const skillRows = [
       {
@@ -2551,17 +2574,7 @@ describe("publishers membership controls", () => {
   });
 
   it("omits private packages from public directory previews when counters are missing", async () => {
-    const publisherRows = [
-      {
-        _id: "publishers:openclaw",
-        _creationTime: 1,
-        kind: "org",
-        handle: "openclaw",
-        displayName: "OpenClaw",
-        createdAt: 1,
-        updatedAt: 1,
-      },
-    ];
+    const publisherRows = [makeOrgPublisherIdentity("openclaw", "OpenClaw")];
     const packageRows = [
       {
         _id: "packages:secret-package",
@@ -2941,15 +2954,7 @@ describe("publishers membership controls", () => {
   });
 
   it("orders profile catalog items by downloads", async () => {
-    const publisher = {
-      _id: "publishers:openclaw",
-      _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
-      displayName: "OpenClaw",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
     const packageRows = [
       {
         _id: "packages:high-download-plugin",
@@ -3051,15 +3056,7 @@ describe("publishers membership controls", () => {
   });
 
   it("preserves mixed catalog pagination when kind is omitted", async () => {
-    const publisher = {
-      _id: "publishers:openclaw",
-      _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
-      displayName: "OpenClaw",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
     const skill = {
       _id: "skills:demo",
       _creationTime: 2,
@@ -3356,15 +3353,7 @@ describe("publishers membership controls", () => {
   });
 
   it("computes OG metadata stats when publisher denormalized stats are missing", async () => {
-    const publisher = {
-      _id: "publishers:openclaw",
-      _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
-      displayName: "OpenClaw",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
     const skill = {
       _id: "skills:demo",
       ownerPublisherId: "publishers:openclaw",
@@ -3597,15 +3586,7 @@ describe("publishers membership controls", () => {
   });
 
   it("excludes hidden and removed skills from publisher catalogs", async () => {
-    const publisher = {
-      _id: "publishers:nvidia",
-      _creationTime: 1,
-      kind: "org",
-      handle: "nvidia",
-      displayName: "NVIDIA",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("nvidia", "NVIDIA");
     const skillRows = [
       {
         _id: "skills:visible",
@@ -3687,15 +3668,7 @@ describe("publishers membership controls", () => {
     // render the same custom glyph that SkillCard / SkillListItem show on
     // /skills and /search. Public plugin icons mirror browse cards, but private
     // plugin URLs must not leak through public publisher profiles.
-    const publisher = {
-      _id: "publishers:openclaw",
-      _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
-      displayName: "OpenClaw",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
@@ -3862,15 +3835,7 @@ describe("publishers membership controls", () => {
   });
 
   it("omits private packages from every public publisher catalog page", async () => {
-    const publisher = {
-      _id: "publishers:openclaw",
-      _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
-      displayName: "OpenClaw",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
     const packages = [
       {
         _id: "packages:secret",
@@ -3965,15 +3930,7 @@ describe("publishers membership controls", () => {
   });
 
   it("returns GitHub-backed display manifest groups for publisher catalogs", async () => {
-    const publisher = {
-      _id: "publishers:nvidia",
-      _creationTime: 1,
-      kind: "org",
-      handle: "nvidia",
-      displayName: "NVIDIA",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("nvidia", "NVIDIA");
     const githubSource = {
       _id: "githubSkillSources:nvidia",
       repo: "NVIDIA/skills",
@@ -4096,15 +4053,7 @@ describe("publishers membership controls", () => {
   });
 
   it("falls back to the normal catalog when no valid display manifest exists", async () => {
-    const publisher = {
-      _id: "publishers:nvidia",
-      _creationTime: 1,
-      kind: "org",
-      handle: "nvidia",
-      displayName: "NVIDIA",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("nvidia", "NVIDIA");
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => (id === "publishers:nvidia" ? publisher : null)),
@@ -4839,17 +4788,10 @@ describe("publishers membership controls", () => {
             };
           }
           if (id === "publishers:jaredforreal") {
-            return {
+            return makeUserPublisherIdentity("jaredforreal", "Jared", {
               _id: id,
-              _creationTime: 1,
-              kind: "user",
-              handle: "jaredforreal",
-              displayName: "Jared",
               linkedUserId: "users:jared",
-              trustedPublisher: false,
-              createdAt: 1,
-              updatedAt: 1,
-            };
+            });
           }
           return null;
         }),
@@ -4917,30 +4859,14 @@ describe("publishers membership controls", () => {
                   return {
                     unique: vi.fn(async () => {
                       if (indexName === "by_handle" && handle === "jaredforreal") {
-                        return {
-                          _id: "publishers:jaredforreal",
-                          _creationTime: 1,
-                          kind: "user",
-                          handle: "jaredforreal",
-                          displayName: "Jared",
+                        return makeUserPublisherIdentity("jaredforreal", "Jared", {
                           linkedUserId: "users:jared",
-                          trustedPublisher: false,
-                          createdAt: 1,
-                          updatedAt: 1,
-                        };
+                        });
                       }
                       if (indexName === "by_linked_user" && linkedUserId === "users:jared") {
-                        return {
-                          _id: "publishers:jaredforreal",
-                          _creationTime: 1,
-                          kind: "user",
-                          handle: "jaredforreal",
-                          displayName: "Jared",
+                        return makeUserPublisherIdentity("jaredforreal", "Jared", {
                           linkedUserId: "users:jared",
-                          trustedPublisher: false,
-                          createdAt: 1,
-                          updatedAt: 1,
-                        };
+                        });
                       }
                       return null;
                     }),
@@ -5918,17 +5844,10 @@ describe("publishers membership controls", () => {
             };
           }
           if (id === "publishers:jaredforreal") {
-            return {
+            return makeUserPublisherIdentity("jaredforreal", "Jared", {
               _id: id,
-              _creationTime: 1,
-              kind: "user",
-              handle: "jaredforreal",
-              displayName: "Jared",
               linkedUserId: "users:jared",
-              trustedPublisher: false,
-              createdAt: 1,
-              updatedAt: 1,
-            };
+            });
           }
           return null;
         }),
@@ -5999,17 +5918,9 @@ describe("publishers membership controls", () => {
                   return {
                     unique: vi.fn(async () => {
                       if (indexName === "by_linked_user" && linkedUserId === "users:jared") {
-                        return {
-                          _id: "publishers:jaredforreal",
-                          _creationTime: 1,
-                          kind: "user",
-                          handle: "jaredforreal",
-                          displayName: "Jared",
+                        return makeUserPublisherIdentity("jaredforreal", "Jared", {
                           linkedUserId: "users:jared",
-                          trustedPublisher: false,
-                          createdAt: 1,
-                          updatedAt: 1,
-                        };
+                        });
                       }
                       return null;
                     }),
@@ -7135,28 +7046,8 @@ describe("publisher bootstrap", () => {
       },
     ];
     const publishers = {
-      "publishers:owner": {
-        _id: "publishers:owner",
-        _creationTime: 1,
-        kind: "user",
-        handle: "owner",
-        displayName: "Owner",
-        linkedUserId: "users:owner",
-        trustedPublisher: false,
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      "publishers:friend": {
-        _id: "publishers:friend",
-        _creationTime: 1,
-        kind: "user",
-        handle: "friend",
-        displayName: "Friend",
-        linkedUserId: "users:friend",
-        trustedPublisher: false,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      "publishers:owner": makeUserPublisherIdentity("owner", "Owner"),
+      "publishers:friend": makeUserPublisherIdentity("friend", "Friend"),
       "publishers:team": {
         _id: "publishers:team",
         _creationTime: 1,
@@ -7394,17 +7285,7 @@ describe("publisher bootstrap", () => {
 
   it("loads every published item only from deletion inventory", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
-    const publisher = {
-      _id: "publishers:alice",
-      _creationTime: 1,
-      kind: "user",
-      handle: "alice",
-      displayName: "Alice",
-      linkedUserId: "users:alice",
-      trustedPublisher: false,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeUserPublisherIdentity("alice", "Alice");
     const skills = Array.from({ length: 4 }, (_, index) => ({
       _id: `skills:tool-${index}`,
       _creationTime: index,
@@ -9221,17 +9102,7 @@ describe("legacy publisher migration", () => {
     const publishers = new Map<string, Record<string, unknown>>([
       [
         "publishers:openclaw",
-        {
-          _id: "publishers:openclaw",
-          _creationTime: 1,
-          kind: "user",
-          handle: "openclaw",
-          displayName: "OpenClaw",
-          linkedUserId: "users:openclaw",
-          trustedPublisher: true,
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        makeUserPublisherIdentity("openclaw", "OpenClaw", { trustedPublisher: true }),
       ],
     ]);
     const packages = [
