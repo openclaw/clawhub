@@ -521,6 +521,15 @@ function captureIndexRange(buildQuery: (q: unknown) => unknown) {
   return { fields, range };
 }
 
+function indexedUnique(readValue: () => unknown) {
+  // Keep fixture evaluation lazy and create a fresh unique mock for each index call.
+  return {
+    withIndex: vi.fn(() => ({
+      unique: vi.fn().mockResolvedValue(readValue()),
+    })),
+  };
+}
+
 function indexedRows(rows: unknown[]) {
   const paginate = vi.fn(
     async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
@@ -4478,16 +4487,12 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "publisherMembers:admin",
-                  publisherId: "publishers:org",
-                  userId: "users:admin",
-                  role: "admin",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "publisherMembers:admin",
+              publisherId: "publishers:org",
+              userId: "users:admin",
+              role: "admin",
+            }));
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -4526,16 +4531,12 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "publisherMembers:owner",
-                  publisherId: "publishers:personal",
-                  userId: "users:owner",
-                  role: "owner",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "publisherMembers:owner",
+              publisherId: "publishers:personal",
+              userId: "users:owner",
+              role: "owner",
+            }));
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -4577,16 +4578,12 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "publisherMembers:friend",
-                  publisherId: "publishers:personal",
-                  userId: "users:friend",
-                  role: "admin",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "publisherMembers:friend",
+              publisherId: "publishers:personal",
+              userId: "users:friend",
+              role: "admin",
+            }));
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -4777,16 +4774,12 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "publisherMembers:owner",
-                  publisherId: "publishers:personal",
-                  userId: "users:owner",
-                  role: "owner",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "publisherMembers:owner",
+              publisherId: "publishers:personal",
+              userId: "users:owner",
+              role: "owner",
+            }));
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -6400,16 +6393,12 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "publisherMembers:admin",
-                  publisherId: "publishers:org",
-                  userId: "users:admin",
-                  role: "admin",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "publisherMembers:admin",
+              publisherId: "publishers:org",
+              userId: "users:admin",
+              role: "admin",
+            }));
           }
           if (table === "officialPublishers") {
             return emptyOfficialPublishersQuery();
@@ -6477,29 +6466,21 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "publisherMembers:admin",
-                  publisherId: "publishers:org",
-                  userId: "users:admin",
-                  role: "admin",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "publisherMembers:admin",
+              publisherId: "publishers:org",
+              userId: "users:admin",
+              role: "admin",
+            }));
           }
           if (table === "githubOrgMemberships") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  userId: "users:admin",
-                  githubOrgId: "42",
-                  login: "trycua",
-                  role: "member",
-                  syncedAt: Date.now(),
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              userId: "users:admin",
+              githubOrgId: "42",
+              login: "trycua",
+              role: "member",
+              syncedAt: Date.now(),
+            }));
           }
           if (table === "officialPublishers") return emptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
@@ -6547,28 +6528,20 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  publisherId: "publishers:org",
-                  userId: "users:admin",
-                  role: "admin",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              publisherId: "publishers:org",
+              userId: "users:admin",
+              role: "admin",
+            }));
           }
           if (table === "githubOrgMemberships") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  userId: "users:admin",
-                  githubOrgId: "42",
-                  login: "trycua",
-                  role: "member",
-                  syncedAt: Date.now() - 16 * 60 * 1000,
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              userId: "users:admin",
+              githubOrgId: "42",
+              login: "trycua",
+              role: "member",
+              syncedAt: Date.now() - 16 * 60 * 1000,
+            }));
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -6603,15 +6576,11 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  publisherId: "publishers:org",
-                  userId: "users:admin",
-                  role: "admin",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              publisherId: "publishers:org",
+              userId: "users:admin",
+              role: "admin",
+            }));
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -6690,15 +6659,11 @@ describe("publishers membership controls", () => {
         },
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  publisherId: "publishers:org",
-                  userId: "users:admin",
-                  role: "admin",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              publisherId: "publishers:org",
+              userId: "users:admin",
+              role: "admin",
+            }));
           }
           if (table === "officialPublishers") return emptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
@@ -6764,15 +6729,11 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  publisherId: "publishers:org",
-                  userId: "users:admin",
-                  role: "admin",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              publisherId: "publishers:org",
+              userId: "users:admin",
+              role: "admin",
+            }));
           }
           if (table === "officialPublishers") return emptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
@@ -6829,16 +6790,12 @@ describe("publishers membership controls", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "publisherMembers:admin",
-                  publisherId: "publishers:org",
-                  userId: "users:admin",
-                  role: "admin",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "publisherMembers:admin",
+              publisherId: "publishers:org",
+              userId: "users:admin",
+              role: "admin",
+            }));
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -7019,11 +6976,7 @@ describe("publisher-owned resource authorization", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(options.membership ?? null),
-              })),
-            };
+            return indexedUnique(() => options.membership ?? null);
           }
           throw new Error(`unexpected table ${table}`);
         }),
