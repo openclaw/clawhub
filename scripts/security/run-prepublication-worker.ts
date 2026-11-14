@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -331,61 +330,24 @@ async function runCommand(
     onOutput?: (output: { code: number | null; stdout: string; stderr: string }) => void;
   },
 ) {
-  return await new Promise<{ code: number | null; stdout: string; stderr: string }>(
-    (resolvePromise, reject) => {
-      const child = spawn(command, args, {
-        cwd: options.cwd,
-        detached: process.platform !== "win32",
-        env: options.env,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      let stdout = "";
-      let stderr = "";
-      let timedOut = false;
-      let forceKillTimeout: NodeJS.Timeout | undefined;
-      const killProcessTree = (signal: NodeJS.Signals) => {
-        if (process.platform !== "win32" && child.pid) {
-          try {
-            process.kill(-child.pid, signal);
-            return;
-          } catch {
-            // The process group may already have exited; fall back to the direct child.
-          }
-        }
-        child.kill(signal);
-      };
-      const timeout = setTimeout(() => {
-        timedOut = true;
-        killProcessTree("SIGTERM");
-        forceKillTimeout = setTimeout(() => killProcessTree("SIGKILL"), 10_000);
-        forceKillTimeout.unref();
-      }, options.timeoutMs);
-      child.stdout.on("data", (chunk) => {
-        stdout += String(chunk);
-      });
-      child.stderr.on("data", (chunk) => {
-        stderr += String(chunk);
-      });
-      child.on("error", (error) => {
-        clearTimeout(timeout);
-        if (timedOut) killProcessTree("SIGKILL");
-        if (forceKillTimeout) clearTimeout(forceKillTimeout);
-        options.onOutput?.({ code: null, stdout, stderr });
-        reject(error);
-      });
-      child.on("close", (code) => {
-        clearTimeout(timeout);
-        if (timedOut) killProcessTree("SIGKILL");
-        if (forceKillTimeout) clearTimeout(forceKillTimeout);
-        options.onOutput?.({ code, stdout, stderr });
-        if (timedOut) {
-          reject(new Error(`${command} timed out`));
-          return;
-        }
-        resolvePromise({ code, stdout, stderr });
-      });
-    },
-  );
+  let output: { code: number | null; stdout: string; stderr: string } = {
+    code: null,
+    stdout: "",
+    stderr: "",
+  };
+  try {
+    output = { code: 0, ...(await runWorkerCommand(command, args, options)) };
+    return output;
+  } catch (error) {
+    if (error instanceof CommandFailure) {
+      output = { code: error.exitCode, stdout: error.stdout, stderr: error.stderr };
+      // Scanner exit codes carry verdicts; transport and resource failures must still reject.
+      if (error.failureKind === "exit") return output;
+    }
+    throw error;
+  } finally {
+    options.onOutput?.(output);
+  }
 }
 
 function restrictedChildEnvironment(

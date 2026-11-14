@@ -546,6 +546,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   exact pre-publication worker through the production GitHub App as soon as the
   attempt becomes pending; the scheduled worker remains recovery for missed
   dispatches.
+- Legacy pre-publication scanner subprocesses use the shared worker runner with
+  capture limits of 32 MiB stdout and 1 MiB stderr. Output overflow and timeout
+  failures keep the attempt unpublished; scanner verdict exit codes remain
+  scanner-specific.
 - For pending-check and ready-finalization attempts, duplicate targeted recovery
   against a live foreign lease returns no work. It preserves the existing claim
   ID and expiry without falling through to another claim path; the same claim
