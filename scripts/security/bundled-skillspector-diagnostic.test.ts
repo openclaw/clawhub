@@ -1,20 +1,17 @@
 /* @vitest-environment node */
-import { chmod, mkdtemp, rm, symlink, truncate, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import { bundledSkillSpectorTerminalContext } from "./bundled-skillspector-diagnostic";
 
-const roots: string[] = [];
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+const roots = createTestTempDirectories("bundled-terminal-");
+afterEach(roots.cleanup);
 
 it.each(["missing", "invalid", "symlink", "world-readable", "oversized"])(
   "fails closed on %s terminal evidence without echoing labels or raw errors",
   async (mode) => {
-    const root = await mkdtemp(join(tmpdir(), "bundled-terminal-"));
-    roots.push(root);
+    const root = await roots.create();
     const file = join(root, "report.json");
     const canary = "private-source-and-credential-canary";
     if (mode !== "missing") {
@@ -42,8 +39,7 @@ it.each(["missing", "invalid", "symlink", "world-readable", "oversized"])(
 );
 
 it("retains known failure categories while counting malformed and unknown metadata", async () => {
-  const root = await mkdtemp(join(tmpdir(), "bundled-terminal-"));
-  roots.push(root);
+  const root = await roots.create();
   const file = join(root, "report.json");
   const canary = "private-arbitrary-analyzer-and-reason";
   await writeFile(

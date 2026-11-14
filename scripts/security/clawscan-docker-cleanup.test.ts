@@ -1,6 +1,5 @@
 /* @vitest-environment node */
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,6 +8,7 @@ import {
   runWorkerCommand,
   type WorkerCommandTermination,
 } from "../lib/runWorkerCommand";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import {
   ClawScanContainerCleanupError,
   hasKnownClawScanChildFinality,
@@ -16,7 +16,7 @@ import {
   clawScanDockerEnvironment,
 } from "./clawscan-docker-cleanup";
 
-const dirs: string[] = [];
+const dirs = createTestTempDirectories("clawscan-cleanup-test-");
 const a = "a".repeat(64);
 const b = "b".repeat(64);
 const c = "c".repeat(64);
@@ -30,9 +30,7 @@ const normal: WorkerCommandTermination = {
   outputLimitExceeded: null,
 };
 
-afterEach(async () => {
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
+afterEach(dirs.cleanup);
 
 type Container = {
   id: string;
@@ -59,8 +57,7 @@ type State = {
 type Log = { args: string[]; env: Record<string, string> };
 
 async function fixture(initial: State = {}) {
-  const workspace = await mkdtemp(join(tmpdir(), "clawscan-cleanup-test-"));
-  dirs.push(workspace);
+  const workspace = await dirs.create();
   const bin = join(workspace, "bin");
   await mkdir(bin);
   const path = join(workspace, "state.json");

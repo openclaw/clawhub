@@ -1,12 +1,12 @@
 /* @vitest-environment node */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import {
   applyServerPublisherToContext,
   assertPublicSkillCardMarkdown,
@@ -24,18 +24,12 @@ import {
   writeWorkspace,
 } from "./run-skill-card-worker";
 
-const tempDirs: string[] = [];
+const tempDirs = createTestTempDirectories("clawhub-skill-card-worker-test-");
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
+  await tempDirs.cleanup();
 });
-
-async function tempDir() {
-  const dir = await mkdtemp(join(tmpdir(), "clawhub-skill-card-worker-test-"));
-  tempDirs.push(dir);
-  return dir;
-}
 
 describe("run-skill-card-worker Codex skill setup", () => {
   it("uses the same batch, runtime, and lease defaults as the security worker", () => {
@@ -114,7 +108,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
         SKILL_CARD_CODEX_SERVICE_TIER: "fast",
       }),
     ).toEqual({ model: "custom-model", reasoningEffort: "high", serviceTier: "fast" });
-    const tool = await tempDir();
+    const tool = await tempDirs.create();
     const automation = join(tool, "AI Transparency Card Automation");
     await mkdir(automation);
     await writeFile(join(automation, "Skill Card Generator.md"), "trusted workflow");
@@ -171,8 +165,8 @@ describe("run-skill-card-worker Codex skill setup", () => {
   });
 
   it("wraps NVIDIA's automation folder as a project-local Codex skill", async () => {
-    const workspace = await tempDir();
-    const toolDir = await tempDir();
+    const workspace = await tempDirs.create();
+    const toolDir = await tempDirs.create();
     const automationDir = join(toolDir, "AI Transparency Card Automation");
     await mkdir(join(automationDir, "scripts"), { recursive: true });
     await mkdir(join(automationDir, "references"), { recursive: true });
@@ -329,7 +323,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("forbidden", { status: 403 }));
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
 
     const error = await writeWorkspace(
       {
@@ -365,7 +359,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
   });
 
   it("materializes directory markers, descendants, and real empty files", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const openAiConfig = "provider: openai\n";
     const emptySha256 = createHash("sha256").update("").digest("hex");
 
@@ -412,7 +406,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
   });
 
   it("rejects downloaded artifact bytes that do not match the stored hash", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
 
     await expect(
       writeWorkspace(
@@ -477,7 +471,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
             version: { version: "1.2.3" },
           },
         },
-        await tempDir(),
+        await tempDirs.create(),
       ),
     ).resolves.toBe(false);
 
@@ -543,7 +537,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
             version: { version: "1.2.3" },
           },
         },
-        await tempDir(),
+        await tempDirs.create(),
       ),
     ).resolves.toBe(false);
 

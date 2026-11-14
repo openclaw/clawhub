@@ -1,9 +1,9 @@
 /* @vitest-environment node */
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import { validateDecisionsRun } from "./clawscan-decisions";
 import * as dockerCleanup from "./clawscan-docker-cleanup";
 import { clawScanExposure, type ClawScanExposure } from "./clawscan-exposure";
@@ -118,14 +118,14 @@ function fixture(verdict = "benign") {
     },
   };
 }
-const dirs: string[] = [];
+const dirs = createTestTempDirectories("decisions-consumer-");
 afterEach(async () => {
   vi.restoreAllMocks();
   runtimeFixture.qualified = false;
   runtimeFixture.templateQualified = false;
   runtimeFixture.command = "";
   vi.unstubAllEnvs();
-  await Promise.all(dirs.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await dirs.cleanup();
 });
 async function runFixture(
   artifact: unknown,
@@ -143,8 +143,7 @@ async function runFixture(
   } = {},
 ) {
   let exposure: ClawScanExposure | undefined;
-  const workspace = await mkdtemp(join(tmpdir(), "decisions-consumer-"));
-  dirs.push(workspace);
+  const workspace = await dirs.create();
   await mkdir(join(workspace, "artifact"));
   await writeFile(join(workspace, "artifact", "openclaw.plugin.json"), '{"id":"fixture"}');
   await writeFile(join(workspace, "artifact", "SKILL.md"), "# Embedded skill at plugin root\n");

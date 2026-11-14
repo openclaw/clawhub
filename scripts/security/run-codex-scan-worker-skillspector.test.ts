@@ -1,18 +1,18 @@
 /* @vitest-environment node */
 import { existsSync, readFileSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import * as workerCommand from "../lib/runWorkerCommand";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import { type ClaimedJob, runBundledSkillSpector, runClawScan } from "./run-codex-scan-worker";
 
-const workspaces: string[] = [];
+const workspaces = createTestTempDirectories("clawhub-bundled-skillspector-");
 
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  await Promise.all(workspaces.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await workspaces.cleanup();
 });
 
 async function command(path: string, body: string) {
@@ -21,8 +21,7 @@ async function command(path: string, body: string) {
 }
 
 async function fixture(scannerBody: string, roots = ["skills/example"]) {
-  const workspace = await mkdtemp(join(tmpdir(), "clawhub-bundled-skillspector-"));
-  workspaces.push(workspace);
+  const workspace = await workspaces.create();
   for (const root of roots) {
     await mkdir(join(workspace, "artifact", root), { recursive: true });
     await writeFile(join(workspace, "artifact", root, "SKILL.md"), "# Example");

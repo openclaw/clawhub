@@ -1,23 +1,20 @@
 /* @vitest-environment node */
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import { runEndorPluginScan, type EndorCommandDiagnostic } from "./run-endor-plugin-scan";
 
-const tempDirs: string[] = [];
+const tempDirs = createTestTempDirectories("clawhub-endor-plugin-test-");
 const claimedRelease = {
   package: { name: "@openclaw/fixture-plugin" },
   release: { version: "1.0.0" },
 };
 
-afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
-});
+afterEach(tempDirs.cleanup);
 
 async function tempDir() {
-  const workspace = await mkdtemp(join(tmpdir(), "clawhub-endor-plugin-test-"));
-  tempDirs.push(workspace);
+  const workspace = await tempDirs.create();
   const bin = join(workspace, "bin");
   await mkdir(bin);
   const docker = join(bin, "docker");
