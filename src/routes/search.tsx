@@ -448,11 +448,7 @@ function CreatorResultsList({ results }: { results: UnifiedCreatorResult[] }) {
     <div className="browse-list-stack">
       <div className="publisher-directory-list">
         {results.map((item) => (
-          <PublisherListItem
-            key={`creator-${item.creator._id}`}
-            publisher={item.creator}
-            variant="list"
-          />
+          <PublisherListItem key={`creator-${item.creator._id}`} publisher={item.creator} />
         ))}
       </div>
     </div>
