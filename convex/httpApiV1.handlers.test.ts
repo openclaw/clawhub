@@ -10861,6 +10861,48 @@ describe("httpApiV1 handlers", () => {
     expect(payload.transfers[0]?.skill?.slug).toBe("demo");
   });
 
+  it.each([
+    "reclassify-ban",
+    "reclaim",
+    "reserve",
+    "email",
+    "publisher",
+    "publisher-delete",
+    "publisher-official",
+    "publisher-member",
+    "publisher-reclaim",
+    "publisher-recovery",
+  ])("users/%s rejects non-admins before dispatch", async (action) => {
+    mockApiTokenUser("users:actor", "moderator");
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn();
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runMutation, runQuery }),
+      new Request(`https://example.com/api/v1/users/${action}`, {
+        method: "POST",
+        body: "{}",
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it.each(["unknown", "constructor", "toString", "__proto__"])(
+    "users/%s rejects unknown actions before parsing or auth",
+    async (action) => {
+      const response = await __handlers.usersPostRouterV1Handler(
+        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        new Request(`https://example.com/api/v1/users/${action}`, {
+          method: "POST",
+          body: "invalid json",
+        }),
+      );
+      expect(response.status).toBe(404);
+      expect(requireApiTokenUser).not.toHaveBeenCalled();
+    },
+  );
+
   it("ban user requires auth", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
     const runMutation = vi.fn().mockResolvedValue(okRate());
