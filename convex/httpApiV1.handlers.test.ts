@@ -9968,71 +9968,126 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledTimes(1);
   });
 
-  it("bulk skill rescan batch requires admin role", async () => {
-    mockApiTokenUser("users:moderator", "moderator");
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      throw new Error("should not enqueue");
+  for (const { kind, handler, url, enqueueRef, statusRef, sampleKey } of [
+    {
+      kind: "skill",
+      handler: __handlers.skillsPostRouterV1Handler,
+      url: "https://example.com/api/v1/skills/-/rescan-batch",
+      enqueueRef: internal.securityScan.enqueueBulkSkillRescanBatchForAdminInternal,
+      statusRef: internal.securityScan.getBulkSkillRescanBatchStatusForAdminInternal,
+      sampleKey: "sampleSlugs",
+    },
+    {
+      kind: "package",
+      handler: __handlers.packagesPostRouterV1Handler,
+      url: "https://example.com/api/v1/packages/-/scan/batch",
+      enqueueRef: internal.securityScan.enqueueBulkPackageRescanBatchForAdminInternal,
+      statusRef: internal.securityScan.getBulkPackageRescanBatchStatusForAdminInternal,
+      sampleKey: "sampleNames",
+    },
+  ]) {
+    it(`bulk ${kind} rescan batch requires admin role`, async () => {
+      mockApiTokenUser("users:moderator", "moderator");
+      const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        throw new Error("should not enqueue");
+      });
+
+      const response = await handler(
+        makeCtx({ runMutation }),
+        new Request(url, {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: JSON.stringify({ batchSize: 25 }),
+        }),
+      );
+
+      expect(response.status).toBe(403);
+      await expect(response.text()).resolves.toBe("Admin role required.");
+      expect(runMutation).toHaveBeenCalledTimes(1);
     });
 
-    const response = await __handlers.skillsPostRouterV1Handler(
-      makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills/-/rescan-batch", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ batchSize: 25 }),
-      }),
-    );
+    it(`bulk ${kind} rescan batch enqueues via admin API`, async () => {
+      mockApiTokenUser("users:admin", "admin");
+      const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        return {
+          ok: true,
+          mode: "all-active-latest",
+          queued: 2,
+          alreadyQueued: 1,
+          skipped: 0,
+          jobIds: ["securityScanJobs:1", "securityScanJobs:2", "securityScanJobs:3"],
+          nextCursor: "cursor-2",
+          done: false,
+          [sampleKey]: ["demo"],
+        };
+      });
 
-    expect(response.status).toBe(403);
-    await expect(response.text()).resolves.toBe("Admin role required.");
-    expect(runMutation).toHaveBeenCalledTimes(1);
-  });
+      const response = await handler(
+        makeCtx({ runMutation }),
+        new Request(url, {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: JSON.stringify({ batchSize: 25, cursor: null, dryRun: false }),
+        }),
+      );
 
-  it("bulk skill rescan batch enqueues via admin API", async () => {
-    mockApiTokenUser("users:admin", "admin");
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      return {
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
         ok: true,
-        mode: "all-active-latest",
         queued: 2,
         alreadyQueued: 1,
-        skipped: 0,
-        jobIds: ["securityScanJobs:1", "securityScanJobs:2", "securityScanJobs:3"],
         nextCursor: "cursor-2",
-        done: false,
-        sampleSlugs: ["demo"],
-      };
-    });
-
-    const response = await __handlers.skillsPostRouterV1Handler(
-      makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills/-/rescan-batch", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ batchSize: 25, cursor: null, dryRun: false }),
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      ok: true,
-      queued: 2,
-      alreadyQueued: 1,
-      nextCursor: "cursor-2",
-    });
-    expect(runMutation).toHaveBeenCalledWith(
-      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
-        .enqueueBulkSkillRescanBatchForAdminInternal,
-      {
+      });
+      expect(runMutation).toHaveBeenCalledWith(enqueueRef, {
         actorUserId: "users:admin",
         cursor: null,
         batchSize: 25,
         dryRun: false,
-      },
-    );
-  });
+      });
+    });
+
+    it(`bulk ${kind} rescan status aggregates via admin API`, async () => {
+      mockApiTokenUser("users:admin", "admin");
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        return {
+          ok: true,
+          total: 2,
+          queued: 0,
+          running: 1,
+          succeeded: 1,
+          failed: 0,
+          missing: 0,
+          terminal: 1,
+          done: false,
+          failedJobIds: [],
+        };
+      });
+
+      const response = await handler(
+        makeCtx({ runQuery }),
+        new Request(`${url}/status`, {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: JSON.stringify({ jobIds: ["securityScanJobs:1", "securityScanJobs:2"] }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        ok: true,
+        total: 2,
+        running: 1,
+        done: false,
+      });
+      expect(runQuery).toHaveBeenCalledWith(statusRef, {
+        actorUserId: "users:admin",
+        jobIds: ["securityScanJobs:1", "securityScanJobs:2"],
+      });
+    });
+  }
 
   it.each(["canonical", "legacy"])(
     "forwards recovery identity and exact baselines through %s batch submit",
@@ -10095,160 +10150,6 @@ describe("httpApiV1 handlers", () => {
       else expect(runQuery).not.toHaveBeenCalled();
     },
   );
-
-  it("bulk skill rescan status aggregates via admin API", async () => {
-    mockApiTokenUser("users:admin", "admin");
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      return {
-        ok: true,
-        total: 2,
-        queued: 0,
-        running: 1,
-        succeeded: 1,
-        failed: 0,
-        missing: 0,
-        terminal: 1,
-        done: false,
-        failedJobIds: [],
-      };
-    });
-
-    const response = await __handlers.skillsPostRouterV1Handler(
-      makeCtx({ runQuery }),
-      new Request("https://example.com/api/v1/skills/-/rescan-batch/status", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ jobIds: ["securityScanJobs:1", "securityScanJobs:2"] }),
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      ok: true,
-      total: 2,
-      running: 1,
-      done: false,
-    });
-    expect(runQuery).toHaveBeenCalledWith(
-      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
-        .getBulkSkillRescanBatchStatusForAdminInternal,
-      {
-        actorUserId: "users:admin",
-        jobIds: ["securityScanJobs:1", "securityScanJobs:2"],
-      },
-    );
-  });
-
-  it("bulk package rescan batch requires admin role", async () => {
-    mockApiTokenUser("users:moderator", "moderator");
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      throw new Error("should not enqueue");
-    });
-
-    const response = await __handlers.packagesPostRouterV1Handler(
-      makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/packages/-/scan/batch", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ batchSize: 25 }),
-      }),
-    );
-
-    expect(response.status).toBe(403);
-    await expect(response.text()).resolves.toBe("Admin role required.");
-    expect(runMutation).toHaveBeenCalledTimes(1);
-  });
-
-  it("bulk package rescan batch enqueues via admin API", async () => {
-    mockApiTokenUser("users:admin", "admin");
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      return {
-        ok: true,
-        mode: "all-active-latest",
-        queued: 2,
-        alreadyQueued: 1,
-        skipped: 0,
-        jobIds: ["securityScanJobs:1", "securityScanJobs:2", "securityScanJobs:3"],
-        nextCursor: "cursor-2",
-        done: false,
-        sampleNames: ["demo"],
-      };
-    });
-
-    const response = await __handlers.packagesPostRouterV1Handler(
-      makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/packages/-/scan/batch", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ batchSize: 25, cursor: null, dryRun: false }),
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      ok: true,
-      queued: 2,
-      alreadyQueued: 1,
-      nextCursor: "cursor-2",
-    });
-    expect(runMutation).toHaveBeenCalledWith(
-      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
-        .enqueueBulkPackageRescanBatchForAdminInternal,
-      {
-        actorUserId: "users:admin",
-        cursor: null,
-        batchSize: 25,
-        dryRun: false,
-      },
-    );
-  });
-
-  it("bulk package rescan status aggregates via admin API", async () => {
-    mockApiTokenUser("users:admin", "admin");
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      return {
-        ok: true,
-        total: 2,
-        queued: 0,
-        running: 1,
-        succeeded: 1,
-        failed: 0,
-        missing: 0,
-        terminal: 1,
-        done: false,
-        failedJobIds: [],
-      };
-    });
-
-    const response = await __handlers.packagesPostRouterV1Handler(
-      makeCtx({ runQuery }),
-      new Request("https://example.com/api/v1/packages/-/scan/batch/status", {
-        method: "POST",
-        headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ jobIds: ["securityScanJobs:1", "securityScanJobs:2"] }),
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      ok: true,
-      total: 2,
-      running: 1,
-      done: false,
-    });
-    expect(runQuery).toHaveBeenCalledWith(
-      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
-        .getBulkPackageRescanBatchStatusForAdminInternal,
-      {
-        actorUserId: "users:admin",
-        jobIds: ["securityScanJobs:1", "securityScanJobs:2"],
-      },
-    );
-  });
 
   it("package rescan enqueues owner-authorized ClawScan jobs", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
