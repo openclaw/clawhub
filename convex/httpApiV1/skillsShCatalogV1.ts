@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { runActionRef, runMutationRef, runQueryRef } from "../lib/functionRefs";
 import { verifyGitHubActionsSkillsShSyncJwt } from "../lib/githubActionsOidc";
 import { buildGitHubApiHeaders } from "../lib/githubAuth";
 import { computeGitHubSkillFolderContentHash } from "../lib/githubSkillSync";
@@ -246,26 +247,6 @@ export async function resolveSkillsShVerify(
     canonicalRef: alias.canonicalRef,
     signature: { status: "unsigned" as const },
   };
-}
-
-async function runMutationRef<T>(
-  ctx: ActionCtx,
-  ref: unknown,
-  args: Record<string, unknown>,
-): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
-
-async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: Record<string, unknown>) {
-  return (await ctx.runAction(ref as never, args as never)) as T;
-}
-
-async function runQueryRef<T>(
-  ctx: ActionCtx,
-  ref: unknown,
-  args: Record<string, unknown>,
-): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

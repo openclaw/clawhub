@@ -2,6 +2,10 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { ADMIN_ONE_OFF_TEMPLATE, buildAdminOneOffEmail } from "../lib/emails";
+import {
+  runMutationRef as runUsersV1MutationRef,
+  runQueryRef as runUsersV1QueryRef,
+} from "../lib/functionRefs";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import {
   getPathSegments,
@@ -36,22 +40,6 @@ const usersV1InternalRefs = internal as unknown as {
     unbanUserForBanAppealServiceInternal: unknown;
   };
 };
-
-async function runUsersV1QueryRef<T>(
-  ctx: Pick<ActionCtx, "runQuery">,
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
-async function runUsersV1MutationRef<T>(
-  ctx: Pick<ActionCtx, "runMutation">,
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
 
 function userOperationErrorResponse(error: unknown, fallbackMessage: string, headers: HeadersInit) {
   const message = error instanceof Error ? error.message : fallbackMessage;

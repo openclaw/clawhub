@@ -76,7 +76,7 @@ import {
 import { endorAnalysisSchema, endorAnalysisValidator } from "./lib/endorAnalysis";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { storedFilesValidator } from "./lib/fileValidators";
-import { runMutationRef, runQueryRef } from "./lib/functionRefs";
+import { runActionRef, runMutationRef, runQueryRef } from "./lib/functionRefs";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
@@ -812,14 +812,6 @@ type StablePackageDiscoveryCursorState = {
   sources: Record<StablePackageFamily, StablePackageDiscoverySourceState>;
 };
 const OFFICIAL_FIRST_PACKAGE_CATEGORY_CURSOR_PREFIX = "pkgofficialfirst:";
-
-async function runActionRef<T>(
-  ctx: { runAction: (ref: never, args: never) => Promise<unknown> },
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runAction(ref as never, args as never)) as T;
-}
 
 async function runAfterRef(
   ctx: {
