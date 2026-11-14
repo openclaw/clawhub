@@ -260,7 +260,6 @@ const LOCAL_SEED_HANDLE = "local";
 const LEGACY_LOCAL_OWNER_HANDLE = "local-owner";
 const LOCAL_SEED_USER_LOOKUP_LIMIT = 10;
 const LOCAL_SEED_GITHUB_CREATED_AT = Date.parse("2020-01-01T00:00:00.000Z");
-const CURRENT_USER_SEED_PREFIX = "dev";
 const PUBLIC_CORPUS_BATCH = "public-corpus-v1";
 const FLAGGED_SKILL_SLUG = "local-flagged-wallet-sync";
 const SCANNED_SKILL_SLUG = "local-agentic-risk-demo";
@@ -711,20 +710,6 @@ redirect behavior.
 `,
   },
 ];
-
-function currentUserSeedKey(userId: Id<"users">) {
-  const normalized = String(userId).replace(/[^a-zA-Z0-9]/g, "");
-  return (normalized || "user").slice(-8);
-}
-
-export function currentUserSeedSkillSlug(userId: Id<"users">, baseSlug: string) {
-  return `${CURRENT_USER_SEED_PREFIX}-${currentUserSeedKey(userId)}-${baseSlug}`;
-}
-
-export function currentUserSeedPackageName(userId: Id<"users">, baseName: string) {
-  const normalized = normalizePackageName(baseName).replace(/^@/, "").replace("/", "-");
-  return `${CURRENT_USER_SEED_PREFIX}-${currentUserSeedKey(userId)}-${normalized}`;
-}
 
 function legacyLocalOwnerHandle(publisherId: Id<"publishers">) {
   const suffix = String(publisherId)
