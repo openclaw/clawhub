@@ -3,6 +3,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { expect, it, vi } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { api } from "./_generated/api";
 import { syncPackageSearchDigestForPackageId } from "./functions";
 import schema from "./schema";
@@ -47,16 +48,12 @@ it("public Featured reads put new and re-added selections first despite an older
         updatedAt: 1,
       });
       const skillId = await ctx.db.insert("skills", {
+        ...createActiveSkillSeedDefaults(),
         slug: name,
         displayName: name,
         ownerUserId,
         ownerPublisherId: publisher,
-        moderationStatus: "active",
-        tags: {},
-        badges: {},
         stats: { comments: 0, downloads: 1, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const storageId = await ctx.storage.store(new Blob(["x"]));
       const file = { path: "SKILL.md", size: 1, storageId, sha256: "a".repeat(64) };

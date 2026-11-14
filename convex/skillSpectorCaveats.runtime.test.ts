@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { afterEach, expect, it, vi } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { api } from "./_generated/api";
 import { capSkillSpectorInspectionCaveats } from "./lib/skillSpectorEvidence";
 import schema from "./schema";
@@ -25,16 +26,12 @@ it.each([false, true])(
         updatedAt: 1,
       });
       const skillId = await ctx.db.insert("skills", {
+        ...createActiveSkillSeedDefaults(),
         slug: "caveat-fixture",
         displayName: "Caveat fixture",
         ownerUserId: userId,
         ownerPublisherId: publisherId,
-        tags: {},
-        badges: {},
-        moderationStatus: "active",
         stats: { comments: 0, downloads: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const createdVersionId = await ctx.db.insert("skillVersions", {
         skillId,

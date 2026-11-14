@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { dispatchGitHubRepositoryEvent } from "./lib/githubRepositoryDispatch";
@@ -72,15 +73,11 @@ async function fixture(
       );
     }
     const skillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "retired-queue-fixture",
       displayName: "Queue fixture",
       ownerUserId: userId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       stats: { comments: 0, downloads: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const versionId = await ctx.db.insert("skillVersions", {
       skillId,

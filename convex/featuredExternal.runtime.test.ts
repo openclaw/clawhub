@@ -3,6 +3,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { api, internal } from "./_generated/api";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
@@ -183,15 +184,11 @@ async function seedNative(
     const seededIds = [];
     for (let i = 0; i < count; i++) {
       const skillId = await ctx.db.insert("skills", {
+        ...createActiveSkillSeedDefaults(),
         slug: `native-${i}`,
         displayName: `Native ${i}`,
         ownerUserId: actor,
-        moderationStatus: "active",
-        tags: {},
-        badges: {},
         stats: { comments: 0, downloads: 1, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const versionId = await ctx.db.insert("skillVersions", {
         skillId,

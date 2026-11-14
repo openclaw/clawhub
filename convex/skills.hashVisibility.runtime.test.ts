@@ -3,6 +3,7 @@
 // Exercise the registered query with persisted publication states and file fingerprints.
 import { convexTest } from "convex-test";
 import { expect, it } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { api } from "./_generated/api";
 import { hashSkillFiles } from "./lib/skills";
 import schema from "./schema";
@@ -45,16 +46,12 @@ async function fixture(branch: Branch, shadow = false, status: "pending" | "bloc
     });
     await ctx.db.patch(userId, { personalPublisherId: publisherId });
     const skillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "rca-hash-visibility",
       displayName: "RCA hash visibility",
       ownerUserId: userId,
       ownerPublisherId: publisherId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       stats: { comments: 0, downloads: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const common = {
       skillId,
@@ -200,15 +197,11 @@ it("rejects a fingerprint and latest pointer whose version belongs to a differen
     const skill = await ctx.db.get(f.skillId);
     if (!skill) throw new Error("Missing fixture skill");
     const foreignSkillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "foreign",
       displayName: "Foreign",
       ownerUserId: skill.ownerUserId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       stats: { comments: 0, downloads: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     await ctx.db.patch(f.publishedId, { skillId: foreignSkillId });
   });

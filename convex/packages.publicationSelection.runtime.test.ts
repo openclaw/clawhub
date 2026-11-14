@@ -5,6 +5,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { unzipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
@@ -391,15 +392,11 @@ describe("checked package release selections", () => {
     const { t, owner } = await fixture();
     const selected = await t.run(async (ctx) => {
       const skillId = await ctx.db.insert("skills", {
+        ...createActiveSkillSeedDefaults(),
         slug: "skill-alias",
         displayName: "Skill alias",
         ownerUserId: owner,
-        tags: {},
-        badges: {},
-        moderationStatus: "active",
         stats: { comments: 0, downloads: 0, stars: 0, versions: 2 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const storageId = await ctx.storage.store(new Blob(["# Skill alias"]));
       const base = {

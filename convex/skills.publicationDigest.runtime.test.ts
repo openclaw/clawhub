@@ -4,6 +4,7 @@ import { convexTest } from "convex-test";
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import { expect, it } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation } from "./functions";
@@ -41,16 +42,12 @@ async function fixture(options: { pendingReview?: boolean } = {}) {
   const ids = await t.run(async (ctx) => {
     const ownerUserId = await ctx.db.insert("users", { handle: "digest-owner" });
     const skillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "digest-visibility",
       displayName: "Digest visibility",
       ownerUserId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       moderationReason: options.pendingReview ? "pending.scan" : undefined,
       stats: { versions: 2, downloads: 0, stars: 0, comments: 0 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const common = {
       skillId,
