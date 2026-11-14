@@ -1,5 +1,6 @@
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
+import { writeJsonIfRequested } from "../../../clawhub/src/cli/output.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
@@ -78,9 +79,7 @@ export async function cmdHardDeleteSkill(
         ? `Scheduled hard delete for @${result.ownerHandle}/${result.slug}`
         : `Dry run OK for @${result.ownerHandle}/${result.slug}: pass --apply --confirm ${result.confirmationToken}`,
     );
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    }
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }

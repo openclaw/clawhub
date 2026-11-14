@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
+import { writeJsonIfRequested } from "../../../clawhub/src/cli/output.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import { createCrabLoader, fail } from "../../../clawhub/src/cli/ui.js";
@@ -192,9 +193,7 @@ export async function cmdSendStaffEmail(opts: GlobalOpts, options: StaffEmailSen
       ApiV1StaffEmailSendResponseSchema,
     );
     spinner?.succeed(`Sent email to ${result.recipient.handle ?? result.recipient.email}`);
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    }
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }
