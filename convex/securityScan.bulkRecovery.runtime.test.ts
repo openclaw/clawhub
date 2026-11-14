@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 
@@ -13,15 +14,11 @@ async function fixture() {
   const ids = await t.run(async (ctx) => {
     const actorUserId = await ctx.db.insert("users", { role: "admin" });
     const skillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "receipt-fixture",
       displayName: "Receipt fixture",
       ownerUserId: actorUserId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       stats: { comments: 0, downloads: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const versionId = await ctx.db.insert("skillVersions", {
       skillId,

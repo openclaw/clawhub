@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { expect, it } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 
@@ -39,16 +40,12 @@ it("preserves publisher-scoped slug uniqueness when accepting a transfer", async
     await ctx.db.patch(destinationUserId, { personalPublisherId: destinationPublisherId });
 
     const transferredSkillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "same-slug",
       displayName: "Transferred lineage",
       ownerUserId: sourceUserId,
       ownerPublisherId: sourcePublisherId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       stats: { comments: 0, downloads: 0, stars: 0, versions: 0 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     await ctx.db.insert("skills", {
       slug: "same-slug",
@@ -120,16 +117,12 @@ it("rejects a transfer when one of its redirects collides at the destination", a
     });
     await ctx.db.patch(destinationUserId, { personalPublisherId: destinationPublisherId });
     const transferredSkillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "new-name",
       displayName: "Transferred",
       ownerUserId: sourceUserId,
       ownerPublisherId: sourcePublisherId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       stats: { comments: 0, downloads: 0, stars: 0, versions: 0 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     await ctx.db.insert("skillSlugAliases", {
       slug: "old-name",
@@ -140,16 +133,12 @@ it("rejects a transfer when one of its redirects collides at the destination", a
       updatedAt: 1,
     });
     const destinationSkillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "destination-skill",
       displayName: "Destination",
       ownerUserId: destinationUserId,
       ownerPublisherId: destinationPublisherId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       stats: { comments: 0, downloads: 0, stars: 0, versions: 0 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     await ctx.db.insert("skillSlugAliases", {
       slug: "old-name",
