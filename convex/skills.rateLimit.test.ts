@@ -7,6 +7,7 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { internal } from "./_generated/api";
 import {
   backfillLatestSkillModerationInternal,
@@ -1170,13 +1171,13 @@ describe("skills anti-spam guards", () => {
               }
               return {
                 unique: async () => ({
+                  ...createActiveSkillSeedDefaults(),
                   _id: "skills:1",
                   slug: "taken-skill",
                   displayName: "Taken Skill",
                   summary: "Existing summary",
                   ownerUserId: "users:owner",
                   latestVersionId: undefined,
-                  tags: {},
                   softDeletedAt: undefined,
                   badges: {
                     redactionApproved: undefined,
@@ -1184,7 +1185,6 @@ describe("skills anti-spam guards", () => {
                     official: undefined,
                     deprecated: undefined,
                   },
-                  moderationStatus: "active",
                   moderationReason: "pending.scan",
                   moderationNotes: undefined,
                   moderationVerdict: "clean",
@@ -1211,8 +1211,6 @@ describe("skills anti-spam guards", () => {
                     versions: 1,
                     comments: 0,
                   },
-                  createdAt: 1,
-                  updatedAt: 1,
                   manualOverride: undefined,
                 }),
               };

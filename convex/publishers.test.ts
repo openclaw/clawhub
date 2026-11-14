@@ -1,8 +1,10 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq, indexedUnique } from "../src/__tests__/helpers/convexQuery";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import {
   assertCanManageOwnedResource,
   ensurePersonalPublisherForUser,
@@ -8140,6 +8142,7 @@ describe("legacy publisher migration", () => {
       ],
     ]);
     const baseSkill = {
+      ...createActiveSkillSeedDefaults(),
       _id: "skills:legacy-skill",
       slug: "demo-skill",
       displayName: "Demo Skill",
@@ -8147,8 +8150,6 @@ describe("legacy publisher migration", () => {
       ownerUserId: options.unexpectedResourceOwner ? "users:someone-else" : "users:legacy",
       ownerPublisherId: "publishers:gingiris",
       forkOf: undefined,
-      tags: {},
-      badges: {},
       stats: {
         downloads: 99,
         stars: 19,
@@ -8159,8 +8160,6 @@ describe("legacy publisher migration", () => {
       statsDownloads: 12,
       statsStars: 3,
       moderationStatus: "approved",
-      createdAt: 1,
-      updatedAt: 1,
     };
     const skills = new Map<string, Record<string, unknown>>(
       options.legacyResources
@@ -8210,22 +8209,17 @@ describe("legacy publisher migration", () => {
         : [],
     );
     const basePackage = {
+      ...createPackageSeedDefaults(),
       _id: "packages:legacy-package",
       name: "@gingiris/demo-plugin",
       normalizedName: "@gingiris/demo-plugin",
       displayName: "Demo Plugin",
       ownerUserId: "users:legacy",
       ownerPublisherId: "publishers:gingiris",
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      tags: {},
       compatibility: {},
       verification: {},
       scanStatus: "pending",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     };
     const packages = new Map<string, Record<string, unknown>>(
       options.legacyResources ? [["packages:legacy-package", basePackage]] : [],

@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { expect, it } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
@@ -16,18 +17,13 @@ it("projects latest-release retirements publicly while preserving privacy, error
     const owner = await ctx.db.insert("users", { role: "user" });
     const stranger = await ctx.db.insert("users", { role: "user" });
     const packageId = await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "retirement-fixture",
       normalizedName: "retirement-fixture",
       displayName: "Retirement Fixture",
       ownerUserId: owner,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      tags: {},
       scanStatus: "clean",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId,

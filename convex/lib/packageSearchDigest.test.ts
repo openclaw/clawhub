@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../../src/__tests__/helpers/packageSeed";
 import {
   deletePackageSearchDigests,
   extractPackageDigestFields,
@@ -28,8 +29,8 @@ describe("packageSearchDigest", () => {
 
   it("projects stored catalog metadata and prefers a stored plugin category", () => {
     const digest = extractPackageDigestFields({
+      ...createPackageSeedDefaults(),
       _id: "packages:demo",
-      family: "code-plugin",
       name: "@openclaw/mcp-provider",
       normalizedName: "@openclaw/mcp-provider",
       displayName: "MCP Provider",
@@ -37,8 +38,6 @@ describe("packageSearchDigest", () => {
       icon: "https://cdn.example.test/icons/mcp.svg",
       categories: ["models"],
       topics: ["local-models", "inference"],
-      channel: "community",
-      isOfficial: false,
       ownerUserId: "users:owner",
       capabilityTags: ["mcp"],
       compatibility: {},
@@ -48,8 +47,6 @@ describe("packageSearchDigest", () => {
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
       recommendedScore: 7,
       recommendedScoreVersion: 1,
-      tags: {},
-      createdAt: 1,
       updatedAt: 2,
     } as never);
 
@@ -62,14 +59,12 @@ describe("packageSearchDigest", () => {
 
   it("tolerates retired stored categories during plugin digest rebuilds", () => {
     const digest = extractPackageDigestFields({
+      ...createPackageSeedDefaults(),
       _id: "packages:legacy",
-      family: "code-plugin",
       name: "@openclaw/legacy",
       normalizedName: "@openclaw/legacy",
       displayName: "Legacy",
       categories: ["retired-category"],
-      channel: "community",
-      isOfficial: false,
       ownerUserId: "users:owner",
       capabilityTags: [],
       compatibility: {},
@@ -77,8 +72,6 @@ describe("packageSearchDigest", () => {
       verification: {},
       scanStatus: "clean",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-      tags: {},
-      createdAt: 1,
       updatedAt: 2,
     } as never);
 
@@ -87,24 +80,20 @@ describe("packageSearchDigest", () => {
 
   it("projects current inferred plugin metadata when author metadata is omitted", () => {
     const digest = extractPackageDigestFields({
+      ...createPackageSeedDefaults(),
       _id: "packages:inferred",
       latestReleaseId: "packageReleases:v1",
       inferredFromReleaseId: "packageReleases:v1",
       inferredCategories: ["models", "voice"],
       inferredTopics: ["OpenAI", "Speech-to-Text"],
-      family: "code-plugin",
       name: "@openclaw/inferred",
       normalizedName: "@openclaw/inferred",
       displayName: "Inferred",
-      channel: "community",
-      isOfficial: false,
       ownerUserId: "users:owner",
       compatibility: {},
       verification: {},
       scanStatus: "clean",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-      tags: {},
-      createdAt: 1,
       updatedAt: 2,
     } as never);
 
