@@ -38,6 +38,43 @@ afterEach(() => {
 
 type Row = Record<string, unknown> & { _id: string };
 
+function createPublicGitHubRepo(
+  fullName: string,
+  id: number,
+  ownerId: number,
+  defaultBranch = "main",
+) {
+  return {
+    id,
+    full_name: fullName,
+    owner: { id: ownerId },
+    private: false,
+    visibility: "public",
+    default_branch: defaultBranch,
+    disabled: false,
+  };
+}
+
+function createGitHubScan(
+  _id: string,
+  contentHash: string,
+  commit: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    _id,
+    skillId: "skills:html",
+    githubSourceId: "githubSkillSources:current",
+    contentHash,
+    commit,
+    path: "skills/html",
+    status: "clean",
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
 function createNvidiaSource() {
   return {
     _id: "githubSkillSources:nvidia",
@@ -165,18 +202,9 @@ function createFakeGitHubSkillsRepo() {
       parsed.hostname === "api.github.com" &&
       parsed.pathname === "/repos/openclaw/agent-skills"
     ) {
-      return new Response(
-        JSON.stringify({
-          id: 100,
-          full_name: repo,
-          owner: { id: 200 },
-          private: false,
-          visibility: "public",
-          default_branch: defaultBranch,
-          disabled: false,
-        }),
-        { headers: { "content-type": "application/json" } },
-      );
+      return new Response(JSON.stringify(createPublicGitHubRepo(repo, 100, 200, defaultBranch)), {
+        headers: { "content-type": "application/json" },
+      });
     }
 
     if (
@@ -447,15 +475,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 101,
-          full_name: "SomeoneElse/public-skills",
-          owner: { id: 201 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("SomeoneElse/public-skills", 101, 201),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -469,15 +489,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 101,
-          full_name: "SomeoneElse/public-skills",
-          owner: { id: 201 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("SomeoneElse/public-skills", 101, 201),
       });
 
     const result = await configurePublicGitHubSkillSourceHandler(
@@ -537,15 +549,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 101,
-          full_name: "patrick-erichsen/skills",
-          owner: { id: 201 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("patrick-erichsen/skills", 101, 201),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -559,15 +563,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 101,
-          full_name: "patrick-erichsen/skills",
-          owner: { id: 201 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("patrick-erichsen/skills", 101, 201),
       });
 
     await expect(
@@ -680,15 +676,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 102,
-          full_name: "aws/agent-toolkit-for-aws",
-          owner: { id: 202 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("aws/agent-toolkit-for-aws", 102, 202),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -702,15 +690,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 102,
-          full_name: "aws/agent-toolkit-for-aws",
-          owner: { id: 202 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("aws/agent-toolkit-for-aws", 102, 202),
       });
 
     await expect(
@@ -760,15 +740,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 103,
-          full_name: "aws/agent-toolkit-for-aws",
-          owner: { id: 203 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("aws/agent-toolkit-for-aws", 103, 203),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -812,15 +784,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
     const runMutation = vi.fn();
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
-      json: async () => ({
-        id: 104,
-        full_name: "SomeoneElse/public-skills",
-        owner: { id: 204 },
-        private: false,
-        visibility: "public",
-        default_branch: "main",
-        disabled: false,
-      }),
+      json: async () => createPublicGitHubRepo("SomeoneElse/public-skills", 104, 204),
     });
 
     await expect(
@@ -854,15 +818,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 105,
-          full_name: "patrick-erichsen/skills",
-          owner: { id: 205 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("patrick-erichsen/skills", 105, 205),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -876,15 +832,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 105,
-          full_name: "someone-else/skills",
-          owner: { id: 999 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("someone-else/skills", 105, 999),
       });
 
     await expect(
@@ -1314,18 +1262,9 @@ describe("bounded legacy GitHub source apply", () => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       if (url === "https://api.github.com/repos/NVIDIA/skills") {
-        return new Response(
-          JSON.stringify({
-            id: 1,
-            full_name: "NVIDIA/skills",
-            owner: { id: 2 },
-            private: false,
-            visibility: "public",
-            default_branch: "main",
-            disabled: false,
-          }),
-          { headers: { "content-type": "application/json" } },
-        );
+        return new Response(JSON.stringify(createPublicGitHubRepo("NVIDIA/skills", 1, 2)), {
+          headers: { "content-type": "application/json" },
+        });
       }
       if (url.startsWith("https://api.github.com/repos/NVIDIA/skills/commits/")) {
         return new Response(JSON.stringify({ sha: commit }), {
@@ -2309,17 +2248,11 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:html",
-          skillId: "skills:html",
+        createGitHubScan("githubSkillScans:html", contentHash, "1".repeat(40), {
           githubSourceId: "githubSkillSources:old",
-          contentHash,
-          commit: "1".repeat(40),
-          path: "skills/html",
-          status: "clean",
           createdAt: 20,
           updatedAt: 20,
-        },
+        }),
       ],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
@@ -2413,19 +2346,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
           updatedAt: 1,
         },
       ],
-      githubSkillScans: [
-        {
-          _id: "githubSkillScans:html",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit: "a".repeat(40),
-          path: "skills/html",
-          status: "clean",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillScans: [createGitHubScan("githubSkillScans:html", contentHash, "a".repeat(40))],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
 
@@ -2601,17 +2522,10 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "b".repeat(64),
-          commit: "b".repeat(40),
-          path: "skills/html",
-          status: "clean",
+        createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
           createdAt: 2,
           updatedAt: 2,
-        },
+        }),
       ],
     });
 
@@ -2795,28 +2709,11 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:a",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "a".repeat(64),
-          commit: "a".repeat(40),
-          path: "skills/html",
-          status: "clean",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "b".repeat(64),
-          commit: "b".repeat(40),
-          path: "skills/html",
-          status: "clean",
+        createGitHubScan("githubSkillScans:a", "a".repeat(64), "a".repeat(40)),
+        createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
           createdAt: 2,
           updatedAt: 2,
-        },
+        }),
       ],
     });
 
@@ -2939,19 +2836,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
           updatedAt: 4,
         },
       ],
-      githubSkillScans: [
-        {
-          _id: "githubSkillScans:html",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit,
-          path: "skills/html",
-          status: "clean",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillScans: [createGitHubScan("githubSkillScans:html", contentHash, commit)],
     });
 
     await expect(
@@ -3025,19 +2910,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
           updatedAt: 2,
         },
       ],
-      githubSkillScans: [
-        {
-          _id: "githubSkillScans:html",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit: snapshot.commit,
-          path: "skills/html",
-          status: "clean",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillScans: [createGitHubScan("githubSkillScans:html", contentHash, snapshot.commit)],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
 
@@ -3315,28 +3188,16 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:stale-b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit: "2".repeat(40),
+        createGitHubScan("githubSkillScans:stale-b", contentHash, "2".repeat(40), {
           path: "skills/html-old-pointer",
-          status: "clean",
           createdAt: 2,
           updatedAt: 2,
-        },
-        {
-          _id: "githubSkillScans:return-a",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit: "3".repeat(40),
+        }),
+        createGitHubScan("githubSkillScans:return-a", contentHash, "3".repeat(40), {
           path: "skills/html-renamed",
-          status: "clean",
           createdAt: 3,
           updatedAt: 3,
-        },
+        }),
       ],
     });
 
@@ -3416,17 +3277,11 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "b".repeat(64),
-          commit: "b".repeat(40),
-          path: "skills/html",
+        createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
           status: "malicious",
           createdAt: 2,
           updatedAt: 3,
-        },
+        }),
       ],
     });
 
@@ -3499,17 +3354,11 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "b".repeat(64),
-          commit: "b".repeat(40),
-          path: "skills/html",
+        createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
           status: "failed",
           createdAt: 2,
           updatedAt: 3,
-        },
+        }),
       ],
     });
 
@@ -3601,17 +3450,11 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit: "b".repeat(40),
-          path: "skills/html",
+        createGitHubScan("githubSkillScans:b", contentHash, "b".repeat(40), {
           status: "malicious",
           createdAt: 2,
           updatedAt: 2,
-        },
+        }),
       ],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
@@ -3754,28 +3597,11 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:a",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "a".repeat(64),
-          commit: "a".repeat(40),
-          path: "skills/html",
-          status: "clean",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "b".repeat(64),
-          commit: "b".repeat(40),
-          path: "skills/html",
-          status: "clean",
+        createGitHubScan("githubSkillScans:a", "a".repeat(64), "a".repeat(40)),
+        createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
           createdAt: 2,
           updatedAt: 2,
-        },
+        }),
       ],
     });
 
