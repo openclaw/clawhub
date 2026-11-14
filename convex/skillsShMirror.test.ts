@@ -205,10 +205,25 @@ const trendingRefs = internal.skillsShMirror as unknown as {
 
 let leaseSequence = 0;
 
+type BatchArgs = Omit<
+  FunctionArgs<typeof internal.skillsShMirror.processBatchInternal>,
+  "leaseToken"
+>;
+
 async function processBatch(
   t: ReturnType<typeof convexTest>,
-  args: Omit<FunctionArgs<typeof internal.skillsShMirror.processBatchInternal>, "leaseToken">,
+  overrides: Pick<BatchArgs, "runId" | "rows"> & Partial<Omit<BatchArgs, "runId" | "rows">>,
 ) {
+  const args: BatchArgs = {
+    page: 0,
+    offset: 0,
+    pageLength: 1,
+    hasMore: false,
+    sourceTotal: 1,
+    sourceRequests: 3,
+    sourceBytes: 1_024,
+    ...overrides,
+  };
   const leaseToken = `test-lease:${(leaseSequence += 1)}`;
   await t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
     runId: args.runId,
@@ -345,13 +360,6 @@ describe("skills.sh external mirror", () => {
 
     const result = await processBatch(t, {
       runId: run.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [exactGithubRow],
     });
 
@@ -388,13 +396,6 @@ describe("skills.sh external mirror", () => {
     const first = await startRun(t, "snapshot:exact-before-invalid", 1);
     await processBatch(t, {
       runId: first.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [exactGithubRow],
     });
     await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
@@ -404,11 +405,6 @@ describe("skills.sh external mirror", () => {
     const second = await startRun(t, "snapshot:invalid-after-exact", 1);
     await processBatch(t, {
       runId: second.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
       sourceRequests: 2,
       sourceBytes: 512,
       rows: [{ ...exactGithubRow, githubCommit: undefined }],
@@ -432,13 +428,8 @@ describe("skills.sh external mirror", () => {
     const run = await startRun(t, "snapshot:duplicate-conflict", 3);
     const result = await processBatch(t, {
       runId: run.runId,
-      page: 0,
-      offset: 0,
       pageLength: 3,
-      hasMore: false,
       sourceTotal: 3,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [
         exactGithubRow,
         { ...exactGithubRow, displayName: "Conflicting Name" },
@@ -466,11 +457,6 @@ describe("skills.sh external mirror", () => {
     const foundation = await startRun(t, "snapshot:foundation", 1);
     await processBatch(t, {
       runId: foundation.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
       sourceRequests: 0,
       sourceBytes: 0,
       rows: [githubRow],
@@ -532,11 +518,6 @@ describe("skills.sh external mirror", () => {
     const foundation = await startRun(t, "snapshot:foundation", 1);
     await processBatch(t, {
       runId: foundation.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
       sourceRequests: 0,
       sourceBytes: 0,
       rows: [githubRow],
@@ -934,11 +915,6 @@ describe("skills.sh external mirror", () => {
     await expect(
       processBatch(t, {
         runId,
-        page: 0,
-        offset: 0,
-        pageLength: 1,
-        hasMore: false,
-        sourceTotal: 1,
         sourceRequests: 1,
         sourceBytes: 50 * 8 * 1024 * 1024,
         rows: [githubRow],
@@ -1268,13 +1244,8 @@ describe("skills.sh external mirror", () => {
 
     const result = await processBatch(t, {
       runId,
-      page: 0,
-      offset: 0,
       pageLength: 2,
-      hasMore: false,
       sourceTotal: 2,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [githubRow, wellKnownRow],
     });
 
@@ -1344,13 +1315,6 @@ describe("skills.sh external mirror", () => {
     await expect(
       processBatch(t, {
         runId,
-        page: 0,
-        offset: 0,
-        pageLength: 1,
-        hasMore: false,
-        sourceTotal: 1,
-        sourceRequests: 3,
-        sourceBytes: 1_024,
         rows: [topicRow],
       }),
     ).resolves.toMatchObject({
@@ -1406,13 +1370,6 @@ describe("skills.sh external mirror", () => {
     const replay = await startRun(t, "snapshot:topic-label-replay", 1);
     await processBatch(t, {
       runId: replay.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [topicRow],
     });
     expect(
@@ -1432,13 +1389,9 @@ describe("skills.sh external mirror", () => {
     const { runId } = await startRun(t, "snapshot:search");
     await processBatch(t, {
       runId,
-      page: 0,
-      offset: 0,
       pageLength: 2,
-      hasMore: false,
       sourceTotal: 2,
       sourceRequests: 5,
-      sourceBytes: 1_024,
       rows: [githubRow, wellKnownRow],
     });
 
@@ -1566,10 +1519,7 @@ describe("skills.sh external mirror", () => {
 
     const result = await processBatch(t, {
       runId,
-      page: 0,
-      offset: 0,
       pageLength: 2,
-      hasMore: false,
       sourceTotal: 2,
       sourceRequests: 4,
       sourceBytes: 2_048,
@@ -1641,13 +1591,6 @@ describe("skills.sh external mirror", () => {
     const firstRun = await startRun(t, "snapshot:detail-available", 1);
     await processBatch(t, {
       runId: firstRun.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [githubRow],
     });
     await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
@@ -1658,12 +1601,6 @@ describe("skills.sh external mirror", () => {
     const secondRun = await startRun(t, "snapshot:detail-missing", 1);
     await processBatch(t, {
       runId: secondRun.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
-      sourceRequests: 3,
       sourceBytes: 512,
       rows: [{ ...githubRow, detail: undefined }],
     });
@@ -1697,13 +1634,6 @@ describe("skills.sh external mirror", () => {
     const firstRun = await startRun(t, "snapshot:before-transient-quarantine", 1);
     await processBatch(t, {
       runId: firstRun.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [githubRow],
     });
     await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
@@ -1722,13 +1652,7 @@ describe("skills.sh external mirror", () => {
     const secondRun = await startRun(t, "snapshot:transient-quarantine", 1);
     const result = await processBatch(t, {
       runId: secondRun.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
       sourceRequests: 2,
-      sourceBytes: 1_024,
       rows: [
         {
           quarantined: true,
@@ -1770,13 +1694,6 @@ describe("skills.sh external mirror", () => {
     const disappearanceRun = await startRun(t, "snapshot:disappearance-before-quarantine", 1);
     await processBatch(t, {
       runId: disappearanceRun.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [wellKnownRow],
     });
     await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
@@ -1787,13 +1704,7 @@ describe("skills.sh external mirror", () => {
     const inactiveQuarantineRun = await startRun(t, "snapshot:inactive-quarantine", 1);
     const inactiveResult = await processBatch(t, {
       runId: inactiveQuarantineRun.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
       sourceRequests: 2,
-      sourceBytes: 1_024,
       rows: [
         {
           quarantined: true,
@@ -1821,13 +1732,6 @@ describe("skills.sh external mirror", () => {
     const firstRun = await startRun(t, "snapshot:before-stale-replay", 1);
     await processBatch(t, {
       runId: firstRun.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [githubRow],
     });
     await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
@@ -1838,13 +1742,7 @@ describe("skills.sh external mirror", () => {
     const quarantineRun = await startRun(t, "snapshot:stale-replay-source", 1);
     await processBatch(t, {
       runId: quarantineRun.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
       sourceRequests: 2,
-      sourceBytes: 1_024,
       rows: [
         {
           quarantined: true,
@@ -1875,11 +1773,6 @@ describe("skills.sh external mirror", () => {
     const replayRun = await startRun(t, "snapshot:stale-replay", 1);
     const replayResult = await processBatch(t, {
       runId: replayRun.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
       sourceRequests: 0,
       sourceBytes: 0,
       rows: [replayRow],
@@ -1922,10 +1815,7 @@ describe("skills.sh external mirror", () => {
 
     const result = await processBatch(t, {
       runId,
-      page: 0,
-      offset: 0,
       pageLength: 2,
-      hasMore: false,
       sourceTotal: 2,
       sourceRequests: 4,
       sourceBytes: 2_048,
@@ -1963,13 +1853,6 @@ describe("skills.sh external mirror", () => {
     const firstRun = await startRun(t, "snapshot:before-quarantine-first", 1);
     await processBatch(t, {
       runId: firstRun.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [githubRow],
     });
     await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
@@ -1980,10 +1863,7 @@ describe("skills.sh external mirror", () => {
     const secondRun = await startRun(t, "snapshot:quarantine-first", 2);
     const result = await processBatch(t, {
       runId: secondRun.runId,
-      page: 0,
-      offset: 0,
       pageLength: 2,
-      hasMore: false,
       sourceTotal: 2,
       sourceRequests: 4,
       sourceBytes: 2_048,
@@ -2023,10 +1903,7 @@ describe("skills.sh external mirror", () => {
 
     await processBatch(t, {
       runId,
-      page: 0,
-      offset: 0,
       pageLength: 3,
-      hasMore: false,
       sourceTotal: 3,
       sourceRequests: 2,
       sourceBytes: 512,
@@ -2042,10 +1919,8 @@ describe("skills.sh external mirror", () => {
     await expect(
       processBatch(t, {
         runId,
-        page: 0,
         offset: 1,
         pageLength: 3,
-        hasMore: false,
         sourceTotal: 3,
         sourceRequests: 2,
         sourceBytes: 512,
@@ -2061,10 +1936,8 @@ describe("skills.sh external mirror", () => {
     });
     const resumed = await processBatch(t, {
       runId,
-      page: 0,
       offset: 1,
       pageLength: 3,
-      hasMore: false,
       sourceTotal: 3,
       sourceRequests: 2,
       sourceBytes: 512,
@@ -2081,10 +1954,7 @@ describe("skills.sh external mirror", () => {
 
     await processBatch(t, {
       runId,
-      page: 0,
-      offset: 0,
       pageLength: 2,
-      hasMore: false,
       sourceTotal: 2,
       sourceRequests: 2,
       sourceBytes: 512,
@@ -2092,10 +1962,8 @@ describe("skills.sh external mirror", () => {
     });
     const conflicted = await processBatch(t, {
       runId,
-      page: 0,
       offset: 1,
       pageLength: 2,
-      hasMore: false,
       sourceTotal: 2,
       sourceRequests: 2,
       sourceBytes: 512,
@@ -2118,13 +1986,8 @@ describe("skills.sh external mirror", () => {
     const first = await startRun(t, "snapshot:all");
     await processBatch(t, {
       runId: first.runId,
-      page: 0,
-      offset: 0,
       pageLength: 2,
-      hasMore: false,
       sourceTotal: 2,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [githubRow, wellKnownRow],
     });
     await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
@@ -2135,11 +1998,6 @@ describe("skills.sh external mirror", () => {
     const second = await startRun(t, "snapshot:missing", 1);
     await processBatch(t, {
       runId: second.runId,
-      page: 0,
-      offset: 0,
-      pageLength: 1,
-      hasMore: false,
-      sourceTotal: 1,
       sourceRequests: 2,
       sourceBytes: 512,
       rows: [githubRow],
@@ -2161,13 +2019,8 @@ describe("skills.sh external mirror", () => {
     const third = await startRun(t, "snapshot:return", 2);
     await processBatch(t, {
       runId: third.runId,
-      page: 0,
-      offset: 0,
       pageLength: 2,
-      hasMore: false,
       sourceTotal: 2,
-      sourceRequests: 3,
-      sourceBytes: 1_024,
       rows: [githubRow, wellKnownRow],
     });
     await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
