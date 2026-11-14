@@ -79,8 +79,6 @@ type SkillsShMirrorControlledSupplement = {
   detailContentHash: string;
 };
 
-export const SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENT_COUNT =
-  SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS.length;
 export const SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS = SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS.map(
   (row) => row.externalId,
 );
@@ -2737,48 +2735,6 @@ async function authorizeSkillsShCatalogTestRequest(
       ownerId: verified.payload.owner_id,
       projectId: verified.payload.project_id,
       environment: verified.payload.environment,
-    },
-  };
-}
-
-export async function fetchSkillsShCatalogTestPage(options: {
-  env?: SkillsShCatalogSourceEnv;
-  fetchImpl?: typeof fetch;
-  getOidcToken?: () => Promise<string>;
-  verifyOidcToken?: VerifyVercelOidc;
-  readConvexControl: () => Promise<SkillsShCatalogTestControl>;
-}) {
-  const authorization = await authorizeSkillsShCatalogTestRequest(options);
-  const control = await options.readConvexControl();
-  if (
-    control.mode !== "staging-live" ||
-    !control.discoveryEnabled ||
-    !control.writesEnabled ||
-    !control.scanPlanningEnabled ||
-    control.maxEntriesPerRun < 1 ||
-    control.maxEntriesPerRun > authorization.maxDiscoveryRows ||
-    control.publicVisibilityEnabled
-  ) {
-    throw new Error("skills.sh live Test discovery requires the dark Convex staging control");
-  }
-  const page = await fetchSkillsShCatalogPage(
-    { page: 0, perPage: authorization.maxDiscoveryRows },
-    {
-      env: options.env,
-      fetchImpl: options.fetchImpl,
-      oidcToken: authorization.oidcToken,
-    },
-  );
-  if (page.data.length > control.maxEntriesPerRun) {
-    throw new Error("skills.sh live Test discovery exceeded the Convex run budget");
-  }
-  return {
-    page,
-    verifiedIdentity: authorization.verifiedIdentity,
-    controls: {
-      maxDiscoveryRows: control.maxEntriesPerRun,
-      maxRealScanAdmissions: authorization.maxRealScanAdmissions,
-      publicVisibilityEnabled: false,
     },
   };
 }
