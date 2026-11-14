@@ -1,5 +1,6 @@
 import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import type { Command } from "commander";
 import { resolveClawdbotDefaultWorkspace } from "./clawdbotConfig.js";
 import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./registry.js";
 import type { GlobalOpts } from "./types.js";
@@ -57,4 +58,14 @@ async function pathExists(path: string) {
   } catch {
     return false;
   }
+}
+
+type CommandActionArgs = Parameters<Parameters<Command["action"]>[0]>;
+
+export function createGlobalOptsAction(resolveOptions: () => Promise<GlobalOpts>) {
+  return (action: (opts: GlobalOpts, ...args: CommandActionArgs) => Promise<unknown>) =>
+    async (...args: CommandActionArgs) => {
+      const opts = await resolveOptions();
+      await action(opts, ...args);
+    };
 }

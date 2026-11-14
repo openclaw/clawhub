@@ -13,7 +13,10 @@ import {
   cmdListSkillReports,
   cmdTriageSkillReport,
 } from "../../clawhub/src/cli/commands/skills.js";
-import { resolveGlobalOpts as resolveGlobalOptsFromOptions } from "../../clawhub/src/cli/globalOpts.js";
+import {
+  createGlobalOptsAction,
+  resolveGlobalOpts as resolveGlobalOptsFromOptions,
+} from "../../clawhub/src/cli/globalOpts.js";
 import {
   configureCommanderHelp,
   styleEnvBlock,
@@ -116,6 +119,8 @@ async function resolveGlobalOpts(): Promise<GlobalOpts> {
   return resolveGlobalOptsFromOptions(raw);
 }
 
+const withGlobalOpts = createGlobalOptsAction(resolveGlobalOpts);
+
 function isInputAllowed() {
   const globalFlags = program.opts<{ input?: boolean }>();
   return globalFlags.input !== false;
@@ -127,26 +132,17 @@ program
   .option("--token <token>", "API token")
   .option("--label <label>", "Token label (device flow only)", "Admin CLI token")
   .option("--no-browser", "Device flow prints a verification URL without opening a browser")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdLoginFlow(opts, options, isInputAllowed());
-  });
+  .action(withGlobalOpts((opts, options) => cmdLoginFlow(opts, options, isInputAllowed())));
 
 program
   .command("logout")
   .description("Remove stored token")
-  .action(async () => {
-    const opts = await resolveGlobalOpts();
-    await cmdLogout(opts);
-  });
+  .action(withGlobalOpts((opts) => cmdLogout(opts)));
 
 program
   .command("whoami")
   .description("Validate token")
-  .action(async () => {
-    const opts = await resolveGlobalOpts();
-    await cmdWhoami(opts);
-  });
+  .action(withGlobalOpts((opts) => cmdWhoami(opts)));
 
 program
   .command("downloads")
@@ -170,26 +166,17 @@ auth
   .option("--token <token>", "API token")
   .option("--label <label>", "Token label (device flow only)", "Admin CLI token")
   .option("--no-browser", "Device flow prints a verification URL without opening a browser")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdLoginFlow(opts, options, isInputAllowed());
-  });
+  .action(withGlobalOpts((opts, options) => cmdLoginFlow(opts, options, isInputAllowed())));
 
 auth
   .command("logout")
   .description("Remove stored token")
-  .action(async () => {
-    const opts = await resolveGlobalOpts();
-    await cmdLogout(opts);
-  });
+  .action(withGlobalOpts((opts) => cmdLogout(opts)));
 
 auth
   .command("whoami")
   .description("Validate token")
-  .action(async () => {
-    const opts = await resolveGlobalOpts();
-    await cmdWhoami(opts);
-  });
+  .action(withGlobalOpts((opts) => cmdWhoami(opts)));
 
 const users = program
   .command("users")
@@ -205,10 +192,11 @@ users
   .option("--fuzzy", "Resolve handle via fuzzy user search")
   .option("--reason <reason>", "Ban reason")
   .option("--yes", "Skip confirmation")
-  .action(async (handleOrId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdBanUser(opts, handleOrId, options, isInputAllowed());
-  });
+  .action(
+    withGlobalOpts((opts, handleOrId, options) =>
+      cmdBanUser(opts, handleOrId, options, isInputAllowed()),
+    ),
+  );
 
 users
   .command("unban")
@@ -218,10 +206,11 @@ users
   .option("--fuzzy", "Resolve handle via fuzzy user search")
   .option("--reason <reason>", "Unban reason")
   .option("--yes", "Skip confirmation")
-  .action(async (handleOrId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdUnbanUser(opts, handleOrId, options, isInputAllowed());
-  });
+  .action(
+    withGlobalOpts((opts, handleOrId, options) =>
+      cmdUnbanUser(opts, handleOrId, options, isInputAllowed()),
+    ),
+  );
 
 users
   .command("lift-moderation-hold")
@@ -232,10 +221,11 @@ users
   .requiredOption("--reason <reason>", "Audit reason")
   .option("--yes", "Skip confirmation")
   .option("--json", "Output JSON")
-  .action(async (handleOrId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdLiftModerationHold(opts, handleOrId, options, isInputAllowed());
-  });
+  .action(
+    withGlobalOpts((opts, handleOrId, options) =>
+      cmdLiftModerationHold(opts, handleOrId, options, isInputAllowed()),
+    ),
+  );
 
 users
   .command("set-role")
@@ -245,10 +235,11 @@ users
   .option("--id", "Treat argument as user id")
   .option("--fuzzy", "Resolve handle via fuzzy user search")
   .option("--yes", "Skip confirmation")
-  .action(async (handleOrId, role, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdSetRole(opts, handleOrId, role, options, isInputAllowed());
-  });
+  .action(
+    withGlobalOpts((opts, handleOrId, role, options) =>
+      cmdSetRole(opts, handleOrId, role, options, isInputAllowed()),
+    ),
+  );
 
 users
   .command("reclassify-ban")
@@ -261,10 +252,11 @@ users
   .requiredOption("--reason <reason>", "New ban reason")
   .option("--yes", "Skip confirmation for --apply")
   .option("--json", "Output JSON")
-  .action(async (handleOrId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdReclassifyBan(opts, handleOrId, options, isInputAllowed());
-  });
+  .action(
+    withGlobalOpts((opts, handleOrId, options) =>
+      cmdReclassifyBan(opts, handleOrId, options, isInputAllowed()),
+    ),
+  );
 
 users
   .command("recover-publisher")
@@ -279,10 +271,11 @@ users
   .option("--apply", "Write changes; defaults to dry-run")
   .option("--yes", "Skip confirmation for --apply")
   .option("--json", "Output JSON")
-  .action(async (handle, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdRecoverPersonalPublisher(opts, handle, options, isInputAllowed());
-  });
+  .action(
+    withGlobalOpts((opts, handle, options) =>
+      cmdRecoverPersonalPublisher(opts, handle, options, isInputAllowed()),
+    ),
+  );
 
 const managedMcp = program
   .command("managed-mcp")
@@ -418,20 +411,14 @@ function registerPromotionCommands(command: Command) {
     .description("List promotions (active by default)")
     .option("--all", "Include drafts and ended promotions (admin token required)")
     .option("--json", "Output JSON")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdListPromotions(opts, options);
-    });
+    .action(withGlobalOpts((opts, options) => cmdListPromotions(opts, options)));
 
   command
     .command("create")
     .description("Create a promotion (starts as draft) from a JSON file")
     .argument("<file>", "JSON file with the promotion payload")
     .option("--json", "Output JSON")
-    .action(async (file, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdCreatePromotion(opts, file, options);
-    });
+    .action(withGlobalOpts((opts, file, options) => cmdCreatePromotion(opts, file, options)));
 
   command
     .command("update")
@@ -439,10 +426,9 @@ function registerPromotionCommands(command: Command) {
     .argument("<slug>", "Promotion slug")
     .argument("<file>", "JSON file with the promotion payload")
     .option("--json", "Output JSON")
-    .action(async (slug, file, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdUpdatePromotion(opts, slug, file, options);
-    });
+    .action(
+      withGlobalOpts((opts, slug, file, options) => cmdUpdatePromotion(opts, slug, file, options)),
+    );
 
   command
     .command("set-status")
@@ -450,10 +436,11 @@ function registerPromotionCommands(command: Command) {
     .argument("<slug>", "Promotion slug")
     .argument("<status>", "draft, active, or ended")
     .option("--json", "Output JSON")
-    .action(async (slug, status, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdSetPromotionStatus(opts, slug, status, options);
-    });
+    .action(
+      withGlobalOpts((opts, slug, status, options) =>
+        cmdSetPromotionStatus(opts, slug, status, options),
+      ),
+    );
 }
 
 function collectOption(value: string, previous: string[]) {
@@ -466,10 +453,9 @@ function registerContentRightsCommands(command: Command) {
     .description("Get an existing ClawHub content rights case from Hermit")
     .argument("<caseId>", "Existing CHR-... case id")
     .option("--json", "Output JSON")
-    .action(async (caseId, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdGetContentRightsCase(opts, caseId, options);
-    });
+    .action(
+      withGlobalOpts((opts, caseId, options) => cmdGetContentRightsCase(opts, caseId, options)),
+    );
 
   command
     .command("record-correspondence")
@@ -483,10 +469,11 @@ function registerContentRightsCommands(command: Command) {
     .option("--provider-message-id <id>", "Email provider message id")
     .option("--attachment <path>", "Evidence attachment to preserve", collectOption, [])
     .option("--json", "Output JSON")
-    .action(async (caseId, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRecordContentRightsCorrespondence(opts, caseId, options);
-    });
+    .action(
+      withGlobalOpts((opts, caseId, options) =>
+        cmdRecordContentRightsCorrespondence(opts, caseId, options),
+      ),
+    );
 }
 
 function registerEmailCommands(command: Command) {
@@ -512,10 +499,7 @@ function registerEmailCommands(command: Command) {
       "Confirm the user approved the final recipient, subject, and body",
     )
     .option("--json", "Output JSON")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdSendStaffEmail(opts, options);
-    });
+    .action(withGlobalOpts((opts, options) => cmdSendStaffEmail(opts, options)));
 }
 
 function registerOfficialPublisherCommands(command: Command) {
@@ -529,10 +513,7 @@ function registerOfficialPublisherCommands(command: Command) {
     .command("list")
     .description("List official publishers")
     .option("--json", "Output JSON")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdListOfficialOrgs(opts, options);
-    });
+    .action(withGlobalOpts((opts, options) => cmdListOfficialOrgs(opts, options)));
 
   official
     .command("add")
@@ -541,10 +522,11 @@ function registerOfficialPublisherCommands(command: Command) {
     .requiredOption("--reason <reason>", "Audit reason")
     .option("--yes", "Skip confirmation")
     .option("--json", "Output JSON")
-    .action(async (handle, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdAddOfficialOrg(opts, handle, options, isInputAllowed());
-    });
+    .action(
+      withGlobalOpts((opts, handle, options) =>
+        cmdAddOfficialOrg(opts, handle, options, isInputAllowed()),
+      ),
+    );
 
   official
     .command("remove")
@@ -553,10 +535,11 @@ function registerOfficialPublisherCommands(command: Command) {
     .requiredOption("--reason <reason>", "Audit reason")
     .option("--yes", "Skip confirmation")
     .option("--json", "Output JSON")
-    .action(async (handle, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRemoveOfficialOrg(opts, handle, options, isInputAllowed());
-    });
+    .action(
+      withGlobalOpts((opts, handle, options) =>
+        cmdRemoveOfficialOrg(opts, handle, options, isInputAllowed()),
+      ),
+    );
 }
 
 function registerOrgCommands(command: Command) {
@@ -572,10 +555,11 @@ function registerOrgCommands(command: Command) {
     .requiredOption("--reason <reason>", "Audit reason")
     .option("--yes", "Skip confirmation")
     .option("--json", "Output JSON")
-    .action(async (handle, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdUpdateOrgProfile(opts, handle, options, isInputAllowed());
-    });
+    .action(
+      withGlobalOpts((opts, handle, options) =>
+        cmdUpdateOrgProfile(opts, handle, options, isInputAllowed()),
+      ),
+    );
 
   command
     .command("create")
@@ -586,10 +570,7 @@ function registerOrgCommands(command: Command) {
     .option("--role <role>", "owner|admin|publisher for --member", "owner")
     .option("--trusted", "Mark org as trusted")
     .option("--json", "Output JSON")
-    .action(async (handle, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdCreateOrg(opts, handle, options);
-    });
+    .action(withGlobalOpts((opts, handle, options) => cmdCreateOrg(opts, handle, options)));
 
   command
     .command("remove-member")
@@ -597,10 +578,11 @@ function registerOrgCommands(command: Command) {
     .argument("<handle>", "Org publisher handle")
     .argument("<member>", "User handle to remove")
     .option("--json", "Output JSON")
-    .action(async (handle, member, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRemoveOrgMember(opts, handle, member, options);
-    });
+    .action(
+      withGlobalOpts((opts, handle, member, options) =>
+        cmdRemoveOrgMember(opts, handle, member, options),
+      ),
+    );
 
   command
     .command("delete")
@@ -609,10 +591,7 @@ function registerOrgCommands(command: Command) {
     .requiredOption("--reason <reason>", "Audit reason")
     .option("--apply", "Write changes; defaults to dry-run")
     .option("--json", "Output JSON")
-    .action(async (handle, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdDeleteOrg(opts, handle, options);
-    });
+    .action(withGlobalOpts((opts, handle, options) => cmdDeleteOrg(opts, handle, options)));
 
   command
     .command("reclaim")
@@ -622,10 +601,9 @@ function registerOrgCommands(command: Command) {
     .option("--apply", "Write changes; defaults to dry-run")
     .option("--confirm <token>", "Confirmation token from dry-run output")
     .option("--json", "Output JSON")
-    .action(async (handle, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdReclaimDeletedOrgHandle(opts, handle, options);
-    });
+    .action(
+      withGlobalOpts((opts, handle, options) => cmdReclaimDeletedOrgHandle(opts, handle, options)),
+    );
 
   command
     .command("repair-scoped-packages")
@@ -639,10 +617,7 @@ function registerOrgCommands(command: Command) {
     .option("--reason <reason>", "Override audit reason for all rows")
     .option("--result-file <path>", "Write JSON result report")
     .option("--json", "Output JSON")
-    .action(async (csv, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRepairScopedPackages(opts, csv, options);
-    });
+    .action(withGlobalOpts((opts, csv, options) => cmdRepairScopedPackages(opts, csv, options)));
 }
 
 function registerPluginGovernanceCommands(command: Command) {
@@ -656,10 +631,11 @@ function registerPluginGovernanceCommands(command: Command) {
     .option("--confirm <token>", "Confirmation token returned by the dry-run")
     .option("--yes", "Skip confirmation for --apply")
     .option("--json", "Output JSON")
-    .action(async (name, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdHardDeletePackage(opts, name, options, isInputAllowed());
-    });
+    .action(
+      withGlobalOpts((opts, name, options) =>
+        cmdHardDeletePackage(opts, name, options, isInputAllowed()),
+      ),
+    );
 
   command
     .command("transfer")
@@ -669,10 +645,7 @@ function registerPluginGovernanceCommands(command: Command) {
     .requiredOption("--reason <reason>", "Audit reason")
     .option("--apply", "Write changes; defaults to dry-run")
     .option("--json", "Output JSON")
-    .action(async (name, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdTransferPackageOwner(opts, name, options);
-    });
+    .action(withGlobalOpts((opts, name, options) => cmdTransferPackageOwner(opts, name, options)));
 
   command
     .command("repair-name")
@@ -684,10 +657,7 @@ function registerPluginGovernanceCommands(command: Command) {
     .requiredOption("--reason <reason>", "Audit reason")
     .option("--apply", "Write changes; defaults to dry-run")
     .option("--json", "Output JSON")
-    .action(async (name, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRepairPackageName(opts, name, options);
-    });
+    .action(withGlobalOpts((opts, name, options) => cmdRepairPackageName(opts, name, options)));
 
   command
     .command("repair-runtime-id")
@@ -697,10 +667,9 @@ function registerPluginGovernanceCommands(command: Command) {
     .requiredOption("--reason <reason>", "Audit reason")
     .option("--apply", "Write changes; defaults to dry-run")
     .option("--json", "Output JSON")
-    .action(async (name, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRepairPackageRuntimeId(opts, name, options);
-    });
+    .action(
+      withGlobalOpts((opts, name, options) => cmdRepairPackageRuntimeId(opts, name, options)),
+    );
 
   command
     .command("migrations")
@@ -715,10 +684,7 @@ function registerPluginGovernanceCommands(command: Command) {
       Number.parseInt(value, 10),
     )
     .option("--json", "Output JSON")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdListPackageMigrations(opts, options);
-    });
+    .action(withGlobalOpts((opts, options) => cmdListPackageMigrations(opts, options)));
 
   command
     .command("set-migration")
@@ -740,10 +706,11 @@ function registerPluginGovernanceCommands(command: Command) {
     .option("--runtime-bundles-ready", "Mark runtime bundles ready")
     .option("--notes <text>", "Operator notes")
     .option("--json", "Output JSON")
-    .action(async (bundledPluginId, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdUpsertPackageMigration(opts, bundledPluginId, options);
-    });
+    .action(
+      withGlobalOpts((opts, bundledPluginId, options) =>
+        cmdUpsertPackageMigration(opts, bundledPluginId, options),
+      ),
+    );
 
   const trustedPublisher = command
     .command("trusted-publisher")
@@ -756,10 +723,9 @@ function registerPluginGovernanceCommands(command: Command) {
     .description("Show trusted publisher config for a plugin package")
     .argument("<name>", "Plugin package name")
     .option("--json", "Output JSON")
-    .action(async (name, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdGetPackageTrustedPublisher(opts, name, options);
-    });
+    .action(
+      withGlobalOpts((opts, name, options) => cmdGetPackageTrustedPublisher(opts, name, options)),
+    );
 
   trustedPublisher
     .command("set")
@@ -769,20 +735,20 @@ function registerPluginGovernanceCommands(command: Command) {
     .requiredOption("--workflow-filename <file>", "Workflow filename, for example publish.yml")
     .option("--environment <name>", "Optional GitHub environment name to pin")
     .option("--json", "Output JSON")
-    .action(async (name, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdSetPackageTrustedPublisher(opts, name, options);
-    });
+    .action(
+      withGlobalOpts((opts, name, options) => cmdSetPackageTrustedPublisher(opts, name, options)),
+    );
 
   trustedPublisher
     .command("delete")
     .description("Remove trusted publisher config from a plugin package")
     .argument("<name>", "Plugin package name")
     .option("--json", "Output JSON")
-    .action(async (name, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdDeletePackageTrustedPublisher(opts, name, options);
-    });
+    .action(
+      withGlobalOpts((opts, name, options) =>
+        cmdDeletePackageTrustedPublisher(opts, name, options),
+      ),
+    );
 }
 
 function registerPluginModerationCommands(command: Command) {
@@ -797,10 +763,7 @@ function registerPluginModerationCommands(command: Command) {
       Number.parseInt(value, 10),
     )
     .option("--json", "Output JSON")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdListPackageReports(opts, options);
-    });
+    .action(withGlobalOpts((opts, options) => cmdListPackageReports(opts, options)));
 
   command
     .command("triage-report")
@@ -811,10 +774,9 @@ function registerPluginModerationCommands(command: Command) {
     .option("--action <action>", "Final action: none|quarantine|revoke")
     .option("--yes", "Skip confirmation for artifact availability changes")
     .option("--json", "Output JSON")
-    .action(async (reportId, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdTriagePackageReport(opts, reportId, options);
-    });
+    .action(
+      withGlobalOpts((opts, reportId, options) => cmdTriagePackageReport(opts, reportId, options)),
+    );
 }
 
 function registerPluginOperations(command: Command) {
@@ -835,19 +797,15 @@ function registerPluginOperations(command: Command) {
     .option("--yes", "Skip confirmation")
     .option("--json", "Output JSON progress events")
     .option("--fail-fast", "Stop after the first drained batch with failed jobs")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRescanAllPackages(opts, options, isInputAllowed());
-    });
+    .action(
+      withGlobalOpts((opts, options) => cmdRescanAllPackages(opts, options, isInputAllowed())),
+    );
 
   command
     .command("validation-report")
     .description("Export current plugin validation results as JSON")
     .requiredOption("--json", "Output one JSON report document")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdExportPackageValidationReport(opts, options);
-    });
+    .action(withGlobalOpts((opts, options) => cmdExportPackageValidationReport(opts, options)));
 
   command
     .command("moderate")
@@ -857,10 +815,9 @@ function registerPluginOperations(command: Command) {
     .requiredOption("--state <state>", "approved|quarantined|revoked")
     .requiredOption("--reason <text>", "Moderation note/reason")
     .option("--json", "Output JSON")
-    .action(async (name, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdModeratePackageRelease(opts, name, options);
-    });
+    .action(
+      withGlobalOpts((opts, name, options) => cmdModeratePackageRelease(opts, name, options)),
+    );
 
   command
     .command("status")
@@ -868,10 +825,9 @@ function registerPluginOperations(command: Command) {
     .description("Show plugin moderation status")
     .argument("<name>", "Plugin package name")
     .option("--json", "Output JSON")
-    .action(async (name, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdPackageModerationStatus(opts, name, options);
-    });
+    .action(
+      withGlobalOpts((opts, name, options) => cmdPackageModerationStatus(opts, name, options)),
+    );
 
   command
     .command("queue")
@@ -883,10 +839,7 @@ function registerPluginOperations(command: Command) {
       Number.parseInt(value, 10),
     )
     .option("--json", "Output JSON")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdPackageModerationQueue(opts, options);
-    });
+    .action(withGlobalOpts((opts, options) => cmdPackageModerationQueue(opts, options)));
 }
 
 function registerSkillModerationCommands(command: Command) {
@@ -901,10 +854,11 @@ function registerSkillModerationCommands(command: Command) {
     .option("--confirm <token>", "Confirmation token returned by the dry-run")
     .option("--yes", "Skip confirmation for --apply")
     .option("--json", "Output JSON")
-    .action(async (skill, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdHardDeleteSkill(opts, skill, options, isInputAllowed());
-    });
+    .action(
+      withGlobalOpts((opts, skill, options) =>
+        cmdHardDeleteSkill(opts, skill, options, isInputAllowed()),
+      ),
+    );
 
   command
     .command("revoke-version")
@@ -915,10 +869,11 @@ function registerSkillModerationCommands(command: Command) {
     .option("--owner <handle>", "Owner handle when the slug is shared")
     .option("--yes", "Skip confirmation")
     .option("--json", "Output JSON")
-    .action(async (slug, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRevokeSkillVersion(opts, slug, options, isInputAllowed());
-    });
+    .action(
+      withGlobalOpts((opts, slug, options) =>
+        cmdRevokeSkillVersion(opts, slug, options, isInputAllowed()),
+      ),
+    );
 
   command
     .command("unhide")
@@ -949,10 +904,11 @@ function registerSkillModerationCommands(command: Command) {
     .option("--version <version>", "Specific skill version; defaults to latest")
     .option("--yes", "Skip confirmation")
     .option("--json", "Output JSON")
-    .action(async (slug, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRescanSkill(opts, slug, options, isInputAllowed());
-    });
+    .action(
+      withGlobalOpts((opts, slug, options) =>
+        cmdRescanSkill(opts, slug, options, isInputAllowed()),
+      ),
+    );
 
   command
     .command("rescan-all")
@@ -971,10 +927,7 @@ function registerSkillModerationCommands(command: Command) {
     .option("--yes", "Skip confirmation")
     .option("--json", "Output JSON progress events")
     .option("--fail-fast", "Stop after the first drained batch with failed jobs")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdRescanAllSkills(opts, options, isInputAllowed());
-    });
+    .action(withGlobalOpts((opts, options) => cmdRescanAllSkills(opts, options, isInputAllowed())));
 
   command
     .command("reports")
@@ -985,10 +938,7 @@ function registerSkillModerationCommands(command: Command) {
       Number.parseInt(value, 10),
     )
     .option("--json", "Output JSON")
-    .action(async (options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdListSkillReports(opts, options);
-    });
+    .action(withGlobalOpts((opts, options) => cmdListSkillReports(opts, options)));
 
   command
     .command("triage-report")
@@ -999,10 +949,9 @@ function registerSkillModerationCommands(command: Command) {
     .option("--action <action>", "Final action: none|hide")
     .option("--yes", "Skip confirmation for artifact availability changes")
     .option("--json", "Output JSON")
-    .action(async (reportId, options) => {
-      const opts = await resolveGlobalOpts();
-      await cmdTriageSkillReport(opts, reportId, options);
-    });
+    .action(
+      withGlobalOpts((opts, reportId, options) => cmdTriageSkillReport(opts, reportId, options)),
+    );
 }
 
 function registerFeaturedCommands(command: Command, kind: "plugin" | "skill") {
@@ -1021,14 +970,15 @@ function registerFeaturedCommands(command: Command, kind: "plugin" | "skill") {
       .description(`${featured ? "Add" : "Remove"} a ${label} from the Featured catalog`)
       .argument(`<${kind}>`, argument)
       .option("--json", "Output JSON")
-      .action(async (value, options) => {
-        const opts = await resolveGlobalOpts();
-        if (kind === "plugin") {
-          await cmdSetPackageFeatured(opts, value, featured, options);
-        } else {
-          await cmdSetSkillFeatured(opts, value, featured, options);
-        }
-      });
+      .action(
+        withGlobalOpts(async (opts, value, options) => {
+          if (kind === "plugin") {
+            await cmdSetPackageFeatured(opts, value, featured, options);
+          } else {
+            await cmdSetSkillFeatured(opts, value, featured, options);
+          }
+        }),
+      );
   }
 }
 
