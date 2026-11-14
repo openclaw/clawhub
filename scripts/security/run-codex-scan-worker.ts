@@ -22,6 +22,7 @@ import {
   runWorkerCommand,
   type WorkerCommandTermination,
 } from "../lib/runWorkerCommand";
+import { numberFrom, optionalNumberFrom, requireEnv } from "../lib/scriptConfig";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskGitHubActionsSecret,
@@ -379,14 +380,6 @@ function parseArgs() {
     const index = args.indexOf(name);
     return index === -1 ? undefined : args[index + 1];
   };
-  const numberFrom = (value: string | undefined, fallback: number) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-  };
-  const optionalNumberFrom = (value: string | undefined) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-  };
   const laneValue = get("--lane") ?? process.env.CODEX_SECURITY_SCAN_LANE;
   const lane: "priority" | "shared" | "catalog" =
     laneValue === "priority" || laneValue === "catalog" ? laneValue : "shared";
@@ -416,12 +409,6 @@ function parseArgs() {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
 }
 
 function safeDiagnosticPathSegment(value: string) {

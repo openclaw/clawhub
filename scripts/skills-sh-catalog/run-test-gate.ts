@@ -1,10 +1,6 @@
 #!/usr/bin/env bun
 
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-}
+import { requireEnv } from "../lib/scriptConfig";
 
 const targetUrl = requireEnv("CLAWHUB_TEST_CATALOG_GATE_URL");
 const operatorAuthorization = requireEnv("CLAWHUB_TEST_OPERATOR_TOKEN");
