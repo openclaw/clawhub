@@ -55,6 +55,7 @@ const {
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
+  cmdPackageAudit,
   cmdPackageModerationStatus,
   cmdPackageMigrationStatus,
   cmdPackagePublication,
@@ -1295,6 +1296,244 @@ describe("package commands", () => {
     await expect(cmdPackagePublication(makeOpts(), "demo-plugin", {})).rejects.toThrow(
       "Pass --version",
     );
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("prints stored audit findings for one exact version and omits source snippets", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      package: { name: "demo-plugin", displayName: "Demo", family: "template" },
+      version: {
+        version: "1.2.3",
+        createdAt: 1,
+        changelog: "",
+        files: [{ path: "CLAW.md", size: 10, sha256: "abc123digest" }],
+        aigAnalysis: {
+          status: "suspicious",
+          issueCount: 2,
+          checkedAt: 1,
+          findings: [
+            {
+              ruleId: "exec-call",
+              level: "high",
+              message: "Calls exec.",
+              file: "plugins/player/index.js",
+              startLine: 10,
+            },
+          ],
+        },
+        skillSpectorAnalysis: {
+          status: "suspicious",
+          issueCount: 1,
+          checkedAt: 1,
+          issues: [
+            {
+              issueId: "SS-1",
+              severity: "medium",
+              explanation: "Reads a path.",
+              file: "skills/library/SKILL.md",
+              startLine: 4,
+              codeSnippet: "SECRET_SNIPPET_DO_NOT_PRINT",
+            },
+          ],
+        },
+        llmAnalysis: null,
+      },
+    });
+
+    await cmdPackageAudit(makeOpts(), "demo-plugin", { version: "1.2.3" });
+
+    const text = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(text).toContain("demo-plugin@1.2.3");
+    expect(text).toContain("A missing report is not a clean scan.");
+    expect(text).toContain("high exec-call plugins/player/index.js:10");
+    expect(text).toContain("medium SS-1 skills/library/SKILL.md:4");
+    expect(text).toContain("LLM judge");
+    expect(text).toContain("not stored");
+    expect(text).not.toContain("SECRET_SNIPPET_DO_NOT_PRINT");
+    expect(text).not.toContain("abc123digest");
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/demo-plugin/versions/1.2.3",
+        token: undefined,
+      },
+      expect.anything(),
+    );
+  });
+
+  it("prints a closed audit JSON document", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      package: { name: "demo-plugin", displayName: "Demo", family: "code-plugin" },
+      version: {
+        version: "1.2.3",
+        createdAt: 1,
+        changelog: "notes",
+        files: [],
+        sha256hash: "deadbeef",
+        aigAnalysis: null,
+        skillSpectorAnalysis: null,
+        llmAnalysis: {
+          status: "completed",
+          verdict: "benign",
+          summary: "No concern.",
+          checkedAt: 1,
+        },
+      },
+    });
+
+    await cmdPackageAudit(makeOpts(), "demo-plugin", { version: "1.2.3", json: true });
+
+    const body = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+    expect(body).toEqual({
+      name: "demo-plugin",
+      version: "1.2.3",
+      family: "code-plugin",
+      reports: [
+        { scanner: "aig", stored: false },
+        { scanner: "skillspector", stored: false },
+        {
+          scanner: "llm",
+          stored: true,
+          status: "completed",
+          verdict: "benign",
+          summary: "No concern.",
+        },
+      ],
+    });
+    expect(mockLog).not.toHaveBeenCalled();
+  });
+
+  it("keeps stored explanations and omits LLM evidence snippets", async () => {
+    const detail = {
+      package: { name: "demo-plugin", displayName: "Demo", family: "template" },
+      version: {
+        version: "1.2.3",
+        createdAt: 1,
+        changelog: "",
+        files: [],
+        aigAnalysis: {
+          status: "suspicious",
+          issueCount: 1,
+          checkedAt: 1,
+          findings: [
+            {
+              ruleId: "session-exfil",
+              level: "high",
+              title: "Session data exfiltration",
+              message: "Sends the session to another host.",
+              description: "The player posts session data after startup.",
+              remediation: "Remove the upload.",
+              file: "plugins/player/index.js",
+              startLine: 10,
+            },
+          ],
+        },
+        skillSpectorAnalysis: null,
+        llmAnalysis: {
+          status: "completed",
+          verdict: "suspicious",
+          findings: "Stored judge explanation.",
+          guidance: "Do not install this version.",
+          dimensions: [
+            {
+              name: "data",
+              label: "Data handling",
+              rating: "concern",
+              detail: "Session data leaves the host.",
+            },
+          ],
+          agenticRiskFindings: [
+            {
+              categoryId: "exfil",
+              categoryLabel: "Exfiltration",
+              severity: "high",
+              userImpact: "A player can send the session away.",
+              recommendation: "Delete the player upload.",
+              evidence: {
+                path: "plugins/player/index.js",
+                snippet: "SECRET_LLM_SNIPPET",
+                explanation: "The upload includes the session.",
+              },
+            },
+          ],
+          checkedAt: 1,
+        },
+      },
+    };
+    httpMocks.apiRequest.mockResolvedValueOnce(detail).mockResolvedValueOnce(detail);
+
+    await cmdPackageAudit(makeOpts(), "demo-plugin", { version: "1.2.3" });
+    const text = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(text).toContain("title: Session data exfiltration");
+    expect(text).toContain("Sends the session to another host.");
+    expect(text).toContain("description: The player posts session data after startup.");
+    expect(text).toContain("guidance: Do not install this version.");
+    expect(text).toContain("Stored judge explanation.");
+    expect(text).toContain("The upload includes the session.");
+    expect(text).not.toContain("SECRET_LLM_SNIPPET");
+    mockLog.mockClear();
+
+    await cmdPackageAudit(makeOpts(), "demo-plugin", { version: "1.2.3", json: true });
+
+    const raw = String(mockWrite.mock.calls[0]?.[0] ?? "");
+    expect(raw).not.toContain("SECRET_LLM_SNIPPET");
+    expect(JSON.parse(raw)).toEqual({
+      name: "demo-plugin",
+      version: "1.2.3",
+      family: "template",
+      reports: [
+        {
+          scanner: "aig",
+          stored: true,
+          status: "suspicious",
+          issueCount: 1,
+          shownCount: 1,
+          findings: [
+            {
+              id: "session-exfil",
+              severity: "high",
+              title: "Session data exfiltration",
+              message: "Sends the session to another host.",
+              description: "The player posts session data after startup.",
+              remediation: "Remove the upload.",
+              file: "plugins/player/index.js",
+              startLine: 10,
+            },
+          ],
+        },
+        { scanner: "skillspector", stored: false },
+        {
+          scanner: "llm",
+          stored: true,
+          status: "completed",
+          verdict: "suspicious",
+          guidance: "Do not install this version.",
+          findings: [
+            { id: "findings", severity: "report", message: "Stored judge explanation." },
+            {
+              id: "data",
+              severity: "concern",
+              title: "Data handling",
+              message: "Session data leaves the host.",
+            },
+            {
+              id: "exfil",
+              severity: "high",
+              title: "Exfiltration",
+              message: "A player can send the session away.",
+              description: "The upload includes the session.",
+              remediation: "Delete the player upload.",
+              file: "plugins/player/index.js",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("requires an exact version for package audit", async () => {
+    await expect(cmdPackageAudit(makeOpts(), "demo-plugin", {})).rejects.toThrow(/Pass --version/);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 
