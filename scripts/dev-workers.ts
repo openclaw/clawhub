@@ -6,6 +6,7 @@ import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isCodexWorkerExecutionAllowed, localCodexWorkerOptInReason } from "./codex-worker-guard";
 import { parseEnv } from "./dev-worktree";
+import { numberFrom } from "./lib/scriptConfig";
 
 type DevWorkerId = "security-scan" | "skill-card";
 
@@ -60,11 +61,6 @@ const DEFAULT_MAX_RUNTIME_MINUTES = 20;
 const DEFAULT_LEASE_MINUTES = 30;
 const DEFAULT_NVIDIA_TOOL_DIR = ".artifacts/nvidia-trustworthy-ai";
 const NVIDIA_AUTOMATION_DIR = "AI Transparency Card Automation";
-
-function numberFrom(value: string | undefined, fallback: number) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
 
 function getArg(args: string[], name: string) {
   const index = args.indexOf(name);

@@ -2,6 +2,7 @@
 
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { requireEnv } from "../lib/scriptConfig";
 import { redactWorkerPublicText } from "../lib/workerRedaction";
 import {
   findRecoverableMirrorRun,
@@ -49,12 +50,6 @@ function isTransportTimeout(error: unknown) {
   return (
     typeof error === "object" && error !== null && "name" in error && error.name === "TimeoutError"
   );
-}
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
 }
 
 function requiredString(value: unknown, name: string) {

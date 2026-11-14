@@ -17,6 +17,7 @@ import {
   securityWorkerDeadline,
 } from "../../convex/lib/securityWorkerBudgets";
 import { runWorkerCommand, CommandFailure } from "../lib/runWorkerCommand";
+import { numberFrom, optionalNumberFrom, requireEnv } from "../lib/scriptConfig";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskKnownWorkerSecrets,
@@ -167,14 +168,6 @@ export function parseArgs(args = process.argv.slice(2), env: NodeJS.ProcessEnv =
     const value = index === -1 ? undefined : args[index + 1];
     return value && !value.startsWith("--") ? value : undefined;
   };
-  const numberFrom = (value: string | undefined, fallback: number) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-  };
-  const optionalNumberFrom = (value: string | undefined) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-  };
   const optionalStringFrom = (value: string | undefined) => value?.trim() || undefined;
   const kind = optionalStringFrom(get("--kind") ?? env.PREPUBLICATION_CHECK_KIND);
   if (kind && kind !== "skill" && kind !== "package") {
@@ -200,12 +193,6 @@ export function parseArgs(args = process.argv.slice(2), env: NodeJS.ProcessEnv =
       version: optionalStringFrom(get("--version") ?? env.PREPUBLICATION_CHECK_VERSION),
     } satisfies PrePublicationClaimFilters,
   };
-}
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
 }
 
 function publicText(value: string, maxChars = MAX_PUBLIC_SUMMARY_CHARS) {
