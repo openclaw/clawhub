@@ -436,7 +436,21 @@ const packageManifestFile = {
   contentType: "application/json",
 };
 
-function makeTrustedPackagePublishToken() {
+function makeTrustedPackagePublisher() {
+  return {
+    _id: "packageTrustedPublishers:1",
+    packageId: "packages:demo",
+    provider: "github-actions",
+    repository: "example/example",
+    repositoryId: "1",
+    repositoryOwner: "example",
+    repositoryOwnerId: "2",
+    workflowFilename: "plugin-clawhub-release.yml",
+    environment: "clawhub-release",
+  };
+}
+
+function makeTrustedPackagePublishToken(ref = "refs/heads/main") {
   return {
     _id: "packagePublishTokens:1",
     packageId: "packages:demo",
@@ -449,7 +463,7 @@ function makeTrustedPackagePublishToken() {
     environment: "clawhub-release",
     version: "1.0.0",
     sha: "abc123",
-    ref: "refs/heads/main",
+    ref,
     runId: "100",
     runAttempt: "1",
     expiresAt: Date.now() + 60_000,
@@ -12219,15 +12233,9 @@ describe("packages public queries", () => {
       return null;
     });
     const trustedPublisher = {
-      _id: "packageTrustedPublishers:1",
-      packageId: "packages:demo",
-      provider: "github-actions",
+      ...makeTrustedPackagePublisher(),
       repository: "openclaw/openclaw",
-      repositoryId: "1",
       repositoryOwner: "openclaw",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
     };
     const ctx = {
       runQuery: vi
@@ -12358,37 +12366,11 @@ describe("packages public queries", () => {
       }
       return null;
     });
-    const trustedPublisher = {
-      _id: "packageTrustedPublishers:1",
-      packageId: "packages:demo",
-      provider: "github-actions",
-      repository: "example/example",
-      repositoryId: "1",
-      repositoryOwner: "example",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
-    };
+    const trustedPublisher = makeTrustedPackagePublisher();
     const ctx = {
       runQuery: vi
         .fn()
-        .mockResolvedValueOnce({
-          _id: "packagePublishTokens:1",
-          packageId: "packages:demo",
-          provider: "github-actions",
-          repository: "example/example",
-          repositoryId: "1",
-          repositoryOwner: "example",
-          repositoryOwnerId: "2",
-          workflowFilename: "plugin-clawhub-release.yml",
-          environment: "clawhub-release",
-          version: "1.0.0",
-          sha: "abc123",
-          ref: "refs/tags/v1.0.0",
-          runId: "100",
-          runAttempt: "1",
-          expiresAt: Date.now() + 60_000,
-        })
+        .mockResolvedValueOnce(makeTrustedPackagePublishToken("refs/tags/v1.0.0"))
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
@@ -12477,17 +12459,7 @@ describe("packages public queries", () => {
   ])(
     "rejects $mode mismatches",
     async ({ candidateSha, sourceCommit, sourceRef, expectedError }) => {
-      const trustedPublisher = {
-        _id: "packageTrustedPublishers:1",
-        packageId: "packages:demo",
-        provider: "github-actions",
-        repository: "example/example",
-        repositoryId: "1",
-        repositoryOwner: "example",
-        repositoryOwnerId: "2",
-        workflowFilename: "plugin-clawhub-release.yml",
-        environment: "clawhub-release",
-      };
+      const trustedPublisher = makeTrustedPackagePublisher();
       const ctx = {
         runQuery: vi
           .fn()
@@ -12570,17 +12542,7 @@ describe("packages public queries", () => {
       }
       return null;
     });
-    const trustedPublisher = {
-      _id: "packageTrustedPublishers:1",
-      packageId: "packages:demo",
-      provider: "github-actions",
-      repository: "example/example",
-      repositoryId: "1",
-      repositoryOwner: "example",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
-    };
+    const trustedPublisher = makeTrustedPackagePublisher();
     const ctx = {
       runQuery: vi
         .fn()
@@ -12661,17 +12623,7 @@ describe("packages public queries", () => {
       }
       return null;
     });
-    const trustedPublisher = {
-      _id: "packageTrustedPublishers:1",
-      packageId: "packages:demo",
-      provider: "github-actions",
-      repository: "example/example",
-      repositoryId: "1",
-      repositoryOwner: "example",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
-    };
+    const trustedPublisher = makeTrustedPackagePublisher();
     const orphanParent = makePackageDoc({
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
@@ -12755,17 +12707,7 @@ describe("packages public queries", () => {
       }
       return null;
     });
-    const trustedPublisher = {
-      _id: "packageTrustedPublishers:1",
-      packageId: "packages:demo",
-      provider: "github-actions",
-      repository: "example/example",
-      repositoryId: "1",
-      repositoryOwner: "example",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
-    };
+    const trustedPublisher = makeTrustedPackagePublisher();
     const ctx = {
       runQuery: vi
         .fn()
@@ -12816,17 +12758,7 @@ describe("packages public queries", () => {
     const runMutation = vi.fn(async () => {
       throw new Error("duplicate publish should not create an attempt");
     });
-    const trustedPublisher = {
-      _id: "packageTrustedPublishers:1",
-      packageId: "packages:demo",
-      provider: "github-actions",
-      repository: "example/example",
-      repositoryId: "1",
-      repositoryOwner: "example",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
-    };
+    const trustedPublisher = makeTrustedPackagePublisher();
     const ctx = {
       runQuery: vi
         .fn()
@@ -12868,17 +12800,7 @@ describe("packages public queries", () => {
     const runMutation = vi.fn(async () => {
       throw new Error("duplicate publish should not create an attempt");
     });
-    const trustedPublisher = {
-      _id: "packageTrustedPublishers:1",
-      packageId: "packages:demo",
-      provider: "github-actions",
-      repository: "example/example",
-      repositoryId: "1",
-      repositoryOwner: "example",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
-    };
+    const trustedPublisher = makeTrustedPackagePublisher();
     const ctx = {
       runQuery: vi
         .fn()
@@ -12922,17 +12844,7 @@ describe("packages public queries", () => {
     const runMutation = vi.fn(async () => {
       throw new Error("duplicate publish should not create an attempt");
     });
-    const trustedPublisher = {
-      _id: "packageTrustedPublishers:1",
-      packageId: "packages:demo",
-      provider: "github-actions",
-      repository: "example/example",
-      repositoryId: "1",
-      repositoryOwner: "example",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
-    };
+    const trustedPublisher = makeTrustedPackagePublisher();
     const ctx = {
       runQuery: vi
         .fn()
@@ -13007,17 +12919,7 @@ describe("packages public queries", () => {
         }
         return null;
       });
-      const trustedPublisher = {
-        _id: "packageTrustedPublishers:1",
-        packageId: "packages:demo",
-        provider: "github-actions",
-        repository: "example/example",
-        repositoryId: "1",
-        repositoryOwner: "example",
-        repositoryOwnerId: "2",
-        workflowFilename: "plugin-clawhub-release.yml",
-        environment: "clawhub-release",
-      };
+      const trustedPublisher = makeTrustedPackagePublisher();
       const ctx = {
         runQuery: vi
           .fn()
@@ -13195,15 +13097,9 @@ describe("packages public queries", () => {
       return null;
     });
     const trustedPublisher = {
-      _id: "packageTrustedPublishers:1",
-      packageId: "packages:demo",
-      provider: "github-actions",
+      ...makeTrustedPackagePublisher(),
       repository: "openclaw/openclaw",
-      repositoryId: "1",
       repositoryOwner: "openclaw",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
     };
     const ctx = {
       runQuery: vi
@@ -13270,15 +13166,9 @@ describe("packages public queries", () => {
       return null;
     });
     const trustedPublisher = {
-      _id: "packageTrustedPublishers:1",
-      packageId: "packages:demo",
-      provider: "github-actions",
+      ...makeTrustedPackagePublisher(),
       repository: "openclaw/openclaw",
-      repositoryId: "1",
       repositoryOwner: "openclaw",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
     };
     const ctx = {
       runQuery: vi
