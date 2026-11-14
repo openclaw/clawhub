@@ -53,6 +53,7 @@ import { UploadDropzoneDecor } from "../../components/UploadDropzoneDecor";
 import { VersionInput } from "../../components/VersionInput";
 import { captureAnalyticsOperation, emitAnalytics } from "../../lib/analyticsEvents";
 import { setPostPublishFlash } from "../../lib/postPublishFlash";
+import { parseSkillPublishSearch } from "../../lib/publishRouteOptions";
 import {
   extractSkillFrontmatterDescription,
   truncateSkillPublishSummary,
@@ -82,10 +83,7 @@ function isRequiredSkillFile(path: string) {
 type SkillPublishField = "slug" | "displayName" | "version" | "tags" | "license";
 
 export const Route = createFileRoute("/skills/publish")({
-  validateSearch: (search) => ({
-    updateSlug: typeof search.updateSlug === "string" ? search.updateSlug : undefined,
-    ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
-  }),
+  validateSearch: parseSkillPublishSearch,
   component: Upload,
 });
 
