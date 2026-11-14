@@ -2112,11 +2112,10 @@ describe("httpApiV1 handlers", () => {
   it("users/reserve forbids non-admin api tokens", async () => {
     const runQuery = vi.fn();
     const runAction = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     mockApiTokenUser("users:actor", "user");
 
     const response = await __handlers.usersPostRouterV1Handler(
-      makeCtx({ runQuery, runAction, runMutation }),
+      makeCtx({ runQuery, runAction }),
       new Request("https://example.com/api/v1/users/reserve", {
         method: "POST",
         body: JSON.stringify({ handle: "target", slugs: ["a"] }),
@@ -2622,10 +2621,8 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("publishers returns a controlled error when JSON is not an object", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
-
     const response = await __handlers.createPublisherV1Handler(
-      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn() }),
       new Request("https://example.com/api/v1/publishers", {
         method: "POST",
         body: "null",
@@ -2652,9 +2649,8 @@ describe("httpApiV1 handlers", () => {
         version: { version: "1.0.0" },
       },
     ]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.searchSkillsV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({ runAction }),
       new Request("https://example.com/api/v1/search?q=test&limit=5&highlightedOnly=true"),
     );
     if (response.status !== 200) {
@@ -2734,10 +2730,9 @@ describe("httpApiV1 handlers", () => {
         },
       },
     ]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.searchSkillsV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({ runAction }),
       new Request("https://example.com/api/v1/search?q=demo"),
     );
 
@@ -2812,9 +2807,8 @@ describe("httpApiV1 handlers", () => {
 
   it("search forwards nonSuspiciousOnly", async () => {
     const runAction = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.searchSkillsV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({ runAction }),
       new Request("https://example.com/api/v1/search?q=test&nonSuspiciousOnly=1"),
     );
     if (response.status !== 200) {
@@ -2830,9 +2824,8 @@ describe("httpApiV1 handlers", () => {
 
   it("search forwards exact mode", async () => {
     const runAction = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.searchSkillsV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({ runAction }),
       new Request("https://example.com/api/v1/search?q=aigroup-alpha&mode=exact&limit=10"),
     );
     if (response.status !== 200) {
@@ -2849,10 +2842,9 @@ describe("httpApiV1 handlers", () => {
 
   it("lists a skill slug prefix with a cursor", async () => {
     const runQuery = vi.fn().mockResolvedValue({ items: [], nextCursor: "next-page" });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills?prefix=aigroup-&limit=10&cursor=cursor-1"),
     );
 
@@ -2870,9 +2862,8 @@ describe("httpApiV1 handlers", () => {
 
   it("search rejects invalid mode", async () => {
     const runAction = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.searchSkillsV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({ runAction }),
       new Request("https://example.com/api/v1/search?q=demo&mode=random"),
     );
 
@@ -2883,9 +2874,8 @@ describe("httpApiV1 handlers", () => {
 
   it("search forwards legacy nonSuspicious alias", async () => {
     const runAction = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.searchSkillsV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({ runAction }),
       new Request("https://example.com/api/v1/search?q=test&nonSuspicious=1"),
     );
     if (response.status !== 200) {
@@ -2901,9 +2891,8 @@ describe("httpApiV1 handlers", () => {
 
   it("search prefers canonical nonSuspiciousOnly over legacy alias", async () => {
     const runAction = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.searchSkillsV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({ runAction }),
       new Request(
         "https://example.com/api/v1/search?q=test&nonSuspiciousOnly=false&nonSuspicious=1",
       ),
@@ -2940,9 +2929,8 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("resolve validates hash", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.resolveSkillVersionV1Handler(
-      makeCtx({ runQuery: vi.fn(), runMutation }),
+      makeCtx({ runQuery: vi.fn() }),
       new Request("https://example.com/api/v1/resolve?slug=demo&hash=bad"),
     );
     expect(response.status).toBe(400);
@@ -2950,9 +2938,8 @@ describe("httpApiV1 handlers", () => {
 
   it("resolve returns 404 when missing", async () => {
     const runQuery = vi.fn().mockResolvedValue(null);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.resolveSkillVersionV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/resolve?slug=demo&hash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       ),
@@ -2966,10 +2953,9 @@ describe("httpApiV1 handlers", () => {
       latestVersion: null,
       ambiguous: true,
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const hash = "a".repeat(64);
     const response = await __handlers.resolveSkillVersionV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(`https://example.com/api/v1/resolve?slug=demo&hash=${hash}`),
     );
 
@@ -2984,9 +2970,8 @@ describe("httpApiV1 handlers", () => {
       match: { version: "1.0.0" },
       latestVersion: { version: "2.0.0" },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.resolveSkillVersionV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/resolve?slug=demo&hash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       ),
@@ -3001,11 +2986,10 @@ describe("httpApiV1 handlers", () => {
       match: { version: "1.0.0" },
       latestVersion: { version: "2.0.0" },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const hash = "a".repeat(64);
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         `https://example.com/api/v1/skills/resolve?slug=demo&ownerHandle=acme&hash=${hash}`,
       ),
@@ -3068,9 +3052,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills?limit=1"),
     );
     expect(response.status).toBe(200);
@@ -3131,7 +3114,6 @@ describe("httpApiV1 handlers", () => {
       }
       throw new Error("Unexpected skill list query");
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const identities = new Set<string>();
     let cursor: string | null = null;
 
@@ -3139,7 +3121,7 @@ describe("httpApiV1 handlers", () => {
       const url = new URL("https://example.com/api/v1/skills?sort=updated&limit=1");
       if (cursor) url.searchParams.set("cursor", cursor);
       const response = await __handlers.listSkillsV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request(url),
       );
       expect(response.status).toBe(200);
@@ -3227,9 +3209,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills?limit=1"),
     );
 
@@ -3260,9 +3241,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills"),
     );
 
@@ -3346,9 +3326,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills"),
     );
     expect(response.status).toBe(200);
@@ -3399,9 +3378,8 @@ describe("httpApiV1 handlers", () => {
         }
         return null;
       });
-      const runMutation = vi.fn().mockResolvedValue(okRate());
       const response = await __handlers.listSkillsV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request(`https://example.com/api/v1/skills?sort=${input}`),
       );
       expect(response.status).toBe(200);
@@ -3415,10 +3393,9 @@ describe("httpApiV1 handlers", () => {
       if ("limit" in args) return { items: [], nextCursor: null };
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills?sort=trending"),
     );
 
@@ -3436,10 +3413,9 @@ describe("httpApiV1 handlers", () => {
       if ("limit" in args) return { items: [], nextCursor: null };
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills?sort=trending"),
     );
 
@@ -3450,9 +3426,8 @@ describe("httpApiV1 handlers", () => {
 
   it("lists skills rejects invalid sort", async () => {
     const runQuery = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills?sort=unknown"),
     );
     expect(response.status).toBe(400);
@@ -3462,9 +3437,8 @@ describe("httpApiV1 handlers", () => {
 
   it("lists skills rejects empty sort", async () => {
     const runQuery = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills?sort="),
     );
     expect(response.status).toBe(400);
@@ -3480,9 +3454,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills?nonSuspiciousOnly=true"),
     );
     expect(response.status).toBe(200);
@@ -3496,9 +3469,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills?nonSuspicious=1"),
     );
     expect(response.status).toBe(200);
@@ -3512,9 +3484,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.listSkillsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills?nonSuspiciousOnly=false&nonSuspicious=1"),
     );
     expect(response.status).toBe(200);
@@ -3522,9 +3493,8 @@ describe("httpApiV1 handlers", () => {
 
   it("get skill returns 404 when missing", async () => {
     const runQuery = vi.fn().mockResolvedValue(null);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/missing"),
     );
     expect(response.status).toBe(404);
@@ -3539,9 +3509,8 @@ describe("httpApiV1 handlers", () => {
         { slug: "demo", ownerHandle: "patrick" },
       ],
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo"),
     );
 
@@ -3578,9 +3547,8 @@ describe("httpApiV1 handlers", () => {
         { slug: "demo", ownerHandle: "patrick" },
       ],
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://wry-manatee-359.convex.site/api/v1/skills/demo"),
     );
 
@@ -3606,9 +3574,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo"),
     );
     expect(response.status).toBe(423);
@@ -3629,9 +3596,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo"),
     );
     expect(response.status).toBe(410);
@@ -3654,9 +3620,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo"),
     );
     expect(response.status).toBe(404);
@@ -3686,9 +3651,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo"),
     );
     expect(response.status).toBe(423);
@@ -3755,9 +3719,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo"),
     );
     expect(response.status).toBe(200);
@@ -3837,9 +3800,8 @@ describe("httpApiV1 handlers", () => {
     const storageGet = vi.fn().mockResolvedValue({
       text: vi.fn().mockResolvedValue("# Home Assistant\nSetup."),
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      makeCtx({ runQuery, storage: { get: storageGet } }),
       new Request("https://example.com/api/v1/skills/home-assistant"),
     );
 
@@ -3911,9 +3873,8 @@ describe("httpApiV1 handlers", () => {
       return null;
     });
     const storageGet = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      makeCtx({ runQuery, storage: { get: storageGet } }),
       new Request("https://example.com/api/v1/skills/home-assistant"),
     );
 
@@ -3950,9 +3911,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/aiq-deploy"),
     );
 
@@ -3974,10 +3934,9 @@ describe("httpApiV1 handlers", () => {
         latestVersionSummary: { version: "1.0.0" },
       },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/install"),
     );
 
@@ -4002,10 +3961,9 @@ describe("httpApiV1 handlers", () => {
         latestVersionSummary: { version: "1.0.0" },
       },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/install?ownerHandle=acme"),
     );
 
@@ -4043,10 +4001,9 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual({ repo: "patrick-erichsen/skills", path: "skills/html" });
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
       ),
@@ -4117,10 +4074,9 @@ describe("httpApiV1 handlers", () => {
     "skill install resolver rejects invalid exact catalog reference %s",
     async (reference) => {
       const runQuery = vi.fn();
-      const runMutation = vi.fn().mockResolvedValue(okRate());
 
       const response = await __handlers.skillsGetRouterV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request(
           `https://example.com/api/v1/skills/html/install?reference=${encodeURIComponent(reference)}`,
         ),
@@ -4138,10 +4094,9 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual({ externalId: "patrick-erichsen/skills/html" });
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
       ),
@@ -4163,10 +4118,9 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual({ repo: "patrick-erichsen/skills", path: "skills/html" });
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
       ),
@@ -4202,10 +4156,9 @@ describe("httpApiV1 handlers", () => {
       if ("externalId" in args) return makePublicSkillsShDigest();
       return makeSkillsShAliasTarget("suspicious");
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
       ),
@@ -4244,10 +4197,9 @@ describe("httpApiV1 handlers", () => {
     "skill verification rejects invalid exact catalog reference %s",
     async (reference) => {
       const runQuery = vi.fn();
-      const runMutation = vi.fn().mockResolvedValue(okRate());
 
       const response = await __handlers.skillsGetRouterV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request(
           `https://example.com/api/v1/skills/html/verify?reference=${encodeURIComponent(reference)}`,
         ),
@@ -4265,10 +4217,9 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual({ externalId: "patrick-erichsen/skills/html" });
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
       ),
@@ -4299,10 +4250,9 @@ describe("httpApiV1 handlers", () => {
         defaultBranch: "main",
       },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/aiq-deploy/install"),
     );
 
@@ -4344,10 +4294,9 @@ describe("httpApiV1 handlers", () => {
         defaultBranch: "main",
       },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/aiq-review/install"),
     );
 
@@ -4399,10 +4348,9 @@ describe("httpApiV1 handlers", () => {
       skill,
       publicVisible: false,
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(`https://example.com/api/v1/skills/${slug}/install`),
     );
 
@@ -4426,10 +4374,9 @@ describe("httpApiV1 handlers", () => {
         githubScanStatus: "clean",
       },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/orphaned-github/install"),
     );
 
@@ -4453,10 +4400,9 @@ describe("httpApiV1 handlers", () => {
       },
       source: { repo: "NVIDIA/skills" },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/aiq-deploy/install"),
     );
 
@@ -4489,10 +4435,9 @@ describe("httpApiV1 handlers", () => {
       },
       source: { repo: "NVIDIA/skills" },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/aiq-deploy/install"),
     );
 
@@ -4521,10 +4466,9 @@ describe("httpApiV1 handlers", () => {
       },
       source: { repo: "NVIDIA/skills" },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/aiq-deploy/install?forceInstall=1"),
     );
 
@@ -4555,10 +4499,9 @@ describe("httpApiV1 handlers", () => {
       },
       source: { repo: "NVIDIA/skills" },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/bad-source/install"),
     );
 
@@ -4601,10 +4544,9 @@ describe("httpApiV1 handlers", () => {
         },
         source: { repo: "NVIDIA/skills" },
       });
-      const runMutation = vi.fn().mockResolvedValue(okRate());
 
       const response = await __handlers.skillsGetRouterV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request("https://example.com/api/v1/skills/blocked-source/install"),
       );
 
@@ -4669,9 +4611,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/reports"),
     );
     expect(response.status).toBe(200);
@@ -4736,10 +4677,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/moderation"),
     );
 
@@ -4788,10 +4728,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/moderation"),
     );
 
@@ -4832,10 +4771,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/moderation"),
     );
 
@@ -4874,10 +4812,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/moderation"),
     );
 
@@ -4930,10 +4867,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/moderation"),
     );
 
@@ -4966,10 +4902,9 @@ describe("httpApiV1 handlers", () => {
         done: true,
       };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/-/reports?status=open&limit=10", {
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -5238,10 +5173,9 @@ describe("httpApiV1 handlers", () => {
         done: true,
       };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/-/appeals?status=open&limit=10", {
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -5331,9 +5265,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions?limit=1"),
     );
     expect(response.status).toBe(200);
@@ -5355,9 +5288,8 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions?limit=1&cursor=legacy-cursor"),
     );
     expect(response.status).toBe(200);
@@ -5374,9 +5306,8 @@ describe("httpApiV1 handlers", () => {
 
   it("returns 404 for versions when the owner is banned", async () => {
     const runQuery = vi.fn(async () => null);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions?limit=1"),
     );
     expect(response.status).toBe(404);
@@ -5385,9 +5316,8 @@ describe("httpApiV1 handlers", () => {
 
   it("returns ownerHandle guidance for ambiguous version list requests", async () => {
     const runQuery = vi.fn().mockResolvedValue({ skill: null, ambiguous: true });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions?limit=1"),
     );
 
@@ -5411,9 +5341,8 @@ describe("httpApiV1 handlers", () => {
       ],
     });
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
     );
     expect(response.status).toBe(200);
@@ -5447,9 +5376,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
     );
     expect(response.status).toBe(410);
@@ -5458,9 +5386,8 @@ describe("httpApiV1 handlers", () => {
 
   it("returns 404 for version detail when the owner is banned", async () => {
     const runQuery = vi.fn(async () => null);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
     );
     expect(response.status).toBe(404);
@@ -5469,9 +5396,8 @@ describe("httpApiV1 handlers", () => {
 
   it("returns ownerHandle guidance for ambiguous version detail requests", async () => {
     const runQuery = vi.fn().mockResolvedValue({ skill: null, ambiguous: true });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
     );
 
@@ -5493,9 +5419,8 @@ describe("httpApiV1 handlers", () => {
       },
     };
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
     );
     expect(response.status).toBe(200);
@@ -5530,9 +5455,8 @@ describe("httpApiV1 handlers", () => {
       },
     };
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
     );
     expect(response.status).toBe(200);
@@ -5570,9 +5494,8 @@ describe("httpApiV1 handlers", () => {
       },
     };
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
     );
     expect(response.status).toBe(200);
@@ -5597,9 +5520,8 @@ describe("httpApiV1 handlers", () => {
       },
     };
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
     );
     expect(response.status).toBe(200);
@@ -5627,9 +5549,8 @@ describe("httpApiV1 handlers", () => {
       },
     };
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
     );
     expect(response.status).toBe(200);
@@ -5659,9 +5580,8 @@ describe("httpApiV1 handlers", () => {
       },
     };
     const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, true);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan"),
     );
     expect(response.status).toBe(200);
@@ -5693,9 +5613,8 @@ describe("httpApiV1 handlers", () => {
       },
     };
     const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan"),
     );
     expect(response.status).toBe(200);
@@ -5735,9 +5654,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan"),
     );
     expect(response.status).toBe(423);
@@ -5773,9 +5691,8 @@ describe("httpApiV1 handlers", () => {
         }
         return null;
       });
-      const runMutation = vi.fn().mockResolvedValue(okRate());
       const response = await __handlers.skillsGetRouterV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request("https://example.com/api/v1/skills/demo/scan"),
       );
       expect(response.status).toBe(423);
@@ -5792,9 +5709,8 @@ describe("httpApiV1 handlers", () => {
       capabilityTags: ["posts-externally", "requires-oauth-token"],
     };
     const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan"),
     );
     expect(response.status).toBe(200);
@@ -5848,9 +5764,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?version=1.0.0"),
     );
     expect(response.status).toBe(403);
@@ -5886,9 +5801,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?version=1.0.0"),
     );
     expect(response.status).toBe(423);
@@ -5924,9 +5838,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?tag=old"),
     );
     expect(response.status).toBe(423);
@@ -5993,9 +5906,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?version=1.0.0"),
     );
     expect(response.status).toBe(200);
@@ -6057,9 +5969,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?version=1.0.0"),
     );
     expect(response.status).toBe(200);
@@ -6090,9 +6001,8 @@ describe("httpApiV1 handlers", () => {
       },
     };
     const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan"),
     );
     expect(response.status).toBe(200);
@@ -6157,9 +6067,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?version=1.0.0"),
     );
     expect(response.status).toBe(200);
@@ -6227,9 +6136,8 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?tag=old"),
     );
     expect(response.status).toBe(200);
@@ -6263,10 +6171,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?tag=old"),
     );
 
@@ -6503,13 +6410,12 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = {
       get: vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/plain" })),
     };
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md&ownerHandle=clawkit"),
     );
 
@@ -6554,11 +6460,10 @@ describe("httpApiV1 handlers", () => {
 
       throw new Error("unexpected version lookup");
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = { get: vi.fn() };
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md"),
     );
 
@@ -6595,11 +6500,10 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = { get: vi.fn() };
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md&tag=old"),
     );
 
@@ -6626,11 +6530,10 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = { get: vi.fn() };
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md&version=2.0.0"),
     );
 
@@ -6680,13 +6583,12 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = {
       get: vi.fn().mockResolvedValue(new Blob(["# Skill Card"], { type: "text/markdown" })),
     };
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/skills/demo/card?ownerHandle=acme&tag=stable"),
     );
 
@@ -6733,11 +6635,10 @@ describe("httpApiV1 handlers", () => {
 
       throw new Error("unexpected version lookup");
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = { get: vi.fn() };
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/skills/demo/card"),
     );
 
@@ -6764,11 +6665,10 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = { get: vi.fn() };
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/skills/demo/card?tag=old"),
     );
 
@@ -6795,11 +6695,10 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = { get: vi.fn() };
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/skills/demo/card?version=2.0.0"),
     );
 
@@ -6826,10 +6725,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/verify?tag=old"),
     );
 
@@ -6864,10 +6762,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({ runQuery, storage: { get: vi.fn() } }),
       new Request("https://example.com/api/v1/skills/demo/card"),
     );
 
@@ -6908,10 +6805,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({ runQuery, storage: { get: vi.fn() } }),
       new Request("https://example.com/api/v1/skills/demo/card"),
     );
 
@@ -6977,10 +6873,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillSecurityVerdictsV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({ runQuery, storage: { get: vi.fn() } }),
       new Request("https://example.com/api/v1/skills/-/security-verdicts", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -7058,10 +6953,9 @@ describe("httpApiV1 handlers", () => {
         },
       };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillSecurityVerdictsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/-/security-verdicts", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -7115,10 +7009,9 @@ describe("httpApiV1 handlers", () => {
         llmAnalysis: { status: "clean", verdict: "clean", checkedAt: 2 },
       },
     }));
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillSecurityVerdictsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://wry-manatee-359.convex.site/api/v1/skills/-/security-verdicts", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -7161,10 +7054,9 @@ describe("httpApiV1 handlers", () => {
         },
       },
     }));
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillSecurityVerdictsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/-/security-verdicts", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -7228,10 +7120,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillSecurityVerdictsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/-/security-verdicts", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -7289,10 +7180,9 @@ describe("httpApiV1 handlers", () => {
           llmAnalysis: { status: "clean", verdict: "clean", summary: "hidden scan", checkedAt: 2 },
         },
       }));
-      const runMutation = vi.fn().mockResolvedValue(okRate());
 
       const response = await __handlers.skillSecurityVerdictsV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request("https://example.com/api/v1/skills/-/security-verdicts", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -7362,10 +7252,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillSecurityVerdictsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/-/security-verdicts", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -7497,11 +7386,10 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = { get: vi.fn() };
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/skills/demo/verify?version=2.0.0"),
     );
 
@@ -7623,12 +7511,10 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({
         runQuery,
-        runMutation,
         storage: {
           get: vi.fn(async () => new Blob([JSON.stringify({ checkedAt: 3, ...scannerReports })])),
         },
@@ -7742,10 +7628,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({ runQuery, storage: { get: vi.fn() } }),
       new Request("https://example.com/api/v1/skills/demo/verify"),
     );
 
@@ -7825,10 +7710,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({ runQuery, storage: { get: vi.fn() } }),
       new Request("https://example.com/api/v1/skills/demo/verify"),
     );
 
@@ -7893,10 +7777,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({ runQuery, storage: { get: vi.fn() } }),
       new Request("https://example.com/api/v1/skills/demo/verify"),
     );
 
@@ -7958,10 +7841,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({ runQuery, storage: { get: vi.fn() } }),
       new Request("https://example.com/api/v1/skills/demo/verify"),
     );
 
@@ -7991,10 +7873,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({ runQuery, storage: { get: vi.fn() } }),
       new Request("https://example.com/api/v1/skills/demo/card"),
     );
 
@@ -8003,9 +7884,8 @@ describe("httpApiV1 handlers", () => {
 
   it("returns ownerHandle guidance for ambiguous raw file requests", async () => {
     const runQuery = vi.fn().mockResolvedValue({ skill: null, ambiguous: true });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md"),
     );
 
@@ -8036,11 +7916,9 @@ describe("httpApiV1 handlers", () => {
     const selectedSkill = makeSkillArtifactFixture();
     const selectedVersion0 = internalVersion;
     const runQuery = makeSkillFileQuery(selectedSkill, selectedVersion0);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({
         runQuery,
-        runMutation,
         storage: {
           get: vi.fn().mockResolvedValue(new Blob([fileBytes], { type: "text/plain" })),
         },
@@ -8458,7 +8336,6 @@ describe("httpApiV1 handlers", () => {
       versionId: "v",
       embeddingId: "e",
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const source = {
       kind: "github",
       url: "https://github.com/spoofed/repo",
@@ -8479,7 +8356,7 @@ describe("httpApiV1 handlers", () => {
     });
 
     const response = await __handlers.publishSkillV1Handler(
-      makeCtx({ runMutation }),
+      makeCtx({}),
       makeSkillPublishJsonRequest(body),
     );
 
@@ -8660,7 +8537,6 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const body = JSON.stringify({
       slug: "demo",
       displayName: "Demo",
@@ -8670,7 +8546,7 @@ describe("httpApiV1 handlers", () => {
       files: [makeSkillPublishFile()],
     });
     const response = await __handlers.publishSkillV1Handler(
-      makeCtx({ runMutation }),
+      makeCtx({}),
       makeSkillPublishJsonRequest(body),
     );
     expect(response.status).toBe(400);
@@ -8929,7 +8805,6 @@ describe("httpApiV1 handlers", () => {
         return { skillId: "s", versionId: "v", embeddingId: "e" } as never;
       },
     );
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const store = vi.fn().mockResolvedValue("storage:1");
     const form = new FormData();
     form.set(
@@ -8947,7 +8822,7 @@ describe("httpApiV1 handlers", () => {
     form.append("files", new Blob(["hello"], { type: "text/plain" }), "SKILL.md");
     form.append("files", new Blob(["junk"], { type: "application/octet-stream" }), ".DS_Store");
     const response = await __handlers.publishSkillV1Handler(
-      makeCtx({ runMutation, storage: { store } }),
+      makeCtx({ storage: { store } }),
       new Request("https://example.com/api/v1/skills", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
@@ -8966,9 +8841,8 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("publish rejects missing token", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.publishSkillV1Handler(
-      makeCtx({ runMutation }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/skills", { method: "POST" }),
     );
     expect(response.status).toBe(401);
@@ -8979,9 +8853,8 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { handle: "p", displayName: "Peter", image: null },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.whoamiV1Handler(
-      makeCtx({ runMutation }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/whoami", {
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -10049,9 +9922,8 @@ describe("httpApiV1 handlers", () => {
 
   it("transfer request requires auth", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsPostRouterV1Handler(
-      makeCtx({ runMutation }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/skills/demo/transfer", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -10520,10 +10392,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.transfersGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/transfers/incoming", {
         method: "GET",
         headers: { Authorization: "Bearer clh_test" },
@@ -10579,9 +10450,8 @@ describe("httpApiV1 handlers", () => {
 
   it("ban user requires auth", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.usersPostRouterV1Handler(
-      makeCtx({ runMutation }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/users/ban", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -10644,9 +10514,8 @@ describe("httpApiV1 handlers", () => {
 
   it("unban user requires auth", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.usersPostRouterV1Handler(
-      makeCtx({ runMutation }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/users/unban", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -10709,9 +10578,8 @@ describe("httpApiV1 handlers", () => {
 
   it("lift moderation hold requires admin", async () => {
     mockApiTokenUser("users:actor", "user");
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.usersPostRouterV1Handler(
-      makeCtx({ runMutation }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/users/lift-moderation-hold", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -10758,9 +10626,8 @@ describe("httpApiV1 handlers", () => {
 
   it("reclassify ban requires admin", async () => {
     mockApiTokenUser("users:actor", "user");
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.usersPostRouterV1Handler(
-      makeCtx({ runMutation }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/users/reclassify-ban", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -10937,9 +10804,8 @@ describe("httpApiV1 handlers", () => {
 
   it("set role requires auth", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.usersPostRouterV1Handler(
-      makeCtx({ runMutation }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/users/role", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -10974,9 +10840,8 @@ describe("httpApiV1 handlers", () => {
 
   it("stars require auth", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.starsPostRouterV1Handler(
-      makeCtx({ runMutation }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/stars/demo", { method: "POST" }),
     );
     expect(response.status).toBe(401);
@@ -11101,9 +10966,8 @@ describe("httpApiV1 handlers", () => {
       if ("query" in args) return [];
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/search?q=test&requiresBrowser=true"),
     );
     if (response.status !== 200) throw new Error(await response.text());
@@ -11119,9 +10983,8 @@ describe("httpApiV1 handlers", () => {
       if ("query" in args) return [];
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/search?q=test&artifactKind=npm-pack"),
     );
     if (response.status !== 200) throw new Error(await response.text());
@@ -11134,7 +10997,6 @@ describe("httpApiV1 handlers", () => {
 
   it("packages search rejects invalid known filters", async () => {
     const runQuery = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     for (const [param, message] of [
       ["family=bad", "Invalid family query parameter"],
@@ -11143,7 +11005,7 @@ describe("httpApiV1 handlers", () => {
       ["featured=maybe", "Invalid featured query parameter"],
     ]) {
       const response = await __handlers.packagesGetRouterV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request(`https://example.com/api/v1/packages/search?q=test&${param}`),
       );
       expect(response.status).toBe(400);
@@ -11155,10 +11017,9 @@ describe("httpApiV1 handlers", () => {
 
   it("packages list supports family=skill and topics on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages?family=skill&limit=7&topic=calendar"),
     );
 
@@ -11207,10 +11068,9 @@ describe("httpApiV1 handlers", () => {
             : [];
       return { page, isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginOverviewV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins/overview"),
     );
 
@@ -11299,10 +11159,9 @@ describe("httpApiV1 handlers", () => {
 
   it("packages list forwards topics to both unified catalog sources", async () => {
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages?limit=7&topic=calendar"),
     );
 
@@ -11349,10 +11208,9 @@ describe("httpApiV1 handlers", () => {
     "packages list supports category $category with family $family",
     async ({ family, category }) => {
       const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
-      const runMutation = vi.fn().mockResolvedValue(okRate());
 
       const response = await __handlers.listPackagesV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request(
           `https://example.com/api/v1/packages?family=${family}&category=${category}&limit=7`,
         ),
@@ -11380,14 +11238,13 @@ describe("httpApiV1 handlers", () => {
     async ({ family, category }) => {
       for (const path of ["/api/v1/packages", "/api/v1/packages/search?q=api"]) {
         const runQuery = vi.fn();
-        const runMutation = vi.fn().mockResolvedValue(okRate());
         const url = new URL(`https://example.com${path}`);
         if (family) url.searchParams.set("family", family);
         url.searchParams.set("category", category);
         const handler = path.includes("/search")
           ? __handlers.packagesGetRouterV1Handler
           : __handlers.listPackagesV1Handler;
-        const response = await handler(makeCtx({ runQuery, runMutation }), new Request(url));
+        const response = await handler(makeCtx({ runQuery }), new Request(url));
         expect(response.status).toBe(400);
         expect(runQuery).not.toHaveBeenCalled();
       }
@@ -11412,10 +11269,9 @@ describe("httpApiV1 handlers", () => {
       }
       return { page: [skillPackage], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages?limit=2&sort=downloads"),
     );
 
@@ -11438,10 +11294,9 @@ describe("httpApiV1 handlers", () => {
       );
       return { page: [], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages?limit=2&sort=installs&cursor=old-install"),
     );
 
@@ -11524,10 +11379,9 @@ describe("httpApiV1 handlers", () => {
       }
       return { page: [skillPackage], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages?limit=2&sort=recommended"),
     );
 
@@ -11560,10 +11414,9 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual(expect.objectContaining({ sort: "downloads" }));
       return { page: [skillPackage], isDone: false, continueCursor: "skills-next" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages?limit=1&sort=recommended"),
     );
 
@@ -11598,10 +11451,9 @@ describe("httpApiV1 handlers", () => {
       );
       return { page: [pluginPackage], isDone: false, continueCursor: "packages-next" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         `https://example.com/api/v1/packages?limit=1&sort=recommended&cursor=${encodeURIComponent(
           fallbackCursor,
@@ -11644,10 +11496,9 @@ describe("httpApiV1 handlers", () => {
       seen.skills = true;
       return { page: [], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         `https://example.com/api/v1/packages?limit=1&sort=recommended&cursor=${encodeURIComponent(
           fallbackCursor,
@@ -11696,10 +11547,9 @@ describe("httpApiV1 handlers", () => {
       }
       throw new Error(`unexpected family ${String(args.family)}`);
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins?limit=7"),
     );
 
@@ -11736,10 +11586,9 @@ describe("httpApiV1 handlers", () => {
       }
       return { page: [], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins?topic=calendar&limit=7"),
     );
 
@@ -11759,10 +11608,9 @@ describe("httpApiV1 handlers", () => {
       }
       return { page: [], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins?category=tools&limit=7"),
     );
 
@@ -11795,10 +11643,9 @@ describe("httpApiV1 handlers", () => {
         }
         return { page: [], isDone: true, continueCursor: "" };
       });
-      const runMutation = vi.fn().mockResolvedValue(okRate());
 
       const response = await __handlers.listPluginsV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request(`https://example.com/api/v1/plugins?category=${legacyCategory}&limit=7`),
       );
 
@@ -11843,10 +11690,9 @@ describe("httpApiV1 handlers", () => {
       }
       throw new Error(`unexpected family ${String(args.family)}`);
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins?category=memory&officialFirst=true&limit=2"),
     );
 
@@ -11869,10 +11715,9 @@ describe("httpApiV1 handlers", () => {
       }
       return { page: [], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/plugins?limit=25&category=security&officialFirst=true&sort=downloads&excludeScanStatus=pending,suspicious",
       ),
@@ -11944,10 +11789,9 @@ describe("httpApiV1 handlers", () => {
       }
       return { page: [], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins?category=data&limit=7"),
     );
 
@@ -11987,10 +11831,9 @@ describe("httpApiV1 handlers", () => {
       );
       return { page: [], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         `https://example.com/api/v1/plugins?category=tools&limit=2&cursor=${encodeURIComponent(
           staleCursor,
@@ -12088,10 +11931,9 @@ describe("httpApiV1 handlers", () => {
         continueCursor: "",
       };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins?featured=true&limit=7"),
     );
 
@@ -12171,10 +12013,9 @@ describe("httpApiV1 handlers", () => {
       }
       throw new Error(`unexpected family ${String(args.family)}`);
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(`https://example.com/api/v1/plugins${fixture.query}`),
     );
 
@@ -12206,10 +12047,9 @@ describe("httpApiV1 handlers", () => {
       }
       throw new Error(`unexpected family ${String(args.family)}`);
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins?isOfficial=true&limit=2&sort=installs"),
     );
 
@@ -12228,10 +12068,9 @@ describe("httpApiV1 handlers", () => {
       }
       return { page: [], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/plugins?sort=updated&excludeScanStatus=pending,suspicious",
       ),
@@ -12265,10 +12104,9 @@ describe("httpApiV1 handlers", () => {
       );
       return { page: [], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         `https://example.com/api/v1/plugins?limit=2&sort=installs&cursor=${encodeURIComponent(
           legacyCursor,
@@ -12373,9 +12211,8 @@ describe("httpApiV1 handlers", () => {
       if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
       return { page: [], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(`https://example.com/api/v1/plugins${search}`, {
         headers: cookie ? { cookie } : {},
       }),
@@ -12418,10 +12255,9 @@ describe("httpApiV1 handlers", () => {
       }
       throw new Error(`unexpected family ${String(args.family)}`);
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         `https://example.com/api/v1/plugins?limit=1&sort=recommended&cursor=${encodeURIComponent(
           fallbackCursor,
@@ -12460,10 +12296,9 @@ describe("httpApiV1 handlers", () => {
       );
       return { page: [codePlugin], isDone: false, continueCursor: "code-next" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         `https://example.com/api/v1/plugins?limit=1&sort=recommended&cursor=${encodeURIComponent(
           fallbackCursor,
@@ -12503,10 +12338,9 @@ describe("httpApiV1 handlers", () => {
       );
       return { page: [codePlugin], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         `https://example.com/api/v1/plugins?limit=1&sort=recommended&cursor=${encodeURIComponent(
           legacyCursor,
@@ -12523,10 +12357,9 @@ describe("httpApiV1 handlers", () => {
   it("plugins list rejects invalid categories", async () => {
     for (const category of ["not-a-category", "constructor", "toString"]) {
       const runQuery = vi.fn();
-      const runMutation = vi.fn().mockResolvedValue(okRate());
 
       const response = await __handlers.listPluginsV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request(`https://example.com/api/v1/plugins?category=${category}`),
       );
 
@@ -12663,14 +12496,13 @@ describe("httpApiV1 handlers", () => {
       if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
       return { page: [], isDone: true, continueCursor: "" };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const staleSearchCursor = `pkgpluginsearch:${JSON.stringify({
       codePlugins: { cursor: "code-search", offset: 0, pageSize: 2, done: false },
       bundlePlugins: { cursor: null, offset: 0, pageSize: 2, done: true },
     })}`;
 
     const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         `https://example.com/api/v1/plugins?limit=7&cursor=${encodeURIComponent(staleSearchCursor)}`,
       ),
@@ -12720,10 +12552,9 @@ describe("httpApiV1 handlers", () => {
 
   it("packages search supports family=skill and topics on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/search?q=demo&family=skill&topic=calendar"),
     );
 
@@ -12739,9 +12570,8 @@ describe("httpApiV1 handlers", () => {
 
   it("forwards Featured plugin searches with a spaced topic", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/packages/search?q=calendar&family=code-plugin&highlightedOnly=true&topic=team%20calendar",
       ),
@@ -12761,10 +12591,9 @@ describe("httpApiV1 handlers", () => {
 
   it("packages search forwards topics to both unified catalog sources", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/search?q=demo&topic=calendar"),
     );
 
@@ -12787,10 +12616,9 @@ describe("httpApiV1 handlers", () => {
     "packages search supports category $category with family $family",
     async ({ family, category }) => {
       const runQuery = vi.fn().mockResolvedValue([]);
-      const runMutation = vi.fn().mockResolvedValue(okRate());
 
       const response = await __handlers.packagesGetRouterV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request(
           `https://example.com/api/v1/packages/search?q=api&family=${family}&category=${category}`,
         ),
@@ -12844,10 +12672,9 @@ describe("httpApiV1 handlers", () => {
       }
       throw new Error(`unexpected family ${String(args.family)}`);
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.pluginsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins/search?q=weather&category=tools&limit=7"),
     );
 
@@ -13060,10 +12887,9 @@ describe("httpApiV1 handlers", () => {
 
   it("plugins search forwards New eligibility to both plugin families", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.pluginsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins/search?q=calendar&createdAfter=123"),
     );
 
@@ -13076,10 +12902,9 @@ describe("httpApiV1 handlers", () => {
 
   it("plugins search maps retired v1 category filters to controlled categories", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.pluginsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/plugins/search?q=metrics&category=observability&limit=7",
       ),
@@ -13099,10 +12924,9 @@ describe("httpApiV1 handlers", () => {
 
   it("plugins search forwards excluded scan statuses to both plugin families", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.pluginsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/plugins/search?q=calendar&excludeScanStatus=pending,suspicious",
       ),
@@ -13150,10 +12974,9 @@ describe("httpApiV1 handlers", () => {
       }
       throw new Error(`unexpected family ${String(args.family)}`);
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.pluginsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins/search?q=plugin&limit=3"),
     );
 
@@ -13178,7 +13001,6 @@ describe("httpApiV1 handlers", () => {
       expect(args).not.toHaveProperty("cursor");
       return [];
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const url = new URL("https://example.com/api/v1/plugins/search");
     url.searchParams.set("q", "plugin");
     url.searchParams.set("sort", "name");
@@ -13186,7 +13008,7 @@ describe("httpApiV1 handlers", () => {
     url.searchParams.set("cursor", "pkgplugins:stale");
 
     const response = await __handlers.pluginsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(url),
     );
 
@@ -13197,10 +13019,9 @@ describe("httpApiV1 handlers", () => {
   it("plugins search rejects invalid categories", async () => {
     for (const category of ["not-a-category", "constructor", "toString"]) {
       const runQuery = vi.fn();
-      const runMutation = vi.fn().mockResolvedValue(okRate());
 
       const response = await __handlers.pluginsGetRouterV1Handler(
-        makeCtx({ runQuery, runMutation }),
+        makeCtx({ runQuery }),
         new Request(`https://example.com/api/v1/plugins/search?q=plugin&category=${category}`),
       );
 
@@ -13250,10 +13071,9 @@ describe("httpApiV1 handlers", () => {
       }
       throw new Error(`unexpected family ${String(args.family)}`);
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.pluginsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins/search?q=plugin&limit=3"),
     );
 
@@ -13271,10 +13091,9 @@ describe("httpApiV1 handlers", () => {
   it("packages list forwards viewerUserId for authenticated private package browsing", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages?channel=private&limit=7"),
     );
 
@@ -13296,10 +13115,9 @@ describe("httpApiV1 handlers", () => {
       if ("query" in args) return [];
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/search?q=secret&channel=private"),
     );
 
@@ -13316,10 +13134,9 @@ describe("httpApiV1 handlers", () => {
   it("packages list falls back to anonymous when cookie auth resolution fails", async () => {
     vi.mocked(getAuthUserId).mockRejectedValue(new Error("stale session"));
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages?isOfficial=true&limit=7"),
     );
 
@@ -13343,10 +13160,9 @@ describe("httpApiV1 handlers", () => {
       if ("query" in args) return [];
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/search?q=secret&channel=community"),
     );
 
@@ -13411,10 +13227,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo"),
     );
 
@@ -13437,10 +13252,9 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn(async () => {
       throw new Error("unexpected package lookup");
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/openclaw%2Fdiscord"),
     );
 
@@ -13481,10 +13295,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo-plugin"),
     );
 
@@ -13531,10 +13344,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/%2540openclaw%2Fdemo-plugin"),
     );
 
@@ -13591,13 +13403,12 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = {
       get: vi.fn().mockResolvedValue(new Blob(["# Demo skill"])),
     };
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/packages/demo/file?path=README.md"),
     );
 
@@ -13649,11 +13460,10 @@ describe("httpApiV1 handlers", () => {
 
       throw new Error("unexpected version lookup");
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = { get: vi.fn() };
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/packages/demo/file?path=README.md"),
     );
 
@@ -13691,11 +13501,10 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const storage = { get: vi.fn() };
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage }),
+      makeCtx({ runQuery, storage }),
       new Request("https://example.com/api/v1/packages/demo/file?path=README.md&tag=old"),
     );
 
@@ -13726,10 +13535,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo/download?version=1.0.0"),
     );
 
@@ -13742,10 +13550,9 @@ describe("httpApiV1 handlers", () => {
   it("packages detail hides private packages from anonymous requests", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue(null);
     const runQuery = vi.fn().mockResolvedValue(null);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/private-plugin"),
     );
 
@@ -13786,10 +13593,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo/versions?limit=1&cursor=legacy-cursor"),
     );
 
@@ -13818,10 +13624,9 @@ describe("httpApiV1 handlers", () => {
       latestRelease: null,
       owner: { _id: "users:owner", handle: "owner" },
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/private-plugin"),
     );
 
@@ -13901,10 +13706,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0"),
     );
 
@@ -13983,10 +13787,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo/versions/1.0.0"),
     );
 
@@ -14023,10 +13826,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo/versions/2.0.0"),
     );
 
@@ -14069,10 +13871,9 @@ describe("httpApiV1 handlers", () => {
 
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo/versions/1.0.0"),
     );
 
@@ -14116,10 +13917,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0"),
     );
 
@@ -14252,10 +14052,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/artifact"),
     );
 
@@ -14301,10 +14100,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/artifact"),
     );
 
@@ -14371,10 +14169,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
     );
 
@@ -14453,10 +14250,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
     );
 
@@ -14503,10 +14299,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
     );
 
@@ -14549,10 +14344,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
     );
 
@@ -14712,10 +14506,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/packages/%40demo%2Fdemo-plugin/versions/1.0.0/security",
       ),
@@ -14774,10 +14567,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/artifact"),
     );
 
@@ -14837,10 +14629,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/@scope/demo-plugin/versions/1.0.0/artifact"),
     );
 
@@ -14902,10 +14693,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/demo-plugin/readiness"),
     );
 
@@ -14996,10 +14786,9 @@ describe("httpApiV1 handlers", () => {
         done: false,
       };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/moderation/queue?status=blocked&limit=20", {
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -15092,10 +14881,9 @@ describe("httpApiV1 handlers", () => {
         done: true,
       };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/reports?status=open&limit=10", {
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -15143,10 +14931,9 @@ describe("httpApiV1 handlers", () => {
         done: true,
       };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/migrations?phase=all&limit=10", {
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -15287,10 +15074,9 @@ describe("httpApiV1 handlers", () => {
         },
       };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/%40scope%2Fdemo/moderation", {
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -15374,10 +15160,9 @@ describe("httpApiV1 handlers", () => {
         done: true,
       };
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/appeals?status=open&limit=10", {
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -15479,10 +15264,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.npmMirrorGetHandler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/npm/demo-plugin"),
     );
 
@@ -15505,10 +15289,9 @@ describe("httpApiV1 handlers", () => {
 
   it("npm mirror uses the public host when requests arrive through Convex rewrites", async () => {
     const runQuery = makeNpmMirrorQuery();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.npmMirrorGetHandler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://wry-manatee-359.convex.site/api/npm/demo-plugin", {
         headers: {
           "x-forwarded-host": "clawhub.ai",
@@ -15532,10 +15315,9 @@ describe("httpApiV1 handlers", () => {
   it("npm mirror falls back to clawhub.ai for production Convex artifact URLs", async () => {
     vi.stubEnv("CONVEX_DEPLOYMENT", "prod:wry-manatee-359");
     const runQuery = makeNpmMirrorQuery();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.npmMirrorGetHandler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://wry-manatee-359.convex.site/api/npm/demo-plugin"),
     );
 
@@ -15629,10 +15411,9 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn(async () => {
       throw new Error("unexpected package lookup");
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.npmMirrorGetHandler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/npm/openclaw%2Fdiscord"),
     );
 
@@ -15681,10 +15462,9 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.npmMirrorGetHandler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/npm/@scope%2Fdemo-plugin"),
     );
 
@@ -15703,11 +15483,10 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns 400 for /packages/search without q", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn();
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/search"),
     );
 
@@ -15717,11 +15496,10 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns 400 for /packages/search with blank q", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn();
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/search?q=%20%20"),
     );
 
@@ -15731,11 +15509,10 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("routes /packages/search with q to catalog search only", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async () => []);
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/search?q=demo"),
     );
 
@@ -15756,14 +15533,13 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("does not treat nested /packages/search paths as catalog search", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) return null;
       return [];
     });
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/packages/search/extra?q=demo"),
     );
 
@@ -15897,7 +15673,6 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package file resolves lowercase readme variants from the canonical request path", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = makePackageDownloadQuery({
       owner: null,
       makeFiles: () => [
@@ -15914,7 +15689,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({
         runQuery,
-        runMutation,
         storage: {
           get: vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/markdown" })),
         },
@@ -16043,7 +15817,6 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("package download fails when any stored file is missing", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = makePackageDownloadQuery({
       makeFiles: () => [
         {
@@ -16070,7 +15843,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({
         runQuery,
-        runMutation,
         storage: { get: storageGet },
       }),
       new Request("https://example.com/api/v1/packages/demo-plugin/download"),
@@ -16081,7 +15853,6 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("allows package downloads while VT scan is pending", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = makePackageDownloadQuery({
       owner: null,
       makeRelease: () => ({
@@ -16105,7 +15876,7 @@ describe("httpApiV1 handlers", () => {
     const storageGet = vi.fn(async () => new Blob(['{"name":"demo-plugin"}']));
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      makeCtx({ runQuery, storage: { get: storageGet } }),
       new Request("https://example.com/api/v1/packages/demo-plugin/download"),
     );
 
@@ -16116,7 +15887,6 @@ describe("httpApiV1 handlers", () => {
 
   it("serves the immutable stored legacy archive without reconstructing it", async () => {
     const archive = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xaa, 0xbb]);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = makePackageDownloadQuery({
       owner: null,
       makeRelease: () => ({
@@ -16142,7 +15912,7 @@ describe("httpApiV1 handlers", () => {
     );
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      makeCtx({ runQuery, storage: { get: storageGet } }),
       new Request("https://example.com/api/v1/packages/demo-plugin/download"),
     );
 
@@ -16155,7 +15925,6 @@ describe("httpApiV1 handlers", () => {
   it("reconstructs compatibility ZIP downloads instead of serving stored npm tarballs", async () => {
     const storedTarball = gzipSync(new TextEncoder().encode("not a zip"));
     const packageJson = new TextEncoder().encode('{"name":"demo-plugin"}');
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = makePackageDownloadQuery({
       owner: null,
       makeRelease: () => ({
@@ -16183,7 +15952,7 @@ describe("httpApiV1 handlers", () => {
     });
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      makeCtx({ runQuery, storage: { get: storageGet } }),
       new Request("https://example.com/api/v1/packages/demo-plugin/download"),
     );
 
@@ -16197,7 +15966,6 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("allows package downloads when verification is clean even without cached vtAnalysis", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = makePackageDownloadQuery({
       owner: null,
       makeRelease: () => ({
@@ -16223,7 +15991,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({
         runQuery,
-        runMutation,
         storage: {
           get: vi.fn(async () => new Blob(["{}"], { type: "application/json" })),
         },
@@ -16235,7 +16002,6 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("blocks package file access when release is malicious", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = makePackageDownloadQuery({
       owner: null,
       makeRelease: () => ({
@@ -16258,7 +16024,7 @@ describe("httpApiV1 handlers", () => {
     });
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({ runQuery, storage: { get: vi.fn() } }),
       new Request("https://example.com/api/v1/packages/demo-plugin/file?path=README.md"),
     );
 
@@ -16545,7 +16311,6 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { _id: "users:1", handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runAction = vi
       .fn()
       .mockRejectedValue(
@@ -16574,7 +16339,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
         runAction,
-        runMutation,
         storage: { store: vi.fn(async (_entry: Blob) => "storage:1") },
       }),
       new Request("https://example.com/api/v1/packages", {
@@ -16598,11 +16362,10 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { _id: "users:1", handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runAction = vi.fn();
 
     const response = await __handlers.publishPackageV1Handler(
-      makeCtx({ runAction, runMutation }),
+      makeCtx({ runAction }),
       new Request("https://example.com/api/v1/packages", {
         method: "POST",
         headers: {
@@ -16656,7 +16419,6 @@ describe("httpApiV1 handlers", () => {
   it("package publish rejects browser session auth when token auth is not an API token", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:session" as never);
     vi.mocked(requirePackagePublishAuth).mockRejectedValue(new Error("Unauthorized"));
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runAction = vi.fn();
     const form = packagePublishForm(packagePublishMetadata());
     form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
@@ -16664,7 +16426,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
         runAction,
-        runMutation,
         storage: { store: vi.fn(async () => "storage:plugin") },
       }),
       new Request("https://example.com/api/v1/packages", {
@@ -16814,7 +16575,6 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { _id: "users:1", handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runAction = vi
       .fn()
       .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
@@ -16836,7 +16596,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
         runAction,
-        runMutation,
         storage: { store: storageStore },
       }),
       new Request("https://example.com/api/v1/packages", {
@@ -16880,7 +16639,6 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { _id: "users:1", handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runAction = vi
       .fn()
       .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
@@ -16911,7 +16669,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
         runAction,
-        runMutation,
         storage: { store: storageStore },
       }),
       new Request("https://example.com/api/v1/packages", {
@@ -16959,7 +16716,6 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { _id: "users:1", handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runAction = vi
       .fn()
       .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
@@ -17001,7 +16757,7 @@ describe("httpApiV1 handlers", () => {
     );
 
     const response = await __handlers.publishPackageV1Handler(
-      makeCtx({ runAction, runMutation, storage: { store: storageStore } }),
+      makeCtx({ runAction, storage: { store: storageStore } }),
       new Request("https://example.com/api/v1/packages", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
@@ -17039,7 +16795,6 @@ describe("httpApiV1 handlers", () => {
         userId: "users:1",
         user: { _id: "users:1", handle: "p" },
       } as never);
-      const runMutation = vi.fn().mockResolvedValue(okRate());
       const storageStore = vi.fn(
         async (_blob: Blob) => `storage:${storageStore.mock.calls.length}`,
       );
@@ -17078,7 +16833,7 @@ describe("httpApiV1 handlers", () => {
       );
 
       const response = await __handlers.publishPackageV1Handler(
-        makeCtx({ runAction, runMutation, storage: { store: storageStore } }),
+        makeCtx({ runAction, storage: { store: storageStore } }),
         new Request("https://example.com/api/v1/packages", {
           method: "POST",
           headers: { Authorization: "Bearer clh_test" },
@@ -17307,7 +17062,6 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { _id: "users:1", handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runAction = vi.fn();
     const storageGet = vi.fn();
     const form = packagePublishForm(packagePublishMetadata({ family: "code-plugin" }));
@@ -17316,7 +17070,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
         runAction,
-        runMutation,
         storage: { get: storageGet, store: vi.fn() },
       }),
       new Request("https://example.com/api/v1/packages", {
@@ -17339,7 +17092,6 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { _id: "users:1", handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runAction = vi.fn();
     const pack = npmPackFixture({
       "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
@@ -17355,7 +17107,7 @@ describe("httpApiV1 handlers", () => {
     );
 
     const response = await __handlers.publishPackageV1Handler(
-      makeCtx({ runAction, runMutation, storage: { store: vi.fn() } }),
+      makeCtx({ runAction, storage: { store: vi.fn() } }),
       new Request("https://example.com/api/v1/packages", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
@@ -17379,14 +17131,13 @@ describe("httpApiV1 handlers", () => {
         userId: "users:1",
         user: { _id: "users:1", handle: "p" },
       } as never);
-      const runMutation = vi.fn().mockResolvedValue(okRate());
       const runAction = vi.fn();
       const form = packagePublishForm(packagePublishMetadata());
       form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
       form.append(field, new File(["{}"], "ignored.json", { type: "application/json" }));
 
       const response = await __handlers.publishPackageV1Handler(
-        makeCtx({ runAction, runMutation, storage: { store: vi.fn() } }),
+        makeCtx({ runAction, storage: { store: vi.fn() } }),
         new Request("https://example.com/api/v1/packages", {
           method: "POST",
           headers: { Authorization: "Bearer clh_test" },
@@ -17409,7 +17160,6 @@ describe("httpApiV1 handlers", () => {
         userId: "users:1",
         user: { _id: "users:1", handle: "p" },
       } as never);
-      const runMutation = vi.fn().mockResolvedValue(okRate());
       const runAction = vi.fn();
       const form = packagePublishForm(
         packagePublishMetadata({
@@ -17440,7 +17190,7 @@ describe("httpApiV1 handlers", () => {
       form.append("files", new File(["{}"], "openclaw.plugin.json", { type: "application/json" }));
 
       const response = await __handlers.publishPackageV1Handler(
-        makeCtx({ runAction, runMutation, storage: { store: vi.fn() } }),
+        makeCtx({ runAction, storage: { store: vi.fn() } }),
         new Request("https://example.com/api/v1/packages", {
           method: "POST",
           headers: { Authorization: "Bearer clh_test" },
@@ -17460,7 +17210,6 @@ describe("httpApiV1 handlers", () => {
       kind: "github-actions",
       publishToken: { _id: "packagePublishTokens:1" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runAction = vi
       .fn()
       .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
@@ -17484,7 +17233,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
         runAction,
-        runMutation,
         storage: { store: vi.fn(async (_entry: Blob) => "storage:1") },
       }),
       new Request("https://example.com/api/v1/packages", {
@@ -17511,7 +17259,6 @@ describe("httpApiV1 handlers", () => {
       userId: "users:publisher",
       user: { _id: "users:publisher", handle: "publisher" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (!("attemptId" in args)) return null;
       return {
@@ -17531,7 +17278,7 @@ describe("httpApiV1 handlers", () => {
     });
 
     const response = await __handlers.publishAttemptsGetRouterV1Handler(
-      makeCtx({ runMutation, runQuery }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/publish/attempts/publishAttempts%3Ademo", {
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -17564,7 +17311,6 @@ describe("httpApiV1 handlers", () => {
         version: "1.0.0",
       },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async () => ({
       attemptId: "publishAttempts:demo",
       userId: "users:publisher",
@@ -17581,7 +17327,7 @@ describe("httpApiV1 handlers", () => {
     }));
 
     const response = await __handlers.publishAttemptsGetRouterV1Handler(
-      makeCtx({ runMutation, runQuery }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/publish/attempts/publishAttempts%3Ademo", {
         headers: { Authorization: "Bearer clh_publish" },
       }),
@@ -17597,7 +17343,6 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("hides package publish attempts from mismatched actors and publish tokens", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async () => ({
       attemptId: "publishAttempts:demo",
       userId: "users:publisher",
@@ -17630,7 +17375,7 @@ describe("httpApiV1 handlers", () => {
     ]) {
       vi.mocked(requirePackagePublishAuth).mockResolvedValue(auth as never);
       const response = await __handlers.publishAttemptsGetRouterV1Handler(
-        makeCtx({ runMutation, runQuery }),
+        makeCtx({ runQuery }),
         new Request("https://example.com/api/v1/publish/attempts/publishAttempts%3Ademo", {
           headers: { Authorization: "Bearer hidden" },
         }),
@@ -17642,7 +17387,6 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns trusted publisher config for a package", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) {
         return {
@@ -17680,7 +17424,7 @@ describe("httpApiV1 handlers", () => {
     });
 
     const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher",
       ),
