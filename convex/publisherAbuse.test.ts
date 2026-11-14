@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("./functions", () => ({
   action: (def: { handler: unknown }) => ({ _handler: def.handler }),
@@ -569,12 +570,7 @@ function makeOfficialPublisherLookupQuery() {
     ) => {
       expect(indexName).toBe("by_publisher");
       const constraints: Record<string, unknown> = {};
-      const q = {
-        eq(field: string, value: unknown) {
-          constraints[field] = value;
-          return q;
-        },
-      };
+      const q = chainEq(constraints);
       build(q);
       return {
         unique: async () =>
@@ -669,12 +665,7 @@ function makePublisherAbuseNominationCountQuery(nominations: unknown[] = []) {
         indexName,
       );
       const constraints: Record<string, unknown> = {};
-      const q = {
-        eq(field: string, value: unknown) {
-          constraints[field] = value;
-          return q;
-        },
-      };
+      const q = chainEq(constraints);
       build(q);
       expect(constraints.status).toBeDefined();
       return {
@@ -710,12 +701,7 @@ function makeEmptyPublisherAbuseScoreRunsQuery() {
         "by_model_version_and_temporal_pipeline_kind_and_phase_started_at",
       ]).toContain(indexName);
       const constraints: Record<string, unknown> = {};
-      const q = {
-        eq(field: string, value: unknown) {
-          constraints[field] = value;
-          return q;
-        },
-      };
+      const q = chainEq(constraints);
       build(q);
       if (indexName === "by_model_version_and_started_at") {
         expect(constraints.modelVersion).toBeTypeOf("string");
@@ -756,12 +742,7 @@ function makeAutoBanNominationQuery(
     ) => {
       expect(indexName).toBe("by_status_and_label_and_last_scored_at");
       const constraints: Record<string, unknown> = {};
-      const q = {
-        eq(field: string, value: unknown) {
-          constraints[field] = value;
-          return q;
-        },
-      };
+      const q = chainEq(constraints);
       build(q);
       expect(constraints).toEqual({
         status: "pending",
@@ -792,12 +773,7 @@ function makePublisherAbuseAutobanSettingQuery(setting: unknown) {
     ) => {
       expect(indexName).toBe("by_key_and_updated_at");
       const constraints: Record<string, unknown> = {};
-      const q = {
-        eq(field: string, value: unknown) {
-          constraints[field] = value;
-          return q;
-        },
-      };
+      const q = chainEq(constraints);
       build(q);
       expect(constraints).toEqual({ key: "publisherAbuseAutobanEnabled" });
       return {
@@ -1139,12 +1115,7 @@ describe("publisher abuse dry-run persistence", () => {
               build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
             ) => {
               const constraints: Record<string, unknown> = {};
-              const q = {
-                eq(field: string, value: unknown) {
-                  constraints[field] = value;
-                  return q;
-                },
-              };
+              const q = chainEq(constraints);
               build(q);
               return {
                 order: () => ({
@@ -3598,12 +3569,7 @@ describe("publisher abuse dry-run persistence", () => {
             build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
           ) => {
             const constraints: Record<string, unknown> = {};
-            const q = {
-              eq(field: string, value: unknown) {
-                constraints[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(constraints);
             build(q);
             if (indexName === "by_status_and_label_and_last_scored_at") {
               return {
@@ -3744,12 +3710,7 @@ describe("publisher abuse dry-run persistence", () => {
                 build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
               ) => {
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 if (indexName === "by_status_and_label_and_last_scored_at") {
                   expect(constraints).toEqual({
@@ -4059,12 +4020,7 @@ describe("publisher abuse dry-run persistence", () => {
                 build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
               ) => {
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 expect(indexName).toBe("by_signal_type_and_last_seen_at");
                 expect(constraints).toEqual({ signalType: "high_install_download_ratio" });
@@ -4415,12 +4371,7 @@ describe("publisher abuse dry-run persistence", () => {
             build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
           ) => {
             const constraints: Record<string, unknown> = {};
-            const q = {
-              eq(field: string, value: unknown) {
-                constraints[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(constraints);
             build(q);
             if (indexName === "by_status_and_label_and_last_scored_at") {
               return {
@@ -4885,12 +4836,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_publisher");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 officialLookupIds.push(String(constraints.publisherId));
                 return {
@@ -4913,12 +4859,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_publisher_and_role");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 return {
                   take: async (numItems: number) => {
@@ -5831,12 +5772,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_owner_key_and_model_version");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 return {
                   take: async () =>
@@ -5974,12 +5910,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_owner_key_and_model_version");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 return {
                   first: async () => null,
@@ -6113,12 +6044,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_owner_key_and_model_version");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 return {
                   take: async () =>
@@ -6278,12 +6204,7 @@ describe("publisher abuse dry-run persistence", () => {
                 }
                 if (indexName === "by_publisher") {
                   const constraints: Record<string, unknown> = {};
-                  const q = {
-                    eq(field: string, value: unknown) {
-                      constraints[field] = value;
-                      return q;
-                    },
-                  };
+                  const q = chainEq(constraints);
                   build?.(q);
                   return {
                     unique: async () =>
@@ -7881,12 +7802,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_skill_signal_type_and_owner_key");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 signalLookups.push(constraints);
                 return {
@@ -8061,12 +7977,7 @@ describe("publisher abuse dry-run persistence", () => {
             build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
           ) => {
             const constraints: Record<string, unknown> = {};
-            const q = {
-              eq(field: string, value: unknown) {
-                constraints[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(constraints);
             build(q);
             return {
               first: async () =>

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import { formatReservedSlugCooldownMessage } from "./lib/reservedSlugs";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -84,12 +85,7 @@ function createCtx(options: {
     callback?: (query: { eq: (field: string, value: unknown) => unknown }) => unknown,
   ) => {
     const constraints: Record<string, unknown> = {};
-    const query = {
-      eq: (field: string, value: unknown) => {
-        constraints[field] = value;
-        return query;
-      },
-    };
+    const query = chainEq(constraints);
     callback?.(query);
     return constraints;
   };

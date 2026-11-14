@@ -1,7 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
-import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
+import { chainEq, indexedUnique } from "../src/__tests__/helpers/convexQuery";
 import {
   assertCanManageOwnedResource,
   ensurePersonalPublisherForUser,
@@ -491,12 +491,7 @@ function buildPublisherMemberQuery<T extends Record<string, unknown>>(
 
 function captureIndexFields(buildQuery: (q: unknown) => unknown) {
   const fields: Record<string, unknown> = {};
-  const q = {
-    eq: (field: string, value: unknown) => {
-      fields[field] = value;
-      return q;
-    },
-  };
+  const q = chainEq(fields);
   buildQuery(q);
   return fields;
 }
@@ -1308,12 +1303,7 @@ describe("publishers membership controls", () => {
                 throw new Error(`unexpected index ${indexName}`);
               }
               const fields: Record<string, string> = {};
-              const q = {
-                eq: (field: string, value: string) => {
-                  fields[field] = value;
-                  return q;
-                },
-              };
+              const q = chainEq(fields);
               builder?.(q);
               return {
                 collect: vi.fn(async () =>
@@ -2431,12 +2421,7 @@ describe("publishers membership controls", () => {
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery?: (q: unknown) => unknown) => {
             const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(fields);
             buildQuery?.(q);
 
             if (table === "officialPublishers" && indexName === "by_created") {
@@ -6733,12 +6718,7 @@ describe("official publisher administration", () => {
           builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
         ) => {
           const fields: Record<string, string> = {};
-          const q = {
-            eq: (field: string, value: string) => {
-              fields[field] = value;
-              return q;
-            },
-          };
+          const q = chainEq(fields);
           builder(q);
           if (table === "publishers" && indexName === "by_handle") {
             return {
@@ -8482,12 +8462,7 @@ describe("legacy publisher migration", () => {
           builder?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
         ) => {
           const fields: Record<string, unknown> = {};
-          const q = {
-            eq: (field: string, value: unknown) => {
-              fields[field] = value;
-              return q;
-            },
-          };
+          const q = chainEq(fields);
           builder?.(q);
           const indexedQuery = {
             unique: vi.fn(async () => {

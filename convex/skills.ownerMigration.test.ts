@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -241,12 +242,7 @@ function createMigrationFixture(params: {
               name === "by_owner_slug"
             ) {
               const constraints: Record<string, string> = {};
-              const q = {
-                eq: (field: string, value: string) => {
-                  constraints[field] = value;
-                  return q;
-                },
-              };
+              const q = chainEq(constraints);
               build?.(q);
               const mode: SkillSourceMode = params.skillSource ?? "other-personal";
               const ownerPublisherId =
@@ -333,12 +329,7 @@ function createMigrationFixture(params: {
             build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
           ) => {
             const constraints: Record<string, string> = {};
-            const q = {
-              eq: (field: string, value: string) => {
-                constraints[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(constraints);
             build?.(q);
             if (name === "by_skill") {
               return { collect: async () => [] };
