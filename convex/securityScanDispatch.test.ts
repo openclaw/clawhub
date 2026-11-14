@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   beginSecurityScanDispatchInternal,
@@ -56,14 +57,10 @@ function makeDispatchDb({
   patch?: ReturnType<typeof vi.fn>;
 }) {
   return {
-    get: vi.fn(),
+    ...createMockDb(),
     insert,
     patch,
     query,
-    replace: vi.fn(),
-    delete: vi.fn(),
-    normalizeId: vi.fn(),
-    system: {},
   };
 }
 

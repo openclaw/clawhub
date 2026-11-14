@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import {
   rebuildTrendingLeaderboardAction,
   rebuildTrendingLeaderboardInternal,
@@ -21,13 +22,7 @@ describe("leaderboards.rebuildTrendingLeaderboardInternal", () => {
     const runAfter = vi.fn().mockResolvedValue("job-1");
     const ctx = {
       db: {
-        get: vi.fn(),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
+        ...createMockDb(),
         system: {
           get: vi.fn(),
           query: vi.fn(),

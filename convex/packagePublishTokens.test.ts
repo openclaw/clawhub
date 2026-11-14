@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { createInternal } from "./packagePublishTokens";
 
 type CreateHandler = {
@@ -49,17 +50,12 @@ describe("package publish authorization token minting", () => {
     const first = vi.fn(async () => ({ _id: "packagePublishTokens:existing" }));
     const ctx = {
       db: {
-        get: vi.fn(),
+        ...createMockDb(),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             filter: vi.fn(() => ({ first })),
           })),
         })),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
         system: { get: vi.fn(), query: vi.fn() },
       },
     };

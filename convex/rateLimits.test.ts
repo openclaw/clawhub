@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 /* @vitest-environment node */
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
@@ -32,10 +33,7 @@ const pruneHttpKeyHandler = getTestHandler<
 
 function makeDb(overrides: { query: ReturnType<typeof vi.fn>; delete: ReturnType<typeof vi.fn> }) {
   return {
-    get: vi.fn(),
-    insert: vi.fn(),
-    patch: vi.fn(),
-    replace: vi.fn(),
+    ...createMockDb(),
     delete: overrides.delete,
     query: overrides.query,
     normalizeId: vi.fn(() => null),

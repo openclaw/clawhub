@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq, indexedUnique } from "../src/__tests__/helpers/convexQuery";
 import {
@@ -801,6 +802,7 @@ function makeResolvePublishTargetCtx(options: {
   });
   return {
     db: {
+      ...createMockDb(),
       get: vi.fn(async (tableOrId: string, maybeId?: string) => {
         const id = maybeId ?? tableOrId;
         if (id === "users:vincent") return actor;
@@ -809,12 +811,8 @@ function makeResolvePublishTargetCtx(options: {
         return null;
       }),
       query,
-      patch: vi.fn(),
       insert: vi.fn(async () => "auditLogs:resolve"),
-      delete: vi.fn(),
-      replace: vi.fn(),
       normalizeId: vi.fn((table: string, id: string) => (id.startsWith(`${table}:`) ? id : null)),
-      system: {},
     },
   };
 }
@@ -6453,6 +6451,7 @@ describe("publishers membership controls", () => {
     const deleteStorage = vi.fn(async () => {});
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => {
           if (id === "users:admin") return { _id: id };
           if (id === "publishers:org") {
@@ -6496,9 +6495,6 @@ describe("publishers membership controls", () => {
         }),
         patch,
         insert,
-        delete: vi.fn(),
-        replace: vi.fn(),
-        normalizeId: vi.fn(),
       },
       storage: {
         getUrl: vi.fn(async () => "https://storage.example/new-logo"),
@@ -9114,6 +9110,7 @@ describe("legacy publisher migration", () => {
     const deleteStorage = vi.fn(async () => {});
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => {
           if (id === "users:admin") return { _id: id, role: "admin" };
           return null;
@@ -9126,9 +9123,6 @@ describe("legacy publisher migration", () => {
         })),
         patch,
         insert: vi.fn(async () => "auditLogs:1"),
-        delete: vi.fn(),
-        replace: vi.fn(),
-        normalizeId: vi.fn(),
       },
       storage: {
         getUrl: vi.fn(async () => "https://storage.example/new-logo"),
