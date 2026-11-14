@@ -66,6 +66,7 @@ import {
 import { recordCatalogSearchObservation } from "../lib/catalogSearchObservations";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
 import { areDownloadMetricsPaused } from "../lib/downloadMetricsSwitch";
+import { runActionRef, runMutationRef, runQueryRef } from "../lib/functionRefs";
 import {
   fetchGitHubRepositoryIdentity,
   GitHubActionsOidcJwksUnavailableError,
@@ -284,18 +285,6 @@ function packagePublishErrorToResponse(
   const transient = transientConvexErrorResponse(error, headers, options);
   if (transient) return transient;
   return text(formatUserFacingErrorMessage(error, "Publish failed"), 400, headers);
-}
-
-async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
-async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runAction(ref as never, args as never)) as T;
-}
-
-async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
 }
 
 async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Request) {

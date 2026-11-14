@@ -38,6 +38,7 @@ import {
   type ClawHubVercelEnvironment,
   verifyClawHubVercelOidcToken,
 } from "../lib/clawhubVercelOidc";
+import { runMutationRef, runQueryRef } from "../lib/functionRefs";
 import {
   buildGitHubSkillHandoffDescriptor,
   getGitHubHandoffBlock,
@@ -411,14 +412,6 @@ const internalRefs = internal as unknown as {
     canAccessOwnerScopeInternal: unknown;
   };
 };
-
-async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
-async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
 
 function isMultipartRequest(request: Request) {
   return (
