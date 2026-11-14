@@ -1,6 +1,7 @@
 import { apiRequest } from "../../http.js";
 import { ApiRoutes, ApiV1PublisherCreateResponseSchema } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
+import { writeJsonIfRequested } from "../output.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
 
@@ -38,10 +39,7 @@ export async function cmdCreatePublisher(
     ApiV1PublisherCreateResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   console.log(`OK. Created publisher @${result.handle}.`);
 }
