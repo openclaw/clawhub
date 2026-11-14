@@ -1,7 +1,6 @@
 /* @vitest-environment node */
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -13,18 +12,11 @@ import {
   validateWorkerEnv,
   WORKERS,
 } from "./dev-workers";
+import { createTestTempDirectories } from "./lib/testTempDirectories";
 
-const tempDirs: string[] = [];
+const tempDirs = createTestTempDirectories("clawhub-dev-workers-test-");
 
-afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
-
-async function tempDir() {
-  const dir = await mkdtemp(join(tmpdir(), "clawhub-dev-workers-test-"));
-  tempDirs.push(dir);
-  return dir;
-}
+afterEach(tempDirs.cleanup);
 
 describe("dev-workers", () => {
   it("parses worker selection and polling options", () => {
@@ -58,7 +50,7 @@ describe("dev-workers", () => {
   });
 
   it("loads .env.local without overriding shell env and aliases VITE_CONVEX_URL", async () => {
-    const root = await tempDir();
+    const root = await tempDirs.create();
     await writeFile(
       join(root, ".env.local"),
       ["VITE_CONVEX_URL=https://dev.example", "SECURITY_SCAN_WORKER_TOKEN=from-file"].join("\n"),
@@ -76,7 +68,7 @@ describe("dev-workers", () => {
   });
 
   it("aliases VITE_CONVEX_URL from shell env when .env.local is absent", async () => {
-    const root = await tempDir();
+    const root = await tempDirs.create();
     const env: NodeJS.ProcessEnv = {
       VITE_CONVEX_URL: "https://dev.example",
       SECURITY_SCAN_WORKER_TOKEN: "from-shell",
@@ -99,7 +91,7 @@ describe("dev-workers", () => {
   });
 
   it("skips the default Skill Card worker when NVIDIA tooling is absent", async () => {
-    const root = await tempDir();
+    const root = await tempDirs.create();
     const selected = resolveEnabledWorkers({
       workers: [],
       skip: [],
@@ -124,7 +116,7 @@ describe("dev-workers", () => {
   });
 
   it("keeps Codex workers with explicit local opt-in", async () => {
-    const root = await tempDir();
+    const root = await tempDirs.create();
     const toolDir = join(root, "nvidia-tooling");
     await mkdir(join(toolDir, "AI Transparency Card Automation", "scripts"), { recursive: true });
     await writeFile(
@@ -147,7 +139,7 @@ describe("dev-workers", () => {
   });
 
   it("keeps the Skill Card worker when an explicit NVIDIA tool checkout exists", async () => {
-    const root = await tempDir();
+    const root = await tempDirs.create();
     const toolDir = join(root, "nvidia-tooling");
     await mkdir(join(toolDir, "AI Transparency Card Automation", "scripts"), { recursive: true });
     await writeFile(

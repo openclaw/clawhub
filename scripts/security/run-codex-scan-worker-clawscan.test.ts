@@ -2,11 +2,11 @@
 import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import * as dockerCleanup from "./clawscan-docker-cleanup";
 import * as pluginRuntime from "./clawscan-plugin-runtime";
 import completeReport from "./fixtures/skillspector-completed.json";
@@ -29,12 +29,12 @@ import {
   type SecurityScanJobHealth,
 } from "./security-scan-worker-summary";
 
-const tempDirs: string[] = [];
+const tempDirs = createTestTempDirectories("clawhub-codex-worker-test-");
 const execFileAsync = promisify(execFile);
 const sha256 = (content: string) => createHash("sha256").update(content).digest("hex");
 
 it("selects the claimed bundle manifest without narrowing the artifact", async () => {
-  const workspace = await tempDir();
+  const workspace = await tempDirs.create();
   await mkdir(join(workspace, "artifact/.claude-plugin"), { recursive: true });
   await writeFile(join(workspace, "artifact/.claude-plugin/plugin.json"), '{"name":"bundle"}');
   await writeFile(join(workspace, "artifact/openclaw.plugin.json"), "{}");
@@ -49,7 +49,7 @@ it("selects the claimed bundle manifest without narrowing the artifact", async (
 });
 
 it("does not let a nested package.json relocate a legacy bundle root", async () => {
-  const workspace = await tempDir();
+  const workspace = await tempDirs.create();
   await mkdir(join(workspace, "artifact/.claude-plugin"), { recursive: true });
   await mkdir(join(workspace, "artifact/package"), { recursive: true });
   await writeFile(join(workspace, "artifact/.claude-plugin/plugin.json"), '{"name":"bundle"}');
@@ -68,7 +68,7 @@ it.each([
   { family: "unknown", paths: ["openclaw.plugin.json"] },
   { family: "bundle-plugin", paths: ["SKILL.md"] },
 ])("fails closed for mismatched or ambiguous family $family", async ({ family, paths }) => {
-  const workspace = await tempDir();
+  const workspace = await tempDirs.create();
   for (const path of paths) {
     await mkdir(dirname(join(workspace, "artifact", path)), { recursive: true });
     await writeFile(join(workspace, "artifact", path), "{}");
@@ -98,7 +98,7 @@ it.each([
     selected: ".codex-plugin/plugin.json",
   },
 ])("preserves already-admitted legacy $family selection", async ({ family, paths, selected }) => {
-  const workspace = await tempDir();
+  const workspace = await tempDirs.create();
   for (const path of paths) {
     await mkdir(dirname(join(workspace, "artifact", path)), { recursive: true });
     await writeFile(join(workspace, "artifact", path), '{"name":"legacy","id":"legacy"}');
@@ -113,14 +113,8 @@ it.each([
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
+  await tempDirs.cleanup();
 });
-
-async function tempDir() {
-  const dir = await mkdtemp(join(tmpdir(), "clawhub-codex-worker-test-"));
-  tempDirs.push(dir);
-  return dir;
-}
 
 async function readStartedPid(path: string) {
   while (true) {
@@ -221,7 +215,7 @@ function fileTarget(path: string, content: string): ClaimedJob["target"] {
 }
 
 async function clawPackTarget(): Promise<ClaimedJob["target"]> {
-  const sourceDir = await tempDir();
+  const sourceDir = await tempDirs.create();
   const packageDir = join(sourceDir, "package");
   const archivePath = join(sourceDir, "artifact.tgz");
   await mkdir(packageDir, { recursive: true });
@@ -539,7 +533,7 @@ describe("run-codex-scan-worker clawscan authority", () => {
         retryableFailed: false,
       });
       expect(preserved).toBeTruthy();
-      tempDirs.push(preserved!);
+      tempDirs.track(preserved!);
       expect(
         await readFile(join(preserved!, "artifact/package/openclaw.plugin.json"), "utf8"),
       ).toContain("fixture-plugin");
@@ -586,7 +580,7 @@ describe("run-codex-scan-worker clawscan authority", () => {
   });
 
   it("saves a failed Endor-only scan on the release instead of failing the job", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     await configureEndorFakeCommands({
       clawScan: "/missing/must-not-launch-clawscan",
       dockerBody: fakeEndorDockerBody({
@@ -653,7 +647,7 @@ describe("run-codex-scan-worker clawscan authority", () => {
   ] as const)(
     "reports %s without inventing exposure or a verdict",
     async (scenario, invocations, failures, accepted) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       const artifact = JSON.parse(clawScanArtifactJson());
       const receiptError = "Judge did not provide the required artifact inspection receipt.";
       const first = {
@@ -766,8 +760,8 @@ describe("run-codex-scan-worker clawscan authority", () => {
   );
 
   it("retains a failed receipt invocation after a successful second receipt through worker summaries", async () => {
-    const workspace = await tempDir();
-    const diagnostics = await tempDir();
+    const workspace = await tempDirs.create();
+    const diagnostics = await tempDirs.create();
     const artifact = JSON.parse(clawScanArtifactJson({ verdict: "malicious" }));
     artifact.judge.result.artifact_inspection.challenge = "b".repeat(64);
     artifact.judge.result.artifact_inspection.required_file_sha256 = "c".repeat(64);
@@ -883,7 +877,7 @@ describe("run-codex-scan-worker clawscan authority", () => {
   it.each([false, true])(
     "passes default/overridden scanner settings to the real subprocess (override=%s)",
     async (overrides) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       await mkdir(join(workspace, "artifact"), { recursive: true });
       await writeFile(join(workspace, "artifact", "SKILL.md"), "# Safe skill\n");
       const fakeClawScan = join(workspace, "fake-clawscan");
@@ -981,7 +975,7 @@ JSON`,
       expected: [{ rootPath: "skills/safe", scanPath: "artifact/package/skills/safe" }],
     },
   ])("selects $name only from the package manifest", async ({ name, roots, expected }) => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     await mkdir(join(workspace, "artifact", "package"), { recursive: true });
     await writeFile(join(workspace, "artifact", "package", "package.json"), "{}\n");
     const job = claimedJob({
@@ -1068,7 +1062,7 @@ JSON`,
   it.each([0, 1])(
     "retains original partial bundled reports for adjudication on exit %s without findings",
     async (exitCode) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       const partial = { ...structuredClone(partialReport), issues: [] };
       const complete = structuredClone(completeReport);
       const command = join(workspace, "skillspector");
@@ -1104,7 +1098,7 @@ esac`,
   );
 
   it("retains partial bundled reports in declared-root order when roots finish out of order", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const partial = { ...structuredClone(partialReport), issues: [] };
     const complete = structuredClone(completeReport);
     // Two roots run together; the first declared root cannot finish until the
@@ -1141,7 +1135,7 @@ esac`,
   it.each(["no-partial", "partial"])(
     "requires explicit complete-child controls only in a partial bundle (%s)",
     async (mode) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       const command = join(workspace, "skillspector");
       const alpha = mode === "partial" ? partialReport : { status: "clean", issues: [] };
       await writeFakeClawScanCommand(
@@ -1170,7 +1164,7 @@ esac`,
   it.each(["crashed", "malformed", "duplicate-keys", "unsuccessful"])(
     "rejects %s bundled evidence before the judge",
     async (mode) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       let raw = JSON.stringify(partialReport);
       if (mode === "malformed") raw = "[]";
       if (mode === "duplicate-keys")
@@ -1200,7 +1194,7 @@ exit ${mode === "crashed" ? 2 : 0}`,
   it.each([0, 1])(
     "never passes a package root to SkillSpector (findings exit %s)",
     async (exitCode) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       const packageRoot = join(workspace, "artifact", "package");
       await mkdir(join(packageRoot, "skills", "alpha"), { recursive: true });
       await mkdir(join(packageRoot, "skills", "beta"), { recursive: true });
@@ -1314,7 +1308,7 @@ JSON`,
   );
 
   it("uses ClawScan as the only skillVersion scan implementation", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const clawscanMarker = join(workspace, "clawscan-called.log");
     await writeFakeClawScanCommand(
@@ -1378,7 +1372,7 @@ JSON`,
   }>)(
     "persists %s ClawScan verdicts through the existing completion shape",
     async ({ verdict, expectedStatus, reportsSupported }) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       const fakeClawScan = join(workspace, "fake-clawscan");
       const argsLog = join(workspace, "clawscan-args.log");
       const artifactJson = clawScanArtifactJson({
@@ -1545,7 +1539,7 @@ JSON`,
   ])(
     "routes $name through the same artifact-only ClawScan persistence adapter",
     async ({ source, targetKind, expectedTarget, expectedFile, target }) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       const fakeClawScan = join(workspace, "fake-clawscan");
       const argsLog = join(workspace, "clawscan-args.log");
       const filesLog = join(workspace, "clawscan-files.log");
@@ -1663,7 +1657,7 @@ JSON`,
   ])(
     "uses the existing retry lifecycle when $targetKind/$source ClawScan execution fails",
     async ({ source, targetKind, target }) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       const fakeClawScan = join(workspace, "fake-clawscan");
       await writeFakeClawScanCommand(fakeClawScan, 'echo "matrix failure" >&2\nexit 17');
 
@@ -1710,7 +1704,7 @@ JSON`,
   ])(
     "saves $status community code-plugin Endor analysis without passing it to the judge",
     async (scan) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       const fakeClawScan = join(workspace, "fake-clawscan");
       const endorDoneMarker = join(workspace, "endor-done");
       const metadataLog = join(workspace, "judge-metadata.json");
@@ -1778,7 +1772,7 @@ JSON`,
       family: "code-plugin",
     },
   ])("does not launch Endor for $excluded", async (cohort) => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const dockerLog = join(workspace, "unexpected-docker-call");
     await writeFakeClawScanCommand(
@@ -1813,7 +1807,7 @@ JSON`,
   });
 
   it("prepares bundled SkillSpector while Endor is active, then judges after both finish", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const callLog = join(workspace, "clawscan-calls.log");
     const endorStarted = join(workspace, "endor-started");
@@ -1869,8 +1863,8 @@ touch ${JSON.stringify(skillReady)}`,
   });
 
   it("waits for Endor cleanup when bundled SkillSpector preparation fails early", async () => {
-    const workspace = await tempDir();
-    const diagnosticsRoot = await tempDir();
+    const workspace = await tempDirs.create();
+    const diagnosticsRoot = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const callLog = join(workspace, "clawscan-calls.log");
     const skillFailed = join(workspace, "skill-failed");
@@ -1960,8 +1954,8 @@ exit 7`,
   it.each(["child failure", "shared deadline"])(
     "retains bounded context after an earlier bundled root succeeds: %s",
     async (failure) => {
-      const workspace = await tempDir();
-      const diagnosticsRoot = await tempDir();
+      const workspace = await tempDirs.create();
+      const diagnosticsRoot = await tempDirs.create();
       const fakeClawScan = join(workspace, "fake-clawscan");
       const callLog = join(workspace, "clawscan-called");
       const firstRootCompleted = join(workspace, "first-root-completed");
@@ -2100,8 +2094,8 @@ exit 2`,
   it.each([true, false])(
     "classifies bundled SkillSpector timeouts without changing retry=%s",
     async (retry) => {
-      const workspace = await tempDir();
-      const diagnosticsRoot = await tempDir();
+      const workspace = await tempDirs.create();
+      const diagnosticsRoot = await tempDirs.create();
       const callLog = join(workspace, "clawscan-called");
       const started = join(workspace, "skillspector-started");
       const timeoutMs = 2_000;
@@ -2168,8 +2162,8 @@ exec sleep 10`,
   );
 
   it("retries a primary ClawScan failure while retaining bounded diagnostics for both failures", async () => {
-    const workspace = await tempDir();
-    const diagnosticsRoot = await tempDir();
+    const workspace = await tempDirs.create();
+    const diagnosticsRoot = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const endorDoneMarker = join(workspace, "endor-done");
     await writeFakeClawScanCommand(
@@ -2229,8 +2223,8 @@ exit 19`,
   });
 
   it("records an Endor timeout as scanner health while completing moderation", async () => {
-    const workspace = await tempDir();
-    const diagnosticsRoot = await tempDir();
+    const workspace = await tempDirs.create();
+    const diagnosticsRoot = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const callLog = join(workspace, "clawscan-calls.log");
     const endorDoneMarker = join(workspace, "endor-done");
@@ -2283,7 +2277,7 @@ exit 19`,
   });
 
   it("fails the job when SkillSpector scanner status is skipped", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const artifactJson = clawScanArtifactJson({
       scannerStatuses: { skillspector: "skipped" },
@@ -2340,7 +2334,7 @@ JSON`,
   });
 
   it("fails the job when the ClawScan artifact is malformed", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     await writeFakeClawScanCommand(
       fakeClawScan,
@@ -2395,7 +2389,7 @@ echo "not json" > "$out"`,
   });
 
   it("fails the job when completed A.I.G output has no SARIF run", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const artifactJson = clawScanArtifactJson({
       aigRaw: { version: "2.1.0", runs: [] },
@@ -2452,7 +2446,7 @@ JSON`,
   });
 
   it("fails the job when the ClawScan judge omits artifact inspection proof", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const { artifact_inspection: _inspection, ...judgeResult } = completeJudgeResult("benign");
     const artifactJson = clawScanArtifactJson({ judgeResult });
@@ -2508,7 +2502,7 @@ JSON`,
   });
 
   it("fails the job when the ClawScan judge result is missing required dimensions", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const artifactJson = clawScanArtifactJson({
       judgeResult: {
@@ -2605,7 +2599,7 @@ JSON`,
   ])(
     "fails the job when ClawScan artifact completedAt is $name",
     async ({ artifactJson, expectedError, name }) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       const fakeClawScan = join(workspace, "fake-clawscan");
       await writeFakeClawScanCommand(
         fakeClawScan,
@@ -2661,7 +2655,7 @@ JSON`,
   );
 
   it("fails the job when a required ClawScan scanner reports failed", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const artifactJson = clawScanArtifactJson({
       scannerStatuses: { skillspector: "failed" },
@@ -2728,7 +2722,7 @@ JSON`,
   });
 
   it("uses the existing timeout/failure retry path for ClawScan timeouts", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const fakeClawScan = join(workspace, "fake-clawscan");
     await writeFakeClawScanCommand(
       fakeClawScan,
@@ -2781,8 +2775,8 @@ echo "this should never complete"`,
   });
 
   it("retains opt-in phase evidence through the outer timeout diagnostic path", async () => {
-    const workspace = await tempDir();
-    const diagnosticsRoot = await tempDir();
+    const workspace = await tempDirs.create();
+    const diagnosticsRoot = await tempDirs.create();
     await mkdir(join(workspace, "artifact"), { recursive: true });
     const fakeClawScan = join(workspace, "fake-clawscan");
     const event =
@@ -2838,7 +2832,7 @@ exec sleep 10`,
   });
 
   it("never accepts a progress checkpoint as a completed scan artifact", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     await mkdir(join(workspace, "artifact"), { recursive: true });
     const fakeClawScan = join(workspace, "fake-clawscan");
     await writeFakeClawScanCommand(
@@ -2858,7 +2852,7 @@ done`,
   });
 
   it("terminates the full ClawScan process tree on timeout", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     await mkdir(join(workspace, "artifact"), { recursive: true });
     const fakeClawScan = join(workspace, "fake-clawscan");
     await writeFakeClawScanCommand(

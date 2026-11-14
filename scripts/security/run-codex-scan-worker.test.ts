@@ -1,9 +1,9 @@
 /* @vitest-environment node */
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import { summarizeClawScanExposure } from "./clawscan-exposure";
 import {
   assertAigFilePathsHaveNoCompiledPython,
@@ -16,18 +16,12 @@ import {
   writeJobDiagnostic,
 } from "./run-codex-scan-worker";
 
-const tempDirs: string[] = [];
+const tempDirs = createTestTempDirectories("clawhub-codex-worker-test-");
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
+  await tempDirs.cleanup();
 });
-
-async function tempDir() {
-  const dir = await mkdtemp(join(tmpdir(), "clawhub-codex-worker-test-"));
-  tempDirs.push(dir);
-  return dir;
-}
 
 function unsafeFixtureLabels() {
   return {
@@ -40,8 +34,8 @@ function unsafeFixtureLabels() {
 
 describe("run-codex-scan-worker diagnostics", () => {
   it("publishes the worker report to the Actions summary and diagnostics artifact", async () => {
-    const diagnosticsRoot = await tempDir();
-    const stepSummaryPath = join(await tempDir(), "step-summary.md");
+    const diagnosticsRoot = await tempDirs.create();
+    const stepSummaryPath = join(await tempDirs.create(), "step-summary.md");
     await writeFile(stepSummaryPath, "");
     const previousStepSummary = process.env.GITHUB_STEP_SUMMARY;
     process.env.GITHUB_STEP_SUMMARY = stepSummaryPath;
@@ -680,7 +674,7 @@ describe("run-codex-scan-worker diagnostics", () => {
   });
 
   it("writes scanner metadata without lease tokens or signed file URLs", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
 
     await writeArtifactWorkspace(
       {
@@ -729,7 +723,7 @@ describe("run-codex-scan-worker diagnostics", () => {
   });
 
   it("rejects downloaded bytes that do not match the stored file hash", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     await expect(
       writeArtifactWorkspace(
         {
@@ -757,7 +751,7 @@ describe("run-codex-scan-worker diagnostics", () => {
   });
 
   it("materializes zero-byte directory markers with descendant files", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
 
     await writeArtifactWorkspace(
       {
@@ -801,7 +795,7 @@ describe("run-codex-scan-worker diagnostics", () => {
   });
 
   it("does not extract legacy ZIP archives after materializing verified files", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     const manifest = '{"id":"demo-plugin"}\n';
 
     await writeArtifactWorkspace(
@@ -841,7 +835,7 @@ describe("run-codex-scan-worker diagnostics", () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("forbidden", { status: 403 }));
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
 
     await expect(
       writeArtifactWorkspace(
@@ -888,7 +882,7 @@ describe("run-codex-scan-worker diagnostics", () => {
           ],
         },
       },
-      await tempDir(),
+      await tempDirs.create(),
     ).catch((caught: unknown) => caught);
 
     const message = error instanceof Error ? error.message : String(error);
@@ -921,7 +915,7 @@ describe("run-codex-scan-worker diagnostics", () => {
           ],
         },
       },
-      await tempDir(),
+      await tempDirs.create(),
     ).catch((caught: unknown) => caught);
     const unsafePathMessage =
       unsafePathError instanceof Error ? unsafePathError.message : String(unsafePathError);
@@ -959,7 +953,7 @@ describe("run-codex-scan-worker diagnostics", () => {
           ],
         },
       },
-      await tempDir(),
+      await tempDirs.create(),
     ).catch((caught: unknown) => caught);
     const networkMessage =
       networkError instanceof Error ? networkError.message : String(networkError);
@@ -1003,7 +997,7 @@ describe("run-codex-scan-worker diagnostics", () => {
             "https://signed.example.invalid/package.tgz?token=secret&X-Amz-Signature=abc123",
         },
       },
-      await tempDir(),
+      await tempDirs.create(),
     ).catch((caught: unknown) => caught);
     const clawpackMessage =
       clawpackError instanceof Error ? clawpackError.message : String(clawpackError);
@@ -1142,8 +1136,8 @@ describe("run-codex-scan-worker diagnostics", () => {
   });
 
   it("retains full ClawScan artifact and scanner outputs with secret-safe redaction", async () => {
-    const diagnosticsRoot = await tempDir();
-    const workspace = await tempDir();
+    const diagnosticsRoot = await tempDirs.create();
+    const workspace = await tempDirs.create();
     const scannerOutputRoot = join(workspace, "clawscan-artifact", "scanner-results");
     await mkdir(scannerOutputRoot, { recursive: true });
 
@@ -1327,7 +1321,7 @@ describe("run-codex-scan-worker diagnostics", () => {
   });
 
   it("writes bounded Endor failure diagnostics with secrets redacted", async () => {
-    const diagnosticsRoot = await tempDir();
+    const diagnosticsRoot = await tempDirs.create();
     await writeJobDiagnostic({
       completedAt: 2000,
       diagnosticsRoot,

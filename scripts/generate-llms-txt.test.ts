@@ -1,15 +1,14 @@
 /* @vitest-environment node */
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { readLlmsDocs, renderLlmsTxt, writeLlmsTxt } from "./generate-llms-txt";
+import { createTestTempDirectories } from "./lib/testTempDirectories";
 
-const temporaryDirectories: string[] = [];
+const temporaryDirectories = createTestTempDirectories("clawhub-llms-");
 
 async function temporaryDocs() {
-  const root = await mkdtemp(join(tmpdir(), "clawhub-llms-"));
-  temporaryDirectories.push(root);
+  const root = await temporaryDirectories.create();
   const docsDir = join(root, "docs");
   await mkdir(docsDir);
   return docsDir;
@@ -19,13 +18,7 @@ async function writeDoc(docsDir: string, filename: string, content: string) {
   await writeFile(join(docsDir, filename), content, "utf8");
 }
 
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true })),
-  );
-});
+afterEach(temporaryDirectories.cleanup);
 
 describe("llms.txt generation", () => {
   it("discovers publishable docs from frontmatter without maintaining a second index", async () => {
@@ -89,8 +82,7 @@ describe("llms.txt generation", () => {
   });
 
   it("writes the static asset once and leaves an identical file untouched", async () => {
-    const root = await mkdtemp(join(tmpdir(), "clawhub-llms-output-"));
-    temporaryDirectories.push(root);
+    const root = await temporaryDirectories.create("clawhub-llms-output-");
     const outputFile = join(root, "llms.txt");
 
     await expect(writeLlmsTxt(outputFile)).resolves.toBe(true);

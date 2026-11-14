@@ -1,31 +1,24 @@
 /* @vitest-environment node */
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import {
   buildTier3Commands,
   discoverSkillEvals,
   resolveRepositoryPath,
 } from "./skill-evaluation-runtime";
 
-const temporaryDirectories: string[] = [];
+const temporaryDirectories = createTestTempDirectories("clawhub-skill-evals-test-");
 
 async function makeSkill() {
-  const directory = await mkdtemp(join(tmpdir(), "clawhub-skill-evals-test-"));
-  temporaryDirectories.push(directory);
+  const directory = await temporaryDirectories.create();
   await writeFile(join(directory, "SKILL.md"), "---\nname: demo\n---\n");
   return directory;
 }
 
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true })),
-  );
-});
+afterEach(temporaryDirectories.cleanup);
 
 describe("SkillEvaluator eval discovery", () => {
   it("discovers the canonical evals/evals.json contract", async () => {
