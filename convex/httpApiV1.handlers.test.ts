@@ -2785,7 +2785,7 @@ describe("httpApiV1 handlers", () => {
     ];
     const runAction = vi.fn().mockResolvedValue(ordered);
     const response = await __handlers.searchSkillsV1Handler(
-      makeCtx({ runAction, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+      makeCtx({ runAction }),
       new Request("https://example.com/api/v1/search?q=find"),
     );
 
@@ -2937,9 +2937,8 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("resolve returns 404 when missing", async () => {
-    const runQuery = vi.fn().mockResolvedValue(null);
     const response = await __handlers.resolveSkillVersionV1Handler(
-      makeCtx({ runQuery }),
+      makeCtx({}),
       new Request(
         "https://example.com/api/v1/resolve?slug=demo&hash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       ),
@@ -3492,9 +3491,8 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("get skill returns 404 when missing", async () => {
-    const runQuery = vi.fn().mockResolvedValue(null);
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/skills/missing"),
     );
     expect(response.status).toBe(404);
@@ -4041,7 +4039,7 @@ describe("httpApiV1 handlers", () => {
     });
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+      makeCtx({ runQuery }),
       new Request(
         "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
       ),
@@ -5305,9 +5303,8 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns 404 for versions when the owner is banned", async () => {
-    const runQuery = vi.fn(async () => null);
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/skills/demo/versions?limit=1"),
     );
     expect(response.status).toBe(404);
@@ -5385,9 +5382,8 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns 404 for version detail when the owner is banned", async () => {
-    const runQuery = vi.fn(async () => null);
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery }),
+      makeCtx({}),
       new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
     );
     expect(response.status).toBe(404);
@@ -6287,7 +6283,6 @@ describe("httpApiV1 handlers", () => {
     };
     const ctx = makeCtx({
       runQuery,
-      runMutation: vi.fn().mockResolvedValue(okRate()),
       storage,
     });
 
@@ -6355,7 +6350,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({
         runQuery,
-        runMutation: vi.fn().mockResolvedValue(okRate()),
         storage: {
           get: vi
             .fn()
@@ -8029,7 +8023,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.skillsPostRouterV1Handler(
       makeCtx({
         runQuery,
-        runMutation: vi.fn().mockResolvedValue(okRate()),
         storage: { store, delete: vi.fn() },
       }),
       new Request(
@@ -8140,10 +8133,7 @@ describe("httpApiV1 handlers", () => {
       },
     ])("maps a transient Convex failure to 503 with Retry-After: $error", async (fixture) => {
       vi.mocked(publishVersionForUser).mockRejectedValueOnce(new Error(fixture.error));
-      const response = await __handlers.publishSkillV1Handler(
-        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
-        skillPublishRequest(),
-      );
+      const response = await __handlers.publishSkillV1Handler(makeCtx({}), skillPublishRequest());
       expect(response.status).toBe(503);
       expect(response.headers.get("Retry-After")).toBe(fixture.retryAfter);
       for (const header of rateLimitHeaders) expect(response.headers.get(header)).toBeNull();
@@ -8162,10 +8152,7 @@ describe("httpApiV1 handlers", () => {
           throw new Error("InternalServerError: Transient error while running mutation");
         },
       );
-      const response = await __handlers.publishSkillV1Handler(
-        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
-        skillPublishRequest(),
-      );
+      const response = await __handlers.publishSkillV1Handler(makeCtx({}), skillPublishRequest());
       // Resending the same tickets can never succeed, so do not invite an automatic retry.
       expect(response.status).toBe(409);
       expect(response.headers.get("Retry-After")).toBeNull();
@@ -8182,10 +8169,7 @@ describe("httpApiV1 handlers", () => {
       new ConvexError("InternalServerError: is a reserved skill name"),
     ])("keeps a genuine validation error as 400 with its message: %s", async (error) => {
       vi.mocked(publishVersionForUser).mockRejectedValueOnce(error);
-      const response = await __handlers.publishSkillV1Handler(
-        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
-        skillPublishRequest(),
-      );
+      const response = await __handlers.publishSkillV1Handler(makeCtx({}), skillPublishRequest());
       expect(response.status).toBe(400);
       expect(response.headers.get("Retry-After")).toBeNull();
       for (const header of rateLimitHeaders) expect(response.headers.get(header)).toBeNull();
@@ -8197,10 +8181,7 @@ describe("httpApiV1 handlers", () => {
       vi.mocked(requireApiTokenUser).mockRejectedValueOnce(
         new Error("Your request couldn't be completed. Try again later."),
       );
-      const response = await __handlers.publishSkillV1Handler(
-        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
-        skillPublishRequest(),
-      );
+      const response = await __handlers.publishSkillV1Handler(makeCtx({}), skillPublishRequest());
       expect(response.status).toBe(503);
       expect(response.headers.get("Retry-After")).toBe("2");
       expect(await response.text()).not.toMatch(/unauthorized|login/i);
@@ -8210,10 +8191,7 @@ describe("httpApiV1 handlers", () => {
     it("keeps a rejected API token as 401", async () => {
       vi.mocked(requireApiTokenUser).mockReset();
       vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new ConvexError("Unauthorized"));
-      const response = await __handlers.publishSkillV1Handler(
-        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
-        skillPublishRequest(),
-      );
+      const response = await __handlers.publishSkillV1Handler(makeCtx({}), skillPublishRequest());
       expect(response.status).toBe(401);
       expect(response.headers.get("Retry-After")).toBeNull();
     });
@@ -8223,7 +8201,7 @@ describe("httpApiV1 handlers", () => {
         throw new Error("InternalServerError: Transient error while running query");
       });
       const response = await __handlers.mintPublishTokenV1Handler(
-        makeCtx({ runQuery, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        makeCtx({ runQuery }),
         new Request("https://example.com/api/v1/publish/token/mint", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -8245,7 +8223,7 @@ describe("httpApiV1 handlers", () => {
         .fn()
         .mockRejectedValue(new Error("InternalServerError: Transient error while running action"));
       const response = await recoverPackagePublishAttemptV1Handler(
-        makeCtx({ runAction, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        makeCtx({ runAction }),
         new Request("https://example.com/api/v1/publish/attempts/publishAttempts:1/recover", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
@@ -8703,7 +8681,6 @@ describe("httpApiV1 handlers", () => {
       form.append("files", new Blob(["# Demo\n"]), "SKILL.md");
       const response = await __handlers.publishSkillV1Handler(
         makeCtx({
-          runMutation: vi.fn().mockResolvedValue(okRate()),
           storage: { store: vi.fn().mockResolvedValue("storage:request"), delete: remove },
         }),
         new Request("https://example.com/api/v1/skills", {
@@ -10437,7 +10414,7 @@ describe("httpApiV1 handlers", () => {
     "users/%s rejects unknown actions before parsing or auth",
     async (action) => {
       const response = await __handlers.usersPostRouterV1Handler(
-        makeCtx({ runMutation: vi.fn().mockResolvedValue(okRate()) }),
+        makeCtx({}),
         new Request(`https://example.com/api/v1/users/${action}`, {
           method: "POST",
           body: "invalid json",
@@ -11136,7 +11113,7 @@ describe("httpApiV1 handlers", () => {
     });
 
     const response = await __handlers.listPluginOverviewV1Handler(
-      makeCtx({ runQuery, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+      makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/plugins/overview"),
     );
 
@@ -13977,7 +13954,6 @@ describe("httpApiV1 handlers", () => {
     };
     const ctx = makeCtx({
       runQuery,
-      runMutation: vi.fn().mockResolvedValue(okRate()),
       storage,
     });
 
@@ -16251,7 +16227,6 @@ describe("httpApiV1 handlers", () => {
       const response = await __handlers.publishPackageV1Handler(
         makeCtx({
           runAction,
-          runMutation: vi.fn().mockResolvedValue(okRate()),
           storage: { store: storageStore, delete: storageDelete },
         }),
         new Request("https://example.com/api/v1/packages", {
@@ -16398,7 +16373,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
         runAction,
-        runMutation: vi.fn().mockResolvedValue(okRate()),
         storage: { store: storageStore },
       }),
       new Request("https://example.com/api/v1/packages", {
@@ -16461,7 +16435,6 @@ describe("httpApiV1 handlers", () => {
     form.append("files", new File(["late"], "late.txt"));
     const responsePromise = __handlers.publishPackageV1Handler(
       makeCtx({
-        runMutation: vi.fn().mockResolvedValue(okRate()),
         runAction,
         storage: { store, delete: remove },
       }),
@@ -16521,7 +16494,6 @@ describe("httpApiV1 handlers", () => {
       } else form.set("clawpack", new File([bytesToArrayBuffer(pack)], "demo.tgz"));
       const responsePromise = __handlers.publishPackageV1Handler(
         makeCtx({
-          runMutation: vi.fn().mockResolvedValue(okRate()),
           runAction,
           storage,
         }),
@@ -16552,7 +16524,6 @@ describe("httpApiV1 handlers", () => {
     form.append("files", new File(["{}"], "openclaw.plugin.json"));
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
-        runMutation: vi.fn().mockResolvedValue(okRate()),
         runAction,
         storage: { store: vi.fn().mockResolvedValue("storage:request-file"), delete: remove },
       }),
@@ -16920,7 +16891,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
         runAction,
-        runMutation: vi.fn().mockResolvedValue(okRate()),
         storage: { store: storageStore },
       }),
       new Request("https://example.com/api/v1/packages", {
@@ -16956,7 +16926,6 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
         runAction,
-        runMutation: vi.fn().mockResolvedValue(okRate()),
         storage: { get: storageGet },
       }),
       new Request("https://example.com/api/v1/packages", {
