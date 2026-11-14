@@ -54,7 +54,10 @@ import {
   cmdTransferRequest,
 } from "./cli/commands/transfer.js";
 import { cmdUnstarSkill } from "./cli/commands/unstar.js";
-import { resolveGlobalOpts as resolveGlobalOptsFromOptions } from "./cli/globalOpts.js";
+import {
+  createGlobalOptsAction,
+  resolveGlobalOpts as resolveGlobalOptsFromOptions,
+} from "./cli/globalOpts.js";
 import { configureCommanderHelp, styleEnvBlock, styleError, styleTitle } from "./cli/helpStyle.js";
 import type { GlobalOpts } from "./cli/types.js";
 import { fail, formatError } from "./cli/ui.js";
@@ -165,16 +168,7 @@ async function resolveGlobalOpts(): Promise<GlobalOpts> {
   return resolveGlobalOptsFromOptions(raw);
 }
 
-type CommandActionArgs = Parameters<Parameters<Command["action"]>[0]>;
-
-function withGlobalOpts(
-  action: (opts: GlobalOpts, ...args: CommandActionArgs) => Promise<unknown>,
-) {
-  return async (...args: CommandActionArgs) => {
-    const opts = await resolveGlobalOpts();
-    await action(opts, ...args);
-  };
-}
+const withGlobalOpts = createGlobalOptsAction(resolveGlobalOpts);
 
 function isInputAllowed() {
   const globalFlags = program.opts<{ input?: boolean }>();
