@@ -15,6 +15,7 @@ import {
   type PackageDetailResponse,
   type PackageVersionDetail,
 } from "../lib/packageApi";
+import { setViewportWidth } from "./helpers/viewport";
 
 const isRateLimitedPackageApiErrorMock = vi.fn(
   (error: unknown) =>
@@ -175,29 +176,6 @@ function openRelease(version: string) {
 }
 
 describe("plugin detail route", () => {
-  function setViewportWidth(width: number) {
-    vi.stubGlobal("matchMedia", (query: string) => {
-      const minWidth = /\(min-width:\s*(\d+)px\)/.exec(query)?.[1];
-      const maxWidth = /\(max-width:\s*(\d+)px\)/.exec(query)?.[1];
-      const matches = minWidth
-        ? width >= Number(minWidth)
-        : maxWidth
-          ? width <= Number(maxWidth)
-          : false;
-
-      return {
-        matches,
-        media: query,
-        onchange: null,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      };
-    });
-  }
-
   beforeEach(() => {
     setViewportWidth(1071);
     paramsMock = { name: "demo-plugin" };
