@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import { makeSkillDetailPageViewProps } from "../__tests__/helpers/skillDetailPageView";
+import { setViewportWidth } from "../__tests__/helpers/viewport";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { SkillDetailPageView } from "./SkillDetailPageView";
 import { TooltipProvider } from "./ui/tooltip";
@@ -53,29 +54,6 @@ describe("SkillDetailPageView", () => {
     expect(
       summary!.compareDocumentPosition(creator!) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-  }
-
-  function setViewportWidth(width: number) {
-    vi.stubGlobal("matchMedia", (query: string) => {
-      const minWidth = /\(min-width:\s*(\d+)px\)/.exec(query)?.[1];
-      const maxWidth = /\(max-width:\s*(\d+)px\)/.exec(query)?.[1];
-      const matches = minWidth
-        ? width >= Number(minWidth)
-        : maxWidth
-          ? width <= Number(maxWidth)
-          : false;
-
-      return {
-        matches,
-        media: query,
-        onchange: null,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      };
-    });
   }
 
   beforeEach(() => {
