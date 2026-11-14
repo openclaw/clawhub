@@ -247,6 +247,129 @@ function createSuccessfulPublishInsert(
   });
 }
 
+function createLegacyPersonalPublishFixture(
+  existingSkill: Record<string, unknown>,
+  {
+    getOwnerDeletedAt,
+    onSlugLookup,
+  }: {
+    getOwnerDeletedAt?: () => number;
+    onSlugLookup?: (slug: string) => void;
+  } = {},
+) {
+  const now = Date.now();
+  const storedSkills = new Map<string, Record<string, unknown>>();
+  let authAccountLookupCount = 0;
+  const patch = vi.fn(async () => {});
+  const insert = createSuccessfulPublishInsert(storedSkills, now);
+  const db = {
+    get: vi.fn(async (id: string) => {
+      if (storedSkills.has(id)) return storedSkills.get(id);
+      if (id === "users:caller") {
+        return {
+          _id: "users:caller",
+          _creationTime: now - 60 * 24 * 60 * 60 * 1000,
+          createdAt: now - 60 * 24 * 60 * 60 * 1000,
+          handle: "caller",
+          trustedPublisher: true,
+          role: "user",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+          personalPublisherId: "publishers:caller",
+        };
+      }
+      if (id === "publishers:caller") {
+        return {
+          _id: "publishers:caller",
+          kind: "user",
+          handle: "caller",
+          linkedUserId: "users:caller",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        };
+      }
+      if (id === "users:owner") {
+        return {
+          _id: "users:owner",
+          handle: "alice",
+          deletedAt: getOwnerDeletedAt?.(),
+          deactivatedAt: undefined,
+        };
+      }
+      return null;
+    }),
+    query: vi.fn((table: string) => {
+      if (table === "skills") {
+        return {
+          withIndex: (
+            name: string,
+            build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            if (name !== "by_slug") {
+              const ownerScoped = emptyOwnerScopedSkillLookup(name);
+              if (ownerScoped) return ownerScoped;
+              throw new Error(`unexpected skills index `);
+            }
+            if (onSlugLookup) {
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field !== "slug") throw new Error(`unexpected field ${field}`);
+                  onSlugLookup(value);
+                  return q;
+                },
+              };
+              build?.(q);
+            }
+            return {
+              unique: async () => ({ ...existingSkill }),
+            };
+          },
+        };
+      }
+      if (table === "authAccounts") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
+            return {
+              take: async () => {
+                authAccountLookupCount += 1;
+                return authAccountLookupCount === 1
+                  ? [{ providerAccountId: "owner-gh" }]
+                  : [{ providerAccountId: "caller-gh" }];
+              },
+            };
+          },
+        };
+      }
+      const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
+      if (emptyAliasesQuery) return emptyAliasesQuery;
+      const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
+      if (emptyReservationsQuery) return emptyReservationsQuery;
+      const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
+      if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
+      const emptyVersionsQuery = buildEmptySkillVersionsQuery(table);
+      if (emptyVersionsQuery) return emptyVersionsQuery;
+      const emptyBadgesQuery = buildEmptySkillBadgesQuery(table);
+      if (emptyBadgesQuery) return emptyBadgesQuery;
+      const emptyEmbeddingsQuery = buildEmptySkillEmbeddingsQuery(table);
+      if (emptyEmbeddingsQuery) return emptyEmbeddingsQuery;
+      const globalStatsQuery = buildGlobalStatsQuery(table);
+      if (globalStatsQuery) return globalStatsQuery;
+      const digestQuery = buildDigestQuery(table);
+      if (digestQuery) return digestQuery;
+      const emptyPublishersQuery = buildEmptyPublishersQuery(table);
+      if (emptyPublishersQuery) return emptyPublishersQuery;
+      const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
+      if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
+      throw new Error(`unexpected table `);
+    }),
+    patch,
+    insert,
+    normalizeId: vi.fn(),
+  };
+  return { db, insert };
+}
+
 function createPublishArgs(overrides?: Partial<Record<string, unknown>>) {
   return {
     userId: "users:owner",
@@ -377,111 +500,15 @@ describe("skills anti-spam guards", () => {
   });
 
   it("allows a legacy personal publish when another owner already uses the slug", async () => {
-    const now = Date.now();
-    const storedSkills = new Map<string, Record<string, unknown>>();
-    let authAccountLookupCount = 0;
-    const patch = vi.fn(async () => {});
-    const insert = createSuccessfulPublishInsert(storedSkills, now);
-    const db = {
-      get: vi.fn(async (id: string) => {
-        if (storedSkills.has(id)) return storedSkills.get(id);
-        if (id === "users:caller") {
-          return {
-            _id: "users:caller",
-            _creationTime: now - 60 * 24 * 60 * 60 * 1000,
-            createdAt: now - 60 * 24 * 60 * 60 * 1000,
-            handle: "caller",
-            trustedPublisher: true,
-            role: "user",
-            deletedAt: undefined,
-            deactivatedAt: undefined,
-            personalPublisherId: "publishers:caller",
-          };
-        }
-        if (id === "publishers:caller") {
-          return {
-            _id: "publishers:caller",
-            kind: "user",
-            handle: "caller",
-            linkedUserId: "users:caller",
-            deletedAt: undefined,
-            deactivatedAt: undefined,
-          };
-        }
-        if (id === "users:owner") {
-          return {
-            _id: "users:owner",
-            handle: "alice",
-            deletedAt: undefined,
-            deactivatedAt: undefined,
-          };
-        }
-        return null;
-      }),
-      query: vi.fn((table: string) => {
-        if (table === "skills") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_slug") {
-                const ownerScoped = emptyOwnerScopedSkillLookup(name);
-                if (ownerScoped) return ownerScoped;
-                throw new Error(`unexpected skills index `);
-              }
-              return {
-                unique: async () => ({
-                  _id: "skills:1",
-                  slug: "taken-skill",
-                  ownerUserId: "users:owner",
-                  latestVersionId: "skillVersions:1",
-                  softDeletedAt: undefined,
-                  moderationStatus: "active",
-                  moderationFlags: undefined,
-                }),
-              };
-            },
-          };
-        }
-        if (table === "authAccounts") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
-              return {
-                take: async () => {
-                  authAccountLookupCount += 1;
-                  return authAccountLookupCount === 1
-                    ? [{ providerAccountId: "owner-gh" }]
-                    : [{ providerAccountId: "caller-gh" }];
-                },
-              };
-            },
-          };
-        }
-        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
-        if (emptyAliasesQuery) return emptyAliasesQuery;
-        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
-        if (emptyReservationsQuery) return emptyReservationsQuery;
-        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
-        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
-        const emptyVersionsQuery = buildEmptySkillVersionsQuery(table);
-        if (emptyVersionsQuery) return emptyVersionsQuery;
-        const emptyBadgesQuery = buildEmptySkillBadgesQuery(table);
-        if (emptyBadgesQuery) return emptyBadgesQuery;
-        const emptyEmbeddingsQuery = buildEmptySkillEmbeddingsQuery(table);
-        if (emptyEmbeddingsQuery) return emptyEmbeddingsQuery;
-        const globalStatsQuery = buildGlobalStatsQuery(table);
-        if (globalStatsQuery) return globalStatsQuery;
-        const digestQuery = buildDigestQuery(table);
-        if (digestQuery) return digestQuery;
-        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
-        if (emptyPublishersQuery) return emptyPublishersQuery;
-        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
-        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
-        throw new Error(`unexpected table `);
-      }),
-      patch,
-      insert,
-      normalizeId: vi.fn(),
-    };
+    const { db, insert } = createLegacyPersonalPublishFixture({
+      _id: "skills:1",
+      slug: "taken-skill",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:1",
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      moderationFlags: undefined,
+    });
 
     const result = await insertVersionHandler(
       { db, scheduler: { runAfter: vi.fn() } } as never,
@@ -507,125 +534,23 @@ describe("skills anti-spam guards", () => {
   });
 
   it("normalizes mixed-case slugs before owner-scoped publish lookup", async () => {
-    const now = Date.now();
-    const storedSkills = new Map<string, Record<string, unknown>>();
-    let authAccountLookupCount = 0;
     let requestedSlug: string | null = null;
-    const patch = vi.fn(async () => {});
-    const insert = createSuccessfulPublishInsert(storedSkills, now);
-    const db = {
-      get: vi.fn(async (id: string) => {
-        if (storedSkills.has(id)) return storedSkills.get(id);
-        if (id === "users:caller") {
-          return {
-            _id: "users:caller",
-            _creationTime: now - 60 * 24 * 60 * 60 * 1000,
-            createdAt: now - 60 * 24 * 60 * 60 * 1000,
-            handle: "caller",
-            trustedPublisher: true,
-            role: "user",
-            deletedAt: undefined,
-            deactivatedAt: undefined,
-            personalPublisherId: "publishers:caller",
-          };
-        }
-        if (id === "publishers:caller") {
-          return {
-            _id: "publishers:caller",
-            kind: "user",
-            handle: "caller",
-            linkedUserId: "users:caller",
-            deletedAt: undefined,
-            deactivatedAt: undefined,
-          };
-        }
-        if (id === "users:owner") {
-          return {
-            _id: "users:owner",
-            handle: "alice",
-            deletedAt: undefined,
-            deactivatedAt: undefined,
-          };
-        }
-        return null;
-      }),
-      query: vi.fn((table: string) => {
-        if (table === "skills") {
-          return {
-            withIndex: (
-              name: string,
-              build:
-                | ((q: { eq: (field: string, value: string) => unknown }) => unknown)
-                | undefined,
-            ) => {
-              if (name !== "by_slug") {
-                const ownerScoped = emptyOwnerScopedSkillLookup(name);
-                if (ownerScoped) return ownerScoped;
-                throw new Error(`unexpected skills index `);
-              }
-              const q = {
-                eq: (field: string, value: string) => {
-                  if (field !== "slug") throw new Error(`unexpected field ${field}`);
-                  requestedSlug = value;
-                  return q;
-                },
-              };
-              build?.(q);
-              return {
-                unique: async () => ({
-                  _id: "skills:1",
-                  slug: "taken-skill",
-                  ownerUserId: "users:owner",
-                  latestVersionId: "skillVersions:1",
-                  softDeletedAt: undefined,
-                  moderationStatus: "active",
-                  moderationFlags: undefined,
-                }),
-              };
-            },
-          };
-        }
-        if (table === "authAccounts") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
-              return {
-                take: async () => {
-                  authAccountLookupCount += 1;
-                  return authAccountLookupCount === 1
-                    ? [{ providerAccountId: "owner-gh" }]
-                    : [{ providerAccountId: "caller-gh" }];
-                },
-              };
-            },
-          };
-        }
-        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
-        if (emptyAliasesQuery) return emptyAliasesQuery;
-        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
-        if (emptyReservationsQuery) return emptyReservationsQuery;
-        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
-        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
-        const emptyVersionsQuery = buildEmptySkillVersionsQuery(table);
-        if (emptyVersionsQuery) return emptyVersionsQuery;
-        const emptyBadgesQuery = buildEmptySkillBadgesQuery(table);
-        if (emptyBadgesQuery) return emptyBadgesQuery;
-        const emptyEmbeddingsQuery = buildEmptySkillEmbeddingsQuery(table);
-        if (emptyEmbeddingsQuery) return emptyEmbeddingsQuery;
-        const globalStatsQuery = buildGlobalStatsQuery(table);
-        if (globalStatsQuery) return globalStatsQuery;
-        const digestQuery = buildDigestQuery(table);
-        if (digestQuery) return digestQuery;
-        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
-        if (emptyPublishersQuery) return emptyPublishersQuery;
-        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
-        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
-        throw new Error(`unexpected table `);
-      }),
-      patch,
-      insert,
-      normalizeId: vi.fn(),
-    };
+    const { db, insert } = createLegacyPersonalPublishFixture(
+      {
+        _id: "skills:1",
+        slug: "taken-skill",
+        ownerUserId: "users:owner",
+        latestVersionId: "skillVersions:1",
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationFlags: undefined,
+      },
+      {
+        onSlugLookup: (slug) => {
+          requestedSlug = slug;
+        },
+      },
+    );
 
     const result = await insertVersionHandler(
       { db, scheduler: { runAfter: vi.fn() } } as never,
@@ -652,110 +577,17 @@ describe("skills anti-spam guards", () => {
   });
 
   it("allows a legacy personal publish when a deleted owner has the same slug", async () => {
-    const now = Date.now();
-    const storedSkills = new Map<string, Record<string, unknown>>();
-    let authAccountLookupCount = 0;
-    const patch = vi.fn(async () => {});
-    const insert = createSuccessfulPublishInsert(storedSkills, now);
-    const db = {
-      get: vi.fn(async (id: string) => {
-        if (storedSkills.has(id)) return storedSkills.get(id);
-        if (id === "users:caller") {
-          return {
-            _id: "users:caller",
-            _creationTime: now - 60 * 24 * 60 * 60 * 1000,
-            createdAt: now - 60 * 24 * 60 * 60 * 1000,
-            handle: "caller",
-            trustedPublisher: true,
-            role: "user",
-            deletedAt: undefined,
-            deactivatedAt: undefined,
-            personalPublisherId: "publishers:caller",
-          };
-        }
-        if (id === "publishers:caller") {
-          return {
-            _id: "publishers:caller",
-            kind: "user",
-            handle: "caller",
-            linkedUserId: "users:caller",
-            deletedAt: undefined,
-            deactivatedAt: undefined,
-          };
-        }
-        if (id === "users:owner") {
-          return {
-            _id: "users:owner",
-            handle: "alice",
-            deletedAt: Date.now(),
-            deactivatedAt: undefined,
-          };
-        }
-        return null;
-      }),
-      query: vi.fn((table: string) => {
-        if (table === "skills") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "by_slug") {
-                const ownerScoped = emptyOwnerScopedSkillLookup(name);
-                if (ownerScoped) return ownerScoped;
-                throw new Error(`unexpected skills index `);
-              }
-              return {
-                unique: async () => ({
-                  _id: "skills:1",
-                  slug: "taken-skill",
-                  ownerUserId: "users:owner",
-                  softDeletedAt: undefined,
-                  moderationStatus: "active",
-                  moderationFlags: undefined,
-                }),
-              };
-            },
-          };
-        }
-        if (table === "authAccounts") {
-          return {
-            withIndex: (name: string) => {
-              if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
-              return {
-                take: async () => {
-                  authAccountLookupCount += 1;
-                  return authAccountLookupCount === 1
-                    ? [{ providerAccountId: "owner-gh" }]
-                    : [{ providerAccountId: "caller-gh" }];
-                },
-              };
-            },
-          };
-        }
-        const emptyAliasesQuery = buildEmptySkillSlugAliasesQuery(table);
-        if (emptyAliasesQuery) return emptyAliasesQuery;
-        const emptyReservationsQuery = buildEmptyReservedSlugsQuery(table);
-        if (emptyReservationsQuery) return emptyReservationsQuery;
-        const emptyFingerprintsQuery = buildEmptySkillVersionFingerprintsQuery(table);
-        if (emptyFingerprintsQuery) return emptyFingerprintsQuery;
-        const emptyVersionsQuery = buildEmptySkillVersionsQuery(table);
-        if (emptyVersionsQuery) return emptyVersionsQuery;
-        const emptyBadgesQuery = buildEmptySkillBadgesQuery(table);
-        if (emptyBadgesQuery) return emptyBadgesQuery;
-        const emptyEmbeddingsQuery = buildEmptySkillEmbeddingsQuery(table);
-        if (emptyEmbeddingsQuery) return emptyEmbeddingsQuery;
-        const globalStatsQuery = buildGlobalStatsQuery(table);
-        if (globalStatsQuery) return globalStatsQuery;
-        const digestQuery = buildDigestQuery(table);
-        if (digestQuery) return digestQuery;
-        const emptyPublishersQuery = buildEmptyPublishersQuery(table);
-        if (emptyPublishersQuery) return emptyPublishersQuery;
-        const emptyPublisherMembersQuery = buildEmptyPublisherMembersQuery(table);
-        if (emptyPublisherMembersQuery) return emptyPublisherMembersQuery;
-        throw new Error(`unexpected table `);
-      }),
-      patch,
-      insert,
-      normalizeId: vi.fn(),
-    };
+    const { db, insert } = createLegacyPersonalPublishFixture(
+      {
+        _id: "skills:1",
+        slug: "taken-skill",
+        ownerUserId: "users:owner",
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationFlags: undefined,
+      },
+      { getOwnerDeletedAt: () => Date.now() },
+    );
 
     const result = await insertVersionHandler(
       { db, scheduler: { runAfter: vi.fn() } } as never,
