@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Scanning: reuse the shared subprocess runner for legacy pre-publication scanners, bounding captured output to 32 MiB stdout and 1 MiB stderr while preserving scanner verdict exit codes.
+
 ## 0.26.0 - 2026-11-12
 
 - Templates: accept native agent settings, including `agent.tools`, and top-level `skills` and `plugins` dependencies in `CLAW.md`. Dependencies can reference exact ClawHub versions or bundled package directories. This fixes the stable CLI rejecting the supported Template format before upload (#4551). Publish an already-built `.tgz`; successful publication does not establish compatibility with a particular OpenClaw consumer release.
