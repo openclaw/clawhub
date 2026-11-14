@@ -102,26 +102,14 @@ export function resolveConvexProxyEnv(
   };
 }
 
-function isPreviewFrontend(env: ProxyEnv) {
+function isFrontendEnvironment(env: ProxyEnv, expected: "preview" | "test" | "staging") {
   const targetEnvironment =
     env.VITE_CLAWHUB_DEPLOY_ENV?.trim() || env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
-  return targetEnvironment === "preview";
-}
-
-function isTestFrontend(env: ProxyEnv) {
-  const targetEnvironment =
-    env.VITE_CLAWHUB_DEPLOY_ENV?.trim() || env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
-  return targetEnvironment === "test";
-}
-
-function isStagingFrontend(env: ProxyEnv) {
-  const targetEnvironment =
-    env.VITE_CLAWHUB_DEPLOY_ENV?.trim() || env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
-  return targetEnvironment === "staging";
+  return targetEnvironment === expected;
 }
 
 export function isConvexProxyMethodAllowed(method: string, env: ProxyEnv) {
-  if (!isPreviewFrontend(env)) return true;
+  if (!isFrontendEnvironment(env, "preview")) return true;
   return method === "GET" || method === "HEAD";
 }
 
@@ -153,7 +141,7 @@ export async function proxyConvexRequest(
 
   const requestUrl = getRequestURL(event);
   const target = buildConvexProxyTarget(`${requestUrl.pathname}${requestUrl.search}`, env);
-  const stagingFrontend = isStagingFrontend(env);
+  const stagingFrontend = isFrontendEnvironment(env, "staging");
   const stagingTarget = new URL(target).origin === STAGING_CONVEX_SITE_ORIGIN;
   const stagingEdgeSecret =
     stagingFrontend && stagingTarget ? env.CLAWHUB_STAGING_EDGE_SECRET?.trim() : undefined;
@@ -314,10 +302,7 @@ async function streamArchive(
     })),
     manifest.meta,
   );
-  const headers = new Headers(manifestResponse.headers);
-  for (const name of ARCHIVE_REPRESENTATION_HEADERS) headers.delete(name);
-  headers.set("content-type", "application/zip");
-  headers.set("content-disposition", `attachment; filename="${manifest.filename}"`);
+  const headers = archiveResponseHeaders(manifestResponse, manifest.filename);
   // Only complete archives count. Keep the original capability expiry: a slow
   // successful download may outlive its best-effort metric, never its bytes.
   const completedStream = stream.pipeThrough(
@@ -513,18 +498,18 @@ function archiveResponseHeaders(manifestResponse: Response, filename: string) {
 }
 
 function addDeploymentProofHeader(response: Response, env: ProxyEnv, target: string) {
-  const header = isTestFrontend(env)
+  const header = isFrontendEnvironment(env, "test")
     ? "X-ClawHub-Test-Backend"
-    : isStagingFrontend(env)
+    : isFrontendEnvironment(env, "staging")
       ? "X-ClawHub-Staging-Backend"
-      : isPreviewFrontend(env)
+      : isFrontendEnvironment(env, "preview")
         ? "X-ClawHub-Preview-Backend"
         : null;
   if (!header) return;
   const deployment = convexDeploymentName(target);
   if (!deployment) return;
   response.headers.set(header, deployment);
-  if (isStagingFrontend(env)) {
+  if (isFrontendEnvironment(env, "staging")) {
     response.headers.delete("X-ClawHub-Staging-Build-SHA");
     const buildSha = env.VITE_APP_BUILD_SHA?.trim();
     if (buildSha && /^[0-9a-f]{40}$/.test(buildSha)) {
@@ -549,11 +534,7 @@ function parseSkillArchiveManifest(
   ) {
     return null;
   }
-  if (!Number.isFinite(manifest.issuedAt) || !Number.isFinite(manifest.expiresAt)) return null;
-  const issuedAt = manifest.issuedAt as number;
-  const expiresAt = manifest.expiresAt as number;
-  if (issuedAt > now + ARCHIVE_MANIFEST_CLOCK_SKEW_MS || expiresAt <= now) return null;
-  if (expiresAt <= issuedAt || expiresAt - issuedAt > ARCHIVE_MANIFEST_MAX_AGE_MS) return null;
+  if (!isFreshArchiveManifest(manifest, now)) return null;
   if (typeof manifest.filename !== "string" || !ARCHIVE_FILENAME_PATTERN.test(manifest.filename)) {
     return null;
   }
