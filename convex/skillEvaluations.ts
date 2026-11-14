@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, requireUser } from "./lib/access";
+import { runMutationRef, runQueryRef } from "./lib/functionRefs";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import {
   NVIDIA_SKILL_EVALUATION_CONFIG,
@@ -31,22 +32,6 @@ const internalRefs = internal as unknown as {
     requestSkillEvaluationDispatchInternal: unknown;
   };
 };
-
-async function runQueryRef<T>(
-  ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
-async function runMutationRef<T>(
-  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
 
 async function requestNextSkillEvaluationDispatch(ctx: {
   runMutation: (ref: never, args: never) => Promise<unknown>;

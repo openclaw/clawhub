@@ -8,6 +8,7 @@ import { assertAdmin, assertModerator, requireUser } from "./lib/access";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { endorAnalysisValidator, type EndorAnalysis } from "./lib/endorAnalysis";
 import { storedFileValidator } from "./lib/fileValidators";
+import { runMutationRef, runQueryRef } from "./lib/functionRefs";
 import { Events, logEvent } from "./lib/observabilityEvents";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
@@ -308,22 +309,6 @@ const internalRefs = internal as unknown as {
     enqueueForVersionInternal: unknown;
   };
 };
-
-async function runQueryRef<T>(
-  ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
-async function runMutationRef<T>(
-  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
 
 function assertWorkerToken(token: string) {
   const expected = process.env.SECURITY_SCAN_WORKER_TOKEN;
