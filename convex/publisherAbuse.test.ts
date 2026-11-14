@@ -395,8 +395,17 @@ function makeCollectingRunGetter(
   }));
 }
 
-function makeFinalizingRunGetter() {
-  return vi.fn(async () => ({
+function makeFinalizingRun(
+  overrides: {
+    _id?: string;
+    modelVersion?: string;
+    modelConfig?: Partial<typeof TEST_MODEL_CONFIG>;
+    scoredPublishers?: number;
+    sumLogPressure?: number;
+    sumSquaredLogPressure?: number;
+  } = {},
+) {
+  return {
     _id: "publisherAbuseScoreRuns:run",
     status: "running",
     phase: "finalizing",
@@ -410,7 +419,12 @@ function makeFinalizingRunGetter() {
     nominatedPublishers: 0,
     sumLogPressure: 3,
     sumSquaredLogPressure: 9,
-  }));
+    ...overrides,
+  };
+}
+
+function makeFinalizingRunGetter() {
+  return vi.fn(async () => makeFinalizingRun());
 }
 
 function makeRepeatPublisherScoreQuery() {
@@ -4664,21 +4678,12 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:legacy-run",
-          status: "running",
-          phase: "finalizing",
-          modelVersion: "publisher-abuse-pressure.v2",
-          modelConfig: legacyModelConfig,
-          scoredPublishers: 1,
-          finalizedScores: 0,
-          passCount: 0,
-          reviewCount: 0,
-          potentialBanCandidateCount: 0,
-          nominatedPublishers: 0,
-          sumLogPressure: 3,
-          sumSquaredLogPressure: 9,
-        })),
+        get: vi.fn(async () =>
+          makeFinalizingRun({
+            _id: "publisherAbuseScoreRuns:legacy-run",
+            modelConfig: legacyModelConfig,
+          }),
+        ),
         insert,
         patch,
         query: vi.fn((table: string) => {
@@ -5714,21 +5719,9 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          status: "running",
-          phase: "finalizing",
-          modelVersion: modelConfig.modelVersion,
-          modelConfig,
-          scoredPublishers: 1,
-          finalizedScores: 0,
-          passCount: 0,
-          reviewCount: 0,
-          potentialBanCandidateCount: 0,
-          nominatedPublishers: 0,
-          sumLogPressure: 3,
-          sumSquaredLogPressure: 9,
-        })),
+        get: vi.fn(async () =>
+          makeFinalizingRun({ modelVersion: modelConfig.modelVersion, modelConfig }),
+        ),
         insert,
         patch,
         query: vi.fn((table: string) => {
@@ -5852,21 +5845,9 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          status: "running",
-          phase: "finalizing",
-          modelVersion: modelConfig.modelVersion,
-          modelConfig,
-          scoredPublishers: 1,
-          finalizedScores: 0,
-          passCount: 0,
-          reviewCount: 0,
-          potentialBanCandidateCount: 0,
-          nominatedPublishers: 0,
-          sumLogPressure: 3,
-          sumSquaredLogPressure: 9,
-        })),
+        get: vi.fn(async () =>
+          makeFinalizingRun({ modelVersion: modelConfig.modelVersion, modelConfig }),
+        ),
         insert,
         patch,
         query: vi.fn((table: string) => {
@@ -5986,21 +5967,15 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:late-v2",
-          status: "running",
-          phase: "finalizing",
-          modelVersion: modelConfig.modelVersion,
-          modelConfig,
-          scoredPublishers: 1,
-          finalizedScores: 0,
-          passCount: 0,
-          reviewCount: 0,
-          potentialBanCandidateCount: 0,
-          nominatedPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: vi.fn(async () =>
+          makeFinalizingRun({
+            _id: "publisherAbuseScoreRuns:late-v2",
+            modelVersion: modelConfig.modelVersion,
+            modelConfig,
+            sumLogPressure: 0,
+            sumSquaredLogPressure: 0,
+          }),
+        ),
         insert,
         patch,
         query: vi.fn((table: string) => {
@@ -6135,22 +6110,12 @@ describe("publisher abuse dry-run persistence", () => {
       db: {
         get: vi.fn(async (id: string) => {
           if (id === "publisherAbuseScoreRuns:run") {
-            return {
-              _id: "publisherAbuseScoreRuns:run",
-              status: "running",
-              phase: "finalizing",
-              modelVersion: "publisher-abuse-pressure.v2",
-              modelConfig: TEST_MODEL_CONFIG,
+            return makeFinalizingRun({
               scoredPublishers: 2,
-              finalizedScores: 0,
-              passCount: 0,
-              reviewCount: 0,
-              potentialBanCandidateCount: 0,
-              nominatedPublishers: 0,
               sumLogPressure: officialScore.logPressure + communityScore.logPressure,
               sumSquaredLogPressure:
                 officialScore.logPressure ** 2 + communityScore.logPressure ** 2,
-            };
+            });
           }
           if (id === officialPublisher._id) return officialPublisher;
           if (id === communityPublisher._id) return communityPublisher;
@@ -6378,21 +6343,7 @@ describe("publisher abuse dry-run persistence", () => {
       db: {
         get: vi.fn(async (id: string) => {
           if (id === "publisherAbuseScoreRuns:run") {
-            return {
-              _id: "publisherAbuseScoreRuns:run",
-              status: "running",
-              phase: "finalizing",
-              modelVersion: "publisher-abuse-pressure.v2",
-              modelConfig: TEST_MODEL_CONFIG,
-              scoredPublishers: 1,
-              finalizedScores: 0,
-              passCount: 0,
-              reviewCount: 0,
-              potentialBanCandidateCount: 0,
-              nominatedPublishers: 0,
-              sumLogPressure: 3,
-              sumSquaredLogPressure: 9,
-            };
+            return makeFinalizingRun();
           }
           if (id === "users:repeat") {
             return { _id: "users:repeat", role: "user" };
