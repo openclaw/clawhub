@@ -45,37 +45,46 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function makeDigestPackage(overrides: Record<string, unknown> = {}) {
+  return {
+    _id: "packages:demo",
+    name: "demo-plugin",
+    normalizedName: "demo-plugin",
+    displayName: "Demo Plugin",
+    family: "code-plugin",
+    channel: "community",
+    isOfficial: false,
+    ownerUserId: "users:owner",
+    summary: "demo",
+    runtimeId: null,
+    softDeletedAt: undefined,
+    createdAt: 1,
+    updatedAt: 2,
+    latestReleaseId: "packageReleases:demo-2",
+    latestVersionSummary: { version: "2.0.0" },
+    verification: { tier: "community" },
+    ...overrides,
+  };
+}
+
+function makeDigestOwner(handle = "owner") {
+  return {
+    _id: "users:owner",
+    handle,
+    deletedAt: undefined,
+    deactivatedAt: undefined,
+  };
+}
+
 describe("package digest sync", () => {
   it("clears latestVersion when the current package release is soft-deleted", async () => {
-    const pkg = {
-      _id: "packages:demo",
-      name: "demo-plugin",
-      normalizedName: "demo-plugin",
-      displayName: "Demo Plugin",
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      ownerUserId: "users:owner",
-      summary: "demo",
-      runtimeId: null,
-      softDeletedAt: undefined,
-      createdAt: 1,
-      updatedAt: 2,
-      latestReleaseId: "packageReleases:demo-2",
-      latestVersionSummary: { version: "2.0.0" },
-      verification: { tier: "community" },
-    };
+    const pkg = makeDigestPackage();
     const latestRelease = {
       _id: "packageReleases:demo-2",
       version: "2.0.0",
       softDeletedAt: 10,
     };
-    const owner = {
-      _id: "users:owner",
-      handle: "owner",
-      deletedAt: undefined,
-      deactivatedAt: undefined,
-    };
+    const owner = makeDigestOwner();
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -109,36 +118,15 @@ describe("package digest sync", () => {
   });
 
   it("preserves latestVersion when the current package release is active", async () => {
-    const pkg = {
-      _id: "packages:demo",
-      name: "demo-plugin",
-      normalizedName: "demo-plugin",
-      displayName: "Demo Plugin",
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      ownerUserId: "users:owner",
-      summary: "demo",
+    const pkg = makeDigestPackage({
       capabilityTags: ["tools"],
       executesCode: true,
-      runtimeId: null,
-      softDeletedAt: undefined,
-      createdAt: 1,
-      updatedAt: 2,
-      latestReleaseId: "packageReleases:demo-2",
-      latestVersionSummary: { version: "2.0.0" },
-      verification: { tier: "community" },
-    };
+    });
     const latestRelease = {
       _id: "packageReleases:demo-2",
       version: "2.0.0",
     };
-    const owner = {
-      _id: "users:owner",
-      handle: "owner",
-      deletedAt: undefined,
-      deactivatedAt: undefined,
-    };
+    const owner = makeDigestOwner();
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -179,31 +167,16 @@ describe("package digest sync", () => {
   ])(
     "repoints packages to a published release, skipping unavailable siblings: %j",
     async (unavailable) => {
-      const pkg = {
-        _id: "packages:demo",
+      const pkg = makeDigestPackage({
         _creationTime: 1,
-        name: "demo-plugin",
-        normalizedName: "demo-plugin",
-        displayName: "Demo Plugin",
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        ownerUserId: "users:owner",
         summary: "latest summary",
         categories: ["models"],
         tags: {
           latest: "packageReleases:demo-2",
           stable: "packageReleases:demo-2",
         },
-        latestReleaseId: "packageReleases:demo-2",
-        latestVersionSummary: { version: "2.0.0" },
         compatibility: { openclaw: "^2.0.0" },
-        verification: { tier: "community" },
-        runtimeId: null,
-        softDeletedAt: undefined,
-        createdAt: 1,
-        updatedAt: 2,
-      };
+      });
       const fallbackRelease = {
         _id: "packageReleases:demo-1",
         _creationTime: 10,
@@ -230,12 +203,7 @@ describe("package digest sync", () => {
         createdAt: 20,
         softDeletedAt: undefined,
       };
-      const owner = {
-        _id: "users:owner",
-        handle: "owner",
-        deletedAt: undefined,
-        deactivatedAt: undefined,
-      };
+      const owner = makeDigestOwner();
       const ctx = {
         db: {
           get: vi.fn(async (id: string) => {
@@ -330,16 +298,13 @@ describe("package digest sync", () => {
   );
 
   it("repoints bundle packages to the newest surviving release, not semver-looking versions", async () => {
-    const pkg = {
+    const pkg = makeDigestPackage({
       _id: "packages:bundle",
       _creationTime: 1,
       name: "demo-bundle",
       normalizedName: "demo-bundle",
       displayName: "Demo Bundle",
       family: "bundle-plugin",
-      channel: "community",
-      isOfficial: false,
-      ownerUserId: "users:owner",
       summary: "latest summary",
       categories: ["models"],
       tags: {
@@ -348,12 +313,8 @@ describe("package digest sync", () => {
       latestReleaseId: "packageReleases:bundle-latest",
       latestVersionSummary: { version: "latest" },
       compatibility: { hosts: ["openclaw"] },
-      verification: { tier: "community" },
       runtimeId: "bundle.runtime",
-      softDeletedAt: undefined,
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const semverLookingRelease = {
       _id: "packageReleases:bundle-semver",
       _creationTime: 10,
@@ -381,12 +342,7 @@ describe("package digest sync", () => {
       createdAt: 20,
       softDeletedAt: undefined,
     };
-    const owner = {
-      _id: "users:owner",
-      handle: "owner",
-      deletedAt: undefined,
-      deactivatedAt: undefined,
-    };
+    const owner = makeDigestOwner();
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -467,32 +423,14 @@ describe("package digest sync", () => {
   });
 
   it("re-syncs package digests when an owner handle changes", async () => {
-    const owner = {
-      _id: "users:owner",
-      handle: "renamed",
-      deletedAt: undefined,
-      deactivatedAt: undefined,
-    };
-    const pkg = {
-      _id: "packages:demo",
+    const owner = makeDigestOwner("renamed");
+    const pkg = makeDigestPackage({
       _creationTime: 1,
-      name: "demo-plugin",
-      normalizedName: "demo-plugin",
-      displayName: "Demo Plugin",
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      ownerUserId: "users:owner",
-      summary: "demo",
       tags: {},
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
-      runtimeId: null,
-      softDeletedAt: undefined,
-      createdAt: 1,
-      updatedAt: 2,
       verification: undefined,
-    };
+    });
     const paginate = vi.fn().mockResolvedValueOnce({
       page: [pkg],
       isDone: true,
@@ -669,69 +607,48 @@ describe("publisher digest scheduling", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("continues owner-publisher package digest sync one page at a time", async () => {
-    const paginate = vi.fn().mockResolvedValue({
-      page: [],
-      isDone: false,
-      continueCursor: "next-packages",
-    });
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({ paginate })),
-        })),
-      },
-      scheduler: {
-        runAfter: vi.fn().mockResolvedValue(undefined),
-      },
-    };
+  it.each([
+    {
+      kind: "package",
+      sync: syncPackageSearchDigestsForOwnerPublisherId,
+      continuation: internal.functions.syncPackageSearchDigestsForOwnerPublisherIdInternal,
+    },
+    {
+      kind: "skill",
+      sync: syncSkillSearchDigestsForOwnerPublisherId,
+      continuation: internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal,
+    },
+  ])(
+    "continues owner-publisher $kind digest sync one page at a time",
+    async ({ kind, sync, continuation }) => {
+      const currentCursor = `current-${kind}s`;
+      const nextCursor = `next-${kind}s`;
+      const paginate = vi.fn().mockResolvedValue({
+        page: [],
+        isDone: false,
+        continueCursor: nextCursor,
+      });
+      const ctx = {
+        db: {
+          query: vi.fn(() => ({
+            withIndex: vi.fn(() => ({ paginate })),
+          })),
+        },
+        scheduler: {
+          runAfter: vi.fn().mockResolvedValue(undefined),
+        },
+      };
 
-    await syncPackageSearchDigestsForOwnerPublisherId(
-      ctx as never,
-      "publishers:demo" as never,
-      "current-packages",
-    );
+      await sync(ctx as never, "publishers:demo" as never, currentCursor);
 
-    expect(paginate).toHaveBeenCalledTimes(1);
-    expect(paginate).toHaveBeenCalledWith({ cursor: "current-packages", numItems: 100 });
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
-      0,
-      internal.functions.syncPackageSearchDigestsForOwnerPublisherIdInternal,
-      { ownerPublisherId: "publishers:demo", cursor: "next-packages" },
-    );
-  });
-
-  it("continues owner-publisher skill digest sync one page at a time", async () => {
-    const paginate = vi.fn().mockResolvedValue({
-      page: [],
-      isDone: false,
-      continueCursor: "next-skills",
-    });
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({ paginate })),
-        })),
-      },
-      scheduler: {
-        runAfter: vi.fn().mockResolvedValue(undefined),
-      },
-    };
-
-    await syncSkillSearchDigestsForOwnerPublisherId(
-      ctx as never,
-      "publishers:demo" as never,
-      "current-skills",
-    );
-
-    expect(paginate).toHaveBeenCalledTimes(1);
-    expect(paginate).toHaveBeenCalledWith({ cursor: "current-skills", numItems: 100 });
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
-      0,
-      internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal,
-      { ownerPublisherId: "publishers:demo", cursor: "next-skills" },
-    );
-  });
+      expect(paginate).toHaveBeenCalledTimes(1);
+      expect(paginate).toHaveBeenCalledWith({ cursor: currentCursor, numItems: 100 });
+      expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, continuation, {
+        ownerPublisherId: "publishers:demo",
+        cursor: nextCursor,
+      });
+    },
+  );
 
   it("syncs recommended rank stats into the skill search digest after wrapped skill patches", async () => {
     const skillId = testId("skills", "skills:demo");
