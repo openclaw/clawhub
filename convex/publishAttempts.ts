@@ -226,6 +226,34 @@ async function terminalizeUnavailableStagedTarget(
   return true;
 }
 
+// Moderation can block promotion of a target whose checks already passed. These
+// are the same hold conditions publication enforces, mirrored here so discovery
+// can skip a blocked attempt instead of selecting it. A hold is not terminal: it
+// can be lifted, so the attempt must keep its ready_to_finalize status.
+async function stagedTargetPromotionHeld(
+  ctx: Pick<MutationCtx, "db">,
+  attempt: Doc<"publishAttempts">,
+) {
+  if (attempt.kind === "skill" && attempt.skillId) {
+    const skill = await ctx.db.get(attempt.skillId);
+    if (!skill) return false;
+    return Boolean(
+      skill.softDeletedAt ||
+        skill.moderationStatus === "removed" ||
+        (skill.moderationStatus === "hidden" && skill.moderationReason !== "pending.publication"),
+    );
+  }
+  if (attempt.kind === "package" && attempt.packageReleaseId) {
+    const release = await ctx.db.get(attempt.packageReleaseId);
+    if (!release) return false;
+    return (
+      release.manualModeration?.state === "quarantined" ||
+      release.manualModeration?.state === "revoked"
+    );
+  }
+  return false;
+}
+
 export const createSkillPublishAttemptInternal = internalMutation({
   args: {
     userId: v.id("users"),
@@ -1177,6 +1205,15 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
         if ((attempt.finalizationClaimExpiresAt ?? 0) > now) return ACTIVE_CLAIM_OUTCOME;
         await bindExpiredFinalizationRecovery(ctx, attempt);
       } else if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) continue;
+
+      // Untargeted discovery must not keep reselecting a target moderation
+      // blocks. Finalization throws for it, the retryable release clears both
+      // reservations by contract so the attempt is instantly claimable again,
+      // and oldest-first selection then returns that same attempt forever while
+      // every newer attempt starves. Skipping it here leaves retry timing for
+      // genuine transient failures untouched. Explicit targeted recovery still
+      // selects the attempt so an operator can act once a hold is lifted.
+      if (!args.attemptId && (await stagedTargetPromotionHeld(ctx, attempt))) continue;
 
       await ctx.db.patch(attempt._id, {
         status: "ready_to_finalize",
