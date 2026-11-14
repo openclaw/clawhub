@@ -4,10 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./_generated/server";
 import { assertRole, requireUserFromAction } from "./lib/access";
-import type {
-  CatalogClassificationConfidence,
-  CatalogClassifierResult,
-} from "./lib/catalogClassification";
+import type { CatalogClassificationConfidence } from "./lib/catalogClassification";
 
 const DEFAULT_CLASSIFICATION_BATCH_SIZE = 10;
 const MAX_CLASSIFICATION_BATCH_SIZE = 25;
@@ -316,5 +313,3 @@ export type StoredCatalogClassificationInput = ReturnType<
   skillVersionId?: Id<"skillVersions">;
   packageReleaseId?: Id<"packageReleases">;
 };
-
-export type CatalogClassifierFunctionResult = CatalogClassifierResult;
