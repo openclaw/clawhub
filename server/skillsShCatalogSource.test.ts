@@ -14,7 +14,6 @@ import {
   fetchSkillsShMirrorBatch,
   fetchSkillsShMirrorControlledBatch,
   fetchSkillsShCatalogPage,
-  fetchSkillsShCatalogTestPage,
   getSkillsShCatalogTestSourcePolicy,
   measureSkillsShMirrorProofSource,
   measureSkillsShTrendingSource,
@@ -3195,8 +3194,8 @@ describe("skills.sh Vercel source boundary", () => {
         }),
       );
     });
-    const readOidc = async () => "oidc";
-    const verifyOidc = async () => ({
+    const readOidc = vi.fn(async () => "oidc");
+    const verifyOidc = vi.fn(async () => ({
       payload: {
         owner_id: "team_pLdjXbfy0XvPRiNmAygTjTSH",
         project_id: "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc",
@@ -3205,7 +3204,7 @@ describe("skills.sh Vercel source boundary", () => {
         aud: "https://vercel.com",
         iss: "https://oidc.vercel.com",
       },
-    });
+    }));
     const options = {
       env: {
         CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
@@ -3301,11 +3300,37 @@ describe("skills.sh Vercel source boundary", () => {
       skippedIncompleteDetails: 1,
     });
     expect(detailUrls).toHaveLength(504);
+    expect(readOidc).toHaveBeenCalledTimes(4);
+    expect(verifyOidc).toHaveBeenCalledWith("oidc", {
+      projectId: "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc",
+      ownerId: "team_pLdjXbfy0XvPRiNmAygTjTSH",
+      environment: "test",
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://skills.sh/api/v1/skills?page=0&per_page=500",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer oidc" }),
+      }),
+    );
+
+    const sourceFetches = fetchImpl.mock.calls.length;
+    await expect(
+      captureSkillsShCatalogTestSnapshot({
+        ...options,
+        readConvexControl: async () => ({
+          ...(await options.readConvexControl()),
+          mode: "fixture",
+        }),
+      }),
+    ).rejects.toThrow("exact dark 500-row control");
+    expect(fetchImpl).toHaveBeenCalledTimes(sourceFetches);
   });
 
   it("rejects an ordinary Preview even when spoofable Test strings are present", async () => {
+    const fetchImpl = vi.fn(async () => new Response("unexpected source fetch", { status: 400 }));
     await expect(
-      fetchSkillsShCatalogTestPage({
+      captureSkillsShCatalogTestSnapshot({
+        fetchImpl,
         env: {
           CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
           VERCEL_ENV: "preview",
@@ -3328,11 +3353,14 @@ describe("skills.sh Vercel source boundary", () => {
         }),
       }),
     ).rejects.toThrow("unexpected Vercel project");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("rejects a verified ClawHub Preview token without the custom Test environment claim", async () => {
+    const fetchImpl = vi.fn(async () => new Response("unexpected source fetch", { status: 400 }));
     await expect(
-      fetchSkillsShCatalogTestPage({
+      captureSkillsShCatalogTestSnapshot({
+        fetchImpl,
         env: {
           CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
           VERCEL_ENV: "preview",
@@ -3362,103 +3390,6 @@ describe("skills.sh Vercel source boundary", () => {
         }),
       }),
     ).rejects.toThrow("verified ClawHub Vercel identity");
-  });
-
-  it("fetches through the verified request token only when the dark Convex control allows it", async () => {
-    const rows = Array.from({ length: 500 }, (_, index) => ({
-      id: `owner/repo/skill-${index}`,
-      installUrl: null,
-      installs: index,
-      name: `Skill ${index}`,
-      slug: `skill-${index}`,
-      source: "owner/repo",
-      sourceType: "github",
-      url: `https://skills.sh/owner/repo/skill-${index}`,
-    }));
-    const fetchImpl = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          data: rows,
-          pagination: {
-            page: 0,
-            perPage: 500,
-            total: 500,
-            hasMore: false,
-          },
-        }),
-      );
-    });
-    const env = {
-      CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
-      VERCEL_ENV: "preview",
-      VERCEL_TARGET_ENV: "test",
-      VITE_CLAWHUB_DEPLOY_ENV: "test",
-      VITE_CONVEX_URL: "https://academic-chihuahua-392.convex.cloud",
-      CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED: "1",
-    };
-    const getOidcToken = vi.fn(async () => "request-token");
-    const verifyOidcToken = vi.fn(async () => ({
-      payload: {
-        owner_id: "team_pLdjXbfy0XvPRiNmAygTjTSH",
-        project_id: "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc",
-        environment: "test",
-        sub: "owner:project:test",
-        aud: "https://vercel.com",
-        iss: "https://oidc.vercel.com",
-      },
-    }));
-
-    const result = await fetchSkillsShCatalogTestPage({
-      env,
-      fetchImpl,
-      getOidcToken,
-      verifyOidcToken,
-      readConvexControl: async () => ({
-        mode: "staging-live",
-        discoveryEnabled: true,
-        writesEnabled: true,
-        scanPlanningEnabled: true,
-        maxEntriesPerRun: 500,
-        publicVisibilityEnabled: false,
-      }),
-    });
-
-    expect(result.page.data).toHaveLength(500);
-    expect(getOidcToken).toHaveBeenCalledOnce();
-    expect(verifyOidcToken).toHaveBeenCalledWith("request-token", {
-      projectId: "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc",
-      ownerId: "team_pLdjXbfy0XvPRiNmAygTjTSH",
-      environment: "test",
-    });
-    expect(result.controls).toEqual({
-      maxDiscoveryRows: 500,
-      maxRealScanAdmissions: 10,
-      publicVisibilityEnabled: false,
-    });
-    expect(fetchImpl).toHaveBeenCalledWith(
-      "https://skills.sh/api/v1/skills?page=0&per_page=500",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer request-token",
-        }),
-      }),
-    );
-
-    await expect(
-      fetchSkillsShCatalogTestPage({
-        env,
-        fetchImpl,
-        getOidcToken: async () => "request-token",
-        verifyOidcToken,
-        readConvexControl: async () => ({
-          mode: "fixture",
-          discoveryEnabled: true,
-          writesEnabled: true,
-          scanPlanningEnabled: true,
-          maxEntriesPerRun: 500,
-          publicVisibilityEnabled: false,
-        }),
-      }),
-    ).rejects.toThrow("dark Convex staging control");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
