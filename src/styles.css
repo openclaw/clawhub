@@ -2489,14 +2489,6 @@ code {
   }
 }
 
-.loading-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 650;
-  color: var(--ink-soft);
-}
-
 /* Skeleton loader rows */
 
 .skeleton-list {
@@ -2565,16 +2557,6 @@ code {
   flex-direction: column;
   gap: 12px;
   min-height: 160px;
-}
-
-.loading-indicator::before {
-  content: "";
-  width: 14px;
-  height: 14px;
-  border-radius: var(--r-pill);
-  border: 2px solid rgba(255, 255, 255, 0.25);
-  border-top-color: var(--accent);
-  animation: spin 0.9s linear infinite;
 }
 
 .skill-card {
@@ -5981,14 +5963,6 @@ a.skills-sh-security-audit-row:focus-visible {
   color: currentColor;
 }
 
-.owner-official-icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  color: var(--official-fg);
-}
-
 .official-badge {
   flex: 0 0 auto;
   display: inline-flex;
@@ -8188,18 +8162,6 @@ a.skills-sh-security-audit-row:focus-visible {
   font-size: 0.9rem;
 }
 
-.diff-loading {
-  position: absolute;
-  bottom: 12px;
-  right: 16px;
-  font-size: var(--fs-xs);
-  color: var(--ink-soft);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  border-radius: var(--r-pill);
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-}
-
 .tab-card {
   display: grid;
   gap: 18px;
@@ -9575,7 +9537,6 @@ a.skills-sh-security-audit-row:focus-visible {
   grid-column: 5;
 }
 
-.version-channel-badge,
 .version-release-channel-badge {
   display: inline-flex;
   align-items: center;
@@ -9584,16 +9545,6 @@ a.skills-sh-security-audit-row:focus-visible {
   min-width: 0;
   min-height: 22px;
   line-height: 1;
-}
-
-.version-channel-badge {
-  padding: 2px 8px;
-  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
-  border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--ink) 3%, transparent);
-  color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
-  font-size: 0.72rem;
-  font-weight: 650;
 }
 
 @media (max-width: 760px) {
@@ -9746,11 +9697,6 @@ a.skills-sh-security-audit-row:focus-visible {
     margin-left: 0;
     flex: 0 0 auto;
     gap: 0;
-  }
-
-  .sign-in-label,
-  .sign-in-provider {
-    display: none;
   }
 
   .github-sign-in-button {
@@ -9909,14 +9855,6 @@ a.skills-sh-security-audit-row:focus-visible {
 
   .diff-view {
     overflow-x: auto;
-  }
-
-  .diff-files {
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(160px, 1fr);
-    overflow-x: auto;
-    padding-bottom: 6px;
-    max-height: none;
   }
 
   .diff-monaco.diff-monaco-split {
@@ -12588,10 +12526,6 @@ a.agentic-risk-finding-title:focus-visible {
     overflow: hidden;
   }
 
-  .file-list.has-hidden-files .file-list-see-all-wrap {
-    display: grid;
-  }
-
   .file-list-body.is-expanded {
     max-height: none;
     overflow: visible;
@@ -15152,12 +15086,6 @@ body:has(.browse-page-borderless-header) .navbar {
   border-bottom-color: var(--ink);
 }
 
-.search-tab-count {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--ink-soft);
-}
-
 .search-results-sections {
   display: grid;
   gap: var(--space-5);
@@ -15179,12 +15107,6 @@ body:has(.browse-page-borderless-header) .navbar {
   font-size: var(--fs-sm);
   font-weight: 700;
   color: var(--ink);
-}
-
-.search-results-section-count {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--ink-soft);
 }
 
 .search-empty-state {
@@ -16948,28 +16870,6 @@ a.search-empty-action {
   font-size: var(--fs-sm);
   margin-bottom: var(--space-4);
   margin-top: 0;
-}
-
-/* Dark mode: only where CSS variables don't suffice */
-
-.mobile-nav-meta {
-  margin-left: auto;
-  font-size: 0.75rem;
-  color: var(--ink-soft);
-}
-
-@media (max-width: 1100px) and (min-width: 761px) {
-  .theme-mode-toggle {
-    min-width: 112px;
-    height: 40px;
-    min-height: 40px;
-    padding: 0 8px;
-    gap: 6px;
-  }
-
-  .theme-cycle-group {
-    display: none;
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
