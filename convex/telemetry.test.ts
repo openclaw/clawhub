@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 const telemetryRefs = vi.hoisted(() => ({
   clearUserTelemetryInternal: Symbol("clearUserTelemetryInternal"),
@@ -33,58 +34,44 @@ const {
   reportCliPluginInstallInternal,
 } = await import("./telemetry");
 
-const reportCliInstallHandler = (
-  reportCliInstallInternal as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: {
-        userId: string;
-        slug: string;
-        ownerHandle?: string;
-        sourceRef?: string;
-        sourceKind?: "skills-sh";
-        sourceRepository?: string;
-        sourcePath?: string;
-        sourceUrl?: string;
-        canonicalRef?: string;
-        clawhubScan?: "unscanned" | "scanned";
-        trustLabel?: string;
-        version?: string;
-      },
-    ) => Promise<void>;
-  }
-)._handler;
+const reportCliInstallHandler = getTestHandler<
+  {
+    userId: string;
+    slug: string;
+    ownerHandle?: string;
+    sourceRef?: string;
+    sourceKind?: "skills-sh";
+    sourceRepository?: string;
+    sourcePath?: string;
+    sourceUrl?: string;
+    canonicalRef?: string;
+    clawhubScan?: "unscanned" | "scanned";
+    trustLabel?: string;
+    version?: string;
+  },
+  void
+>(reportCliInstallInternal);
 
-const reportCliLegacyInstallBatchHandler = (
-  reportCliLegacyInstallBatchInternal as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: {
-        userId: string;
-        skills: Array<{ slug: string; version?: string }>;
-      },
-    ) => Promise<void>;
-  }
-)._handler;
+const reportCliLegacyInstallBatchHandler = getTestHandler<
+  {
+    userId: string;
+    skills: Array<{ slug: string; version?: string }>;
+  },
+  void
+>(reportCliLegacyInstallBatchInternal);
 
-const reportCliPluginInstallHandler = (
-  reportCliPluginInstallInternal as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: {
-        userId: string;
-        packageName: string;
-        version?: string;
-      },
-    ) => Promise<void>;
-  }
-)._handler;
+const reportCliPluginInstallHandler = getTestHandler<
+  {
+    userId: string;
+    packageName: string;
+    version?: string;
+  },
+  void
+>(reportCliPluginInstallInternal);
 
-const clearUserTelemetryHandler = (
-  clearUserTelemetryInternal as unknown as {
-    _handler: (ctx: unknown, args: { userId: string; clearStartedAt?: number }) => Promise<void>;
-  }
-)._handler;
+const clearUserTelemetryHandler = getTestHandler<{ userId: string; clearStartedAt?: number }, void>(
+  clearUserTelemetryInternal,
+);
 
 const pruneInstallTelemetryDedupesHandler = (
   pruneInstallTelemetryDedupesInternal as unknown as {

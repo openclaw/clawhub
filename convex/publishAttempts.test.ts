@@ -1,5 +1,6 @@
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   claimPendingPublishAttemptChecksInternal,
   claimPrePublicationChecks,
@@ -14,62 +15,34 @@ import {
   releaseSkillPublishAttemptFinalizationClaimInternal,
 } from "./publishAttempts";
 
-const claimPendingChecksHandler = (
-  claimPendingPublishAttemptChecksInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
-const completePendingChecksHandler = (
-  completePendingPublishAttemptChecksInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
-const claimReadyFinalizationHandler = (
-  claimReadyPublishAttemptFinalizationRetryInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
-const claimPrePublicationChecksHandler = (
-  claimPrePublicationChecks as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
-const releaseSkillFinalizationHandler = (
-  releaseSkillPublishAttemptFinalizationClaimInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
-const releasePackageFinalizationHandler = (
-  releasePackagePublishAttemptFinalizationClaimInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
-const recordSkillFinalizedHandler = (
-  recordSkillPublishAttemptFinalizedInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
-const createSkillPublishAttemptHandler = (
-  createSkillPublishAttemptInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
-const createPackagePublishAttemptHandler = (
-  createPackagePublishAttemptInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
-const getPackagePublishAttemptStatusHandler = (
-  getPackagePublishAttemptStatusInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
+const claimPendingChecksHandler = getTestHandler<unknown>(claimPendingPublishAttemptChecksInternal);
+const completePendingChecksHandler = getTestHandler<unknown>(
+  completePendingPublishAttemptChecksInternal,
+);
+const claimReadyFinalizationHandler = getTestHandler<unknown>(
+  claimReadyPublishAttemptFinalizationRetryInternal,
+);
+const claimPrePublicationChecksHandler = getTestHandler<unknown>(claimPrePublicationChecks);
+const releaseSkillFinalizationHandler = getTestHandler<unknown>(
+  releaseSkillPublishAttemptFinalizationClaimInternal,
+);
+const releasePackageFinalizationHandler = getTestHandler<unknown>(
+  releasePackagePublishAttemptFinalizationClaimInternal,
+);
+const recordSkillFinalizedHandler = getTestHandler<unknown>(
+  recordSkillPublishAttemptFinalizedInternal,
+);
+const createSkillPublishAttemptHandler = getTestHandler<unknown>(createSkillPublishAttemptInternal);
+const createPackagePublishAttemptHandler = getTestHandler<unknown>(
+  createPackagePublishAttemptInternal,
+);
+const getPackagePublishAttemptStatusHandler = getTestHandler<unknown>(
+  getPackagePublishAttemptStatusInternal,
+);
 
-const findExistingPublishAttemptForArtifactHandler = (
-  findExistingPublishAttemptForArtifactInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
+const findExistingPublishAttemptForArtifactHandler = getTestHandler<unknown>(
+  findExistingPublishAttemptForArtifactInternal,
+);
 
 function makeAttemptLookupCtx(
   attempts: Array<Record<string, unknown>>,
