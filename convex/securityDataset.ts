@@ -1,16 +1,15 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalQuery } from "./functions";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { getOwnerPublisher } from "./lib/publishers";
+import { collectArtifactExportBatch, MAX_EXPORT_BATCH_PAGES } from "./lib/securityDatasetBatch";
 import { readRedactedBundleFiles, readRedactedSkillMdContent } from "./lib/securityDatasetContent";
 import { totalBundleBytes } from "./lib/securityDatasetRedaction";
 
 const MAX_EXPORT_PAGE_SIZE = 50;
-const MAX_EXPORT_BATCH_PAGES = 20;
 const MAX_REDACTED_BUNDLE_BYTES_PER_RESPONSE = 256 * 1024;
 const REDACTION_POLICY_VERSION = "public-signals-v2-bundle-files";
 const SOURCE_TABLES = ["skillVersions", "packageReleases"] as const;
@@ -27,7 +26,7 @@ type StoredLlmAnalysis = Doc<"skillVersions">["llmAnalysis"];
 type ArtifactExportRow =
   | Awaited<ReturnType<typeof skillVersionPageToLatestExportRows>>[number]
   | Awaited<ReturnType<typeof packageReleasePageToExportRows>>[number];
-type ArtifactExportPage = {
+export type ArtifactExportPage = {
   page: ArtifactExportRow[];
   isDone: boolean;
   continueCursor: string;
@@ -110,34 +109,10 @@ export const listArtifactExportBatchInternal = internalAction({
     pageCount: v.number(),
   },
   handler: async (ctx, args) => {
-    const pageCount = Math.min(Math.max(1, Math.floor(args.pageCount)), MAX_EXPORT_BATCH_PAGES);
-    let cursor = args.paginationOpts.cursor;
-    const page: ArtifactExportPage["page"] = [];
-    let isDone = false;
-    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-      const result: ArtifactExportPage = await ctx.runQuery(
-        internal.securityDataset.listArtifactExportPageInternal,
-        {
-          sourceKind: args.sourceKind,
-          mode: args.mode,
-          createdAtGte: args.createdAtGte,
-          createdAtLt: args.createdAtLt,
-          paginationOpts: {
-            cursor,
-            numItems: args.paginationOpts.numItems,
-          },
-        },
-      );
-      page.push(...result.page);
-      cursor = result.continueCursor;
-      isDone = result.isDone;
-      if (isDone) break;
-    }
+    const batch = await collectArtifactExportBatch(ctx, args);
     return {
-      page: await enrichAndSanitizeArtifactRows(ctx, page),
-      isDone,
-      continueCursor: cursor,
-      exportMode: args.mode ?? "public",
+      ...batch,
+      page: await enrichAndSanitizeArtifactRows(ctx, batch.page),
     };
   },
 });
