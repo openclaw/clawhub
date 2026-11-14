@@ -75,6 +75,19 @@ function requireBanAppealsServiceOrResponse(request: Request, headers: HeadersIn
   return { ok: true as const };
 }
 
+const adminJsonHandlers = new Map<string, typeof handleAdminReserve>([
+  ["reclassify-ban", handleAdminReclassifyBan],
+  ["reclaim", handleAdminReclaim],
+  ["reserve", handleAdminReserve],
+  ["email", handleAdminStaffEmail],
+  ["publisher", handleAdminEnsurePublisher],
+  ["publisher-delete", handleAdminDeletePublisher],
+  ["publisher-official", handleAdminOfficialPublisherPost],
+  ["publisher-member", handleAdminRemovePublisherMember],
+  ["publisher-reclaim", handleAdminReclaimDeletedOrgHandle],
+  ["publisher-recovery", handleAdminRecoverPersonalPublisher],
+]);
+
 export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
@@ -84,23 +97,17 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     return text("Not found", 404, rate.headers);
   }
   const action = segments[0];
+  const adminJsonHandler = adminJsonHandlers.get(action);
   if (
-    action !== "ban" &&
-    action !== "unban" &&
-    action !== "lift-moderation-hold" &&
-    action !== "role" &&
-    action !== "reclassify-ban" &&
-    action !== "ban-appeal-unban" &&
-    action !== "reclaim" &&
-    action !== "reserve" &&
-    action !== "email" &&
-    action !== "publisher" &&
-    action !== "publisher-delete" &&
-    action !== "publisher-official" &&
-    action !== "publisher-member" &&
-    action !== "publisher-profile" &&
-    action !== "publisher-reclaim" &&
-    action !== "publisher-recovery"
+    !adminJsonHandler &&
+    ![
+      "ban",
+      "unban",
+      "lift-moderation-hold",
+      "role",
+      "ban-appeal-unban",
+      "publisher-profile",
+    ].includes(action)
   ) {
     return text("Not found", 404, rate.headers);
   }
@@ -126,69 +133,15 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
   const actorUserId = authResult.userId;
   const actorUser = authResult.user;
 
-  if (action === "reclassify-ban") {
+  if (adminJsonHandler) {
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
-    return handleAdminReclassifyBan(ctx, payload, actorUserId, rate.headers);
+    return adminJsonHandler(ctx, payload, actorUserId, rate.headers);
   }
 
   if (action === "lift-moderation-hold") {
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
-  }
-
-  if (action === "reclaim") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminReclaim(ctx, request, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "reserve") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminReserve(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "email") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminStaffEmail(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminEnsurePublisher(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher-delete") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminDeletePublisher(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher-official") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminOfficialPublisherPost(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher-member") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminRemovePublisherMember(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher-reclaim") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminReclaimDeletedOrgHandle(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher-recovery") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminRecoverPersonalPublisher(ctx, payload, actorUserId, rate.headers);
   }
 
   const handleRaw = typeof payload.handle === "string" ? payload.handle.trim() : "";
@@ -612,7 +565,6 @@ export async function usersGetRouterV1Handler(ctx: ActionCtx, request: Request) 
  */
 async function handleAdminReclaim(
   ctx: ActionCtx,
-  _request: Request,
   payload: Record<string, unknown>,
   actorUserId: Id<"users">,
   headers: HeadersInit,
