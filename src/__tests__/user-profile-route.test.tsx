@@ -58,6 +58,18 @@ async function loadRoute() {
   };
 }
 
+function createPublishedItemDefaults() {
+  return {
+    summary: null,
+    topics: [],
+    icon: null,
+    installs: 1,
+    stars: 0,
+    isOfficial: true,
+    updatedAt: 1,
+  };
+}
+
 const publisher = {
   _id: "publishers:nvidia",
   _creationTime: 1,
@@ -236,17 +248,11 @@ describe("user profile route", () => {
     paginatedQueryMock.mockReturnValue({
       loadMore: vi.fn(),
       results: Array.from({ length: 8 }, (_, index) => ({
+        ...createPublishedItemDefaults(),
         _id: `skills:item-${index}`,
         kind: "skill",
         displayName: `Skill ${index}`,
-        summary: null,
-        topics: [],
-        icon: null,
         href: `/nvidia/skill-${index}`,
-        installs: 1,
-        stars: 0,
-        isOfficial: true,
-        updatedAt: 1,
       })),
       status: "Exhausted",
     });
@@ -264,17 +270,12 @@ describe("user profile route", () => {
       loadMore: vi.fn(),
       results: [
         {
+          ...createPublishedItemDefaults(),
           _id: "skills:gpu",
           kind: "skill",
           displayName: "GPU Helper",
           summary: "GPU tasks",
-          topics: [],
-          icon: null,
           href: "/nvidia/gpu-helper",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
       ],
       status: "Exhausted",
@@ -313,33 +314,23 @@ describe("user profile route", () => {
         args.kind === "plugin"
           ? [
               {
+                ...createPublishedItemDefaults(),
                 _id: "packages:diagnostics",
                 kind: "plugin",
                 displayName: "Diagnostics",
                 summary: "Plugin diagnostics",
-                topics: [],
-                icon: null,
                 href: "/nvidia/plugins/diagnostics",
-                installs: 1,
-                stars: 0,
-                isOfficial: true,
-                updatedAt: 1,
               },
             ]
           : args.kind === "skill"
             ? [
                 {
+                  ...createPublishedItemDefaults(),
                   _id: "skills:gpu",
                   kind: "skill",
                   displayName: "GPU Helper",
                   summary: "GPU tasks",
-                  topics: [],
-                  icon: null,
                   href: "/nvidia/gpu-helper",
-                  installs: 1,
-                  stars: 0,
-                  isOfficial: true,
-                  updatedAt: 1,
                 },
               ]
             : [],
@@ -387,43 +378,30 @@ describe("user profile route", () => {
       loadMore: vi.fn(),
       results: [
         {
+          ...createPublishedItemDefaults(),
           _id: "skills:gpu",
           kind: "skill",
           displayName: "GPU Helper",
           summary: "GPU tasks",
           topics: ["GPU development", "CUDA"],
-          icon: null,
           href: "/nvidia/gpu-helper",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
         {
+          ...createPublishedItemDefaults(),
           _id: "skills:travel",
           kind: "skill",
           displayName: "Travel Helper",
           summary: "Travel tasks",
           topics: ["Travel"],
-          icon: null,
           href: "/nvidia/travel-helper",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
         {
+          ...createPublishedItemDefaults(),
           _id: "skills:orphan",
           kind: "skill",
           displayName: "Orphan Helper",
           summary: "No topic",
-          topics: [],
-          icon: null,
           href: "/nvidia/orphan-helper",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
       ],
       status: "Exhausted",
@@ -476,43 +454,28 @@ describe("user profile route", () => {
       loadMore: vi.fn(),
       results: [
         {
+          ...createPublishedItemDefaults(),
           _id: "packages:codex",
           kind: "plugin",
           displayName: "Codex",
-          summary: null,
           topics: ["Codex"],
-          icon: null,
           href: "/openclaw/plugins/codex",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
         {
+          ...createPublishedItemDefaults(),
           _id: "packages:diagnostics",
           kind: "plugin",
           displayName: "Diagnostics",
-          summary: null,
           topics: ["Diagnostics"],
-          icon: null,
           href: "/openclaw/plugins/diagnostics",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
         ...Array.from({ length: 10 }, (_, index) => ({
+          ...createPublishedItemDefaults(),
           _id: `packages:plugin-${index}`,
           kind: "plugin" as const,
           displayName: `Plugin ${index}`,
-          summary: null,
           topics: ["Feishu"],
-          icon: null,
           href: `/openclaw/plugins/plugin-${index}`,
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         })),
       ],
       status: "CanLoadMore",
@@ -547,30 +510,24 @@ describe("publisher profile helpers", () => {
   it("uses publisher total for grouped All tab when provided", () => {
     const groups = groupPublisherCatalogItemsByTopic([
       {
+        ...createPublishedItemDefaults(),
         _id: "packages:a",
         kind: "plugin",
         displayName: "A",
-        summary: null,
         topics: ["Codex"],
-        icon: null,
         href: "/openclaw/plugins/a",
         installs: 0,
-        stars: 0,
         isOfficial: false,
-        updatedAt: 1,
       },
       {
+        ...createPublishedItemDefaults(),
         _id: "packages:b",
         kind: "plugin",
         displayName: "B",
-        summary: null,
         topics: ["Diagnostics"],
-        icon: null,
         href: "/openclaw/plugins/b",
         installs: 0,
-        stars: 0,
         isOfficial: false,
-        updatedAt: 1,
       },
     ]);
 
@@ -606,30 +563,23 @@ describe("publisher profile helpers", () => {
   it("renames empty topic groups to uncategorized and sorts them last", () => {
     const groups = groupPublisherCatalogItemsByTopic([
       {
+        ...createPublishedItemDefaults(),
         _id: "skills:orphan",
         kind: "skill",
         displayName: "Orphan",
-        summary: null,
-        topics: [],
-        icon: null,
         href: "/x/orphan",
         installs: 0,
-        stars: 0,
         isOfficial: false,
-        updatedAt: 1,
       },
       {
+        ...createPublishedItemDefaults(),
         _id: "skills:prompt",
         kind: "skill",
         displayName: "Prompt",
-        summary: null,
         topics: ["Prompt"],
-        icon: null,
         href: "/x/prompt",
         installs: 0,
-        stars: 0,
         isOfficial: false,
-        updatedAt: 1,
       },
     ]);
 
