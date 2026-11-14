@@ -514,6 +514,14 @@ function isRetryableSkillsShHttpStatus(status: number) {
   return status === 408 || status === 429 || status >= 500;
 }
 
+async function deferSkillsShRateLimit(response: Response, attempt: number) {
+  if (response.status !== 429) return;
+  const retryAfterMs = skillsShRetryAfterMs(response, attempt);
+  if (attempt < MAX_SOURCE_ATTEMPTS - 1 && retryAfterMs <= MAX_INLINE_RETRY_AFTER_MS) return;
+  await cancelResponseBody(response);
+  throw new SkillsShSourceHttpError(429, Math.max(1, Math.ceil(retryAfterMs / 1_000)));
+}
+
 async function fetchSkillsShApiResponse(
   path: string,
   options: SkillsShFetchOptions,
@@ -533,17 +541,10 @@ async function fetchSkillsShApiResponse(
       await cancelResponseBody(response);
       return null;
     }
-    const retryAfterMs = response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
-    if (
-      !isRetryableSkillsShHttpStatus(response.status) ||
-      attempt === MAX_SOURCE_ATTEMPTS - 1 ||
-      (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS)
-    ) {
+    await deferSkillsShRateLimit(response, attempt);
+    if (!isRetryableSkillsShHttpStatus(response.status) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
       await cancelResponseBody(response);
-      throw new SkillsShSourceHttpError(
-        response.status,
-        retryAfterMs === null ? null : Math.max(1, Math.ceil(retryAfterMs / 1_000)),
-      );
+      throw new SkillsShSourceHttpError(response.status, null);
     }
     await cancelResponseBody(response);
     await waitForSkillsShRetry(response, attempt);
@@ -914,19 +915,7 @@ async function fetchSkillsShIdentityPage(
       }
       if (!response.ok) {
         if (isRetryableSkillsShHttpStatus(response.status)) {
-          const retryAfterMs =
-            response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
-          if (
-            response.status === 429 &&
-            (attempt === MAX_SOURCE_ATTEMPTS - 1 ||
-              (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS))
-          ) {
-            await cancelResponseBody(response);
-            throw new SkillsShSourceHttpError(
-              response.status,
-              retryAfterMs === null ? null : Math.max(1, Math.ceil(retryAfterMs / 1_000)),
-            );
-          }
+          await deferSkillsShRateLimit(response, attempt);
           if (attempt < MAX_SOURCE_ATTEMPTS - 1) {
             await cancelResponseBody(response);
             await waitForSkillsShRetry(response, attempt);
@@ -1861,19 +1850,9 @@ async function fetchSkillsShProofText(
       }
       return new TextDecoder().decode(body.bytes);
     }
-    const retryAfterMs = response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
-    if (
-      !isRetryableSkillsShHttpStatus(response.status) ||
-      attempt === MAX_SOURCE_ATTEMPTS - 1 ||
-      (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS)
-    ) {
+    await deferSkillsShRateLimit(response, attempt);
+    if (!isRetryableSkillsShHttpStatus(response.status) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
       await cancelResponseBody(response);
-      if (response.status === 429) {
-        throw new SkillsShSourceHttpError(
-          response.status,
-          retryAfterMs === null ? null : Math.max(1, Math.ceil(retryAfterMs / 1_000)),
-        );
-      }
       throw new Error(`skills.sh proof metadata returned HTTP ${response.status}`);
     }
     await cancelResponseBody(response);
@@ -2429,19 +2408,7 @@ export async function fetchSkillsShMirrorControlledBatch(
           );
         }
         if (response) {
-          const retryAfterMs =
-            response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
-          if (
-            response.status === 429 &&
-            (attempt === MAX_SOURCE_ATTEMPTS - 1 ||
-              (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS))
-          ) {
-            await cancelResponseBody(response);
-            throw new SkillsShSourceHttpError(
-              response.status,
-              retryAfterMs === null ? null : Math.max(1, Math.ceil(retryAfterMs / 1_000)),
-            );
-          }
+          await deferSkillsShRateLimit(response, attempt);
           if (attempt === MAX_SOURCE_ATTEMPTS - 1) {
             await cancelResponseBody(response);
             break;
