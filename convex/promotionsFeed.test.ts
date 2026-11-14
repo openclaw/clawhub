@@ -1,5 +1,6 @@
 import { parsePromotionsFeed, PROMOTIONS_FEED_ID } from "clawhub-schema";
 import { describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -30,9 +31,7 @@ function makeCtx({
   const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
   const patches: Array<{ id: unknown; patch: Record<string, unknown> }> = [];
   const db = {
-    normalizeId: vi.fn(),
-    system: {},
-    get: vi.fn(),
+    ...createMockDb(),
     query: vi.fn((table: string) => {
       if (table === "promotions") {
         return {
@@ -59,8 +58,6 @@ function makeCtx({
     patch: vi.fn(async (id: unknown, patch: Record<string, unknown>) => {
       patches.push({ id, patch });
     }),
-    replace: vi.fn(),
-    delete: vi.fn(),
   };
   return { ctx: { db } as never, inserts, patches };
 }

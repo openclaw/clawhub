@@ -1,5 +1,6 @@
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   claimPendingPublishAttemptChecksInternal,
@@ -80,14 +81,8 @@ function makeAttemptLookupCtx(
 function makeClaimCtx(attempt: Record<string, unknown>) {
   return {
     db: {
-      delete: vi.fn(),
+      ...createMockDb(),
       get: vi.fn(async () => attempt),
-      insert: vi.fn(),
-      normalizeId: vi.fn(),
-      patch: vi.fn(),
-      query: vi.fn(),
-      replace: vi.fn(),
-      system: {},
     },
   };
 }
@@ -283,11 +278,8 @@ describe("publishAttempts", () => {
     const insert = vi.fn(async () => "publishAttempts:fresh");
     const ctx = {
       db: {
-        delete: vi.fn(),
-        get: vi.fn(),
+        ...createMockDb(),
         insert,
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             order: vi.fn(() => ({
@@ -295,8 +287,6 @@ describe("publishAttempts", () => {
             })),
           })),
         })),
-        replace: vi.fn(),
-        system: {},
       },
       scheduler: { runAfter },
     };
@@ -337,11 +327,7 @@ describe("publishAttempts", () => {
     const runAfter = vi.fn();
     const ctx = {
       db: {
-        delete: vi.fn(),
-        get: vi.fn(),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
+        ...createMockDb(),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             order: vi.fn(() => ({
@@ -355,8 +341,6 @@ describe("publishAttempts", () => {
             })),
           })),
         })),
-        replace: vi.fn(),
-        system: {},
       },
       scheduler: { runAfter },
     };
@@ -409,11 +393,7 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        delete: vi.fn(),
-        get: vi.fn(),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
+        ...createMockDb(),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             order: vi.fn(() => ({
@@ -421,8 +401,6 @@ describe("publishAttempts", () => {
             })),
           })),
         })),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -601,11 +579,7 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        delete: vi.fn(),
-        get: vi.fn(),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
+        ...createMockDb(),
         query: vi.fn(() => ({
           withIndex: vi.fn((indexName: string) => ({
             order: vi.fn(() => ({
@@ -617,8 +591,6 @@ describe("publishAttempts", () => {
             })),
           })),
         })),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -656,15 +628,12 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async (id: string) =>
           id === "skillVersions:healthy"
             ? { _id: id, fingerprint: healthy.artifactFingerprint }
             : null,
         ),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             order: vi.fn(() => ({
@@ -672,8 +641,6 @@ describe("publishAttempts", () => {
             })),
           })),
         })),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -725,15 +692,12 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async (id: string) =>
           id === "skillVersions:reusable"
             ? { fingerprint: "exact-fingerprint", llmAnalysis: analysis }
             : null,
         ),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             order: vi.fn(() => ({
@@ -741,8 +705,6 @@ describe("publishAttempts", () => {
             })),
           })),
         })),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -771,7 +733,7 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async (id: string) =>
           id === "skillVersions:invalid-aig"
             ? {
@@ -785,9 +747,6 @@ describe("publishAttempts", () => {
               }
             : null,
         ),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             order: vi.fn(() => ({
@@ -795,8 +754,6 @@ describe("publishAttempts", () => {
             })),
           })),
         })),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -971,17 +928,11 @@ describe("publishAttempts", () => {
   it("lets targeted pending attempts fall through the ready-finalization lookup", async () => {
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:pending",
           status: "pending_checks",
         })),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -1061,11 +1012,7 @@ describe("publishAttempts", () => {
   it("skips ready-to-finalize attempts with an active retry lease", async () => {
     const ctx = {
       db: {
-        delete: vi.fn(),
-        get: vi.fn(),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
+        ...createMockDb(),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             order: vi.fn(() => ({
@@ -1080,8 +1027,6 @@ describe("publishAttempts", () => {
             })),
           })),
         })),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -1111,13 +1056,10 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async (id: string) =>
           id === "packageReleases:deleted" ? { _id: id, softDeletedAt: Date.now() } : { _id: id },
         ),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             order: vi.fn(() => ({
@@ -1125,8 +1067,6 @@ describe("publishAttempts", () => {
             })),
           })),
         })),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -1155,18 +1095,12 @@ describe("publishAttempts", () => {
   it("treats targeted attempts terminalized by the ready queue as drained", async () => {
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:orphan-package",
           kind: "package",
           status: "failed",
         })),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -1215,7 +1149,7 @@ describe("publishAttempts", () => {
     const now = Date.now();
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:demo",
           kind: "skill",
@@ -1223,12 +1157,6 @@ describe("publishAttempts", () => {
           artifactFingerprint: "fingerprint",
           finalizationClaimExpiresAt: now - 1,
         })),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        query: vi.fn(),
-        normalizeId: vi.fn(),
-        system: {},
       },
       storage: {
         delete: vi.fn(),
@@ -1256,6 +1184,7 @@ describe("publishAttempts", () => {
     const now = Date.now();
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:demo",
           kind: "skill",
@@ -1268,13 +1197,6 @@ describe("publishAttempts", () => {
             clawscan: { status: "pending" },
           },
         })),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn(),
-        normalizeId: vi.fn(),
-        system: {},
       },
       storage: {
         delete: vi.fn(),
@@ -1315,6 +1237,7 @@ describe("publishAttempts", () => {
     const now = Date.now();
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:poison",
           kind: "skill",
@@ -1332,13 +1255,6 @@ describe("publishAttempts", () => {
             },
           },
         })),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn(),
-        normalizeId: vi.fn(),
-        system: {},
       },
       storage: {
         delete: vi.fn(),
@@ -1378,6 +1294,7 @@ describe("publishAttempts", () => {
     const now = Date.now();
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) =>
           id === "publishAttempts:orphan"
             ? {
@@ -1400,12 +1317,6 @@ describe("publishAttempts", () => {
             throw new Error("Update on nonexistent document ID skillVersions:deleted");
           }
         }),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn(),
-        normalizeId: vi.fn(),
-        system: {},
       },
       storage: {
         delete: vi.fn(),
@@ -1445,7 +1356,7 @@ describe("publishAttempts", () => {
   it("terminalizes duplicate skill versions instead of retrying finalization", async () => {
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:demo",
           kind: "skill",
@@ -1454,12 +1365,6 @@ describe("publishAttempts", () => {
           followup: {},
           finalizationClaimId: "finalize:claim",
         })),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
       },
     };
     const error =
@@ -1488,7 +1393,7 @@ describe("publishAttempts", () => {
   it("terminalizes ambiguous legacy fork slugs instead of retrying finalization", async () => {
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:ambiguous-fork",
           kind: "skill",
@@ -1501,12 +1406,6 @@ describe("publishAttempts", () => {
           followup: {},
           finalizationClaimId: "finalize:claim",
         })),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
       },
     };
     const error =
@@ -1545,7 +1444,7 @@ describe("publishAttempts", () => {
   ])("terminalizes %s instead of retrying finalization", async (_caseName, error) => {
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:legacy-fork",
           kind: "skill",
@@ -1558,12 +1457,6 @@ describe("publishAttempts", () => {
           followup: {},
           finalizationClaimId: "finalize:claim",
         })),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -1593,7 +1486,7 @@ describe("publishAttempts", () => {
   it("terminalizes duplicate package versions while preserving transient retries", async () => {
     const duplicateCtx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:demo-package",
           kind: "package",
@@ -1601,12 +1494,6 @@ describe("publishAttempts", () => {
           packageInsertArgs: { name: "@demo/plugin", version: "1.0.0" },
           finalizationClaimId: "finalize:claim",
         })),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
       },
     };
     const duplicateError =
@@ -1622,7 +1509,7 @@ describe("publishAttempts", () => {
 
     const transientCtx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:retry",
           kind: "skill",
@@ -1631,12 +1518,6 @@ describe("publishAttempts", () => {
           followup: {},
           finalizationClaimId: "finalize:retry",
         })),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -1662,7 +1543,7 @@ describe("publishAttempts", () => {
     async (conclusion) => {
       const ctx = {
         db: {
-          delete: vi.fn(),
+          ...createMockDb(),
           get: vi.fn(async (id: string) =>
             id === "publishAttempts:terminal-parent"
               ? {
@@ -1678,12 +1559,6 @@ describe("publishAttempts", () => {
                   publicationStatus: "pending",
                 },
           ),
-          insert: vi.fn(),
-          normalizeId: vi.fn(),
-          patch: vi.fn(),
-          query: vi.fn(),
-          replace: vi.fn(),
-          system: {},
         },
       };
       const error = `OpenClaw release parent terminal state completed/${conclusion} is not authorized by automated-awaited`;
@@ -1721,7 +1596,7 @@ describe("publishAttempts", () => {
   ])("terminalizes permanent staged OpenClaw authorization failure: %s", async (error) => {
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async (id: string) =>
           id === "publishAttempts:invalid-auth"
             ? {
@@ -1737,12 +1612,6 @@ describe("publishAttempts", () => {
                 publicationStatus: "pending",
               },
         ),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
       },
     };
 
@@ -1763,7 +1632,7 @@ describe("publishAttempts", () => {
   it("terminalizes deleted package releases instead of retrying finalization", async () => {
     const ctx = {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:orphan-package",
           kind: "package",
@@ -1771,12 +1640,6 @@ describe("publishAttempts", () => {
           packageReleaseId: "packageReleases:deleted",
           finalizationClaimId: "finalize:claim",
         })),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
       },
     };
     const error = "Uncaught ConvexError: Pending package release not found";
@@ -1807,7 +1670,7 @@ describe("publishAttempts", () => {
     const ctx = {
       scheduler: { runAfter: vi.fn() },
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async (id: string) =>
           id === "publishAttempts:demo"
             ? {
@@ -1822,9 +1685,6 @@ describe("publishAttempts", () => {
               }
             : null,
         ),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
         query: vi.fn((table: string) => {
           const query = {
             withIndex: vi.fn(() => query),
@@ -1844,8 +1704,6 @@ describe("publishAttempts", () => {
           };
           return query;
         }),
-        replace: vi.fn(),
-        system: {},
       },
     };
     const result = {
@@ -1895,6 +1753,7 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:demo",
           kind: "skill",
@@ -1907,13 +1766,6 @@ describe("publishAttempts", () => {
             version: "1.0.0",
           },
         })),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn(),
-        normalizeId: vi.fn(),
-        system: {},
       },
       storage: {
         delete: vi.fn(),
@@ -1969,6 +1821,7 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) =>
           id === "publishAttempts:demo"
             ? {
@@ -1991,13 +1844,6 @@ describe("publishAttempts", () => {
                 aigAnalysis: existingAigAnalysis,
               },
         ),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn(),
-        normalizeId: vi.fn(),
-        system: {},
       },
       storage: {
         delete: vi.fn(),
@@ -2042,6 +1888,7 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) =>
           id === "publishAttempts:demo"
             ? {
@@ -2058,13 +1905,6 @@ describe("publishAttempts", () => {
                 fingerprint: "fingerprint",
               },
         ),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn(),
-        normalizeId: vi.fn(),
-        system: {},
       },
       storage: {
         delete: vi.fn(),
@@ -2092,6 +1932,7 @@ describe("publishAttempts", () => {
     const now = Date.now();
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) =>
           id === "publishAttempts:demo"
             ? {
@@ -2118,13 +1959,6 @@ describe("publishAttempts", () => {
                 },
               },
         ),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn(),
-        normalizeId: vi.fn(),
-        system: {},
       },
       storage: {
         delete: vi.fn(),
@@ -2171,6 +2005,7 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:demo",
           kind: "package",
@@ -2183,13 +2018,6 @@ describe("publishAttempts", () => {
             version: "1.0.0",
           },
         })),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn(),
-        normalizeId: vi.fn(),
-        system: {},
       },
       storage: {
         delete: vi.fn(),
@@ -2231,6 +2059,7 @@ describe("publishAttempts", () => {
   it("emails the publisher when TruffleHog blocks a staged publish", async () => {
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi
           .fn()
           .mockResolvedValueOnce({
@@ -2257,10 +2086,6 @@ describe("publishAttempts", () => {
             handle: "publisher",
             email: "publisher@example.com",
           }),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
         query: vi.fn((table: string) => {
           if (table === "skillVersionFingerprints") {
             return {
@@ -2278,8 +2103,6 @@ describe("publishAttempts", () => {
           }
           throw new Error(`Unexpected table ${table}`);
         }),
-        normalizeId: vi.fn(),
-        system: {},
       },
       scheduler: {
         runAfter: vi.fn(),
@@ -2335,6 +2158,7 @@ describe("publishAttempts", () => {
   it("keeps existing skill parents when TruffleHog blocks a pending new version", async () => {
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi
           .fn()
           .mockResolvedValueOnce({
@@ -2357,10 +2181,6 @@ describe("publishAttempts", () => {
             handle: "publisher",
             email: "publisher@example.com",
           }),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
         query: vi.fn((table: string) => {
           if (table === "skillVersionFingerprints") {
             return {
@@ -2371,8 +2191,6 @@ describe("publishAttempts", () => {
           }
           throw new Error(`Unexpected table ${table}`);
         }),
-        normalizeId: vi.fn(),
-        system: {},
       },
       scheduler: {
         runAfter: vi.fn(),
@@ -2408,6 +2226,7 @@ describe("publishAttempts", () => {
   it("keeps TruffleHog-positive attempts pending when secret storage deletion fails", async () => {
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:demo",
           kind: "skill",
@@ -2420,13 +2239,6 @@ describe("publishAttempts", () => {
           checkClaimExpiresAt: Date.now() + 60_000,
           files: [{ storageId: "_storage:secret-skill" }],
         })),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn(),
-        normalizeId: vi.fn(),
-        system: {},
       },
       scheduler: {
         runAfter: vi.fn(),
@@ -2459,6 +2271,7 @@ describe("publishAttempts", () => {
   it("deletes package artifacts when TruffleHog blocks a staged package publish", async () => {
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi
           .fn()
           .mockResolvedValueOnce({
@@ -2479,13 +2292,6 @@ describe("publishAttempts", () => {
             handle: "publisher",
             email: "publisher@example.com",
           }),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn(),
-        normalizeId: vi.fn(),
-        system: {},
       },
       scheduler: {
         runAfter: vi.fn(),

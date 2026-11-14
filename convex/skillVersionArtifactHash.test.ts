@@ -2,6 +2,7 @@
 
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { sha256Hex } from "./lib/hash";
 import { buildDeterministicZip } from "./lib/skillZip";
 import {
@@ -118,16 +119,11 @@ function makeBackfillCtx(page: Array<Record<string, unknown>>, isDone: boolean) 
   const paginate = vi.fn(async () => ({ page, isDone, continueCursor: "cursor:next" }));
   const ctx = {
     db: {
+      ...createMockDb(),
       query: vi.fn(() => ({
         withIndex: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
       })),
-      get: vi.fn(),
-      insert: vi.fn(),
-      patch: vi.fn(),
-      replace: vi.fn(),
-      delete: vi.fn(),
       normalizeId: vi.fn(() => null),
-      system: {},
     },
     scheduler: { runAfter },
   };

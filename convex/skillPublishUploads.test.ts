@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import {
   attachSkillPublishUploadInternal,
   cleanupSkillPublishUploadInternal,
@@ -36,13 +37,8 @@ function makeCtx(
 ) {
   return {
     db: {
+      ...createMockDb(),
       get: vi.fn(async () => ticket),
-      patch: vi.fn(),
-      delete: vi.fn(),
-      normalizeId: vi.fn(),
-      query: vi.fn(),
-      replace: vi.fn(),
-      insert: vi.fn(),
       system: { get: vi.fn(async () => metadata), query: vi.fn() },
     },
     storage: { delete: vi.fn() },

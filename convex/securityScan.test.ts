@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import type { EndorAnalysis } from "./lib/endorAnalysis";
 import {
@@ -683,7 +684,7 @@ function makeFailedScanRecoveryCtx(
   return {
     ctx: {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs[id] ?? null),
         insert: vi.fn(async (table: string, doc: Record<string, unknown>) => {
           inserts.push({ table, doc });
@@ -692,8 +693,6 @@ function makeFailedScanRecoveryCtx(
         normalizeId: vi.fn((_table: string, id: string) => id),
         patch,
         query,
-        replace: vi.fn(),
-        system: {},
       },
     },
     patches,
@@ -869,14 +868,12 @@ function makeRescanCtx(options: {
   return {
     ctx: {
       db: {
+        ...createMockDb(),
         get,
         insert,
         patch,
         query,
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
       scheduler,
     },
@@ -976,14 +973,12 @@ function makeBulkRescanCtx(options: {
   return {
     ctx: {
       db: {
+        ...createMockDb(),
         get,
         insert,
         patch,
         query,
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     },
     inserts,
@@ -1138,14 +1133,11 @@ function makeClaimCtx(
 
   const ctx = {
     db: {
+      ...createMockDb(),
       query,
       patch,
       get: vi.fn(async (id: string) => docs[id] ?? jobs.find((job) => job._id === id) ?? null),
-      insert: vi.fn(),
-      replace: vi.fn(),
-      delete: vi.fn(),
       normalizeId: vi.fn(() => null),
-      system: {},
     },
     runQuery: vi.fn(async (_ref: unknown, args: unknown) =>
       listReadySourceJobsForClaimHandler(ctx as never, args as never),
@@ -3560,18 +3552,14 @@ describe("securityScan", () => {
     ]);
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs.get(id) ?? null),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             unique: vi.fn(async () => null),
           })),
         })),
-        insert: vi.fn(),
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
 
@@ -5945,6 +5933,7 @@ describe("securityScan", () => {
       });
       const ctx = {
         db: {
+          ...createMockDb(),
           get: vi.fn(async (id: string) => docs.get(id) ?? null),
           query: vi.fn((table: string) => {
             if (table === "skillScanRequestFileChunks") {
@@ -5970,10 +5959,7 @@ describe("securityScan", () => {
           }),
           insert,
           patch,
-          replace: vi.fn(),
-          delete: vi.fn(),
           normalizeId: vi.fn(() => null),
-          system: {},
         },
       };
 
@@ -6112,14 +6098,12 @@ describe("securityScan", () => {
     }));
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs.get(id) ?? null),
         query,
         insert,
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
     const args = {
@@ -6182,6 +6166,7 @@ describe("securityScan", () => {
     const insert = vi.fn();
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => {
           if (id === "skills:1") {
             return {
@@ -6202,13 +6187,8 @@ describe("securityScan", () => {
           }
           return null;
         }),
-        query: vi.fn(),
         insert,
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
 
@@ -6258,14 +6238,9 @@ describe("securityScan", () => {
     ]);
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs.get(id) ?? null),
-        query: vi.fn(),
-        insert: vi.fn(),
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
 
@@ -6353,6 +6328,7 @@ describe("securityScan", () => {
     });
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs.get(id) ?? null),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
@@ -6361,10 +6337,7 @@ describe("securityScan", () => {
         })),
         insert,
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
 
@@ -6437,18 +6410,15 @@ describe("securityScan", () => {
     });
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs.get(id) ?? null),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             unique: vi.fn(async () => docs.get("githubSkillScans:1")),
           })),
         })),
-        insert: vi.fn(),
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
     const result = await prepareGitHubSkillScanRequestInternalHandler(ctx as never, {

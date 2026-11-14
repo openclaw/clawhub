@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import {
   rebuildTrendingLeaderboardAction,
   rebuildTrendingLeaderboardInternal,
@@ -22,14 +23,8 @@ describe("packageLeaderboards", () => {
     const result = await mutationHandler(
       {
         db: {
-          get: vi.fn(),
-          insert: vi.fn(),
-          normalizeId: vi.fn(),
-          patch: vi.fn(),
-          query: vi.fn(),
-          replace: vi.fn(),
+          ...createMockDb(),
           system: { get: vi.fn(), query: vi.fn() },
-          delete: vi.fn(),
         },
         scheduler: { runAfter },
       },
