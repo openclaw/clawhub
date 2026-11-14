@@ -851,29 +851,21 @@ const skillScanRequestSourceKindValidator = v.union(
   v.literal("skills-sh-catalog"),
 );
 
-const skills = defineTable({
+// Fields mirrored by the search digest use the source skill validators.
+const skillSearchDigestSharedFields = {
   slug: v.string(),
   displayName: v.string(),
   summary: v.optional(v.string()),
+  // Keep icons on the digest so card/list hydration avoids reading the full skill row.
   icon: v.optional(v.string()),
-  resourceId: v.optional(v.string()),
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
   canonicalSkillId: v.optional(v.id("skills")),
   forkOf: forkOfValidator,
   installKind: v.optional(v.literal("github")),
-  githubSourceId: v.optional(v.id("githubSkillSources")),
-  githubCurrentRepo: v.optional(v.string()),
-  githubPath: v.optional(v.string()),
   githubHasSkillCard: v.optional(v.boolean()),
-  githubCurrentCommit: v.optional(v.string()),
-  githubCurrentContentHash: v.optional(v.string()),
   githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
-  githubCurrentCheckedAt: v.optional(v.number()),
   githubScanStatus: v.optional(githubSkillScanStatusValidator),
-  githubRemovedAt: v.optional(v.number()),
-  githubCurrentCandidateId: v.optional(v.id("githubSkillCandidates")),
-  githubPendingCandidateId: v.optional(v.id("githubSkillCandidates")),
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSummary: v.optional(
     v.object({
@@ -888,6 +880,38 @@ const skills = defineTable({
   tags: v.record(v.string(), v.id("skillVersions")),
   categories: v.optional(v.array(v.string())),
   topics: v.optional(v.array(v.string())),
+  softDeletedAt: v.optional(v.number()),
+  badges: badgesValidator,
+  moderationStatus: moderationStatusValidator,
+  moderationReason: v.optional(v.string()),
+  moderationVerdict: v.optional(
+    v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
+  ),
+  isSuspicious: v.optional(v.boolean()),
+  moderationFlags: v.optional(v.array(v.string())),
+  statsDownloads: v.optional(v.number()),
+  statsStars: v.optional(v.number()),
+  statsInstallsCurrent: v.optional(v.number()),
+  statsInstallsAllTime: v.optional(v.number()),
+  statsSkillsShInstalls: v.optional(v.number()),
+  statsGithubStars: v.optional(v.number()),
+  stats: statsValidator,
+  createdAt: v.number(),
+  updatedAt: v.number(),
+};
+
+const skills = defineTable({
+  ...skillSearchDigestSharedFields,
+  resourceId: v.optional(v.string()),
+  githubSourceId: v.optional(v.id("githubSkillSources")),
+  githubCurrentRepo: v.optional(v.string()),
+  githubPath: v.optional(v.string()),
+  githubCurrentCommit: v.optional(v.string()),
+  githubCurrentContentHash: v.optional(v.string()),
+  githubCurrentCheckedAt: v.optional(v.number()),
+  githubRemovedAt: v.optional(v.number()),
+  githubCurrentCandidateId: v.optional(v.id("githubSkillCandidates")),
+  githubPendingCandidateId: v.optional(v.id("githubSkillCandidates")),
   inferredCategories: v.optional(v.array(v.string())),
   inferredTopics: v.optional(v.array(v.string())),
   inferredFromVersionId: v.optional(v.id("skillVersions")),
@@ -898,14 +922,7 @@ const skills = defineTable({
   inferredInputHash: v.optional(v.string()),
   inferredTopicInputHash: v.optional(v.string()),
   inferredAt: v.optional(v.number()),
-  softDeletedAt: v.optional(v.number()),
-  badges: badgesValidator,
-  moderationStatus: moderationStatusValidator,
   moderationNotes: v.optional(v.string()),
-  moderationReason: v.optional(v.string()),
-  moderationVerdict: v.optional(
-    v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-  ),
   moderationReasonCodes: v.optional(v.array(v.string())),
   moderationEvidence: v.optional(
     v.array(
@@ -927,8 +944,6 @@ const skills = defineTable({
   // values before this field and its validator are removed in a follow-up.
   manualOverride: v.optional(manualModerationOverride),
   quality: v.optional(qualityAssessmentValidator.extend({ evaluatedAt: v.number() })),
-  isSuspicious: v.optional(v.boolean()),
-  moderationFlags: v.optional(v.array(v.string())),
   lastReviewedAt: v.optional(v.number()),
   // Retired VirusTotal polling bookkeeping. No longer written or read; kept
   // optional until existing rows are cleared and the fields can be dropped.
@@ -942,12 +957,6 @@ const skills = defineTable({
   reportCount: v.optional(v.number()),
   lastReportedAt: v.optional(v.number()),
   batch: v.optional(v.string()),
-  statsDownloads: v.optional(v.number()),
-  statsStars: v.optional(v.number()),
-  statsInstallsCurrent: v.optional(v.number()),
-  statsInstallsAllTime: v.optional(v.number()),
-  statsSkillsShInstalls: v.optional(v.number()),
-  statsGithubStars: v.optional(v.number()),
   installBackfill: v.optional(
     v.object({
       modelVersion: v.string(),
@@ -988,9 +997,6 @@ const skills = defineTable({
       appliedAt: v.number(),
     }),
   ),
-  stats: statsValidator,
-  createdAt: v.number(),
-  updatedAt: v.number(),
 })
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
@@ -1327,68 +1333,23 @@ const embeddingSkillMap = defineTable({
 // Lightweight projection of skill docs for search hydration (~800 bytes vs ~3-5KB).
 // Contains exactly the fields needed by toPublicSkill() + isPublicSkillDoc() + isSkillSuspicious().
 const skillSearchDigest = defineTable({
+  ...skillSearchDigestSharedFields,
   skillId: v.id("skills"),
-  slug: v.string(),
   normalizedSlug: v.optional(v.string()),
   normalizedSlugFirstToken: v.optional(v.string()),
-  displayName: v.string(),
   normalizedDisplayName: v.optional(v.string()),
   normalizedDisplayNameFirstToken: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  // Mirrors `skills.icon`. Kept on the digest so card/list hydration paths
-  // can render the icon without reading the full skill row.
-  icon: v.optional(v.string()),
-  ownerUserId: v.id("users"),
-  ownerPublisherId: v.optional(v.id("publishers")),
   ownerHandle: v.optional(v.string()),
   ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
   ownerName: v.optional(v.string()),
   ownerDisplayName: v.optional(v.string()),
   ownerImage: v.optional(v.string()),
-  canonicalSkillId: v.optional(v.id("skills")),
-  forkOf: forkOfValidator,
-  latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSkillId: v.optional(v.id("skills")),
   // Missing means the rollout backfill has not reached this row. New writes
   // always store an explicit available or unavailable public-version state.
   publicVersion: v.optional(publicBrowseVersionStateValidator),
-  installKind: v.optional(v.literal("github")),
-  githubHasSkillCard: v.optional(v.boolean()),
-  githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
-  githubScanStatus: v.optional(githubSkillScanStatusValidator),
-  latestVersionSummary: v.optional(
-    v.object({
-      version: v.string(),
-      createdAt: v.number(),
-      changelog: v.string(),
-      changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
-      description: v.optional(v.string()),
-      clawdis: v.optional(v.any()),
-    }),
-  ),
-  tags: v.record(v.string(), v.id("skillVersions")),
-  categories: v.optional(v.array(v.string())),
-  topics: v.optional(v.array(v.string())),
-  badges: badgesValidator,
-  stats: statsValidator,
-  statsDownloads: v.optional(v.number()),
-  statsStars: v.optional(v.number()),
-  statsInstallsCurrent: v.optional(v.number()),
-  statsInstallsAllTime: v.optional(v.number()),
-  statsSkillsShInstalls: v.optional(v.number()),
-  statsGithubStars: v.optional(v.number()),
   recommendedScore: v.optional(v.number()),
   recommendedScoreVersion: v.optional(v.number()),
-  softDeletedAt: v.optional(v.number()),
-  moderationStatus: moderationStatusValidator,
-  moderationFlags: v.optional(v.array(v.string())),
-  moderationVerdict: v.optional(
-    v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
-  ),
-  moderationReason: v.optional(v.string()),
-  isSuspicious: v.optional(v.boolean()),
-  createdAt: v.number(),
-  updatedAt: v.number(),
 })
   .index("by_skill", ["skillId"])
   .index("by_active_updated", ["softDeletedAt", "updatedAt"])
