@@ -1,23 +1,6 @@
-import type { Doc } from "../../convex/_generated/dataModel";
+import type { PublicPublisher } from "../../convex/lib/public";
 
-export type PublicUser = Pick<
-  Doc<"users">,
-  "_id" | "_creationTime" | "handle" | "name" | "displayName" | "image" | "bio"
->;
-
-export type PublicPublisher = Pick<
-  Doc<"publishers">,
-  | "_id"
-  | "_creationTime"
-  | "kind"
-  | "handle"
-  | "displayName"
-  | "image"
-  | "bio"
-  | "linkedUserId"
-  | "githubHandle"
-  | "githubVerifiedAt"
-> & { official?: boolean };
+export type { PublicPublisher, PublicSkill, PublicUser } from "../../convex/lib/public";
 
 type PublicPublisherStats = {
   skills: number;
@@ -97,48 +80,3 @@ export type PublicPublisherCatalogDisplay = {
 export function readPublicDownloadCount(value: { downloads?: number; installs?: number }) {
   return value.downloads ?? value.installs ?? 0;
 }
-
-type PublicSkillStats = {
-  downloads: number;
-  stars: number;
-  installs: number;
-  versions: number;
-  comments: number;
-};
-
-export type PublicSkill = Omit<
-  Pick<
-    Doc<"skills">,
-    | "_id"
-    | "_creationTime"
-    | "slug"
-    | "displayName"
-    | "summary"
-    | "icon"
-    | "ownerUserId"
-    | "ownerPublisherId"
-    | "canonicalSkillId"
-    | "forkOf"
-    | "latestVersionId"
-    | "installKind"
-    | "githubPath"
-    | "githubCurrentCommit"
-    | "githubCurrentStatus"
-    | "githubScanStatus"
-    | "githubHasSkillCard"
-    | "tags"
-    | "categories"
-    | "inferredCategories"
-    | "inferredFromVersionId"
-    | "topics"
-    | "badges"
-    | "stats"
-    | "isSuspicious"
-    | "createdAt"
-    | "updatedAt"
-  >,
-  "stats"
-> & {
-  stats: PublicSkillStats;
-  githubSourceRepo?: string;
-};
