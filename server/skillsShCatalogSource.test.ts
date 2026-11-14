@@ -22,51 +22,66 @@ import {
   skillsShSourceRetryAfterSeconds,
   SkillsShCatalogOwnerProofRequiredError,
   validateSkillsShCatalogGitHubOwnerProof,
+  type SkillsShCatalogListRow,
 } from "./skillsShCatalogSource";
 
-const proofMetadataRow = {
-  id: "owner/repo/skill",
-  installUrl: "https://github.com/owner/repo",
-  installs: 1,
-  name: "Skill",
-  slug: "skill",
-  source: "owner/repo",
-  sourceType: "github",
-  url: "https://www.skills.sh/owner/repo/skill",
-};
+function makeProofCatalogRow(
+  overrides: Partial<SkillsShCatalogListRow> = {},
+): SkillsShCatalogListRow {
+  return {
+    id: "owner/repo/skill",
+    installUrl: "https://github.com/owner/repo",
+    installs: 1,
+    name: "Skill",
+    slug: "skill",
+    source: "owner/repo",
+    sourceType: "github",
+    url: "https://www.skills.sh/owner/repo/skill",
+    ...overrides,
+  };
+}
+
+function makeLarkDocCatalogRow(
+  overrides: Partial<SkillsShCatalogListRow> = {},
+): SkillsShCatalogListRow {
+  return {
+    id: "larksuite/cli/lark-doc",
+    installUrl: null,
+    installs: 383_123,
+    name: "lark-doc",
+    slug: "lark-doc",
+    source: "larksuite/cli",
+    sourceType: "well-known",
+    url: "https://www.skills.sh/larksuite/cli/lark-doc",
+    ...overrides,
+  };
+}
+
+function makeFindSkillsCatalogRow(): SkillsShCatalogListRow {
+  return {
+    id: "vercel-labs/skills/find-skills",
+    installUrl: "https://github.com/vercel-labs/skills",
+    installs: 42,
+    name: "Find Skills",
+    slug: "find-skills",
+    source: "vercel-labs/skills",
+    sourceType: "github",
+    url: "https://skills.sh/vercel-labs/skills/find-skills",
+  };
+}
+
+const proofMetadataRow = makeProofCatalogRow();
 
 function larkDocCatalogPage() {
   return {
-    data: [
-      {
-        id: "larksuite/cli/lark-doc",
-        installUrl: null,
-        installs: 383_123,
-        name: "lark-doc",
-        slug: "lark-doc",
-        source: "larksuite/cli",
-        sourceType: "well-known",
-        url: "https://www.skills.sh/larksuite/cli/lark-doc",
-      },
-    ],
+    data: [makeLarkDocCatalogRow()],
     pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
   };
 }
 
 function findSkillsCatalogPage() {
   return {
-    data: [
-      {
-        id: "vercel-labs/skills/find-skills",
-        installUrl: "https://github.com/vercel-labs/skills",
-        installs: 42,
-        name: "Find Skills",
-        slug: "find-skills",
-        source: "vercel-labs/skills",
-        sourceType: "github",
-        url: "https://skills.sh/vercel-labs/skills/find-skills",
-      },
-    ],
+    data: [makeFindSkillsCatalogRow()],
     pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
   };
 }
@@ -916,16 +931,7 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("rejects proof metadata redirects outside the exact skills.sh route", async () => {
-    const row = {
-      id: "owner/repo/skill",
-      installUrl: "https://github.com/owner/repo",
-      installs: 1,
-      name: "Skill",
-      slug: "skill",
-      source: "owner/repo",
-      sourceType: "github",
-      url: "https://www.skills.sh/owner/repo/skill",
-    };
+    const row = makeProofCatalogRow();
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.includes("/api/v1/skills?page=0")) {
@@ -1184,16 +1190,11 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("uses an exact GitHub install identity when the source type marker drifts", () => {
-    const liveRow = {
-      id: "larksuite/cli/lark-doc",
+    const liveRow = makeLarkDocCatalogRow({
       installUrl: "https://github.com/larksuite/cli.git",
-      installs: 383_123,
-      name: "lark-doc",
-      slug: "lark-doc",
-      source: "larksuite/cli",
       sourceType: " GitHub-Repository ",
       url: "https://skills.sh/larksuite/cli/lark-doc",
-    };
+    });
     expect(buildSkillsShMirrorObservation(liveRow)).toMatchObject({
       externalId: "larksuite/cli/lark-doc",
       sourceType: "github",
@@ -1207,16 +1208,11 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("normalizes advisory source types to the persisted token grammar", () => {
-    const liveRow = {
-      id: "larksuite/cli/lark-doc",
+    const liveRow = makeLarkDocCatalogRow({
       installUrl: "https://github.com/larksuite/cli",
-      installs: 383_123,
-      name: "lark-doc",
-      slug: "lark-doc",
-      source: "larksuite/cli",
       sourceType: ".GitHub_Repository.",
       url: "https://skills.sh/larksuite/cli/lark-doc",
-    };
+    });
     expect(buildSkillsShMirrorObservation(liveRow)).toMatchObject({
       sourceType: "github",
       upstreamSourceType: "github_repository",
@@ -1228,16 +1224,7 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("uses only the labeled Repository section for an ambiguous GitHub-backed row", () => {
-    const liveRow = {
-      id: "larksuite/cli/lark-doc",
-      installUrl: null,
-      installs: 383_123,
-      name: "lark-doc",
-      slug: "lark-doc",
-      source: "larksuite/cli",
-      sourceType: "well-known",
-      url: "https://www.skills.sh/larksuite/cli/lark-doc",
-    };
+    const liveRow = makeLarkDocCatalogRow();
     const html = `
       <main>
         <article>
@@ -1278,16 +1265,11 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("rejects conflicting GitHub structural identity without exposing the install URL", () => {
-    const liveRow = {
-      id: "larksuite/cli/lark-doc",
+    const liveRow = makeLarkDocCatalogRow({
       installUrl: "https://github.com/larksuite/cli",
-      installs: 383_123,
-      name: "lark-doc",
-      slug: "lark-doc",
-      source: "larksuite/cli",
       sourceType: "repository",
       url: "https://skills.sh/larksuite/cli/lark-doc",
-    };
+    });
     const invalidRows = [
       { ...liveRow, installUrl: "https://github.com/larksuite/docs" },
       { ...liveRow, installUrl: "https://github.com/larksuite/cli/tree/main" },
@@ -1314,16 +1296,11 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("quarantines a non-string skills.sh id instead of throwing", () => {
-    const liveRow = {
-      id: "larksuite/cli/lark-doc",
+    const liveRow = makeLarkDocCatalogRow({
       installUrl: "https://github.com/larksuite/cli",
-      installs: 383_123,
-      name: "lark-doc",
-      slug: "lark-doc",
-      source: "larksuite/cli",
       sourceType: "repository",
       url: "https://skills.sh/larksuite/cli/lark-doc",
-    };
+    });
     const malformed = { ...liveRow, id: 12, source: { repo: "larksuite/cli" } };
     expect(() => buildSkillsShMirrorObservation(malformed as never)).toThrow(
       "Unsupported skills.sh mirror identity",
@@ -1338,16 +1315,7 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("keeps a legacy blank id hash distinct from the stored missing placeholder", () => {
-    const row = {
-      id: "owner/repo/skill",
-      installUrl: "https://github.com/owner/repo",
-      installs: 1,
-      name: "Skill",
-      slug: "skill",
-      source: "owner/repo",
-      sourceType: "github",
-      url: "https://skills.sh/owner/repo/skill",
-    };
+    const row = makeProofCatalogRow({ url: "https://skills.sh/owner/repo/skill" });
     const legacy = [{ ...row, id: "   " }, row];
     const empty = [{ ...row, id: "" }, row];
     const stored = [{ ...row, id: "missing:4:0" }, row];
@@ -1730,16 +1698,7 @@ describe("skills.sh Vercel source boundary", () => {
         return new Response(
           JSON.stringify({
             data: [
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
+              makeFindSkillsCatalogRow(),
               {
                 id: "open.feishu.cn/lark-doc",
                 installUrl: null,
@@ -1823,16 +1782,7 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("accounts for exact downloaded list, detail, and audit JSON bytes", async () => {
-    const row = {
-      id: "owner/repo/skill",
-      installUrl: "https://github.com/owner/repo",
-      installs: 42,
-      name: "Skill",
-      slug: "skill",
-      source: "owner/repo",
-      sourceType: "github",
-      url: "https://www.skills.sh/owner/repo/skill",
-    };
+    const row = makeProofCatalogRow({ installs: 42 });
     const listJson = JSON.stringify(
       {
         data: [row],
@@ -1886,16 +1836,7 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("uses the durable captured page without refetching the mutable leaderboard", async () => {
-    const row = {
-      id: "vercel-labs/skills/find-skills",
-      installUrl: "https://github.com/vercel-labs/skills",
-      installs: 42,
-      name: "Find Skills",
-      slug: "find-skills",
-      source: "vercel-labs/skills",
-      sourceType: "github",
-      url: "https://skills.sh/vercel-labs/skills/find-skills",
-    };
+    const row = makeFindSkillsCatalogRow();
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.includes("?page=")) throw new Error("leaderboard refetch is forbidden");
@@ -2157,18 +2098,7 @@ describe("skills.sh Vercel source boundary", () => {
       if (url.includes("?page=0&per_page=500")) {
         return new Response(
           JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
+            data: [makeLarkDocCatalogRow({ url: "https://skills.sh/larksuite/cli/lark-doc" })],
             pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
           }),
         );
@@ -2219,28 +2149,7 @@ describe("skills.sh Vercel source boundary", () => {
       if (url.includes("?page=0&per_page=500")) {
         return new Response(
           JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
-            ],
+            data: [makeLarkDocCatalogRow(), makeFindSkillsCatalogRow()],
             pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
           }),
         );
@@ -2316,16 +2225,7 @@ describe("skills.sh Vercel source boundary", () => {
                 sourceType: "github",
                 url: "https://skills.sh/owner/repo/removed-skill",
               },
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
+              makeFindSkillsCatalogRow(),
             ],
             pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
           }),
@@ -2587,16 +2487,7 @@ describe("skills.sh Vercel source boundary", () => {
                 sourceType: "github",
                 url: "https://skills.sh/owner/repo/nested/skill",
               },
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
+              makeFindSkillsCatalogRow(),
             ],
             pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
           }),
