@@ -97,6 +97,17 @@ const mirrorPageQueries = new Map<string, unknown>([
   ["mirror-detail-page", internalRefs.skillsShMirror.listDetailsPageInternal],
   ["mirror-facet-page", internalRefs.skillsShMirror.listFacetsPageInternal],
 ]);
+const mirrorVisibilityActions = new Map<string, unknown>([
+  ["mirror-verify-activate", internalRefs.skillsShMirrorVisibility.verifyAndActivateInternal],
+  [
+    "mirror-prepare-native-trending",
+    internalRefs.skillsShMirrorVisibility.prepareNativeTrendingInternal,
+  ],
+  [
+    "mirror-deactivate-native-trending",
+    internalRefs.skillsShMirrorVisibility.deactivateAndMaterializeInternal,
+  ],
+]);
 const MAX_GITHUB_OWNER_RESOLUTIONS = 500;
 const GITHUB_OWNER_RESOLUTION_CONCURRENCY = 8;
 const CONTROLLED_CANARY_FIXTURE_ID = "patrick-html-canary-v1";
@@ -683,43 +694,14 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
         rate.headers,
       );
     }
-    if (operation === "mirror-verify-activate") {
+    const visibilityAction = mirrorVisibilityActions.get(operation);
+    if (visibilityAction) {
       return json(
-        await runActionRef(ctx, internalRefs.skillsShMirrorVisibility.verifyAndActivateInternal, {
+        await runActionRef(ctx, visibilityAction, {
           actor,
           reason: requireString(body, "reason"),
           confirm: requireString(body, "confirm"),
         }),
-        200,
-        rate.headers,
-      );
-    }
-    if (operation === "mirror-prepare-native-trending") {
-      return json(
-        await runActionRef(
-          ctx,
-          internalRefs.skillsShMirrorVisibility.prepareNativeTrendingInternal,
-          {
-            actor,
-            reason: requireString(body, "reason"),
-            confirm: requireString(body, "confirm"),
-          },
-        ),
-        200,
-        rate.headers,
-      );
-    }
-    if (operation === "mirror-deactivate-native-trending") {
-      return json(
-        await runActionRef(
-          ctx,
-          internalRefs.skillsShMirrorVisibility.deactivateAndMaterializeInternal,
-          {
-            actor,
-            reason: requireString(body, "reason"),
-            confirm: requireString(body, "confirm"),
-          },
-        ),
         200,
         rate.headers,
       );
