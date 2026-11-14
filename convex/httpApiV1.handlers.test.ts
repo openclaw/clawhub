@@ -173,16 +173,34 @@ function makePluginExportRelease<
   };
 }
 
-function makeSkillArtifactFixture(tags: Record<string, string> = {}) {
+function makeSkillFixture(
+  overrides: Partial<{
+    _id: string;
+    slug: string;
+    displayName: string;
+    summary: string;
+    tags: Record<string, string>;
+    stats: Record<string, number>;
+    createdAt: number;
+    updatedAt: number;
+  }> = {},
+) {
   return {
     _id: "skills:1",
     slug: "demo",
     displayName: "Demo",
     summary: "s",
-    tags,
+    tags: {},
     stats: {},
     createdAt: 1,
     updatedAt: 2,
+    ...overrides,
+  };
+}
+
+function makeSkillArtifactFixture(tags: Record<string, string> = {}) {
+  return {
+    ...makeSkillFixture({ tags }),
     latestVersionId: "skillVersions:1",
   };
 }
@@ -3118,16 +3136,12 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("lists skills with long description metadata and setup requirements", async () => {
-    const selectedSkill0 = {
-      _id: "skills:1",
+    const selectedSkill0 = makeSkillFixture({
       slug: "home-assistant",
       displayName: "Home Assistant",
       summary: "Control Home Assistant.",
-      tags: {},
       stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const selectedVersion0 = {
       _id: "skillVersions:0",
       skillId: "skills:1",
@@ -3226,16 +3240,12 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("reuses checked version selections across latest snapshots and tags", async () => {
-    const selectedSkill0 = {
-      _id: "skills:1",
+    const selectedSkill0 = makeSkillFixture({
       slug: "skill-a",
       displayName: "Skill A",
-      summary: "s",
       tags: { latest: "versions:1", stable: "versions:2" },
       stats: { downloads: 0, stars: 0, versions: 2, comments: 0 },
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const selectedVersion0 = {
       _id: "versions:1",
       skillId: "skills:1",
@@ -3243,16 +3253,13 @@ describe("httpApiV1 handlers", () => {
       createdAt: 3,
       changelog: "c",
     };
-    const selectedSkill1 = {
+    const selectedSkill1 = makeSkillFixture({
       _id: "skills:2",
       slug: "skill-b",
       displayName: "Skill B",
-      summary: "s",
       tags: { latest: "versions:3" },
       stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const selectedVersion1 = {
       _id: "versions:3",
       skillId: "skills:2",
@@ -3891,16 +3898,13 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
         return {
-          skill: {
+          skill: makeSkillFixture({
             _id: "skills:github",
             slug: "aiq-deploy",
             displayName: "AIQ Deploy",
             summary: "Deploy workflows.",
-            tags: {},
             stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          }),
           latestVersion: null,
           owner: { handle: "nvidia", displayName: "NVIDIA", image: null },
           moderationInfo: null,
@@ -4583,16 +4587,12 @@ describe("httpApiV1 handlers", () => {
   );
 
   it("get skill treats reports as a valid slug", async () => {
-    const selectedSkill0 = {
-      _id: "skills:1",
+    const selectedSkill0 = makeSkillFixture({
       slug: "reports",
       displayName: "Reports",
-      summary: "s",
       tags: { latest: "versions:1" },
       stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const selectedVersion0 = {
       _id: "versions:1",
       skillId: "skills:1",
@@ -5653,16 +5653,9 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns scan payload for latest version", async () => {
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
+    const selectedSkill = makeSkillFixture({
       tags: { latest: "versions:1" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const selectedVersion0 = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -5707,16 +5700,9 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("treats completed llm analysis without verdict as error", async () => {
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
+    const selectedSkill = makeSkillFixture({
       tags: { latest: "versions:1" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const selectedVersion0 = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -5838,16 +5824,9 @@ describe("httpApiV1 handlers", () => {
   }
 
   it("omits security when no scanner result exists yet", async () => {
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
+    const selectedSkill = makeSkillFixture({
       tags: { latest: "skillVersions:1" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const selectedVersion0 = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -6171,16 +6150,9 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("reports an errored ClawScan without a definitive scan result", async () => {
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
+    const selectedSkill = makeSkillFixture({
       tags: { latest: "versions:2" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const selectedVersion0 = {
       _id: "skillVersions:2",
       skillId: "skills:1",
@@ -6216,16 +6188,9 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("marks moderation as a latest-version snapshot when querying a historical version", async () => {
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
+    const selectedSkill = makeSkillFixture({
       tags: { latest: "skillVersions:2", old: "skillVersions:1" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const selectedVersion0 = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -6299,16 +6264,9 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("resolves scan by tag and reports moderation context against latest version", async () => {
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
+    const selectedSkill = makeSkillFixture({
       tags: { latest: "skillVersions:2", old: "skillVersions:1" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const selectedVersion0 = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -6379,16 +6337,9 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("does not resolve scan tags to another skill's version", async () => {
-    const selectedSkill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "s",
+    const selectedSkill = makeSkillFixture({
       tags: { old: "skillVersions:other" },
-      stats: {},
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "not_found" };
