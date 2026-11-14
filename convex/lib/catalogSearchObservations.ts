@@ -4,7 +4,6 @@ import type { ActionCtx } from "../_generated/server";
 const SEARCH_SOURCES = ["clawhub-web", "openclaw-control-ui"] as const;
 type SearchSource = (typeof SEARCH_SOURCES)[number];
 export type CatalogArtifactKind = "plugin" | "skill";
-export type CatalogSearchScope = "catalog" | "shelf";
 
 export function parseCatalogSearchSource(value: string | null): SearchSource | undefined {
   return SEARCH_SOURCES.find((source) => source === value);

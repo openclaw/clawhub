@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 
 export type AuditSeverity = "error" | "warning" | "info";
 export type AuditKind = "mechanical" | "judgment";
@@ -215,10 +215,6 @@ export function renderPullRequestBody(report: AuditReport, runUrl: string) {
     "This pull request is intentionally draft. The workflow never merges, deploys, publishes, or mutates backend data.",
   );
   return `${lines.join("\n")}\n`;
-}
-
-export async function readFindings(path: string) {
-  return parseFindings(JSON.parse(await readFile(path, "utf8")));
 }
 
 export async function writeReport(path: string, report: AuditReport) {

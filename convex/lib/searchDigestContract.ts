@@ -263,7 +263,6 @@ export const searchDigestValidator = v.union(
 
 export type WeeklySearchDigest = Infer<typeof searchDigestValidator>;
 export type EvidenceSearchDigest = Infer<typeof evidenceSearchDigestValidator>;
-export type SearchRecommendation = Infer<typeof searchRecommendationValidator>;
 
 export type LineupSearchDigest = Infer<typeof lineupSearchDigestValidator>;
 export type LineupSearchRecommendation = Infer<typeof lineupRecommendationValidator>;
