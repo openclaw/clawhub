@@ -2273,7 +2273,7 @@ const packagePublishUploadTickets = defineTable({
   storageId: v.optional(v.id("_storage")),
 }).index("by_publish_token", ["publishTokenId"]);
 
-const packageSearchDigest = defineTable({
+const packageSearchDigestSharedFields = {
   packageId: v.id("packages"),
   name: v.string(),
   normalizedName: v.string(),
@@ -2292,7 +2292,6 @@ const packageSearchDigest = defineTable({
   categories: v.optional(v.array(v.string())),
   topics: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
-  manifestSearchTerms: v.optional(v.array(v.string())),
   verificationTier: v.optional(packageVerificationTierValidator),
   stats: v.optional(packageStatsValidator),
   recommendedScore: v.optional(v.number()),
@@ -2301,6 +2300,11 @@ const packageSearchDigest = defineTable({
   softDeletedAt: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
+};
+
+const packageSearchDigest = defineTable({
+  ...packageSearchDigestSharedFields,
+  manifestSearchTerms: v.optional(v.array(v.string())),
 })
   .index("by_package", ["packageId"])
   .index("by_active_updated", ["softDeletedAt", "updatedAt"])
@@ -2339,33 +2343,8 @@ const packageSearchDigest = defineTable({
   });
 
 const packageTopicSearchDigest = defineTable({
-  packageId: v.id("packages"),
-  name: v.string(),
-  normalizedName: v.string(),
-  displayName: v.string(),
-  family: packageFamilyValidator,
-  channel: packageChannelValidator,
-  isOfficial: v.boolean(),
-  ownerUserId: v.id("users"),
-  ownerPublisherId: v.optional(v.id("publishers")),
-  ownerHandle: v.optional(v.string()),
-  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
-  summary: v.optional(v.string()),
-  icon: v.optional(v.string()),
-  latestVersion: v.optional(v.string()),
-  runtimeId: v.optional(v.string()),
-  categories: v.optional(v.array(v.string())),
-  topics: v.optional(v.array(v.string())),
-  pluginCategoryTags: v.optional(v.array(v.string())),
+  ...packageSearchDigestSharedFields,
   topic: v.string(),
-  verificationTier: v.optional(packageVerificationTierValidator),
-  stats: v.optional(packageStatsValidator),
-  recommendedScore: v.optional(v.number()),
-  recommendedScoreVersion: v.optional(v.number()),
-  scanStatus: packageScanStatusValidator,
-  softDeletedAt: v.optional(v.number()),
-  createdAt: v.number(),
-  updatedAt: v.number(),
 })
   .index("by_package", ["packageId", "topic"])
   .index("by_active_topic_updated", ["softDeletedAt", "topic", "updatedAt"])
@@ -2471,33 +2450,8 @@ const packageTopicSearchDigest = defineTable({
   ]);
 
 const packagePluginCategorySearchDigest = defineTable({
-  packageId: v.id("packages"),
-  name: v.string(),
-  normalizedName: v.string(),
-  displayName: v.string(),
-  family: packageFamilyValidator,
-  channel: packageChannelValidator,
-  isOfficial: v.boolean(),
-  ownerUserId: v.id("users"),
-  ownerPublisherId: v.optional(v.id("publishers")),
-  ownerHandle: v.optional(v.string()),
-  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
-  summary: v.optional(v.string()),
-  icon: v.optional(v.string()),
-  latestVersion: v.optional(v.string()),
-  runtimeId: v.optional(v.string()),
-  categories: v.optional(v.array(v.string())),
-  topics: v.optional(v.array(v.string())),
-  pluginCategoryTags: v.optional(v.array(v.string())),
+  ...packageSearchDigestSharedFields,
   pluginCategory: v.string(),
-  verificationTier: v.optional(packageVerificationTierValidator),
-  stats: v.optional(packageStatsValidator),
-  recommendedScore: v.optional(v.number()),
-  recommendedScoreVersion: v.optional(v.number()),
-  scanStatus: packageScanStatusValidator,
-  softDeletedAt: v.optional(v.number()),
-  createdAt: v.number(),
-  updatedAt: v.number(),
 })
   .index("by_package", ["packageId", "pluginCategory"])
   .index("by_active_category_downloads_name", [
