@@ -92,6 +92,11 @@ const internalRefs = internal as unknown as {
   };
   rolloutCapabilities: { getPublicCapabilitiesInternal: unknown };
 };
+const mirrorPageQueries = new Map<string, unknown>([
+  ["mirror-page", internalRefs.skillsShMirror.listDigestsPageInternal],
+  ["mirror-detail-page", internalRefs.skillsShMirror.listDetailsPageInternal],
+  ["mirror-facet-page", internalRefs.skillsShMirror.listFacetsPageInternal],
+]);
 const MAX_GITHUB_OWNER_RESOLUTIONS = 500;
 const GITHUB_OWNER_RESOLUTION_CONCURRENCY = 8;
 const CONTROLLED_CANARY_FIXTURE_ID = "patrick-html-canary-v1";
@@ -795,47 +800,12 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
         rate.headers,
       );
     }
-    if (operation === "mirror-page") {
-      const cursor =
-        body.cursor === null || typeof body.cursor === "string"
-          ? body.cursor
-          : (() => {
-              throw new Error("cursor is required");
-            })();
+    const pageQuery = mirrorPageQueries.get(operation);
+    if (pageQuery) {
+      const cursor = body.cursor;
+      if (cursor !== null && typeof cursor !== "string") throw new Error("cursor is required");
       return json(
-        await runQueryRef(ctx, internalRefs.skillsShMirror.listDigestsPageInternal, {
-          cursor,
-          limit: requireNumber(body, "limit"),
-        }),
-        200,
-        rate.headers,
-      );
-    }
-    if (operation === "mirror-detail-page") {
-      const cursor =
-        body.cursor === null || typeof body.cursor === "string"
-          ? body.cursor
-          : (() => {
-              throw new Error("cursor is required");
-            })();
-      return json(
-        await runQueryRef(ctx, internalRefs.skillsShMirror.listDetailsPageInternal, {
-          cursor,
-          limit: requireNumber(body, "limit"),
-        }),
-        200,
-        rate.headers,
-      );
-    }
-    if (operation === "mirror-facet-page") {
-      const cursor =
-        body.cursor === null || typeof body.cursor === "string"
-          ? body.cursor
-          : (() => {
-              throw new Error("cursor is required");
-            })();
-      return json(
-        await runQueryRef(ctx, internalRefs.skillsShMirror.listFacetsPageInternal, {
+        await runQueryRef(ctx, pageQuery, {
           cursor,
           limit: requireNumber(body, "limit"),
         }),
