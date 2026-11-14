@@ -32,6 +32,7 @@ import {
 } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { withLoaderErrorHandling } from "../loader.js";
+import { writeJsonIfRequested } from "../output.js";
 import { getRegistry } from "../registry.js";
 import {
   parseSkillsShCliReference,
@@ -1296,10 +1297,7 @@ export async function cmdListSkillReports(opts: GlobalOpts, options: SkillReport
     ApiV1SkillReportListResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
   if (result.items.length === 0) {
     console.log("No skill reports found.");
   } else {
@@ -1361,10 +1359,7 @@ export async function cmdTriageSkillReport(
     ApiV1SkillReportTriageResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
   const actionSuffix =
     result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
   console.log(`OK. Skill report ${trimmed} set to ${result.status}${actionSuffix}.`);
