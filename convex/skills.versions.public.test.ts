@@ -130,6 +130,35 @@ function makeVersion() {
   };
 }
 
+function makeSkillWithLatestVersion(latestVersionId: string) {
+  return {
+    _id: "skills:1",
+    _creationTime: 1,
+    slug: "demo",
+    displayName: "Demo",
+    summary: "Summary",
+    ownerUserId: "users:1",
+    canonicalSkillId: undefined,
+    forkOf: undefined,
+    latestVersionId,
+    tags: {},
+    stats: {
+      downloads: 1,
+      installsCurrent: 1,
+      installsAllTime: 1,
+      stars: 1,
+      versions: 1,
+      comments: 0,
+    },
+    createdAt: 1,
+    updatedAt: 2,
+    moderationStatus: "active",
+    moderationFlags: undefined,
+    moderationReason: undefined,
+    softDeletedAt: undefined,
+  };
+}
+
 function publicVersionFixtureDoc(id: string, version: unknown = null) {
   if (id === "skills:1")
     return {
@@ -215,32 +244,7 @@ describe("public skill version queries", () => {
             };
           }
           if (table !== "skills") throw new Error(`Unexpected table ${table}`);
-          return indexedUnique(() => ({
-            _id: "skills:1",
-            _creationTime: 1,
-            slug: "demo",
-            displayName: "Demo",
-            summary: "Summary",
-            ownerUserId: "users:1",
-            canonicalSkillId: undefined,
-            forkOf: undefined,
-            latestVersionId: version._id,
-            tags: {},
-            stats: {
-              downloads: 1,
-              installsCurrent: 1,
-              installsAllTime: 1,
-              stars: 1,
-              versions: 1,
-              comments: 0,
-            },
-            createdAt: 1,
-            updatedAt: 2,
-            moderationStatus: "active",
-            moderationFlags: undefined,
-            moderationReason: undefined,
-            softDeletedAt: undefined,
-          }));
+          return indexedUnique(() => makeSkillWithLatestVersion(version._id));
         }),
         get: vi.fn(async (id: string) => {
           if (id === version._id) return version;
@@ -755,31 +759,8 @@ describe("public skill version queries", () => {
             order: vi.fn(() => ({
               take: vi.fn().mockResolvedValue([
                 {
-                  _id: "skills:1",
-                  _creationTime: 1,
-                  slug: "demo",
-                  displayName: "Demo",
-                  summary: "Summary",
-                  ownerUserId: "users:1",
-                  canonicalSkillId: undefined,
-                  forkOf: undefined,
-                  latestVersionId: version._id,
-                  tags: {},
+                  ...makeSkillWithLatestVersion(version._id),
                   badges: undefined,
-                  stats: {
-                    downloads: 1,
-                    installsCurrent: 1,
-                    installsAllTime: 1,
-                    stars: 1,
-                    versions: 1,
-                    comments: 0,
-                  },
-                  createdAt: 1,
-                  updatedAt: 2,
-                  softDeletedAt: undefined,
-                  moderationStatus: "active",
-                  moderationFlags: undefined,
-                  moderationReason: undefined,
                 },
               ]),
             })),
@@ -809,31 +790,8 @@ describe("public skill version queries", () => {
             order: vi.fn(() => ({
               take: vi.fn().mockResolvedValue([
                 {
-                  _id: "skills:1",
-                  _creationTime: 1,
-                  slug: "demo",
-                  displayName: "Demo",
-                  summary: "Summary",
-                  ownerUserId: "users:1",
-                  canonicalSkillId: undefined,
-                  forkOf: undefined,
-                  latestVersionId: version._id,
-                  tags: {},
+                  ...makeSkillWithLatestVersion(version._id),
                   badges: undefined,
-                  stats: {
-                    downloads: 1,
-                    installsCurrent: 1,
-                    installsAllTime: 1,
-                    stars: 1,
-                    versions: 1,
-                    comments: 0,
-                  },
-                  createdAt: 1,
-                  updatedAt: 2,
-                  softDeletedAt: undefined,
-                  moderationStatus: "active",
-                  moderationFlags: undefined,
-                  moderationReason: undefined,
                 },
               ]),
             })),
@@ -857,15 +815,7 @@ describe("public skill version queries", () => {
   it("drops cross-skill latestVersion summaries in highlighted public list", async () => {
     const version = { ...makeVersion(), _id: "skillVersions:other", skillId: "skills:other" };
     const skill = {
-      _id: "skills:1",
-      _creationTime: 1,
-      slug: "demo",
-      displayName: "Demo",
-      summary: "Summary",
-      ownerUserId: "users:1",
-      canonicalSkillId: undefined,
-      forkOf: undefined,
-      latestVersionId: version._id,
+      ...makeSkillWithLatestVersion(version._id),
       latestVersionSummary: {
         version: "9.9.9",
         createdAt: 9,
@@ -873,22 +823,7 @@ describe("public skill version queries", () => {
         changelogSource: "user",
         clawdis: undefined,
       },
-      tags: {},
       badges: { highlighted: { byUserId: "users:moderator", at: 3 } },
-      stats: {
-        downloads: 1,
-        installsCurrent: 1,
-        installsAllTime: 1,
-        stars: 1,
-        versions: 1,
-        comments: 0,
-      },
-      createdAt: 1,
-      updatedAt: 2,
-      softDeletedAt: undefined,
-      moderationStatus: "active",
-      moderationFlags: undefined,
-      moderationReason: undefined,
     };
     const ctx = {
       db: {
