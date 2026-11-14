@@ -90,7 +90,6 @@ import type * as lib_changelog from "../lib/changelog.js";
 import type * as lib_clawhubVercelOidc from "../lib/clawhubVercelOidc.js";
 import type * as lib_clawpack from "../lib/clawpack.js";
 import type * as lib_contentDisposition from "../lib/contentDisposition.js";
-import type * as lib_contentTypes from "../lib/contentTypes.js";
 import type * as lib_devAuth from "../lib/devAuth.js";
 import type * as lib_devSeed from "../lib/devSeed.js";
 import type * as lib_discoveryWindows from "../lib/discoveryWindows.js";
@@ -441,7 +440,6 @@ declare const fullApi: ApiFromModules<{
   "lib/clawhubVercelOidc": typeof lib_clawhubVercelOidc;
   "lib/clawpack": typeof lib_clawpack;
   "lib/contentDisposition": typeof lib_contentDisposition;
-  "lib/contentTypes": typeof lib_contentTypes;
   "lib/devAuth": typeof lib_devAuth;
   "lib/devSeed": typeof lib_devSeed;
   "lib/discoveryWindows": typeof lib_discoveryWindows;
