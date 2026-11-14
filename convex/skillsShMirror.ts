@@ -2141,81 +2141,43 @@ export const listActiveByNormalizedDisplayNameInternal = internalQuery({
   },
 });
 
-export const listActiveByNormalizedSlugPrefixInternal = internalQuery({
-  args: {
-    prefix: v.string(),
-    limit: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const prefix = requiredSearchValue("prefix", args.prefix);
-    return await ctx.db
-      .query("skillsShMirrorDigests")
-      .withIndex("by_active_and_normalized_slug", (q) =>
-        q
-          .eq("active", true)
-          .gte("normalizedSlug", prefix)
-          .lt("normalizedSlug", prefixUpperBound(prefix)),
-      )
-      .take(searchLimit(args.limit));
-  },
-});
+const activePrefixIndexes = {
+  normalizedSlug: "by_active_and_normalized_slug",
+  normalizedDisplayName: "by_active_and_normalized_display_name",
+  normalizedSlugFirstToken: "by_active_and_normalized_slug_first_token",
+  normalizedDisplayNameFirstToken: "by_active_and_normalized_display_name_first_token",
+} as const;
 
-export const listActiveByNormalizedDisplayNamePrefixInternal = internalQuery({
-  args: {
-    prefix: v.string(),
-    limit: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const prefix = requiredSearchValue("prefix", args.prefix);
-    return await ctx.db
-      .query("skillsShMirrorDigests")
-      .withIndex("by_active_and_normalized_display_name", (q) =>
-        q
-          .eq("active", true)
-          .gte("normalizedDisplayName", prefix)
-          .lt("normalizedDisplayName", prefixUpperBound(prefix)),
-      )
-      .take(searchLimit(args.limit));
-  },
-});
+function activePrefixQuery(field: keyof typeof activePrefixIndexes) {
+  return internalQuery({
+    args: {
+      prefix: v.string(),
+      limit: v.number(),
+    },
+    handler: async (ctx, args) => {
+      const prefix = requiredSearchValue("prefix", args.prefix);
+      return await ctx.db
+        .query("skillsShMirrorDigests")
+        .withIndex(activePrefixIndexes[field], (q) =>
+          q.eq("active", true).gte(field, prefix).lt(field, prefixUpperBound(prefix)),
+        )
+        .take(searchLimit(args.limit));
+    },
+  });
+}
 
-export const listActiveByNormalizedSlugFirstTokenPrefixInternal = internalQuery({
-  args: {
-    prefix: v.string(),
-    limit: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const prefix = requiredSearchValue("prefix", args.prefix);
-    return await ctx.db
-      .query("skillsShMirrorDigests")
-      .withIndex("by_active_and_normalized_slug_first_token", (q) =>
-        q
-          .eq("active", true)
-          .gte("normalizedSlugFirstToken", prefix)
-          .lt("normalizedSlugFirstToken", prefixUpperBound(prefix)),
-      )
-      .take(searchLimit(args.limit));
-  },
-});
+export const listActiveByNormalizedSlugPrefixInternal = activePrefixQuery("normalizedSlug");
 
-export const listActiveByNormalizedDisplayNameFirstTokenPrefixInternal = internalQuery({
-  args: {
-    prefix: v.string(),
-    limit: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const prefix = requiredSearchValue("prefix", args.prefix);
-    return await ctx.db
-      .query("skillsShMirrorDigests")
-      .withIndex("by_active_and_normalized_display_name_first_token", (q) =>
-        q
-          .eq("active", true)
-          .gte("normalizedDisplayNameFirstToken", prefix)
-          .lt("normalizedDisplayNameFirstToken", prefixUpperBound(prefix)),
-      )
-      .take(searchLimit(args.limit));
-  },
-});
+export const listActiveByNormalizedDisplayNamePrefixInternal =
+  activePrefixQuery("normalizedDisplayName");
+
+export const listActiveByNormalizedSlugFirstTokenPrefixInternal = activePrefixQuery(
+  "normalizedSlugFirstToken",
+);
+
+export const listActiveByNormalizedDisplayNameFirstTokenPrefixInternal = activePrefixQuery(
+  "normalizedDisplayNameFirstToken",
+);
 
 export const searchActiveBySearchTextInternal = internalQuery({
   args: {
