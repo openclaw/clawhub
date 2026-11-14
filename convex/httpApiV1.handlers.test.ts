@@ -272,20 +272,40 @@ function makeSkillFileQuery<TSkill, TVersion>(selectedSkill: TSkill, selectedVer
   });
 }
 
+function makePackageFixture(
+  overrides: Partial<{
+    _id: string;
+    name: string;
+    displayName: string;
+    family: string;
+    tags: Record<string, string>;
+    latestReleaseId: string;
+    channel: string;
+    isOfficial: boolean;
+    createdAt: number;
+    updatedAt: number;
+  }> = {},
+) {
+  return {
+    _id: "packages:demo-plugin",
+    name: "demo-plugin",
+    displayName: "Demo Plugin",
+    family: "code-plugin",
+    tags: { latest: "packageReleases:1" },
+    latestReleaseId: "packageReleases:1",
+    channel: "community",
+    isOfficial: false,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
 function makeNpmMirrorLookupResult() {
   return {
     package: {
-      _id: "packages:demo-plugin",
-      name: "demo-plugin",
-      displayName: "Demo Plugin",
-      family: "code-plugin",
-      tags: { latest: "packageReleases:1" },
-      latestReleaseId: "packageReleases:1",
-      channel: "community",
-      isOfficial: false,
+      ...makePackageFixture(),
       summary: "Demo package",
-      createdAt: 1,
-      updatedAt: 1,
     },
     latestRelease: null,
     owner: null,
@@ -325,18 +345,7 @@ function makeNpmMirrorQuery() {
 
 function makeDemoPluginLookupResult() {
   return {
-    package: {
-      _id: "packages:demo-plugin",
-      name: "demo-plugin",
-      displayName: "Demo Plugin",
-      family: "code-plugin",
-      tags: { latest: "packageReleases:1" },
-      latestReleaseId: "packageReleases:1",
-      channel: "community",
-      isOfficial: false,
-      createdAt: 1,
-      updatedAt: 1,
-    },
+    package: makePackageFixture(),
     latestRelease: null,
     owner: { _id: "publishers:demo", handle: "demo" },
   };
@@ -360,18 +369,10 @@ function makePackageDownloadQuery({
   return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
     if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
       return {
-        package: {
+        package: makePackageFixture({
           _id: "packages:1",
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
           tags: {},
-          latestReleaseId: "packageReleases:1",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
         latestRelease: null,
         owner: owner === null ? null : { _id: "users:owner", handle: "owner" },
       };
@@ -13901,18 +13902,13 @@ describe("httpApiV1 handlers", () => {
   it("packages detail allows private packages for browser-session owners", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const runQuery = vi.fn().mockResolvedValue({
-      package: {
+      package: makePackageFixture({
         _id: "packages:private",
         name: "private-plugin",
         displayName: "Private Plugin",
-        family: "code-plugin",
         tags: {},
-        latestReleaseId: "packageReleases:1",
         channel: "private",
-        isOfficial: false,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
       latestRelease: null,
       owner: { _id: "users:owner", handle: "owner" },
     });
@@ -14241,18 +14237,9 @@ describe("httpApiV1 handlers", () => {
     const injected = `1"; filename*=UTF-8''setup.jar; x="`;
     const tarballName = `demo-plugin-${injected}.tgz`;
     const zipName = `demo-plugin-${injected}.zip`;
-    const pkg = {
-      _id: "packages:demo-plugin",
-      name: "demo-plugin",
-      displayName: "Demo Plugin",
+    const pkg = makePackageFixture({
       family: "bundle-plugin",
-      tags: { latest: "packageReleases:1" },
-      latestReleaseId: "packageReleases:1",
-      channel: "community",
-      isOfficial: false,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const release = {
       _id: "packageReleases:1",
       packageId: "packages:demo-plugin",
@@ -14786,18 +14773,9 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
         return {
-          package: {
-            _id: "packages:demo-plugin",
+          package: makePackageFixture({
             name: "@demo/demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
+          }),
           latestRelease: null,
           owner: { _id: "publishers:demo", handle: "demo" },
         };
@@ -14917,18 +14895,9 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
         return {
-          package: {
-            _id: "packages:demo-plugin",
+          package: makePackageFixture({
             name: "@scope/demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
+          }),
           latestRelease: null,
           owner: { _id: "publishers:demo", handle: "demo" },
         };
@@ -15772,17 +15741,10 @@ describe("httpApiV1 handlers", () => {
         expect(args.name).toBe("@scope/demo-plugin");
         return {
           package: {
-            _id: "packages:demo-plugin",
-            name: "@scope/demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: { latest: "packageReleases:1" },
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
+            ...makePackageFixture({
+              name: "@scope/demo-plugin",
+            }),
             summary: "Demo package",
-            createdAt: 1,
-            updatedAt: 1,
           },
           latestRelease: null,
           owner: null,
@@ -16403,18 +16365,11 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) {
         return {
-          package: {
+          package: makePackageFixture({
             _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
             tags: { latest: "packageReleases:deleted" },
             latestReleaseId: "packageReleases:deleted",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
+          }),
           latestRelease: null,
           owner: null,
         };
@@ -16463,18 +16418,11 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) {
         return {
-          package: {
+          package: makePackageFixture({
             _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
             tags: { latest: "packageReleases:published" },
             latestReleaseId: "packageReleases:published",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
+          }),
           latestRelease: null,
           owner: null,
         };
