@@ -45,11 +45,9 @@ const searchSkillsHandler = getTestHandler<
     semanticScore: number;
   }>
 >(searchNativeSkills);
-const canonicalSearchSkillsHandler = (
-  canonicalSearchSkills as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<Array<Record<string, unknown>>>;
-  }
-)._handler;
+const canonicalSearchSkillsHandler = getTestHandler<unknown, Array<Record<string, unknown>>>(
+  canonicalSearchSkills,
+);
 const lexicalFallbackSkillsHandler = getTestHandler<
   unknown,
   Array<{ skill: { slug: string; _id: string } }>
@@ -58,49 +56,30 @@ const directPrefixSkillMatchesHandler = getTestHandler<
   unknown,
   Array<{ skill: { slug: string; _id: string } }>
 >(directPrefixSkillMatches);
-const getExactSkillSlugMatchHandler = (
-  getExactSkillSlugMatch as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: unknown,
-    ) => Promise<
-      Array<{
-        skill: { slug: string; _id: string };
-        ownerHandle: string | null;
-        owner: { official?: boolean } | null;
-      }>
-    >;
-  }
-)._handler;
-const getOwnerQualifiedSkillMatchHandler = (
-  getOwnerQualifiedSkillMatch as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: unknown,
-    ) => Promise<Array<{ skill: { slug: string }; ownerHandle: string | null }>>;
-  }
-)._handler;
-const getExternalSkillSearchCandidatesHandler = (
-  getExternalSkillSearchCandidates as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<Array<{ externalId: string }>>;
-  }
-)._handler;
-const getRollingSkillSearchUsageHandler = (
-  getRollingSkillSearchUsage as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: unknown,
-    ) => Promise<Array<{ skillId: string; installs: number; bookmarks: number }>>;
-  }
-)._handler;
-const hydrateResultsHandler = (
-  hydrateResults as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: unknown,
-    ) => Promise<Array<{ skill: { slug: string; _id: string }; ownerHandle: string | null }>>;
-  }
-)._handler;
+const getExactSkillSlugMatchHandler = getTestHandler<
+  unknown,
+  Array<{
+    skill: { slug: string; _id: string };
+    ownerHandle: string | null;
+    owner: { official?: boolean } | null;
+  }>
+>(getExactSkillSlugMatch);
+const getOwnerQualifiedSkillMatchHandler = getTestHandler<
+  unknown,
+  Array<{ skill: { slug: string }; ownerHandle: string | null }>
+>(getOwnerQualifiedSkillMatch);
+const getExternalSkillSearchCandidatesHandler = getTestHandler<
+  unknown,
+  Array<{ externalId: string }>
+>(getExternalSkillSearchCandidates);
+const getRollingSkillSearchUsageHandler = getTestHandler<
+  unknown,
+  Array<{ skillId: string; installs: number; bookmarks: number }>
+>(getRollingSkillSearchUsage);
+const hydrateResultsHandler = getTestHandler<
+  unknown,
+  Array<{ skill: { slug: string; _id: string }; ownerHandle: string | null }>
+>(hydrateResults);
 
 describe("search helpers", () => {
   it.each([{ highlightedOnly: true }, { officialOnly: true }, { createdAfter: 0 }])(
@@ -3773,11 +3752,7 @@ describe("batched canonical search for intelligence", () => {
           return lexicalFallbackSkillsHandler(queryContext, args);
         case "search:lexicalFallbackSkillsBatchInternal": {
           fallbackQueries.push(...args.queries);
-          return (
-            lexicalFallbackSkillsBatchInternal as unknown as {
-              _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-            }
-          )._handler(queryContext, args);
+          return getTestHandler<unknown>(lexicalFallbackSkillsBatchInternal)(queryContext, args);
         }
         case "search:getExactSkillSlugMatch":
         case "search:directPrefixSkillMatches":
@@ -3840,11 +3815,7 @@ describe("batched canonical search for intelligence", () => {
         }),
       );
     const ctx = makeLexicalCtx(fixture);
-    const handler = (
-      lexicalFallbackSkillsBatchInternal as unknown as {
-        _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<unknown>(lexicalFallbackSkillsBatchInternal);
     await expect(handler(ctx, { queries })).resolves.toEqual(expected);
     expect(ctx.takeLimits).toEqual([200, 200]);
     expect(
