@@ -1558,14 +1558,9 @@ describe("users.ensurePublisherHandleInternal", () => {
   it("rejects public route owner handles", async () => {
     const { ctx, get, insert } = makeCtx();
     get.mockResolvedValue({ _id: "users:admin", role: "admin" });
-    const handler = (
-      ensurePublisherHandleInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { actorUserId: string; handle: string; displayName?: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{ actorUserId: string; handle: string; displayName?: string }>(
+      ensurePublisherHandleInternal,
+    );
 
     await expect(
       handler(ctx, {
@@ -1591,11 +1586,7 @@ describe("users.syncGitHubProfileInternal", () => {
       createdAt: 1,
     });
 
-    const handler = (
-      syncGitHubProfileInternal as unknown as {
-        _handler: (ctx: unknown, args: unknown) => Promise<void>;
-      }
-    )._handler;
+    const handler = getTestHandler<unknown, void>(syncGitHubProfileInternal);
 
     await handler(ctx, {
       userId: "users:other",
@@ -1665,11 +1656,7 @@ describe("users.syncGitHubProfileInternal", () => {
       };
     }) as never);
 
-    const handler = (
-      syncGitHubProfileInternal as unknown as {
-        _handler: (ctx: unknown, args: unknown) => Promise<void>;
-      }
-    )._handler;
+    const handler = getTestHandler<unknown, void>(syncGitHubProfileInternal);
 
     await handler(ctx, {
       userId: "users:other",
@@ -1706,11 +1693,7 @@ describe("users.syncGitHubProfileInternal", () => {
       userId: "users:other",
     });
 
-    const handler = (
-      syncGitHubProfileInternal as unknown as {
-        _handler: (ctx: unknown, args: unknown) => Promise<void>;
-      }
-    )._handler;
+    const handler = getTestHandler<unknown, void>(syncGitHubProfileInternal);
 
     await handler(ctx, {
       userId: "users:other",
@@ -2515,9 +2498,7 @@ describe("users.list", () => {
       { _id: "users:3", _creationTime: 1, handle: "carol", role: "user" },
     ];
     const { ctx, take, collect } = makeListCtx(users);
-    const listHandler = (
-      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const listHandler = getTestHandler<unknown>(list);
 
     const result = (await listHandler(ctx, { limit: 2 })) as {
       items: Array<Record<string, unknown>>;
@@ -2541,9 +2522,7 @@ describe("users.list", () => {
       { _id: "users:3", _creationTime: 1, handle: "carol", role: "user" },
     ];
     const { ctx, take, collect } = makeListCtx(users);
-    const listHandler = (
-      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const listHandler = getTestHandler<unknown>(list);
 
     const result = (await listHandler(ctx, { limit: 50, search: "ali" })) as {
       items: Array<Record<string, unknown>>;
@@ -2572,9 +2551,7 @@ describe("users.list", () => {
       { _id: "users:older", _creationTime: 1, handle: "alice", role: "user" },
     ];
     const { ctx, take, collect } = makeListCtx(users);
-    const listHandler = (
-      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const listHandler = getTestHandler<unknown>(list);
 
     const result = (await listHandler(ctx, { limit: 50, search: "alice" })) as {
       items: Array<Record<string, unknown>>;
@@ -2613,9 +2590,7 @@ describe("users.list", () => {
         },
       },
     });
-    const listHandler = (
-      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const listHandler = getTestHandler<unknown>(list);
 
     const result = (await listHandler(ctx, { limit: 50, search: "lmLukeF" })) as {
       items: Array<Record<string, unknown>>;
@@ -2644,9 +2619,7 @@ describe("users.list", () => {
       role: "user",
     }));
     const { ctx, take } = makeListCtx(users);
-    const listHandler = (
-      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const listHandler = getTestHandler<unknown>(list);
 
     await listHandler(ctx, { limit: 999, search: "user" });
 
@@ -2676,9 +2649,7 @@ describe("users.list", () => {
       },
     ];
     const { ctx } = makeListCtx(users);
-    const listHandler = (
-      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const listHandler = getTestHandler<unknown>(list);
 
     await expect(listHandler(ctx, { limit: 50, search: "car" })).resolves.toMatchObject({
       total: 1,
@@ -2715,9 +2686,7 @@ describe("users.list", () => {
         "users:1": users[0]!,
       },
     });
-    const listHandler = (
-      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const listHandler = getTestHandler<unknown>(list);
 
     await expect(listHandler(ctx, { limit: 10, search: "clawgrid" })).resolves.toMatchObject({
       total: 1,
@@ -2735,9 +2704,7 @@ describe("users.list", () => {
       { _id: "users:2", _creationTime: 1, handle: "bob", role: "user" },
     ];
     const { ctx, take, collect } = makeListCtx(users);
-    const listHandler = (
-      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const listHandler = getTestHandler<unknown>(list);
 
     const result = (await listHandler(ctx, { limit: 50, search: "   " })) as {
       items: Array<Record<string, unknown>>;
@@ -2759,9 +2726,7 @@ describe("users.list", () => {
       { _id: "users:2", _creationTime: 1, handle: "bob", role: "user" },
     ];
     const { ctx, take } = makeListCtx(users);
-    const listHandler = (
-      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const listHandler = getTestHandler<unknown>(list);
 
     const result = (await listHandler(ctx, { limit: 0 })) as {
       items: Array<Record<string, unknown>>;
@@ -2779,9 +2744,7 @@ describe("users.list", () => {
       user: { _id: "users:basic", role: "user" },
     } as never);
     const { ctx } = makeListCtx([]);
-    const listHandler = (
-      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const listHandler = getTestHandler<unknown>(list);
 
     await expect(listHandler(ctx, { limit: 10 })).rejects.toThrow("Forbidden");
   });
@@ -2790,9 +2753,7 @@ describe("users.list", () => {
 describe("users.searchInternal", () => {
   it("rejects missing actor", async () => {
     const { ctx, get } = makeListCtx([]);
-    const handler = (
-      searchInternal as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const handler = getTestHandler<unknown>(searchInternal);
     get.mockResolvedValue(null);
 
     await expect(handler(ctx, { actorUserId: "users:missing" })).rejects.toThrow("Unauthorized");
@@ -2804,9 +2765,7 @@ describe("users.searchInternal", () => {
       { _id: "users:2", _creationTime: 1, handle: "bob", name: "bob", role: "moderator" },
     ];
     const { ctx, take, collect, get } = makeListCtx(users);
-    const handler = (
-      searchInternal as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const handler = getTestHandler<unknown>(searchInternal);
     get.mockResolvedValue({ _id: "users:admin", role: "admin" });
 
     const result = (await handler(ctx, {
@@ -2856,9 +2815,7 @@ describe("users.searchInternal", () => {
         },
       },
     });
-    const handler = (
-      searchInternal as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const handler = getTestHandler<unknown>(searchInternal);
     get.mockImplementation(async (id: string) => {
       if (id === "users:admin") return { _id: "users:admin", role: "admin" };
       if (id === "users:owner") {
@@ -2931,9 +2888,7 @@ describe("users.searchInternal", () => {
         "users:owner": users[2] as Record<string, unknown>,
       },
     });
-    const handler = (
-      searchInternal as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const handler = getTestHandler<unknown>(searchInternal);
     get.mockImplementation(async (id: string) => {
       if (id === "users:admin") return { _id: "users:admin", role: "admin" };
       if (id === "users:owner") return users[2] as Record<string, unknown>;
@@ -2955,9 +2910,7 @@ describe("users.searchInternal", () => {
 
   it("rejects deactivated actors", async () => {
     const { ctx, get } = makeListCtx([]);
-    const handler = (
-      searchInternal as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const handler = getTestHandler<unknown>(searchInternal);
     get.mockResolvedValue({ _id: "users:ghost", role: "admin", deactivatedAt: Date.now() });
 
     await expect(handler(ctx, { actorUserId: "users:ghost" })).rejects.toThrow("Unauthorized");
@@ -2965,9 +2918,7 @@ describe("users.searchInternal", () => {
 
   it("rejects non-admin actors", async () => {
     const { ctx, get } = makeListCtx([]);
-    const handler = (
-      searchInternal as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const handler = getTestHandler<unknown>(searchInternal);
     get.mockResolvedValue({ _id: "users:mod", role: "moderator" });
 
     await expect(handler(ctx, { actorUserId: "users:mod", query: "a" })).rejects.toThrow(
@@ -2983,9 +2934,7 @@ describe("users.searchInternal", () => {
       role: "user",
     }));
     const { ctx, take, collect, get } = makeListCtx(users);
-    const handler = (
-      searchInternal as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
-    )._handler;
+    const handler = getTestHandler<unknown>(searchInternal);
     get.mockResolvedValue({ _id: "users:admin", role: "admin" });
 
     const result = (await handler(ctx, {
@@ -3021,14 +2970,9 @@ describe("users.banUserInternal", () => {
       .mockResolvedValueOnce({ deletedCount: 0, revokedTokenCount: 0, scheduled: false })
       .mockResolvedValueOnce(undefined);
 
-    const handler = (
-      banUserInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { actorUserId: string; targetUserId: string; reason?: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{ actorUserId: string; targetUserId: string; reason?: string }>(
+      banUserInternal,
+    );
 
     const result = (await handler(ctx, {
       actorUserId: "users:actor",
@@ -3078,14 +3022,9 @@ describe("users.banUserInternal", () => {
       .mockResolvedValueOnce({ deletedCount: 0, revokedTokenCount: 0, scheduled: false })
       .mockResolvedValueOnce(undefined);
 
-    const handler = (
-      banUserInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { actorUserId: string; targetUserId: string; reason?: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{ actorUserId: string; targetUserId: string; reason?: string }>(
+      banUserInternal,
+    );
 
     await handler(ctx, {
       actorUserId: "users:actor",
@@ -3115,14 +3054,9 @@ describe("users.banUserInternal", () => {
       return null;
     });
 
-    const handler = (
-      banUserInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { actorUserId: string; targetUserId: string; reason?: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{ actorUserId: string; targetUserId: string; reason?: string }>(
+      banUserInternal,
+    );
 
     const result = (await handler(ctx, {
       actorUserId: "users:actor",
@@ -3179,19 +3113,12 @@ describe("users.autobanMalwareAuthorInternal", () => {
       .mockResolvedValueOnce({ deletedCount: 0, revokedTokenCount: 0, scheduled: false })
       .mockResolvedValueOnce(undefined);
 
-    const handler = (
-      autobanMalwareAuthorInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            sha256hash?: string;
-            slug: string;
-            trigger?: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{
+      ownerUserId: string;
+      sha256hash?: string;
+      slug: string;
+      trigger?: string;
+    }>(autobanMalwareAuthorInternal);
 
     await handler(ctx, {
       ownerUserId: "users:target",
@@ -3236,19 +3163,12 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
   };
 
   function publisherAbuseAutobanHandler() {
-    return (
-      autobanPublisherAbuseOwnerInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            nominationId: string;
-            scoreId: string;
-            reason: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    return getTestHandler<{
+      ownerUserId: string;
+      nominationId: string;
+      scoreId: string;
+      reason: string;
+    }>(autobanPublisherAbuseOwnerInternal);
   }
 
   function expectNoPublisherAbuseBanSideEffects({
@@ -3457,22 +3377,15 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
       return null;
     });
 
-    const handler = (
-      recordMaliciousArtifactFindingInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            artifactKind: "skill" | "plugin";
-            artifactName: string;
-            version?: string;
-            trigger?: string;
-            sha256hash?: string;
-            findingSummary?: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{
+      ownerUserId: string;
+      artifactKind: "skill" | "plugin";
+      artifactName: string;
+      version?: string;
+      trigger?: string;
+      sha256hash?: string;
+      findingSummary?: string;
+    }>(recordMaliciousArtifactFindingInternal);
 
     const result = await handler(ctx, {
       ownerUserId: "users:target",
@@ -3549,21 +3462,14 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
     });
     runMutation.mockResolvedValue({ ok: true, alreadyBanned: false });
 
-    const handler = (
-      recordMaliciousArtifactFindingInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            artifactKind: "skill" | "plugin";
-            artifactName: string;
-            version?: string;
-            trigger?: string;
-            sha256hash?: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{
+      ownerUserId: string;
+      artifactKind: "skill" | "plugin";
+      artifactName: string;
+      version?: string;
+      trigger?: string;
+      sha256hash?: string;
+    }>(recordMaliciousArtifactFindingInternal);
 
     const result = await handler(ctx, {
       ownerUserId: "users:target",
@@ -3610,21 +3516,14 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
       return null;
     });
 
-    const handler = (
-      recordMaliciousArtifactFindingInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            artifactKind: "skill" | "plugin";
-            artifactName: string;
-            version?: string;
-            trigger?: string;
-            sha256hash?: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{
+      ownerUserId: string;
+      artifactKind: "skill" | "plugin";
+      artifactName: string;
+      version?: string;
+      trigger?: string;
+      sha256hash?: string;
+    }>(recordMaliciousArtifactFindingInternal);
 
     const result = await handler(ctx, {
       ownerUserId: "users:target",
@@ -3665,21 +3564,14 @@ describe("users.recordMaliciousArtifactFindingInternal", () => {
     });
     runMutation.mockResolvedValue({ ok: true, alreadyBanned: false });
 
-    const handler = (
-      recordMaliciousArtifactFindingInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            artifactKind: "skill" | "plugin";
-            artifactName: string;
-            version?: string;
-            trigger?: string;
-            sha256hash?: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{
+      ownerUserId: string;
+      artifactKind: "skill" | "plugin";
+      artifactName: string;
+      version?: string;
+      trigger?: string;
+      sha256hash?: string;
+    }>(recordMaliciousArtifactFindingInternal);
 
     const result = await handler(ctx, {
       ownerUserId: "users:target",
@@ -3741,14 +3633,11 @@ describe("users.unbanUserForBanAppealServiceInternal", () => {
       .mockResolvedValueOnce({ restoredCount: 5, scheduled: false })
       .mockResolvedValueOnce({ restoredCount: 2, scheduled: true });
 
-    const handler = (
-      unbanUserForBanAppealServiceInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { targetUserId: string; reason?: string; reviewerDiscordId: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{
+      targetUserId: string;
+      reason?: string;
+      reviewerDiscordId: string;
+    }>(unbanUserForBanAppealServiceInternal);
 
     const result = await handler(ctx, {
       targetUserId: "users:target",
@@ -3838,14 +3727,11 @@ describe("users.unbanUserForBanAppealServiceInternal", () => {
       .mockResolvedValueOnce({ restoredCount: 3, scheduled: false })
       .mockResolvedValueOnce({ restoredCount: 0, scheduled: false });
 
-    const handler = (
-      unbanUserForBanAppealServiceInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { targetUserId: string; reason?: string; reviewerDiscordId: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{
+      targetUserId: string;
+      reason?: string;
+      reviewerDiscordId: string;
+    }>(unbanUserForBanAppealServiceInternal);
 
     await expect(
       handler(ctx, {
@@ -3901,14 +3787,11 @@ describe("users.unbanUserForBanAppealServiceInternal", () => {
       return null;
     });
 
-    const handler = (
-      unbanUserForBanAppealServiceInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { targetUserId: string; reason?: string; reviewerDiscordId: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{
+      targetUserId: string;
+      reason?: string;
+      reviewerDiscordId: string;
+    }>(unbanUserForBanAppealServiceInternal);
 
     await expect(
       handler(ctx, {
@@ -3946,19 +3829,12 @@ describe("users.reclassifyBanInternal", () => {
       return null;
     });
 
-    const handler = (
-      reclassifyBanInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            actorUserId: string;
-            targetUserId: string;
-            reason: string;
-            dryRun?: boolean;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{
+      actorUserId: string;
+      targetUserId: string;
+      reason: string;
+      dryRun?: boolean;
+    }>(reclassifyBanInternal);
 
     const result = await handler(ctx, {
       actorUserId: "users:actor",
@@ -3997,19 +3873,12 @@ describe("users.reclassifyBanInternal", () => {
       return null;
     });
 
-    const handler = (
-      reclassifyBanInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            actorUserId: string;
-            targetUserId: string;
-            reason: string;
-            dryRun?: boolean;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{
+      actorUserId: string;
+      targetUserId: string;
+      reason: string;
+      dryRun?: boolean;
+    }>(reclassifyBanInternal);
 
     const result = await handler(ctx, {
       actorUserId: "users:actor",
@@ -4052,14 +3921,9 @@ describe("users.reclassifyBanInternal", () => {
       return null;
     });
 
-    const handler = (
-      reclassifyBanInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { actorUserId: string; targetUserId: string; reason: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{ actorUserId: string; targetUserId: string; reason: string }>(
+      reclassifyBanInternal,
+    );
 
     await expect(
       handler(ctx, {
@@ -4091,14 +3955,9 @@ describe("users.placeUserUnderModerationInternal", () => {
     });
     const runMutation = vi.fn(async () => ({ hiddenCount: 3, scheduled: false }));
 
-    const handler = (
-      placeUserUnderModerationInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { ownerUserId: string; slug: string; reason: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{ ownerUserId: string; slug: string; reason: string }>(
+      placeUserUnderModerationInternal,
+    );
 
     const result = (await handler(
       {
@@ -4186,19 +4045,12 @@ describe("users.reserveHandleInternal", () => {
       throw new Error(`Unexpected table ${table}`);
     }) as never);
 
-    const handler = (
-      reserveHandleInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            actorUserId: string;
-            handle: string;
-            rightfulOwnerUserId: string;
-            reason?: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{
+      actorUserId: string;
+      handle: string;
+      rightfulOwnerUserId: string;
+      reason?: string;
+    }>(reserveHandleInternal);
 
     const result = await handler(ctx, {
       actorUserId: "users:admin",
@@ -4264,14 +4116,9 @@ describe("users.liftModerationHoldInternal", () => {
     });
     const runMutation = vi.fn(async () => ({ restoredCount: 5, scheduled: false }));
 
-    const handler = (
-      liftModerationHoldInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { actorUserId: string; targetUserId: string; reason?: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{ actorUserId: string; targetUserId: string; reason?: string }>(
+      liftModerationHoldInternal,
+    );
 
     const result = (await handler(
       {
@@ -4360,14 +4207,9 @@ describe("users.liftModerationHoldInternal", () => {
       return null;
     });
 
-    const handler = (
-      liftModerationHoldInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { actorUserId: string; targetUserId: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{ actorUserId: string; targetUserId: string }>(
+      liftModerationHoldInternal,
+    );
 
     const result = (await handler(
       {
@@ -4412,14 +4254,9 @@ describe("users.liftModerationHoldInternal", () => {
       return null;
     });
 
-    const handler = (
-      liftModerationHoldInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { actorUserId: string; targetUserId: string },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<{ actorUserId: string; targetUserId: string }>(
+      liftModerationHoldInternal,
+    );
 
     await expect(
       handler(
