@@ -817,6 +817,25 @@ function makeResolvePublishTargetCtx(options: {
   };
 }
 
+function makePersonalPublisher(handle: string, overrides: Record<string, unknown> = {}) {
+  return {
+    _id: `publishers:${handle}`,
+    _creationTime: 1,
+    kind: "user" as const,
+    handle,
+    displayName: handle,
+    linkedUserId: `users:${handle}`,
+    publishedSkills: 0,
+    publishedPackages: 0,
+    totalInstalls: 0,
+    totalDownloads: 0,
+    totalStars: 0,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
 function makeHomeSummaryPublisher(handle: string, overrides: Record<string, unknown> = {}) {
   return {
     _id: `publishers:${handle}`,
@@ -1718,21 +1737,13 @@ describe("publishers membership controls", () => {
 
   it("filters public publisher listings by kind", async () => {
     const publisherRows = [
-      {
-        _id: "publishers:alice",
-        _creationTime: 1,
-        kind: "user",
-        handle: "alice",
+      makePersonalPublisher("alice", {
         displayName: "Alice",
-        linkedUserId: "users:alice",
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 4,
         totalDownloads: 10,
         totalStars: 1,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
       {
         _id: "publishers:openclaw",
         _creationTime: 1,
@@ -1889,36 +1900,20 @@ describe("publishers membership controls", () => {
 
   it("pages public publishers by kind and query", async () => {
     const publisherRows = [
-      {
-        _id: "publishers:alice",
-        _creationTime: 1,
-        kind: "user",
-        handle: "alice",
+      makePersonalPublisher("alice", {
         displayName: "Alice Labs",
-        linkedUserId: "users:alice",
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 4,
         totalDownloads: 10,
         totalStars: 1,
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        _id: "publishers:bob",
-        _creationTime: 1,
-        kind: "user",
-        handle: "bob",
+      }),
+      makePersonalPublisher("bob", {
         displayName: "Bob Tools",
-        linkedUserId: "users:bob",
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 2,
         totalDownloads: 8,
         totalStars: 1,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
       {
         _id: "publishers:openclaw",
         _creationTime: 1,
@@ -2021,36 +2016,19 @@ describe("publishers membership controls", () => {
   });
 
   it("finds publishers outside the popular install window via handle prefix search", async () => {
-    const popularRows = Array.from({ length: 500 }, (_, index) => ({
-      _id: `publishers:popular-${index}`,
-      _creationTime: index,
-      kind: "user" as const,
-      handle: `popular-${index}`,
-      displayName: `Popular ${index}`,
-      linkedUserId: `users:popular-${index}`,
-      publishedSkills: 1,
-      publishedPackages: 0,
-      totalInstalls: 500 - index,
-      totalDownloads: 500 - index,
-      totalStars: 1,
-      createdAt: 1,
-      updatedAt: 1,
-    }));
-    const vincentkoc = {
-      _id: "publishers:vincentkoc",
-      _creationTime: 1,
-      kind: "user" as const,
-      handle: "vincentkoc",
+    const popularRows = Array.from({ length: 500 }, (_, index) =>
+      makePersonalPublisher(`popular-${index}`, {
+        _creationTime: index,
+        displayName: `Popular ${index}`,
+        publishedSkills: 1,
+        totalInstalls: 500 - index,
+        totalDownloads: 500 - index,
+        totalStars: 1,
+      }),
+    );
+    const vincentkoc = makePersonalPublisher("vincentkoc", {
       displayName: "Vincent Koc",
-      linkedUserId: "users:vincentkoc",
-      publishedSkills: 0,
-      publishedPackages: 0,
-      totalInstalls: 0,
-      totalDownloads: 0,
-      totalStars: 0,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -2124,36 +2102,23 @@ describe("publishers membership controls", () => {
   });
 
   it("finds publishers with published skills outside the popular install window", async () => {
-    const popularRows = Array.from({ length: 500 }, (_, index) => ({
-      _id: `publishers:popular-${index}`,
-      _creationTime: index,
-      kind: "user" as const,
-      handle: `popular-${index}`,
-      displayName: `Popular ${index}`,
-      linkedUserId: `users:popular-${index}`,
-      publishedSkills: 1,
-      publishedPackages: 0,
-      totalInstalls: 500 - index,
-      totalDownloads: 500 - index,
-      totalStars: 1,
-      createdAt: 1,
-      updatedAt: 1,
-    }));
-    const vyctorbrzezowski = {
-      _id: "publishers:vyctorbrzezowski",
-      _creationTime: 1,
-      kind: "user" as const,
-      handle: "vyctorbrzezowski",
+    const popularRows = Array.from({ length: 500 }, (_, index) =>
+      makePersonalPublisher(`popular-${index}`, {
+        _creationTime: index,
+        displayName: `Popular ${index}`,
+        publishedSkills: 1,
+        totalInstalls: 500 - index,
+        totalDownloads: 500 - index,
+        totalStars: 1,
+      }),
+    );
+    const vyctorbrzezowski = makePersonalPublisher("vyctorbrzezowski", {
       displayName: "Vyctor Brzezowski",
-      linkedUserId: "users:vyctorbrzezowski",
       publishedSkills: 5,
       publishedPackages: 1,
       totalInstalls: 46,
       totalDownloads: 1288,
-      totalStars: 0,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -2239,36 +2204,21 @@ describe("publishers membership controls", () => {
 
   it("filters hidden legacy user publishers before counting and paginating public publisher pages", async () => {
     const publisherRows = [
-      {
-        _id: "publishers:proof-banned-builder",
-        _creationTime: 1,
-        kind: "user",
-        handle: "proof-banned-builder",
+      makePersonalPublisher("proof-banned-builder", {
         displayName: "Proof Banned Builder",
         linkedUserId: undefined,
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 10,
         totalDownloads: 100,
         totalStars: 5,
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        _id: "publishers:alice",
-        _creationTime: 1,
-        kind: "user",
-        handle: "alice",
+      }),
+      makePersonalPublisher("alice", {
         displayName: "Alice Labs",
-        linkedUserId: "users:alice",
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 4,
         totalDownloads: 10,
         totalStars: 1,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
     ];
     const get = vi.fn(async (id: string) => {
       if (id === "users:proof-banned-builder") {
@@ -2348,21 +2298,12 @@ describe("publishers membership controls", () => {
 
   it("lists official creators and organizations from the official publisher index", async () => {
     const publishers = [
-      {
-        _id: "publishers:steipete",
-        _creationTime: 1,
-        kind: "user",
-        handle: "steipete",
-        displayName: "steipete",
-        linkedUserId: "users:steipete",
+      makePersonalPublisher("steipete", {
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 85_400,
         totalDownloads: 100_000,
         totalStars: 100,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
       {
         _id: "publishers:openclaw",
         _creationTime: 2,
@@ -2755,21 +2696,16 @@ describe("publishers membership controls", () => {
   });
 
   it("does not hydrate every publisher catalog preview before filtering public publisher pages", async () => {
-    const publisherRows = Array.from({ length: 120 }, (_, index) => ({
-      _id: `publishers:user-${index}`,
-      _creationTime: index,
-      kind: "user",
-      handle: `user-${index}`,
-      displayName: `User ${index}`,
-      linkedUserId: `users:user-${index}`,
-      publishedSkills: 1,
-      publishedPackages: 0,
-      totalInstalls: 120 - index,
-      totalDownloads: 120 - index,
-      totalStars: 1,
-      createdAt: 1,
-      updatedAt: 1,
-    }));
+    const publisherRows = Array.from({ length: 120 }, (_, index) =>
+      makePersonalPublisher(`user-${index}`, {
+        _creationTime: index,
+        displayName: `User ${index}`,
+        publishedSkills: 1,
+        totalInstalls: 120 - index,
+        totalDownloads: 120 - index,
+        totalStars: 1,
+      }),
+    );
     const get = vi.fn(async (id: string) => ({ _id: id, image: `https://github.com/${id}.png` }));
     const ownerPublisherQueries: string[] = [];
     const ctx = {
@@ -2824,21 +2760,16 @@ describe("publishers membership controls", () => {
   });
 
   it("ranks bounded legacy publishers missing download aggregates before paginating", async () => {
-    const rankedPublisherRows = Array.from({ length: 2 }, (_, index) => ({
-      _id: `publishers:user-${index}`,
-      _creationTime: index,
-      kind: "user",
-      handle: `user-${index}`,
-      displayName: `User ${index}`,
-      linkedUserId: `users:user-${index}`,
-      publishedSkills: 1,
-      publishedPackages: 0,
-      totalInstalls: 500 - index,
-      totalDownloads: 500 - index,
-      totalStars: 1,
-      createdAt: 1,
-      updatedAt: 1,
-    }));
+    const rankedPublisherRows = Array.from({ length: 2 }, (_, index) =>
+      makePersonalPublisher(`user-${index}`, {
+        _creationTime: index,
+        displayName: `User ${index}`,
+        publishedSkills: 1,
+        totalInstalls: 500 - index,
+        totalDownloads: 500 - index,
+        totalStars: 1,
+      }),
+    );
     const legacyFillerRows = Array.from({ length: 500 }, (_, index) => ({
       _id: `publishers:legacy-filler-${index}`,
       _creationTime: 100 + index,
@@ -2973,21 +2904,16 @@ describe("publishers membership controls", () => {
   });
 
   it("does not hydrate publisher catalog previews when a public publisher search has no matches", async () => {
-    const publisherRows = Array.from({ length: 120 }, (_, index) => ({
-      _id: `publishers:user-${index}`,
-      _creationTime: index,
-      kind: "user",
-      handle: `user-${index}`,
-      displayName: `User ${index}`,
-      linkedUserId: `users:user-${index}`,
-      publishedSkills: 1,
-      publishedPackages: 0,
-      totalInstalls: 120 - index,
-      totalDownloads: 120 - index,
-      totalStars: 1,
-      createdAt: 1,
-      updatedAt: 1,
-    }));
+    const publisherRows = Array.from({ length: 120 }, (_, index) =>
+      makePersonalPublisher(`user-${index}`, {
+        _creationTime: index,
+        displayName: `User ${index}`,
+        publishedSkills: 1,
+        totalInstalls: 120 - index,
+        totalDownloads: 120 - index,
+        totalStars: 1,
+      }),
+    );
     const get = vi.fn(async (id: string) => ({ _id: id }));
     const ownerPublisherQueries: string[] = [];
     const ctx = {
@@ -7383,21 +7309,13 @@ describe("publisher bootstrap", () => {
 
   it("uses complete counters for mine summaries without reading resource tables", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
-    const publisher = {
-      _id: "publishers:alice",
-      _creationTime: 1,
-      kind: "user",
-      handle: "alice",
+    const publisher = makePersonalPublisher("alice", {
       displayName: "Alice",
-      linkedUserId: "users:alice",
       publishedSkills: 4,
       publishedPackages: 1,
       totalInstalls: 14,
       totalDownloads: 14,
-      totalStars: 0,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -7453,21 +7371,13 @@ describe("publisher bootstrap", () => {
 
   it("keeps complete published items for listMine callers without the lightweight opt-out", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
-    const publisher = {
-      _id: "publishers:alice",
-      _creationTime: 1,
-      kind: "user",
-      handle: "alice",
+    const publisher = makePersonalPublisher("alice", {
       displayName: "Alice",
-      linkedUserId: "users:alice",
       publishedSkills: 1,
       publishedPackages: 1,
       totalInstalls: 3,
       totalDownloads: 5,
-      totalStars: 0,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
