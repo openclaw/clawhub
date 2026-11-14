@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
 import {
   buildSkillVersionRevocationPlan,
   findReplacementLatestSkillVersion,
@@ -190,11 +191,7 @@ describe("revokeSkillVersionForUser", () => {
             };
           }
           if (table === "skillVersions") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-              })),
-            };
+            return indexedUnique(() => null);
           }
           throw new Error(`Unexpected table ${table}`);
         }),

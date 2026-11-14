@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -214,36 +215,32 @@ describe("public skill version queries", () => {
             };
           }
           if (table !== "skills") throw new Error(`Unexpected table ${table}`);
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue({
-                _id: "skills:1",
-                _creationTime: 1,
-                slug: "demo",
-                displayName: "Demo",
-                summary: "Summary",
-                ownerUserId: "users:1",
-                canonicalSkillId: undefined,
-                forkOf: undefined,
-                latestVersionId: version._id,
-                tags: {},
-                stats: {
-                  downloads: 1,
-                  installsCurrent: 1,
-                  installsAllTime: 1,
-                  stars: 1,
-                  versions: 1,
-                  comments: 0,
-                },
-                createdAt: 1,
-                updatedAt: 2,
-                moderationStatus: "active",
-                moderationFlags: undefined,
-                moderationReason: undefined,
-                softDeletedAt: undefined,
-              }),
-            })),
-          };
+          return indexedUnique(() => ({
+            _id: "skills:1",
+            _creationTime: 1,
+            slug: "demo",
+            displayName: "Demo",
+            summary: "Summary",
+            ownerUserId: "users:1",
+            canonicalSkillId: undefined,
+            forkOf: undefined,
+            latestVersionId: version._id,
+            tags: {},
+            stats: {
+              downloads: 1,
+              installsCurrent: 1,
+              installsAllTime: 1,
+              stars: 1,
+              versions: 1,
+              comments: 0,
+            },
+            createdAt: 1,
+            updatedAt: 2,
+            moderationStatus: "active",
+            moderationFlags: undefined,
+            moderationReason: undefined,
+            softDeletedAt: undefined,
+          }));
         }),
         get: vi.fn(async (id: string) => {
           if (id === version._id) return version;
@@ -346,11 +343,7 @@ describe("public skill version queries", () => {
           get: vi.fn().mockResolvedValue(version),
           query: vi.fn((table: string) => {
             if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(version),
-              })),
-            };
+            return indexedUnique(() => version);
           }),
         },
       } as never;
@@ -377,11 +370,7 @@ describe("public skill version queries", () => {
           get: vi.fn().mockResolvedValue(version),
           query: vi.fn((table: string) => {
             if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(version),
-              })),
-            };
+            return indexedUnique(() => version);
           }),
         },
       } as never;
@@ -403,11 +392,7 @@ describe("public skill version queries", () => {
         get: vi.fn(async (id: string) => publicVersionFixtureDoc(id, legacyVersion)),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(legacyVersion),
-            })),
-          };
+          return indexedUnique(() => legacyVersion);
         }),
       },
     } as never;
@@ -909,11 +894,7 @@ describe("public skill version queries", () => {
       db: {
         query: vi.fn((table: string) => {
           if (table === "officialPublishers" || table === "featuredSelections") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-              })),
-            };
+            return indexedUnique(() => null);
           }
           if (table !== "skillBadges") throw new Error(`Unexpected table ${table}`);
           return {

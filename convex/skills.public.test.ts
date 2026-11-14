@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -247,11 +248,7 @@ function makeCtx(args: {
       };
     }
     if (table === "publisherMembers") {
-      return {
-        withIndex: vi.fn(() => ({
-          unique: vi.fn().mockResolvedValue(args.membership ?? null),
-        })),
-      };
+      return indexedUnique(() => args.membership ?? null);
     }
     if (table === "skillSlugAliases") {
       return {
@@ -261,11 +258,7 @@ function makeCtx(args: {
       };
     }
     if (table === "githubSkillScans") {
-      return {
-        withIndex: vi.fn(() => ({
-          unique: vi.fn().mockResolvedValue(args.githubScan ?? null),
-        })),
-      };
+      return indexedUnique(() => args.githubScan ?? null);
     }
     if (table === "skillDailyStats") {
       return {
@@ -1114,11 +1107,7 @@ describe("skill artifact moderation", () => {
           }),
           query: vi.fn((table: string) => {
             if (table === "skills") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(skill),
-                })),
-              };
+              return indexedUnique(() => skill);
             }
             if (table === "skillAppeals") {
               return {
@@ -1200,23 +1189,15 @@ describe("skill artifact moderation", () => {
             }),
             query: vi.fn((table: string) => {
               if (table === "skills") {
-                return {
-                  withIndex: vi.fn(() => ({
-                    unique: vi.fn().mockResolvedValue(skill),
-                  })),
-                };
+                return indexedUnique(() => skill);
               }
               if (table === "publisherMembers") {
-                return {
-                  withIndex: vi.fn(() => ({
-                    unique: vi.fn().mockResolvedValue({
-                      _id: "publisherMembers:stale",
-                      publisherId: "publishers:owner",
-                      userId: "users:stranger",
-                      role: "owner",
-                    }),
-                  })),
-                };
+                return indexedUnique(() => ({
+                  _id: "publisherMembers:stale",
+                  publisherId: "publishers:owner",
+                  userId: "users:stranger",
+                  role: "owner",
+                }));
               }
               if (table === "skillSlugAliases") {
                 return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })) };
@@ -1266,18 +1247,10 @@ describe("skill artifact moderation", () => {
             }),
             query: vi.fn((table: string) => {
               if (table === "skills") {
-                return {
-                  withIndex: vi.fn(() => ({
-                    unique: vi.fn().mockResolvedValue(skill),
-                  })),
-                };
+                return indexedUnique(() => skill);
               }
               if (table === "publisherMembers") {
-                return {
-                  withIndex: vi.fn(() => ({
-                    unique: vi.fn().mockResolvedValue(null),
-                  })),
-                };
+                return indexedUnique(() => null);
               }
               if (table === "skillSlugAliases") {
                 return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })) };
@@ -1332,23 +1305,15 @@ describe("skill artifact moderation", () => {
           }),
           query: vi.fn((table: string) => {
             if (table === "skills") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(skill),
-                })),
-              };
+              return indexedUnique(() => skill);
             }
             if (table === "publisherMembers") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "publisherMembers:member",
-                    publisherId: "publishers:org",
-                    userId: "users:member",
-                    role: "publisher",
-                  }),
-                })),
-              };
+              return indexedUnique(() => ({
+                _id: "publisherMembers:member",
+                publisherId: "publishers:org",
+                userId: "users:member",
+                role: "publisher",
+              }));
             }
             if (table === "skillAppeals") {
               return {

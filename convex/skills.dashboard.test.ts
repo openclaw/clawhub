@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -136,11 +137,7 @@ function makeCtx(
       }),
       query: vi.fn((table: string) => {
         if (table === "publisherMembers") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(options.membership ?? null),
-            })),
-          };
+          return indexedUnique(() => options.membership ?? null);
         }
         if (table === "skillBadges") {
           return {

@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -214,18 +215,10 @@ function makeSkillDeletionCtx(options: {
           };
         }
         if (table === "skillSearchDigest") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(digest),
-            })),
-          };
+          return indexedUnique(() => digest);
         }
         if (table === "publisherMembers") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(options.membership ?? null),
-            })),
-          };
+          return indexedUnique(() => options.membership ?? null);
         }
         throw new Error(`Unexpected table ${table}`);
       }),
@@ -352,11 +345,7 @@ function makePackageDeletionCtx(options: {
       }),
       query: vi.fn((table: string) => {
         if (table === "packages") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(pkg),
-            })),
-          };
+          return indexedUnique(() => pkg);
         }
         if (table === "packageReleases") {
           return {
@@ -392,18 +381,10 @@ function makePackageDeletionCtx(options: {
           };
         }
         if (table === "publishers") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(null),
-            })),
-          };
+          return indexedUnique(() => null);
         }
         if (table === "packageSearchDigest") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(digest),
-            })),
-          };
+          return indexedUnique(() => digest);
         }
         if (
           table === "packageCapabilitySearchDigest" ||
@@ -417,11 +398,7 @@ function makePackageDeletionCtx(options: {
           };
         }
         if (table === "publisherMembers") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(options.membership ?? null),
-            })),
-          };
+          return indexedUnique(() => options.membership ?? null);
         }
         throw new Error(`Unexpected table ${table}`);
       }),

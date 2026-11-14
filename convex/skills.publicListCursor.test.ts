@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 /* @vitest-environment node */
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -277,11 +278,7 @@ describe("public skill list deterministic cursors", () => {
             if (table !== "officialPublishers") {
               throw new Error(`Unexpected table: ${table}`);
             }
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({ publisherId: "publishers:openclaw" }),
-              })),
-            };
+            return indexedUnique(() => ({ publisherId: "publishers:openclaw" }));
           }),
         },
       } as never,
@@ -2024,11 +2021,7 @@ describe("skills.listRelatedByCategory", () => {
     });
     const query = vi.fn((table: string) => {
       if (table === "officialPublishers") {
-        return {
-          withIndex: vi.fn(() => ({
-            unique: vi.fn().mockResolvedValue(null),
-          })),
-        };
+        return indexedUnique(() => null);
       }
       if (table !== "skillSearchDigest") throw new Error(`Unexpected query table: ${table}`);
       return { withIndex };
@@ -2100,11 +2093,7 @@ describe("skills.listRelatedByCategory", () => {
     });
     const query = vi.fn((table: string) => {
       if (table === "officialPublishers") {
-        return {
-          withIndex: vi.fn(() => ({
-            unique: vi.fn().mockResolvedValue(null),
-          })),
-        };
+        return indexedUnique(() => null);
       }
       if (table !== "skillSearchDigest") throw new Error(`Unexpected query table: ${table}`);
       return { withIndex };
@@ -2137,11 +2126,7 @@ describe("skills.listRelatedByCategory", () => {
     });
     const query = vi.fn((table: string) => {
       if (table === "officialPublishers") {
-        return {
-          withIndex: vi.fn(() => ({
-            unique: vi.fn().mockResolvedValue(null),
-          })),
-        };
+        return indexedUnique(() => null);
       }
       return { withIndex };
     });

@@ -2937,17 +2937,9 @@ function makePackageCtx(options: {
             );
           }
           if (table === "officialPublishers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi
-                  .fn()
-                  .mockResolvedValue(
-                    options.officialPublisher === false
-                      ? null
-                      : { publisherId: pkg?.ownerPublisherId },
-                  ),
-              })),
-            };
+            return indexedUnique(() =>
+              options.officialPublisher === false ? null : { publisherId: pkg?.ownerPublisherId },
+            );
           }
           throw new Error(`Unexpected table ${table}`);
         }),
@@ -19498,13 +19490,7 @@ function makeSoftDeleteCtx(options?: {
             };
           }
           if (table === "packageSearchDigest") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi
-                  .fn()
-                  .mockResolvedValue({ _id: "packageSearchDigest:demo", packageId: pkg._id }),
-              })),
-            };
+            return indexedUnique(() => ({ _id: "packageSearchDigest:demo", packageId: pkg._id }));
           }
           if (table === "packageCapabilitySearchDigest") {
             return {
@@ -19677,13 +19663,7 @@ function makeOwnedPackageBatchCtx(options?: {
             };
           }
           if (table === "packageSearchDigest") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi
-                  .fn()
-                  .mockResolvedValue({ _id: "packageSearchDigest:demo", packageId: pkg._id }),
-              })),
-            };
+            return indexedUnique(() => ({ _id: "packageSearchDigest:demo", packageId: pkg._id }));
           }
           if (table === "packageCapabilitySearchDigest") {
             return {
