@@ -94,6 +94,21 @@ vi.mock("../../convex/_generated/api", () => ({
   },
 }));
 
+type CatalogItem = NonNullable<typeof loaderDataMock>["items"][number];
+
+function makeCatalogItem(overrides: Partial<CatalogItem> = {}): CatalogItem {
+  return {
+    name: "demo-plugin",
+    displayName: "Demo Plugin",
+    family: "code-plugin",
+    channel: "community",
+    isOfficial: false,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
 async function loadRoute() {
   return (await import("../routes/plugins/index")).Route as unknown as {
     __config: {
@@ -578,15 +593,10 @@ describe("plugins route", () => {
   it("accepts a healthy catalog response that takes longer than five seconds", async () => {
     vi.useFakeTimers();
     try {
-      const item = {
+      const item = makeCatalogItem({
         name: "healthy-slow-plugin",
         displayName: "Healthy slow plugin",
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        createdAt: 1,
-        updatedAt: 1,
-      };
+      });
       fetchPluginCatalogMock.mockImplementation(
         ({ signal }: { signal?: AbortSignal }) =>
           new Promise((resolve, reject) => {
@@ -638,17 +648,7 @@ describe("plugins route", () => {
 
   it("does not refetch loader-backed catalog data after mount", async () => {
     loaderDataMock = {
-      items: [
-        {
-          name: "server-plugin",
-          displayName: "Server Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      items: [makeCatalogItem({ name: "server-plugin", displayName: "Server Plugin" })],
       nextCursor: null,
       rateLimited: false,
       retryAfterSeconds: null,
@@ -775,17 +775,7 @@ describe("plugins route", () => {
 
   it("loads the next plugin page from horizontal browse controls", async () => {
     loaderDataMock = {
-      items: [
-        {
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      items: [makeCatalogItem()],
       nextCursor: "cursor:next",
       rateLimited: false,
       retryAfterSeconds: null,
@@ -812,18 +802,7 @@ describe("plugins route", () => {
 
   it("aborts stale pagination when route loader data changes", async () => {
     let paginationSignal: AbortSignal | undefined;
-    let resolvePagination: (value: {
-      items: Array<{
-        name: string;
-        displayName: string;
-        family: "code-plugin";
-        channel: "community";
-        isOfficial: false;
-        createdAt: number;
-        updatedAt: number;
-      }>;
-      nextCursor: null;
-    }) => void = () => {};
+    let resolvePagination: (value: { items: CatalogItem[]; nextCursor: null }) => void = () => {};
     fetchPluginCatalogMock.mockImplementation(
       ({ signal }: { signal?: AbortSignal }) =>
         new Promise((resolve) => {
@@ -832,17 +811,7 @@ describe("plugins route", () => {
         }),
     );
     loaderDataMock = {
-      items: [
-        {
-          name: "old-plugin",
-          displayName: "Old Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      items: [makeCatalogItem({ name: "old-plugin", displayName: "Old Plugin" })],
       nextCursor: "cursor:old-next",
       rateLimited: false,
       retryAfterSeconds: null,
@@ -857,15 +826,12 @@ describe("plugins route", () => {
     searchMock = { category: "tools" };
     loaderDataMock = {
       items: [
-        {
+        makeCatalogItem({
           name: "new-plugin",
           displayName: "New Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
           createdAt: 2,
           updatedAt: 2,
-        },
+        }),
       ],
       nextCursor: null,
       rateLimited: false,
@@ -880,15 +846,12 @@ describe("plugins route", () => {
     await act(async () => {
       resolvePagination({
         items: [
-          {
+          makeCatalogItem({
             name: "stale-plugin",
             displayName: "Stale Plugin",
-            family: "code-plugin",
-            channel: "community",
-            isOfficial: false,
             createdAt: 3,
             updatedAt: 3,
-          },
+          }),
         ],
         nextCursor: null,
       });
@@ -901,17 +864,7 @@ describe("plugins route", () => {
   it("keeps downloads sort in filtered load-more requests", async () => {
     searchMock = { category: "security" };
     loaderDataMock = {
-      items: [
-        {
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      items: [makeCatalogItem()],
       nextCursor: "cursor:next",
       rateLimited: false,
       retryAfterSeconds: null,
@@ -937,18 +890,7 @@ describe("plugins route", () => {
 
   it("renders plugin download counts in browse results", async () => {
     loaderDataMock = {
-      items: [
-        {
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-          stats: { downloads: 1_234, installs: 9, stars: 0, versions: 1 },
-        },
-      ],
+      items: [makeCatalogItem({ stats: { downloads: 1_234, installs: 9, stars: 0, versions: 1 } })],
       nextCursor: null,
       rateLimited: false,
       retryAfterSeconds: null,
@@ -982,17 +924,7 @@ describe("plugins route", () => {
     searchMock = { cursor: "cursor:current" };
     convexReactMocks.useQueries.mockReturnValue({ totalPluginsCount: 333 });
     loaderDataMock = {
-      items: [
-        {
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      items: [makeCatalogItem()],
       nextCursor: "cursor:next",
       rateLimited: false,
       retryAfterSeconds: null,
@@ -1011,17 +943,7 @@ describe("plugins route", () => {
 
   it("renders the total plugin count in the unfiltered page title", async () => {
     loaderDataMock = {
-      items: [
-        {
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      items: [makeCatalogItem()],
       nextCursor: null,
       totalCount: 321,
       rateLimited: false,
@@ -1064,17 +986,7 @@ describe("plugins route", () => {
       return null;
     });
     loaderDataMock = {
-      items: [
-        {
-          name: "available-plugin",
-          displayName: "Available Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      items: [makeCatalogItem({ name: "available-plugin", displayName: "Available Plugin" })],
       nextCursor: null,
       totalCount: null,
       rateLimited: false,
@@ -1173,17 +1085,7 @@ describe("plugins route", () => {
 
   it("renders a label-only title and always-visible search without view controls", async () => {
     loaderDataMock = {
-      items: [
-        {
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      items: [makeCatalogItem()],
       nextCursor: null,
       rateLimited: false,
       retryAfterSeconds: null,
@@ -1225,17 +1127,7 @@ describe("plugins route", () => {
   it.each(["cards", "grid"])("renders legacy %s URLs as lists", async (view) => {
     searchMock = { view };
     loaderDataMock = {
-      items: [
-        {
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      items: [makeCatalogItem()],
       nextCursor: null,
       rateLimited: false,
       retryAfterSeconds: null,
@@ -1254,24 +1146,8 @@ describe("plugins route", () => {
   it("preserves catalog results during catalog loading", async () => {
     fetchPluginCatalogMock.mockResolvedValue({
       items: [
-        {
-          name: "my-skill",
-          displayName: "My Skill",
-          family: "skill",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-        {
-          name: "my-plugin",
-          displayName: "My Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        makeCatalogItem({ name: "my-skill", displayName: "My Skill", family: "skill" }),
+        makeCatalogItem({ name: "my-plugin", displayName: "My Plugin" }),
       ],
       nextCursor: null,
     });
@@ -1419,24 +1295,18 @@ describe("plugins route", () => {
     searchMock = { category: "security" };
     loaderDataMock = {
       items: [
-        {
+        makeCatalogItem({
           name: "official-security",
           displayName: "Official Security",
-          family: "code-plugin",
           channel: "official",
           isOfficial: true,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-        {
+        }),
+        makeCatalogItem({
           name: "community-security",
           displayName: "Community Security",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
           createdAt: 2,
           updatedAt: 2,
-        },
+        }),
       ],
       nextCursor: null,
       rateLimited: false,
@@ -1571,26 +1441,19 @@ describe("plugins route", () => {
     searchMock = { q: "security", sort: "downloads" };
     loaderDataMock = {
       items: [
-        {
+        makeCatalogItem({
           name: "zulu-plugin",
           displayName: "Zulu Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
           createdAt: 2,
           updatedAt: 20,
           stats: { downloads: 1, installs: 10, stars: 0, versions: 1 },
-        },
-        {
+        }),
+        makeCatalogItem({
           name: "alpha-plugin",
           displayName: "Alpha Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
           updatedAt: 10,
           stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },
-        },
+        }),
       ],
       nextCursor: null,
       rateLimited: false,
@@ -1610,26 +1473,19 @@ describe("plugins route", () => {
     searchMock = { q: "security", sort: "downloads" };
     loaderDataMock = {
       items: [
-        {
+        makeCatalogItem({
           name: "zulu-plugin",
           displayName: "Zulu Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
           createdAt: 2,
           updatedAt: 20,
           stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },
-        },
-        {
+        }),
+        makeCatalogItem({
           name: "alpha-plugin",
           displayName: "Alpha Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
           updatedAt: 10,
           stats: { downloads: 1, installs: 10, stars: 0, versions: 1 },
-        },
+        }),
       ],
       nextCursor: null,
       rateLimited: false,
