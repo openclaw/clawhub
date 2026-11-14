@@ -50,6 +50,7 @@ import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
+import { MarketplaceIcon } from "../../components/MarketplaceIcon";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
@@ -565,6 +566,40 @@ function compatibilityFieldIcon(key: string): LucideIcon | undefined {
 
 function formatCompatibilityLabel(key: string): string {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase());
+}
+
+// Mirrors the Control UI's recommended-prompt rows: the plugin's mark and name, then the
+// prompt. ClawHub can't start a chat, so each row copies its prompt instead.
+function PluginRecommendedPrompts({
+  prompts,
+  name,
+  icon,
+}: {
+  prompts: readonly string[];
+  name: string;
+  icon: ReactNode;
+}) {
+  return (
+    <section className="plugin-manifest-list" aria-label="Example prompts">
+      {prompts.map((prompt) => (
+        <div key={prompt} className="plugin-manifest-row plugin-prompt-row">
+          <p>
+            {icon}
+            <strong>{name}</strong> {prompt}
+          </p>
+          <InstallCopyButton
+            text={prompt}
+            ariaLabel={`Copy prompt: ${prompt}`}
+            tooltip="Copy prompt"
+            className="plugin-validation-toolbar-copy"
+            showLabel={false}
+            variant="ghost"
+            size="icon-sm"
+          />
+        </div>
+      ))}
+    </section>
+  );
 }
 
 function PluginManifestConfigurationPanel({ fields }: { fields: PluginConfigField[] }) {
@@ -1814,6 +1849,22 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     isPlugin ? "Copy plugin install command" : "Copy skill install command"
                   }
                 />
+                {pluginManifestSummary?.recommendedPrompts?.length ? (
+                  <PluginRecommendedPrompts
+                    prompts={pluginManifestSummary.recommendedPrompts}
+                    name={presentationTitle(pkg.displayName, pkg.name)}
+                    icon={
+                      <MarketplaceIcon
+                        kind="plugin"
+                        label={presentationTitle(pkg.displayName, pkg.name)}
+                        imageUrl={pkg.icon}
+                        publisherImageUrl={owner?.image}
+                        categorySlug={headerCategories[0]?.slug}
+                        size="xs"
+                      />
+                    }
+                  />
+                ) : null}
               </div>
               <PluginDetailTabs
                 activeTab={activeTab}

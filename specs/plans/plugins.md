@@ -137,6 +137,14 @@ It changes presentation metadata only, without changing release artifacts,
 versions, moderation, or download statistics. Keep it as maintenance tooling for
 imports created before portable icon support.
 
+### Recommended prompts
+
+Publication copies a manifest's `recommendedPrompts` into the release's
+`pluginManifestSummary` with OpenClaw's rules (max 3, 128 code points each); an
+invalid list is dropped whole and never blocks publication. OpenClaw's Gateway
+already reads this summary field for catalog plugins, so keep it the only copy.
+Existing releases gain prompts through the plugin manifest summary backfill.
+
 ### ClawHub today
 
 ClawHub is currently a text-bundle registry for skills.

@@ -193,6 +193,13 @@ outcome, not as a problem with your plugin, and scans the release again later.
 Run `clawhub package validate <source>` to see the same findings before you
 publish.
 
+### Example Prompts
+
+Add up to three `recommendedPrompts` (128 characters each) to `openclaw.plugin.json`,
+for example `["List what's assigned to me and update me on their status."]`.
+ClawHub and OpenClaw show them on your plugin's page. An invalid list is ignored;
+your release still publishes.
+
 ### Plugin Icons
 
 ClawHub uses the bundled `assets/icon.png` for plugin catalog artwork. Manifest

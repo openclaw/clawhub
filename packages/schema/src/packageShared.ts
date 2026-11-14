@@ -34,6 +34,7 @@ export const PluginManifestSummarySchema = type({
   channels: "string[]?",
   categories: "string[]?",
   icon: "string?",
+  recommendedPrompts: "string[]?",
   compatibility: PackageCompatibilitySchema.optional(),
   manifestIdentity: type({
     name: "string?",

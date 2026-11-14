@@ -338,6 +338,18 @@ function parseSkillMarkdownMetadata(text: string | undefined) {
   };
 }
 
+// Mirrors OpenClaw's validatePluginRecommendedPrompts (max 3, 128 code points each):
+// an invalid list is dropped whole, never truncated, and never blocks publication.
+function extractRecommendedPrompts(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 3) return undefined;
+  const prompts = value.map((entry) =>
+    typeof entry === "string" ? entry.replace(/\s+/gu, " ").trim() : "",
+  );
+  return prompts.every((prompt) => prompt && Array.from(prompt).length <= 128)
+    ? prompts
+    : undefined;
+}
+
 function declaredCapabilityNames(value: unknown): string[] {
   return Array.isArray(value)
     ? uniq(value.filter((entry): entry is string => typeof entry === "string")).sort()
@@ -364,6 +376,7 @@ export function derivePluginManifestSummary(params: {
       .map(([key, value]) => [key, declaredCapabilityNames(value)] as const)
       .filter(([, names]) => names.length > 0),
   );
+  const recommendedPrompts = extractRecommendedPrompts(params.pluginManifest.recommendedPrompts);
   const providers = declaredCapabilityNames(params.pluginManifest.providers);
   const channels = declaredCapabilityNames(params.pluginManifest.channels);
   const skillManifest = params.skillManifest ?? params.pluginManifest;
@@ -397,6 +410,7 @@ export function derivePluginManifestSummary(params: {
     ...(params.categories ? { categories: [...params.categories] } : {}),
     ...(compatibility ? { compatibility } : {}),
     ...(manifestIdentity ? { manifestIdentity } : {}),
+    ...(recommendedPrompts ? { recommendedPrompts } : {}),
     ...(Object.keys(contracts).length ? { contracts } : {}),
     ...(providers.length ? { providers } : {}),
     ...(channels.length ? { channels } : {}),

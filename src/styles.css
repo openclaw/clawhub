@@ -3230,6 +3230,30 @@ code {
   min-width: 0;
 }
 
+/* Two classes so the mobile one-column manifest-row rule can't stack the copy button. */
+.plugin-manifest-row.plugin-prompt-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.plugin-prompt-row p {
+  margin: 0;
+  color: var(--oc-text-primary);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.plugin-prompt-row .marketplace-icon {
+  display: inline-flex;
+  margin-right: var(--oc-space-2);
+  vertical-align: -0.3em;
+}
+
+/* The plugin name reads as a mention, like the Control UI's prompt rows. */
+.plugin-prompt-row strong {
+  color: var(--oc-accent-primary);
+  font-weight: 600;
+}
+
 .plugin-detail-page .skill-hero-main-extra {
   gap: var(--space-7);
   overflow-x: clip;

@@ -616,6 +616,56 @@ describe("plugin detail route", () => {
     expect(container.querySelector(".skill-hero-title-row .marketplace-icon")).toBeNull();
   });
 
+  it("lists recommended prompts as copyable rows like the Control UI", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      version: {
+        package: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+        },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Adds starter prompts",
+          files: [],
+          pluginManifestSummary: {
+            schemaVersion: 1,
+            recommendedPrompts: [
+              "List what's assigned to me and update me on their status.",
+              "Summarize my open pull requests.",
+            ],
+            configFields: [],
+            mcpServers: [],
+            bundledSkills: [],
+          },
+        },
+      },
+    };
+    const { PluginDetailPage } = await import("../routes/plugins/$name");
+
+    render(<PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />);
+
+    const prompts = screen.getByRole("region", { name: "Example prompts" });
+    expect(prompts.textContent).toContain(
+      "Demo Plugin List what's assigned to me and update me on their status.",
+    );
+    expect(prompts.textContent).toContain("Demo Plugin Summarize my open pull requests.");
+    expect(
+      screen.getByRole("button", { name: "Copy prompt: Summarize my open pull requests." }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("figure", { name: "OpenClaw chat preview" })).toBeNull();
+  });
+
+  it("omits the prompt section when a plugin has no recommended prompts", async () => {
+    const { PluginDetailPage } = await import("../routes/plugins/$name");
+
+    render(<PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />);
+
+    expect(screen.queryByRole("region", { name: "Example prompts" })).toBeNull();
+  });
+
   it("loads and appends the next active release page", async () => {
     loaderDataMock = {
       ...loaderDataMock,
