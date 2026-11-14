@@ -556,22 +556,16 @@ function makePublicPublisherVisibilityCtx(options?: {
   skillModerationStatus?: string;
 }) {
   const legacyPersonalPublisher = options?.legacyPersonalPublisher ?? false;
-  const publisher = {
-    _id: "publishers:proof-banned-builder",
-    _creationTime: 1,
-    kind: "user",
-    handle: "proof-banned-builder",
+  const publisher = makePersonalPublisher("proof-banned-builder", {
     displayName: "Proof Banned Builder",
     linkedUserId: legacyPersonalPublisher ? undefined : "users:proof-banned-builder",
     trustedPublisher: false,
     publishedSkills: 1,
-    publishedPackages: 0,
     totalInstalls: 1,
     totalDownloads: 4,
     totalStars: 2,
-    createdAt: 1,
     updatedAt: 2,
-  };
+  });
   const linkedUser =
     options && "linkedUser" in options
       ? options.linkedUser
@@ -838,7 +832,7 @@ function makePersonalPublisher(handle: string, overrides: Record<string, unknown
   };
 }
 
-function makeHomeSummaryPublisher(handle: string, overrides: Record<string, unknown> = {}) {
+function makeOrgPublisher(handle: string, overrides: Record<string, unknown> = {}) {
   return {
     _id: `publishers:${handle}`,
     _creationTime: 1,
@@ -857,7 +851,7 @@ function makeHomeSummaryPublisher(handle: string, overrides: Record<string, unkn
 }
 
 function makeHomePublisherSummariesCtx(
-  publishers: Array<ReturnType<typeof makeHomeSummaryPublisher>>,
+  publishers: Array<ReturnType<typeof makeOrgPublisher>>,
   users: Record<string, Record<string, unknown> | null> = {},
 ) {
   const publishersByHandle = new Map(publishers.map((publisher) => [publisher.handle, publisher]));
@@ -910,12 +904,12 @@ describe("home publisher summaries", () => {
   });
 
   it("normalizes and deduplicates handles while preserving first-seen order", async () => {
-    const bravo = makeHomeSummaryPublisher("bravo", {
+    const bravo = makeOrgPublisher("bravo", {
       kind: "user",
       linkedUserId: "users:bravo",
       displayName: "Publisher fallback",
     });
-    const alpha = makeHomeSummaryPublisher("alpha");
+    const alpha = makeOrgPublisher("alpha");
     const { ctx, publisherReads, get } = makeHomePublisherSummariesCtx([bravo, alpha], {
       "users:bravo": {
         _id: "users:bravo",
@@ -950,22 +944,22 @@ describe("home publisher summaries", () => {
 
   it("omits incomplete or invisible summaries without reading catalog or membership tables", async () => {
     const publishers = [
-      makeHomeSummaryPublisher("incomplete", { totalStars: undefined }),
-      makeHomeSummaryPublisher("deactivated", { deactivatedAt: 2 }),
-      makeHomeSummaryPublisher("deleted", { deletedAt: 2 }),
-      makeHomeSummaryPublisher("missing-user", {
+      makeOrgPublisher("incomplete", { totalStars: undefined }),
+      makeOrgPublisher("deactivated", { deactivatedAt: 2 }),
+      makeOrgPublisher("deleted", { deletedAt: 2 }),
+      makeOrgPublisher("missing-user", {
         kind: "user",
         linkedUserId: "users:missing",
       }),
-      makeHomeSummaryPublisher("deleted-user", {
+      makeOrgPublisher("deleted-user", {
         kind: "user",
         linkedUserId: "users:deleted",
       }),
-      makeHomeSummaryPublisher("deactivated-user", {
+      makeOrgPublisher("deactivated-user", {
         kind: "user",
         linkedUserId: "users:deactivated",
       }),
-      makeHomeSummaryPublisher("legacy-unlinked", { kind: "user" }),
+      makeOrgPublisher("legacy-unlinked", { kind: "user" }),
     ];
     const { ctx, query, get } = makeHomePublisherSummariesCtx(publishers, {
       "users:deleted": { _id: "users:deleted", deletedAt: 2 },
@@ -985,18 +979,18 @@ describe("home publisher summaries", () => {
 describe("home official creator summaries", () => {
   it("pages the official publisher index and returns only active organizations with content", async () => {
     const publishers = [
-      makeHomeSummaryPublisher("high", { totalInstalls: 100 }),
-      makeHomeSummaryPublisher("person", {
+      makeOrgPublisher("high", { totalInstalls: 100 }),
+      makeOrgPublisher("person", {
         kind: "user",
         linkedUserId: "users:person",
         totalInstalls: 80,
       }),
-      makeHomeSummaryPublisher("empty", {
+      makeOrgPublisher("empty", {
         publishedSkills: 0,
         publishedPackages: 0,
         totalInstalls: 70,
       }),
-      makeHomeSummaryPublisher("inactive", { deactivatedAt: 2, totalInstalls: 50 }),
+      makeOrgPublisher("inactive", { deactivatedAt: 2, totalInstalls: 50 }),
     ];
     const officialRows = publishers.map((publisher, index) => ({
       _id: `officialPublishers:${index}`,
@@ -1036,7 +1030,7 @@ describe("home official creator summaries", () => {
 
   it("collects every official page, orders by installs, and clamps the result to sixteen", async () => {
     const makeSummary = (index: number, installs: number) => ({
-      ...makeHomeSummaryPublisher(`org-${index}`, { totalInstalls: installs }),
+      ...makeOrgPublisher(`org-${index}`, { totalInstalls: installs }),
       stats: { skills: 2, packages: 1, installs, downloads: installs, stars: 5 },
     });
     const firstPage = Array.from({ length: 12 }, (_, index) => makeSummary(index, 20 - index));
@@ -1746,20 +1740,13 @@ describe("publishers membership controls", () => {
         totalDownloads: 10,
         totalStars: 1,
       }),
-      {
-        _id: "publishers:openclaw",
-        _creationTime: 1,
-        kind: "org",
-        handle: "openclaw",
+      makeOrgPublisher("openclaw", {
         displayName: "OpenClaw",
         publishedSkills: 0,
-        publishedPackages: 1,
         totalInstalls: 20,
         totalDownloads: 40,
         totalStars: 2,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
     ];
     const ctx = {
       db: {
@@ -1802,20 +1789,14 @@ describe("publishers membership controls", () => {
 
   it("omits hidden publisher preview skills without scanning extra pages", async () => {
     const publisherRows = [
-      {
-        _id: "publishers:nvidia",
-        _creationTime: 1,
-        kind: "org",
-        handle: "nvidia",
+      makeOrgPublisher("nvidia", {
         displayName: "NVIDIA",
         publishedSkills: 1,
         publishedPackages: 0,
         totalInstalls: 0,
         totalDownloads: 70,
         totalStars: 0,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
     ];
     const skillRows = [
       ...Array.from({ length: 3 }, (_, index) => 100 - index).map((installs, index) => ({
@@ -1916,20 +1897,13 @@ describe("publishers membership controls", () => {
         totalDownloads: 8,
         totalStars: 1,
       }),
-      {
-        _id: "publishers:openclaw",
-        _creationTime: 1,
-        kind: "org",
-        handle: "openclaw",
+      makeOrgPublisher("openclaw", {
         displayName: "OpenClaw",
         publishedSkills: 0,
-        publishedPackages: 1,
         totalInstalls: 20,
         totalDownloads: 40,
         totalStars: 2,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
     ];
     const ctx = {
       db: {
@@ -2412,20 +2386,14 @@ describe("publishers membership controls", () => {
 
   it("orders and renders public publisher card previews by downloads", async () => {
     const publisherRows = [
-      {
-        _id: "publishers:openclaw",
-        _creationTime: 1,
-        kind: "org",
-        handle: "openclaw",
+      makeOrgPublisher("openclaw", {
         displayName: "OpenClaw",
         publishedSkills: 1,
         publishedPackages: 4,
         totalInstalls: 20,
         totalDownloads: 364,
         totalStars: 2,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
     ];
     const skillRows = [
       {
@@ -3159,20 +3127,13 @@ describe("publishers membership controls", () => {
   });
 
   it("preserves canonical download order for legacy skills across pages", async () => {
-    const publisher = {
-      _id: "publishers:legacy",
-      _creationTime: 1,
-      kind: "org",
-      handle: "legacy",
+    const publisher = makeOrgPublisher("legacy", {
       displayName: "Legacy",
-      publishedSkills: 2,
       publishedPackages: 0,
       totalInstalls: 4,
       totalDownloads: 77,
       totalStars: 2,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const highDownloadLegacySkill = {
       _id: "skills:legacy-high",
       _creationTime: 1,
@@ -3261,20 +3222,13 @@ describe("publishers membership controls", () => {
   });
 
   it("resumes untagged pre-index cursors with the original comparator across backfill", async () => {
-    const publisher = {
-      _id: "publishers:preindex",
-      _creationTime: 1,
-      kind: "org",
-      handle: "preindex",
+    const publisher = makeOrgPublisher("preindex", {
       displayName: "Pre-index",
       publishedSkills: 3,
       publishedPackages: 0,
-      totalInstalls: 3,
       totalDownloads: 30,
       totalStars: 6,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const originalRows = [
       {
         _id: "skills:old-a",
@@ -3360,20 +3314,14 @@ describe("publishers membership controls", () => {
   });
 
   it("uses complete profile counters without reading resource or star tables", async () => {
-    const publisher = {
-      _id: "publishers:openclaw",
-      _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
+    const publisher = makeOrgPublisher("openclaw", {
       displayName: "OpenClaw",
       publishedSkills: 3,
       publishedPackages: 2,
       totalInstalls: 50,
       totalDownloads: 80,
       totalStars: 7,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const queriedTables: string[] = [];
     const ctx = {
       db: {
@@ -3469,18 +3417,9 @@ describe("publishers membership controls", () => {
   });
 
   it("returns verified visible organization affiliations for user OG metadata", async () => {
-    const personalPublisher = {
-      _id: "publishers:teoslayer",
-      _creationTime: 1,
-      kind: "user",
+    const personalPublisher = makePersonalPublisher("teoslayer", {
       userId: "users:teoslayer",
-      linkedUserId: "users:teoslayer",
-      handle: "teoslayer",
       displayName: null,
-      createdAt: 1,
-      updatedAt: 1,
-      publishedSkills: 0,
-      publishedPackages: 0,
       totalInstalls: 3,
       totalDownloads: 10,
       totalStars: 4,
@@ -3489,7 +3428,7 @@ describe("publishers membership controls", () => {
       statsInstallsAllTime: 3,
       statsStars: 4,
       stats: { downloads: 10, installsCurrent: 2, installsAllTime: 3, stars: 4 },
-    };
+    });
     const user = {
       _id: "users:teoslayer",
       handle: "teoslayer",
@@ -3592,17 +3531,8 @@ describe("publishers membership controls", () => {
   });
 
   it("bounds raw membership rows scanned for user OG metadata", async () => {
-    const personalPublisher = {
-      _id: "publishers:teoslayer",
-      _creationTime: 1,
-      kind: "user",
-      linkedUserId: "users:teoslayer",
-      handle: "teoslayer",
+    const personalPublisher = makePersonalPublisher("teoslayer", {
       displayName: null,
-      createdAt: 1,
-      updatedAt: 1,
-      publishedSkills: 0,
-      publishedPackages: 0,
       totalInstalls: 3,
       totalDownloads: 10,
       totalStars: 4,
@@ -3611,7 +3541,7 @@ describe("publishers membership controls", () => {
       statsInstallsAllTime: 3,
       statsStars: 4,
       stats: { downloads: 10, installsCurrent: 2, installsAllTime: 3, stars: 4 },
-    };
+    });
     const user = {
       _id: "users:teoslayer",
       handle: "teoslayer",
