@@ -2,6 +2,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
+import { writeJsonIfRequested } from "../../../clawhub/src/cli/output.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
@@ -159,9 +160,7 @@ export async function cmdCreateOrg(opts: GlobalOpts, handle: string, options: Or
         result.member ? ` and set @${result.member.handle} as ${result.member.role}` : ""
       }`,
     );
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    }
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }
@@ -200,9 +199,7 @@ export async function cmdRemoveOrgMember(
         ? `Removed @${result.member.handle} from @${result.handle}`
         : `@${result.member.handle} is not a member of @${result.handle}`,
     );
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    }
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }
@@ -256,7 +253,7 @@ export async function cmdUpdateOrgProfile(
       ApiV1PublisherProfileUpdateResponseSchema,
     );
     spinner?.succeed(`Updated @${result.handle} profile`);
-    if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }
@@ -298,9 +295,7 @@ export async function cmdDeleteOrg(
         ? `Deleted @${result.handle}; ${result.memberCount} member(s) retained for history`
         : `Dry run OK for @${result.handle}: ${result.activeSkills} active skill(s), ${result.activePackages} active package(s), ${result.memberCount} member(s)`,
     );
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    }
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }
@@ -345,9 +340,7 @@ export async function cmdReclaimDeletedOrgHandle(
         ? `Reclaimed @${result.handle}; hard-deleted ${result.memberCount} member row(s)`
         : `Dry run OK for @${result.handle}: pass --apply --confirm ${result.confirmationToken} to hard-delete ${result.memberCount} member row(s)`,
     );
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    }
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }
@@ -368,10 +361,7 @@ export async function cmdListOfficialOrgs(opts: GlobalOpts, options: OrgOfficial
     );
 
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return result;
-    }
+    if (writeJsonIfRequested(options.json, result)) return result;
 
     const items = result.items.filter((item) => item.active);
     if (items.length === 0) {
@@ -455,9 +445,7 @@ async function updateOfficialOrg(
           ? `Removed @${result.handle} from official publishers`
           : `@${result.handle} was not official`,
     );
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    }
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }
@@ -568,7 +556,7 @@ export async function cmdRepairScopedPackages(
     spinner?.succeed(
       `${dryRun ? "Planned" : "Applied"} scoped package repairs: ${summary.planned || summary.applied} ok, ${summary.failed} failed`,
     );
-    if (options.json) process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    writeJsonIfRequested(options.json, summary);
     return summary;
   });
 }

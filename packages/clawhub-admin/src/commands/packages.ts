@@ -4,6 +4,7 @@ import {
   reportModerationPlan,
 } from "../../../clawhub/src/cli/commands/moderationPlan.js";
 import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
+import { writeJsonIfRequested } from "../../../clawhub/src/cli/output.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
@@ -195,7 +196,7 @@ export async function cmdExportPackageValidationReport(
     },
     plugins,
   };
-  if (options.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  writeJsonIfRequested(options.json, report);
   return report;
 }
 
@@ -250,7 +251,7 @@ export async function cmdHardDeletePackage(
         ? `Hard-deleted @${result.ownerHandle}/${result.name}`
         : `Dry run OK for @${result.ownerHandle}/${result.name}: pass --apply --confirm ${result.confirmationToken}`,
     );
-    if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }
@@ -271,10 +272,7 @@ export async function cmdDeletePackageTrustedPublisher(
       token,
     });
     spinner.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     console.log(`Trusted publisher deleted for ${trimmed}.`);
   });
 }
@@ -309,10 +307,7 @@ export async function cmdModeratePackageRelease(
       ApiV1PackageReleaseModerationResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     console.log(`OK. ${trimmed}@${version} moderation state set to ${result.state}.`);
     console.log(`Scan status: ${result.scanStatus}`);
   });
@@ -344,10 +339,7 @@ export async function cmdListPackageReports(
     ApiV1PackageReportListResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   if (result.items.length === 0) {
     console.log("No package reports found.");
@@ -415,10 +407,7 @@ export async function cmdTriagePackageReport(
       ApiV1PackageReportTriageResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     const actionSuffix =
       result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
     console.log(`OK. Report ${trimmed} set to ${result.status}${actionSuffix}.`);
@@ -451,10 +440,7 @@ export async function cmdPackageModerationQueue(
     ApiV1PackageModerationQueueResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   if (result.items.length === 0) {
     console.log("No package releases in the moderation queue.");
@@ -517,10 +503,7 @@ export async function cmdRepairPackageName(
       ApiV1PackageRepairNameResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
 
     console.log(
       `${result.dryRun ? "Dry run" : "Applied"} package repair: ${trimmed} -> ${nextName}`,
@@ -570,10 +553,7 @@ export async function cmdRepairPackageRuntimeId(
       ApiV1PackageRepairRuntimeIdResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
 
     console.log(`${result.dryRun ? "Dry run" : "Applied"} package runtime id repair: ${trimmed}`);
     for (const operation of result.operations) {
@@ -622,10 +602,7 @@ export async function cmdListPackageMigrations(
     ApiV1PackageOfficialMigrationListResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   if (result.items.length === 0) {
     console.log("No package migrations found.");
@@ -693,10 +670,7 @@ export async function cmdUpsertPackageMigration(
       ApiV1PackageOfficialMigrationResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     console.log(
       `OK. Migration ${result.migration.bundledPluginId} is ${result.migration.phase} for ${result.migration.packageName}.`,
     );
@@ -737,10 +711,7 @@ export async function cmdTransferPackageOwner(
       ApiV1PackageRepairNameResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return result;
-    }
+    if (writeJsonIfRequested(options.json, result)) return result;
     console.log(
       `${result.dryRun ? "Dry run" : "Applied"} package transfer: ${trimmed} -> @${owner}`,
     );

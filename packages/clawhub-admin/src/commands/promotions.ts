@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
+import { writeJsonIfRequested } from "../../../clawhub/src/cli/output.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import { createCrabLoader, fail, formatError } from "../../../clawhub/src/cli/ui.js";
@@ -79,10 +80,7 @@ export async function cmdListPromotions(
   } while (cursor);
 
   const parsed = { promotions };
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
-    return parsed;
-  }
+  if (writeJsonIfRequested(options.json, parsed)) return parsed;
   if (parsed.promotions.length === 0) {
     console.log(options.all ? "No promotions." : "No active promotions.");
     return parsed;
@@ -112,7 +110,7 @@ export async function cmdCreatePromotion(
     spinner?.succeed(
       `Created promotion "${result.slug}" (status: ${result.status}). Activate with: clawhub-admin promotions set-status ${result.slug} active`,
     );
-    if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }
@@ -136,7 +134,7 @@ export async function cmdUpdatePromotion(
       ApiV1PromotionWriteResponseSchema,
     );
     spinner?.succeed(`Updated promotion "${result.slug}" (status: ${result.status})`);
-    if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }
@@ -163,7 +161,7 @@ export async function cmdSetPromotionStatus(
       ApiV1PromotionWriteResponseSchema,
     );
     spinner?.succeed(`Promotion "${result.slug}" is now ${result.status}`);
-    if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    writeJsonIfRequested(options.json, result);
     return result;
   });
 }

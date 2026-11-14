@@ -1,6 +1,7 @@
 import { isCancel, select } from "@clack/prompts";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
+import { writeJsonIfRequested } from "../../../clawhub/src/cli/output.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
@@ -78,7 +79,7 @@ export async function cmdRevokeSkillVersion(
         ? `OK. ${slug}@${version} was already revoked`
         : `OK. Revoked ${slug}@${version}`,
     );
-    if (options.json) process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
+    writeJsonIfRequested(options.json, parsed);
     return parsed;
   });
 }
@@ -233,7 +234,7 @@ export async function cmdLiftModerationHold(
         ? `OK. ${resolved.label} had no moderation hold`
         : `OK. Lifted moderation hold for ${resolved.label} (${formatRestoredSkills(parsed.restoredSkills)})`,
     );
-    if (options.json) process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
+    writeJsonIfRequested(options.json, parsed);
     return parsed;
   });
 }
@@ -412,9 +413,7 @@ export async function cmdRescanSkill(
     spinner?.succeed(
       `OK. Queued ClawScan for ${slug}${version ? `@${version}` : ""} (${parsed.alreadyQueued ? "existing job" : "new job"}).`,
     );
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
-    }
+    writeJsonIfRequested(options.json, parsed);
     return parsed;
   });
 }
