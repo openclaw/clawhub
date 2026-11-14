@@ -514,6 +514,25 @@ function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
+function makeSkillPublishFile() {
+  return {
+    path: "SKILL.md",
+    size: 1,
+    storageId: "storage:1",
+    sha256: "abc",
+    contentType: "text/plain",
+    uploadTicket: "skillPublishUploadTickets:1",
+  };
+}
+
+function makeSkillPublishJsonRequest(body: string) {
+  return new Request("https://example.com/api/v1/skills", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
+    body,
+  });
+}
+
 function packagePublishMetadata(overrides: Record<string, unknown> = {}) {
   return {
     name: "demo-plugin",
@@ -8311,16 +8330,7 @@ describe("httpApiV1 handlers", () => {
       changelog: "c",
       acceptLicenseTerms: true,
       forkOf: { slug: "upstream", ownerHandle: "@openclaw", version: "1.0.0" },
-      files: [
-        {
-          path: "SKILL.md",
-          size: 1,
-          storageId: "storage:1",
-          sha256: "abc",
-          contentType: "text/plain",
-          uploadTicket: "skillPublishUploadTickets:1",
-        },
-      ],
+      files: [makeSkillPublishFile()],
     });
     runMutation.mockImplementation(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
@@ -8329,11 +8339,7 @@ describe("httpApiV1 handlers", () => {
     });
     const response = await __handlers.publishSkillV1Handler(
       makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
-        body,
-      }),
+      makeSkillPublishJsonRequest(body),
     );
     expect(response.status).toBe(200);
     const json = await response.json();
@@ -8359,16 +8365,7 @@ describe("httpApiV1 handlers", () => {
           version: "1.0.0",
           changelog: "c",
           acceptLicenseTerms: true,
-          files: [
-            {
-              path: "SKILL.md",
-              size: 1,
-              storageId: "storage:1",
-              sha256: "abc",
-              contentType: "text/plain",
-              uploadTicket: "skillPublishUploadTickets:1",
-            },
-          ],
+          files: [makeSkillPublishFile()],
         }),
       });
     const rateLimitHeaders = [
@@ -8568,24 +8565,11 @@ describe("httpApiV1 handlers", () => {
       acceptLicenseTerms: true,
       migrateOwner: true,
       sourceOwnerHandle: "org",
-      files: [
-        {
-          path: "SKILL.md",
-          size: 1,
-          storageId: "storage:1",
-          sha256: "abc",
-          contentType: "text/plain",
-          uploadTicket: "skillPublishUploadTickets:1",
-        },
-      ],
+      files: [makeSkillPublishFile()],
     });
     const response = await __handlers.publishSkillV1Handler(
       makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
-        body,
-      }),
+      makeSkillPublishJsonRequest(body),
     );
     if (response.status !== 200) {
       throw new Error(await response.text());
@@ -8633,25 +8617,12 @@ describe("httpApiV1 handlers", () => {
       changelog: "c",
       acceptLicenseTerms: true,
       source,
-      files: [
-        {
-          path: "SKILL.md",
-          size: 1,
-          storageId: "storage:1",
-          sha256: "abc",
-          contentType: "text/plain",
-          uploadTicket: "skillPublishUploadTickets:1",
-        },
-      ],
+      files: [makeSkillPublishFile()],
     });
 
     const response = await __handlers.publishSkillV1Handler(
       makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
-        body,
-      }),
+      makeSkillPublishJsonRequest(body),
     );
 
     expect(response.status).toBe(200);
@@ -8691,24 +8662,11 @@ describe("httpApiV1 handlers", () => {
       version: "1.0.0",
       changelog: "c",
       acceptLicenseTerms: true,
-      files: [
-        {
-          path: "SKILL.md",
-          size: 1,
-          storageId: "storage:1",
-          sha256: "abc",
-          contentType: "text/plain",
-          uploadTicket: "skillPublishUploadTickets:1",
-        },
-      ],
+      files: [makeSkillPublishFile()],
     });
     const response = await __handlers.publishSkillV1Handler(
       makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
-        body,
-      }),
+      makeSkillPublishJsonRequest(body),
     );
     expect(response.status).toBe(200);
     expect(runMutation).toHaveBeenCalledWith(
@@ -8754,24 +8712,11 @@ describe("httpApiV1 handlers", () => {
       version: "1.0.0",
       changelog: "c",
       acceptLicenseTerms: true,
-      files: [
-        {
-          path: "SKILL.md",
-          size: 1,
-          storageId: "storage:1",
-          sha256: "abc",
-          contentType: "text/plain",
-          uploadTicket: "skillPublishUploadTickets:1",
-        },
-      ],
+      files: [makeSkillPublishFile()],
     });
     const response = await __handlers.publishSkillV1Handler(
       makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
-        body,
-      }),
+      makeSkillPublishJsonRequest(body),
     );
     expect(response.status).toBe(200);
     expect(publishVersionForUser).toHaveBeenCalledWith(
@@ -8801,24 +8746,11 @@ describe("httpApiV1 handlers", () => {
       version: "1.0.0",
       changelog: "c",
       acceptLicenseTerms: true,
-      files: [
-        {
-          path: "SKILL.md",
-          size: 1,
-          storageId: "storage:1",
-          sha256: "abc",
-          contentType: "text/plain",
-          uploadTicket: "skillPublishUploadTickets:1",
-        },
-      ],
+      files: [makeSkillPublishFile()],
     });
     const response = await __handlers.publishSkillV1Handler(
       makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
-        body,
-      }),
+      makeSkillPublishJsonRequest(body),
     );
     expect(response.status).toBe(400);
     expect(await response.text()).toMatch(/publisher not found/i);
@@ -8877,24 +8809,11 @@ describe("httpApiV1 handlers", () => {
       ownerHandle: "me",
       version: "1.0.0",
       changelog: "c",
-      files: [
-        {
-          path: "SKILL.md",
-          size: 1,
-          storageId: "storage:1",
-          sha256: "abc",
-          contentType: "text/plain",
-          uploadTicket: "skillPublishUploadTickets:1",
-        },
-      ],
+      files: [makeSkillPublishFile()],
     });
     const response = await __handlers.publishSkillV1Handler(
       makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
-        body,
-      }),
+      makeSkillPublishJsonRequest(body),
     );
     expect(response.status).toBe(400);
     expect(await response.text()).toMatch(/license terms must be accepted/i);
@@ -9135,11 +9054,7 @@ describe("httpApiV1 handlers", () => {
     });
     const response = await __handlers.publishSkillV1Handler(
       makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
-        body,
-      }),
+      makeSkillPublishJsonRequest(body),
     );
     expect(response.status).toBe(400);
     expect(await response.text()).toMatch(/license terms must be accepted/i);
