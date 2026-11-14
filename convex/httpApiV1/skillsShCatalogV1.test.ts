@@ -42,6 +42,23 @@ const { buildGitHubApiHeaders } = await import("../lib/githubAuth");
 const { verifyGitHubActionsSkillsShSyncJwt } = await import("../lib/githubActionsOidc");
 const { computeGitHubSkillFolderContentHash } = await import("../lib/githubSkillSync");
 const { applyRateLimit } = await import("../lib/httpRateLimit");
+const mirrorVisibilityActions = [
+  [
+    "mirror-verify-activate",
+    internal.skillsShMirrorVisibility.verifyAndActivateInternal,
+    "activate-skills-sh-public-production",
+  ],
+  [
+    "mirror-prepare-native-trending",
+    internal.skillsShMirrorVisibility.prepareNativeTrendingInternal,
+    "deactivate-skills-sh-public-production",
+  ],
+  [
+    "mirror-deactivate-native-trending",
+    internal.skillsShMirrorVisibility.deactivateAndMaterializeInternal,
+    "deactivate-skills-sh-public-production",
+  ],
+] as const;
 const {
   skillsShCatalogPublicV1Handler,
   skillsShCatalogTestV1Handler,
@@ -136,53 +153,43 @@ describe("skills.sh catalog Test HTTP API", () => {
     const runQuery = vi.fn(async () => ({ runs: [], control: null }));
     const runAction = vi.fn(async () => ({ ok: true, activated: true }));
     const runMutation = vi.fn(async () => ({ ok: true, enabled: false }));
-
-    const response = await skillsShCatalogTestV1Handler(
-      { runQuery, runAction, runMutation } as never,
-      new Request("https://wry-manatee-359.convex.site/api/v1/operator/skills-sh/mirror", {
-        method: "POST",
-        headers: { Authorization: "Bearer github-oidc-token" },
-        body: JSON.stringify({ operation: "mirror-status" }),
-      }),
-    );
+    const invoke = (body: Record<string, unknown>) =>
+      skillsShCatalogTestV1Handler(
+        { runQuery, runAction, runMutation } as never,
+        new Request("https://example.com/api/v1/operator/skills-sh/mirror", {
+          method: "POST",
+          headers: { Authorization: "Bearer github-oidc-token" },
+          body: JSON.stringify(body),
+        }),
+      );
+    const response = await invoke({ operation: "mirror-status" });
 
     expect(response.status).toBe(200);
     expect(verifyGitHubActionsSkillsShSyncJwt).toHaveBeenCalledWith("github-oidc-token");
     expect(requireApiTokenUserOrResponse).not.toHaveBeenCalled();
     expect(requireAdminOrResponse).not.toHaveBeenCalled();
 
-    const activation = await skillsShCatalogTestV1Handler(
-      { runQuery, runAction, runMutation } as never,
-      new Request("https://wry-manatee-359.convex.site/api/v1/operator/skills-sh/mirror", {
-        method: "POST",
-        headers: { Authorization: "Bearer github-oidc-token" },
-        body: JSON.stringify({
-          operation: "mirror-verify-activate",
-          reason: "CLAW-603 production activation",
-          confirm: "activate-skills-sh-public-production",
-        }),
-      }),
-    );
-    expect(activation.status).toBe(200);
-    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
-      actor: "github-actions:603:1",
-      reason: "CLAW-603 production activation",
-      confirm: "activate-skills-sh-public-production",
-    });
+    for (const [operation, actionRef, confirm] of mirrorVisibilityActions) {
+      const activation = await invoke({
+        operation,
+        reason: "CLAW-603 production activation",
+        confirm,
+      });
+      expect(activation.status).toBe(200);
+      expect(await activation.json()).toEqual({ ok: true, activated: true });
+      expect(runAction).toHaveBeenLastCalledWith(actionRef, {
+        actor: "github-actions:603:1",
+        reason: "CLAW-603 production activation",
+        confirm,
+      });
+    }
 
-    const rollback = await skillsShCatalogTestV1Handler(
-      { runQuery, runAction, runMutation } as never,
-      new Request("https://wry-manatee-359.convex.site/api/v1/operator/skills-sh/mirror", {
-        method: "POST",
-        headers: { Authorization: "Bearer github-oidc-token" },
-        body: JSON.stringify({
-          operation: "mirror-public-gate",
-          enabled: false,
-          reason: "systemic skills.sh rollback",
-          confirm: "deactivate-skills-sh-public-production",
-        }),
-      }),
-    );
+    const rollback = await invoke({
+      operation: "mirror-public-gate",
+      enabled: false,
+      reason: "systemic skills.sh rollback",
+      confirm: "deactivate-skills-sh-public-production",
+    });
     expect(rollback.status).toBe(200);
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
       enabled: false,
