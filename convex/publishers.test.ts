@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
 import {
   assertCanManageOwnedResource,
   ensurePersonalPublisherForUser,
@@ -519,15 +520,6 @@ function captureIndexRange(buildQuery: (q: unknown) => unknown) {
   };
   buildQuery(q);
   return { fields, range };
-}
-
-function indexedUnique(readValue: () => unknown) {
-  // Keep fixture evaluation lazy and create a fresh unique mock for each index call.
-  return {
-    withIndex: vi.fn(() => ({
-      unique: vi.fn().mockResolvedValue(readValue()),
-    })),
-  };
 }
 
 function indexedRows(rows: unknown[]) {
