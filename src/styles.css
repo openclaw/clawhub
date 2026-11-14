@@ -585,12 +585,6 @@ code {
   padding: 0 var(--space-5);
 }
 
-.section-cta {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 18px;
-}
-
 .navbar {
   position: sticky;
   top: 0;
@@ -2562,12 +2556,6 @@ code {
   width: 42%;
 }
 
-.skeleton-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-}
-
 .skeleton-card {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -4501,18 +4489,6 @@ code {
   max-width: 100%;
 }
 
-.skill-hero-action-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
-  gap: 16px;
-  align-items: stretch;
-  min-width: 0;
-}
-
-.skill-hero-action-grid > * {
-  min-width: 0;
-}
-
 .skill-hero-title {
   display: grid;
   gap: 18px;
@@ -5751,11 +5727,6 @@ a.skills-sh-security-audit-row:focus-visible {
   min-width: 0;
   align-items: center;
   gap: 6px;
-}
-
-.activity-metric-tooltip {
-  max-width: 260px;
-  line-height: 1.4;
 }
 
 .downloads-metric-label-row {
@@ -9841,10 +9812,6 @@ a.skills-sh-security-audit-row:focus-visible {
     border-top: 1px solid var(--line);
   }
 
-  .section-cta {
-    justify-content: flex-start;
-  }
-
   .skill-hero-lower {
     grid-template-columns: 1fr;
   }
@@ -9993,14 +9960,6 @@ a.skills-sh-security-audit-row:focus-visible {
   .search-input {
     flex: 1 1 180px;
     min-width: 0;
-  }
-
-  .report-dialog-backdrop {
-    padding: 12px;
-  }
-
-  .report-dialog {
-    padding: 16px;
   }
 
   .site-footer {
@@ -10863,24 +10822,6 @@ a.skills-sh-security-audit-row:focus-visible {
   font-size: 1.5rem;
   font-weight: 600;
   margin: 0;
-}
-
-.dashboard-list {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
-}
-
-@media (min-width: 1024px) {
-  .dashboard-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 1536px) {
-  .dashboard-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 640px) {
@@ -12353,23 +12294,6 @@ a.skills-sh-security-audit-row:focus-visible {
   box-sizing: border-box;
 }
 
-.management-textarea {
-  min-height: 104px;
-  resize: vertical;
-}
-
-.management-actions-start {
-  justify-content: flex-start;
-}
-
-.management-subitem {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .management-report-item {
   display: grid;
   gap: 4px;
@@ -12397,10 +12321,6 @@ a.skills-sh-security-audit-row:focus-visible {
   }
 
   .management-actions {
-    justify-content: flex-start;
-  }
-
-  .management-subitem {
     justify-content: flex-start;
   }
 }
@@ -12500,12 +12420,6 @@ a.agentic-risk-finding-title:focus-visible {
 .pending-banner-blocked {
   background: var(--oc-status-error-bg);
   border-color: color-mix(in srgb, var(--oc-status-error-fg) 40%, var(--oc-border-subtle));
-}
-
-/* Warning banner variant */
-.pending-banner-warning {
-  background: var(--oc-status-warning-bg);
-  border-color: color-mix(in srgb, var(--oc-status-warning-fg) 40%, var(--oc-border-subtle));
 }
 
 @media (max-width: 480px) {
@@ -13101,10 +13015,6 @@ a.agentic-risk-finding-title:focus-visible {
   gap: 16px;
   min-width: 0;
   width: 100%;
-}
-
-.user-list-item .skill-list-item-owner {
-  font-size: 0.82rem;
 }
 
 .publisher-filter-tabs {
@@ -15172,18 +15082,6 @@ body:has(.browse-page-borderless-header) .navbar {
     width: 100%;
     padding: 8px 0;
   }
-}
-
-/* ===== Detail Page Layout — Full Width ===== */
-
-.detail-content-full {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  overflow-x: hidden;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
 }
 
 /* ===== Unified Search Page ===== */
