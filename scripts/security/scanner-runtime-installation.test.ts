@@ -26,7 +26,8 @@ const image =
   "ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c";
 
 async function installFixture() {
-  const root = await mkdtemp(join(tmpdir(), "clawscan-runtime-install-"));
+  // Exercise command assertions with an installer name inside the temporary path.
+  const root = await mkdtemp(join(tmpdir(), "clawscan-runtime-install-pip-"));
   const bin = join(root, "bin");
   const scriptDir = join(root, "scripts");
   const fixture = join(root, "reviewed-source");
@@ -66,7 +67,9 @@ async function installFixture() {
     GITHUB_ENV: join(root, "github-env"),
     QUALIFICATION_LOG: join(root, "qualification.log"),
   };
-  return { root, bin, scriptDir, fixture, runtime, env };
+  const readCommands = async () =>
+    (await readFile(env.COMMAND_LOG, "utf8")).replaceAll(root, "<fixture>");
+  return { root, bin, scriptDir, fixture, runtime, env, readCommands };
 }
 
 async function addJudge(runtime: string) {
@@ -148,7 +151,7 @@ describe("optional source-qualified scanner runtime commands", () => {
       expect((await readdir(sourceDir, { recursive: true })).join("\n")).not.toContain(
         "__pycache__",
       );
-      expect(await readFile(fixture.env.COMMAND_LOG, "utf8")).not.toMatch(/pip|uv /);
+      expect(await fixture.readCommands()).not.toMatch(/pip|uv /);
     } finally {
       await rm(fixture.root, { recursive: true, force: true });
     }
@@ -220,8 +223,8 @@ describe("optional source-qualified scanner runtime commands", () => {
           env: { ...fixture.env, CLAWSCAN_SOURCE_DIR: fixture.fixture },
         }),
       ).rejects.toThrow(/exact qualified source and immutable runtime image/);
-      expect(await readFile(fixture.env.COMMAND_LOG, "utf8")).toBe(
-        "git -C " + fixture.fixture + " rev-parse HEAD\n",
+      expect(await fixture.readCommands()).toBe(
+        "git -C <fixture>/reviewed-source rev-parse HEAD\n",
       );
       await expect(readFile(fixture.env.GITHUB_PATH, "utf8")).rejects.toThrow();
     } finally {
@@ -242,7 +245,7 @@ describe("explicit qualified candidate installation", () => {
       expect(await readFile(join(fixture.scriptDir, "clawscan-source-commit.txt"), "utf8")).toBe(
         pin + "\n",
       );
-      const commands = await readFile(fixture.env.COMMAND_LOG, "utf8");
+      const commands = await fixture.readCommands();
       expect(commands).toContain("fetch --quiet --depth 1 origin " + candidate);
       expect(commands).toContain("rev-parse HEAD^{tree}");
       expect(commands).toContain("rev-parse HEAD:docker/clawscan-runtime");
@@ -276,7 +279,7 @@ describe("explicit qualified candidate installation", () => {
           }),
         ).rejects.toThrow();
       }
-      await expect(readFile(fixture.env.COMMAND_LOG, "utf8")).rejects.toThrow();
+      await expect(fixture.readCommands()).rejects.toThrow();
       await expect(readFile(fixture.env.GITHUB_PATH, "utf8")).rejects.toThrow();
       await expect(readFile(fixture.env.GITHUB_ENV, "utf8")).rejects.toThrow();
     } finally {
@@ -310,7 +313,7 @@ describe("explicit qualified candidate installation", () => {
           }),
         ).rejects.toThrow();
       }
-      expect(await readFile(fixture.env.COMMAND_LOG, "utf8")).not.toMatch(/docker |go /);
+      expect(await fixture.readCommands()).not.toMatch(/docker |go /);
       await expect(readFile(fixture.env.GITHUB_PATH, "utf8")).rejects.toThrow();
       await expect(readFile(fixture.env.GITHUB_ENV, "utf8")).rejects.toThrow();
     } finally {
@@ -344,7 +347,7 @@ describe("explicit qualified candidate installation", () => {
         },
       );
       expect(result.stdout).toContain("Qualified ClawScan aig-mcp runtime: " + image);
-      const commands = await readFile(fixture.env.COMMAND_LOG, "utf8");
+      const commands = await fixture.readCommands();
       expect(commands).toContain("docker pull " + image + "\n");
       expect(commands).toContain(
         "docker image inspect --format {{range .RepoDigests}}{{println .}}{{end}} " + image + "\n",
@@ -388,7 +391,7 @@ describe("explicit qualified candidate installation", () => {
             },
           ),
         ).rejects.toThrow();
-        const commands = await readFile(fixture.env.COMMAND_LOG, "utf8");
+        const commands = await fixture.readCommands();
         if (!("CLI_FAILURE" in failure)) expect(commands).not.toContain("docker run ");
         expect(commands).not.toMatch(/pip|uv |fetch /);
         await expect(readFile(fixture.env.GITHUB_PATH, "utf8")).rejects.toThrow();
