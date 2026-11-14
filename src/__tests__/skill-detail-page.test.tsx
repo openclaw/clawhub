@@ -152,7 +152,7 @@ describe("SkillDetailPage", () => {
     };
   }
 
-  function makeWeatherSkill() {
+  function makeWeatherSkill(overrides: Record<string, unknown> = {}) {
     return {
       _id: skillId,
       _creationTime: 0,
@@ -172,6 +172,7 @@ describe("SkillDetailPage", () => {
       },
       createdAt: 0,
       updatedAt: 0,
+      ...overrides,
     };
   }
 
@@ -610,26 +611,11 @@ describe("SkillDetailPage", () => {
         canonicalOwner="steipete"
         initialData={{
           result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
+            skill: makeWeatherSkill({
               slug: "github",
               displayName: "Github",
               summary: "Interact with GitHub using the `gh` CLI.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
+            }),
             owner: makeWeatherPublisher(),
             latestVersion: makeWeatherVersion({
               files: [
@@ -849,16 +835,10 @@ describe("SkillDetailPage", () => {
         slug="aiq-deploy"
         initialData={{
           result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
+            skill: makeWeatherSkill({
               slug: "aiq-deploy",
               displayName: "AIQ Deploy",
               summary: "Deploy AgentIQ workflows.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
               stats: {
                 stars: 0,
                 downloads: 0,
@@ -866,9 +846,7 @@ describe("SkillDetailPage", () => {
                 versions: 0,
                 comments: 0,
               },
-              createdAt: 0,
-              updatedAt: 0,
-            },
+            }),
             owner: {
               _id: ownerPublisherId,
               _creationTime: 0,
@@ -1153,16 +1131,11 @@ describe("SkillDetailPage", () => {
         return {
           items: [
             {
-              skill: {
+              skill: makeWeatherSkill({
                 _id: "skills:2" as Id<"skills">,
-                _creationTime: 0,
                 slug: "pipeline-builder",
                 displayName: "Pipeline Builder",
                 summary: "Compose agent workflow pipelines.",
-                ownerUserId: ownerId,
-                ownerPublisherId,
-                tags: {},
-                badges: {},
                 stats: {
                   stars: 4,
                   downloads: 12,
@@ -1170,9 +1143,7 @@ describe("SkillDetailPage", () => {
                   versions: 1,
                   comments: 0,
                 },
-                createdAt: 0,
-                updatedAt: 0,
-              },
+              }),
               latestVersion: null,
               ownerHandle: "steipete",
               owner: null,
@@ -1344,26 +1315,11 @@ describe("SkillDetailPage", () => {
         slug="kmind-markdown-to-mindmap"
         initialData={{
           result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
+            skill: makeWeatherSkill({
               slug: "kmind-markdown-to-mindmap",
               displayName: "KMind Markdown to Mindmap",
               summary: "Convert markdown to mindmaps.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installs: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
+            }),
             owner: makeWeatherPublisher({
               handle: "suka233",
               displayName: "suka233",
@@ -1670,16 +1626,7 @@ describe("SkillDetailPage", () => {
       if (args && typeof args === "object" && "skillId" in args) return false;
       if (args && typeof args === "object" && "slug" in args) {
         return {
-          skill: {
-            _id: skillId,
-            _creationTime: 0,
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: ownerId,
-            ownerPublisherId,
-            tags: {},
-            badges: {},
+          skill: makeWeatherSkill({
             stats: {
               stars: 8,
               downloads: 34,
@@ -1687,9 +1634,7 @@ describe("SkillDetailPage", () => {
               versions: 1,
               comments: 0,
             },
-            createdAt: 0,
-            updatedAt: 0,
-          },
+          }),
           owner: makeWeatherPublisher(),
           latestVersion: makeWeatherVersion(),
           forkOf: null,
@@ -1732,16 +1677,7 @@ describe("SkillDetailPage", () => {
       if (args && typeof args === "object" && "skillId" in args) return true;
       if (args && typeof args === "object" && "slug" in args) {
         return {
-          skill: {
-            _id: skillId,
-            _creationTime: 0,
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: ownerId,
-            ownerPublisherId,
-            tags: {},
-            badges: {},
+          skill: makeWeatherSkill({
             stats: {
               stars: 1,
               downloads: 34,
@@ -1749,9 +1685,7 @@ describe("SkillDetailPage", () => {
               versions: 1,
               comments: 0,
             },
-            createdAt: 0,
-            updatedAt: 0,
-          },
+          }),
           owner: makeWeatherPublisher(),
           latestVersion: makeWeatherVersion(),
           forkOf: null,
