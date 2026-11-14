@@ -4,8 +4,6 @@ import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import type { Id } from "./_generated/dataModel";
 import {
   backfillExistingPublicCorpusBatchRows,
-  currentUserSeedPackageName,
-  currentUserSeedSkillSlug,
   seedCatalogPresentationFixtures,
   seedCanonicalSearchFixture,
   seedFeaturedPluginPackagesMutation,
@@ -332,7 +330,7 @@ describe("devSeed local fixtures", () => {
       createdAt: 1,
       updatedAt: 1,
     })) as Id<"users">;
-    const scopedSlug = currentUserSeedSkillSlug(userId, "catalog-demo");
+    const scopedSlug = "dev-owner-catalog-demo";
 
     await seedSkillMutationHandler(
       createMutationCtx(db) as never,
@@ -1153,10 +1151,10 @@ describe("devSeed local fixtures", () => {
       createdAt: 1,
       updatedAt: 1,
     })) as Id<"users">;
-    const flaggedSkillSlug = currentUserSeedSkillSlug(userId, "local-flagged-wallet-sync");
-    const scannedSkillSlug = currentUserSeedSkillSlug(userId, "local-agentic-risk-demo");
-    const flaggedPluginName = currentUserSeedPackageName(userId, "local-flagged-runtime-plugin");
-    const scannedPluginName = currentUserSeedPackageName(userId, "local-scanned-runtime-plugin");
+    const flaggedSkillSlug = "dev-owner-local-flagged-wallet-sync";
+    const scannedSkillSlug = "dev-owner-local-agentic-risk-demo";
+    const flaggedPluginName = "dev-owner-local-flagged-runtime-plugin";
+    const scannedPluginName = "dev-owner-local-scanned-runtime-plugin";
 
     await seedLocalModerationFixturesHandler(
       createMutationCtx(db) as never,
@@ -1281,7 +1279,7 @@ describe("devSeed local fixtures", () => {
         ownerUserId: userId,
         packages: [
           {
-            name: currentUserSeedPackageName(userId, "local-merge-notes-plugin"),
+            name: "dev-owner-local-merge-notes-plugin",
             displayName: "Local Merge Notes",
             summary: "Seeded local owner plugin.",
             version: "0.1.0",
@@ -1312,7 +1310,7 @@ describe("devSeed local fixtures", () => {
       tables.packages?.map((pkg) => String(pkg.name)).sort((a, b) => a.localeCompare(b)),
     ).toEqual([
       flaggedPluginName,
-      currentUserSeedPackageName(userId, "local-merge-notes-plugin"),
+      "dev-owner-local-merge-notes-plugin",
       scannedPluginName,
       "local-truncation-runtime-plugin",
     ]);
