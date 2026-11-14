@@ -3,6 +3,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { dispatchGitHubRepositoryEvent } from "./lib/githubRepositoryDispatch";
@@ -40,20 +41,16 @@ async function fixture(
     const releases: Id<"packageReleases">[] = [];
     for (const family of ["code-plugin", "bundle-plugin", "claw"] as const) {
       const packageId = await ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name: "fixture-" + family,
         normalizedName: "fixture-" + family,
         displayName: family,
         ownerUserId: userId,
         family,
-        channel: "community",
-        isOfficial: false,
-        tags: {},
         compatibility: {},
         verification,
         scanStatus: "clean",
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       releases.push(
         await ctx.db.insert("packageReleases", {

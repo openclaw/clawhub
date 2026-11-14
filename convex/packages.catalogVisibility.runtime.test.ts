@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { compareCatalogSearchEntries } from "./httpApiV1/packagesV1";
@@ -312,16 +313,12 @@ describe("normal plugin catalog visibility", () => {
     const { packageId, ownerUserId } = await t.run(async (ctx) => {
       const createdOwnerUserId = await ctx.db.insert("users", { handle: "version-owner" });
       const createdPackageId = await ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name: "@runtime/version-pagination",
         normalizedName: "@runtime/version-pagination",
         displayName: "Version pagination",
         ownerUserId: createdOwnerUserId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        tags: {},
         stats: { downloads: 0, installs: 0, stars: 0, versions: 2 },
-        createdAt: 1,
         updatedAt: 3,
       });
       return { packageId: createdPackageId, ownerUserId: createdOwnerUserId };

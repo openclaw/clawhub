@@ -4,6 +4,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { MANAGED_MCP_DEFINITION_PATH } from "clawhub-schema";
 import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import { sha256Hex } from "./lib/clawpack";
 import { hashToken } from "./lib/tokens";
@@ -353,17 +354,12 @@ describe("managed MCP authorization", () => {
     const { t, userId } = await publicationFixture();
     await t.run((ctx) =>
       ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name: "@openclaw/demo",
         normalizedName: "@openclaw/demo",
         displayName: "Demo",
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
         ownerUserId: userId,
-        tags: {},
         stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-        createdAt: 1,
-        updatedAt: 1,
       }),
     );
     await expect(

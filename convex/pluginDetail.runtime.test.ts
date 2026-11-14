@@ -4,6 +4,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api } from "./_generated/api";
 import { MAX_RAW_FILE_BYTES } from "./httpApiV1/shared";
 import { hashToken } from "./lib/tokens";
@@ -32,17 +33,14 @@ async function fixture(family: "code-plugin" | "bundle-plugin" = "code-plugin") 
     });
     const storageId = await ctx.storage.store(new Blob(["# Plugin README"]));
     const packageId = await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "@fixture/plugin",
       normalizedName: "@fixture/plugin",
       displayName: "Plugin",
       ownerUserId,
       family,
-      channel: "community",
-      isOfficial: false,
       scanStatus: "clean",
-      tags: {},
       stats: { downloads: 0, installs: 0, stars: 0, versions: 12 },
-      createdAt: 1,
       updatedAt: 12,
     });
     const releaseIds = [];
