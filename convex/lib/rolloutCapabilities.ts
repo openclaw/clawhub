@@ -7,14 +7,6 @@ export function getRuntimeRolloutCapabilities(env: ClawHubRolloutEnvironment = p
   return getClawHubRolloutCapabilities(env);
 }
 
-export function assertSkillsShRuntimeEnabled(env: ClawHubRolloutEnvironment = process.env) {
-  const capabilities = getRuntimeRolloutCapabilities(env);
-  if (!capabilities.skillsSh.runtimeEnabled) {
-    throw new ConvexError("skills.sh catalog rollout is disabled");
-  }
-  return capabilities;
-}
-
 export function assertGitHubSkillSyncRuntimeEnabled(env: ClawHubRolloutEnvironment = process.env) {
   const capabilities = getRuntimeRolloutCapabilities(env);
   if (!capabilities.githubSkillSync.runtimeEnabled) {

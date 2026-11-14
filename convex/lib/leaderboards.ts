@@ -24,13 +24,6 @@ export function getTrendingRange(now: number) {
   return { startDay, endDay };
 }
 
-export async function queryDailyStats(ctx: QueryCtx | MutationCtx, day: number) {
-  return ctx.db
-    .query("skillDailyStats")
-    .withIndex("by_day", (q) => q.eq("day", day))
-    .collect();
-}
-
 export function takeTopTrendingEntries(entries: LeaderboardEntry[], limit: number) {
   return topN(entries, limit, compareTrendingEntries).sort((a, b) => compareTrendingEntries(b, a));
 }
