@@ -502,6 +502,30 @@ function makeCompletedPressureScoreRun() {
   };
 }
 
+function makeEmptyPublisherAbuseDashboard(
+  fields: { signalCount?: number; signalCountHasMore?: boolean } = {},
+) {
+  return {
+    latestRun: null,
+    latestSignalRun: null,
+    latestSignalRunIsCurrentModel: false,
+    pendingItems: [],
+    pendingPotentialBanCandidateItems: [],
+    pendingReviewItems: [],
+    recentResolvedItems: [],
+    pendingPotentialBanCandidateCount: 0,
+    pendingReviewCount: 0,
+    pendingCount: 0,
+    recentResolvedCount: 0,
+    pendingPotentialBanCandidateCountHasMore: false,
+    pendingReviewCountHasMore: false,
+    pendingCountHasMore: false,
+    recentResolvedCountHasMore: false,
+    signalCount: fields.signalCount ?? 0,
+    signalCountHasMore: fields.signalCountHasMore ?? false,
+  };
+}
+
 function makeNomination(
   fields: Partial<{
     _id: string;
@@ -852,25 +876,7 @@ describe("publisher abuse dry-run persistence", () => {
 
       await expect(
         listDashboardHandler({ db: { get: dbGet, query: dbQuery } }, {}),
-      ).resolves.toEqual({
-        latestRun: null,
-        latestSignalRun: null,
-        latestSignalRunIsCurrentModel: false,
-        pendingItems: [],
-        pendingPotentialBanCandidateItems: [],
-        pendingReviewItems: [],
-        recentResolvedItems: [],
-        pendingPotentialBanCandidateCount: 0,
-        pendingReviewCount: 0,
-        pendingCount: 0,
-        recentResolvedCount: 0,
-        pendingPotentialBanCandidateCountHasMore: false,
-        pendingReviewCountHasMore: false,
-        pendingCountHasMore: false,
-        recentResolvedCountHasMore: false,
-        signalCount: 0,
-        signalCountHasMore: false,
-      });
+      ).resolves.toEqual(makeEmptyPublisherAbuseDashboard());
       await expect(
         getPublisherAbuseAutobanSettingHandler({ db: { query: dbQuery } }, {}),
       ).resolves.toEqual({
@@ -919,25 +925,9 @@ describe("publisher abuse dry-run persistence", () => {
       query: vi.fn(),
     };
 
-    await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
-      latestRun: null,
-      latestSignalRun: null,
-      latestSignalRunIsCurrentModel: false,
-      pendingItems: [],
-      pendingPotentialBanCandidateItems: [],
-      pendingReviewItems: [],
-      recentResolvedItems: [],
-      pendingPotentialBanCandidateCount: 0,
-      pendingReviewCount: 0,
-      pendingCount: 0,
-      recentResolvedCount: 0,
-      pendingPotentialBanCandidateCountHasMore: false,
-      pendingReviewCountHasMore: false,
-      pendingCountHasMore: false,
-      recentResolvedCountHasMore: false,
-      signalCount: 0,
-      signalCountHasMore: false,
-    });
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
+      makeEmptyPublisherAbuseDashboard(),
+    );
     await expect(getPublisherAbuseAutobanSettingHandler({ db }, {})).resolves.toEqual({
       enabled: false,
       updatedAt: null,
@@ -1037,25 +1027,9 @@ describe("publisher abuse dry-run persistence", () => {
       }),
     };
 
-    await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
-      latestRun: null,
-      latestSignalRun: null,
-      latestSignalRunIsCurrentModel: false,
-      pendingItems: [],
-      pendingPotentialBanCandidateItems: [],
-      pendingReviewItems: [],
-      recentResolvedItems: [],
-      pendingPotentialBanCandidateCount: 0,
-      pendingReviewCount: 0,
-      pendingCount: 0,
-      recentResolvedCount: 0,
-      pendingPotentialBanCandidateCountHasMore: false,
-      pendingReviewCountHasMore: false,
-      pendingCountHasMore: false,
-      recentResolvedCountHasMore: false,
-      signalCount: 25,
-      signalCountHasMore: true,
-    });
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
+      makeEmptyPublisherAbuseDashboard({ signalCount: 25, signalCountHasMore: true }),
+    );
 
     expect(db.query).toHaveBeenCalledWith("publisherAbuseSignals");
   });
@@ -1387,25 +1361,9 @@ describe("publisher abuse dry-run persistence", () => {
       }),
     };
 
-    await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
-      latestRun: null,
-      latestSignalRun: null,
-      latestSignalRunIsCurrentModel: false,
-      pendingItems: [],
-      pendingPotentialBanCandidateItems: [],
-      pendingReviewItems: [],
-      recentResolvedItems: [],
-      pendingPotentialBanCandidateCount: 0,
-      pendingReviewCount: 0,
-      pendingCount: 0,
-      recentResolvedCount: 0,
-      pendingPotentialBanCandidateCountHasMore: false,
-      pendingReviewCountHasMore: false,
-      pendingCountHasMore: false,
-      recentResolvedCountHasMore: false,
-      signalCount: 1,
-      signalCountHasMore: false,
-    });
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
+      makeEmptyPublisherAbuseDashboard({ signalCount: 1 }),
+    );
 
     expect(db.query).toHaveBeenCalledWith("publisherAbuseSignals");
   });
@@ -1459,25 +1417,9 @@ describe("publisher abuse dry-run persistence", () => {
       }),
     };
 
-    await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
-      latestRun: null,
-      latestSignalRun: null,
-      latestSignalRunIsCurrentModel: false,
-      pendingItems: [],
-      pendingPotentialBanCandidateItems: [],
-      pendingReviewItems: [],
-      recentResolvedItems: [],
-      pendingPotentialBanCandidateCount: 0,
-      pendingReviewCount: 0,
-      pendingCount: 0,
-      recentResolvedCount: 0,
-      pendingPotentialBanCandidateCountHasMore: false,
-      pendingReviewCountHasMore: false,
-      pendingCountHasMore: false,
-      recentResolvedCountHasMore: false,
-      signalCount: 1,
-      signalCountHasMore: false,
-    });
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
+      makeEmptyPublisherAbuseDashboard({ signalCount: 1 }),
+    );
   });
 
   it("defaults publisher abuse autobans to disabled when no setting exists", async () => {
